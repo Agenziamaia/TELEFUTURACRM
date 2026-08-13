@@ -17,6 +17,11 @@ import { esclusaDalleGare } from "@/lib/commissioning";
 import { dbError, notify } from "./toast";
 import { cn } from "@/utils";
 
+// ad oggi l'UNICO brand che paga a moltiplicatore sul canone del cliente è
+// Wind3 (Luca 13/08): il pannello vive solo su di lui — quando un altro
+// operatore passerà a canone basta aggiungerlo qui
+const BRAND_CANONI = ["windtre"];
+
 interface Brand { id: string; nome: string; colore1: string; attivo: boolean }
 interface Cat { id: string; nome: string }
 interface ProdRow { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; attivo: boolean }
@@ -28,7 +33,7 @@ const GRUPPI = [
 ] as const;
 
 export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
-    const [brandSel, setBrandSel] = useState("windtre");
+    const [brandSel] = useState(BRAND_CANONI[0]);
     const [gruppoSel, setGruppoSel] = useState<string>("mobile");
     const [prodotti, setProdotti] = useState<ProdRow[]>([]);
     const [offerte, setOfferte] = useState<OffRow[]>([]);
@@ -115,14 +120,13 @@ export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap gap-2 items-center">
-                {brands.filter(b => b.attivo).map(b => (
-                    <button key={b.id} onClick={() => setBrandSel(b.id)}
-                        className={cn("flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm font-bold transition-all",
-                            brandSel === b.id ? "border-violet-400/70 bg-violet-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25")}>
+                {brands.filter(b => b.attivo && BRAND_CANONI.includes(b.id)).map(b => (
+                    <span key={b.id} className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-violet-400/70 bg-violet-500/15 text-white text-sm font-bold">
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: b.colore1 || "var(--tf-94a3b8)" }} />
                         {b.nome}
-                    </button>
+                    </span>
                 ))}
+                <span className="text-[11px] text-slate-500">unico operatore che oggi paga a moltiplicatore sul canone del cliente</span>
             </div>
             {/* i due mondi a canone: click = esplode tutto quello da prezzare */}
             <div className="flex flex-wrap gap-2">

@@ -68,6 +68,22 @@ const _ymd = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, "0");
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 };
+// FERIE DEL RESPONSABILE (Luca 13/08, mondo agenzia): le pratiche degli
+// agenti sono in carico al back office, che non lavora come un negozio e non
+// ha deleghe — nei giorni di ferie del BO warning e malus NON avanzano.
+// La mappa è keyed sul VENDITORE della riga (nome agente) → periodi di
+// ferie approvate del suo back office.
+let FERIE_RESP: Record<string, { dal: string; al: string }[]> | null = null;
+export function impostaFerieResponsabili(m: Record<string, { dal: string; al: string }[]> | null | undefined) {
+  FERIE_RESP = m && Object.keys(m).length ? m : null;
+}
+function inFerieResp(d: Date, venditore?: string): boolean {
+  if (!venditore || !FERIE_RESP) return false;
+  const periodi = FERIE_RESP[venditore];
+  if (!periodi?.length) return false;
+  const ymd = _ymd(d);
+  return periodi.some((p) => ymd >= p.dal && ymd <= p.al);
+}
 function giornoChiuso(d: Date, negozio?: string): boolean {
   if (d.getDay() === 0) {
     const apertoDomenica = !!negozio && !!DOMENICALI?.some((s) => sameStore(s, negozio));
@@ -82,7 +98,7 @@ function giornoChiuso(d: Date, negozio?: string): boolean {
 }
 /** Giorni col negozio APERTO (domeniche incluse se il negozio è domenicale,
  *  meno festivi e chiusure straordinarie). */
-export function giorniApertiDa(dataStrIta: string, negozio?: string): number {
+export function giorniApertiDa(dataStrIta: string, negozio?: string, venditore?: string): number {
   const from = parseRuleDate(dataStrIta);
   if (!from) return 0;
   const to = new Date();
@@ -92,7 +108,8 @@ export function giorniApertiDa(dataStrIta: string, negozio?: string): number {
   const cur = new Date(from);
   while (cur < to) {
     cur.setDate(cur.getDate() + 1);
-    if (!giornoChiuso(cur, negozio)) count++;
+    // ferie del responsabile (BO agenzia) = giorno congelato per la pratica
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) count++;
   }
   return count;
 }
@@ -424,8 +441,8 @@ function misure(row: TrackingRow) {
   const ggUltimo = ultimo ? giorniLavorativiDa(ultimo.data) : null;
   // varianti APERTI (Luca 11/08): warning e malus corrono solo nei giorni in
   // cui il negozio della pratica era aperto (festivi e chiusure esclusi)
-  const aGg = giorniApertiDa(row.dataInserimento, row.negozio);
-  const aUltimo = ultimo ? giorniApertiDa(ultimo.data, row.negozio) : null;
+  const aGg = giorniApertiDa(row.dataInserimento, row.negozio, row.venditore);
+  const aUltimo = ultimo ? giorniApertiDa(ultimo.data, row.negozio, row.venditore) : null;
   return {
     gg,
     ggSenza: ultimo ? null : gg,

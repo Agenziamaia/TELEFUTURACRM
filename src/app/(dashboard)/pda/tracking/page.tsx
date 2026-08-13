@@ -30,6 +30,7 @@ import {
   impostaRegoleTracking,
   impostaEsitiTracking,
   impostaCalendarioChiusure,
+  impostaFerieResponsabili,
   esitoCompletato,
   getStatiAdminPerCategoria,
   esitoAdminDefinitivo,
@@ -1499,6 +1500,24 @@ export default function TrackingPdaPage() {
         // il malus delle pratiche degli agenti si intesta al loro BO
         // (risposta Luca 13/08) — la sync legge questa mappa
         impostaAgentiBOMalus(mappa);
+        // FERIE DEL BO (risposta Luca 13/08): il back office non lavora come
+        // un negozio e non delega — nei suoi giorni di ferie approvate le
+        // pratiche dei suoi agenti congelano warning e malus. Mappa keyed
+        // sul nome AGENTE (venditore riga) → periodi del suo BO.
+        const ferieResp: Record<string, { dal: string; al: string }[]> = {};
+        if (boIds.length) {
+          const { data: fer } = await supabase.from("vacation_requests")
+            .select("user_id, date_from, date_to, status, tipo").in("user_id", boIds);
+          const okFer = ((fer ?? []) as { user_id: string; date_from: string; date_to: string; status: string | null; tipo: string | null }[])
+            .filter((f) => /approv/i.test(String(f.status || "")) && String(f.tipo || "ferie") !== "corsi");
+          righe.forEach((a) => {
+            if (!a.full_name || !a.back_office_id) return;
+            const periodi = okFer.filter((f) => f.user_id === a.back_office_id)
+              .map((f) => ({ dal: String(f.date_from).slice(0, 10), al: String(f.date_to).slice(0, 10) }));
+            if (periodi.length) ferieResp[a.full_name] = periodi;
+          });
+        }
+        impostaFerieResponsabili(ferieResp);
       }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
