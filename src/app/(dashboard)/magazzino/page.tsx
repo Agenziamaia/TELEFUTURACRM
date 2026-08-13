@@ -11,15 +11,20 @@
 //                  (magazzino + usati + vendite CRM)
 //   🚚 Trasferimenti — merce da un negozio all'altro con DDT progressivo:
 //                  in transito → accettato dal magazzino che riceve
+//   📚 Articoli  — anagrafica articoli dall'export del gestionale (task Luca
+//                  13/08): solo i riferimenti (codice, barcode, descrizione,
+//                  gruppo/listino, sottogruppo, marca), divisi per brand.
+//                  Import col runner scripts/import_mag_articoli.js.
 // Stati unità: disponibile · in_arrivo · in_transito (negozio = destinazione,
 // il mittente lo vede spedito nel DDT) · venduto (deflaggato ma ricercabile).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
+import { BookOpen, Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { isAdminOrAbove } from "@/lib/roles";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
+import { SelectOpzioni } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 
 type Unita = {
@@ -32,6 +37,12 @@ type Unita = {
 type Ddt = {
     id: string; numero: number; da_negozio: string; a_negozio: string; stato: string;
     creato_da: string | null; creato_il: string; accettato_da: string | null; accettato_il: string | null; note: string | null;
+};
+type Articolo = {
+    codice: string; barcode: string | null; descrizione: string;
+    gruppo: string | null; sottogruppo: string | null; marca: string | null;
+    iva_acquisto: string | null; iva_vendita: string | null;
+    costo_ultimo: number | null; prezzo: number | null; attivo: boolean;
 };
 
 const STATI_LABEL: Record<string, string> = {
@@ -48,7 +59,7 @@ export default function MagazzinoPage() {
     // merce solo amministrazione in su (segnalazione Francesco 12/08)
     const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
     const puoCaricare = isAdminOrAbove(user?.role);
-    const [tab, setTab] = useState<"giacenze" | "ricerca" | "trasferimenti">("giacenze");
+    const [tab, setTab] = useState<"giacenze" | "ricerca" | "trasferimenti" | "articoli">("giacenze");
 
     const [negozi, setNegozi] = useState<string[]>([]);
     const [unita, setUnita] = useState<Unita[]>([]);
@@ -74,7 +85,7 @@ export default function MagazzinoPage() {
             <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Boxes size={26} /> Magazzino</h1>
                 <div className="flex gap-2">
-                    {([["giacenze", "📦 Giacenze"], ["ricerca", "🔍 Ricerca seriale"], ["trasferimenti", "🚚 Trasferimenti"]] as const).map(([k, l]) => (
+                    {([["giacenze", "📦 Giacenze"], ["ricerca", "🔍 Ricerca seriale"], ["trasferimenti", "🚚 Trasferimenti"], ["articoli", "📚 Articoli"]] as const).map(([k, l]) => (
                         <button key={k} onClick={() => setTab(k)}
                             className={cn("px-4 py-2 rounded-xl text-sm font-semibold border transition",
                                 tab === k ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}>
@@ -89,6 +100,8 @@ export default function MagazzinoPage() {
                 <Giacenze unita={unita} negozi={negozi} aziende={aziende} />
             ) : tab === "ricerca" ? (
                 <RicercaSeriale unita={unita} />
+            ) : tab === "articoli" ? (
+                <Articoli vedeCosti={puoCaricare} />
             ) : (
                 <Trasferimenti unita={unita} negozi={negozi} aziende={aziende} gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica} />
             )}
@@ -465,6 +478,131 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40">
                     {busy ? "Carico…" : "Carica le unità"}
                 </button>
+            </div>
+        </div>
+    );
+}
+
+/* ── 📚 ARTICOLI (task Luca 13/08) ───────────────────────────────────────
+   Anagrafica articoli dall'export giacenze del gestionale: SOLO i
+   riferimenti (niente disponibilità). La divisione "per brand" corre su due
+   assi: GRUPPO = listino/famiglia del gestionale (chips coi conteggi),
+   MARCA = produttore (tendina, valorizzata soprattutto sui device).
+   I costi li vede solo amministrazione in su; il prezzo lo vedono tutti. */
+function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
+    const [articoli, setArticoli] = useState<Articolo[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [gruppo, setGruppo] = useState("");
+    const [marca, setMarca] = useState("");
+    const [cerca, setCerca] = useState("");
+
+    useEffect(() => {
+        (async () => {
+            const { data } = await caricaTutte<Articolo>((from, to) =>
+                supabase.from("mag_articoli").select("*").order("codice").range(from, to) as never);
+            setArticoli((data ?? []) as Articolo[]);
+            setLoading(false);
+        })();
+    }, []);
+
+    const gruppi = useMemo(() => {
+        const m = new Map<string, number>();
+        articoli.forEach(a => { const g = a.gruppo || "Senza gruppo"; m.set(g, (m.get(g) || 0) + 1); });
+        return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+    }, [articoli]);
+    const marche = useMemo(() =>
+        Array.from(new Set(articoli.map(a => a.marca).filter(Boolean))).sort() as string[], [articoli]);
+
+    const filtrati = useMemo(() => articoli.filter(a => {
+        if (gruppo && (a.gruppo || "Senza gruppo") !== gruppo) return false;
+        if (marca && a.marca !== marca) return false;
+        if (cerca) {
+            const q = cerca.toLowerCase();
+            if (!`${a.codice} ${a.barcode || ""} ${a.descrizione}`.toLowerCase().includes(q)) return false;
+        }
+        return true;
+    }), [articoli, gruppo, marca, cerca]);
+
+    const TETTO = 300;
+    const visibili = filtrati.slice(0, TETTO);
+
+    const esporta = () => {
+        const dati: CellaXlsx[][] = filtrati.map(a => [
+            a.codice, a.barcode || "", a.descrizione, a.gruppo || "", a.sottogruppo || "", a.marca || "",
+            a.prezzo ?? "", ...(vedeCosti ? [a.costo_ultimo ?? ""] : []),
+        ]);
+        scaricaXlsx(`articoli_${gruppo || "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+            ["Codice", "Barcode", "Descrizione", "Gruppo", "Sottogruppo", "Marca", "Prezzo €", ...(vedeCosti ? ["Costo €"] : [])],
+            dati, "Articoli");
+    };
+
+    if (loading) return <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>;
+    return (
+        <div className="space-y-4">
+            {/* chips dei GRUPPI coi conteggi: la divisione per brand a colpo d'occhio */}
+            <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => setGruppo("")}
+                    className={cn("px-3 py-1.5 rounded-xl border text-xs font-semibold transition",
+                        !gruppo ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}>
+                    Tutti · {articoli.length}
+                </button>
+                {gruppi.map(([g, n]) => (
+                    <button key={g} onClick={() => setGruppo(gruppo === g ? "" : g)}
+                        className={cn("px-3 py-1.5 rounded-xl border text-xs font-semibold transition",
+                            gruppo === g ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}>
+                        {g} · {n}
+                    </button>
+                ))}
+            </div>
+            <div className="glass-panel rounded-2xl p-4 flex items-end gap-3 flex-wrap">
+                <label className="text-xs text-slate-400">Marca<br />
+                    <SelectOpzioni value={marca} onChange={setMarca} opzioni={marche} placeholder="Tutte" className="w-44" />
+                </label>
+                <label className="text-xs text-slate-400 flex-1 min-w-[220px]">Cerca (codice, barcode, descrizione)<br />
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                        <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Es. Galaxy A16, 8032325…"
+                            className="glass-input !h-9 text-sm w-full pl-9" />
+                    </div>
+                </label>
+                <button onClick={esporta} disabled={!filtrati.length}
+                    className="px-3 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-40">
+                    <FileDown size={14} /> Excel
+                </button>
+            </div>
+            <div className="glass-card overflow-x-auto">
+                <table className="w-full text-left text-sm text-slate-300">
+                    <thead className="bg-white/[0.03] text-xs uppercase text-slate-400">
+                        <tr>
+                            <th className="px-4 py-3 font-semibold">Codice</th>
+                            <th className="px-4 py-3 font-semibold">Barcode</th>
+                            <th className="px-4 py-3 font-semibold">Descrizione</th>
+                            <th className="px-4 py-3 font-semibold">Sottogruppo</th>
+                            <th className="px-4 py-3 font-semibold">Marca</th>
+                            <th className="px-4 py-3 font-semibold text-center">Prezzo</th>
+                            {vedeCosti && <th className="px-4 py-3 font-semibold text-center">Costo ult.</th>}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {visibili.map(a => (
+                            <tr key={a.codice} className="border-t border-white/5 hover:bg-white/[0.03]">
+                                <td className="px-4 py-2 font-mono text-xs text-slate-400 whitespace-nowrap">{a.codice}</td>
+                                <td className="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">{a.barcode || "—"}</td>
+                                <td className="px-4 py-2 text-slate-200">{a.descrizione}</td>
+                                <td className="px-4 py-2 text-xs text-slate-400">{a.sottogruppo || "—"}</td>
+                                <td className="px-4 py-2 text-xs text-slate-400">{a.marca || "—"}</td>
+                                <td className="px-4 py-2 text-center tabular-nums">{eur(a.prezzo)}</td>
+                                {vedeCosti && <td className="px-4 py-2 text-center tabular-nums text-slate-400">{eur(a.costo_ultimo)}</td>}
+                            </tr>
+                        ))}
+                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 7 : 6} className="px-4 py-10 text-center text-slate-500">Nessun articolo con questi filtri.</td></tr>}
+                    </tbody>
+                </table>
+                {filtrati.length > TETTO && (
+                    <div className="px-4 py-3 text-xs text-slate-500 border-t border-white/5">
+                        Mostro i primi {TETTO} di {filtrati.length.toLocaleString("it-IT")} articoli — affina coi filtri o usa l&apos;Excel per l&apos;elenco completo.
+                    </div>
+                )}
             </div>
         </div>
     );
