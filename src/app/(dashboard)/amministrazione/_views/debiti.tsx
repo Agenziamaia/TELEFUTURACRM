@@ -161,13 +161,36 @@ export function DebitiView({ gestore }: { gestore: string }) {
                     competenza: piuMesi(comp, i), rata_n: i + 1, rate_totali: rate,
                 }));
             }
-            const { error } = await supabase.from("user_movimenti").insert(rows);
-            if (dbError("Salvataggio debito", error)) return;
+            const ins = await supabase.from("user_movimenti").insert(rows).select("id");
+            if (dbError("Salvataggio debito", ins.error)) return;
             let extra = "";
             if (nTipo === "credito" && nCompensa) {
                 const esito = await compensaFIFO(scelto!.id, imp, `Credito: ${nTitolo.trim()}`);
+                // Il credito CONSUMATO esce dai vivi INSIEME ai debiti che ha
+                // chiuso (caso Eros 13/08: restava aperto e il collaboratore
+                // appariva "in credito" a partita chiusa). Copertura piena =
+                // tutto in storico; parziale = si spezza, vivo resta l'avanzo.
+                const creditoId = ins.data?.[0]?.id as string | undefined;
+                const consumato = Math.round((imp - esito.avanzo) * 100) / 100;
+                if (creditoId && esito.saldate > 0 && consumato > 0) {
+                    const quando = new Date().toISOString();
+                    const chiusa = `Ha saldato ${esito.saldate} debit${esito.saldate === 1 ? "o" : "i"}`;
+                    if (esito.avanzo <= 0.001) {
+                        await supabase.from("user_movimenti")
+                            .update({ stato: "saldato", saldato_il: quando, saldato_da: chiusa }).eq("id", creditoId);
+                    } else {
+                        await supabase.from("user_movimenti")
+                            .update({ importo: esito.avanzo, note: (nNote.trim() ? nNote.trim() + " · " : "") + `avanzo del credito iniziale di ${eur(imp)}` })
+                            .eq("id", creditoId);
+                        await supabase.from("user_movimenti").insert({
+                            user_id: scelto!.id, origine: "debito", tipo: "one_shot", titolo: nTitolo.trim(),
+                            note: `parte consumata del credito di ${eur(imp)}`, importo: consumato, segno: 1,
+                            competenza: comp, stato: "saldato", saldato_il: quando, saldato_da: chiusa, creato_da: gestore,
+                        });
+                    }
+                }
                 extra = esito.saldate
-                    ? ` — compensate ${esito.saldate} voci${esito.avanzo > 0 ? `, avanzo ${eur(esito.avanzo)}` : ""}`
+                    ? ` — compensate ${esito.saldate} voci${esito.avanzo > 0 ? `, avanzo ${eur(esito.avanzo)} ancora vivo` : ": partita chiusa, tutto in storico"}`
                     : " — nessuna voce interamente coperta: resta a scalare";
             }
             notify((rows.length > 1 ? `Debito registrato in ${rows.length} rate ✓` : nTipo === "credito" ? "Credito registrato ✓" : "Debito registrato ✓") + extra, "ok");
@@ -395,7 +418,8 @@ export function DebitiView({ gestore }: { gestore: string }) {
                                     <p className="text-[11px] text-slate-500">
                                         {r.tipo === "ricorrenza" ? `${periodoRicorrenza(r)} · ${mesiMaturati(r)} mensilita' maturate` : meseLabel(r.competenza)}
                                         {r.note ? ` · ${r.note}` : ""} · inserito da {r.creato_da || "—"}
-                                        {r.stato === "saldato" && r.saldato_il ? ` · compensata il ${new Date(r.saldato_il).toLocaleDateString("it-IT")}${r.saldato_da ? ` (${r.saldato_da})` : ""}` : ""}
+                                        {r.created_at ? ` il ${new Date(r.created_at).toLocaleDateString("it-IT")} alle ${new Date(r.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                                        {r.stato === "saldato" && r.saldato_il ? ` · compensata il ${new Date(r.saldato_il).toLocaleDateString("it-IT")} alle ${new Date(r.saldato_il).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}${r.saldato_da ? ` (${r.saldato_da})` : ""}` : ""}
                                     </p>
                                 </div>
                                 <p className={cn("text-sm font-black font-mono", Number(r.segno) === 1 ? "text-emerald-400" : "text-slate-100")}>
