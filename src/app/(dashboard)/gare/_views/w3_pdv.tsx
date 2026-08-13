@@ -23,6 +23,7 @@ interface TargetPdv {
     peso_mobile: number | null; peso_fix: number | null;
     cluster_mobile: string | null; soglie_mobile: number[] | null; soglie_mobile_lettera: number[] | null;
     cluster_fisso: string | null; soglie_fisso: number[] | null; soglie_fisso_lettera: number[] | null;
+    extra?: { premi?: number[] } | null;
 }
 interface NegozioSeg { gara: string; store_name: string }
 
@@ -43,7 +44,7 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
 
     const carica = async () => {
         const [t, n] = await Promise.all([
-            supabase.from("pay_target_pdv").select("id, cod_gara, negozio, peso_mobile, peso_fix, cluster_mobile, soglie_mobile, soglie_mobile_lettera, cluster_fisso, soglie_fisso, soglie_fisso_lettera").eq("brand", "windtre").eq("month", monthISO).order("negozio"),
+            supabase.from("pay_target_pdv").select("id, cod_gara, negozio, peso_mobile, peso_fix, cluster_mobile, soglie_mobile, soglie_mobile_lettera, cluster_fisso, soglie_fisso, soglie_fisso_lettera, extra").eq("brand", "windtre").eq("month", monthISO).order("negozio"),
             supabase.from("gare_azienda_negozi").select("gara, store_name").eq("brand", "w3").eq("month", monthISO).order("store_name"),
         ]);
         setTargets((t.data ?? []) as TargetPdv[]);
@@ -62,7 +63,14 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
         if (stores.length && !stores.includes(pdvSel)) setPdvSel(stores[0]);
     }, [seg, negozi]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-    const target = pdvSel ? targetDi(pdvSel) : undefined;
+    // MULTIBRAND = GARA UNICA a punti cumulati (Luca 13/08): il target è del
+    // segmento (T2 per Ragione Sociale), non del singolo PDV — niente picker
+    const targetSegmento = seg === "multibrand"
+        ? targets.find(t => t.cod_gara.startsWith("MB-T1"))
+        : seg === "multibrand_t2"
+            ? targets.find(t => t.cod_gara.startsWith("MB-T2"))
+            : undefined;
+    const target = seg === "franchising" ? (pdvSel ? targetDi(pdvSel) : undefined) : targetSegmento;
     const segInfo = SEGMENTI.find(s => s.id === seg);
 
     const chiave = (tid: string, campo: string, i: number) => `${tid}|${campo}|${i}`;
@@ -159,7 +167,7 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
                 ))}
                 {segInfo && <span className="text-[11px] text-slate-500 self-center">{segInfo.regola}</span>}
             </div>
-            {stores.length > 1 && (
+            {seg === "franchising" && stores.length > 1 && (
                 <div className="flex flex-wrap gap-1.5 mb-3">
                     {stores.map(n => (
                         <button key={n} onClick={() => setPdvSel(n)}
@@ -170,7 +178,7 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
                     ))}
                 </div>
             )}
-            {stores.length === 1 && <div className="text-sm font-semibold text-white mb-3">🏬 {stores[0]}</div>}
+            {seg !== "franchising" && target && <div className="text-sm font-semibold text-white mb-3">🏬 {target.negozio}</div>}
             {target ? (
                 <>
                     {seg === "franchising" ? (
@@ -179,47 +187,51 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
                             <TabSoglie t={target} titolo="🏠 Fisso" campo="fisso" cluster={target.cluster_fisso} peso={target.peso_fix} />
                         </div>
                     ) : (
-                        /* MULTIBRAND (Luca 13/08): target cumulati dal mobile in
-                           giù → UNA tabella sola, una riga per pista */
+                        /* MULTIBRAND (Luca 13/08): GARA UNICA a punti cumulati
+                           (mobile→assicurazioni) — UNA riga: soglie punti +
+                           premio 🎁 per soglia (Gara On Top della lettera) */
                         (() => {
-                            const righeT: { label: string; campo: "mobile" | "fisso"; arr: number[] | null; lett: number[] | null }[] = [
-                                { label: "📱 Mobile", campo: "mobile" as const, arr: target.soglie_mobile, lett: target.soglie_mobile_lettera },
-                                { label: "🏠 Fisso", campo: "fisso" as const, arr: target.soglie_fisso, lett: target.soglie_fisso_lettera },
-                            ].filter(r => r.arr?.length);
-                            if (!righeT.length) return null;
-                            const maxT = Math.max(...righeT.map(r => r.arr!.length));
+                            const arr = target.soglie_mobile;
+                            if (!arr?.length) return null;
+                            const premi = target.extra?.premi || [];
                             return (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm border-collapse">
                                         <thead>
                                             <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                                                <th className="text-left font-semibold px-3 py-1.5">Pista</th>
-                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                                <th className="text-left font-semibold px-3 py-1.5">Gara</th>
+                                                {arr.map((_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-24">S{i + 1}</th>)}
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {righeT.map(r => (
-                                                <tr key={r.campo} className="border-t border-white/5">
-                                                    <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{r.label}</td>
-                                                    {Array.from({ length: maxT }, (_, i) => {
-                                                        if (r.arr![i] == null) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
-                                                        const orig = r.lett?.[i];
-                                                        const attuale = draft[chiave(target.id, r.campo, i)] ?? String(r.arr![i]);
-                                                        const modificata = orig != null && Number(attuale) !== Number(orig);
-                                                        return (
-                                                            <td key={i} className="px-1.5 py-2 text-center align-top" title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
-                                                                <input value={valCella(target, r.campo, i)}
-                                                                    onChange={e => setDraft(prev => ({ ...prev, [chiave(target.id, r.campo, i)]: e.target.value }))}
-                                                                    className={cn("bg-white/[0.05] border rounded-lg px-1.5 py-1 text-[15px] font-bold text-white w-16 text-center tabular-nums",
-                                                                        modificata ? "border-amber-400/60" : "border-white/10")} />
-                                                                {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
-                                            ))}
+                                            <tr className="border-t border-white/5">
+                                                <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">🏆 Punti cumulati <span className="text-slate-500 font-normal text-xs">(mobile → assicurazioni)</span></td>
+                                                {arr.map((v, i) => {
+                                                    const orig = target.soglie_mobile_lettera?.[i];
+                                                    const attuale = draft[chiave(target.id, "mobile", i)] ?? String(v);
+                                                    const modificata = orig != null && Number(attuale) !== Number(orig);
+                                                    return (
+                                                        <td key={i} className="px-1.5 py-2 text-center align-top" title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
+                                                            <input value={valCella(target, "mobile", i)}
+                                                                onChange={e => setDraft(prev => ({ ...prev, [chiave(target.id, "mobile", i)]: e.target.value }))}
+                                                                className={cn("bg-white/[0.05] border rounded-lg px-1.5 py-1 text-[15px] font-bold text-white w-16 text-center tabular-nums",
+                                                                    modificata ? "border-amber-400/60" : "border-white/10")} />
+                                                            {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
+                                                            {premi[i] != null && (
+                                                                <div className="mt-1 inline-flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
+                                                                    title={`Premio alla soglia: ${Number(premi[i]).toLocaleString("it-IT")} €`}>
+                                                                    <span className="text-[10px]">🎁</span>
+                                                                    <span className="text-[11px] font-semibold text-emerald-200 tabular-nums">{Number(premi[i]).toLocaleString("it-IT")}</span>
+                                                                    <span className="text-[10px] font-bold text-emerald-300/90">€</span>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
                                         </tbody>
                                     </table>
+                                    <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {seg === "multibrand_t2" ? "Gara per Ragione Sociale: target ×2 PDV al 100%." : ""}</p>
                                 </div>
                             );
                         })()

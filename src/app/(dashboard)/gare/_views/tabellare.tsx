@@ -204,10 +204,22 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
         return { scala: out, pct: Number(pct) };
     };
-    // BONUS DI SOGLIA (Luca 13/08, rifinito): sotto la soglia compare SOLO il
-    // pay unitario di soglia dove esiste davvero (pay_soglie.bonus — es.
-    // assicurazioni W3 a volume, Bonus Completezza VF a livelli). Le soglie
-    // "normali" non mostrano nulla: i loro pay stanno già nelle tabelle sotto.
+    // BONUS DI SOGLIA (Luca 13/08, rifinito): sotto la soglia compare il pay
+    // unitario di soglia dove esiste (pay_soglie.bonus — assicurazioni W3,
+    // Completezza VF). Su Wind3 rete anche l'INDICAZIONE del gettone per
+    // contratto alla soglia (Business P.IVA, Luce&Gas — «così a primo impatto
+    // so quanto ci pagano ogni contratto»); le soglie normali degli altri
+    // brand restano pulite: i loro pay stanno già nelle tabelle sotto.
+    const payPerSoglia = (chiave: string, nTiers: number): (string | null)[] => {
+        const rr = righe.filter(r => r.pista === chiave && !r.gettone && r.attivo && !r.moltiplicatore);
+        if (!rr.length) return Array(nTiers).fill(null);
+        return Array.from({ length: nTiers }, (_, i) => {
+            const vals = rr.map(r => r.pay_tiers[i]).filter((v): v is number => v != null && Number.isFinite(v));
+            if (!vals.length) return null;
+            const mn = Math.min(...vals), mx = Math.max(...vals);
+            return mn === mx ? `${mn}` : `${mn}–${mx}`;
+        });
+    };
     const setBonusVal = (pista: string, tier: number, v: string) => {
         setSoglie(prev => prev.map(s => s.pista === pista && s.tier === tier ? { ...s, bonus: v.trim() === "" ? null : num(v) } : s));
         setSoglieDirty(prev => new Set(prev).add(pista));
@@ -619,8 +631,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 </thead>
                                 <tbody>
                                     {visibili.map(({ p, scala, der, mostra }) => {
-                                        // sotto la soglia SOLO il bonus di soglia, dove esiste
+                                        // sotto la soglia: bonus dove esiste; su W3 rete anche
+                                        // il gettone indicativo per contratto alla soglia
                                         const conBonus = lato === "azienda" && scala.some(s => s.bonus != null);
+                                        const pays = ctx === "windtre" && lato === "azienda" && !conBonus ? payPerSoglia(p.chiave, maxT) : [];
                                         return (
                                         <tr key={p.id} className="border-t border-white/5">
                                             <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{der && <span className="text-sky-400/80 text-[10px] font-normal ml-1.5">× {der.pct}%</span>}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
@@ -645,6 +659,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                                     className="bg-transparent border-none outline-none text-[11px] font-semibold text-emerald-200 w-12 text-right tabular-nums" placeholder="—" />
                                                                 <span className="text-[10px] font-bold text-emerald-300/90">€</span>
                                                             </div>
+                                                        )}
+                                                        {!der && !conBonus && pays[i] && (
+                                                            <div className="mt-0.5 text-[10px] text-slate-400 tabular-nums"
+                                                                title="Gettone per contratto a questa soglia (se le righe differiscono: dal minimo al massimo)">{pays[i]} €/pezzo</div>
                                                         )}
                                                     </td>
                                                 );
