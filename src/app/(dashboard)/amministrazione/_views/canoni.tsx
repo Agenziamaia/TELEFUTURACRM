@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { esclusaDalleGare } from "@/lib/commissioning";
+import { SelectOpzioni } from "@/components/SelectPersona";
 import { dbError, notify } from "./toast";
 import { cn } from "@/utils";
 
@@ -26,6 +27,7 @@ interface Brand { id: string; nome: string; colore1: string; attivo: boolean }
 interface Cat { id: string; nome: string }
 interface ProdRow { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; attivo: boolean }
 interface OffRow { id: string; prodotto_id: string; nome: string; attivo: boolean; canone_mensile: number | null }
+interface OpzRow { id: string; offerta_id: string; nome: string; attivo: boolean; canone_mensile: number | null }
 
 const GRUPPI = [
     { id: "mobile", label: "📱 Mobile", match: /mobile/i },
@@ -37,6 +39,7 @@ export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
     const [gruppoSel, setGruppoSel] = useState<string>("mobile");
     const [prodotti, setProdotti] = useState<ProdRow[]>([]);
     const [offerte, setOfferte] = useState<OffRow[]>([]);
+    const [opzioni, setOpzioni] = useState<OpzRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [cerca, setCerca] = useState("");
     const [soloSenza, setSoloSenza] = useState(false);
@@ -53,7 +56,19 @@ export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
         if (!ids.length) { setOfferte([]); setLoading(false); return; }
         const o = await supabase.from("catalog_offerte").select("id, prodotto_id, nome, attivo, canone_mensile").in("prodotto_id", ids).eq("attivo", true);
         if (dbError("Caricamento offerte", o.error)) { setLoading(false); return; }
-        setOfferte((o.data ?? []) as OffRow[]);
+        const offs = (o.data ?? []) as OffRow[];
+        setOfferte(offs);
+        // OPZIONI A CANONE (Luca 13/08, caso 2°Linea business): la lettera
+        // paga a canone anche alcune opzioni di Registra Vendita — si
+        // caricano tutte per poterle promuovere/settare dal pannello
+        const offIds = offs.map(x => x.id);
+        let opz: OpzRow[] = [];
+        for (let i = 0; i < offIds.length; i += 80) {
+            const r = await supabase.from("catalog_opzioni").select("id, offerta_id, nome, attivo, canone_mensile").in("offerta_id", offIds.slice(i, i + 80)).eq("attivo", true);
+            if (r.error) break;
+            opz = opz.concat((r.data ?? []) as OpzRow[]);
+        }
+        setOpzioni(opz);
         setLoading(false);
     }, []);
     useEffect(() => { carica(brandSel); }, [brandSel, carica]);
@@ -116,6 +131,43 @@ export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
 
     const valDi = (o: OffRow) => draft[o.id] ?? (o.canone_mensile == null ? "" : String(o.canone_mensile));
     const dirty = (o: OffRow) => draft[o.id] != null && draft[o.id] !== (o.canone_mensile == null ? "" : String(o.canone_mensile));
+
+    // ── OPZIONI A CANONE del gruppo: distinte per NOME (il canone di
+    //    un'opzione è unico, si scrive una volta e vale su tutte le offerte
+    //    che la portano). In lista solo quelle già a canone; le altre si
+    //    promuovono dalla tendina.
+    const g = GRUPPI.find(x => x.id === gruppoSel);
+    const opzGruppo = useMemo(() => {
+        if (!g) return [];
+        const offOk = new Set(offerte.filter(o => {
+            const p = prodDi.get(o.prodotto_id);
+            return p && g.match.test(String(nomeCat.get(p.categoria_id) || ""));
+        }).map(o => o.id));
+        return opzioni.filter(o => offOk.has(o.offerta_id));
+    }, [opzioni, offerte, prodDi, nomeCat, g]);
+    const opzACanone = useMemo(() => {
+        const per = new Map<string, { ids: string[]; canone: number | null; n: number }>();
+        opzGruppo.forEach(o => {
+            const e = per.get(o.nome) || { ids: [], canone: null, n: 0 };
+            e.ids.push(o.id); e.n++;
+            if (o.canone_mensile != null) e.canone = Number(o.canone_mensile);
+            per.set(o.nome, e);
+        });
+        return per;
+    }, [opzGruppo]);
+    const [opzDraft, setOpzDraft] = useState<Record<string, string>>({});
+    const [opzNuova, setOpzNuova] = useState("");
+    const salvaOpz = async (nome: string, valore: string) => {
+        const e = opzACanone.get(nome);
+        if (!e) return;
+        const n = valore.trim() === "" ? null : Number(String(valore).replace(",", "."));
+        if (n != null && (!Number.isFinite(n) || n < 0)) { notify("Canone non valido", "error"); return; }
+        const { error } = await supabase.from("catalog_opzioni").update({ canone_mensile: n }).in("id", e.ids);
+        if (dbError("Salvataggio canone opzione", error)) return;
+        setOpzioni(prev => prev.map(x => e.ids.includes(x.id) ? { ...x, canone_mensile: n } : x));
+        setOpzDraft(prev => { const c = { ...prev }; delete c[nome]; return c; });
+        notify(n == null ? `«${nome}» tolta dalle opzioni a canone ✓` : `Canone «${nome}» salvato ✓`, "ok");
+    };
 
     return (
         <div className="space-y-4">
@@ -187,7 +239,39 @@ export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
                     </table>
                 )}
             </div>
-            <p className="text-[11px] text-slate-500">Solo mobile e fisso: è lì che il pay corre a moltiplicatore sul canone. Le opzioni con pay one-shot della lettera (Smart Security…) non stanno qui: pagano a gettone. Invio o 💾 salvano la riga.</p>
+            {/* OPZIONI A CANONE (caso 2°Linea business, Luca 13/08): la lettera
+                ne paga alcune a canone anche se in Registra Vendita sono
+                opzioni — qui si promuovono e si prezzano, per nome */}
+            <div className="glass-card p-4">
+                <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Opzioni a canone <span className="normal-case font-normal text-slate-500">— opzioni di Registra Vendita che la lettera paga a canone (es. 2°Linea business): il canone vale su tutte le offerte che le portano</span></div>
+                <div className="space-y-1.5">
+                    {[...opzACanone.entries()].filter(([nome, e]) => e.canone != null || nome === opzNuova).map(([nome, e]) => (
+                        <div key={nome} className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm text-slate-200 font-semibold min-w-[140px]">{nome}</span>
+                            <span className="text-[11px] text-slate-500">su {e.n} offert{e.n === 1 ? "a" : "e"}</span>
+                            <input value={opzDraft[nome] ?? (e.canone == null ? "" : String(e.canone))}
+                                onChange={ev => setOpzDraft(prev => ({ ...prev, [nome]: ev.target.value }))}
+                                onKeyDown={ev => { if (ev.key === "Enter") { salvaOpz(nome, opzDraft[nome] ?? ""); setOpzNuova(""); } }}
+                                placeholder="€/mese"
+                                className="bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-sm text-white w-24 text-right" />
+                            {(opzDraft[nome] != null && opzDraft[nome] !== (e.canone == null ? "" : String(e.canone))) &&
+                                <button onClick={() => { salvaOpz(nome, opzDraft[nome]); setOpzNuova(""); }} className="text-emerald-300 text-xs font-semibold">💾</button>}
+                            {e.canone != null &&
+                                <button onClick={() => { if (window.confirm(`«${nome}» torna opzione a gettone (senza canone)?`)) salvaOpz(nome, ""); }}
+                                    title="Togli il canone: torna opzione a gettone" className="text-slate-500 hover:text-rose-400 text-xs font-bold">✕</button>}
+                        </div>
+                    ))}
+                    {![...opzACanone.values()].some(e => e.canone != null) && !opzNuova &&
+                        <div className="text-sm text-slate-500">Nessuna opzione a canone su questo gruppo.</div>}
+                </div>
+                <div className="flex items-center gap-2 mt-3">
+                    <span className="text-[11px] text-slate-500">＋ promuovi un&apos;opzione:</span>
+                    <SelectOpzioni value={opzNuova} onChange={setOpzNuova}
+                        opzioni={[...opzACanone.entries()].filter(([, e]) => e.canone == null).map(([nome]) => nome).sort()}
+                        placeholder="scegli l'opzione…" className="w-56" />
+                </div>
+            </div>
+            <p className="text-[11px] text-slate-500">Solo mobile e fisso: è lì che il pay corre a moltiplicatore sul canone. Le opzioni con pay one-shot della lettera (Smart Security…) restano a gettone e non vanno prezzate qui. Invio o 💾 salvano la riga.</p>
         </div>
     );
 }
