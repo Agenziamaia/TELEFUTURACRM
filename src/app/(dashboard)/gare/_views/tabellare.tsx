@@ -580,26 +580,18 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         <input value={s.soglia_da} onChange={e => setDa(p.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
                                     </label>
                                 ))}
+                                {/* UNA % PER POSTO (Luca 13/08): qui sulle SOGLIE vive solo
+                                    la % delle soglie; la % dei pay sta giù, sulla tabella
+                                    della pista dove i pay si vedono */}
                                 {lato === "azienda" && (
-                                    <>
-                                        <label className="text-[11px] text-amber-300/90 ml-2">% ai ragazzi
-                                            <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
-                                                onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                                className={inputCls + " ml-1 w-16"} placeholder="100" />
-                                            {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
-                                                <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                        </label>
-                                        {/* % soglie ai ragazzi (unificata QUI, Luca 13/08): come la
-                                            % dei pay, si governa dal lato azienda */}
-                                        <label className="text-[11px] text-sky-300/90 ml-2" title="Scostamento delle soglie ragazzi da queste: es. 135 = azienda × 1,35 arrotondato. Cambi queste soglie (nuova lettera) e i ragazzi si aggiornano da soli. Vuota = soglie ragazzi manuali.">
-                                            🔗 % soglie ai ragazzi
-                                            <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
-                                                onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                                className={inputCls + " ml-1 w-16"} placeholder="manuali" />
-                                            {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
-                                                <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                        </label>
-                                    </>
+                                    <label className="text-[11px] text-sky-300/90 ml-2" title="Scostamento delle soglie ragazzi da queste: es. 135 = azienda × 1,35 arrotondato. Cambi queste soglie (nuova lettera) e i ragazzi si aggiornano da soli. Vuota = soglie ragazzi manuali.">
+                                        % soglie ai ragazzi
+                                        <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
+                                            onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                            className={inputCls + " ml-1 w-16"} placeholder="manuali" />
+                                        {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
+                                            <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                    </label>
                                 )}
                                 {!der && <>
                                     <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
@@ -626,9 +618,22 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 const nTiers = soglieDi(p.chiave).length;
                 return (
                     <div key={p.id} className="glass-panel rounded-2xl overflow-hidden">
-                        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-3 flex-wrap">
                             <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{p.nome} <span className="text-slate-600">({rr.length})</span></div>
-                            <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
+                            <div className="flex items-center gap-3">
+                                {/* % PAY ai ragazzi QUI, dove i pay si vedono (Luca 13/08) */}
+                                {lato === "azienda" && (
+                                    <label className="text-[11px] text-amber-300/90" title="Quota dei pay girata ai ragazzi: il loro tabellare deriva da questi importi × la %. Vuota = 100%.">
+                                        % pay ai ragazzi
+                                        <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
+                                            onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                            className={inputCls + " ml-1 w-16"} placeholder="100" />
+                                        {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
+                                            <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                    </label>
+                                )}
+                                <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
+                            </div>
                         </div>
                         {nuovaRigaPer === p.chiave && <div className="px-4"><NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} /></div>}
                         {rr.length > 0 && (

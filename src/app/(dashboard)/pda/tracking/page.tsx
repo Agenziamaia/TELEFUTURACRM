@@ -50,6 +50,9 @@ type RawRow = Record<string, unknown> & {
 // così ANCHE chi vede tutto (admin) capisce a colpo d'occhio quali pratiche
 // sono degli agenti e chi ne risponde.
 let AGENTI_BO: Record<string, string> = {};
+// nel FILTRO utente e nelle tendine l'agente compare col nome del suo
+// responsabile (risposta Luca 13/08: «trovo ancora Berdini e non Coviello»)
+const nomeResponsabile = (v: string) => AGENTI_BO[v] || v;
 
 function formatDataInserimento(val: string | undefined): string {
   const d = parseDataRiga(val);
@@ -1693,11 +1696,11 @@ export default function TrackingPdaPage() {
     [baseVisibile, seesAll]
   );
   const venditoriAttivi = useMemo(
-    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []),
+    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.map((r) => nomeResponsabile(r.venditore)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, seesWhole, seesAll]
   );
   const utentiAttivi = useMemo(
-    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []),
+    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => nomeResponsabile(r.venditore)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, seesAll, negozioSel]
   );
   const catAttive = useMemo(() => new Set(
@@ -1717,7 +1720,7 @@ export default function TrackingPdaPage() {
   // (altrimenti resta un filtro-fantasma che svuota la tabella).
   useEffect(() => {
     setUtentiSel((prev) => {
-      const next = prev.filter((n) => baseVisibile.some((r) => r.venditore === n && (!negozioSel || r.negozio === negozioSel)));
+      const next = prev.filter((n) => baseVisibile.some((r) => nomeResponsabile(r.venditore) === n && (!negozioSel || r.negozio === negozioSel)));
       return next.length === prev.length ? prev : next;
     });
   }, [negozioSel, baseVisibile]);
@@ -1767,8 +1770,8 @@ export default function TrackingPdaPage() {
       }
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
-      if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
-      if (venditoreSel && row.venditore !== venditoreSel) return false;
+      if (utentiSel.length > 0 && !utentiSel.includes(nomeResponsabile(row.venditore))) return false;
+      if (venditoreSel && nomeResponsabile(row.venditore) !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
@@ -1810,8 +1813,8 @@ export default function TrackingPdaPage() {
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
       if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
-      if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
-      if (venditoreSel && row.venditore !== venditoreSel) return false;
+      if (utentiSel.length > 0 && !utentiSel.includes(nomeResponsabile(row.venditore))) return false;
+      if (venditoreSel && nomeResponsabile(row.venditore) !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
