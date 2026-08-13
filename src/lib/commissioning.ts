@@ -23,7 +23,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 
-export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null; soglie_pct?: number | null };
+export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null; soglie_pct?: number | null; soglie_max?: number | null };
 export type PaySoglia = { pista: string; tier: number; soglia_da: number; soglia_a: number | null };
 export type PayRiga = {
     id: string; pista: string | null; nome: string;
@@ -84,7 +84,7 @@ export function estremiMese(monthISO: string): { primo: string; ultimo: string }
 
 async function caricaTabellareLato(brand: string, monthISO: string, lato: string): Promise<Tabellare | null> {
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
-        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
+        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
         supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
@@ -160,6 +160,22 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     const percDi = new Map(azienda.piste.map(p => [p.chiave, p.perc_ragazzi == null ? 100 : Number(p.perc_ragazzi)]));
     const scala = (v: number | null, pista: string | null) =>
         v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
+    // TAGLIO SOGLIE RAGAZZI (Luca 13/08, W3): pay_piste.soglie_max sul lato
+    // azienda = i ragazzi vedono solo le prime N soglie della stessa scala
+    // (la loro S1 È la nostra S1), l'ultima diventa aperta; i pay_tiers delle
+    // righe derivate si tagliano uguale.
+    const maxDi = new Map(azienda.piste.map(p => [p.chiave, p.soglie_max == null ? null : Number(p.soglie_max)]));
+    const taglia = (arr: PaySoglia[], pista: string): PaySoglia[] => {
+        const max = maxDi.get(pista);
+        if (!max || arr.length <= max) return arr;
+        const out = [...arr].sort((a, b) => a.tier - b.tier).slice(0, max).map(s => ({ ...s }));
+        if (out.length) out[out.length - 1].soglia_a = null;
+        return out;
+    };
+    const tagliaTiers = (tiers: number[], pista: string | null): number[] => {
+        const max = pista ? maxDi.get(pista) : null;
+        return max ? tiers.slice(0, max) : tiers;
+    };
     const deriva = (r: PayRiga): PayRiga => {
         // MAPPA SOGLIE (Luca 12/08, modello W3): dove esiste, ogni soglia
         // NOSTRA pesca il valore azienda della soglia LORO mappata e applica
@@ -175,12 +191,12 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
                 tiers.push(voce == null || az == null ? (null as unknown as number)
                     : Math.round(az * (voce.perc / 100) * 100) / 100);
             }
-            return { ...r, pay_base: scala(r.pay_base, r.pista), pay_tiers: tiers };
+            return { ...r, pay_base: scala(r.pay_base, r.pista), pay_tiers: tagliaTiers(tiers, r.pista) };
         }
         return {
             ...r,
             pay_base: scala(r.pay_base, r.pista),
-            pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
+            pay_tiers: tagliaTiers(r.pay_tiers.map(v => scala(v, r.pista) as number), r.pista),
         };
     };
     // PISTE SOLO AZIENDA (Luca 13/08, gara business W3 «di rete, resta solo
@@ -204,7 +220,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
         // ai ragazzi sono azienda × pct dove impostata
         const soglieDer = pisteDer.flatMap(p => {
             const azS = azienda.soglie.filter(s => s.pista === p.chiave);
-            return p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave);
+            return taglia(p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave), p.chiave);
         });
         return {
             ...azienda, derivato: true,
@@ -227,7 +243,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     const pisteSoglieRag = new Set(soglieRagEff.map(s => s.pista));
     const soglieApp = pisteApp.flatMap(p => {
         const azS = azienda.soglie.filter(s => s.pista === p.chiave);
-        return p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave);
+        return taglia(p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave), p.chiave);
     });
     return {
         ...ragazzi, derivato: true,
@@ -357,6 +373,11 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     if (/business/i.test(String(c.tipo_cliente || ""))) f.add("piva");
     if (/\bconv\b|convergente/i.test(off)) f.add("conv");
     if (/\bfwa\b|super internet/i.test(prod + " " + off)) f.add("fwa");
+    // COMPENSO CONTRATTUALE (flat, lettera W3): mobile Untied 1€ / Tied 5€;
+    // fisso 23€ · 19€ convergenti · 17€ Voce Casa — la componente giusta si
+    // accende qui, gli importi vivono nelle righe gettone `contrattuale_*`
+    if (/^mobile\b/i.test(cat)) f.add(f.has("tied") ? "contrattuale_tied" : "contrattuale_untied");
+    if (/^fisso/i.test(cat)) f.add(f.has("conv") ? "contrattuale_conv" : (/voce\s*casa/i.test(off) ? "contrattuale_voce" : "contrattuale"));
     return f;
 }
 
@@ -410,6 +431,23 @@ export function payPerRighe(set: PayRiga[], tier: number): number | null {
  *  es. fisso base 1 + P.IVA 0,5 = 1,5 come da lettera) */
 export function puntiPerRighe(set: PayRiga[]): number {
     return Math.round(set.reduce((s, r) => s + Number(r.punti || 0), 0) * 100) / 100;
+}
+
+/** € COMPLESSIVI dell'attivazione alla soglia: componenti a moltiplicatore
+ *  ×canone + gettoni flat del set (compenso contrattuale…). null se una
+ *  componente a moltiplicatore c'è ma manca il canone a catalogo. */
+export function payEuroAttivazione(set: PayRiga[], tier: number, canone: number | null | undefined): number | null {
+    if (!set.length) return null;
+    let tot = 0;
+    for (const r of set) {
+        const v = payPerRiga(r, r.gettone ? 0 : tier);
+        if (v == null) continue;
+        if (r.moltiplicatore) {
+            if (canone == null) return null;
+            tot += canone * v;
+        } else tot += v;
+    }
+    return Math.round(tot * 100) / 100;
 }
 
 /**
@@ -565,11 +603,14 @@ export type AvanzamentoPista = {
     soglia: PaySoglia | null;           // soglia raggiunta
     prossima: PaySoglia | null;         // prossima da prendere
     mancano: number | null;             // punti alla prossima
+    gate?: string | null;               // vincolo che tiene bassa la soglia (W3: 4ª mobile ← 2ª fisso)
 };
 
 export type Avanzamento = {
     piste: Record<string, AvanzamentoPista>;
     contati: number;                    // contratti agganciati a una riga
+    pivaMobile: number;                 // attivazioni mobile Business del mese (malus W3)
+    malus30Mobile: boolean;             // W3: premio mobile −30% se no 1ª soglia fisso o <6 P.IVA mobile
     scartati: { categoria: string | null; prodotto: string | null; offerta: string | null; n: number }[];
 };
 
@@ -578,6 +619,7 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     const pezzi: Record<string, number> = {};
     const scartatiMap = new Map<string, { categoria: string | null; prodotto: string | null; offerta: string | null; n: number }>();
     let contati = 0;
+    let pivaMobile = 0;
     for (const c of contratti) {
         // set additivo (componenti W3) o singola riga classica: la prima
         // riga porta la pista, i punti si sommano su tutto il set
@@ -594,6 +636,7 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
             punti[pista] = (punti[pista] || 0) + puntiPerRighe(set);
             pezzi[pista] = (pezzi[pista] || 0) + 1;
         }
+        if (pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) pivaMobile++;
     }
     const piste: Record<string, AvanzamentoPista> = {};
     for (const p of tab.piste) {
@@ -608,7 +651,26 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
             mancano: prossima ? Math.round((prossima.soglia_da - val) * 100) / 100 : null,
         };
     }
-    return { piste, contati, scartati: [...scartatiMap.values()].sort((a, b) => b.n - a.n) };
+    // VINCOLO W3 (lettera agosto): l'accesso alla 4ª soglia mobile è
+    // subordinato al raggiungimento della 2ª soglia della pista fisso —
+    // senza, il mobile resta S3 (il gate lo racconta alla UI).
+    if (tab.brand === "windtre") {
+        const mob = piste["mobile"], fis = piste["fisso"];
+        if (mob && fis && mob.tier >= 4 && fis.tier < 2) {
+            const scalaM = tab.soglie.filter(s => s.pista === "mobile").sort((a, b) => a.tier - b.tier);
+            piste["mobile"] = {
+                ...mob, tier: 3,
+                soglia: scalaM.find(s => s.tier === 3) || null,
+                prossima: scalaM.find(s => s.tier === 4) || null, mancano: null,
+                gate: "4ª soglia bloccata: serve la 2ª soglia del fisso",
+            };
+        }
+    }
+    // MALUS W3 −30% sul premio della gara mobile: scatta se il mese chiude
+    // senza la 1ª soglia fisso o con meno di 6 attivazioni P.IVA mobile.
+    const malus30Mobile = tab.brand === "windtre" && !!piste["mobile"] && !!piste["fisso"]
+        && (piste["fisso"].tier < 1 || pivaMobile < 6);
+    return { piste, contati, pivaMobile, malus30Mobile, scartati: [...scartatiMap.values()].sort((a, b) => b.n - a.n) };
 }
 
 /**

@@ -13,7 +13,7 @@ import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbError, notify } from "../../amministrazione/_views/toast";
 
-type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null; soglie_pct?: number | null };
+type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null; soglie_pct?: number | null; soglie_max?: number | null };
 type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null; bonus?: number | null };
 type Riga = {
     id: string; pista: string | null; nome: string;
@@ -61,7 +61,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     const load = useCallback(async () => {
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
         const [p, s, r, az] = await Promise.all([
-            supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
+            supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
             supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
@@ -71,7 +71,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         // ragazzi senza tabellare proprio + azienda presente → carica e SCALA
         if (lato === "ragazzi" && !(p.data || []).length && (az.count || 0) > 0) {
             const [ap, as, ar] = await Promise.all([
-                supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
+                supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
                 supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
             ]);
@@ -91,20 +91,33 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     .map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) }))
                     .sort((a, b) => a.tier - b.tier);
                 const pct = pctDi.get(px.chiave);
-                if (pct == null) return azS;
-                const k = pct / 100;
-                const out = azS.map((s, i) => ({ ...s, tier: i + 1, soglia_da: Math.round(s.soglia_da * k), soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k) }));
-                for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
+                let out = azS;
+                if (pct != null) {
+                    const k = pct / 100;
+                    out = azS.map((s, i) => ({ ...s, tier: i + 1, soglia_da: Math.round(s.soglia_da * k), soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k) }));
+                    for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
+                }
+                // TAGLIO SOGLIE RAGAZZI (Luca 13/08, W3): soglie_max sul lato
+                // azienda = i ragazzi vedono solo le prime N (S1=S1), ultima aperta
+                const max = px.soglie_max == null ? null : Number(px.soglie_max);
+                if (max && out.length > max) {
+                    out = out.slice(0, max).map(s => ({ ...s }));
+                    out[out.length - 1].soglia_a = null;
+                }
                 return out;
             });
             setDerivato({
                 piste: pisteAz,
                 soglie: soglieAzScalate,
-                righe: ((ar.data || []) as Riga[]).filter(x => !x.pista || chiaviAz.has(x.pista)).map(x => ({
-                    ...x, punti: Number(x.punti || 0),
-                    pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
-                    pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number),
-                })),
+                righe: ((ar.data || []) as Riga[]).filter(x => !x.pista || chiaviAz.has(x.pista)).map(x => {
+                    // pay_tiers tagliati come le soglie (soglie_max della pista)
+                    const mx = x.pista ? pisteAz.find(p => p.chiave === x.pista)?.soglie_max : null;
+                    return {
+                        ...x, punti: Number(x.punti || 0),
+                        pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
+                        pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number).slice(0, mx ? Number(mx) : undefined),
+                    };
+                }),
             });
         } else {
             setDerivato(null);

@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, giorniLavorativiMese, payPerRighe, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -258,16 +258,14 @@ export default function CalcolatorePage() {
     for (const sg of scalaRiga) if (puntiProj >= sg.soglia_da) tierProj = sg.tier;
     // preselezione sulla PROIEZIONE (a inizio mese, senza dati, vale la live)
     const tier = tierSel == null ? (proiezioneOn && avz ? tierProj : tierLive) : tierSel;
-    // modello W3: la riga a MOLTIPLICATORE paga canone x valore della soglia
+    // modello W3: € complessivi del set — componenti a moltiplicatore ×canone
+    // + gettoni flat (compenso contrattuale); brand classici = valore secco
     const canone = offSel?.canone_mensile == null ? null : Number(offSel.canone_mensile);
-    const valore = righeSet.length ? payPerRighe(righeSet, riga!.gettone ? 0 : tier) : null;
-    const pay = riga?.moltiplicatore
-        ? (canone != null && valore != null ? Math.round(canone * valore * 100) / 100 : null)
-        : valore;
-    const valProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRighe(righeSet, tier + 1) : null;
-    const payProssima = riga?.moltiplicatore
-        ? (canone != null && valProssima != null ? Math.round(canone * valProssima * 100) / 100 : null)
-        : valProssima;
+    const pay = righeSet.length ? payEuroAttivazione(righeSet, riga!.gettone ? 0 : tier, canone) : null;
+    const payProssima = riga && !riga.gettone && tier < scalaRiga.length ? payEuroAttivazione(righeSet, tier + 1, canone) : null;
+    // per la formula a video: moltiplicatori e flat separati
+    const moltSum = righeSet.filter(r => r.moltiplicatore).reduce((s, r) => { const v = payPerRiga(r, r.gettone ? 0 : tier); return v == null ? s : s + v; }, 0);
+    const flatSum = righeSet.filter(r => !r.moltiplicatore).reduce((s, r) => { const v = payPerRiga(r, r.gettone ? 0 : tier); return v == null ? s : s + v; }, 0);
 
     // scoperture: offerte del catalogo senza riga pay
     const scoperte = useMemo(() => {
@@ -477,7 +475,7 @@ export default function CalcolatorePage() {
                                                         ? '"Di cui base" — sotto la 1ª soglia'
                                                         : `alla Soglia ${tier} · retroattivo dal 1° pezzo`}
                                                 {riga.moltiplicatore && (canone != null
-                                                    ? ` · ×${valore} sul canone di ${euro(canone)}`
+                                                    ? ` · ×${Math.round(moltSum * 100) / 100} sul canone di ${euro(canone)}${flatSum ? ` + ${euro(Math.round(flatSum * 100) / 100)} contrattuale` : ""}`
                                                     : " · ⚠️ manca il canone mensile a catalogo")}
                                             </div>
                                         </div>
@@ -505,6 +503,16 @@ export default function CalcolatorePage() {
                                     {payProssima != null && pay != null && payProssima !== pay && (
                                         <div className="text-emerald-300/90 text-sm mt-4">
                                             🎯 Alla S{tier + 1} questa attivazione varrebbe <b>{euro(payProssima)}</b> ({payProssima > pay ? "+" : ""}{euro(Math.round((payProssima - pay) * 100) / 100)})
+                                        </div>
+                                    )}
+                                    {/* VINCOLI W3 (lettera agosto): gate 4ª soglia e malus −30% */}
+                                    {riga.pista && avz?.piste[riga.pista]?.gate && (
+                                        <div className="text-amber-300 text-xs mt-3">⛔ {avz.piste[riga.pista].gate}</div>
+                                    )}
+                                    {avz?.malus30Mobile && riga.pista === "mobile" && (
+                                        <div className="text-rose-300/90 text-xs mt-2">
+                                            ⚠️ Premio della gara mobile −30% se il mese chiude senza la 1ª soglia del fisso e 6 attivazioni P.IVA mobile
+                                            (ora: fisso S{avz.piste["fisso"]?.tier ?? 0} · P.IVA mobile {avz.pivaMobile}).
                                         </div>
                                     )}
                                     {riga.note && <div className="text-slate-500 text-xs mt-4">{riga.note}</div>}

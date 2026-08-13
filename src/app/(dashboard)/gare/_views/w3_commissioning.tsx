@@ -26,6 +26,8 @@ const PISTE_LABEL: Record<string, string> = { mobile: "📱 Mobile", fisso: "�
 const COMP_LABEL: Record<string, string> = {
     base: "base", base_underground: "base Underground", mnp: "MNP", tied: "Tied",
     piva: "P.IVA", conv: "Convergenza", la: "Linea agg.", ftth: "FTTH", fwa: "FWA", opzioni: "Opzioni",
+    contrattuale: "contrattuale", contrattuale_conv: "contrattuale conv.", contrattuale_voce: "contrattuale Voce Casa",
+    contrattuale_untied: "contrattuale Untied", contrattuale_tied: "contrattuale Tied",
 };
 // componenti che il pannello non può accendere da solo: dipendono dalla
 // vendita (le applica l'analisi leggendo campi e opzioni)
@@ -46,9 +48,11 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
                 .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
                 .in("pista", ["mobile", "fisso"]).eq("attivo", true).limit(500);
+            // moltiplicatori + componenti flat (compenso contrattuale): il set
+            // additivo li somma insieme nel totale € della cella
             const molt = ((r.data ?? []) as PayRiga[])
-                .filter(x => x.moltiplicatore)
-                .map(x => ({ ...x, punti: Number(x.punti || 0), pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []) }));
+                .filter(x => x.moltiplicatore || x.componente)
+                .map(x => ({ ...x, punti: Number(x.punti || 0), pay_base: x.pay_base == null ? null : Number(x.pay_base), pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []) }));
             // catalogo: prodotti → offerte con canone (comprese le opzioni a
             // canone, es. 2°Linea, appese come voci col loro prezzo)
             const [cats, prods] = await Promise.all([
@@ -149,15 +153,17 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                 <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
                                                 <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
                                                 {Array.from({ length: maxT }, (_, i) => {
-                                                    const parti = set.filter(r => r.pay_tiers[i] != null);
-                                                    if (!parti.length) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
-                                                    const molt = Math.round(parti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
-                                                    const scomposizione = parti.map(r =>
+                                                    const moltParti = set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
+                                                    if (!moltParti.length) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
+                                                    // gettoni flat del set (compenso contrattuale): stessi a ogni soglia
+                                                    const flat = set.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0);
+                                                    const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
+                                                    const scomposizione = moltParti.map(r =>
                                                         `${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`).join(" + ");
                                                     return (
                                                         <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums"
-                                                            title={`${eur(o.canone)} € × ${it(molt)}  (${scomposizione})`}>
-                                                            {eur(o.canone * molt)} €
+                                                            title={`${eur(o.canone)} € × ${it(molt)}  (${scomposizione})${flat ? ` + ${eur(flat)} € contrattuale` : ""}`}>
+                                                            {eur(o.canone * molt + flat)} €
                                                         </td>
                                                     );
                                                 })}
