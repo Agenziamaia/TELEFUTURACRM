@@ -16,6 +16,7 @@ import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { TabellareEditor } from "./_views/tabellare";
 import { W3PdvPanel } from "./_views/w3_pdv";
 import { W3CommissioningPanel } from "./_views/w3_commissioning";
+import { W3PartnershipPanel } from "./_views/w3_partnership";
 import { CalendarioGareView } from "./_views/calendario_gare";
 
 /* GARE — le condizioni degli operatori (lato AZIENDA) e la gara interna della squadra
@@ -242,7 +243,15 @@ function GareInner() {
                                 euro per soglia (canone × moltiplicatore). L'ordine è
                                 suo: PDV → soglie di rete → commissioning */}
                             {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 === "franchising" && (
-                                <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                <>
+                                    <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                    {/* PARTNERSHIP REWARD (cantiere da zero 13/08): la gara
+                                        Customer Base — target per PDV dal Target excel, premi
+                                        sul PDV, modificatori Protetti/assicurazioni e correzione
+                                        manuale per Sos Caring/qualità finché non integriamo i
+                                        report settimanali dell'azienda */}
+                                    <W3PartnershipPanel key={`w3pr|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                </>
                             )}
                             {!tabVuoto && (
                                 <button onClick={() => setVecchioSchema(v => !v)}
