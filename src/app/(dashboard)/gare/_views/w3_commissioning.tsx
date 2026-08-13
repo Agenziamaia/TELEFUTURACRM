@@ -11,7 +11,7 @@
    opzioni) le aggiunge l'analisi: qui sono elencate sotto la tabella.
    Le offerte senza canone (o escluse dalle gare) non compaiono. */
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { esclusaDalleGare, matchComponenti, matchRigaTabellare, PayRiga } from "@/lib/commissioning";
@@ -21,7 +21,7 @@ interface OffCanone {
     id: string; nome: string; canone: number; prodotto: string; tipo_cliente: string; categoria: string;
 }
 
-const PISTE_LABEL: Record<string, string> = { mobile: "📱 Mobile", fisso: "🏠 Fisso" };
+const PISTE_LABEL: Record<string, string> = { mobile: "📱 Mobile", fisso: "🏠 Fisso", assicurazioni: "🛡 Assicurazioni" };
 // etichette corte delle componenti per la scomposizione nel tooltip
 const COMP_LABEL: Record<string, string> = {
     base: "base", base_underground: "base Underground", mnp: "MNP", tied: "Tied",
@@ -47,7 +47,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
             const r = await supabase.from("pay_righe")
                 .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
                 .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
-                .in("pista", ["mobile", "fisso"]).eq("attivo", true).limit(500);
+                .in("pista", ["mobile", "fisso", "assicurazioni"]).eq("attivo", true).limit(500);
             // moltiplicatori + componenti flat (compenso contrattuale): il set
             // additivo li somma insieme nel totale € della cella
             const molt = ((r.data ?? []) as PayRiga[])
@@ -90,12 +90,12 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     };
 
     const perPista = useMemo(() => {
-        const out: Record<string, { o: OffCanone; set: PayRiga[] }[]> = { mobile: [], fisso: [] };
+        const out: Record<string, { o: OffCanone; set: PayRiga[] }[]> = { mobile: [], fisso: [], assicurazioni: [] };
         offerte.forEach(o => {
             const set = setPer(o);
             if (!set.length) return;
             const pista = set[0].pista;
-            if (pista !== "mobile" && pista !== "fisso") return;
+            if (!pista || !(pista in out)) return;
             if (!set.some(r => r.pay_tiers.length)) return;
             if (cerca.trim() && !`${o.nome} ${o.prodotto} ${o.tipo_cliente}`.toLowerCase().includes(cerca.toLowerCase())) return;
             out[pista].push({ o, set });
@@ -122,7 +122,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                         className="glass-input !h-8 text-xs w-full pl-8" />
                 </div>
             </div>
-            {(["mobile", "fisso"] as const).map(pista => {
+            {(["mobile", "fisso", "assicurazioni"] as const).map(pista => {
                 const rr = perPista[pista];
                 if (!rr?.length) return null;
                 const maxT = Math.max(...rr.map(x => Math.max(...x.set.map(r => r.pay_tiers.length))));
@@ -147,9 +147,22 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rr.map(({ o, set }) => (
-                                            <tr key={o.id} className="border-t border-white/[0.04] hover:bg-white/[0.03]">
-                                                <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}{o.tipo_cliente === "Business" && <span className="text-[9px] text-amber-300/80 ml-1.5">P.IVA</span>}</td>
+                                        {rr.map(({ o, set }, idx) => {
+                                            // sezioncine per tipo cliente + prodotto: la lista piatta
+                                            // mescolava tutto (feedback Luca 14/08 «confusionario»)
+                                            const gruppo = `${o.tipo_cliente}|${o.prodotto}`;
+                                            const nuovoGruppo = idx === 0 || gruppo !== `${rr[idx - 1].o.tipo_cliente}|${rr[idx - 1].o.prodotto}`;
+                                            return (
+                                            <Fragment key={o.id}>
+                                            {nuovoGruppo && (
+                                                <tr className="bg-white/[0.04]">
+                                                    <td colSpan={3 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                        {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}</td>
                                                 <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
                                                 <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
                                                 {Array.from({ length: maxT }, (_, i) => {
@@ -168,7 +181,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     );
                                                 })}
                                             </tr>
-                                        ))}
+                                            </Fragment>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                                 {!!runtime.length && (

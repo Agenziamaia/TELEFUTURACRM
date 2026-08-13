@@ -72,6 +72,10 @@ function GareInner() {
     const go = (b?: string, l?: string) => router.push(b ? `/gare?brand=${b}${l ? `&lato=${l}` : ""}` : "/gare");
     const [month, setMonth] = useState(currentMonthKey());
     useEffect(() => { setMostraCreazione(false); }, [brandId, lato, month]);
+    // W3 azienda A SCHEDE (Luca 14/08: cinque pannelli impilati erano
+    // «confusionari»): Partnership · Commissioning € · Lettera & tabellare
+    const [tabW3, setTabW3] = useState<"partnership" | "comm" | "lettera">("partnership");
+    useEffect(() => { setTabW3("partnership"); }, [brandId]);
     const [vecchioSchema, setVecchioSchema] = useState(false);   // schema gare pre-tabellari, a richiesta
     const [tabVuoto, setTabVuoto] = useState(false);   // tabellare assente → lo schema precedente si mostra da solo
     const [mostraCreazione, setMostraCreazione] = useState(false);   // apre la card copia/crea del tabellare pay
@@ -222,52 +226,91 @@ function GareInner() {
                         </div>
                     </div>
 
-                    {/* TABELLARE PAY (Luca 11/08): il tabellare vive QUI, dentro il suo
-                        operatore, pilotato dalla barra mese e dalle tab Azienda/Ragazzi.
-                        Lo schema gare precedente resta consultabile dal bottone in fondo. */}
-                    {/* W3 azienda (Luca 13/08): la struttura di luglio — Franchising
-                        (gara per PDV) · Multibrand · Multibrand T2 — con le soglie
-                        Mobile/Fisso del singolo negozio dal foglio Target. Il
-                        segmento scelto governa cosa si vede sotto. */}
-                    {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && (
-                        <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
-                    )}
-                    {PAY_CTX[brand.id] && !(PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 !== "franchising") ? (
+                    {/* W3 AZIENDA A SCHEDE (riordino Luca 14/08, «era confusionario»):
+                        il pannello PDV con segmento e target resta sempre in testa;
+                        sul franchising il resto vive in TRE SCHEDE — 🏅 Partnership,
+                        💶 Commissioning €, 📜 Lettera & tabellare — una alla volta. */}
+                    {PAY_CTX[brand.id] === "windtre" && lato === "azienda" ? (
                         <>
+                            <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
+                            {segW3 === "franchising" && (
+                                <>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        {([
+                                            { id: "partnership", label: "🏅 Partnership Reward" },
+                                            { id: "comm", label: "💶 Commissioning €" },
+                                            { id: "lettera", label: "📜 Lettera & tabellare" },
+                                        ] as const).map(t => (
+                                            <button key={t.id} onClick={() => setTabW3(t.id)}
+                                                className={cn(
+                                                    "px-4 py-2 rounded-xl border text-sm font-bold transition-all",
+                                                    tabW3 === t.id ? "border-amber-400/70 bg-amber-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25",
+                                                )}>
+                                                {t.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {tabW3 === "partnership" && (
+                                        <W3PartnershipPanel key={`w3pr|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                    )}
+                                    {tabW3 === "comm" && (
+                                        <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                    )}
+                                    {tabW3 === "lettera" && (
+                                        <>
+                                            <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
+                                                ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
+                                                vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
+                                                nascondiVuoto={!mostraCreazione} />
+                                            {!tabVuoto && (
+                                                <button onClick={() => setVecchioSchema(v => !v)}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                                                    {vecchioSchema ? "▾ Nascondi lo schema gare precedente" : "▸ Mostra lo schema gare precedente"}
+                                                </button>
+                                            )}
+                                            {tabVuoto && !mostraCreazione && (
+                                                <button onClick={() => setMostraCreazione(true)}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                                                    ＋ Imposta il tabellare pay del Calcolatore per questo mese
+                                                </button>
+                                            )}
+                                            {(vecchioSchema || tabVuoto) && (
+                                                <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
+                                            )}
+                                        </>
+                                    )}
+                                </>
+                            )}
+                        </>
+                    ) : PAY_CTX[brand.id] ? (
+                        <>
+                            {/* TABELLARE PAY (Luca 11/08): gli altri brand e il lato
+                                ragazzi restano al flusso classico */}
                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
                                 vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
                                 nascondiVuoto={!mostraCreazione} />
-                            {/* COMMISSIONING € del franchising (Luca 13/08): la parte
-                                che NON cambia col PDV — ogni offerta col suo pay in
-                                euro per soglia (canone × moltiplicatore). L'ordine è
-                                suo: PDV → soglie di rete → commissioning */}
-                            {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 === "franchising" && (
-                                <>
-                                    <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
-                                    {/* PARTNERSHIP REWARD (cantiere da zero 13/08): la gara
-                                        Customer Base — target per PDV dal Target excel, premi
-                                        sul PDV, modificatori Protetti/assicurazioni e correzione
-                                        manuale per Sos Caring/qualità finché non integriamo i
-                                        report settimanali dell'azienda */}
-                                    <W3PartnershipPanel key={`w3pr|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
-                                </>
-                            )}
                             {!tabVuoto && (
                                 <button onClick={() => setVecchioSchema(v => !v)}
                                     className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
                                     {vecchioSchema ? "▾ Nascondi lo schema gare precedente" : "▸ Mostra lo schema gare precedente"}
                                 </button>
                             )}
+                            {tabVuoto && !mostraCreazione && (
+                                <button onClick={() => setMostraCreazione(true)}
+                                    className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                                    ＋ Imposta il tabellare pay del Calcolatore per questo mese
+                                </button>
+                            )}
+                            {(vecchioSchema || tabVuoto) && (
+                                lato === "azienda" ? (
+                                    <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
+                                ) : rag ? (
+                                    <RagazziTab key={`${rag.id}|${month}|rag`} garaId={rag.id} month={month} nota={rag.nota} />
+                                ) : null
+                            )}
                         </>
-                    ) : null}
-                    {PAY_CTX[brand.id] && tabVuoto && !mostraCreazione && (
-                        <button onClick={() => setMostraCreazione(true)}
-                            className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
-                            ＋ Imposta il tabellare pay del Calcolatore per questo mese
-                        </button>
-                    )}
-                    {(!PAY_CTX[brand.id] || vecchioSchema || tabVuoto) && (
+                    ) : (
                         lato === "azienda" ? (
                             <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
                         ) : rag ? (

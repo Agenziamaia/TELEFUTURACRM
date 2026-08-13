@@ -323,6 +323,10 @@ export function matchRigaTabellare(
     let bestScore = -1;
     for (const r of righe) {
         if (!r.attivo) continue;
+        // le righe COMPONENTE vivono solo nel modello additivo (matchComponenti):
+        // da sole non significano nulla — senza questo skip una vendita qualsiasi
+        // (es. una polizza) agganciava «GA base» a condizioni vuote (baco 14/08)
+        if (r.componente) continue;
         if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
         let score = 0;
         if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
