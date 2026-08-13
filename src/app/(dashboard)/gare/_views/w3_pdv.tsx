@@ -27,10 +27,16 @@ interface TargetPdv {
 }
 interface NegozioSeg { gara: string; store_name: string }
 
+// MULTIBRAND come il franchising (Luca 13/08): la gara è la STESSA — un solo
+// pulsante Multibrand e sotto le due Ragioni Sociali, Telefutura (T1, 1
+// negozio) e Telefutura 2 (T2, 2 negozi col target ×1,85)
 const SEGMENTI = [
     { id: "franchising", label: "🏪 Franchising", regola: "gara sul singolo punto vendita" },
-    { id: "multibrand", label: "🏬 Multibrand", regola: "gara unica (T1)" },
-    { id: "multibrand_t2", label: "🏬 Multibrand T2", regola: "2 punti vendita — POS dopo il primo a −15%" },
+    { id: "multibrand", label: "🏬 Multibrand", regola: "gara unica a punti cumulati, per Ragione Sociale" },
+] as const;
+const RS_MULTIBRAND = [
+    { id: "MB-T1", label: "Telefutura", sub: "Donna Olimpia" },
+    { id: "MB-T2", label: "Telefutura 2", sub: "Promontori + Garbatella" },
 ] as const;
 
 export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string; colore: string; seg?: string; onSeg?: (s: string) => void }) {
@@ -67,14 +73,12 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
         if (stores.length && !stores.includes(pdvSel)) setPdvSel(stores[0]);
     }, [seg, negozi]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-    // MULTIBRAND = GARA UNICA a punti cumulati (Luca 13/08): il target è del
-    // segmento (T2 per Ragione Sociale), non del singolo PDV — niente picker
-    const targetSegmento = seg === "multibrand"
-        ? targets.find(t => t.cod_gara.startsWith("MB-T1"))
-        : seg === "multibrand_t2"
-            ? targets.find(t => t.cod_gara.startsWith("MB-T2"))
-            : undefined;
-    const target = seg === "franchising" ? (pdvSel ? targetDi(pdvSel) : undefined) : targetSegmento;
+    // MULTIBRAND = stessa gara del franchising come struttura: si sceglie la
+    // RAGIONE SOCIALE (Telefutura / Telefutura 2) e si vede il suo target
+    const [rsSel, setRsSel] = useState<string>("MB-T1");
+    const target = seg === "franchising"
+        ? (pdvSel ? targetDi(pdvSel) : undefined)
+        : targets.find(t => t.cod_gara.startsWith(rsSel));
     const segInfo = SEGMENTI.find(s => s.id === seg);
 
     const chiave = (tid: string, campo: string, i: number) => `${tid}|${campo}|${i}`;
@@ -182,7 +186,17 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
                     ))}
                 </div>
             )}
-            {seg !== "franchising" && target && <div className="text-sm font-semibold text-white mb-3">🏬 {target.negozio}</div>}
+            {seg === "multibrand" && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                    {RS_MULTIBRAND.map(rs => (
+                        <button key={rs.id} onClick={() => setRsSel(rs.id)}
+                            className={cn("px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all",
+                                rsSel === rs.id ? "border-white/40 bg-white/10 text-white" : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-slate-200")}>
+                            🏢 {rs.label} <span className="font-normal opacity-70">({rs.sub})</span>
+                        </button>
+                    ))}
+                </div>
+            )}
             {target ? (
                 <>
                     {seg === "franchising" ? (
@@ -235,7 +249,7 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
                                             </tr>
                                         </tbody>
                                     </table>
-                                    <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {seg === "multibrand_t2" ? "Gara per Ragione Sociale sui 2 PDV: 1° al 100% + 2° scontato del 15% (lettera multipos) = target ×1,85." : ""}</p>
+                                    <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {rsSel === "MB-T2" ? "Telefutura 2 ha 2 negozi: 1° al 100% + 2° scontato del 15% (lettera multipos) = target ×1,85." : ""}</p>
                                 </div>
                             );
                         })()

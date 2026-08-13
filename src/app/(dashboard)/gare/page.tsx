@@ -15,6 +15,7 @@ import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { TabellareEditor } from "./_views/tabellare";
 import { W3PdvPanel } from "./_views/w3_pdv";
+import { W3CommissioningPanel } from "./_views/w3_commissioning";
 import { CalendarioGareView } from "./_views/calendario_gare";
 
 /* GARE — le condizioni degli operatori (lato AZIENDA) e la gara interna della squadra
@@ -229,6 +230,13 @@ function GareInner() {
                         segmento scelto governa cosa si vede sotto. */}
                     {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && (
                         <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
+                    )}
+                    {/* COMMISSIONING € del franchising (Luca 13/08): la parte che
+                        NON cambia col PDV — ogni offerta col suo pay in euro per
+                        soglia (canone × moltiplicatore): l'analytics farà solo
+                        il match soglia raggiunta → colonna */}
+                    {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 === "franchising" && (
+                        <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
                     )}
                     {PAY_CTX[brand.id] && !(PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 !== "franchising") ? (
                         <>
