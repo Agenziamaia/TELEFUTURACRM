@@ -2396,29 +2396,25 @@ function CallerPageInner() {
                                                         </div>
                                                     </td>
                                                     {/* CANCELLA LISTA (Luca 12/08: «magari abbiamo fatto delle prove»):
-                                                        via la lista E le pratiche importate da lei (lista_origine).
-                                                        GUARDIA (13/08, caso «61→59 attivazioni»): le pratiche ATTIVATE
-                                                        o con contratto/appuntamento NON si cancellano mai — si
-                                                        sganciano dalla lista e restano nel caller. */}
+                                                        via la lista E TUTTE le pratiche importate da lei
+                                                        (lista_origine), cooperation comprese — regola CONFERMATA da
+                                                        Luca il 13/08 dopo il caso «61→59 attivazioni»: cancellare una
+                                                        lista assegnata deve portarsi via anche leads e attivazioni.
+                                                        La conferma dice quante attivate cadono, così non succede
+                                                        più a sorpresa. */}
                                                     {isDirector && (
                                                         <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                                            <button title="Cancella la lista e le pratiche importate da lei (le attivate restano)"
+                                                            <button title="Cancella la lista e tutte le pratiche importate da lei (attivazioni comprese)"
                                                                 onClick={async () => {
-                                                                    const { data: agganciate } = await supabase.from("calls").select("id, stato, contract_id, appointment_id").eq("lista_origine", l.nome);
-                                                                    const righe = (agganciate || []) as { id: string; stato: string | null; contract_id: string | null; appointment_id: number | string | null }[];
-                                                                    const protetta = (r: typeof righe[number]) => /^attivat/i.test(String(r.stato || "")) || !!r.contract_id || !!r.appointment_id;
-                                                                    const daCancellare = righe.filter((r) => !protetta(r));
-                                                                    const daSganciare = righe.filter(protetta);
+                                                                    const { data: agganciate } = await supabase.from("calls").select("id, stato").eq("lista_origine", l.nome);
+                                                                    const righe = (agganciate || []) as { id: string; stato: string | null }[];
+                                                                    const attivate = righe.filter((r) => /^attivat/i.test(String(r.stato || ""))).length;
                                                                     const dettaglio = righe.length
-                                                                        ? ` e le sue ${daCancellare.length} pratiche importate${daSganciare.length ? ` (le ${daSganciare.length} attivate o con contratto/appuntamento NON si toccano: restano nel caller, sganciate dalla lista)` : ""}`
+                                                                        ? ` e le sue ${righe.length} pratiche importate${attivate ? ` (comprese ${attivate} attivate, che escono anche dal conteggio cooperation)` : ""}`
                                                                         : " (nessuna pratica agganciata)";
                                                                     if (!window.confirm(`Cancello la lista «${l.nome}»${dettaglio}? Operazione definitiva.`)) return;
-                                                                    for (let i = 0; i < daSganciare.length; i += 100) {
-                                                                        const { error: eS } = await supabase.from("calls").update({ lista_origine: null }).in("id", daSganciare.slice(i, i + 100).map((r) => r.id));
-                                                                        if (eS) { alert("Pratiche non sganciate: " + eS.message); return; }
-                                                                    }
-                                                                    for (let i = 0; i < daCancellare.length; i += 100) {
-                                                                        const { error: eC } = await supabase.from("calls").delete().in("id", daCancellare.slice(i, i + 100).map((r) => r.id));
+                                                                    if (righe.length) {
+                                                                        const { error: eC } = await supabase.from("calls").delete().eq("lista_origine", l.nome);
                                                                         if (eC) { alert("Pratiche non cancellate: " + eC.message); return; }
                                                                     }
                                                                     const { error: eL } = await supabase.from("liste").delete().eq("id", l.id);

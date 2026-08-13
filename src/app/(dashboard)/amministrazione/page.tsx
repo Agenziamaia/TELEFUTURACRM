@@ -27,7 +27,7 @@ import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from 
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
-import { SelectOpzioni } from "@/components/SelectPersona";
+import { SelectOpzioni, SelectPersona } from "@/components/SelectPersona";
 import {
     ROLES,
     AREAS,
@@ -116,6 +116,10 @@ interface AppUser {
     password: string | null;
     // MOD-25: utenza Aircall collegata (bigint) — aggancia chiamate e click-to-call
     aircall_user_id?: number | null;
+    // Mondo agenzia (Luca 13/08): back office responsabile delle pratiche in
+    // Tracking PDA — si imposta QUI alla creazione/modifica dell'agente;
+    // vuoto = resta tutto in carico all'agente
+    back_office_id?: string | null;
     // MOD-33: licenziamento con data (futura = programmato) e sospensione
     data_licenziamento?: string | null;
     sospeso_dal?: string | null;
@@ -162,6 +166,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visib
     hire_date: "",
     note: "",
     aircall_user_id: null,
+    back_office_id: null,
     stores: [],
     brands: [],
     visibility: [],
@@ -829,6 +834,17 @@ function UserForm({
 
     const grades = gradesOf(f.role || "");
 
+    // MONDO AGENZIA (Luca 13/08, spostata qui da Ruoli): per i ruoli dell'area
+    // OB/agenzia si sceglie il back office responsabile — le pratiche in
+    // Tracking PDA vanno nella sua coda; vuoto = restano in carico all'agente.
+    const ruoloAgenzia = areaOf(f.role || "") === "ob";
+    const [boCandidati, setBoCandidati] = useState<{ id: string; full_name: string }[]>([]);
+    useEffect(() => {
+        supabase.from("app_users").select("id, full_name, role").eq("active", true).order("full_name")
+            .then(({ data }) => setBoCandidati(((data ?? []) as { id: string; full_name: string; role: string }[])
+                .filter((u) => /back_office|amministrativo/.test(u.role))));
+    }, []);
+
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
 
     const toggleIn = (key: "stores" | "brands" | "visibility", val: string) =>
@@ -915,6 +931,9 @@ function UserForm({
             note: f.note?.trim() || null,
             // MOD-25: aggancio utenza Aircall (null = scollegata)
             aircall_user_id: f.aircall_user_id ? Number(f.aircall_user_id) : null,
+            // Mondo agenzia: il BO responsabile vale solo per i ruoli area OB;
+            // cambiando ruolo fuori area l'associazione si pulisce da sola
+            back_office_id: ruoloAgenzia ? f.back_office_id || null : null,
         };
 
         let userId = editing?.id;
@@ -1061,6 +1080,21 @@ function UserForm({
                             </Field>
                         )}
                     </div>
+
+                    {/* MONDO AGENZIA (Luca 13/08): l'associazione al back office si fa
+                        QUI, creando o modificando l'agente — non più dal pannello Ruoli */}
+                    {ruoloAgenzia && (
+                        <Field label="🏢 In carico a (back office)">
+                            <SelectPersona
+                                value={(() => { const b = boCandidati.find((x) => x.id === f.back_office_id); return b ? b.full_name : ""; })()}
+                                onChange={(nome) => { const b = boCandidati.find((x) => x.full_name === nome); set("back_office_id", b ? b.id : null); }}
+                                opzioni={boCandidati.map((b) => b.full_name)}
+                                placeholder="nessuno — resta in carico all'agente"
+                                className="w-full"
+                            />
+                            <div className="text-[11px] text-slate-500 mt-1">Le pratiche di questo agente in Tracking PDA entrano nella coda del back office scelto (badge 🏢 in riga). Vuoto = restano in carico all&apos;agente.</div>
+                        </Field>
+                    )}
 
                     {/* Dati contrattuali e società */}
                     <div className="grid sm:grid-cols-2 gap-3">

@@ -224,6 +224,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         });
         setMappaDirty(prev => new Set(prev).add(pista));
     };
+    // % UNICA (risposta Luca 13/08): una sola casella riempie la % di TUTTE le
+    // soglie della pista in un colpo; le caselle per-soglia restano e possono
+    // ritoccare i singoli valori dopo
+    const setPercTutte = (pista: string, nTiers: number, perc: string) => {
+        for (let tn = 1; tn <= nTiers; tn++) setVoceMappa(pista, tn, { perc });
+    };
     const salvaMappa = async (pista: string, nTiers: number) => {
         const del = await supabase.from("pay_mappa_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", pista);
         if (dbError("Mappa soglie", del.error)) return;
@@ -332,6 +338,19 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                 loro scelta e applica la % — per pista, non per prodotto */}
                                             <div className="w-full flex items-center gap-2 flex-wrap mt-1 ml-[130px]">
                                                 <span className="text-[11px] text-slate-500">↘ pay girato:</span>
+                                                {/* % unica: vale per tutte le soglie, poi ritocchi le singole */}
+                                                {(() => {
+                                                    const percs = mie.map((_, i) => (mappa[px.chiave] || {})[i + 1]?.perc ?? "");
+                                                    const unica = percs.length && percs.every(p => p === percs[0]) ? percs[0] : "";
+                                                    return (
+                                                        <span className="text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1 inline-flex items-center gap-1"
+                                                            title="Scrivi qui e la stessa % va su tutte le soglie della pista; le caselle a fianco restano per ritoccare le singole">
+                                                            tutte ×
+                                                            <input value={unica} placeholder="%" onChange={e => setPercTutte(px.chiave, mie.length, e.target.value)}
+                                                                className="bg-transparent border border-amber-500/30 rounded px-1 py-0.5 text-[11px] text-white w-12 text-center" />%
+                                                        </span>
+                                                    );
+                                                })()}
                                                 {mie.map((_, i) => {
                                                     const tn = i + 1;
                                                     const v = (mappa[px.chiave] || {})[tn];

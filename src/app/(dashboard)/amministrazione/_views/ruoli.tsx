@@ -18,7 +18,6 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { AREAS, type Area, type Grade } from "@/lib/roles";
 import { useRoles, type RoleMerged } from "@/lib/useRoles";
-import { SelectPersona } from "@/components/SelectPersona";
 import { useAuth } from "@/context/AuthContext";
 import { notify, dbError } from "./toast";
 
@@ -217,26 +216,15 @@ export function RuoliView() {
                                                 {!p.active && <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 font-bold">non attivo</span>}
                                                 <span className="ml-auto text-slate-500">{gradeLabelOf(r, p.grade)}</span>
                                                 {p.primary_store && <span className="text-slate-600">· {p.primary_store}</span>}
-                                                {/* BO RESPONSABILE (Luca 12/08, mondo agenzia; tendina omologata
-                                                    13/08): le pratiche di questo utente in Tracking PDA sono in
-                                                    carico al back office scelto — vanno nella SUA coda, non
-                                                    restano all'agente. Vuoto = nessuna presa in carico. */}
-                                                <span className="flex items-center gap-1" title="Back office responsabile: le pratiche di questo utente in Tracking PDA entrano nella coda del BO scelto">
-                                                    <span className="text-[10px] font-bold text-slate-500">🏢 In carico a</span>
-                                                    <SelectPersona
-                                                        value={(() => { const b = persone.find((x) => x.id === p.back_office_id); return b ? b.full_name : ""; })()}
-                                                        onChange={async (nome) => {
-                                                            const b = persone.find((x) => x.full_name === nome) || null;
-                                                            const v = b ? b.id : null;
-                                                            const { error } = await supabase.from("app_users").update({ back_office_id: v }).eq("id", p.id);
-                                                            if (error) { alert("Non salvato: " + error.message); return; }
-                                                            setPersone((prev) => prev.map((x) => x.id === p.id ? { ...x, back_office_id: v } : x));
-                                                        }}
-                                                        opzioni={persone.filter((b) => b.active && /back_office|amministrativo/.test(b.role)).map((b) => b.full_name)}
-                                                        placeholder="nessuno"
-                                                        className="w-[150px] text-[11px]"
-                                                    />
-                                                </span>
+                                                {/* BO agenzia (13/08): l'associazione al back office si fa dalla
+                                                    scheda utente (Utenti → Nuovo/Modifica), non più da qui —
+                                                    resta solo il badge informativo per chi ce l'ha */}
+                                                {p.back_office_id && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-bold"
+                                                        title={`In carico al back office ${persone.find((x) => x.id === p.back_office_id)?.full_name || ""} — si cambia dalla scheda utente`}>
+                                                        🏢 {persone.find((x) => x.id === p.back_office_id)?.full_name || "BO"}
+                                                    </span>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
