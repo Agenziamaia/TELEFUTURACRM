@@ -16,6 +16,7 @@ import { TrackingEsitiView } from "./_views/tracking_esiti";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
+import { CouponView } from "./_views/coupon";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -78,6 +79,7 @@ import {
     ShieldCheck,
     Clock3,
     Radar,
+    Ticket,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -201,6 +203,7 @@ const SEZIONI: Sezione[] = [
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
     { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
+    { id: "coupon", label: "Coupon", icon: Ticket, desc: "Coupon sconto emessi dai ritiri usati: emessi, riscattati, scaduti, annullati — con valore e residuo. Sola lettura." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
@@ -584,6 +587,8 @@ function AmministrazioneInner() {
                 <CalendarioEsitiView />
             ) : sez === "trackingesiti" ? (
                 <TrackingEsitiView />
+            ) : sez === "coupon" ? (
+                <CouponView />
             ) : null}
 
             {showForm && (

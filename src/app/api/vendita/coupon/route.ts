@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
+import { supabase } from "@/lib/supabaseClient";
 import { generaCoupon, validaCoupon } from "@/lib/coupons";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Lista coupon per Amministrazione (emessi/riscattati/scaduti/annullati). Sola lettura.
+// GET ?negozio=  (facoltativo) → tutti i coupon (max 500, recenti prima) con `scaduto`
+// derivato (attivo + scadenza superata). Filtri/stat li fa la vista.
+export async function GET(req: Request) {
+    const { searchParams } = new URL(req.url);
+    const negozio = searchParams.get("negozio");
+    let q = supabase.from("coupons")
+        .select("code, valore, valore_residuo, stato, negozio, origine, cliente, parent_code, created_by, created_at, redeemed_at, redeemed_ref, scadenza, usato_id")
+        .order("created_at", { ascending: false }).limit(500);
+    if (negozio) q = q.eq("negozio", negozio);
+    const { data, error } = await q;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const now = Date.now();
+    const coupons = (data || []).map((r: any) => ({
+        ...r,
+        scaduto: r.stato === "attivo" && !!r.scadenza && new Date(r.scadenza).getTime() < now,
+    }));
+    return NextResponse.json({ ok: true, coupons });
+}
 
 // Coupon sconto (spec Francesco). La REDENZIONE avviene nel route dello scontrino
 // (atomica con l'emissione + sconto). Qui:
