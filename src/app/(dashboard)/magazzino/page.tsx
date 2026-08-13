@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { isAdminOrAbove } from "@/lib/roles";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { cn } from "@/utils";
@@ -43,8 +44,10 @@ const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleStri
 
 export default function MagazzinoPage() {
     const { user } = useAuth();
-    // consultazione per tutti; carico/trasferimenti per chi gestisce
+    // consultazione per tutti; trasferimenti per chi gestisce; il CARICO
+    // merce solo amministrazione in su (segnalazione Francesco 12/08)
     const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
+    const puoCaricare = isAdminOrAbove(user?.role);
     const [tab, setTab] = useState<"giacenze" | "ricerca" | "trasferimenti">("giacenze");
 
     const [negozi, setNegozi] = useState<string[]>([]);
@@ -87,7 +90,7 @@ export default function MagazzinoPage() {
             ) : tab === "ricerca" ? (
                 <RicercaSeriale unita={unita} />
             ) : (
-                <Trasferimenti unita={unita} negozi={negozi} aziende={aziende} gestisce={gestisce} utente={user?.name || "—"} ricarica={carica} />
+                <Trasferimenti unita={unita} negozi={negozi} aziende={aziende} gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica} />
             )}
         </div>
     );
@@ -278,8 +281,8 @@ function RicercaSeriale({ unita }: { unita: Unita[] }) {
 }
 
 /* ── 🚚 TRASFERIMENTI + 📥 CARICO ─────────────────────────────────────── */
-function Trasferimenti({ unita, negozi, aziende, gestisce, utente, ricarica }: {
-    unita: Unita[]; negozi: string[]; aziende: string[]; gestisce: boolean; utente: string; ricarica: () => void;
+function Trasferimenti({ unita, negozi, aziende, gestisce, puoCaricare, utente, ricarica }: {
+    unita: Unita[]; negozi: string[]; aziende: string[]; gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
 }) {
     const [ddt, setDdt] = useState<Ddt[]>([]);
     const [apriNuovo, setApriNuovo] = useState(false);
@@ -321,7 +324,7 @@ ${mie.map((u, i) => `<tr><td>${i + 1}</td><td>${u.codice || ""}</td><td>${u.desc
             {gestisce && (
                 <div className="flex gap-2">
                     <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold inline-flex items-center gap-2"><Truck size={15} /> Nuovo trasferimento</button>
-                    <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }} className="px-4 py-2 rounded-xl border border-white/15 text-slate-200 text-sm font-semibold inline-flex items-center gap-2"><PackagePlus size={15} /> Carico merce</button>
+                    {puoCaricare && <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }} className="px-4 py-2 rounded-xl border border-white/15 text-slate-200 text-sm font-semibold inline-flex items-center gap-2"><PackagePlus size={15} /> Carico merce</button>}
                 </div>
             )}
             {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}

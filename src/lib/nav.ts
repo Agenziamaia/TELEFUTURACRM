@@ -104,8 +104,6 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Magazzino", href: "/magazzino", icon: Boxes, roles: EVERYONE },
             { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
-            // CHIUSURA LINEA (Luca 01/08): ticketing disdette operatori
-            { name: "Chiusura Linea", href: "/chiusura-linea", icon: Scissors, roles: EVERYONE },
             // REGISTRO CHIAMATE Aircall del negozio (AIR-01, Luca 04/08): il
             // registro lo vede tutto il negozio, l'AUDIO delle registrazioni è
             // gestito a parte per ruolo (store manager in su, gate in pagina e
@@ -123,6 +121,9 @@ export const NAVIGATION: NavEntry[] = [
         icon: Wrench,
         children: [
             { name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
+            // CHIUSURA LINEA (Luca 01/08, qui dal 13/08): ticketing disdette
+            // operatori — Luca la vuole in Utility, prima di Documentazione
+            { name: "Chiusura Linea", href: "/chiusura-linea", icon: Scissors, roles: EVERYONE },
             { name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],

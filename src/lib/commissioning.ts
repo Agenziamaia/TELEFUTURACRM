@@ -473,10 +473,11 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
 export async function giorniLavorativiMese(monthISO: string): Promise<{
     totali: number; trascorsi: number; override: boolean;
     oraScatto: number; proiezioneDal: number; mostraProiezione: boolean;
+    congelati: number[]; festivi: string[];
 }> {
     const { primo, ultimo } = estremiMese(monthISO);
     const [ov, fest] = await Promise.all([
-        supabase.from("pay_giorni_lavorativi").select("giorni, ora_scatto, proiezione_dal").eq("month", monthISO).maybeSingle(),
+        supabase.from("pay_giorni_lavorativi").select("giorni, ora_scatto, proiezione_dal, congelati").eq("month", monthISO).maybeSingle(),
         supabase.from("giorni_festivi").select("data").gte("data", primo).lte("data", ultimo),
     ]);
     const festivi = new Set((fest.data || []).map(f => String((f as { data: string }).data).slice(0, 10)));
@@ -484,13 +485,16 @@ export async function giorniLavorativiMese(monthISO: string): Promise<{
     const nGiorni = new Date(y, m, 0).getDate();
     const oraScatto = ov.data?.ora_scatto == null ? 19 : Number(ov.data.ora_scatto);
     const proiezioneDal = ov.data?.proiezione_dal == null ? 1 : Number(ov.data.proiezione_dal);
+    // GIORNI CONGELATI (Luca 13/08): tutti i negozi chiusi — fuori dal
+    // conteggio (totali e trascorsi) esattamente come i festivi
+    const congelati = new Set(((ov.data?.congelati as number[] | null) || []).map(Number));
     const oggi = new Date();
     const oggiISO = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
     let totali = 0, trascorsi = 0;
     for (let g = 1; g <= nGiorni; g++) {
         const iso = `${y}-${String(m).padStart(2, "0")}-${String(g).padStart(2, "0")}`;
         const dow = new Date(y, m - 1, g).getDay();
-        if (dow === 0 || festivi.has(iso)) continue;   // domeniche e festivi fuori
+        if (dow === 0 || festivi.has(iso) || congelati.has(g)) continue;   // domeniche, festivi e congelati fuori
         totali++;
         // ORA DI SCATTO (Luca 11/08): il giorno corrente conta come trascorso
         // solo dopo quell'ora — prima, le proiezioni non lo considerano.
@@ -504,7 +508,10 @@ export async function giorniLavorativiMese(monthISO: string): Promise<{
     // la proiezione si mostra solo dal giorno scelto del mese (mesi passati: sempre)
     const meseCorrente = oggiISO.slice(0, 7) === monthISO.slice(0, 7);
     const mostraProiezione = !meseCorrente ? true : oggi.getDate() >= proiezioneDal;
-    return { totali, trascorsi, override: overrideGiorni != null, oraScatto, proiezioneDal, mostraProiezione };
+    return {
+        totali, trascorsi, override: overrideGiorni != null, oraScatto, proiezioneDal, mostraProiezione,
+        congelati: [...congelati].sort((a, b) => a - b), festivi: [...festivi].sort(),
+    };
 }
 
 /** € per attivazione della riga alla soglia data (0 = sotto soglia → base). */

@@ -1383,6 +1383,9 @@ const defaultClientiView = {
     itemsPerPage: 25 as number,
     currentPage: 1,
     filterTipo: "tutti" as "tutti" | "consumer" | "business" | "turista",
+    // FILTRI TIPO CUMULABILI (Luca 13/08): si sommano in OR; vuoto = tutti.
+    // filterTipo resta solo per migrare le view salvate prima del cambio.
+    filterTipi: [] as ("consumer" | "business" | "turista")[],
     filterNome: "",
     filterCognome: "",
     filterRagione: "",
@@ -1408,8 +1411,19 @@ export default function ClientiPage() {
     const setItemsPerPage = (v: number) => setView((p) => ({ ...p, itemsPerPage: v }));
     const currentPage = view.currentPage;
     const setCurrentPage = (v: number) => setView((p) => ({ ...p, currentPage: v }));
-    const filterTipo = view.filterTipo;
-    const setFilterTipo = (v: "tutti" | "consumer" | "business" | "turista") => setView((p) => ({ ...p, filterTipo: v }));
+    // Tipi cumulabili: le view salvate col vecchio filterTipo singolo
+    // vengono lette come selezione a un elemento finche' non si ritocca
+    const filterTipi = useMemo<("consumer" | "business" | "turista")[]>(() => {
+        if (view.filterTipi && view.filterTipi.length) return view.filterTipi;
+        return view.filterTipo && view.filterTipo !== "tutti" ? [view.filterTipo] : [];
+    }, [view.filterTipi, view.filterTipo]);
+    const toggleTipo = (t: "consumer" | "business" | "turista") => setView((p) => ({
+        ...p, filterTipo: "tutti",
+        filterTipi: filterTipi.includes(t) ? filterTipi.filter((x) => x !== t) : [...filterTipi, t],
+    }));
+    const azzeraTipi = () => setView((p) => ({ ...p, filterTipo: "tutti", filterTipi: [] }));
+    const soloBusiness = filterTipi.length > 0 && filterTipi.every((t) => t === "business");
+    const soloPrivati = filterTipi.length > 0 && !filterTipi.includes("business");
     const filterNome = view.filterNome;
     const setFilterNome = (v: string) => setView((p) => ({ ...p, filterNome: v }));
     const filterCognome = view.filterCognome;
@@ -1713,8 +1727,14 @@ export default function ClientiPage() {
             // 2. Advanced filters
             if (gestitiSet && !gestitiSet.has(c.id)) return false;
             if (mieiSet && !mieiSet.has(c.id)) return false;
-            if (filterTipo === "turista") { if (!c.turista) return false; }
-            else if (filterTipo !== "tutti" && c.tipo !== filterTipo) return false;
+            // Tipi cumulabili in OR (Luca 13/08): il cliente passa se rientra
+            // in ALMENO uno dei tipi selezionati; nessuna selezione = tutti
+            if (filterTipi.length) {
+                const passaTipo = (filterTipi.includes("consumer") && c.tipo === "consumer")
+                    || (filterTipi.includes("business") && c.tipo === "business")
+                    || (filterTipi.includes("turista") && !!c.turista);
+                if (!passaTipo) return false;
+            }
             // per le business il "Nome/Cognome Referente" puo' stare in nome_ref
             // (Registra Vendita) o in nome (caller): il filtro guarda entrambi
             if (filterNome && !`${c.nome} ${c.nomeRef || ""}`.toLowerCase().includes(filterNome.toLowerCase())) return false;
@@ -1738,7 +1758,7 @@ export default function ClientiPage() {
 
             return true;
         });
-    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, filterAcqDa, filterAcqA, gestitiSet, mieiSet]);
+    }, [clientList, quickSearch, filterTipi, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, filterAcqDa, filterAcqA, gestitiSet, mieiSet]);
 
     // Pagination bounds
     const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
@@ -1841,19 +1861,30 @@ export default function ClientiPage() {
                         sulla STESSA riga (Luca 08/08: più piccoli, allineati alla
                         casella di ricerca, tabella più in alto) */}
                     <div className="flex flex-col md:flex-row gap-3 justify-between items-center">
-                        {/* Tipo cliente: solo emoji, altezza = casella ricerca */}
+                        {/* Tipo cliente: solo emoji, altezza = casella ricerca.
+                            CUMULABILI (Luca 13/08): i tre tipi si spuntano
+                            insieme (OR); 👥 azzera la selezione = tutti */}
                         <div className="flex gap-1.5 shrink-0">
+                            <button
+                                onClick={() => { azzeraTipi(); setCurrentPage(1); }}
+                                title="Tutti i clienti" aria-label="Tutti i clienti"
+                                className={`w-11 h-11 rounded-xl border flex items-center justify-center text-lg transition-all ${!filterTipi.length
+                                    ? "bg-violet-500/20 border-violet-500/50 shadow shadow-violet-500/10"
+                                    : "bg-white/5 border-white/10 grayscale opacity-60 hover:opacity-100 hover:grayscale-0"
+                                    }`}
+                            >
+                                👥
+                            </button>
                             {([
-                                { t: "tutti", emoji: "👥", titolo: "Tutti i clienti" },
                                 { t: "consumer", emoji: "👤", titolo: "Consumer" },
                                 { t: "business", emoji: "🏢", titolo: "Business" },
                                 { t: "turista", emoji: "🌍", titolo: "Turisti" },
                             ] as const).map(({ t, emoji, titolo }) => (
                                 <button
                                     key={t}
-                                    onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
-                                    title={titolo} aria-label={titolo}
-                                    className={`w-11 h-11 rounded-xl border flex items-center justify-center text-lg transition-all ${filterTipo === t
+                                    onClick={() => { toggleTipo(t); setCurrentPage(1); }}
+                                    title={`${titolo} — cumulabile con gli altri tipi`} aria-label={titolo}
+                                    className={`w-11 h-11 rounded-xl border flex items-center justify-center text-lg transition-all ${filterTipi.includes(t)
                                         ? "bg-violet-500/20 border-violet-500/50 shadow shadow-violet-500/10"
                                         : "bg-white/5 border-white/10 grayscale opacity-60 hover:opacity-100 hover:grayscale-0"
                                         }`}
@@ -1971,7 +2002,7 @@ export default function ClientiPage() {
 
                                 {/* Common Fields */}
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-slate-400">Nome {filterTipo === "business" && "Referente"}</label>
+                                    <label className="text-xs font-medium text-slate-400">Nome {soloBusiness && "Referente"}</label>
                                     <input
                                         type="text"
                                         value={filterNome}
@@ -1982,7 +2013,7 @@ export default function ClientiPage() {
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-slate-400">Cognome {filterTipo === "business" && "Referente"}</label>
+                                    <label className="text-xs font-medium text-slate-400">Cognome {soloBusiness && "Referente"}</label>
                                     <input
                                         type="text"
                                         value={filterCognome}
@@ -1992,7 +2023,7 @@ export default function ClientiPage() {
                                     />
                                 </div>
 
-                                {(filterTipo === "business" || filterTipo === "tutti") && (
+                                {(!filterTipi.length || filterTipi.includes("business")) && (
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-medium text-slate-400">Ragione Sociale</label>
                                         <input
@@ -2001,7 +2032,7 @@ export default function ClientiPage() {
                                             onChange={(e) => { setFilterRagione(e.target.value); setCurrentPage(1); }}
                                             className="w-full glass-input text-sm rounded-lg py-2"
                                             placeholder="Es. Tech Srl"
-                                            disabled={filterTipo !== "business"}
+                                            disabled={!filterTipi.includes("business")}
                                         />
                                     </div>
                                 )}
@@ -2030,7 +2061,7 @@ export default function ClientiPage() {
 
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-medium text-slate-400">
-                                        {filterTipo === "consumer" ? "Codice Fiscale" : filterTipo === "business" ? "Partita IVA" : "CF / P.IVA"}
+                                        {soloPrivati ? "Codice Fiscale" : soloBusiness ? "Partita IVA" : "CF / P.IVA"}
                                     </label>
                                     <input
                                         type="text"

@@ -44,6 +44,13 @@ type RawRow = Record<string, unknown> & {
   dettagli?: Record<string, unknown> | null;
 };
 
+// MONDO AGENZIA (13/08, «non riesco a capire»): mappa nome agente → nome del
+// back office che lo ha in carico (app_users.back_office_id). Riempita da
+// fetchData PRIMA di posare le righe e letta al render per il badge 🏢 —
+// così ANCHE chi vede tutto (admin) capisce a colpo d'occhio quali pratiche
+// sono degli agenti e chi ne risponde.
+let AGENTI_BO: Record<string, string> = {};
+
 function formatDataInserimento(val: string | undefined): string {
   const d = parseDataRiga(val);
   return d ? d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
@@ -664,7 +671,15 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                   <td className={tdStyle + " text-sm font-semibold text-slate-200 whitespace-nowrap"}>{row.brand}</td>
                   <td className={tdStyle + " text-sm font-medium text-slate-200 group-hover:text-white transition-colors"}>{row.nominativo}</td>
                   <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>{row.negozio}</td>
-                  <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>{row.venditore}</td>
+                  <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>
+                    {row.venditore}
+                    {AGENTI_BO[row.venditore] && (
+                      <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-indigo-500/10 border-indigo-500/30 text-indigo-300 whitespace-nowrap"
+                        title={`Agente esterno: la pratica è in carico al back office ${AGENTI_BO[row.venditore]}`}>
+                        🏢 {AGENTI_BO[row.venditore]}
+                      </span>
+                    )}
+                  </td>
                   <td className={tdStyle + " text-xs text-slate-500 whitespace-nowrap"}>{row.dataInserimento}</td>
                   <td className={tdStyle}>
                     <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
@@ -989,7 +1004,9 @@ function Drawer({
               <div><div className={labelStyle}>N° CONTRATTO</div><div className={valStyle + " font-mono"}>{row.numContratto}</div></div>
               <div><div className={labelStyle}>N° ATTIVAZIONE</div><div className={valStyle + " font-mono"}>{row.numAttivazione}</div></div>
               <div><div className={labelStyle}>NEGOZIO</div><div className={valStyle}>{row.negozio}</div></div>
-              <div><div className={labelStyle}>VENDITORE</div><div className={valStyle}>{row.venditore}</div></div>
+              <div><div className={labelStyle}>VENDITORE</div><div className={valStyle}>{row.venditore}</div>
+                {AGENTI_BO[row.venditore] && <div className="mt-0.5 text-[11px] font-semibold text-indigo-300">🏢 agente in carico a {AGENTI_BO[row.venditore]}</div>}
+              </div>
               <div><div className={labelStyle}>TELEFONO</div><div className={valStyle}>{row.telefono}</div></div>
               <div><div className={labelStyle}>DATA INSERIMENTO</div><div className={valStyle}>{row.dataInserimento}</div></div>
               <div className="col-span-2"><div className={labelStyle}>C.F. / P.IVA</div><div className={valStyle + " font-mono"}>{row.cf}</div></div>
@@ -1455,12 +1472,27 @@ export default function TrackingPdaPage() {
       const lavorabili = (list as RawRow[]).filter((r) => vaInTracking(r));
       // MONDO AGENZIA (Luca 12/08): gli agenti associati a un back office
       // (app_users.back_office_id) sono in carico a LUI — le loro pratiche
-      // entrano nella sua coda (visibilità e responsabilità malus al BO,
-      // mai all'agente). Pannello: Amministrazione → Ruoli, select "BO".
+      // entrano nella sua coda. Pannello: Amministrazione → Ruoli, tendina
+      // «🏢 In carico a». La mappa completa si carica per TUTTI (serve al
+      // badge 🏢 in riga, anche per gli admin); la coda del BO usa la stessa.
       const mieiAgenti = new Set<string>();
-      if (!seesAll && user?.id) {
-        const { data: ag } = await supabase.from("app_users").select("full_name").eq("back_office_id", user.id).eq("active", true);
-        (ag ?? []).forEach((a: { full_name: string | null }) => { if (a.full_name) mieiAgenti.add(a.full_name); });
+      {
+        const { data: ag } = await supabase.from("app_users")
+          .select("full_name, back_office_id").not("back_office_id", "is", null).eq("active", true);
+        const righe = (ag ?? []) as { full_name: string | null; back_office_id: string | null }[];
+        const boIds = [...new Set(righe.map((a) => a.back_office_id).filter(Boolean))] as string[];
+        const nomiBO: Record<string, string> = {};
+        if (boIds.length) {
+          const { data: bos } = await supabase.from("app_users").select("id, full_name").in("id", boIds);
+          ((bos ?? []) as { id: string; full_name: string | null }[]).forEach((b) => { if (b.full_name) nomiBO[b.id] = b.full_name; });
+        }
+        const mappa: Record<string, string> = {};
+        righe.forEach((a) => {
+          if (!a.full_name || !a.back_office_id) return;
+          if (nomiBO[a.back_office_id]) mappa[a.full_name] = nomiBO[a.back_office_id];
+          if (a.back_office_id === user?.id) mieiAgenti.add(a.full_name);
+        });
+        AGENTI_BO = mappa;
       }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
