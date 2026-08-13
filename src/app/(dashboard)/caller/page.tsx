@@ -2363,10 +2363,11 @@ function CallerPageInner() {
                                             <Th>Contatti</Th>
                                             <Th>Caller</Th>
                                             <Th>Avanzamento</Th>
+                                            {isDirector && <Th> </Th>}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredListe.length === 0 && (<tr><td colSpan={7} className="text-center py-12 text-slate-500">Nessuna lista trovata</td></tr>)}
+                                        {filteredListe.length === 0 && (<tr><td colSpan={isDirector ? 8 : 7} className="text-center py-12 text-slate-500">Nessuna lista trovata</td></tr>)}
                                         {filteredListe.map((l) => {
                                             const pct = l.totale > 0 ? Math.round((l.lavorate / l.totale) * 100) : 0;
                                             return (
@@ -2394,6 +2395,26 @@ function CallerPageInner() {
                                                             </div>
                                                         </div>
                                                     </td>
+                                                    {/* CANCELLA LISTA (Luca 12/08: «magari abbiamo fatto delle prove»):
+                                                        via la lista E le pratiche importate da lei (lista_origine) */}
+                                                    {isDirector && (
+                                                        <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                            <button title="Cancella la lista e le pratiche importate da lei"
+                                                                onClick={async () => {
+                                                                    const { count } = await supabase.from("calls").select("id", { count: "exact", head: true }).eq("lista_origine", l.nome);
+                                                                    const n = count || 0;
+                                                                    if (!window.confirm(`Cancello la lista «${l.nome}»${n ? ` e le sue ${n} pratiche importate` : " (nessuna pratica agganciata)"}? Operazione definitiva.`)) return;
+                                                                    if (n) {
+                                                                        const { error: eC } = await supabase.from("calls").delete().eq("lista_origine", l.nome);
+                                                                        if (eC) { alert("Pratiche non cancellate: " + eC.message); return; }
+                                                                    }
+                                                                    const { error: eL } = await supabase.from("liste").delete().eq("id", l.id);
+                                                                    if (eL) { alert("Lista non cancellata: " + eL.message); return; }
+                                                                    await Promise.all([fetchListe(), fetchCalls()]);
+                                                                }}
+                                                                className="text-slate-500 hover:text-rose-400 transition-colors"><Trash2 size={15} /></button>
+                                                        </td>
+                                                    )}
                                                 </tr>
                                             );
                                         })}

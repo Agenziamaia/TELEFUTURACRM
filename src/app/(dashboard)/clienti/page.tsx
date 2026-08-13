@@ -364,7 +364,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
     // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
     // sullo storico chiamate della scheda).
-    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; appuntamenti?: ApptTml[] };
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; docsLabel?: string; appuntamenti?: ApptTml[] };
     const isMarg = (b?: string | null) => /marginal|extra/i.test(b || "");
 
     // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
@@ -379,9 +379,13 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // in negozio (Luca 04/08) — si CONTANO dentro la voce della visita invece
     // di comparire come evento a sé; restano voci autonome solo i caricamenti
     // nei giorni SENZA vendite (es. integrazione documenti a distanza).
+    // I documenti del RITIRO usato (Francesco/Luca 12/08) vivono invece
+    // dentro la voce «Ritirato usato»: fuori sia dalle visite sia dalle voci sciolte.
+    const docDiRitiro = (d: DocRiga) => (d.file_type || "").toLowerCase() === "dichiarazione_usato" || (d.file_name || "").startsWith("Documento identità — ritiro");
     const giorniVisita = new Set([...gruppiContratti.keys()].map((k) => k.split("|")[0]));
     const docsPerGiorno = new Map<string, number>();
     docs.forEach((d) => {
+        if (docDiRitiro(d)) return;
         const g = String(d.created_at || "").slice(0, 10);
         if (g && giorniVisita.has(g)) docsPerGiorno.set(g, (docsPerGiorno.get(g) || 0) + 1);
     });
@@ -437,17 +441,24 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const timeline: VoceTimeline[] = [
         ...vociContratti,
         ...vociChiamate,
-        // ritiri usato (Francesco 12/08): l'acquisizione si vede in timeline
-        ...usatiCliente.filter((u) => u.purchase_date).map((u) => ({
-            key: "us" + u.id, when: String(u.purchase_date),
-            color: "var(--tf-34d399)", icon: "♻️",
-            title: `Ritirato usato — ${u.model || "dispositivo"}`,
-            desc: [u.imei ? `IMEI ${u.imei}` : null, u.purchase_price != null ? `${Number(u.purchase_price).toLocaleString("it-IT")} €` : null, u.store].filter(Boolean).join(" · "),
-            stato: null as string | null,
-        })),
+        // ritiri usato (Francesco 12/08): l'acquisizione si vede in timeline,
+        // e i suoi documenti (dichiarazione + identità) stanno DENTRO la voce
+        ...usatiCliente.filter((u) => u.purchase_date).map((u) => {
+            const docsRitiro = u.model ? docs.filter((d) => docDiRitiro(d) && (d.file_name || "").includes(u.model!)).length : 0;
+            return {
+                key: "us" + u.id, when: String(u.purchase_date),
+                color: "var(--tf-34d399)", icon: "♻️",
+                title: `Ritirato usato — ${u.model || "dispositivo"}`,
+                desc: [u.imei ? `IMEI ${u.imei}` : null, u.purchase_price != null ? `${Number(u.purchase_price).toLocaleString("it-IT")} €` : null, u.store].filter(Boolean).join(" · ") + (docsRitiro ? ` · 📎 ${docsRitiro}` : ""),
+                stato: null as string | null,
+                docsN: docsRitiro || undefined, docsLabel: "del ritiro",
+            };
+        }),
         // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
-        // la voce del negozio (esperienza unica del cliente, Luca 04/08)
+        // la voce del negozio (esperienza unica del cliente, Luca 04/08);
+        // i documenti del RITIRO usato vivono dentro la voce del ritiro (12/08)
         ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10))
+            && !docDiRitiro(d)
             // smarriti/archiviati fuori dalla timeline per i non-admin (MOD-14)
             && (isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly))
             .map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
@@ -600,7 +611,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             <div className="space-y-6">
                                 {timeline.map(ev => {
                                     // MOD-21: espandibile anche la CHIAMATA con appuntamento dentro
-                                    const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length);
+                                    // e il RITIRO USATO coi suoi documenti (12/08)
+                                    const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length) || (ev.docsN || 0) > 0;
                                     const cliccabile = espandibile || !!ev.apreStorico;
                                     const aperta = espandibile && !!gruppiAperti[ev.key];
                                     return (
@@ -620,7 +632,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                     <div className="flex items-center justify-between gap-2">
                                                         <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5 min-w-0">
                                                             <span className="truncate">{ev.title}</span>
-                                                            {(ev.contratti || (ev.appuntamenti && ev.appuntamenti.length)) && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                            {espandibile && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
                                                             {ev.apreStorico && !(ev.appuntamenti && ev.appuntamenti.length) && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
                                                         </h4>
                                                         <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
@@ -683,7 +695,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                             title={vedeAllegati ? "Apri i documenti del cliente" : undefined}
                                                             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 text-left transition-all ${vedeAllegati ? "hover:bg-white/[0.05] hover:border-amber-500/30" : "cursor-default"}`}>
                                                             <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">📎</span>
-                                                            <span className="flex-1 text-xs font-semibold text-slate-300">{ev.docsN === 1 ? "1 documento caricato" : `${ev.docsN} documenti caricati`} durante la visita</span>
+                                                            <span className="flex-1 text-xs font-semibold text-slate-300">{ev.docsN === 1 ? "1 documento caricato" : `${ev.docsN} documenti caricati`} {ev.docsLabel || "durante la visita"}</span>
                                                             {vedeAllegati && <ExternalLink className="w-3 h-3 text-slate-600 shrink-0" />}
                                                         </button>
                                                     )}

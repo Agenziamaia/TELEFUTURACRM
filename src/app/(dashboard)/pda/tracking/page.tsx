@@ -1453,7 +1453,17 @@ export default function TrackingPdaPage() {
       // Mobile — Luca 03/08 —, macro fuori perimetro — Luca 29/07 —, mobile
       // consumer senza MNP ne' finanziamento — segnalazione 91) vivono la'.
       const lavorabili = (list as RawRow[]).filter((r) => vaInTracking(r));
+      // MONDO AGENZIA (Luca 12/08): gli agenti associati a un back office
+      // (app_users.back_office_id) sono in carico a LUI — le loro pratiche
+      // entrano nella sua coda (visibilità e responsabilità malus al BO,
+      // mai all'agente). Pannello: Amministrazione → Ruoli, select "BO".
+      const mieiAgenti = new Set<string>();
+      if (!seesAll && user?.id) {
+        const { data: ag } = await supabase.from("app_users").select("full_name").eq("back_office_id", user.id).eq("active", true);
+        (ag ?? []).forEach((a: { full_name: string | null }) => { if (a.full_name) mieiAgenti.add(a.full_name); });
+      }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
+        if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
         if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
         return (!!r.venditore && !!user?.name && r.venditore === user.name)
             || (!!r.delegated_to && r.delegated_to === user?.id);

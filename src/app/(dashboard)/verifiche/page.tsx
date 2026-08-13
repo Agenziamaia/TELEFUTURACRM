@@ -87,7 +87,8 @@ const fmtQuando = (s: string | null) => {
 
 // MOD-39/40: form "nuova task / proponi modifica" — componente TOP-LEVEL con
 // stato suo (mai annidato nel componente pagina: perderebbe il focus).
-function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto: string; bottone: string; onInvia: (tit: string, det: string, allegati: Allegato[]) => Promise<void> }) {
+function FormNuova({ titolo, sotto, bottone, onInvia, conLink }: { titolo: string; sotto: string; bottone: string; onInvia: (tit: string, det: string, allegati: Allegato[], link?: string) => Promise<void>; conLink?: boolean }) {
+    const [link, setLink] = useState("");
     const [aperto, setAperto] = useState(false);
     const [tit, setTit] = useState("");
     const [det, setDet] = useState("");
@@ -96,9 +97,9 @@ function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto:
     const invia = async () => {
         if (!tit.trim() || inCorso) return;
         setInCorso(true);
-        await onInvia(tit.trim(), det.trim(), alleg);
+        await onInvia(tit.trim(), det.trim(), alleg, link.trim() || undefined);
         setInCorso(false);
-        setTit(""); setDet(""); setAlleg([]); setAperto(false);
+        setTit(""); setDet(""); setAlleg([]); setLink(""); setAperto(false);
     };
     if (!aperto) return (
         <button onClick={() => setAperto(true)}
@@ -115,6 +116,8 @@ function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto:
             <textarea value={det} onChange={(e) => setDet(e.target.value)} rows={3}
                 placeholder="Descrivi bene cosa serve (più dettagli dai, meglio viene): pagina interessata, comportamento atteso, esempi…"
                 className="glass-input w-full text-sm !h-auto py-2 resize-y" />
+            {conLink && <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Link alla sezione (es. /gare, /clienti) — così sulla card c'è il bottone Apri"
+                className="glass-input w-full text-sm" />}
             <AllegatiPicker value={alleg} onChange={setAlleg} />
             <div className="flex gap-2">
                 <button onClick={invia} disabled={inCorso || !tit.trim()}
@@ -144,6 +147,7 @@ function CardVoce({ v, children }: { v: Voce; children?: React.ReactNode }) {
                 </div>
                 {v.link && (
                     <a href={v.link} target={v.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer"
+                        onClick={() => { if (!v.link!.startsWith("http")) try { sessionStorage.setItem("verifica_spettro", JSON.stringify({ titolo: v.titolo, dettaglio: v.dettaglio })); } catch { } }}
                         className="shrink-0 inline-flex items-center gap-1 text-xs font-bold text-sky-300 hover:text-sky-200 px-2.5 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30">
                         Apri <ExternalLink className="w-3 h-3" />
                     </a>
@@ -265,8 +269,8 @@ export default function VerifichePage() {
     };
     // MOD-39: task dell'ADMIN → dritta in carico a Claude ('da_sistemare')
     const oggiSessione = new Date().toLocaleDateString("it-IT");
-    const creaTaskAdmin = async (tit: string, det: string, alleg: Allegato[]) => {
-        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", sessione: oggiSessione, allegati: alleg });
+    const creaTaskAdmin = async (tit: string, det: string, alleg: Allegato[], link?: string) => {
+        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", sessione: oggiSessione, allegati: alleg, link: (link || "").trim() || null });
         carica();
     };
     // MOD-40: PROPOSTA del delegato → passa da Luca ('segnalazione_delegato')
@@ -338,7 +342,7 @@ export default function VerifichePage() {
                 {isAdmin ? (
                     <FormNuova titolo="Nuova task per Claude"
                         sotto="La scrivi qui in qualsiasi momento (anche da telefono): Claude la legge alla prossima sessione, la svolge e la sposta tra gli update 'da verificare' con la nota di cosa ha fatto."
-                        bottone="Aggiungi la task" onInvia={creaTaskAdmin} />
+                        bottone="Aggiungi la task" onInvia={creaTaskAdmin} conLink />
                 ) : (
                     <FormNuova titolo="Proponi una modifica"
                         sotto="La proposta arriva all'amministrazione: se la conferma, viene lavorata da Claude (resta firmata col tuo nome)."
