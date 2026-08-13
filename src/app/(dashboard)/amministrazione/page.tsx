@@ -838,12 +838,27 @@ function UserForm({
     // OB/agenzia si sceglie il back office responsabile — le pratiche in
     // Tracking PDA vanno nella sua coda; vuoto = restano in carico all'agente.
     const ruoloAgenzia = areaOf(f.role || "") === "ob";
+    const ruoloBO = /back_office|amministrativo/.test(f.role || "");
     const [boCandidati, setBoCandidati] = useState<{ id: string; full_name: string }[]>([]);
     useEffect(() => {
         supabase.from("app_users").select("id, full_name, role").eq("active", true).order("full_name")
             .then(({ data }) => setBoCandidati(((data ?? []) as { id: string; full_name: string; role: string }[])
                 .filter((u) => /back_office|amministrativo/.test(u.role))));
     }, []);
+    // Vista SPECULARE sul profilo del BO (risposta Luca 13/08): l'elenco degli
+    // agenti in carico a questa persona, annullabili con la ✕
+    const [agentiInCarico, setAgentiInCarico] = useState<{ id: string; full_name: string }[]>([]);
+    useEffect(() => {
+        if (!editing?.id) { setAgentiInCarico([]); return; }
+        supabase.from("app_users").select("id, full_name").eq("back_office_id", editing.id).eq("active", true).order("full_name")
+            .then(({ data }) => setAgentiInCarico((data ?? []) as { id: string; full_name: string }[]));
+    }, [editing?.id]);
+    const sganciaAgente = async (a: { id: string; full_name: string }) => {
+        if (!window.confirm(`Tolgo ${a.full_name} dal carico di questo back office? Le sue pratiche tornano in carico a lui.`)) return;
+        const { error } = await supabase.from("app_users").update({ back_office_id: null }).eq("id", a.id);
+        if (error) { alert("Non annullata: " + error.message); return; }
+        setAgentiInCarico((prev) => prev.filter((x) => x.id !== a.id));
+    };
 
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
 
@@ -1093,6 +1108,23 @@ function UserForm({
                                 className="w-full"
                             />
                             <div className="text-[11px] text-slate-500 mt-1">Le pratiche di questo agente in Tracking PDA entrano nella coda del back office scelto (badge 🏢 in riga). Vuoto = restano in carico all&apos;agente.</div>
+                        </Field>
+                    )}
+
+                    {/* Vista SPECULARE (Luca 13/08): sul profilo del back office si
+                        vedono gli agenti in carico e si annullano con la ✕ */}
+                    {ruoloBO && !!editing && agentiInCarico.length > 0 && (
+                        <Field label="🏢 Agenti in carico a questa persona">
+                            <div className="flex flex-wrap gap-1.5">
+                                {agentiInCarico.map((a) => (
+                                    <span key={a.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-indigo-500/10 border-indigo-500/30 text-indigo-200">
+                                        {a.full_name}
+                                        <button type="button" onClick={() => sganciaAgente(a)} title={`Annulla l'associazione: le pratiche tornano a ${a.full_name}`}
+                                            className="text-indigo-300/70 hover:text-rose-300 font-bold leading-none">✕</button>
+                                    </span>
+                                ))}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1">La ✕ annulla subito l&apos;associazione: le pratiche in Tracking PDA tornano in carico all&apos;agente.</div>
                         </Field>
                     )}
 

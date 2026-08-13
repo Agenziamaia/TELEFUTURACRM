@@ -13,7 +13,7 @@ import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbError, notify } from "../../amministrazione/_views/toast";
 
-type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null };
+type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null; soglie_pct?: number | null };
 type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null };
 type Riga = {
     id: string; pista: string | null; nome: string;
@@ -53,11 +53,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // in sola lettura — l'editing vive sul lato azienda.
     const [derivato, setDerivato] = useState<{ piste: Pista[]; soglie: Soglia[]; righe: Riga[] } | null>(null);
     const [nuovaRigaPer, setNuovaRigaPer] = useState<string | null>(null);   // chiave pista | "__gettoni"
+    // % SCOSTAMENTO SOGLIE (Luca 13/08, VF): pista ragazzi con soglie_pct =
+    // le soglie si derivano dall'azienda × pct (arrotondate) e qui si vedono
+    // in sola lettura; il riferimento azienda serve per l'anteprima
+    const [aziendaRef, setAziendaRef] = useState<{ piste: { chiave: string; ordine: number }[]; soglie: Soglia[] } | null>(null);
 
     const load = useCallback(async () => {
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
         const [p, s, r, az] = await Promise.all([
-            supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
+            supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
             supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
@@ -67,24 +71,42 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         // ragazzi senza tabellare proprio + azienda presente → carica e SCALA
         if (lato === "ragazzi" && !(p.data || []).length && (az.count || 0) > 0) {
             const [ap, as, ar] = await Promise.all([
-                supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
+                supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
                 supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
             ]);
-            const pisteAz = ((ap.data || []) as Pista[]);
+            // PISTE SOLO AZIENDA (Luca 13/08: gara business/assicurazioni W3
+            // «di rete, resta solo all'azienda»): perc_ragazzi = 0 le esclude
+            // dal derivato — qui come in commissioning.caricaTabellare
+            const pisteAz = ((ap.data || []) as Pista[]).filter(x => Number(x.perc_ragazzi ?? 100) !== 0);
+            const chiaviAz = new Set(pisteAz.map(x => x.chiave));
             const percDi = new Map(pisteAz.map(x => [x.chiave, x.perc_ragazzi == null ? 100 : Number(x.perc_ragazzi)]));
             const scala = (v: number | null, pista: string | null) =>
                 v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
             setDerivato({
                 piste: pisteAz,
-                soglie: ((as.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
-                righe: ((ar.data || []) as Riga[]).map(x => ({
+                soglie: ((as.data || []) as Soglia[]).filter(x => chiaviAz.has(x.pista)).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
+                righe: ((ar.data || []) as Riga[]).filter(x => !x.pista || chiaviAz.has(x.pista)).map(x => ({
                     ...x, punti: Number(x.punti || 0),
                     pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
                     pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number),
                 })),
             });
-        } else setDerivato(null);
+        } else {
+            setDerivato(null);
+            // riferimento azienda per le SOGLIE DERIVATE (% soglie da azienda,
+            // Luca 13/08): serve al pannello ragazzi CON tabellare proprio
+            if (lato === "ragazzi" && (az.count || 0) > 0) {
+                const [ap2, as2] = await Promise.all([
+                    supabase.from("pay_piste").select("chiave, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
+                    supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
+                ]);
+                setAziendaRef({
+                    piste: ((ap2.data || []) as { chiave: string; ordine: number }[]),
+                    soglie: ((as2.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
+                });
+            } else setAziendaRef(null);
+        }
         if (dbError("Caricamento tabellare", p.error || s.error || r.error)) { setCarico(false); return; }
         setPiste((p.data || []) as Pista[]);
         setSoglie(((s.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })));
@@ -140,6 +162,30 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         if (dbError("Salvataggio %", error)) return;
         notify("% ai ragazzi salvata ✓", "ok"); load();
     };
+    // % SOGLIE da azienda (lato ragazzi): vuota = manuali; piena = derivate
+    const [pctDraft, setPctDraft] = useState<Record<string, string>>({});
+    const salvaSogliePct = async (p: Pista) => {
+        const v = pctDraft[p.id];
+        const n = v === "" || v == null ? null : Number(String(v).replace(",", "."));
+        const { error } = await supabase.from("pay_piste").update({ soglie_pct: n }).eq("id", p.id);
+        if (dbError("Salvataggio % soglie", error)) return;
+        notify(n == null ? "Soglie tornate manuali ✓" : "% soglie agganciata all'azienda ✓", "ok"); load();
+    };
+    const soglieDerivateDi = (p: Pista): Soglia[] | null => {
+        if (p.soglie_pct == null || !aziendaRef) return null;
+        const azOrd = [...aziendaRef.piste].sort((a, b) => a.ordine - b.ordine);
+        const ragOrd = [...piste].sort((a, b) => a.ordine - b.ordine);
+        const azKey = aziendaRef.piste.some(x => x.chiave === p.chiave)
+            ? p.chiave
+            : azOrd[ragOrd.findIndex(x => x.chiave === p.chiave)]?.chiave;
+        if (!azKey) return null;
+        const azS = aziendaRef.soglie.filter(s => s.pista === azKey).sort((a, b) => a.tier - b.tier);
+        if (!azS.length) return null;
+        const k = Number(p.soglie_pct) / 100;
+        const out = azS.map((s, i) => ({ pista: p.chiave, tier: i + 1, soglia_da: Math.round(s.soglia_da * k), soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k) }));
+        for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
+        return out;
+    };
 
     // ── RIGHE
     const dirty = (r: Riga) => orig.get(r.id) !== JSON.stringify(r);
@@ -176,7 +222,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         if (!fonteCopia) { notify("Non c'è ancora nessun tabellare da copiare per questo operatore"); return; }
         const prev = `${fonteCopia}-01`;
         const [p, s, r] = await Promise.all([
-            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", ctx).eq("month", prev).eq("lato", lato),
+            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
@@ -494,11 +540,20 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 </div>
                 {piste.map(p => {
                     const scala = soglieDi(p.chiave);
+                    // SOGLIE DERIVATE (Luca 13/08): con la % impostata i valori
+                    // arrivano dall'azienda e qui sono in sola lettura
+                    const der = lato === "ragazzi" ? soglieDerivateDi(p) : null;
+                    const mostra = der ?? scala;
                     return (
                         <div key={p.id} className="mb-4 last:mb-0">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-semibold text-white min-w-[130px]">{p.nome} <span className="text-slate-500 font-normal">({p.um})</span></span>
-                                {scala.map((s, i) => (
+                                {der ? der.map((s, i) => (
+                                    <span key={s.tier} className="text-[12px] text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2 py-1"
+                                        title={`Derivata: soglia azienda × ${p.soglie_pct}%`}>
+                                        S{i + 1} da <b className="text-white">{s.soglia_da}</b>
+                                    </span>
+                                )) : scala.map((s, i) => (
                                     <label key={s.tier} className="text-[11px] text-slate-400">S{i + 1} da
                                         <input value={s.soglia_da} onChange={e => setDa(p.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
                                     </label>
@@ -512,14 +567,27 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                             <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
                                     </label>
                                 )}
-                                <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
-                                <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
-                                {soglieDirty.has(p.chiave) && (
-                                    <button onClick={() => salvaSoglie(p.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
+                                {lato === "ragazzi" && aziendaEsiste && (
+                                    <label className="text-[11px] text-sky-300/90 ml-2" title="Scostamento dalle soglie azienda: es. 135 = azienda × 1,35 arrotondato. Cambiano le soglie azienda (nuova lettera) → queste si aggiornano da sole. Vuota = soglie manuali.">
+                                        🔗 % soglie da azienda
+                                        <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
+                                            onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                            className={inputCls + " ml-1 w-16"} placeholder="manuali" />
+                                        {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
+                                            <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                    </label>
                                 )}
+                                {!der && <>
+                                    <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
+                                    <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
+                                    {soglieDirty.has(p.chiave) && (
+                                        <button onClick={() => salvaSoglie(p.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
+                                    )}
+                                </>}
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1 ml-[130px]">
-                                {scala.map((s, i) => `S${i + 1}: ${s.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}
+                                {mostra.map((s, i) => `S${i + 1}: ${s.soglia_da}${i < mostra.length - 1 ? `–${mostra[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}
+                                {der && <span className="text-sky-400/80"> — derivate dall&apos;azienda × {p.soglie_pct}%</span>}
                             </div>
                         </div>
                     );

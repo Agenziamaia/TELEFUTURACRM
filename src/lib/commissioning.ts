@@ -23,7 +23,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 
-export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null };
+export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null; soglie_pct?: number | null };
 export type PaySoglia = { pista: string; tier: number; soglia_da: number; soglia_a: number | null };
 export type PayRiga = {
     id: string; pista: string | null; nome: string;
@@ -80,7 +80,7 @@ export function estremiMese(monthISO: string): { primo: string; ultimo: string }
 
 async function caricaTabellareLato(brand: string, monthISO: string, lato: string): Promise<Tabellare | null> {
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
-        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
+        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
         supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
@@ -117,6 +117,36 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
         caricaMappaSoglie(brand, monthISO),
     ]);
     if (!azienda) return ragazzi;
+    // % SCOSTAMENTO SOGLIE (Luca 13/08, VF): la pista ragazzi con soglie_pct
+    // DERIVA le sue soglie da quelle azienda × pct/100 (arrotondate) — nuova
+    // lettera = si toccano solo le soglie azienda e i ragazzi seguono da soli.
+    // Appaiamento per chiave; se la chiave non esiste sull'azienda si appaia
+    // per POSIZIONE nell'ordine piste (caso vas ↔ soluzioni_digitali).
+    const applicaSogliePct = (rag: Tabellare, az: Tabellare): PaySoglia[] => {
+        const conPct = rag.piste.filter(p => p.soglie_pct != null);
+        if (!conPct.length) return rag.soglie;
+        const azOrd = [...az.piste].sort((a, b) => a.ordine - b.ordine);
+        const ragOrd = [...rag.piste].sort((a, b) => a.ordine - b.ordine);
+        let out = rag.soglie;
+        for (const p of conPct) {
+            const azKey = az.piste.some(x => x.chiave === p.chiave)
+                ? p.chiave
+                : azOrd[ragOrd.findIndex(x => x.chiave === p.chiave)]?.chiave;
+            if (!azKey) continue;
+            const azS = az.soglie.filter(s => s.pista === azKey).sort((a, b) => a.tier - b.tier);
+            if (!azS.length) continue;
+            const k = Number(p.soglie_pct) / 100;
+            const derivate: PaySoglia[] = azS.map((s, i) => ({
+                pista: p.chiave, tier: i + 1,
+                soglia_da: Math.round(s.soglia_da * k),
+                soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k),
+            }));
+            // il fino-a si riallinea a catena (l'arrotondamento non deve aprire buchi)
+            for (let i = 0; i < derivate.length - 1; i++) derivate[i].soglia_a = derivate[i + 1].soglia_da - 1;
+            out = [...out.filter(s => s.pista !== p.chiave), ...derivate];
+        }
+        return out;
+    };
     const percDi = new Map(azienda.piste.map(p => [p.chiave, p.perc_ragazzi == null ? 100 : Number(p.perc_ragazzi)]));
     const scala = (v: number | null, pista: string | null) =>
         v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
@@ -173,14 +203,15 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     // "scoperture" diventano la lista vera di ciò che manca su ogni brand.
     const chiaviRag = new Set(ragazzi.piste.map(p => p.chiave));
     const pisteApp = azienda.piste.filter(p => !chiaviRag.has(p.chiave) && !soloAzienda(p));
-    if (!pisteApp.length) return ragazzi;
+    const soglieRagEff = applicaSogliePct(ragazzi, azienda);
+    if (!pisteApp.length) return { ...ragazzi, soglie: soglieRagEff };
     const chiaviApp = new Set(pisteApp.map(p => p.chiave));
     // le soglie ragazzi (anche manuali, sulle piste derivate) vincono sempre
-    const pisteSoglieRag = new Set(ragazzi.soglie.map(s => s.pista));
+    const pisteSoglieRag = new Set(soglieRagEff.map(s => s.pista));
     return {
         ...ragazzi, derivato: true,
         piste: [...ragazzi.piste, ...pisteApp],
-        soglie: [...ragazzi.soglie, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista) && !pisteSoglieRag.has(sg.pista))],
+        soglie: [...soglieRagEff, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista) && !pisteSoglieRag.has(sg.pista))],
         righe: [...ragazzi.righe, ...azienda.righe.filter(r => r.pista && chiaviApp.has(r.pista)).map(deriva)],
     };
 }
