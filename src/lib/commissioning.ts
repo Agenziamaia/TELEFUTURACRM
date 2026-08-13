@@ -117,33 +117,39 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
         caricaMappaSoglie(brand, monthISO),
     ]);
     if (!azienda) return ragazzi;
-    // % SCOSTAMENTO SOGLIE (Luca 13/08, VF): la pista ragazzi con soglie_pct
-    // DERIVA le sue soglie da quelle azienda × pct/100 (arrotondate) — nuova
-    // lettera = si toccano solo le soglie azienda e i ragazzi seguono da soli.
-    // Appaiamento per chiave; se la chiave non esiste sull'azienda si appaia
-    // per POSIZIONE nell'ordine piste (caso vas ↔ soluzioni_digitali).
+    // % SCOSTAMENTO SOGLIE (Luca 13/08, unificata sul lato AZIENDA come le
+    // altre %): la pista AZIENDA con soglie_pct detta le soglie dei ragazzi —
+    // azienda × pct/100 arrotondato. Nuova lettera = si toccano solo le soglie
+    // azienda e i ragazzi seguono da soli. La pista ragazzi corrispondente si
+    // trova per chiave, o per POSIZIONE se il nome differisce (vas ↔
+    // soluzioni_digitali). Vale anche per la % lasciata sul lato ragazzi
+    // (retrocompatibilità: vince l'azienda se entrambe presenti).
+    const scalaSoglie = (azS: PaySoglia[], pct: number, pistaOut: string): PaySoglia[] => {
+        const k = pct / 100;
+        const out: PaySoglia[] = [...azS].sort((a, b) => a.tier - b.tier).map((s, i) => ({
+            pista: pistaOut, tier: i + 1,
+            soglia_da: Math.round(s.soglia_da * k),
+            soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k),
+        }));
+        // il fino-a si riallinea a catena (l'arrotondamento non deve aprire buchi)
+        for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
+        return out;
+    };
     const applicaSogliePct = (rag: Tabellare, az: Tabellare): PaySoglia[] => {
-        const conPct = rag.piste.filter(p => p.soglie_pct != null);
-        if (!conPct.length) return rag.soglie;
         const azOrd = [...az.piste].sort((a, b) => a.ordine - b.ordine);
         const ragOrd = [...rag.piste].sort((a, b) => a.ordine - b.ordine);
         let out = rag.soglie;
-        for (const p of conPct) {
-            const azKey = az.piste.some(x => x.chiave === p.chiave)
-                ? p.chiave
-                : azOrd[ragOrd.findIndex(x => x.chiave === p.chiave)]?.chiave;
-            if (!azKey) continue;
-            const azS = az.soglie.filter(s => s.pista === azKey).sort((a, b) => a.tier - b.tier);
+        for (const pAz of az.piste) {
+            const ragKey = rag.piste.some(x => x.chiave === pAz.chiave)
+                ? pAz.chiave
+                : ragOrd[azOrd.findIndex(x => x.chiave === pAz.chiave)]?.chiave;
+            if (!ragKey) continue;
+            const pRag = rag.piste.find(x => x.chiave === ragKey);
+            const pct = pAz.soglie_pct ?? pRag?.soglie_pct;   // azienda vince, ragazzi = retrocompat
+            if (pct == null) continue;
+            const azS = az.soglie.filter(s => s.pista === pAz.chiave);
             if (!azS.length) continue;
-            const k = Number(p.soglie_pct) / 100;
-            const derivate: PaySoglia[] = azS.map((s, i) => ({
-                pista: p.chiave, tier: i + 1,
-                soglia_da: Math.round(s.soglia_da * k),
-                soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k),
-            }));
-            // il fino-a si riallinea a catena (l'arrotondamento non deve aprire buchi)
-            for (let i = 0; i < derivate.length - 1; i++) derivate[i].soglia_a = derivate[i + 1].soglia_da - 1;
-            out = [...out.filter(s => s.pista !== p.chiave), ...derivate];
+            out = [...out.filter(s => s.pista !== ragKey), ...scalaSoglie(azS, Number(pct), ragKey)];
         }
         return out;
     };
@@ -190,10 +196,16 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
         const manuali = new Set(soglieRag.map(s => s.pista));
         const pisteDer = azienda.piste.filter(p => !soloAzienda(p));
         const chiaviDer = new Set(pisteDer.map(p => p.chiave));
+        // % soglie (lato azienda): anche nel derivato pieno le soglie mostrate
+        // ai ragazzi sono azienda × pct dove impostata
+        const soglieDer = pisteDer.flatMap(p => {
+            const azS = azienda.soglie.filter(s => s.pista === p.chiave);
+            return p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave);
+        });
         return {
             ...azienda, derivato: true,
             piste: pisteDer,
-            soglie: [...azienda.soglie.filter(s => chiaviDer.has(s.pista) && !manuali.has(s.pista)), ...soglieRag],
+            soglie: [...soglieDer.filter(s => !manuali.has(s.pista)), ...soglieRag],
             righe: [...azienda.righe.filter(r => !r.pista || chiaviDer.has(r.pista)).map(deriva), ...orfani],
         };
     }
@@ -206,12 +218,17 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     const soglieRagEff = applicaSogliePct(ragazzi, azienda);
     if (!pisteApp.length) return { ...ragazzi, soglie: soglieRagEff };
     const chiaviApp = new Set(pisteApp.map(p => p.chiave));
-    // le soglie ragazzi (anche manuali, sulle piste derivate) vincono sempre
+    // le soglie ragazzi (anche manuali, sulle piste derivate) vincono sempre;
+    // le piste azienda appese portano le loro soglie × pct dove impostata
     const pisteSoglieRag = new Set(soglieRagEff.map(s => s.pista));
+    const soglieApp = pisteApp.flatMap(p => {
+        const azS = azienda.soglie.filter(s => s.pista === p.chiave);
+        return p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave);
+    });
     return {
         ...ragazzi, derivato: true,
         piste: [...ragazzi.piste, ...pisteApp],
-        soglie: [...soglieRagEff, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista) && !pisteSoglieRag.has(sg.pista))],
+        soglie: [...soglieRagEff, ...soglieApp.filter(sg => !pisteSoglieRag.has(sg.pista))],
         righe: [...ragazzi.righe, ...azienda.righe.filter(r => r.pista && chiaviApp.has(r.pista)).map(deriva)],
     };
 }

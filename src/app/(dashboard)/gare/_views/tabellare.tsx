@@ -56,7 +56,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // % SCOSTAMENTO SOGLIE (Luca 13/08, VF): pista ragazzi con soglie_pct =
     // le soglie si derivano dall'azienda × pct (arrotondate) e qui si vedono
     // in sola lettura; il riferimento azienda serve per l'anteprima
-    const [aziendaRef, setAziendaRef] = useState<{ piste: { chiave: string; ordine: number }[]; soglie: Soglia[] } | null>(null);
+    const [aziendaRef, setAziendaRef] = useState<{ piste: { chiave: string; ordine: number; soglie_pct: number | null }[]; soglie: Soglia[] } | null>(null);
 
     const load = useCallback(async () => {
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
@@ -83,9 +83,23 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             const percDi = new Map(pisteAz.map(x => [x.chiave, x.perc_ragazzi == null ? 100 : Number(x.perc_ragazzi)]));
             const scala = (v: number | null, pista: string | null) =>
                 v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
+            // % soglie ai ragazzi (Luca 13/08): nel derivato le soglie mostrate
+            // sono azienda × pct dove impostata (arrotondate, fino-a a catena)
+            const pctDi = new Map(pisteAz.map(x => [x.chiave, x.soglie_pct == null ? null : Number(x.soglie_pct)]));
+            const soglieAzScalate = pisteAz.flatMap(px => {
+                const azS = ((as.data || []) as Soglia[]).filter(x => x.pista === px.chiave)
+                    .map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) }))
+                    .sort((a, b) => a.tier - b.tier);
+                const pct = pctDi.get(px.chiave);
+                if (pct == null) return azS;
+                const k = pct / 100;
+                const out = azS.map((s, i) => ({ ...s, tier: i + 1, soglia_da: Math.round(s.soglia_da * k), soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k) }));
+                for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
+                return out;
+            });
             setDerivato({
                 piste: pisteAz,
-                soglie: ((as.data || []) as Soglia[]).filter(x => chiaviAz.has(x.pista)).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
+                soglie: soglieAzScalate,
                 righe: ((ar.data || []) as Riga[]).filter(x => !x.pista || chiaviAz.has(x.pista)).map(x => ({
                     ...x, punti: Number(x.punti || 0),
                     pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
@@ -98,11 +112,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             // Luca 13/08): serve al pannello ragazzi CON tabellare proprio
             if (lato === "ragazzi" && (az.count || 0) > 0) {
                 const [ap2, as2] = await Promise.all([
-                    supabase.from("pay_piste").select("chiave, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
+                    supabase.from("pay_piste").select("chiave, ordine, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                     supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
                 ]);
                 setAziendaRef({
-                    piste: ((ap2.data || []) as { chiave: string; ordine: number }[]),
+                    piste: ((ap2.data || []) as { chiave: string; ordine: number; soglie_pct: number | null }[]),
                     soglie: ((as2.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
                 });
             } else setAziendaRef(null);
@@ -162,29 +176,32 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         if (dbError("Salvataggio %", error)) return;
         notify("% ai ragazzi salvata ✓", "ok"); load();
     };
-    // % SOGLIE da azienda (lato ragazzi): vuota = manuali; piena = derivate
+    // % SOGLIE ai ragazzi (Luca 13/08, UNIFICATA sul lato azienda come le
+    // altre %): si imposta sulla pista AZIENDA; vuota = ragazzi manuali
     const [pctDraft, setPctDraft] = useState<Record<string, string>>({});
     const salvaSogliePct = async (p: Pista) => {
         const v = pctDraft[p.id];
         const n = v === "" || v == null ? null : Number(String(v).replace(",", "."));
         const { error } = await supabase.from("pay_piste").update({ soglie_pct: n }).eq("id", p.id);
         if (dbError("Salvataggio % soglie", error)) return;
-        notify(n == null ? "Soglie tornate manuali ✓" : "% soglie agganciata all'azienda ✓", "ok"); load();
+        notify(n == null ? "Soglie ragazzi tornate manuali ✓" : "% soglie ai ragazzi salvata ✓", "ok"); load();
     };
-    const soglieDerivateDi = (p: Pista): Soglia[] | null => {
-        if (p.soglie_pct == null || !aziendaRef) return null;
+    // pista ragazzi → % e soglie dell'azienda corrispondente (per chiave o
+    // POSIZIONE, caso vas↔soluzioni_digitali); pct sul ragazzi = retrocompat
+    const soglieDerivateDi = (p: Pista): { scala: Soglia[]; pct: number } | null => {
+        if (!aziendaRef) return null;
         const azOrd = [...aziendaRef.piste].sort((a, b) => a.ordine - b.ordine);
         const ragOrd = [...piste].sort((a, b) => a.ordine - b.ordine);
-        const azKey = aziendaRef.piste.some(x => x.chiave === p.chiave)
-            ? p.chiave
-            : azOrd[ragOrd.findIndex(x => x.chiave === p.chiave)]?.chiave;
-        if (!azKey) return null;
-        const azS = aziendaRef.soglie.filter(s => s.pista === azKey).sort((a, b) => a.tier - b.tier);
+        const pAz = aziendaRef.piste.find(x => x.chiave === p.chiave)
+            ?? azOrd[ragOrd.findIndex(x => x.chiave === p.chiave)];
+        const pct = pAz?.soglie_pct ?? p.soglie_pct;
+        if (pct == null || !pAz) return null;
+        const azS = aziendaRef.soglie.filter(s => s.pista === pAz.chiave).sort((a, b) => a.tier - b.tier);
         if (!azS.length) return null;
-        const k = Number(p.soglie_pct) / 100;
+        const k = Number(pct) / 100;
         const out = azS.map((s, i) => ({ pista: p.chiave, tier: i + 1, soglia_da: Math.round(s.soglia_da * k), soglia_a: s.soglia_a == null ? null : Math.round(s.soglia_a * k) }));
         for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
-        return out;
+        return { scala: out, pct: Number(pct) };
     };
 
     // ── RIGHE
@@ -540,10 +557,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 </div>
                 {piste.map(p => {
                     const scala = soglieDi(p.chiave);
-                    // SOGLIE DERIVATE (Luca 13/08): con la % impostata i valori
-                    // arrivano dall'azienda e qui sono in sola lettura
+                    // SOGLIE DERIVATE (Luca 13/08, % unificata sul lato azienda):
+                    // con la % impostata sull'azienda i valori ragazzi arrivano
+                    // da lì e qui sono in sola lettura
                     const der = lato === "ragazzi" ? soglieDerivateDi(p) : null;
-                    const mostra = der ?? scala;
+                    const mostra = der?.scala ?? scala;
                     // PISTE SENZA SOGLIE fuori dalla card (Luca 13/08, W3 azienda:
                     // mobile/fisso vivono di soglie per PDV nel Target — la voce
                     // vuota con la % era solo rumore). Le righe pay restano sotto.
@@ -552,9 +570,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         <div key={p.id} className="mb-4 last:mb-0">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-semibold text-white min-w-[130px]">{p.nome} <span className="text-slate-500 font-normal">({p.um})</span></span>
-                                {der ? der.map((s, i) => (
+                                {der ? der.scala.map((s, i) => (
                                     <span key={s.tier} className="text-[12px] text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2 py-1"
-                                        title={`Derivata: soglia azienda × ${p.soglie_pct}%`}>
+                                        title={`Derivata: soglia azienda × ${der.pct}%`}>
                                         S{i + 1} da <b className="text-white">{s.soglia_da}</b>
                                     </span>
                                 )) : scala.map((s, i) => (
@@ -563,23 +581,25 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     </label>
                                 ))}
                                 {lato === "azienda" && (
-                                    <label className="text-[11px] text-amber-300/90 ml-2">% ai ragazzi
-                                        <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
-                                            onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                            className={inputCls + " ml-1 w-16"} placeholder="100" />
-                                        {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
-                                            <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                    </label>
-                                )}
-                                {lato === "ragazzi" && aziendaEsiste && (
-                                    <label className="text-[11px] text-sky-300/90 ml-2" title="Scostamento dalle soglie azienda: es. 135 = azienda × 1,35 arrotondato. Cambiano le soglie azienda (nuova lettera) → queste si aggiornano da sole. Vuota = soglie manuali.">
-                                        🔗 % soglie da azienda
-                                        <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
-                                            onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                            className={inputCls + " ml-1 w-16"} placeholder="manuali" />
-                                        {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
-                                            <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                    </label>
+                                    <>
+                                        <label className="text-[11px] text-amber-300/90 ml-2">% ai ragazzi
+                                            <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
+                                                onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                                className={inputCls + " ml-1 w-16"} placeholder="100" />
+                                            {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
+                                                <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                        </label>
+                                        {/* % soglie ai ragazzi (unificata QUI, Luca 13/08): come la
+                                            % dei pay, si governa dal lato azienda */}
+                                        <label className="text-[11px] text-sky-300/90 ml-2" title="Scostamento delle soglie ragazzi da queste: es. 135 = azienda × 1,35 arrotondato. Cambi queste soglie (nuova lettera) e i ragazzi si aggiornano da soli. Vuota = soglie ragazzi manuali.">
+                                            🔗 % soglie ai ragazzi
+                                            <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
+                                                onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                                className={inputCls + " ml-1 w-16"} placeholder="manuali" />
+                                            {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
+                                                <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                        </label>
+                                    </>
                                 )}
                                 {!der && <>
                                     <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
@@ -591,7 +611,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1 ml-[130px]">
                                 {mostra.map((s, i) => `S${i + 1}: ${s.soglia_da}${i < mostra.length - 1 ? `–${mostra[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}
-                                {der && <span className="text-sky-400/80"> — derivate dall&apos;azienda × {p.soglie_pct}%</span>}
+                                {der && <span className="text-sky-400/80"> — derivate dall&apos;azienda × {der.pct}%</span>}
                             </div>
                         </div>
                     );
