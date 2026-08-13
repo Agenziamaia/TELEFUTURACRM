@@ -37,7 +37,7 @@ import {
 import { RegoleTracking } from "./RegoleTracking";
 import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
-import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt } from "./malusStorico";
+import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus } from "./malusStorico";
 
 type RawRow = Record<string, unknown> & {
   clients?: Record<string, unknown> | null;
@@ -1493,6 +1493,9 @@ export default function TrackingPdaPage() {
           if (a.back_office_id === user?.id) mieiAgenti.add(a.full_name);
         });
         AGENTI_BO = mappa;
+        // il malus delle pratiche degli agenti si intesta al loro BO
+        // (risposta Luca 13/08) — la sync legge questa mappa
+        impostaAgentiBOMalus(mappa);
       }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;

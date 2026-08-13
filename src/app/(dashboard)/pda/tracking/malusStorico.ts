@@ -118,6 +118,14 @@ function subLavorativi(d: Date, n: number): Date {
  * (con piu' controlli sulla stessa pratica la storia e' condivisa, ma
  * "Liquidato" non e' uno stato MNP e viene ignorato dalla riga MNP).
  */
+// MONDO AGENZIA (risposta Luca 13/08): il malus delle pratiche degli AGENTI
+// si intesta all'operatore di back office che li ha in carico — la mappa
+// nome agente → nome BO arriva dalla pagina (stessa di AGENTI_BO) PRIMA
+// della sync. Gli episodi nuovi nascono già intestati al BO; la chiave
+// episodio (contract+categoria+data) non cambia, quindi niente doppioni.
+let AGENTI_BO_MALUS: Record<string, string> = {};
+export function impostaAgentiBOMalus(mappa: Record<string, string>) { AGENTI_BO_MALUS = mappa; }
+
 export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
   const euro = Number(r?.malus_euro) || 0;
@@ -136,7 +144,8 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     categoria: row.categoria,
     brand: row.brand || null,
     negozio: row.negozio || null,
-    venditore: row.venditore || null,
+    // agente associato → il malus è del suo back office (Luca 13/08)
+    venditore: (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null,
     nominativo: row.nominativo || null,
     malus_euro: euro,
   };
