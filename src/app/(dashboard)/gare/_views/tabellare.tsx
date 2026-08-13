@@ -63,7 +63,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const [p, s, r, az] = await Promise.all([
             supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
-            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
+            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
         setAziendaEsiste((az.count || 0) > 0);
@@ -73,7 +73,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             const [ap, as, ar] = await Promise.all([
                 supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
-                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
+                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
             ]);
             // PISTE SOLO AZIENDA (Luca 13/08: gara business/assicurazioni W3
             // «di rete, resta solo all'azienda»): perc_ragazzi = 0 le esclude
@@ -262,7 +262,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const [p, s, r] = await Promise.all([
             supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", prev).eq("lato", lato),
-            supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
+            supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
         if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${fonteCopia}`); return; }
         const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id");

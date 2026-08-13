@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigaTabellare, giorniLavorativiMese, payPerRiga, esclusaDalleGare, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, giorniLavorativiMese, payPerRighe, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -232,14 +232,21 @@ export default function CalcolatorePage() {
         return Array.from(set).map(t => ({ token: t, label: LABEL[t] || t }));
     }, [tab]);
 
-    // risoluzione riga pay
-    const riga: PayRiga | null = useMemo(() => {
-        if (!tab || !offSel || !prodSel || !catSel) return null;
-        return matchRigaTabellare(tab.righe, {
+    // risoluzione righe pay: set ADDITIVO (componenti W3: base + MNP + Tied +
+    // P.IVA…) o singola riga classica — la prima riga porta i metadati
+    const righeSet: PayRiga[] = useMemo(() => {
+        if (!tab || !offSel || !prodSel || !catSel) return [];
+        return matchRigheAttivazione(tab.righe, {
             tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: offSel.nome,
             provenienza: provSel,
         }, brand);
     }, [tab, offSel, prodSel, catSel, brand, provSel]);
+    const riga: PayRiga | null = righeSet[0] ?? null;
+    // nome e punti raccontano l'intero set (es. "GA base + MNP + Tied ×canone")
+    const nomeRiga = righeSet.length > 1
+        ? righeSet.map(r => r.nome.replace(/\s*×\s*canone\s*$/i, "").replace(/^\+\s*/, "")).join(" + ") + " ×canone"
+        : riga?.nome || "";
+    const puntiRiga = puntiPerRighe(righeSet);
 
     const scalaRiga = useMemo(() =>
         (tabEff && riga?.pista) ? tabEff.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
@@ -253,11 +260,11 @@ export default function CalcolatorePage() {
     const tier = tierSel == null ? (proiezioneOn && avz ? tierProj : tierLive) : tierSel;
     // modello W3: la riga a MOLTIPLICATORE paga canone x valore della soglia
     const canone = offSel?.canone_mensile == null ? null : Number(offSel.canone_mensile);
-    const valore = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
+    const valore = righeSet.length ? payPerRighe(righeSet, riga!.gettone ? 0 : tier) : null;
     const pay = riga?.moltiplicatore
         ? (canone != null && valore != null ? Math.round(canone * valore * 100) / 100 : null)
         : valore;
-    const valProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRiga(riga, tier + 1) : null;
+    const valProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRighe(righeSet, tier + 1) : null;
     const payProssima = riga?.moltiplicatore
         ? (canone != null && valProssima != null ? Math.round(canone * valProssima * 100) / 100 : null)
         : valProssima;
@@ -270,8 +277,8 @@ export default function CalcolatorePage() {
             const p = prods.find(x => x.id === o.prodotto_id); if (!p) continue;
             const c = cats.find(x => x.id === p.categoria_id); if (!c) continue;
             if (esclusaDalleGare({ categoria: c.nome, prodotto: p.nome, offerta: o.nome })) continue;   // escluse per regola, non scoperture
-            const r = matchRigaTabellare(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome }, brand);
-            if (!r) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
+            const r = matchRigheAttivazione(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome }, brand);
+            if (!r.length) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
         }
         return out;
     }, [tab, offs, prods, cats, brand]);
@@ -408,7 +415,7 @@ export default function CalcolatorePage() {
                                 <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                                     {offsProd.map(o => {
                                         const on = offId === o.id;
-                                        const r = tab && catSel && prodSel ? matchRigaTabellare(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome }, brand) : null;
+                                        const r = tab && catSel && prodSel ? (matchRigheAttivazione(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome }, brand)[0] ?? null) : null;
                                         return (
                                             <button key={o.id} onClick={() => { setOffId(o.id); setTierSel(null); }}
                                                 className="rounded-xl px-3 py-3 text-sm font-semibold text-left border transition"
@@ -461,7 +468,7 @@ export default function CalcolatorePage() {
                                 <>
                                     <div className="flex items-start justify-between flex-wrap gap-4">
                                         <div>
-                                            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">{riga.nome}</div>
+                                            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">{nomeRiga}</div>
                                             <div className="text-5xl font-black text-white leading-none">{euro(pay)}</div>
                                             <div className="text-slate-400 text-sm mt-2">
                                                 {riga.gettone
@@ -476,7 +483,7 @@ export default function CalcolatorePage() {
                                         </div>
                                         <div className="text-right">
                                             {riga.pista && <div className="text-slate-300 text-sm font-semibold">{tab.piste.find(p => p.chiave === riga.pista)?.nome || riga.pista}</div>}
-                                            {riga.punti > 0 && <div className="text-slate-400 text-sm mt-1">vale <b className="text-white">{riga.punti}</b> in soglia</div>}
+                                            {puntiRiga > 0 && <div className="text-slate-400 text-sm mt-1">vale <b className="text-white">{puntiRiga}</b> in soglia</div>}
                                         </div>
                                     </div>
                                     {!riga.gettone && scalaRiga.length > 0 && (

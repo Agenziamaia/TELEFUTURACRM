@@ -35,6 +35,10 @@ export type PayRiga = {
     // normalizzato). NULL = qualsiasi. Es. TIM MNP +10€, Kena STAR (Luca 12/08).
     provenienza?: string | null;
     moltiplicatore?: boolean;                   // true = i tiers sono MOLTIPLICATORI del canone dell'offerta (modello W3)
+    // MODELLO ADDITIVO W3 (13/08): base | base_underground | mnp | tied | piva |
+    // conv | la | ftth | fwa | opzioni — le righe componente si SOMMANO come
+    // nella lettera (GA base + MNP + Tied + P.IVA). NULL = riga intera classica.
+    componente?: string | null;
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
@@ -82,7 +86,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
         supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
-        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
@@ -323,6 +327,91 @@ export function matchRigaTabellare(
     return best;
 }
 
+/* ================= MODELLO A COMPONENTI (W3, cantiere 13/08/2026) =================
+   La lettera WindTre paga ogni attivazione come SOMMA di componenti: sul mobile
+   GA base (o base Underground) + MNP (+1) + Tied (+2/+2,25) + P.IVA (+1) sul
+   canone; sul fisso attivazione base + convergenza + P.IVA + FWA (+ le
+   componenti da vendita: linea aggiuntiva, FTTH, opzioni — le aggiunge
+   l'analisi perché non si deducono dall'offerta). Gli attributi si leggono
+   dalle scelte dei ragazzi in Registra Vendita (Luca 13/08): la CATEGORIA dice
+   Wallet/Ric. Automatica (= Untied/Tied), il PRODOTTO dice GA o MNP, il TIPO
+   CLIENTE dice P.IVA; la provenienza MNP sta nei campi vendita (conteggio). */
+
+/** pista del modello a componenti dalla categoria di catalogo (solo W3) */
+export function pistaComponenti(c: { categoria?: string | null }): "mobile" | "fisso" | null {
+    const cat = String(c.categoria || "");
+    if (/^mobile\b/i.test(cat)) return "mobile";
+    if (/^fisso/i.test(cat)) return "fisso";
+    return null;
+}
+
+/** componenti che la vendita accende, dedotte dai nomi di catalogo */
+export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null }): Set<string> {
+    const f = new Set<string>();
+    const off = String(c.offerta || "");
+    const prod = String(c.prodotto || "");
+    const cat = String(c.categoria || "");
+    if (/underground/i.test(off)) f.add("base_underground");
+    if (/\bmnp\b/i.test(prod) || /\bmnp\b/i.test(off)) f.add("mnp");
+    if (/ric\.?\s*auto/i.test(cat)) f.add("tied");
+    if (/business/i.test(String(c.tipo_cliente || ""))) f.add("piva");
+    if (/\bconv\b|convergente/i.test(off)) f.add("conv");
+    if (/\bfwa\b|super internet/i.test(prod + " " + off)) f.add("fwa");
+    return f;
+}
+
+/** Il set additivo per la vendita: base della pista + extra accese. NULL se il
+ *  tabellare non ha componenti per quella pista (si resta al pick-one). */
+export function matchComponenti(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null },
+): PayRiga[] | null {
+    const pista = pistaComponenti(c);
+    if (!pista) return null;
+    const comp = righe.filter(r => r.attivo && r.componente && r.pista === pista);
+    if (!comp.length) return null;
+    const flags = flagsComponenti(c);
+    const out: PayRiga[] = [];
+    const base = (flags.has("base_underground") ? comp.find(r => r.componente === "base_underground") : undefined)
+        || comp.find(r => r.componente === "base");
+    if (base) out.push(base);
+    for (const r of comp) {
+        if (r.componente === "base" || r.componente === "base_underground") continue;
+        if (flags.has(String(r.componente))) out.push(r);
+    }
+    return out.length ? out : null;
+}
+
+/** Righe pay della vendita: il set additivo dove esiste, altrimenti la singola
+ *  riga classica (array vuoto = scopertura). La prima riga del set è la base:
+ *  porta pista, gettone e moltiplicatore per chi deve mostrare i metadati. */
+export function matchRigheAttivazione(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null },
+    brandVendita?: string | null,
+): PayRiga[] {
+    const comp = matchComponenti(righe, c);
+    if (comp) return comp;
+    const r = matchRigaTabellare(righe, c, brandVendita);
+    return r ? [r] : [];
+}
+
+/** € (o moltiplicatore totale) del set alla soglia: somma dei payPerRiga. */
+export function payPerRighe(set: PayRiga[], tier: number): number | null {
+    let tot = 0, trovato = false;
+    for (const r of set) {
+        const v = payPerRiga(r, r.gettone ? 0 : tier);
+        if (v != null) { tot += v; trovato = true; }
+    }
+    return trovato ? Math.round(tot * 100) / 100 : null;
+}
+
+/** punti in soglia del set (le componenti sommano anche il conteggio:
+ *  es. fisso base 1 + P.IVA 0,5 = 1,5 come da lettera) */
+export function puntiPerRighe(set: PayRiga[]): number {
+    return Math.round(set.reduce((s, r) => s + Number(r.punti || 0), 0) * 100) / 100;
+}
+
 /**
  * REGOLA GENERALE (Luca 10/08): le SOSTITUZIONI SIM — di TUTTI gli operatori —
  * non generano né commissioning né punti in gara. Escluse alla radice: non
@@ -490,17 +579,20 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     const scartatiMap = new Map<string, { categoria: string | null; prodotto: string | null; offerta: string | null; n: number }>();
     let contati = 0;
     for (const c of contratti) {
-        const riga = matchRigaTabellare(tab.righe, c, brandIdDaLabel(c.brand));
-        if (!riga) {
+        // set additivo (componenti W3) o singola riga classica: la prima
+        // riga porta la pista, i punti si sommano su tutto il set
+        const set = matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand));
+        if (!set.length) {
             const k = `${c.categoria}|${c.prodotto}|${c.offerta}`;
             const e = scartatiMap.get(k) || { categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, n: 0 };
             e.n++; scartatiMap.set(k, e);
             continue;
         }
         contati++;
-        if (riga.pista) {
-            punti[riga.pista] = (punti[riga.pista] || 0) + riga.punti;
-            pezzi[riga.pista] = (pezzi[riga.pista] || 0) + 1;
+        const pista = set[0].pista;
+        if (pista) {
+            punti[pista] = (punti[pista] || 0) + puntiPerRighe(set);
+            pezzi[pista] = (pezzi[pista] || 0) + 1;
         }
     }
     const piste: Record<string, AvanzamentoPista> = {};
