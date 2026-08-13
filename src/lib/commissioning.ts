@@ -143,6 +143,10 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
             pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
         };
     };
+    // PISTE SOLO AZIENDA (Luca 13/08, gara business W3 «di rete, resta solo
+    // all'azienda»): perc_ragazzi = 0 marca la pista che NON si deriva mai
+    // ai ragazzi — sparisce dal loro tabellare invece di comparire a 0€.
+    const soloAzienda = (p: PayPista) => Number(p.perc_ragazzi ?? 100) === 0;
     if (!ragazzi) {
         // il ragazzi può avere SOLO gettoni senza piste (es. W3 dopo l'abbandono
         // del vecchio tabellare): ripescali e affiancali al derivato. E può avere
@@ -154,10 +158,13 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
             caricaSoglieLato(brand, monthISO, "ragazzi"),
         ]);
         const manuali = new Set(soglieRag.map(s => s.pista));
+        const pisteDer = azienda.piste.filter(p => !soloAzienda(p));
+        const chiaviDer = new Set(pisteDer.map(p => p.chiave));
         return {
             ...azienda, derivato: true,
-            soglie: [...azienda.soglie.filter(s => !manuali.has(s.pista)), ...soglieRag],
-            righe: [...azienda.righe.map(deriva), ...orfani],
+            piste: pisteDer,
+            soglie: [...azienda.soglie.filter(s => chiaviDer.has(s.pista) && !manuali.has(s.pista)), ...soglieRag],
+            righe: [...azienda.righe.filter(r => !r.pista || chiaviDer.has(r.pista)).map(deriva), ...orfani],
         };
     }
     // DERIVAZIONE PARZIALE (allineamento Luca 11/08): le piste azienda che il
@@ -165,7 +172,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     // il Calcolatore mostra mappato tutto ciò che l'azienda copre e le
     // "scoperture" diventano la lista vera di ciò che manca su ogni brand.
     const chiaviRag = new Set(ragazzi.piste.map(p => p.chiave));
-    const pisteApp = azienda.piste.filter(p => !chiaviRag.has(p.chiave));
+    const pisteApp = azienda.piste.filter(p => !chiaviRag.has(p.chiave) && !soloAzienda(p));
     if (!pisteApp.length) return ragazzi;
     const chiaviApp = new Set(pisteApp.map(p => p.chiave));
     // le soglie ragazzi (anche manuali, sulle piste derivate) vincono sempre
