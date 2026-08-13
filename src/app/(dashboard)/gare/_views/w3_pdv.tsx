@@ -173,10 +173,57 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
             {stores.length === 1 && <div className="text-sm font-semibold text-white mb-3">🏬 {stores[0]}</div>}
             {target ? (
                 <>
-                    <div className="flex gap-6 flex-wrap">
-                        <TabSoglie t={target} titolo="📱 Mobile" campo="mobile" cluster={target.cluster_mobile} peso={target.peso_mobile} />
-                        <TabSoglie t={target} titolo="🏠 Fisso" campo="fisso" cluster={target.cluster_fisso} peso={target.peso_fix} />
-                    </div>
+                    {seg === "franchising" ? (
+                        <div className="flex gap-6 flex-wrap">
+                            <TabSoglie t={target} titolo="📱 Mobile" campo="mobile" cluster={target.cluster_mobile} peso={target.peso_mobile} />
+                            <TabSoglie t={target} titolo="🏠 Fisso" campo="fisso" cluster={target.cluster_fisso} peso={target.peso_fix} />
+                        </div>
+                    ) : (
+                        /* MULTIBRAND (Luca 13/08): target cumulati dal mobile in
+                           giù → UNA tabella sola, una riga per pista */
+                        (() => {
+                            const righeT: { label: string; campo: "mobile" | "fisso"; arr: number[] | null; lett: number[] | null }[] = [
+                                { label: "📱 Mobile", campo: "mobile" as const, arr: target.soglie_mobile, lett: target.soglie_mobile_lettera },
+                                { label: "🏠 Fisso", campo: "fisso" as const, arr: target.soglie_fisso, lett: target.soglie_fisso_lettera },
+                            ].filter(r => r.arr?.length);
+                            if (!righeT.length) return null;
+                            const maxT = Math.max(...righeT.map(r => r.arr!.length));
+                            return (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">Pista</th>
+                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {righeT.map(r => (
+                                                <tr key={r.campo} className="border-t border-white/5">
+                                                    <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{r.label}</td>
+                                                    {Array.from({ length: maxT }, (_, i) => {
+                                                        if (r.arr![i] == null) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
+                                                        const orig = r.lett?.[i];
+                                                        const attuale = draft[chiave(target.id, r.campo, i)] ?? String(r.arr![i]);
+                                                        const modificata = orig != null && Number(attuale) !== Number(orig);
+                                                        return (
+                                                            <td key={i} className="px-1.5 py-2 text-center align-top" title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
+                                                                <input value={valCella(target, r.campo, i)}
+                                                                    onChange={e => setDraft(prev => ({ ...prev, [chiave(target.id, r.campo, i)]: e.target.value }))}
+                                                                    className={cn("bg-white/[0.05] border rounded-lg px-1.5 py-1 text-[15px] font-bold text-white w-16 text-center tabular-nums",
+                                                                        modificata ? "border-amber-400/60" : "border-white/10")} />
+                                                                {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            );
+                        })()
+                    )}
                     <div className="flex items-center gap-3 mt-2">
                         {dirtyPdv(target) && (
                             <button onClick={() => salvaPdv(target)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">💾 Salva soglie {target.negozio}</button>
