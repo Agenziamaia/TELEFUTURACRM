@@ -7,6 +7,7 @@ import { cn } from "@/utils";
 import { Loader2, Plus, Trash2, Pencil, ChevronUp, ChevronDown, Power, Layers, Check, X, Settings2 } from "lucide-react";
 import { notify, dbError } from "./toast";
 import { MarginalitaView } from "./marginalita";
+import { CanoniView } from "./canoni";
 import { BrandNegozioView } from "./brandnegozio";
 
 /* CATALOGO OPERATORI A 6 LIVELLI (mig. 091/092) — LA BASE DEL DATABASE.
@@ -654,9 +655,17 @@ export function CatalogoView() {
                             brandSel === "__negozi" ? "border-sky-400/70 bg-sky-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25")}>
                         <span className="shrink-0">🏬</span> Brand × Negozio
                     </button>
+                    {/* CANONI (Luca 13/08, cantiere W3): setting dei canoni mensili
+                        di tutte le offerte — il pay a moltiplicatore parte da qui */}
+                    <button onClick={() => pickBrand("__canoni")}
+                        className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-bold transition-all",
+                            brandSel === "__canoni" ? "border-emerald-400/70 bg-emerald-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25")}>
+                        <span className="shrink-0">💶</span> Canoni
+                    </button>
                 </div>
 
-                {brandSel === "__negozi" ? <div className="mt-4"><BrandNegozioView brands={brands} onBrandsChanged={() => { loadBase(); }} /></div>
+                {brandSel === "__canoni" ? <div className="mt-4"><CanoniView brands={brands} cats={cats} /></div>
+                : brandSel === "__negozi" ? <div className="mt-4"><BrandNegozioView brands={brands} onBrandsChanged={() => { loadBase(); }} /></div>
                 : brandSel === "__marg" ? <div className="mt-4"><MarginalitaView /></div> : (<>
                 {/* tipo cliente + regola contratto a livello BRAND (MOD-31) */}
                 <div className="flex gap-2 mt-3 items-center flex-wrap">
