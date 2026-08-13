@@ -73,6 +73,10 @@ function GareInner() {
     const [vecchioSchema, setVecchioSchema] = useState(false);   // schema gare pre-tabellari, a richiesta
     const [tabVuoto, setTabVuoto] = useState(false);   // tabellare assente → lo schema precedente si mostra da solo
     const [mostraCreazione, setMostraCreazione] = useState(false);   // apre la card copia/crea del tabellare pay
+    // W3 azienda (Luca 13/08, «ragiona da proprietario»): il SEGMENTO guida
+    // TUTTA la pagina — su Franchising si vedono rete e tabellare a
+    // moltiplicatore (che sono suoi); su Multibrand/T2 solo la loro gara
+    const [segW3, setSegW3] = useState("franchising");
     const rag = brand ? RAGAZZI_GARA[brand.id] : null;
     const GestIcon = gestione?.icon;
 
@@ -221,11 +225,12 @@ function GareInner() {
                         Lo schema gare precedente resta consultabile dal bottone in fondo. */}
                     {/* W3 azienda (Luca 13/08): la struttura di luglio — Franchising
                         (gara per PDV) · Multibrand · Multibrand T2 — con le soglie
-                        Mobile/Fisso del singolo negozio dal foglio Target */}
+                        Mobile/Fisso del singolo negozio dal foglio Target. Il
+                        segmento scelto governa cosa si vede sotto. */}
                     {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && (
-                        <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                        <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
                     )}
-                    {PAY_CTX[brand.id] ? (
+                    {PAY_CTX[brand.id] && !(PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 !== "franchising") ? (
                         <>
                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}

@@ -33,11 +33,15 @@ const SEGMENTI = [
     { id: "multibrand_t2", label: "🏬 Multibrand T2", regola: "2 punti vendita — POS dopo il primo a −15%" },
 ] as const;
 
-export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
+export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string; colore: string; seg?: string; onSeg?: (s: string) => void }) {
     const monthISO = `${mese}-01`;
     const [targets, setTargets] = useState<TargetPdv[]>([]);
     const [negozi, setNegozi] = useState<NegozioSeg[]>([]);
-    const [seg, setSeg] = useState<string>("franchising");
+    // il segmento può essere GOVERNATO dalla pagina (Luca 13/08: la scelta
+    // guida tutta la vista azienda W3, tabellare compreso)
+    const [segInterno, setSegInterno] = useState<string>("franchising");
+    const seg = segProp ?? segInterno;
+    const setSeg = (s: string) => { setSegInterno(s); onSeg?.(s); };
     const [pdvSel, setPdvSel] = useState<string>("");
     // modifiche manuali in corso: chiave `${targetId}|${campo}|${idx}` → testo
     const [draft, setDraft] = useState<Record<string, string>>({});
@@ -231,7 +235,7 @@ export function W3PdvPanel({ mese, colore }: { mese: string; colore: string }) {
                                             </tr>
                                         </tbody>
                                     </table>
-                                    <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {seg === "multibrand_t2" ? "Gara per Ragione Sociale: target ×2 PDV al 100%." : ""}</p>
+                                    <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {seg === "multibrand_t2" ? "Gara per Ragione Sociale sui 2 PDV: 1° al 100% + 2° scontato del 15% (lettera multipos) = target ×1,85." : ""}</p>
                                 </div>
                             );
                         })()
