@@ -24,11 +24,13 @@ interface OffCanone {
 
 // sezioni della scheda: canone = esploso per offerta (canone × componenti);
 // evento = € diretti per soglia; flat = gettone secco per evento
+// la gara BUSINESS non è più una sezione a parte (Luca 14/08): è un premio a
+// evento che SI SOMMA all'attivazione — vive nelle colonne 💼 dentro Mobile,
+// Fisso e sulla riga business di Luce&Gas
 const SEZIONI = [
-    { id: "mobile", label: "📱 Mobile", tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale" },
-    { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale" },
-    { id: "business_piva", label: "💼 Business P.IVA", tipo: "evento", sub: "ogni evento valido paga il premio unitario della soglia di Ragione Sociale" },
-    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale" },
+    { id: "mobile", label: "📱 Mobile", tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
+    { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
+    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — sul microbusiness in più le colonne 💼 della gara Business" },
     { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore" },
     { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia" },
 ] as const;
@@ -105,6 +107,33 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     };
 
     const filtro = (testo: string) => !cerca.trim() || testo.toLowerCase().includes(cerca.toLowerCase());
+
+    // GARA BUSINESS a colonne (Luca 14/08): per le attivazioni Business il
+    // premio a evento (25/35/45 € alla soglia di rete, target nella tabella
+    // sopra) si somma al pay — qui compare nelle colonne 💼 S1-S3
+    const bizRighe = useMemo(() => righe.filter(r => r.pista === "business_piva"), [righe]);
+    const bizN = bizRighe.length ? Math.min(3, tierMax["business_piva"] || 3) : 0;
+    const bizInfo = (c: { tipo_cliente: string; categoria?: string | null; prodotto?: string | null; offerta?: string | null }): { scale: number[]; punti: number } | null => {
+        if (!/business/i.test(c.tipo_cliente || "") || !bizRighe.length) return null;
+        const r = matchRigaTabellare(bizRighe, { tipo_cliente: c.tipo_cliente, categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta });
+        if (!r) return null;
+        return { scale: r.pay_tiers.slice(0, bizN), punti: Number(r.punti || 0) };
+    };
+    const CellaBiz = ({ info, i }: { info: { scale: number[]; punti: number } | null; i: number }) => {
+        if (!info || info.scale[i] == null) return <td className="px-1.5 py-0.5 text-center text-slate-700">—</td>;
+        return (
+            <td className="px-1.5 py-0.5 text-center font-semibold text-sky-300 tabular-nums cursor-help"
+                onMouseEnter={e => mostraTip(e, [
+                    { testo: `💼 Gara Business · soglia S${i + 1}`, stile: "formula" },
+                    { testo: `· premio a evento: ${eur(info.scale[i])} €`, stile: "voce" },
+                    { testo: `· quest'attivazione vale ${it(info.punti)} punti business`, stile: "voce" },
+                    { testo: "si somma al pay dell'attivazione", stile: "flat" },
+                ])}
+                onMouseLeave={() => setTip(null)}>
+                +{eur(info.scale[i])} €
+            </td>
+        );
+    };
 
     const perPista = useMemo(() => {
         const out: Record<string, { o: OffCanone; set: PayRiga[] }[]> = { mobile: [], fisso: [], assicurazioni: [] };
@@ -202,6 +231,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                         <thead>
                                             <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                                 <th className="text-left font-semibold px-3 py-1.5">Offerta / variante</th>
+                                                {Array.from({ length: bizN }, (_, i) => <th key={`b${i}`} className="px-1.5 py-1.5 font-semibold text-center w-16 text-sky-300/80">💼 S{i + 1}</th>)}
                                                 <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
                                                 {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
                                             </tr>
@@ -215,7 +245,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     <Fragment key={`${g.tipo}|${g.nome}`}>
                                                         {nuovoTipo && (
                                                             <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kTipo)}>
-                                                                <td colSpan={2 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                <td colSpan={2 + bizN + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
                                                                     {chiuso ? "▸" : "▾"} {g.tipo === "Business" ? "💼" : "👤"} {g.tipo}
                                                                     {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {gruppi.filter(x => x.tipo === g.tipo).length} offerte</span>}
                                                                 </td>
@@ -223,7 +253,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                         )}
                                                         {!chiuso && (
                                                         <tr className="border-t border-white/[0.06]">
-                                                            <td colSpan={2 + maxT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.nome}</td>
+                                                            <td colSpan={2 + bizN + maxT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.nome}</td>
                                                         </tr>
                                                         )}
                                                         {!chiuso && g.vars.map(v => (
@@ -236,6 +266,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                                         {v.label}
                                                                     </span>
                                                                 </td>
+                                                                {Array.from({ length: bizN }, (_, i) => (
+                                                                    <CellaBiz key={`b${i}`} info={bizInfo(v.o)} i={i} />
+                                                                ))}
                                                                 <td className="px-1.5 py-0.5 text-center text-[12px] text-slate-400 tabular-nums">{eur(v.o.canone)} €</td>
                                                                 {Array.from({ length: maxT }, (_, i) => {
                                                                     const moltParti = v.set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
@@ -280,6 +313,8 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                     // sulle assicurazioni ogni polizza porta i suoi punti in
                     // soglia (Luca 14/08): colonna prima del canone
                     const conPunti = sez.id === "assicurazioni";
+                    // sul fisso i Business hanno anche le colonne 💼 della gara Business
+                    const conBiz = sez.id === "fisso" && bizN > 0;
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
@@ -294,6 +329,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                 <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
                                                 <th className="text-left font-semibold px-2 py-1.5">Prodotto</th>
                                                 {conPunti && <th className="px-2 py-1.5 font-semibold text-center w-24">Punti in soglia</th>}
+                                                {conBiz && Array.from({ length: bizN }, (_, i) => <th key={`b${i}`} className="px-1.5 py-1.5 font-semibold text-center w-16 text-sky-300/80">💼 S{i + 1}</th>)}
                                                 <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
                                                 {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
                                             </tr>
@@ -308,7 +344,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     <Fragment key={o.id}>
                                                         {nuovoGruppo && (
                                                             <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kGruppo)}>
-                                                                <td colSpan={(conPunti ? 4 : 3) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                <td colSpan={(conPunti ? 4 : 3) + (conBiz ? bizN : 0) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
                                                                     {chiuso ? "▸" : "▾"} {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
                                                                     {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {rr.filter(x => `${x.o.tipo_cliente}|${x.o.prodotto}` === gruppo).length} offerte</span>}
                                                                 </td>
@@ -319,6 +355,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                             <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}</td>
                                                             <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
                                                             {conPunti && <td className="px-2 py-1 text-center font-bold text-white tabular-nums">{it(set.reduce((s, r) => s + Number(r.punti || 0), 0))}</td>}
+                                                            {conBiz && Array.from({ length: bizN }, (_, i) => (
+                                                                <CellaBiz key={`b${i}`} info={bizInfo(o)} i={i} />
+                                                            ))}
                                                             <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
                                                             {Array.from({ length: maxT }, (_, i) => {
                                                                 const moltParti = set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
@@ -370,9 +409,10 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                     <table className="w-full text-sm border-collapse">
                                         <thead>
                                             <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                                                <th className="text-left font-semibold px-3 py-1.5">{sez.id === "business_piva" ? "Evento" : "Attivazione"}</th>
+                                                <th className="text-left font-semibold px-3 py-1.5">Attivazione</th>
                                                 {conPunti && <th className="px-2 py-1.5 font-semibold text-center w-24">Punti in soglia</th>}
                                                 {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                                {bizN > 0 && Array.from({ length: bizN }, (_, i) => <th key={`b${i}`} className="px-1.5 py-1.5 font-semibold text-center w-16 text-sky-300/80">💼 S{i + 1}</th>)}
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -385,13 +425,13 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                             {r.pay_tiers[i] == null ? "—" : `${eur(r.pay_tiers[i])} €`}
                                                         </td>
                                                     ))}
+                                                    {bizN > 0 && Array.from({ length: bizN }, (_, i) => (
+                                                        <CellaBiz key={`b${i}`} info={bizInfo({ tipo_cliente: r.tipo_cliente || "", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta })} i={i} />
+                                                    ))}
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
-                                    {sez.id === "business_piva" && (
-                                        <p className="text-[11px] text-slate-500 mt-1">Pagamento a evento, retroattivo: la soglia di Ragione Sociale sceglie il premio unitario di ogni evento. La 4ª soglia (55 €) esiste solo col Business Promoter Plus+.</p>
-                                    )}
                                     {sez.id === "lucegas" && (
                                         <p className="text-[11px] text-slate-500 mt-1">Gettoni regressivi, includono il contrattuale 10 €: −50% sui clienti ex W3 Luce&amp;Gas Powered by Acea · attivato senza SDD −15 €.</p>
                                     )}
@@ -452,7 +492,10 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                     </div>
                 );
             })}
-            <p className="text-[11px] text-slate-500 mt-2">Canoni dal Catalogo → 💶 Canoni; componenti, premi e gettoni dal tabellare (scheda Lettera). Cambia un valore lì → questi euro si aggiornano da soli. Sulle celle a canone il passaggio del mouse mostra la scomposizione.</p>
+            <p className="text-[11px] text-slate-500 mt-2">
+                💼 Colonne Business: premio a evento della gara Business alla soglia di rete raggiunta (target nella tabella sopra) — si somma al pay dell&apos;attivazione; pagamento retroattivo, la 4ª soglia esiste solo col BP Plus+. Contano anche le Protezione Pro Negozi (5 punti, stesso premio a evento).
+                Canoni dal Catalogo → 💶 Canoni; componenti, premi e gettoni dalla scheda ⚙️ Regole del mese: cambia un valore lì → questi euro si aggiornano da soli.
+            </p>
             {/* bolla di scomposizione: in PORTAL sul body — il backdrop-filter
                 del glass-panel rompe il position:fixed dei discendenti (le
                 coordinate diventavano relative al pannello: bolla lontanissima,
