@@ -124,6 +124,11 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     const eur = (v: number) => (Math.round(v * 100) / 100).toLocaleString("it-IT", { minimumFractionDigits: v % 1 ? 2 : 0 });
     const it = (v: number) => Number(v).toLocaleString("it-IT");
     const toggle = (id: string) => setAperte(prev => { const c = new Set(prev); if (c.has(id)) c.delete(id); else c.add(id); return c; });
+    // SOTTOCARTELLE richiudibili (Luca 14/08): i gruppi Consumer/Business e
+    // tipo·prodotto si chiudono cliccando l'intestazione; la ricerca li riapre
+    const [chiusi, setChiusi] = useState<Set<string>>(new Set());
+    const toggleGruppo = (k: string) => setChiusi(prev => { const c = new Set(prev); if (c.has(k)) c.delete(k); else c.add(k); return c; });
+    const gruppoChiuso = (k: string) => !cerca.trim() && chiusi.has(k);
 
     if (loading) return null;
 
@@ -185,19 +190,24 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                         <tbody>
                                             {gruppi.map((g, gi) => {
                                                 const nuovoTipo = gi === 0 || g.tipo !== gruppi[gi - 1].tipo;
+                                                const kTipo = `mobile|${g.tipo}`;
+                                                const chiuso = gruppoChiuso(kTipo);
                                                 return (
                                                     <Fragment key={`${g.tipo}|${g.nome}`}>
                                                         {nuovoTipo && (
-                                                            <tr className="bg-white/[0.04]">
+                                                            <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kTipo)}>
                                                                 <td colSpan={2 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                                                                    {g.tipo === "Business" ? "💼" : "👤"} {g.tipo}
+                                                                    {chiuso ? "▸" : "▾"} {g.tipo === "Business" ? "💼" : "👤"} {g.tipo}
+                                                                    {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {gruppi.filter(x => x.tipo === g.tipo).length} offerte</span>}
                                                                 </td>
                                                             </tr>
                                                         )}
+                                                        {!chiuso && (
                                                         <tr className="border-t border-white/[0.06]">
                                                             <td colSpan={2 + maxT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.nome}</td>
                                                         </tr>
-                                                        {g.vars.map(v => (
+                                                        )}
+                                                        {!chiuso && g.vars.map(v => (
                                                             <tr key={v.o.id} className="hover:bg-white/[0.03]">
                                                                 <td className="pl-7 pr-2 py-0.5 whitespace-nowrap">
                                                                     <span className={cn("text-[11px] px-2 py-0.5 rounded-full border",
@@ -270,15 +280,19 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                             {rr.map(({ o, set }, idx) => {
                                                 const gruppo = `${o.tipo_cliente}|${o.prodotto}`;
                                                 const nuovoGruppo = idx === 0 || gruppo !== `${rr[idx - 1].o.tipo_cliente}|${rr[idx - 1].o.prodotto}`;
+                                                const kGruppo = `${sez.id}|${gruppo}`;
+                                                const chiuso = gruppoChiuso(kGruppo);
                                                 return (
                                                     <Fragment key={o.id}>
                                                         {nuovoGruppo && (
-                                                            <tr className="bg-white/[0.04]">
+                                                            <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kGruppo)}>
                                                                 <td colSpan={3 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                                                                    {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
+                                                                    {chiuso ? "▸" : "▾"} {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
+                                                                    {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {rr.filter(x => `${x.o.tipo_cliente}|${x.o.prodotto}` === gruppo).length} offerte</span>}
                                                                 </td>
                                                             </tr>
                                                         )}
+                                                        {!chiuso && (
                                                         <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
                                                             <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}</td>
                                                             <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
@@ -298,6 +312,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                                 );
                                                             })}
                                                         </tr>
+                                                        )}
                                                     </Fragment>
                                                 );
                                             })}
@@ -385,21 +400,26 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                     <tbody>
                                         {rr.map((r, idx) => {
                                             const nuovoGruppo = idx === 0 || (r.tipo_cliente || "") !== (rr[idx - 1].tipo_cliente || "");
+                                            const kGruppo = `cb|${r.tipo_cliente || ""}`;
+                                            const chiuso = gruppoChiuso(kGruppo);
                                             return (
                                                 <Fragment key={r.id}>
                                                     {nuovoGruppo && (
-                                                        <tr className="bg-white/[0.04]">
+                                                        <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kGruppo)}>
                                                             <td colSpan={2} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                                                                {r.tipo_cliente === "Business" ? "💼 Business" : "👤 Consumer"}
+                                                                {chiuso ? "▸" : "▾"} {r.tipo_cliente === "Business" ? "💼 Business" : "👤 Consumer"}
+                                                                {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {rr.filter(x => (x.tipo_cliente || "") === (r.tipo_cliente || "")).length} eventi</span>}
                                                             </td>
                                                         </tr>
                                                     )}
+                                                    {!chiuso && (
                                                     <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
                                                         <td className="px-3 py-1 text-slate-200">{r.nome}</td>
                                                         <td className="px-2 py-1 text-center font-semibold text-emerald-200 tabular-nums">
                                                             {r.pay_base == null ? "—" : Number(r.pay_base) === 0 ? <span className="text-slate-500" title={r.note || "esclusa dalla remunerazione"}>0 €</span> : `${eur(Number(r.pay_base))} €`}
                                                         </td>
                                                     </tr>
+                                                    )}
                                                 </Fragment>
                                             );
                                         })}
