@@ -129,6 +129,24 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     const [chiusi, setChiusi] = useState<Set<string>>(new Set());
     const toggleGruppo = (k: string) => setChiusi(prev => { const c = new Set(prev); if (c.has(k)) c.delete(k); else c.add(k); return c; });
     const gruppoChiuso = (k: string) => !cerca.trim() && chiusi.has(k);
+    // TOOLTIP VERO sulla scomposizione (Luca 14/08: il title nativo era lento
+    // e dentro le tabelle a scorrimento spesso non compariva): una bolla
+    // fissa e immediata sopra la cella, con formula, componenti e totale
+    type TipRiga = { testo: string; stile: "formula" | "voce" | "flat" | "tot" };
+    const [tip, setTip] = useState<{ x: number; y: number; righe: TipRiga[] } | null>(null);
+    const mostraTip = (e: React.MouseEvent, righe: TipRiga[]) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setTip({ x: r.left + r.width / 2, y: r.top, righe });
+    };
+    const righeTip = (canone: number, moltParti: PayRiga[], i: number, flat: number): TipRiga[] => {
+        const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
+        return [
+            { testo: `${eur(canone)} € × ${it(molt)}`, stile: "formula" },
+            ...moltParti.map(r => ({ testo: `· ${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`, stile: "voce" as const })),
+            ...(flat ? [{ testo: `+ ${eur(flat)} € contrattuale`, stile: "flat" as const }] : []),
+            { testo: `= ${eur(canone * molt + flat)} €`, stile: "tot" },
+        ];
+    };
 
     if (loading) return null;
 
@@ -223,11 +241,10 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                                     if (!moltParti.length) return <td key={i} className="px-1.5 py-0.5 text-center text-slate-700">—</td>;
                                                                     const flat = v.set.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0);
                                                                     const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
-                                                                    const scomposizione = moltParti.map(r =>
-                                                                        `${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`).join(" + ");
                                                                     return (
-                                                                        <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums"
-                                                                            title={`${eur(v.o.canone)} € × ${it(molt)}  (${scomposizione})${flat ? ` + ${eur(flat)} € contrattuale` : ""}`}>
+                                                                        <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
+                                                                            onMouseEnter={e => mostraTip(e, righeTip(v.o.canone, moltParti, i, flat))}
+                                                                            onMouseLeave={() => setTip(null)}>
                                                                             {eur(v.o.canone * molt + flat)} €
                                                                         </td>
                                                                     );
@@ -302,11 +319,10 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                                 if (!moltParti.length) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
                                                                 const flat = set.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0);
                                                                 const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
-                                                                const scomposizione = moltParti.map(r =>
-                                                                    `${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`).join(" + ");
                                                                 return (
-                                                                    <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums"
-                                                                        title={`${eur(o.canone)} € × ${it(molt)}  (${scomposizione})${flat ? ` + ${eur(flat)} € contrattuale` : ""}`}>
+                                                                    <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
+                                                                        onMouseEnter={e => mostraTip(e, righeTip(o.canone, moltParti, i, flat))}
+                                                                        onMouseLeave={() => setTip(null)}>
                                                                         {eur(o.canone * molt + flat)} €
                                                                     </td>
                                                                 );
@@ -431,6 +447,20 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 );
             })}
             <p className="text-[11px] text-slate-500 mt-2">Canoni dal Catalogo → 💶 Canoni; componenti, premi e gettoni dal tabellare (scheda Lettera). Cambia un valore lì → questi euro si aggiornano da soli. Sulle celle a canone il passaggio del mouse mostra la scomposizione.</p>
+            {/* bolla di scomposizione: fissa sullo schermo, mai tagliata dallo scroll */}
+            {tip && (
+                <div className="fixed z-50 -translate-x-1/2 -translate-y-full pointer-events-none" style={{ left: tip.x, top: tip.y - 8 }}>
+                    <div className="rounded-xl border border-white/15 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] leading-relaxed whitespace-nowrap">
+                        {tip.righe.map((r, i) => (
+                            <div key={i} className={
+                                r.stile === "formula" ? "font-bold text-white text-[12px]" :
+                                    r.stile === "tot" ? "font-bold text-emerald-300 border-t border-white/10 mt-1 pt-1" :
+                                        r.stile === "flat" ? "text-amber-300" : "text-slate-400"
+                            }>{r.testo}</div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
