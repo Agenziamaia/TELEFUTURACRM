@@ -395,9 +395,10 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                     const rr = righe.filter(r => r.pista === sez.id && !r.gettone && r.pay_tiers.length && filtro(`${r.nome} ${r.offerta || ""}`))
                         .sort((a, b) => a.ordine - b.ordine);
                     if (!rr.length) return null;
-                    // colonne = soglie VERE della pista (es. Business: 3 — la 4ª è solo BP Plus+)
+                    // colonne = soglie VERE della pista
                     const maxT = Math.min(tierMax[sez.id] || 99, Math.max(...rr.map(r => r.pay_tiers.length)));
-                    const conPunti = sez.id === "business_piva";
+                    // (l'unica sezione a evento rimasta è Luce&Gas: niente colonna punti)
+                    const conPunti = false;
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
