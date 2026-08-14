@@ -239,7 +239,7 @@ function GareInner() {
                                         {([
                                             { id: "partnership", label: "🏅 Partnership Reward" },
                                             { id: "comm", label: "💶 Commissioning €" },
-                                            { id: "lettera", label: "⚙️ Regole del mese (lettera)" },
+                                            { id: "lettera", label: "⚖️ Regole di gara" },
                                         ] as const).map(t => (
                                             <button key={t.id} onClick={() => setTabW3(t.id)}
                                                 className={cn(

@@ -28,7 +28,7 @@ interface OffCanone {
 // evento che SI SOMMA all'attivazione — vive nelle colonne 💼 dentro Mobile,
 // Fisso e sulla riga business di Luce&Gas.
 // SEPARAZIONE DEI COLORI (Luca 14/08 sera-3): il VERDE è riservato a ciò che
-// è CALCOLATO dalle Regole del mese (canone × componenti); i GETTONI one-shot
+// è CALCOLATO dalle Regole di gara (canone × componenti); i GETTONI one-shot
 // della lettera (telefoni, Luce&Gas, Customer Base) vivono QUI in celle
 // EDITABILI — di serie li riempirà l'upload della gara mensile.
 const SEZIONI = [
@@ -36,7 +36,7 @@ const SEZIONI = [
     { id: "device", label: "📞 Telefoni & device", tipo: "device", sub: "gettoni one-shot della lettera per fascia di prezzo e finanziamento — editabili; l'analisi li aggancia al modello scelto in Registra Vendita" },
     { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
     { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — editabili; sul microbusiness in più le colonne 💼 della gara Business" },
-    { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole del mese)" },
+    { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole di gara)" },
     { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia — editabile" },
 ] as const;
 
@@ -597,7 +597,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 );
             })}
             <p className="text-[11px] text-slate-500 mt-2">
-                🟢 Verde = calcolato dalle Regole del mese (canone × componenti) · ⬜ celle bianche = gettoni one-shot della lettera, editabili qui (li riempirà l&apos;upload della gara mensile).
+                🟢 Verde = calcolato dalle Regole di gara (canone × componenti) · ⬜ celle bianche = gettoni one-shot della lettera, editabili qui (li riempirà l&apos;upload della gara mensile).
                 💼 Colonne Business: premio a evento della gara Business alla soglia di rete (target e importi nella tabella sopra) — si somma al pay; retroattivo, 4ª soglia solo col BP Plus+; contano anche le Protezione Pro Negozi (5 punti).
             </p>
             {/* bolla di scomposizione: in PORTAL sul body — il backdrop-filter
