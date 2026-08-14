@@ -12,6 +12,7 @@
    opzioni) le aggiunge l'analisi: elencate sotto le tabelle. */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { esclusaDalleGare, matchComponenti, matchRigaTabellare, PayRiga } from "@/lib/commissioning";
@@ -452,8 +453,11 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 );
             })}
             <p className="text-[11px] text-slate-500 mt-2">Canoni dal Catalogo → 💶 Canoni; componenti, premi e gettoni dal tabellare (scheda Lettera). Cambia un valore lì → questi euro si aggiornano da soli. Sulle celle a canone il passaggio del mouse mostra la scomposizione.</p>
-            {/* bolla di scomposizione: fissa sullo schermo, mai tagliata dallo scroll */}
-            {tip && (
+            {/* bolla di scomposizione: in PORTAL sul body — il backdrop-filter
+                del glass-panel rompe il position:fixed dei discendenti (le
+                coordinate diventavano relative al pannello: bolla lontanissima,
+                baco visto da Luca 14/08) */}
+            {tip && typeof document !== "undefined" && createPortal(
                 <div className="fixed z-50 -translate-x-1/2 -translate-y-full pointer-events-none" style={{ left: tip.x, top: tip.y - 8 }}>
                     <div className="rounded-xl border border-white/15 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] leading-relaxed whitespace-nowrap">
                         {tip.righe.map((r, i) => (
@@ -464,7 +468,8 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                             }>{r.testo}</div>
                         ))}
                     </div>
-                </div>
+                </div>,
+                document.body,
             )}
         </div>
     );
