@@ -141,6 +141,108 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
             </div>
             {SEZIONI.map(sez => {
                 const aperta = aperte.has(sez.id) || !!cerca.trim();
+                /* ---- MOBILE: una riga per OFFERTA con le diramazioni
+                   GA/MNP × Untied/Tied sotto (proposta Luca 14/08 — la lista
+                   piatta ripeteva la stessa offerta 2-4 volte senza dire
+                   quale variante fosse; le offerte solo MNP, es. Underground,
+                   mostrano naturalmente meno diramazioni) ---- */
+                if (sez.tipo === "canone" && sez.id === "mobile") {
+                    const rr = perPista[sez.id];
+                    if (!rr?.length) return null;
+                    const maxT = Math.max(...rr.map(x => Math.max(...x.set.map(r => r.pay_tiers.length))));
+                    type Variante = { o: OffCanone; set: PayRiga[]; label: string; ord: number };
+                    const gruppi: { tipo: string; nome: string; vars: Variante[] }[] = [];
+                    const idxG = new Map<string, number>();
+                    rr.forEach(({ o, set }) => {
+                        const mnp = /mnp/i.test(o.prodotto);
+                        const tied = /ric\.?\s*auto/i.test(o.categoria);
+                        const k = `${o.tipo_cliente}|${o.nome}`;
+                        if (!idxG.has(k)) { idxG.set(k, gruppi.length); gruppi.push({ tipo: o.tipo_cliente, nome: o.nome, vars: [] }); }
+                        gruppi[idxG.get(k)!].vars.push({
+                            o, set,
+                            label: `${mnp ? "MNP" : "GA"} · ${tied ? "Tied" : "Untied"}`,
+                            ord: (mnp ? 2 : 0) + (tied ? 1 : 0),
+                        });
+                    });
+                    gruppi.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.nome.localeCompare(b.nome));
+                    gruppi.forEach(g => g.vars.sort((a, b) => a.ord - b.ord));
+                    return (
+                        <div key={sez.id} className="mb-3 last:mb-0">
+                            <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
+                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${gruppi.length} offerte`}</span>
+                            </button>
+                            <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub} — ogni offerta con le sue diramazioni GA/MNP · Untied/Tied</p>
+                            {aperta && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">Offerta / variante</th>
+                                                <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
+                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {gruppi.map((g, gi) => {
+                                                const nuovoTipo = gi === 0 || g.tipo !== gruppi[gi - 1].tipo;
+                                                return (
+                                                    <Fragment key={`${g.tipo}|${g.nome}`}>
+                                                        {nuovoTipo && (
+                                                            <tr className="bg-white/[0.04]">
+                                                                <td colSpan={2 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                    {g.tipo === "Business" ? "💼" : "👤"} {g.tipo}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        <tr className="border-t border-white/[0.06]">
+                                                            <td colSpan={2 + maxT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.nome}</td>
+                                                        </tr>
+                                                        {g.vars.map(v => (
+                                                            <tr key={v.o.id} className="hover:bg-white/[0.03]">
+                                                                <td className="pl-7 pr-2 py-0.5 whitespace-nowrap">
+                                                                    <span className={cn("text-[11px] px-2 py-0.5 rounded-full border",
+                                                                        /Tied/.test(v.label) && !/Untied/.test(v.label)
+                                                                            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                                                                            : "border-white/10 bg-white/[0.04] text-slate-300")}>
+                                                                        {v.label}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-1.5 py-0.5 text-center text-[12px] text-slate-400 tabular-nums">{eur(v.o.canone)} €</td>
+                                                                {Array.from({ length: maxT }, (_, i) => {
+                                                                    const moltParti = v.set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
+                                                                    if (!moltParti.length) return <td key={i} className="px-1.5 py-0.5 text-center text-slate-700">—</td>;
+                                                                    const flat = v.set.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0);
+                                                                    const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
+                                                                    const scomposizione = moltParti.map(r =>
+                                                                        `${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`).join(" + ");
+                                                                    return (
+                                                                        <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums"
+                                                                            title={`${eur(v.o.canone)} € × ${it(molt)}  (${scomposizione})${flat ? ` + ${eur(flat)} € contrattuale` : ""}`}>
+                                                                            {eur(v.o.canone * molt + flat)} €
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                    {(() => {
+                                        const runtime = righe.filter(r => r.pista === "mobile" && r.componente && COMP_RUNTIME.has(r.componente));
+                                        return runtime.length ? (
+                                            <p className="text-[11px] text-slate-500 mt-1">
+                                                ➕ Componenti che dipendono dalla vendita (le aggiunge l&apos;analisi):{" "}
+                                                {runtime.map(r => `${r.nome.replace(/\s*×\s*canone\s*$/i, "")} (${r.pay_tiers.map(it).join("/")})`).join(" · ")} ×canone.
+                                            </p>
+                                        ) : null;
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
                 /* ---- sezioni a CANONE: esploso per offerta ---- */
                 if (sez.tipo === "canone") {
                     const rr = perPista[sez.id];
