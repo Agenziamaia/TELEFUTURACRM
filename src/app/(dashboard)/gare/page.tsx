@@ -261,7 +261,7 @@ function GareInner() {
                                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
                                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
                                                 vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
-                                                nascondiVuoto={!mostraCreazione} nascondiSoglie />
+                                                nascondiVuoto={!mostraCreazione} nascondiSoglie soloRegole />
                                             {!tabVuoto && (
                                                 <button onClick={() => setVecchioSchema(v => !v)}
                                                     className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">

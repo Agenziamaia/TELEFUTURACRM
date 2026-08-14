@@ -26,13 +26,18 @@ interface OffCanone {
 // evento = € diretti per soglia; flat = gettone secco per evento
 // la gara BUSINESS non è più una sezione a parte (Luca 14/08): è un premio a
 // evento che SI SOMMA all'attivazione — vive nelle colonne 💼 dentro Mobile,
-// Fisso e sulla riga business di Luce&Gas
+// Fisso e sulla riga business di Luce&Gas.
+// SEPARAZIONE DEI COLORI (Luca 14/08 sera-3): il VERDE è riservato a ciò che
+// è CALCOLATO dalle Regole del mese (canone × componenti); i GETTONI one-shot
+// della lettera (telefoni, Luce&Gas, Customer Base) vivono QUI in celle
+// EDITABILI — di serie li riempirà l'upload della gara mensile.
 const SEZIONI = [
     { id: "mobile", label: "📱 Mobile", tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
+    { id: "device", label: "📞 Telefoni & device", tipo: "device", sub: "gettoni one-shot della lettera per fascia di prezzo e finanziamento — editabili; l'analisi li aggancia al modello scelto in Registra Vendita" },
     { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
-    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — sul microbusiness in più le colonne 💼 della gara Business" },
-    { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore" },
-    { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia" },
+    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — editabili; sul microbusiness in più le colonne 💼 della gara Business" },
+    { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole del mese)" },
+    { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia — editabile" },
 ] as const;
 
 // etichette corte delle componenti per la scomposizione nel tooltip
@@ -59,10 +64,13 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
         let vivo = true;
         (async () => {
             const [r, sg] = await Promise.all([
+                // niente filtro attivo: i gettoni device sono spenti (in attesa
+                // dell'aggancio listino) ma vanno mostrati ed editati qui; i
+                // matcher del motore scartano da soli le righe spente
                 supabase.from("pay_righe")
                     .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
                     .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
-                    .neq("pista", "partnership").eq("attivo", true).limit(500),
+                    .neq("pista", "partnership").limit(500),
                 supabase.from("pay_soglie").select("pista, tier")
                     .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda"),
             ]);
@@ -154,6 +162,50 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     const eur = (v: number) => (Math.round(v * 100) / 100).toLocaleString("it-IT", { minimumFractionDigits: v % 1 ? 2 : 0 });
     const it = (v: number) => Number(v).toLocaleString("it-IT");
     const toggle = (id: string) => setAperte(prev => { const c = new Set(prev); if (c.has(id)) c.delete(id); else c.add(id); return c; });
+    // GETTONI EDITABILI (Luca 14/08 sera-3): device, Luce&Gas e Customer Base
+    // si correggono QUI — draft per riga (`id` = pay_base, `id|i` = tier),
+    // salvataggio unico col bottone 💾 in testa al pannello
+    const [payDraft, setPayDraft] = useState<Record<string, string>>({});
+    const dirtyPay = Object.keys(payDraft).length > 0;
+    const numPay = (v: string, fallback: number | null) => {
+        if (v.trim() === "") return null;
+        const n = Number(v.replace(",", "."));
+        return Number.isFinite(n) ? n : fallback;
+    };
+    const salvaPay = async () => {
+        const perRiga = new Map<string, Record<string, string>>();
+        Object.entries(payDraft).forEach(([k, v]) => {
+            const [id, i] = k.split("|");
+            const e = perRiga.get(id) || {};
+            e[i ?? "base"] = v;
+            perRiga.set(id, e);
+        });
+        for (const [id, mods] of perRiga) {
+            const r = righe.find(x => x.id === id);
+            if (!r) continue;
+            const patch: { pay_base?: number | null; pay_tiers?: number[] } = {};
+            if (mods["base"] != null) patch.pay_base = numPay(mods["base"], r.pay_base);
+            const tierKeys = Object.keys(mods).filter(x => x !== "base");
+            if (tierKeys.length) {
+                const tiers = [...r.pay_tiers];
+                tierKeys.forEach(tk => { const nv = numPay(mods[tk], tiers[Number(tk)]); if (nv != null) tiers[Number(tk)] = nv; });
+                patch.pay_tiers = tiers;
+            }
+            const { error } = await supabase.from("pay_righe").update(patch).eq("id", id);
+            if (error) { alert("Errore salvataggio gettoni: " + error.message); return; }
+        }
+        setPayDraft({});
+        // ricarica le righe (stessa query del mount)
+        const r2 = await supabase.from("pay_righe")
+            .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+            .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
+            .neq("pista", "partnership").limit(500);
+        setRighe(((r2.data ?? []) as PayRiga[])
+            .map(x => ({ ...x, punti: Number(x.punti || 0), pay_base: x.pay_base == null ? null : Number(x.pay_base), pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []) })));
+    };
+    // input di un gettone editabile (NON verde: il verde è il calcolato)
+    const inputPay = "bg-white/[0.05] border border-white/15 rounded-lg px-1.5 py-0.5 text-[13px] font-semibold text-white w-16 text-center tabular-nums";
+
     // SOTTOCARTELLE richiudibili (Luca 14/08): i gruppi Consumer/Business e
     // tipo·prodotto si chiudono cliccando l'intestazione; la ricerca li riapre
     const [chiusi, setChiusi] = useState<Set<string>>(new Set());
@@ -186,14 +238,59 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">
                     Commissioning in € — il pay di ogni attivazione, per soglia: la soglia raggiunta sceglie la colonna
                 </div>
-                <div className="relative w-64">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca offerta o evento…"
-                        className="glass-input !h-8 text-xs w-full pl-8" />
+                <div className="flex items-center gap-2">
+                    {dirtyPay && (
+                        <button onClick={salvaPay} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">💾 Salva gettoni</button>
+                    )}
+                    <div className="relative w-64">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                        <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca offerta o evento…"
+                            className="glass-input !h-8 text-xs w-full pl-8" />
+                    </div>
                 </div>
             </div>
             {SEZIONI.map(sez => {
                 const aperta = aperte.has(sez.id) || !!cerca.trim();
+                /* ---- TELEFONI & DEVICE: gettoni one-shot della lettera,
+                   celle EDITABILI (Luca 14/08 sera-3) — righe spente per il
+                   motore finché l'analisi non aggancia il listino ---- */
+                if (sez.tipo === "device") {
+                    const rr = righe.filter(r => r.pista === "mobile" && r.gettone && !r.componente && filtro(r.nome))
+                        .sort((a, b) => a.ordine - b.ordine);
+                    if (!rr.length) return null;
+                    return (
+                        <div key={sez.id} className="mb-3 last:mb-0">
+                            <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
+                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} voci`}</span>
+                            </button>
+                            <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
+                            {aperta && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse max-w-3xl">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">Voce</th>
+                                                <th className="px-2 py-1.5 font-semibold text-center w-24">Gettone</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rr.map(r => (
+                                                <tr key={r.id} className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                    <td className="px-3 py-1 text-slate-200">{r.nome.replace(/^Gettone device · /, "")}</td>
+                                                    <td className="px-2 py-1 text-center">
+                                                        <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                            onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                                            className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
                 /* ---- MOBILE: una riga per OFFERTA con le diramazioni
                    GA/MNP × Untied/Tied sotto (proposta Luca 14/08 — la lista
                    piatta ripeteva la stessa offerta 2-4 volte senza dire
@@ -422,8 +519,12 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{r.nome}</td>
                                                     {conPunti && <td className="px-2 py-1 text-center font-bold text-white tabular-nums">{it(r.punti)}</td>}
                                                     {Array.from({ length: maxT }, (_, i) => (
-                                                        <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums">
-                                                            {r.pay_tiers[i] == null ? "—" : `${eur(r.pay_tiers[i])} €`}
+                                                        <td key={i} className="px-1.5 py-1 text-center">
+                                                            {r.pay_tiers[i] == null ? <span className="text-slate-700">—</span> : (
+                                                                <input value={payDraft[`${r.id}|${i}`] ?? String(r.pay_tiers[i])}
+                                                                    onChange={e => setPayDraft(prev => ({ ...prev, [`${r.id}|${i}`]: e.target.value }))}
+                                                                    className={inputPay} />
+                                                            )}
                                                         </td>
                                                     ))}
                                                     {bizN > 0 && Array.from({ length: bizN }, (_, i) => (
@@ -477,9 +578,11 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     )}
                                                     {!chiuso && (
                                                     <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
-                                                        <td className="px-3 py-1 text-slate-200">{r.nome}</td>
-                                                        <td className="px-2 py-1 text-center font-semibold text-emerald-200 tabular-nums">
-                                                            {r.pay_base == null ? "—" : Number(r.pay_base) === 0 ? <span className="text-slate-500" title={r.note || "esclusa dalla remunerazione"}>0 €</span> : `${eur(Number(r.pay_base))} €`}
+                                                        <td className="px-3 py-1 text-slate-200">{r.nome}{Number(r.pay_base) === 0 && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>esclusa per lettera</span>}</td>
+                                                        <td className="px-2 py-1 text-center">
+                                                            <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                                                className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
                                                         </td>
                                                     </tr>
                                                     )}
@@ -494,8 +597,8 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 );
             })}
             <p className="text-[11px] text-slate-500 mt-2">
-                💼 Colonne Business: premio a evento della gara Business alla soglia di rete raggiunta (target nella tabella sopra) — si somma al pay dell&apos;attivazione; pagamento retroattivo, la 4ª soglia esiste solo col BP Plus+. Contano anche le Protezione Pro Negozi (5 punti, stesso premio a evento).
-                Canoni dal Catalogo → 💶 Canoni; componenti, premi e gettoni dalla scheda ⚙️ Regole del mese: cambia un valore lì → questi euro si aggiornano da soli.
+                🟢 Verde = calcolato dalle Regole del mese (canone × componenti) · ⬜ celle bianche = gettoni one-shot della lettera, editabili qui (li riempirà l&apos;upload della gara mensile).
+                💼 Colonne Business: premio a evento della gara Business alla soglia di rete (target e importi nella tabella sopra) — si somma al pay; retroattivo, 4ª soglia solo col BP Plus+; contano anche le Protezione Pro Negozi (5 punti).
             </p>
             {/* bolla di scomposizione: in PORTAL sul body — il backdrop-filter
                 del glass-panel rompe il position:fixed dei discendenti (le

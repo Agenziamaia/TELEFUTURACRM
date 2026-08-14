@@ -18,7 +18,7 @@ type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; sog
 type Riga = {
     id: string; pista: string | null; nome: string;
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null; offerta: string | null;
-    brand_vendita: string | null; moltiplicatore?: boolean; punti: number; pay_base: number | null; pay_tiers: number[];
+    brand_vendita: string | null; moltiplicatore?: boolean; componente?: string | null; punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
 
@@ -29,11 +29,16 @@ const num = (v: string): number => {
     return Number.isFinite(n) ? n : 0;
 };
 
-export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto, nascondiSoglie }: {
+export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto, nascondiSoglie, soloRegole }: {
     ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
     // W3 azienda (Luca 14/08): la tabella soglie di rete vive nella tabella
     // target del pannello negozi — qui si nasconde per non avere doppioni
     nascondiSoglie?: boolean;
+    // W3 azienda (Luca 14/08 sera-3): qui restano SOLO le regole della
+    // matematica (componenti mobile/fisso, moltiplicatori+punti assicurazioni,
+    // partnership) — i gettoni one-shot (Luce&Gas, Customer Base, business,
+    // telefoni) vivono editabili nel Commissioning
+    soloRegole?: boolean;
     // a tabellare ASSENTE non mostrare la card vuota (confondeva: sotto ci sono
     // le tabelle dello schema esistente — caso W3 azienda, Luca 11/08): la
     // creazione si apre dal link discreto della pagina Gare
@@ -718,7 +723,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 centrati, colonne strette, niente scroll infinito — stile delle
                 griglie S1-S4 che manda lui) */}
             {piste.map(p => {
-                const rr = righeDiPista(p.chiave);
+                // modalità soloRegole (W3): le piste a gettone e i gettoni
+                // sciolti si editano nel Commissioning, non qui
+                if (soloRegole && ["lucegas", "cb", "business_piva"].includes(p.chiave)) return null;
+                const rr = righeDiPista(p.chiave).filter(r => !soloRegole || !(r.gettone && !r.componente));
                 // colonne S1..Sn: dalle soglie della pista, MA con ripiego sui
                 // pay_tiers delle righe — Mobile/Fisso W3 non hanno soglie di
                 // rete (le loro sono per negozio) e senza ripiego i
