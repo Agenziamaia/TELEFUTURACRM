@@ -351,7 +351,9 @@ export function matchRigaTabellare(
                 .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
             const req = r.opzione.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
             if (!req.every(t => scelte.includes(t))) continue;
-            score += 2;
+            // più opzioni richieste = riga più specifica (es. Pronto+Bollettino
+            // deve vincere su Pronto da solo)
+            score += 2 * req.length;
         }
         if (score > bestScore || (score === bestScore && best && r.ordine < best.ordine)) {
             best = r; bestScore = score;
