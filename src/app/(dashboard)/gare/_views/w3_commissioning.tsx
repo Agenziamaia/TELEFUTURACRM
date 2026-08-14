@@ -383,7 +383,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                                     </span>
                                                                 </td>
                                                                 {Array.from({ length: bizN }, (_, i) => (
-                                                                    <CellaBiz key={`b${i}`} info={bizInfo(v.o)} i={i} />
+                                                                    // il matcher vuole `offerta`, l'oggetto catalogo ha `nome`:
+                                                                    // il mismatch teneva le colonne 💼 vuote (sonda 14/08)
+                                                                    <CellaBiz key={`b${i}`} info={bizInfo({ tipo_cliente: v.o.tipo_cliente, categoria: v.o.categoria, prodotto: v.o.prodotto, offerta: v.o.nome })} i={i} />
                                                                 ))}
                                                                 <td className="px-1.5 py-0.5 text-center text-[12px] text-slate-400 tabular-nums">{eur(v.o.canone)} €</td>
                                                                 {Array.from({ length: maxT }, (_, i) => {
@@ -472,7 +474,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                             <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
                                                             {conPunti && <td className="px-2 py-1 text-center font-bold text-white tabular-nums">{it(set.reduce((s, r) => s + Number(r.punti || 0), 0))}</td>}
                                                             {conBiz && Array.from({ length: bizN }, (_, i) => (
-                                                                <CellaBiz key={`b${i}`} info={bizInfo(o)} i={i} />
+                                                                <CellaBiz key={`b${i}`} info={bizInfo({ tipo_cliente: o.tipo_cliente, categoria: o.categoria, prodotto: o.prodotto, offerta: o.nome })} i={i} />
                                                             ))}
                                                             <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
                                                             {Array.from({ length: maxT }, (_, i) => {
