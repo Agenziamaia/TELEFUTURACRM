@@ -53,16 +53,24 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
     // e `${pista}|${tier}` → testo (rete)
     const [draftRete, setDraftRete] = useState<Record<string, string>>({});
 
+    // pay a pezzo della gara Business (25/35/45 alla soglia): mostrato sotto
+    // le celle della riga Business come i premi assicurazioni — ma è un pay
+    // per evento, non un bonus (Luca 14/08)
+    const [payPezzoBiz, setPayPezzoBiz] = useState<number[]>([]);
     const carica = async () => {
-        const [t, n, s] = await Promise.all([
+        const [t, n, s, bz] = await Promise.all([
             supabase.from("pay_target_pdv").select("id, cod_gara, negozio, peso_mobile, peso_fix, cluster_mobile, soglie_mobile, soglie_mobile_lettera, cluster_fisso, soglie_fisso, soglie_fisso_lettera, extra").eq("brand", "windtre").eq("month", monthISO).order("negozio"),
             supabase.from("gare_azienda_negozi").select("gara, store_name").eq("brand", "w3").eq("month", monthISO).order("store_name"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, bonus").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
                 .in("pista", ["business_piva", "lucegas", "assicurazioni"]).order("tier"),
+            supabase.from("pay_righe").select("pay_tiers").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
+                .eq("pista", "business_piva").eq("attivo", true).limit(1),
         ]);
         setTargets((t.data ?? []) as TargetPdv[]);
         setNegozi((n.data ?? []) as NegozioSeg[]);
         setRete(((s.data ?? []) as SogliaRete[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), bonus: x.bonus == null ? null : Number(x.bonus) })));
+        const bt = (bz.data ?? [])[0]?.pay_tiers;
+        setPayPezzoBiz(Array.isArray(bt) ? bt.map(Number) : []);
     };
     useEffect(() => { setDraft({}); setDraftRete({}); carica(); }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -257,6 +265,14 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
                                                                 <span className="text-[10px]">🎁</span>
                                                                 <span className="text-[11px] font-semibold text-emerald-200 tabular-nums">{Number(r.bonus).toLocaleString("it-IT")}</span>
                                                                 <span className="text-[10px] font-bold text-emerald-300/90">€</span>
+                                                            </div>
+                                                        )}
+                                                        {rt.pista === "business_piva" && payPezzoBiz[i] != null && (
+                                                            <div className="mt-1 inline-flex items-center gap-0.5 bg-sky-500/10 border border-sky-500/30 rounded-lg px-1.5 py-0.5"
+                                                                title={`Pay a pezzo alla soglia: ogni evento business paga ${Number(payPezzoBiz[i]).toLocaleString("it-IT")} € (premio a evento, non un bonus)`}>
+                                                                <span className="text-[10px]">💶</span>
+                                                                <span className="text-[11px] font-semibold text-sky-200 tabular-nums">{Number(payPezzoBiz[i]).toLocaleString("it-IT")}</span>
+                                                                <span className="text-[10px] font-bold text-sky-300/90">€/pezzo</span>
                                                             </div>
                                                         )}
                                                     </td>

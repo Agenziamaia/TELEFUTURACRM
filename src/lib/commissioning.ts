@@ -53,6 +53,7 @@ export type ContrattoPay = {
     nascosta_gestione: boolean | null;
     cod_ins: string | null;                     // codice inserimento (dettagli "Cod.Ins.")
     provenienza: string | null;                 // dettagli "Operatore di Provenienza"
+    opzioni: string | null;                     // dettagli "Opzioni" (es. "Security Pro" — conteggio W3)
 };
 
 /** contracts.brand (etichetta "WindTre"/"Very Mobile") → catalog_brands.id */
@@ -365,8 +366,9 @@ export function pistaComponenti(c: { categoria?: string | null }): "mobile" | "f
     return null;
 }
 
-/** componenti che la vendita accende, dedotte dai nomi di catalogo */
-export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null }): Set<string> {
+/** componenti che la vendita accende, dedotte dai nomi di catalogo (e, per il
+ *  CONTEGGIO W3, da opzioni e provenienza della vendita: righe punti_*) */
+export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; opzioni?: string | null; provenienza?: string | null }): Set<string> {
     const f = new Set<string>();
     const off = String(c.offerta || "");
     const prod = String(c.prodotto || "");
@@ -382,6 +384,12 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // accende qui, gli importi vivono nelle righe gettone `contrattuale_*`
     if (/^mobile\b/i.test(cat)) f.add(f.has("tied") ? "contrattuale_tied" : "contrattuale_untied");
     if (/^fisso/i.test(cat)) f.add(f.has("conv") ? "contrattuale_conv" : (/voce\s*casa/i.test(off) ? "contrattuale_voce" : "contrattuale"));
+    // CONTEGGIO mobile W3 (Luca 14/08): righe punti_* — la Security venduta
+    // insieme è nel campo Opzioni della vendita («Security»/«Security Pro»),
+    // la provenienza MNP nel campo dedicato, la Staff dal nome offerta.
+    if (/security/i.test(String(c.opzioni || ""))) f.add("punti_security");
+    if (c.provenienza != null && /^(iliad|coop|poste|tiscali)/i.test(String(c.provenienza).trim())) f.add("punti_mnp_prov");
+    if (/professional staff/i.test(off)) f.add("punti_staff");
     return f;
 }
 
@@ -524,11 +532,13 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
         const catCat = d["categoria_catalogo"];
         const { dettagli: _d, ...resto } = r;
         const prov = d["Operatore di Provenienza"];
+        const opz = d["Opzioni"];
         return {
             ...resto,
             categoria: catCat ? String(catCat) : r.categoria,
             cod_ins: cod == null ? null : String(cod),
             provenienza: prov == null ? null : String(prov),
+            opzioni: opz == null ? null : String(opz),
         };
     }).filter(c => produzioneValidaGare(c) && (!escludiOggi || String(c.data || "").slice(0, 10) !== escludiOggi));
 }
