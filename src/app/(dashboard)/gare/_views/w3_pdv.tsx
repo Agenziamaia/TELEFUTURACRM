@@ -1,17 +1,13 @@
 "use client";
 
-/* GARE W3 PER PUNTO VENDITA — lato azienda (Luca 13/08, cantiere W3 in
-   terminal). Tre segmenti con le regole di luglio:
-     🏪 Franchising    — gara sul SINGOLO punto vendita (5 PDV, soglie dal
-                          foglio Target mensile W3)
-     🏬 Multibrand     — gara unica (Donna Olimpia): soglie dalla lettera
-                          «Incentivazione Multibrand» (T1)
-     🏬 Multibrand T2  — 2 punti vendita: 1° POS a soglie piene, POS
-                          successivi scontati del 15% come da lettera
-   Le soglie arrivano da lettera/Target ma sono RITOCCABILI a mano: la cella
-   modificata mostra «modificata» piccolo sotto (originale conservato in
-   *_lettera, ↺ per tornarci). Luce & Gas, Business P.IVA e Assicurazioni
-   valgono SOLO per il franchising: sui multibrand qui contano Mobile e Fisso. */
+/* GARE W3 PER PUNTO VENDITA — lato azienda. TABELLA UNICA dei target
+   (proposta Luca 14/08): Mobile e Fisso cambiano col negozio selezionato,
+   sotto le tre righe di RETE (Business P.IVA, Luce&Gas, Assicurazioni)
+   uguali per tutti — tutto in una griglia sola, soglie editabili sia lato
+   negozio (pay_target_pdv, badge «modificata» vs lettera, ↺ ripristino)
+   sia lato rete (pay_soglie, il fino-a si riallinea a catena da solo).
+     🏪 Franchising    — gara sul singolo punto vendita (5 PDV dal Target)
+     🏬 Multibrand     — gara unica a punti cumulati per Ragione Sociale */
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -26,10 +22,8 @@ interface TargetPdv {
     extra?: { premi?: number[] } | null;
 }
 interface NegozioSeg { gara: string; store_name: string }
+interface SogliaRete { id: string; pista: string; tier: number; soglia_da: number; bonus: number | null }
 
-// MULTIBRAND come il franchising (Luca 13/08): la gara è la STESSA — un solo
-// pulsante Multibrand e sotto le due Ragioni Sociali, Telefutura (T1, 1
-// negozio) e Telefutura 2 (T2, 2 negozi col target ×1,85)
 const SEGMENTI = [
     { id: "franchising", label: "🏪 Franchising", regola: "gara sul singolo punto vendita" },
     { id: "multibrand", label: "🏬 Multibrand", regola: "gara unica a punti cumulati, per Ragione Sociale" },
@@ -38,29 +32,39 @@ const RS_MULTIBRAND = [
     { id: "MB-T1", label: "Telefutura", sub: "Donna Olimpia" },
     { id: "MB-T2", label: "Telefutura 2", sub: "Promontori + Garbatella" },
 ] as const;
+// le tre gare di RETE nella tabella unica (ordine e etichette)
+const RETE = [
+    { pista: "business_piva", label: "💼 Business P.IVA", nota: "per Ragione Sociale" },
+    { pista: "lucegas", label: "⚡ Luce & Gas", nota: "per Ragione Sociale" },
+    { pista: "assicurazioni", label: "🛡 Assicurazioni", nota: "target concordato" },
+] as const;
 
 export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string; colore: string; seg?: string; onSeg?: (s: string) => void }) {
     const monthISO = `${mese}-01`;
     const [targets, setTargets] = useState<TargetPdv[]>([]);
     const [negozi, setNegozi] = useState<NegozioSeg[]>([]);
-    // il segmento può essere GOVERNATO dalla pagina (Luca 13/08: la scelta
-    // guida tutta la vista azienda W3, tabellare compreso)
+    const [rete, setRete] = useState<SogliaRete[]>([]);
     const [segInterno, setSegInterno] = useState<string>("franchising");
     const seg = segProp ?? segInterno;
     const setSeg = (s: string) => { setSegInterno(s); onSeg?.(s); };
     const [pdvSel, setPdvSel] = useState<string>("");
-    // modifiche manuali in corso: chiave `${targetId}|${campo}|${idx}` → testo
+    // modifiche manuali in corso: `${targetId}|${campo}|${idx}` → testo (negozio)
     const [draft, setDraft] = useState<Record<string, string>>({});
+    // e `${pista}|${tier}` → testo (rete)
+    const [draftRete, setDraftRete] = useState<Record<string, string>>({});
 
     const carica = async () => {
-        const [t, n] = await Promise.all([
+        const [t, n, s] = await Promise.all([
             supabase.from("pay_target_pdv").select("id, cod_gara, negozio, peso_mobile, peso_fix, cluster_mobile, soglie_mobile, soglie_mobile_lettera, cluster_fisso, soglie_fisso, soglie_fisso_lettera, extra").eq("brand", "windtre").eq("month", monthISO).order("negozio"),
             supabase.from("gare_azienda_negozi").select("gara, store_name").eq("brand", "w3").eq("month", monthISO).order("store_name"),
+            supabase.from("pay_soglie").select("id, pista, tier, soglia_da, bonus").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
+                .in("pista", ["business_piva", "lucegas", "assicurazioni"]).order("tier"),
         ]);
         setTargets((t.data ?? []) as TargetPdv[]);
         setNegozi((n.data ?? []) as NegozioSeg[]);
+        setRete(((s.data ?? []) as SogliaRete[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), bonus: x.bonus == null ? null : Number(x.bonus) })));
     };
-    useEffect(() => { setDraft({}); carica(); }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => { setDraft({}); setDraftRete({}); carica(); }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
 
     const negozioDi = (s: string) => negozi.filter(n => n.gara === s).map(n => n.store_name);
     // il Target usa il nome secco ("Magliana"), lo schema quello con suffisso
@@ -73,14 +77,13 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
         if (stores.length && !stores.includes(pdvSel)) setPdvSel(stores[0]);
     }, [seg, negozi]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-    // MULTIBRAND = stessa gara del franchising come struttura: si sceglie la
-    // RAGIONE SOCIALE (Telefutura / Telefutura 2) e si vede il suo target
     const [rsSel, setRsSel] = useState<string>("MB-T1");
     const target = seg === "franchising"
         ? (pdvSel ? targetDi(pdvSel) : undefined)
         : targets.find(t => t.cod_gara.startsWith(rsSel));
     const segInfo = SEGMENTI.find(s => s.id === seg);
 
+    /* ---- celle del NEGOZIO (pay_target_pdv, come prima) ---- */
     const chiave = (tid: string, campo: string, i: number) => `${tid}|${campo}|${i}`;
     const valCella = (t: TargetPdv, campo: "mobile" | "fisso", i: number): string => {
         const d = draft[chiave(t.id, campo, i)];
@@ -114,55 +117,47 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
         carica();
     };
 
-    const TabSoglie = ({ t, titolo, campo, cluster, peso }: { t: TargetPdv; titolo: string; campo: "mobile" | "fisso"; cluster: string | null; peso: number | null }) => {
-        const arr = campo === "mobile" ? t.soglie_mobile : t.soglie_fisso;
-        const lett = campo === "mobile" ? t.soglie_mobile_lettera : t.soglie_fisso_lettera;
-        if (!arr?.length) return null;
-        return (
-            <div className="flex-1 min-w-[260px]">
-                <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
-                    {titolo} {cluster && <span className="text-slate-500 normal-case">· {cluster}</span>}
-                    {peso != null && peso !== 1 && <span className="text-amber-300/80 normal-case"> · peso {peso}</span>}
-                </div>
-                <table className="w-full text-sm border-collapse">
-                    <thead>
-                        <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                            {arr.map((_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center">S{i + 1}</th>)}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr className="border-t border-white/5">
-                            {arr.map((v, i) => {
-                                const orig = lett?.[i];
-                                const attuale = draft[chiave(t.id, campo, i)] ?? String(v);
-                                const modificata = orig != null && Number(attuale) !== Number(orig);
-                                return (
-                                    <td key={i} className="px-1.5 py-2 text-center align-top"
-                                        title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
-                                        <input value={valCella(t, campo, i)}
-                                            onChange={e => setDraft(prev => ({ ...prev, [chiave(t.id, campo, i)]: e.target.value }))}
-                                            className={cn("bg-white/[0.05] border rounded-lg px-1.5 py-1 text-[15px] font-bold text-white w-16 text-center tabular-nums",
-                                                modificata ? "border-amber-400/60" : "border-white/10")} />
-                                        {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
-                                    </td>
-                                );
-                            })}
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        );
+    /* ---- celle di RETE (pay_soglie): il fino-a si riallinea a catena ---- */
+    const reteDi = (pista: string) => rete.filter(r => r.pista === pista).sort((a, b) => a.tier - b.tier);
+    const valRete = (pista: string, tier: number): string => {
+        const d = draftRete[`${pista}|${tier}`];
+        if (d != null) return d;
+        const r = rete.find(x => x.pista === pista && x.tier === tier);
+        return r ? String(r.soglia_da) : "";
+    };
+    const dirtyRete = Object.keys(draftRete).length > 0;
+    const salvaRete = async () => {
+        // per ogni pista toccata: nuove soglia_da + fino-a ricalcolato a catena
+        const piste = new Set(Object.keys(draftRete).map(k => k.split("|")[0]));
+        for (const pista of piste) {
+            const scala = reteDi(pista).map(r => {
+                const d = draftRete[`${pista}|${r.tier}`];
+                const n = d == null ? r.soglia_da : Number(String(d).replace(",", "."));
+                return { ...r, soglia_da: Number.isFinite(n) ? n : r.soglia_da };
+            });
+            for (let i = 0; i < scala.length; i++) {
+                const soglia_a = i < scala.length - 1 ? scala[i + 1].soglia_da - 1 : null;
+                const { error } = await supabase.from("pay_soglie")
+                    .update({ soglia_da: scala[i].soglia_da, soglia_a }).eq("id", scala[i].id);
+                if (dbError("Salvataggio target di rete", error)) return;
+            }
+        }
+        notify("Target di rete salvati ✓", "ok");
+        setDraftRete({});
+        carica();
     };
 
     if (!negozi.length && !targets.length) return null;
+    const maxT = 5;   // colonne della tabella unica (fisso e L&G arrivano a 5)
+    const inputCls = (mod: boolean) => cn(
+        "bg-white/[0.05] border rounded-lg px-1.5 py-1 text-[15px] font-bold text-white w-16 text-center tabular-nums",
+        mod ? "border-amber-400/60" : "border-white/10");
 
     return (
         <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
             <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">
-                Gare per punto vendita — Mobile e Fisso corrono sul singolo PDV
-                {seg === "franchising"
-                    ? "; Business P.IVA, Assicurazioni e Luce & Gas sulla rete (tabella soglie qui sopra — valgono solo per il franchising)"
-                    : ". Le gare di rete (Business, Assicurazioni, Luce & Gas) valgono solo per il franchising: qui non contano"}
+                🎯 Target del mese — Mobile e Fisso corrono sul negozio selezionato; Business, Luce &amp; Gas e Assicurazioni sono di rete, uguali per tutti
+                {seg !== "franchising" && " (le gare di rete valgono solo per il franchising: sui multibrand non contano)"}
             </div>
             <div className="flex flex-wrap gap-2 mb-3">
                 {SEGMENTI.map(s => (
@@ -197,74 +192,148 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
                     ))}
                 </div>
             )}
-            {target ? (
+            {target && seg === "franchising" ? (
                 <>
-                    {seg === "franchising" ? (
-                        <div className="flex gap-6 flex-wrap">
-                            <TabSoglie t={target} titolo="📱 Mobile" campo="mobile" cluster={target.cluster_mobile} peso={target.peso_mobile} />
-                            <TabSoglie t={target} titolo="🏠 Fisso" campo="fisso" cluster={target.cluster_fisso} peso={target.peso_fix} />
-                        </div>
-                    ) : (
-                        /* MULTIBRAND (Luca 13/08): GARA UNICA a punti cumulati
-                           (mobile→assicurazioni) — UNA riga: soglie punti +
-                           premio 🎁 per soglia (Gara On Top della lettera) */
-                        (() => {
-                            const arr = target.soglie_mobile;
-                            if (!arr?.length) return null;
-                            const premi = target.extra?.premi || [];
-                            return (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm border-collapse">
-                                        <thead>
-                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                                                <th className="text-left font-semibold px-3 py-1.5">Gara</th>
-                                                {arr.map((_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-24">S{i + 1}</th>)}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr className="border-t border-white/5">
-                                                <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">🏆 Punti cumulati <span className="text-slate-500 font-normal text-xs">(mobile → assicurazioni)</span></td>
-                                                {arr.map((v, i) => {
-                                                    const orig = target.soglie_mobile_lettera?.[i];
-                                                    const attuale = draft[chiave(target.id, "mobile", i)] ?? String(v);
-                                                    const modificata = orig != null && Number(attuale) !== Number(orig);
-                                                    return (
-                                                        <td key={i} className="px-1.5 py-2 text-center align-top" title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
-                                                            <input value={valCella(target, "mobile", i)}
-                                                                onChange={e => setDraft(prev => ({ ...prev, [chiave(target.id, "mobile", i)]: e.target.value }))}
-                                                                className={cn("bg-white/[0.05] border rounded-lg px-1.5 py-1 text-[15px] font-bold text-white w-16 text-center tabular-nums",
-                                                                    modificata ? "border-amber-400/60" : "border-white/10")} />
-                                                            {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
-                                                            {premi[i] != null && (
-                                                                <div className="mt-1 inline-flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
-                                                                    title={`Premio alla soglia: ${Number(premi[i]).toLocaleString("it-IT")} €`}>
-                                                                    <span className="text-[10px]">🎁</span>
-                                                                    <span className="text-[11px] font-semibold text-emerald-200 tabular-nums">{Number(premi[i]).toLocaleString("it-IT")}</span>
-                                                                    <span className="text-[10px] font-bold text-emerald-300/90">€</span>
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                    );
-                                                })}
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                    <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {rsSel === "MB-T2" ? "Telefutura 2 ha 2 negozi: 1° al 100% + 2° scontato del 15% (lettera multipos) = target ×1,85." : ""}</p>
-                                </div>
-                            );
-                        })()
-                    )}
-                    <div className="flex items-center gap-3 mt-2">
+                    {/* TABELLA UNICA: negozio sopra, rete sotto */}
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                            <thead>
+                                <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                    <th className="text-left font-semibold px-3 py-1.5 min-w-[210px]">Gara</th>
+                                    {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-24">S{i + 1}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {([
+                                    { campo: "mobile" as const, label: "📱 Mobile", cluster: target.cluster_mobile, peso: target.peso_mobile, arr: target.soglie_mobile, lett: target.soglie_mobile_lettera },
+                                    { campo: "fisso" as const, label: "🏠 Fisso", cluster: target.cluster_fisso, peso: target.peso_fix, arr: target.soglie_fisso, lett: target.soglie_fisso_lettera },
+                                ]).map(riga => (
+                                    <tr key={riga.campo} className="border-t border-white/5">
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            <span className="font-semibold text-white">{riga.label}</span>
+                                            <span className="text-[11px] text-slate-500"> · 🏬 {target.negozio}{riga.cluster ? ` · ${riga.cluster}` : ""}{riga.peso != null && riga.peso !== 1 ? ` · peso ${riga.peso}` : ""}</span>
+                                        </td>
+                                        {Array.from({ length: maxT }, (_, i) => {
+                                            if (!riga.arr || riga.arr[i] == null) return <td key={i} className="px-1.5 py-2 text-center text-slate-700">—</td>;
+                                            const orig = riga.lett?.[i];
+                                            const attuale = draft[chiave(target.id, riga.campo, i)] ?? String(riga.arr[i]);
+                                            const modificata = orig != null && Number(attuale) !== Number(orig);
+                                            return (
+                                                <td key={i} className="px-1.5 py-2 text-center align-top" title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
+                                                    <input value={valCella(target, riga.campo, i)}
+                                                        onChange={e => setDraft(prev => ({ ...prev, [chiave(target.id, riga.campo, i)]: e.target.value }))}
+                                                        className={inputCls(modificata)} />
+                                                    {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                                <tr className="bg-white/[0.03]">
+                                    <td colSpan={1 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-400">
+                                        🌐 Rete — uguali per tutti i negozi
+                                    </td>
+                                </tr>
+                                {RETE.map(rt => {
+                                    const scala = reteDi(rt.pista);
+                                    if (!scala.length) return null;
+                                    return (
+                                        <tr key={rt.pista} className="border-t border-white/5">
+                                            <td className="px-3 py-2 whitespace-nowrap">
+                                                <span className="font-semibold text-white">{rt.label}</span>
+                                                <span className="text-[11px] text-slate-500"> · {rt.nota}</span>
+                                            </td>
+                                            {Array.from({ length: maxT }, (_, i) => {
+                                                const r = scala.find(x => x.tier === i + 1);
+                                                if (!r) return <td key={i} className="px-1.5 py-2 text-center text-slate-700">—</td>;
+                                                return (
+                                                    <td key={i} className="px-1.5 py-2 text-center align-top">
+                                                        <input value={valRete(rt.pista, r.tier)}
+                                                            onChange={e => setDraftRete(prev => ({ ...prev, [`${rt.pista}|${r.tier}`]: e.target.value }))}
+                                                            className={inputCls(draftRete[`${rt.pista}|${r.tier}`] != null)} />
+                                                        {r.bonus != null && (
+                                                            <div className="mt-1 inline-flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
+                                                                title={`Premio a volume alla soglia: ${Number(r.bonus).toLocaleString("it-IT")} € per negozio`}>
+                                                                <span className="text-[10px]">🎁</span>
+                                                                <span className="text-[11px] font-semibold text-emerald-200 tabular-nums">{Number(r.bonus).toLocaleString("it-IT")}</span>
+                                                                <span className="text-[10px] font-bold text-emerald-300/90">€</span>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
                         {dirtyPdv(target) && (
                             <button onClick={() => salvaPdv(target)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">💾 Salva soglie {target.negozio}</button>
                         )}
-                        <button onClick={() => ripristina(target)} className="text-[11px] text-slate-500 hover:text-slate-300" title="Torna alle soglie originali della lettera/Target">↺ come da lettera</button>
+                        {dirtyRete && (
+                            <button onClick={salvaRete} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">💾 Salva target di rete</button>
+                        )}
+                        <button onClick={() => ripristina(target)} className="text-[11px] text-slate-500 hover:text-slate-300" title="Le soglie del negozio tornano a quelle originali della lettera/Target">↺ negozio come da lettera</button>
                     </div>
                 </>
+            ) : target && seg === "multibrand" ? (
+                /* MULTIBRAND: gara unica a punti cumulati — una riga */
+                (() => {
+                    const arr = target.soglie_mobile;
+                    if (!arr?.length) return null;
+                    const premi = target.extra?.premi || [];
+                    return (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm border-collapse">
+                                <thead>
+                                    <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                        <th className="text-left font-semibold px-3 py-1.5">Gara</th>
+                                        {arr.map((_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-24">S{i + 1}</th>)}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr className="border-t border-white/5">
+                                        <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">🏆 Punti cumulati <span className="text-slate-500 font-normal text-xs">(mobile → assicurazioni)</span></td>
+                                        {arr.map((v, i) => {
+                                            const orig = target.soglie_mobile_lettera?.[i];
+                                            const attuale = draft[chiave(target.id, "mobile", i)] ?? String(v);
+                                            const modificata = orig != null && Number(attuale) !== Number(orig);
+                                            return (
+                                                <td key={i} className="px-1.5 py-2 text-center align-top" title={orig != null && modificata ? `lettera: ${orig}` : undefined}>
+                                                    <input value={valCella(target, "mobile", i)}
+                                                        onChange={e => setDraft(prev => ({ ...prev, [chiave(target.id, "mobile", i)]: e.target.value }))}
+                                                        className={inputCls(modificata)} />
+                                                    {modificata && <div className="text-[9px] text-amber-300/90 mt-0.5">modificata</div>}
+                                                    {premi[i] != null && (
+                                                        <div className="mt-1 inline-flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
+                                                            title={`Premio alla soglia: ${Number(premi[i]).toLocaleString("it-IT")} €`}>
+                                                            <span className="text-[10px]">🎁</span>
+                                                            <span className="text-[11px] font-semibold text-emerald-200 tabular-nums">{Number(premi[i]).toLocaleString("it-IT")}</span>
+                                                            <span className="text-[10px] font-bold text-emerald-300/90">€</span>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p className="text-[11px] text-slate-500 mt-1.5">Punti: GA mobile 1 · TIED 1 · MNP 1 · Fisso 3 · P.IVA 2 · Luce&amp;Gas 2 · CB 1 (lettera multibrand). {rsSel === "MB-T2" ? "Telefutura 2 ha 2 negozi: 1° al 100% + 2° scontato del 15% (lettera multipos) = target ×1,85." : ""}</p>
+                            <div className="flex items-center gap-3 mt-2">
+                                {dirtyPdv(target) && (
+                                    <button onClick={() => salvaPdv(target)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">💾 Salva soglie {target.negozio}</button>
+                                )}
+                                <button onClick={() => ripristina(target)} className="text-[11px] text-slate-500 hover:text-slate-300" title="Torna alle soglie originali della lettera">↺ come da lettera</button>
+                            </div>
+                        </div>
+                    );
+                })()
             ) : (
                 <div className="text-sm text-slate-500">Nessun target per questo punto vendita nel mese: importa il foglio Target Wind3.</div>
             )}
-            <p className="text-[11px] text-slate-500 mt-3">Soglie a punti da lettera/Target ({target?.cod_gara || "—"}), ritoccabili a mano: la cella che si discosta dall&apos;originale mostra «modificata». Il pay resta canone × moltiplicatore dalle tabelle del tabellare; le soglie qui decidono il moltiplicatore del PDV.</p>
+            <p className="text-[11px] text-slate-500 mt-3">Soglie da lettera/Target ({target?.cod_gara || "—"}), ritoccabili: la cella del negozio che si discosta dall&apos;originale mostra «modificata». Il pay per attivazione sta nella scheda 💶 Commissioning €.</p>
         </div>
     );
 }

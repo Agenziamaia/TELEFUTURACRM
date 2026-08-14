@@ -276,6 +276,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                     if (!rr?.length) return null;
                     const maxT = Math.max(...rr.map(x => Math.max(...x.set.map(r => r.pay_tiers.length))));
                     const runtime = righe.filter(r => r.pista === sez.id && r.componente && COMP_RUNTIME.has(r.componente));
+                    // sulle assicurazioni ogni polizza porta i suoi punti in
+                    // soglia (Luca 14/08): colonna prima del canone
+                    const conPunti = sez.id === "assicurazioni";
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
@@ -289,6 +292,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                             <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                                 <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
                                                 <th className="text-left font-semibold px-2 py-1.5">Prodotto</th>
+                                                {conPunti && <th className="px-2 py-1.5 font-semibold text-center w-24">Punti in soglia</th>}
                                                 <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
                                                 {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
                                             </tr>
@@ -303,7 +307,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     <Fragment key={o.id}>
                                                         {nuovoGruppo && (
                                                             <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kGruppo)}>
-                                                                <td colSpan={3 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                <td colSpan={(conPunti ? 4 : 3) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
                                                                     {chiuso ? "▸" : "▾"} {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
                                                                     {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {rr.filter(x => `${x.o.tipo_cliente}|${x.o.prodotto}` === gruppo).length} offerte</span>}
                                                                 </td>
@@ -313,6 +317,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                         <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
                                                             <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}</td>
                                                             <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
+                                                            {conPunti && <td className="px-2 py-1 text-center font-bold text-white tabular-nums">{it(set.reduce((s, r) => s + Number(r.punti || 0), 0))}</td>}
                                                             <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
                                                             {Array.from({ length: maxT }, (_, i) => {
                                                                 const moltParti = set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
