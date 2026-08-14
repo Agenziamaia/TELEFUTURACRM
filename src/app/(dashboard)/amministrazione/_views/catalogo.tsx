@@ -27,7 +27,7 @@ interface Cat { id: string; nome: string; ordine: number; attivo: boolean; contr
 interface Brand { id: string; nome: string; colore1: string; colore2: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
 interface Prod { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
 interface Off { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
-interface Opz { id: string; offerta_id: string; nome: string; tipo: string | null; gruppo_singolo: string | null; ordine: number; attivo: boolean }
+interface Opz { id: string; offerta_id: string; nome: string; tipo: string | null; gruppo_singolo: string | null; obbligatoria?: boolean; ordine: number; attivo: boolean }
 interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean; facoltativo?: boolean; valori?: string[] }
 /* riga della QUINTA tabella (03/08): campo risolto per l'offerta selezionata,
    con la provenienza — "offerta" = regola dedicata, "generale" = regole comuni */
@@ -282,7 +282,7 @@ export function CatalogoView() {
         if (nuove.length) {
             const { error } = await supabase.from("catalog_opzioni").insert(nuove.map((k, i) => ({
                 offerta_id: target.id, nome: k.nome, tipo: k.tipo ?? null,
-                gruppo_singolo: k.gruppo_singolo ?? null, ordine: kidsTgt.length + i, attivo: k.attivo ?? true,
+                gruppo_singolo: k.gruppo_singolo ?? null, obbligatoria: k.obbligatoria ?? false, ordine: kidsTgt.length + i, attivo: k.attivo ?? true,
             })));
             if (dbError("Copia opzioni", error)) return;
         }
@@ -907,6 +907,7 @@ export function CatalogoView() {
                                                                     <span className="truncate flex items-center gap-1.5">
                                                                         {k.nome}
                                                                         {k.gruppo_singolo && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300" title={`Gruppo "${k.gruppo_singolo}": tra le opzioni con questo gruppo se ne sceglie UNA sola`}>1 sola · {k.gruppo_singolo}</span>}
+                                                                        {k.obbligatoria && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300" title="Gruppo a scelta obbligatoria: in Registra Vendita la vendita non è completa finché una del gruppo non è selezionata">✱ obbligatoria</span>}
                                                                         {k.tipo === "numero" && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300" title="Alla selezione chiede una quantità">n°</span>}
                                                                     </span>
                                                                     <span className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -916,6 +917,11 @@ export function CatalogoView() {
                                                                         <button title={k.gruppo_singolo ? `Gruppo "${k.gruppo_singolo}" — clicca per cambiarlo o svuotarlo` : "Metti in un gruppo di incompatibilità: le opzioni con lo stesso gruppo si escludono a vicenda"}
                                                                             onClick={() => { const g = window.prompt('Gruppo di incompatibilità: le opzioni della STESSA offerta con lo stesso nome di gruppo si escludono a vicenda (se ne sceglie una sola).\nEsempi: "reload", "security". Vuoto = cumulabile con tutto.', k.gruppo_singolo || ""); if (g === null) return; run("Gruppo opzione", () => supabase.from("catalog_opzioni").update({ gruppo_singolo: g.trim().toLowerCase() || null }).eq("id", k.id)); }}
                                                                             className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase", k.gruppo_singolo ? "bg-violet-500/25 text-violet-200" : "bg-white/5 text-slate-500 hover:text-white")}>1</button>
+                                                                        {/* ✱ = il gruppo di questa opzione diventa a scelta OBBLIGATORIA
+                                                                            in Registra Vendita (feature Luca 14/08, nata per Protecta) */}
+                                                                        <button title={k.obbligatoria ? "Scelta obbligatoria attiva sul gruppo — clicca per toglierla" : "Rendi il gruppo a scelta obbligatoria: in Registra Vendita andrà selezionata una opzione del gruppo"}
+                                                                            onClick={() => run("Obbligatorietà opzione", () => supabase.from("catalog_opzioni").update({ obbligatoria: !k.obbligatoria }).eq("id", k.id))}
+                                                                            className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold", k.obbligatoria ? "bg-amber-500/25 text-amber-200" : "bg-white/5 text-slate-500 hover:text-white")}>✱</button>
                                                                         <button title={k.tipo === "numero" ? "Togli la quantità" : "Chiedi una quantità alla selezione"}
                                                                             onClick={() => run("Tipo opzione", () => supabase.from("catalog_opzioni").update({ tipo: k.tipo === "numero" ? null : "numero" }).eq("id", k.id))}
                                                                             className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase", k.tipo === "numero" ? "bg-sky-500/25 text-sky-200" : "bg-white/5 text-slate-500 hover:text-white")}>n°</button>

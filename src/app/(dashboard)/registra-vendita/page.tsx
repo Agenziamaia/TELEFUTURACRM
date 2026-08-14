@@ -3345,7 +3345,12 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
     )}
     {offSel&&offSel.opzioni.length>0&&(
       <div style={{marginTop:10}}>
-        <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>{_haVincolabili&&<span style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
+        <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>
+          {/* gruppi a scelta OBBLIGATORIA (Luca 14/08, es. Protecta kit+pagamento) */}
+          {(()=>{const _go=[...new Set(offSel.opzioni.filter(o=>o.obb&&o.gruppo).map(o=>o.gruppo))];
+            const _manca=_go.filter(g=>!offSel.opzioni.some(k=>k.gruppo===g&&opz[k.nome]));
+            return _go.length?<span style={{fontWeight:700,color:_manca.length?"var(--tf-f59e0b)":"var(--tf-28a745)",marginLeft:8}}>✱ scelta obbligatoria: {_go.join(", ")}{_manca.length?" — manca: "+_manca.join(", "):" ✓"}</span>:null;})()}
+          {_haVincolabili&&<span style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {offSel.opzioni.map(o=>{const on=!!opz[o.nome];
             const bloccata=!on&&(_opzBundle(o.nome)||_opzAccessorio(o.nome))&&_vinc>=MAX_BUNDLE_ACC;
@@ -3420,6 +3425,20 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
 };
 
 const subComplete=(sub,d)=>{
+  // GRUPPI OPZIONE OBBLIGATORI (Luca 14/08, nato per Protecta kit+pagamento):
+  // se l'offerta scelta ha opzioni con obb=true, per OGNI loro gruppo deve
+  // esserci una selezione — vale per qualunque flusso a catalogo
+  {
+    const _f=(d&&d.fields)||{};
+    const _osel=(sub&&sub.catOfferte||[]).find(o=>o.nome===_f["Offerta"]);
+    if(_osel){
+      const _opz=_f.__opzioni||{};
+      const _grpObb=[...new Set((_osel.opzioni||[]).filter(k=>k.obb&&k.gruppo).map(k=>k.gruppo))];
+      for(const g of _grpObb){
+        if(!(_osel.opzioni||[]).some(k=>k.gruppo===g&&_opz[k.nome]))return false;
+      }
+    }
+  }
   if(!d)return false;
   const F=(k)=>_NE(d[k]);
   const C=d.contract||{};
@@ -4636,7 +4655,7 @@ function CRM() {
       return {id:"cat_"+cat.id,title:cat.nome.toUpperCase(),icon:def.icon,color:def.color,radio:true,catMacro:macro,subs:prods.map(x=>({
         id:"p_"+x.id,title:x.nome,isCatalogo:true,hasContract:false,ct:"cat",fields:[],
         catBrand:slug,catTipo:tipoCat,catCategoria:cat.nome,catProdotto:x.nome,
-        catOfferte:(offByProd[x.id]||[]).sort((a,b)=>a.ordine-b.ordine||a.nome.localeCompare(b.nome)).map(o=>({nome:o.nome,opzioni:((o.catalog_opzioni||[]).filter(k=>k.attivo)).sort((a,b)=>a.ordine-b.ordine).map(k=>({nome:k.nome,tipo:k.tipo,gruppo:k.gruppo_singolo}))})),
+        catOfferte:(offByProd[x.id]||[]).sort((a,b)=>a.ordine-b.ordine||a.nome.localeCompare(b.nome)).map(o=>({nome:o.nome,opzioni:((o.catalog_opzioni||[]).filter(k=>k.attivo)).sort((a,b)=>a.ordine-b.ordine).map(k=>({nome:k.nome,tipo:k.tipo,gruppo:k.gruppo_singolo,obb:!!k.obbligatoria}))})),
       }))};
     }).filter(Boolean);
   },[brand,catTree,tipoCliente,turista]);

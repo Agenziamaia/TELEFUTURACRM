@@ -317,7 +317,7 @@ function provenienzaOk(tokens: string, vendita: unknown): boolean {
 
 export function matchRigaTabellare(
     righe: PayRiga[],
-    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null },
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
     brandVendita?: string | null,
 ): PayRiga | null {
     let best: PayRiga | null = null;
@@ -339,6 +339,18 @@ export function matchRigaTabellare(
         // (TIM MNP +10€ da Iliad/Coop/Poste, Kena STAR da Iliad/FW/Coop/Poste)
         if (r.provenienza != null && r.provenienza.trim() !== "") {
             if (!provenienzaOk(r.provenienza, c.provenienza)) continue;
+            score += 2;
+        }
+        // OPZIONI (Luca 14/08, caso Protecta kit|pagamento): la riga vincolata
+        // alle opzioni vale solo se TUTTE le sue voci (separate da |) sono tra
+        // le opzioni scelte nella vendita (dettaglio "Opzioni": lista separata
+        // da virgole, eventuali quantità "(n)" ignorate) — nomi ESATTI, così
+        // «Finanziato» non piglia «Non finanziato»
+        if (r.opzione != null && r.opzione.trim() !== "") {
+            const scelte = String(c.opzioni || "").split(",")
+                .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
+            const req = r.opzione.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
+            if (!req.every(t => scelte.includes(t))) continue;
             score += 2;
         }
         if (score > bestScore || (score === bestScore && best && r.ordine < best.ordine)) {
