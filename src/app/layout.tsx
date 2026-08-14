@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   // <meta name="tf-build-check"> in ogni pagina — per verificare che la
   // produzione serva la build di un certo push basta aggiornare il valore
   // e cercarlo nell'HTML del dominio. Aggiornarlo quando serve un test.
-  other: { 'tf-build-check': 'wh-20260814-regole-di-gara' },
+  other: { 'tf-build-check': 'wh-20260814-gettoni-filtrati' },
 }
 
 // NIENTE pagine prerenderizzate in cache (Luca 01/08, caso "reset password
