@@ -37,6 +37,7 @@ const SEZIONI = [
     { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
     { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — editabili; sul microbusiness in più le colonne 💼 della gara Business" },
     { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole di gara)" },
+    { id: "protetti", label: "🏠🛡 W3 Protetti (kit)", tipo: "device", sub: "commissioning dei kit dalla slide — editabile; si distingue col kit scelto in vendita, manca solo il dato finanziato/non (campo in arrivo)" },
     { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia — editabile" },
 ] as const;
 
@@ -255,7 +256,11 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                    celle EDITABILI (Luca 14/08 sera-3) — righe spente per il
                    motore finché l'analisi non aggancia il listino ---- */
                 if (sez.tipo === "device") {
-                    const rr = righe.filter(r => r.pista === "mobile" && r.gettone && !r.componente && filtro(r.nome))
+                    // 'device' = lista piatta di gettoni editabili: i telefoni
+                    // (pista mobile, gettoni non-componente) o i kit Protetti
+                    const rr = righe.filter(r =>
+                        (sez.id === "protetti" ? r.pista === "protetti" : (r.pista === "mobile" && !r.componente))
+                        && r.gettone && filtro(`${r.nome} ${r.opzione || ""}`))
                         .sort((a, b) => a.ordine - b.ordine);
                     if (!rr.length) return null;
                     return (
