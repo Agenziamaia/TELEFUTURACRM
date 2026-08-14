@@ -713,7 +713,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 griglie S1-S4 che manda lui) */}
             {piste.map(p => {
                 const rr = righeDiPista(p.chiave);
-                const nTiers = soglieDi(p.chiave).length;
+                // colonne S1..Sn: dalle soglie della pista, MA con ripiego sui
+                // pay_tiers delle righe — Mobile/Fisso W3 non hanno soglie di
+                // rete (le loro sono per negozio) e senza ripiego i
+                // moltiplicatori restavano INVISIBILI (baco visto da Luca 14/08:
+                // «GA base: leggo punti 1 e niente soglie»)
+                const nTiers = soglieDi(p.chiave).length || Math.max(0, ...rr.map(r => r.pay_tiers.length));
                 return (
                     <div key={p.id} className="glass-panel rounded-2xl overflow-hidden">
                         <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-3 flex-wrap">
