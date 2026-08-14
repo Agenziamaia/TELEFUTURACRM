@@ -411,7 +411,10 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     if (ha("più sicuri ufficio")) f.add("pscu");               // 2 € + 0,25 punti
     if (ha("cloud")) f.add("cloud");                           // 8 €, non conta in soglia
     if (/professional box/i.test(off)) f.add("fritz");         // +40 € e +1 punto (FRITZ!Box)
-    if (ha("2°linea", "2° linea")) f.add("punti_2linea");      // conteggio 1,5 della 2ª linea
+    // 2ª linea Professional (opzione a canone): la lettera la scrive come
+    // moltiplicatore L.A. ×1 sul canone della linea (10 €) → in pratica flat
+    // 20 € (10 + contrattuale dedicato 10) e conteggio 1,5
+    if (ha("2°linea", "2° linea")) f.add("seconda_linea");
     if (ha("ftth", "ftth extra")) f.add("ftth");               // componente +1 ×canone
     if (ha("chiamate illimitate", "internazionali")) f.add("opzioni");   // componente 0,25-1,5 ×canone
     return f;
