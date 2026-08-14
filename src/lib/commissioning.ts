@@ -373,10 +373,11 @@ export function matchRigaTabellare(
    CLIENTE dice P.IVA; la provenienza MNP sta nei campi vendita (conteggio). */
 
 /** pista del modello a componenti dalla categoria di catalogo (solo W3) */
-export function pistaComponenti(c: { categoria?: string | null }): "mobile" | "fisso" | null {
+export function pistaComponenti(c: { categoria?: string | null }): "mobile" | "fisso" | "lucegas" | null {
     const cat = String(c.categoria || "");
     if (/^mobile\b/i.test(cat)) return "mobile";
     if (/^fisso/i.test(cat)) return "fisso";
+    if (/^energia/i.test(cat)) return "lucegas";
     return null;
 }
 
@@ -418,6 +419,11 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // della soglia sul SUO canone (riga a € per soglia 20/30/35/40/50) più il
     // contrattuale dedicato 10 €, e conta 1,5 in soglia — pescata dall'opzione
     if (ha("2°linea", "2° linea")) { f.add("seconda_linea"); f.add("contrattuale_2linea"); }
+    // Luce&Gas (scorporo Luca 14/08: il delta 35 della slide = 25 convergenza
+    // già dentro le offerte Multiservice + 10 pronto assistenza): modificatori
+    // additivi dalle opzioni — Pronto +10, Bollettino −15 (no SDD)
+    if (ha("pronto intervento")) f.add("lg_pronto");
+    if (ha("bollettino")) f.add("lg_bollettino");
     if (ha("ftth", "ftth extra")) f.add("ftth");               // componente +1 ×canone
     if (ha("chiamate illimitate", "internazionali")) f.add("opzioni");   // componente 0,25-1,5 ×canone
     return f;
@@ -435,8 +441,20 @@ export function matchComponenti(
     if (!comp.length) return null;
     const flags = flagsComponenti(c);
     const out: PayRiga[] = [];
-    const base = (flags.has("base_underground") ? comp.find(r => r.componente === "base_underground") : undefined)
-        || comp.find(r => r.componente === "base");
+    // BASE: tra le basi che matchano le condizioni della vendita vince la più
+    // specifica (le basi Luce&Gas sono per offerta/tipo cliente); sul mobile
+    // la variante Underground entra solo col suo flag e allora vince
+    const basi = comp.filter(r => r.componente === "base" || r.componente === "base_underground");
+    let base: PayRiga | undefined; let bs = -1;
+    for (const r of basi) {
+        if (r.componente === "base_underground" && !flags.has("base_underground")) continue;
+        let s = r.componente === "base_underground" ? 10 : 0;
+        if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; s++; }
+        if (r.categoria != null) { if (!eq(r.categoria, c.categoria)) continue; s++; }
+        if (r.prodotto != null) { if (!eq(r.prodotto, c.prodotto)) continue; s++; }
+        if (r.offerta != null) { if (!eq(r.offerta, c.offerta)) continue; s += 2; }
+        if (s > bs) { base = r; bs = s; }
+    }
     if (base) out.push(base);
     for (const r of comp) {
         if (r.componente === "base" || r.componente === "base_underground") continue;

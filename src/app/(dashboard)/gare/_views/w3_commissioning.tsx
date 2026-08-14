@@ -36,7 +36,7 @@ const SEZIONI = [
     { id: "device", label: "📞 Telefoni & device", tipo: "device", sub: "gettoni one-shot della lettera per fascia di prezzo e finanziamento — editabili; l'analisi li aggancia al modello scelto in Registra Vendita" },
     { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
     { id: "fisso_extra", label: "🎁 Extra fisso", tipo: "device", sub: "gettoni delle opzioni (Netflix, Cloud, Più Sicuri Ufficio, FRITZ!Box) — editabili; si accendono da soli dalle opzioni della vendita e si sommano al pay del fisso" },
-    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — editabili; sul microbusiness in più le colonne 💼 della gara Business" },
+    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala per offerta (la convergenza +25 è già dentro le Multiservice) + modificatori: Pronto assistenza +10, Bollettino −15 — sul microbusiness in più le colonne 💼 della gara Business" },
     { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole di gara)" },
     { id: "protetti", label: "🏠🛡 W3 Protetti (kit)", tipo: "device", sub: "commissioning dei kit dalla slide — editabile; si distingue col kit scelto in vendita, manca solo il dato finanziato/non (campo in arrivo)" },
     { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia — editabile" },
@@ -574,7 +574,34 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                         </tbody>
                                     </table>
                                     {sez.id === "lucegas" && (
-                                        <p className="text-[11px] text-slate-500 mt-1">Gettoni regressivi, includono il contrattuale 10 €: −50% sui clienti ex W3 Luce&amp;Gas Powered by Acea · attivato senza SDD −15 €.</p>
+                                        <>
+                                            <p className="text-[11px] text-slate-500 mt-1">Gettoni regressivi, includono il contrattuale 10 €: −50% sui clienti ex W3 Luce&amp;Gas Powered by Acea.</p>
+                                            {/* modificatori additivi (scorporo Luca 14/08): si accendono
+                                                dalle opzioni della vendita e si sommano al gettone base */}
+                                            {(() => {
+                                                const gg = righe.filter(r => r.pista === "lucegas" && r.gettone && filtro(r.nome)).sort((a, b) => a.ordine - b.ordine);
+                                                if (!gg.length) return null;
+                                                return (
+                                                    <div className="mt-2">
+                                                        <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Modificatori (dalle opzioni della vendita)</p>
+                                                        <table className="w-full text-sm border-collapse max-w-xl">
+                                                            <tbody>
+                                                                {gg.map(r => (
+                                                                    <tr key={r.id} className="border-t border-white/[0.04]">
+                                                                        <td className="px-3 py-1 text-slate-200">{r.nome}</td>
+                                                                        <td className="px-2 py-1 text-center w-24">
+                                                                            <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                                onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                                                                className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </>
                                     )}
                                 </div>
                             )}
