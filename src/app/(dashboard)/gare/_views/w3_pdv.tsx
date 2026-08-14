@@ -53,24 +53,25 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
     // e `${pista}|${tier}` → testo (rete)
     const [draftRete, setDraftRete] = useState<Record<string, string>>({});
 
-    // pay a pezzo della gara Business (25/35/45 alla soglia): mostrato sotto
-    // le celle della riga Business come i premi assicurazioni — ma è un pay
-    // per evento, non un bonus (Luca 14/08)
-    const [payPezzoBiz, setPayPezzoBiz] = useState<number[]>([]);
+    // pay a pezzo della gara Business (25/35/45 alla soglia): EDITABILE qui —
+    // vive nei pay_tiers di TUTTE le righe business_piva (la scala è unica),
+    // il salvataggio la riscrive su ogni riga (Luca 14/08: la tabella target
+    // è il riferimento per i KPI di rete, bonus e pay a pezzo compresi)
+    const [bizRows, setBizRows] = useState<{ id: string; pay_tiers: number[] }[]>([]);
+    const payPezzoBiz = bizRows[0]?.pay_tiers ?? [];
     const carica = async () => {
         const [t, n, s, bz] = await Promise.all([
             supabase.from("pay_target_pdv").select("id, cod_gara, negozio, peso_mobile, peso_fix, cluster_mobile, soglie_mobile, soglie_mobile_lettera, cluster_fisso, soglie_fisso, soglie_fisso_lettera, extra").eq("brand", "windtre").eq("month", monthISO).order("negozio"),
             supabase.from("gare_azienda_negozi").select("gara, store_name").eq("brand", "w3").eq("month", monthISO).order("store_name"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, bonus").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
                 .in("pista", ["business_piva", "lucegas", "assicurazioni"]).order("tier"),
-            supabase.from("pay_righe").select("pay_tiers").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
-                .eq("pista", "business_piva").eq("attivo", true).limit(1),
+            supabase.from("pay_righe").select("id, pay_tiers").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
+                .eq("pista", "business_piva").eq("attivo", true),
         ]);
         setTargets((t.data ?? []) as TargetPdv[]);
         setNegozi((n.data ?? []) as NegozioSeg[]);
         setRete(((s.data ?? []) as SogliaRete[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), bonus: x.bonus == null ? null : Number(x.bonus) })));
-        const bt = (bz.data ?? [])[0]?.pay_tiers;
-        setPayPezzoBiz(Array.isArray(bt) ? bt.map(Number) : []);
+        setBizRows(((bz.data ?? []) as { id: string; pay_tiers: unknown }[]).map(x => ({ id: x.id, pay_tiers: Array.isArray(x.pay_tiers) ? (x.pay_tiers as unknown[]).map(Number) : [] })));
     };
     useEffect(() => { setDraft({}); setDraftRete({}); carica(); }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -134,20 +135,48 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
         return r ? String(r.soglia_da) : "";
     };
     const dirtyRete = Object.keys(draftRete).length > 0;
+    const num = (v: string, fallback: number | null) => {
+        const n = Number(String(v).replace(",", "."));
+        return Number.isFinite(n) ? n : fallback;
+    };
     const salvaRete = async () => {
-        // per ogni pista toccata: nuove soglia_da + fino-a ricalcolato a catena
-        const piste = new Set(Object.keys(draftRete).map(k => k.split("|")[0]));
-        for (const pista of piste) {
+        // soglie: per ogni pista toccata, nuove soglia_da + fino-a a catena
+        const pisteToccate = new Set(Object.keys(draftRete).filter(k => !k.startsWith("b|") && !k.startsWith("pz|")).map(k => k.split("|")[0]));
+        for (const pista of pisteToccate) {
             const scala = reteDi(pista).map(r => {
                 const d = draftRete[`${pista}|${r.tier}`];
-                const n = d == null ? r.soglia_da : Number(String(d).replace(",", "."));
-                return { ...r, soglia_da: Number.isFinite(n) ? n : r.soglia_da };
+                return { ...r, soglia_da: d == null ? r.soglia_da : (num(d, r.soglia_da) as number) };
             });
             for (let i = 0; i < scala.length; i++) {
                 const soglia_a = i < scala.length - 1 ? scala[i + 1].soglia_da - 1 : null;
                 const { error } = await supabase.from("pay_soglie")
                     .update({ soglia_da: scala[i].soglia_da, soglia_a }).eq("id", scala[i].id);
                 if (dbError("Salvataggio target di rete", error)) return;
+            }
+        }
+        // bonus (assicurazioni, valore GLOBALE di rete): chiavi b|pista|tier
+        for (const k of Object.keys(draftRete).filter(x => x.startsWith("b|"))) {
+            const [, pista, tier] = k.split("|");
+            const r = rete.find(x => x.pista === pista && x.tier === Number(tier));
+            if (!r) continue;
+            const v = draftRete[k].trim();
+            const { error } = await supabase.from("pay_soglie")
+                .update({ bonus: v === "" ? null : num(v, r.bonus) }).eq("id", r.id);
+            if (dbError("Salvataggio bonus", error)) return;
+        }
+        // pay a pezzo business: chiavi pz|tier — la scala è unica, si riscrive
+        // il valore su TUTTE le righe business (il commissioning legge da lì)
+        const pzKeys = Object.keys(draftRete).filter(x => x.startsWith("pz|"));
+        if (pzKeys.length) {
+            for (const row of bizRows) {
+                const tiers = [...row.pay_tiers];
+                for (const k of pzKeys) {
+                    const i = Number(k.split("|")[1]);
+                    const v = num(draftRete[k], tiers[i]);
+                    if (v != null) tiers[i] = v;
+                }
+                const { error } = await supabase.from("pay_righe").update({ pay_tiers: tiers }).eq("id", row.id);
+                if (dbError("Salvataggio pay a pezzo business", error)) return;
             }
         }
         notify("Target di rete salvati ✓", "ok");
@@ -259,19 +288,23 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
                                                         <input value={valRete(rt.pista, r.tier)}
                                                             onChange={e => setDraftRete(prev => ({ ...prev, [`${rt.pista}|${r.tier}`]: e.target.value }))}
                                                             className={inputCls(draftRete[`${rt.pista}|${r.tier}`] != null)} />
-                                                        {r.bonus != null && (
-                                                            <div className="mt-1 inline-flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
-                                                                title={`Premio a volume alla soglia: ${Number(r.bonus).toLocaleString("it-IT")} € per negozio`}>
+                                                        {rt.pista === "assicurazioni" && (
+                                                            <div className="mt-1 inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
+                                                                title="Premio a volume complessivo di rete alla soglia (globale, non per negozio) — editabile">
                                                                 <span className="text-[10px]">🎁</span>
-                                                                <span className="text-[11px] font-semibold text-emerald-200 tabular-nums">{Number(r.bonus).toLocaleString("it-IT")}</span>
+                                                                <input value={draftRete[`b|${rt.pista}|${r.tier}`] ?? (r.bonus == null ? "" : String(r.bonus))}
+                                                                    onChange={e => setDraftRete(prev => ({ ...prev, [`b|${rt.pista}|${r.tier}`]: e.target.value }))}
+                                                                    className="bg-transparent text-[11px] font-semibold text-emerald-200 tabular-nums w-12 text-center outline-none" />
                                                                 <span className="text-[10px] font-bold text-emerald-300/90">€</span>
                                                             </div>
                                                         )}
                                                         {rt.pista === "business_piva" && payPezzoBiz[i] != null && (
-                                                            <div className="mt-1 inline-flex items-center gap-0.5 bg-sky-500/10 border border-sky-500/30 rounded-lg px-1.5 py-0.5"
-                                                                title={`Pay a pezzo alla soglia: ogni evento business paga ${Number(payPezzoBiz[i]).toLocaleString("it-IT")} € (premio a evento, non un bonus)`}>
+                                                            <div className="mt-1 inline-flex items-center gap-1 bg-sky-500/10 border border-sky-500/30 rounded-lg px-1.5 py-0.5"
+                                                                title="Pay a pezzo alla soglia: ogni evento business paga questo importo (premio a evento, non un bonus) — editabile, il commissioning si aggiorna da solo">
                                                                 <span className="text-[10px]">💶</span>
-                                                                <span className="text-[11px] font-semibold text-sky-200 tabular-nums">{Number(payPezzoBiz[i]).toLocaleString("it-IT")}</span>
+                                                                <input value={draftRete[`pz|${i}`] ?? String(payPezzoBiz[i])}
+                                                                    onChange={e => setDraftRete(prev => ({ ...prev, [`pz|${i}`]: e.target.value }))}
+                                                                    className="bg-transparent text-[11px] font-semibold text-sky-200 tabular-nums w-9 text-center outline-none" />
                                                                 <span className="text-[10px] font-bold text-sky-300/90">€/pezzo</span>
                                                             </div>
                                                         )}

@@ -29,8 +29,11 @@ const num = (v: string): number => {
     return Number.isFinite(n) ? n : 0;
 };
 
-export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto }: {
+export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto, nascondiSoglie }: {
     ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
+    // W3 azienda (Luca 14/08): la tabella soglie di rete vive nella tabella
+    // target del pannello negozi — qui si nasconde per non avere doppioni
+    nascondiSoglie?: boolean;
     // a tabellare ASSENTE non mostrare la card vuota (confondeva: sotto ci sono
     // le tabelle dello schema esistente — caso W3 azienda, Luca 11/08): la
     // creazione si apre dal link discreto della pagina Gare
@@ -602,7 +605,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 {lato === "azienda" && " Se il lato ragazzi non ha un suo tabellare, si deriva da qui con la \"% ai ragazzi\"."}
             </div>
 
-            {/* SOGLIE per pista */}
+            {/* SOGLIE per pista (nascoste su W3 azienda: la tabella di
+                riferimento è quella dei target nel pannello negozi) */}
+            {!nascondiSoglie && (
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
                 <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] uppercase tracking-wider text-slate-400">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
@@ -707,6 +712,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     );
                 })()}
             </div>
+            )}
 
             {/* RIGHE per pista — TABELLE compatte (segnalazione Luca 11/08: numeri
                 centrati, colonne strette, niente scroll infinito — stile delle
