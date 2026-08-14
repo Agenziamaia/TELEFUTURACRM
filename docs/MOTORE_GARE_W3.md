@@ -94,3 +94,52 @@ gettoni flat per offerta cluster. Protetti: righe kit attive (opzioni).
   Regole + gettoni in Commissioning + stima soglie (cluster × sconti riga 2
   dell'excel × pesi POS); Excel del 10 → target definitivi (con anteprima
   delle differenze prima di applicare).
+
+---
+
+## Playbook per il cantiere MULTIBRAND (il metodo usato sul franchising)
+
+Fonte: `Desktop/Telco/Operatori/W3/Agosto 2026/Incentivazione Agosto 2026
+Multibrand.pdf`. Replicare questi passi, nell'ordine:
+
+1. **Lettura da zero della lettera**, slide per slide (convertire in PDF con
+   LibreOffice se serve), SENZA fidarsi del lavoro precedente; poi match con
+   l'esistente. Occhio ai valori barrati (sono il mese vecchio).
+2. **Separazione netta** (regola di Luca): moltiplicatori, punteggi e
+   contrattuali → Regole di gara; ogni pay unitario one-shot → Commissioning
+   in celle editabili. Il verde = calcolato, il bianco = gettone della lettera.
+3. **Componenti additive** col motore esistente: `matchComponenti` supporta
+   già più basi per pista scelte per condizioni (fatto per Luce&Gas) — per il
+   multibrand basta seminare righe `componente` con la pista giusta.
+4. **Flag dalle scelte di Registra Vendita**: PRIMA verificare i nomi veri a
+   catalogo (categorie, prodotti, offerte, opzioni) — trappole già viste:
+   grafie diverse (virgola/punto), dati non tracciati (aggiungere campi o
+   opzioni, es. Premio versato, gruppo obbligatorio kit/pagamento).
+5. **Collaudo incrociato** categoria per categoria contro Registra Vendita:
+   è il metodo che ha trovato tutti i buchi del franchising. La sonda-tooltip
+   sulle celle vuote dice sempre il perché.
+6. **Operativo**: build con gate sull'exit code; push → deploy automatico sul
+   box 204 in ~4-5 min (2-4 min di scosse sulle schede aperte); verifica col
+   marker `tf-build-check` nell'HTML del dominio; runner via pooler con dump
+   prima di ogni modifica dati; recap UNICO in /verifiche accorpando.
+
+### Stato multibrand già noto (non partire da zero)
+
+- Pannello target: gara On Top a punti cumulati GIÀ seminata — MB-T1 Donna
+  Olimpia 180/280/380/480, MB-T2 (Promontori+Garbatella) ×1,85 = 333/518/703/888,
+  premi 🎁 250/500/1000/2000 in `pay_target_pdv.extra.premi` (righe MB-*).
+- Dalla lettera (letta il 13/08): Top Quality Dealer — mobile soglie
+  25/55/90 + extra 130 · fisso 4/8/13/20 + extra 32; punteggi GA 0,5/1/1,5 ·
+  MNP 1,75/2,25/2,25 · TIED 0,75/0,75/1; multipos −15% sui POS dopo il primo;
+  L&G dealer soglie 1/10/20/30 + 85 con gettoni 75-120 (115-160 micro);
+  Boost MNP 35/20 €; il COMMISSIONING € multibrand non è ancora costruito.
+- Il segmento Multibrand nella pagina W3 mostra oggi solo il pannello target
+  (schede Partnership/Commissioning/Regole sono solo franchising): andranno
+  estese o dedicate.
+
+### Aperti del franchising (ereditati, non bloccanti)
+
+Collaudo Telefono a Rate · prezzi Add-On Fissi e business · conferma agente
+sui 10 € del Pronto Intervento · 2 vendite storiche Pronto da riclassificare ·
+frazionamento annuale polizze (+0,5) · upload mensile · analisi (checklist
+sopra).
