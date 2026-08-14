@@ -1,15 +1,15 @@
 "use client";
 
-/* COMMISSIONING € FRANCHISING W3 — l'ESPLOSIONE del pay per attivazione
-   (Luca 13/08, cantiere da zero): ogni offerta a canone ha il suo pay in
-   euro per soglia, già pronto da pescare — l'analisi dovrà solo dire quale
-   soglia ha raggiunto il PDV. Dal 13/08 il calcolo è ADDITIVO come la
-   lettera vera: canone × (base + MNP + Tied + P.IVA…) — le componenti
-   arrivano dalle scelte dei ragazzi in Registra Vendita (categoria =
-   Wallet/Ric. Automatica, prodotto = GA/MNP, tipo cliente = P.IVA).
-   Le componenti NON deducibili dall'offerta (linea aggiuntiva, FTTH,
-   opzioni) le aggiunge l'analisi: qui sono elencate sotto la tabella.
-   Le offerte senza canone (o escluse dalle gare) non compaiono. */
+/* COMMISSIONING € FRANCHISING W3 — l'ESPLOSIONE del pay per attivazione:
+   ogni tipo di vendita col suo € per soglia, già pronto da pescare —
+   l'analisi dovrà solo dire quale soglia ha raggiunto il PDV/la rete.
+   COMPLETATO 14/08 (Luca «ora passo al commissioning»): oltre alle piste a
+   canone (mobile/fisso additive come la lettera, assicurazioni a
+   moltiplicatore) qui vivono anche Business P.IVA (premio unitario a evento
+   per soglia di rete — la colonna S4 da 55€ esiste solo col BP Plus+ e non
+   si mostra), Luce&Gas (gettoni a scala) e Customer Base (gettoni flat).
+   Le componenti non deducibili dall'offerta (linea aggiuntiva, FTTH,
+   opzioni) le aggiunge l'analisi: elencate sotto le tabelle. */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
@@ -21,7 +21,17 @@ interface OffCanone {
     id: string; nome: string; canone: number; prodotto: string; tipo_cliente: string; categoria: string;
 }
 
-const PISTE_LABEL: Record<string, string> = { mobile: "📱 Mobile", fisso: "🏠 Fisso", assicurazioni: "🛡 Assicurazioni" };
+// sezioni della scheda: canone = esploso per offerta (canone × componenti);
+// evento = € diretti per soglia; flat = gettone secco per evento
+const SEZIONI = [
+    { id: "mobile", label: "📱 Mobile", tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale" },
+    { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale" },
+    { id: "business_piva", label: "💼 Business P.IVA", tipo: "evento", sub: "ogni evento valido paga il premio unitario della soglia di Ragione Sociale" },
+    { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale" },
+    { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore" },
+    { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia" },
+] as const;
+
 // etichette corte delle componenti per la scomposizione nel tooltip
 const COMP_LABEL: Record<string, string> = {
     base: "base", base_underground: "base Underground", mnp: "MNP", tied: "Tied",
@@ -37,6 +47,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     const monthISO = `${mese}-01`;
     const [righe, setRighe] = useState<PayRiga[]>([]);
     const [offerte, setOfferte] = useState<OffCanone[]>([]);
+    const [tierMax, setTierMax] = useState<Record<string, number>>({});   // pista → n. soglie vere
     const [loading, setLoading] = useState(true);
     const [cerca, setCerca] = useState("");
     const [aperte, setAperte] = useState<Set<string>>(new Set(["mobile"]));
@@ -44,17 +55,19 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     useEffect(() => {
         let vivo = true;
         (async () => {
-            const r = await supabase.from("pay_righe")
-                .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
-                .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
-                .in("pista", ["mobile", "fisso", "assicurazioni"]).eq("attivo", true).limit(500);
-            // moltiplicatori + componenti flat (compenso contrattuale): il set
-            // additivo li somma insieme nel totale € della cella
-            const molt = ((r.data ?? []) as PayRiga[])
-                .filter(x => x.moltiplicatore || x.componente)
+            const [r, sg] = await Promise.all([
+                supabase.from("pay_righe")
+                    .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+                    .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
+                    .neq("pista", "partnership").eq("attivo", true).limit(500),
+                supabase.from("pay_soglie").select("pista, tier")
+                    .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda"),
+            ]);
+            const rows = ((r.data ?? []) as PayRiga[])
                 .map(x => ({ ...x, punti: Number(x.punti || 0), pay_base: x.pay_base == null ? null : Number(x.pay_base), pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []) }));
-            // catalogo: prodotti → offerte con canone (comprese le opzioni a
-            // canone, es. 2°Linea, appese come voci col loro prezzo)
+            const tm: Record<string, number> = {};
+            ((sg.data ?? []) as { pista: string; tier: number }[]).forEach(s => { tm[s.pista] = Math.max(tm[s.pista] || 0, Number(s.tier)); });
+            // catalogo: prodotti → offerte con canone (per le sezioni a canone)
             const [cats, prods] = await Promise.all([
                 supabase.from("catalog_categorie").select("id, nome"),
                 supabase.from("catalog_prodotti").select("id, nome, tipo_cliente, categoria_id").eq("brand_id", "windtre").eq("attivo", true),
@@ -72,15 +85,16 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 });
             }
             if (!vivo) return;
-            setRighe(molt);
+            setRighe(rows);
+            setTierMax(tm);
             setOfferte(offs);
             setLoading(false);
         })();
         return () => { vivo = false; };
     }, [monthISO]);
 
-    // set di righe dell'offerta: componenti additive (modello lettera) con
-    // ripiego sul pick-one classico per i mesi senza componenti
+    // set di righe dell'offerta a canone: componenti additive (modello lettera)
+    // con ripiego sul pick-one classico (assicurazioni, mesi senza componenti)
     const setPer = (o: OffCanone): PayRiga[] => {
         const c = { tipo_cliente: o.tipo_cliente, categoria: o.categoria, prodotto: o.prodotto, offerta: o.nome };
         const comp = matchComponenti(righe, c);
@@ -88,6 +102,8 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
         const r = matchRigaTabellare(righe, c);
         return r ? [r] : [];
     };
+
+    const filtro = (testo: string) => !cerca.trim() || testo.toLowerCase().includes(cerca.toLowerCase());
 
     const perPista = useMemo(() => {
         const out: Record<string, { o: OffCanone; set: PayRiga[] }[]> = { mobile: [], fisso: [], assicurazioni: [] };
@@ -97,7 +113,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
             const pista = set[0].pista;
             if (!pista || !(pista in out)) return;
             if (!set.some(r => r.pay_tiers.length)) return;
-            if (cerca.trim() && !`${o.nome} ${o.prodotto} ${o.tipo_cliente}`.toLowerCase().includes(cerca.toLowerCase())) return;
+            if (!filtro(`${o.nome} ${o.prodotto} ${o.tipo_cliente}`)) return;
             out[pista].push({ o, set });
         });
         for (const k of Object.keys(out))
@@ -107,6 +123,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
 
     const eur = (v: number) => (Math.round(v * 100) / 100).toLocaleString("it-IT", { minimumFractionDigits: v % 1 ? 2 : 0 });
     const it = (v: number) => Number(v).toLocaleString("it-IT");
+    const toggle = (id: string) => setAperte(prev => { const c = new Set(prev); if (c.has(id)) c.delete(id); else c.add(id); return c; });
 
     if (loading) return null;
 
@@ -114,90 +131,184 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
         <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
             <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">
-                    Commissioning in € — uguale per tutti i PDV: canone dell&apos;offerta × somma delle componenti della lettera (base + MNP + Tied + P.IVA…). La soglia raggiunta dal punto vendita sceglie la colonna.
+                    Commissioning in € — il pay di ogni attivazione, per soglia: la soglia raggiunta sceglie la colonna
                 </div>
                 <div className="relative w-64">
                     <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca offerta…"
+                    <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Cerca offerta o evento…"
                         className="glass-input !h-8 text-xs w-full pl-8" />
                 </div>
             </div>
-            {(["mobile", "fisso", "assicurazioni"] as const).map(pista => {
-                const rr = perPista[pista];
-                if (!rr?.length) return null;
-                const maxT = Math.max(...rr.map(x => Math.max(...x.set.map(r => r.pay_tiers.length))));
-                const aperta = aperte.has(pista) || !!cerca.trim();
-                // componenti da vendita della pista (non deducibili dall'offerta)
-                const runtime = righe.filter(r => r.pista === pista && r.componente && COMP_RUNTIME.has(r.componente));
+            {SEZIONI.map(sez => {
+                const aperta = aperte.has(sez.id) || !!cerca.trim();
+                /* ---- sezioni a CANONE: esploso per offerta ---- */
+                if (sez.tipo === "canone") {
+                    const rr = perPista[sez.id];
+                    if (!rr?.length) return null;
+                    const maxT = Math.max(...rr.map(x => Math.max(...x.set.map(r => r.pay_tiers.length))));
+                    const runtime = righe.filter(r => r.pista === sez.id && r.componente && COMP_RUNTIME.has(r.componente));
+                    return (
+                        <div key={sez.id} className="mb-3 last:mb-0">
+                            <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
+                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} offerte`}</span>
+                            </button>
+                            <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
+                            {aperta && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
+                                                <th className="text-left font-semibold px-2 py-1.5">Prodotto</th>
+                                                <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
+                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rr.map(({ o, set }, idx) => {
+                                                const gruppo = `${o.tipo_cliente}|${o.prodotto}`;
+                                                const nuovoGruppo = idx === 0 || gruppo !== `${rr[idx - 1].o.tipo_cliente}|${rr[idx - 1].o.prodotto}`;
+                                                return (
+                                                    <Fragment key={o.id}>
+                                                        {nuovoGruppo && (
+                                                            <tr className="bg-white/[0.04]">
+                                                                <td colSpan={3 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                    {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                            <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}</td>
+                                                            <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
+                                                            <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
+                                                            {Array.from({ length: maxT }, (_, i) => {
+                                                                const moltParti = set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
+                                                                if (!moltParti.length) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
+                                                                const flat = set.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0);
+                                                                const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
+                                                                const scomposizione = moltParti.map(r =>
+                                                                    `${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`).join(" + ");
+                                                                return (
+                                                                    <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums"
+                                                                        title={`${eur(o.canone)} € × ${it(molt)}  (${scomposizione})${flat ? ` + ${eur(flat)} € contrattuale` : ""}`}>
+                                                                        {eur(o.canone * molt + flat)} €
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    </Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                    {!!runtime.length && (
+                                        <p className="text-[11px] text-slate-500 mt-1">
+                                            ➕ Componenti che dipendono dalla vendita (le aggiunge l&apos;analisi):{" "}
+                                            {runtime.map(r => `${r.nome.replace(/\s*×\s*canone\s*$/i, "")} (${r.pay_tiers.map(it).join("/")})`).join(" · ")} ×canone.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
+                /* ---- sezioni a EVENTO: € diretti per soglia di rete ---- */
+                if (sez.tipo === "evento") {
+                    const rr = righe.filter(r => r.pista === sez.id && !r.gettone && r.pay_tiers.length && filtro(`${r.nome} ${r.offerta || ""}`))
+                        .sort((a, b) => a.ordine - b.ordine);
+                    if (!rr.length) return null;
+                    // colonne = soglie VERE della pista (es. Business: 3 — la 4ª è solo BP Plus+)
+                    const maxT = Math.min(tierMax[sez.id] || 99, Math.max(...rr.map(r => r.pay_tiers.length)));
+                    const conPunti = sez.id === "business_piva";
+                    return (
+                        <div key={sez.id} className="mb-3 last:mb-0">
+                            <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
+                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} voci`}</span>
+                            </button>
+                            <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
+                            {aperta && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">{sez.id === "business_piva" ? "Evento" : "Attivazione"}</th>
+                                                {conPunti && <th className="px-2 py-1.5 font-semibold text-center w-24">Punti in soglia</th>}
+                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rr.map(r => (
+                                                <tr key={r.id} className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                    <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{r.nome}</td>
+                                                    {conPunti && <td className="px-2 py-1 text-center font-bold text-white tabular-nums">{it(r.punti)}</td>}
+                                                    {Array.from({ length: maxT }, (_, i) => (
+                                                        <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums">
+                                                            {r.pay_tiers[i] == null ? "—" : `${eur(r.pay_tiers[i])} €`}
+                                                        </td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {sez.id === "business_piva" && (
+                                        <p className="text-[11px] text-slate-500 mt-1">Pagamento a evento, retroattivo: la soglia di Ragione Sociale sceglie il premio unitario di ogni evento. La 4ª soglia (55 €) esiste solo col Business Promoter Plus+.</p>
+                                    )}
+                                    {sez.id === "lucegas" && (
+                                        <p className="text-[11px] text-slate-500 mt-1">Gettoni regressivi, includono il contrattuale 10 €: −50% sui clienti ex W3 Luce&amp;Gas Powered by Acea · attivato senza SDD −15 €.</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
+                /* ---- Customer Base: gettoni flat ---- */
+                const rr = righe.filter(r => r.pista === sez.id && r.gettone && filtro(`${r.nome} ${r.offerta || ""}`))
+                    .sort((a, b) => (a.tipo_cliente || "").localeCompare(b.tipo_cliente || "") || a.ordine - b.ordine);
+                if (!rr.length) return null;
                 return (
-                    <div key={pista} className="mb-3 last:mb-0">
-                        <button onClick={() => setAperte(prev => { const c = new Set(prev); if (c.has(pista)) c.delete(pista); else c.add(pista); return c; })}
-                            className="text-sm font-bold text-white flex items-center gap-2 mb-1.5">
-                            {PISTE_LABEL[pista]} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} offerte`}</span>
+                    <div key={sez.id} className="mb-3 last:mb-0">
+                        <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
+                            {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} eventi`}</span>
                         </button>
+                        <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
                         {aperta && (
                             <div className="overflow-x-auto">
-                                <table className="w-full text-sm border-collapse">
+                                <table className="w-full text-sm border-collapse max-w-xl">
                                     <thead>
                                         <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                                            <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
-                                            <th className="text-left font-semibold px-2 py-1.5">Prodotto</th>
-                                            <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
-                                            {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                            <th className="text-left font-semibold px-3 py-1.5">Evento</th>
+                                            <th className="px-2 py-1.5 font-semibold text-center w-24">Gettone</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rr.map(({ o, set }, idx) => {
-                                            // sezioncine per tipo cliente + prodotto: la lista piatta
-                                            // mescolava tutto (feedback Luca 14/08 «confusionario»)
-                                            const gruppo = `${o.tipo_cliente}|${o.prodotto}`;
-                                            const nuovoGruppo = idx === 0 || gruppo !== `${rr[idx - 1].o.tipo_cliente}|${rr[idx - 1].o.prodotto}`;
+                                        {rr.map((r, idx) => {
+                                            const nuovoGruppo = idx === 0 || (r.tipo_cliente || "") !== (rr[idx - 1].tipo_cliente || "");
                                             return (
-                                            <Fragment key={o.id}>
-                                            {nuovoGruppo && (
-                                                <tr className="bg-white/[0.04]">
-                                                    <td colSpan={3 + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                                                        {o.tipo_cliente === "Business" ? "💼" : "👤"} {o.tipo_cliente} · {o.prodotto}
-                                                    </td>
-                                                </tr>
-                                            )}
-                                            <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
-                                                <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{o.nome}</td>
-                                                <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{o.prodotto}</td>
-                                                <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">{eur(o.canone)} €</td>
-                                                {Array.from({ length: maxT }, (_, i) => {
-                                                    const moltParti = set.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
-                                                    if (!moltParti.length) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
-                                                    // gettoni flat del set (compenso contrattuale): stessi a ogni soglia
-                                                    const flat = set.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0);
-                                                    const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
-                                                    const scomposizione = moltParti.map(r =>
-                                                        `${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`).join(" + ");
-                                                    return (
-                                                        <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums"
-                                                            title={`${eur(o.canone)} € × ${it(molt)}  (${scomposizione})${flat ? ` + ${eur(flat)} € contrattuale` : ""}`}>
-                                                            {eur(o.canone * molt + flat)} €
+                                                <Fragment key={r.id}>
+                                                    {nuovoGruppo && (
+                                                        <tr className="bg-white/[0.04]">
+                                                            <td colSpan={2} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                {r.tipo_cliente === "Business" ? "💼 Business" : "👤 Consumer"}
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                        <td className="px-3 py-1 text-slate-200">{r.nome}</td>
+                                                        <td className="px-2 py-1 text-center font-semibold text-emerald-200 tabular-nums">
+                                                            {r.pay_base == null ? "—" : Number(r.pay_base) === 0 ? <span className="text-slate-500" title={r.note || "esclusa dalla remunerazione"}>0 €</span> : `${eur(Number(r.pay_base))} €`}
                                                         </td>
-                                                    );
-                                                })}
-                                            </tr>
-                                            </Fragment>
+                                                    </tr>
+                                                </Fragment>
                                             );
                                         })}
                                     </tbody>
                                 </table>
-                                {!!runtime.length && (
-                                    <p className="text-[11px] text-slate-500 mt-1">
-                                        ➕ Componenti che dipendono dalla vendita (le aggiunge l&apos;analisi):{" "}
-                                        {runtime.map(r => `${r.nome.replace(/\s*×\s*canone\s*$/i, "")} (${r.pay_tiers.map(it).join("/")})`).join(" · ")} ×canone.
-                                    </p>
-                                )}
                             </div>
                         )}
                     </div>
                 );
             })}
-            <p className="text-[11px] text-slate-500 mt-2">Canoni dal pannello Catalogo → 💶 Canoni; componenti e moltiplicatori dal tabellare (lettera di gara). Cambia un canone o una componente → questi euro si aggiornano da soli. Passa col mouse su una cella per la scomposizione.</p>
+            <p className="text-[11px] text-slate-500 mt-2">Canoni dal Catalogo → 💶 Canoni; componenti, premi e gettoni dal tabellare (scheda Lettera). Cambia un valore lì → questi euro si aggiornano da soli. Sulle celle a canone il passaggio del mouse mostra la scomposizione.</p>
         </div>
     );
 }
