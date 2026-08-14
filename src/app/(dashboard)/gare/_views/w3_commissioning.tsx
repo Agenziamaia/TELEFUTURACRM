@@ -487,6 +487,32 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                             {runtime.map(r => `${r.nome.replace(/\s*×\s*canone\s*$/i, "")} (${r.pay_tiers.map(it).join("/")})`).join(" · ")} ×canone.
                                         </p>
                                     )}
+                                    {/* gettoni assicurazioni SENZA canone (Pronto Intervento,
+                                        Giro X Il Mondo): non passano dall'esploso a canone —
+                                        tabellina editabile qui sotto (Luca 14/08) */}
+                                    {sez.id === "assicurazioni" && (() => {
+                                        const gg = righe.filter(r => r.pista === "assicurazioni" && r.gettone && filtro(r.nome)).sort((a, b) => a.ordine - b.ordine);
+                                        if (!gg.length) return null;
+                                        return (
+                                            <div className="mt-2">
+                                                <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Gettoni senza canone</p>
+                                                <table className="w-full text-sm border-collapse max-w-xl">
+                                                    <tbody>
+                                                        {gg.map(r => (
+                                                            <tr key={r.id} className="border-t border-white/[0.04]">
+                                                                <td className="px-3 py-1 text-slate-200">{r.nome}{!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa dell&apos;importo premio</span>}</td>
+                                                                <td className="px-2 py-1 text-center w-24">
+                                                                    <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                        onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                                                        className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
                         </div>
