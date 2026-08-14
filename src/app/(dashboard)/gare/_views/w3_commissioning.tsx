@@ -495,6 +495,49 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     </Fragment>
                                                 );
                                             })}
+                                            {/* SECONDA LINEA (Luca 14/08: «deve stare con le offerte
+                                                del fisso»): è un'opzione, non un'offerta — riga
+                                                dedicata; per lettera conta anche nella gara Business
+                                                (punti fisso «1 per linea», premio a evento) */}
+                                            {sez.id === "fisso" && (() => {
+                                                const sl = righe.find(r => r.componente === "seconda_linea");
+                                                if (!sl || !sl.pay_tiers.length) return null;
+                                                const flat = Number(righe.find(r => r.componente === "contrattuale_2linea")?.pay_base || 0);
+                                                const infoBiz = bizInfo({ tipo_cliente: "Business", categoria: "Fisso", prodotto: null, offerta: null });
+                                                return (
+                                                    <Fragment>
+                                                        <tr className="bg-white/[0.04]">
+                                                            <td colSpan={(conPunti ? 4 : 3) + (conBiz ? bizN : 0) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                ➕ Dalla vendita · opzione 2°Linea (un altro fisso da 10 €)
+                                                            </td>
+                                                        </tr>
+                                                        <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                            <td className="px-3 py-1 text-slate-200 whitespace-nowrap">Seconda linea Professional</td>
+                                                            <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">opzione sui fissi business</td>
+                                                            {conBiz && Array.from({ length: bizN }, (_, i) => (
+                                                                <CellaBiz key={`b${i}`} info={infoBiz} i={i} />
+                                                            ))}
+                                                            <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">10 €</td>
+                                                            {Array.from({ length: maxT }, (_, i) => {
+                                                                const v = sl.pay_tiers[i];
+                                                                if (v == null) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
+                                                                return (
+                                                                    <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
+                                                                        onMouseEnter={e => mostraTip(e, [
+                                                                            { testo: `2ª linea · soglia S${i + 1}`, stile: "formula" },
+                                                                            { testo: `· canone linea 10 € × moltiplicatore base = ${eur(v)} €`, stile: "voce" },
+                                                                            ...(flat ? [{ testo: `+ ${eur(flat)} € contrattuale 2ª linea`, stile: "flat" as const }] : []),
+                                                                            { testo: `= ${eur(v + flat)} €`, stile: "tot" },
+                                                                        ])}
+                                                                        onMouseLeave={() => setTip(null)}>
+                                                                        {eur(v + flat)} €
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    </Fragment>
+                                                );
+                                            })()}
                                         </tbody>
                                     </table>
                                     {!!runtime.length && (
