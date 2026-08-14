@@ -396,12 +396,24 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // accende qui, gli importi vivono nelle righe gettone `contrattuale_*`
     if (/^mobile\b/i.test(cat)) f.add(f.has("tied") ? "contrattuale_tied" : "contrattuale_untied");
     if (/^fisso/i.test(cat)) f.add(f.has("conv") ? "contrattuale_conv" : (/voce\s*casa/i.test(off) ? "contrattuale_voce" : "contrattuale"));
-    // CONTEGGIO mobile W3 (Luca 14/08): righe punti_* — la Security venduta
-    // insieme è nel campo Opzioni della vendita («Security»/«Security Pro»),
-    // la provenienza MNP nel campo dedicato, la Staff dal nome offerta.
-    if (/security/i.test(String(c.opzioni || ""))) f.add("punti_security");
+    // CONTEGGI ED EXTRA DALLE OPZIONI della vendita (Luca 14/08): le opzioni
+    // stanno nel dettaglio "Opzioni" come lista separata da virgole (eventuali
+    // quantità "(n)" in coda) — confronto per nome ESATTO, non substring
+    const opzList = String(c.opzioni || "").split(",")
+        .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
+    const ha = (...nomi: string[]) => nomi.some(n => opzList.includes(n));
+    // mobile: Security (GA 0,75 → 1), provenienza MNP, Staff
+    if (ha("security", "security pro")) f.add("punti_security");
     if (c.provenienza != null && /^(iliad|coop|poste|tiscali)/i.test(String(c.provenienza).trim())) f.add("punti_mnp_prov");
     if (/professional staff/i.test(off)) f.add("punti_staff");
+    // fisso: gli extra della slide agganciati alle opzioni del catalogo
+    if (ha("netflix")) f.add("netflix");                       // 10 € + 0,5 punti
+    if (ha("più sicuri ufficio")) f.add("pscu");               // 2 € + 0,25 punti
+    if (ha("cloud")) f.add("cloud");                           // 8 €, non conta in soglia
+    if (/professional box/i.test(off)) f.add("fritz");         // +40 € e +1 punto (FRITZ!Box)
+    if (ha("2°linea", "2° linea")) f.add("punti_2linea");      // conteggio 1,5 della 2ª linea
+    if (ha("ftth", "ftth extra")) f.add("ftth");               // componente +1 ×canone
+    if (ha("chiamate illimitate", "internazionali")) f.add("opzioni");   // componente 0,25-1,5 ×canone
     return f;
 }
 

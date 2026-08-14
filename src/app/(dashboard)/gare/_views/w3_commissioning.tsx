@@ -35,6 +35,7 @@ const SEZIONI = [
     { id: "mobile", label: "📱 Mobile", tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
     { id: "device", label: "📞 Telefoni & device", tipo: "device", sub: "gettoni one-shot della lettera per fascia di prezzo e finanziamento — editabili; l'analisi li aggancia al modello scelto in Registra Vendita" },
     { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
+    { id: "fisso_extra", label: "🎁 Extra fisso", tipo: "device", sub: "gettoni delle opzioni (Netflix, Cloud, Più Sicuri Ufficio, FRITZ!Box) — editabili; si accendono da soli dalle opzioni della vendita e si sommano al pay del fisso" },
     { id: "lucegas", label: "⚡ Luce & Gas", tipo: "evento", sub: "gettoni a scala sulla soglia di Ragione Sociale — editabili; sul microbusiness in più le colonne 💼 della gara Business" },
     { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole di gara)" },
     { id: "protetti", label: "🏠🛡 W3 Protetti (kit)", tipo: "device", sub: "commissioning dei kit dalla slide — editabile; si distingue col kit scelto in vendita, manca solo il dato finanziato/non (campo in arrivo)" },
@@ -256,12 +257,15 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                    celle EDITABILI (Luca 14/08 sera-3) — righe spente per il
                    motore finché l'analisi non aggancia il listino ---- */
                 if (sez.tipo === "device") {
-                    // 'device' = lista piatta di gettoni editabili: i telefoni
-                    // (pista mobile, gettoni non-componente) o i kit Protetti
-                    const rr = righe.filter(r =>
-                        (sez.id === "protetti" ? r.pista === "protetti" : (r.pista === "mobile" && !r.componente))
-                        && r.gettone && filtro(`${r.nome} ${r.opzione || ""}`))
-                        .sort((a, b) => a.ordine - b.ordine);
+                    // 'device' = lista piatta di gettoni editabili: telefoni
+                    // (pista mobile non-componente), extra fisso (componenti
+                    // gettone: Netflix, Cloud…) o kit Protetti
+                    const rr = righe.filter(r => {
+                        if (!r.gettone || !filtro(`${r.nome} ${r.opzione || ""}`)) return false;
+                        if (sez.id === "protetti") return r.pista === "protetti";
+                        if (sez.id === "fisso_extra") return r.pista === "fisso" && !(r.componente || "").startsWith("contrattuale");
+                        return r.pista === "mobile" && !r.componente;
+                    }).sort((a, b) => a.ordine - b.ordine);
                     if (!rr.length) return null;
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
@@ -281,7 +285,11 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                         <tbody>
                                             {rr.map(r => (
                                                 <tr key={r.id} className="border-t border-white/[0.04] hover:bg-white/[0.03]">
-                                                    <td className="px-3 py-1 text-slate-200">{r.nome.replace(/^Gettone device · /, "")}</td>
+                                                    <td className="px-3 py-1 text-slate-200">
+                                                        {r.nome.replace(/^Gettone device · /, "")}
+                                                        {Number(r.punti) > 0 && <span className="text-[10px] text-sky-300/80 ml-1.5" title="Vale anche punti in soglia">+{it(Number(r.punti))} punti</span>}
+                                                        {!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa di aggancio</span>}
+                                                    </td>
                                                     <td className="px-2 py-1 text-center">
                                                         <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                             onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
