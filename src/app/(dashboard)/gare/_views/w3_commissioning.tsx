@@ -123,14 +123,20 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     // sopra) si somma al pay — qui compare nelle colonne 💼 S1-S3
     const bizRighe = useMemo(() => righe.filter(r => r.pista === "business_piva"), [righe]);
     const bizN = bizRighe.length ? Math.min(3, tierMax["business_piva"] || 3) : 0;
-    const bizInfo = (c: { tipo_cliente: string; categoria?: string | null; prodotto?: string | null; offerta?: string | null }): { scale: number[]; punti: number } | null => {
-        if (!/business/i.test(c.tipo_cliente || "") || !bizRighe.length) return null;
+    // SONDA (Luca vede le colonne 💼 vuote, la simulazione le dà piene): la
+    // cella vuota porta nel title il MOTIVO esatto — da togliere a baco chiuso
+    type BizEsito = { scale: number[]; punti: number } | { err: string };
+    const bizInfo = (c: { tipo_cliente: string; categoria?: string | null; prodotto?: string | null; offerta?: string | null }): BizEsito => {
+        if (!bizRighe.length) return { err: "nessuna riga business caricata" };
+        if (!/business/i.test(c.tipo_cliente || "")) return { err: "tipo cliente: " + (c.tipo_cliente || "vuoto") };
         const r = matchRigaTabellare(bizRighe, { tipo_cliente: c.tipo_cliente, categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta });
-        if (!r) return null;
+        if (!r) return { err: `nessun match: tc=${c.tipo_cliente} · cat=${c.categoria} · prod=${c.prodotto} · off=${c.offerta} · righe business=${bizRighe.length}` };
         return { scale: r.pay_tiers.slice(0, bizN), punti: Number(r.punti || 0) };
     };
-    const CellaBiz = ({ info, i }: { info: { scale: number[]; punti: number } | null; i: number }) => {
-        if (!info || info.scale[i] == null) return <td className="px-1.5 py-0.5 text-center text-slate-700">—</td>;
+    const CellaBiz = ({ info, i }: { info: BizEsito | null; i: number }) => {
+        if (!info || "err" in info || info.scale[i] == null) {
+            return <td className="px-1.5 py-0.5 text-center text-slate-700" title={info && "err" in info ? info.err : undefined}>—</td>;
+        }
         return (
             <td className="px-1.5 py-0.5 text-center font-semibold text-sky-300 tabular-nums cursor-help"
                 onMouseEnter={e => mostraTip(e, [
