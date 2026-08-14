@@ -392,10 +392,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
 
     const righeDiPista = (chiave: string) => righe.filter(r => r.pista === chiave && !r.gettone);
     // modalità soloRegole (W3): la sezione Gettoni raccoglie TUTTI i gettone
-    // a prescindere dalla pista — qui restano solo quelli che sono COMPONENTI
-    // della matematica (compenso contrattuale); i one-shot (Customer Base,
-    // telefoni…) si editano nel Commissioning (svista vista da Luca 14/08)
-    const gettoni = righe.filter(r => (r.gettone || !r.pista) && (!soloRegole || !!r.componente));
+    // a prescindere dalla pista — qui restano SOLO i contrattuali (che sono
+    // regole); ogni altro pay unitario (Netflix, Cloud, FRITZ, Customer Base,
+    // telefoni…) vive unicamente nel Commissioning (regola Luca 14/08 sera)
+    const gettoni = righe.filter(r => (r.gettone || !r.pista) && (!soloRegole || (r.componente || "").startsWith("contrattuale")));
 
     if (carico) return <div className="text-slate-400 text-sm">Carico il tabellare…</div>;
 
