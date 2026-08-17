@@ -1,552 +1,458 @@
 // @ts-nocheck
 "use client";
 
-// Dashboard REALE, role-aware (redesign "bento", Luca 30/07). Dati veri da
-// contracts/clients filtrati per ruolo. FASE 1: KPI + grafici + classifica.
-// FASE 2: bussola Direzione Inserimento (da Amministrazione). FASE 2b: Obiettivo
-// reale dai target Home (dashboard_targets). FASE 3: reminder dinamici (pratiche
-// ferme nel Tracking + impegni Calendario in scadenza). FASE 4: layout Home
-// personalizzabile — "Modifica" e trascini i blocchi, l'ordine e' salvato per utente.
+// HOME A WIDGET SINGOLI (Luca 17/08). Ogni widget è indipendente: si
+// aggiunge, si toglie, si trascina in ordine sparso e si ridimensiona
+// (1 blocco · 2 blocchi · mezza pagina), come i widget di un telefono.
+// L'ordine e le taglie sono salvati per utente in app_users.dashboard_layout
+// come ["id@taglia", ...]; i vecchi layout a blocchi vengono spacchettati.
+//
+// NUMERI: produzione del NEGOZIO CHE REGISTRA (colonna negozio) — mai il
+// codice di inserimento (quello è il caricamento azienda, vive in Gare).
+// Store manager → tutto il punto vendita; consulente → solo il suo.
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { roleLabel, seesWholeStore, BRAND_COLORS } from "@/lib/roles";
+import { roleLabel, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { caricaTutte } from "@/lib/fetchTutte";
+import { giorniLavorativiMese, caricaContrattiMese, caricaTabellareAzienda } from "@/lib/commissioning";
 import { cn } from "@/utils";
-import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
-  FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
-  AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
-  Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, LayoutGrid,
-  Check, GripVertical, CalendarClock, LogIn, EyeOff, Eye,
+    Loader2, LayoutGrid, Check, GripVertical, Plus, X, ChevronLeft,
+    ChevronRight, RotateCcw, Store as StoreIcon, Users,
 } from "lucide-react";
+import {
+    renderWidget, infoWidget, widgetsDisponibili, risolviLayout, layoutDefault,
+    encodeLayout, SIZE_LABEL, isCtr, isExt, validaProduzione, giornoDi,
+} from "./_widgets";
 
 const norm = (s) => (s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
-const STATO_COLOR = (s = "") => {
-  const k = s.toLowerCase();
-  if (k.includes("attiv")) return "var(--tf-22c55e)";
-  if (k.includes("lavorazione") || k.includes("nuovo")) return "var(--tf-f59e0b)";
-  if (k.includes("annull")) return "var(--tf-ef4444)";
-  if (k.includes("sospes")) return "var(--tf-f97316)";
-  return "var(--tf-64748b)";
-};
-const brandColor = (b) => BRAND_COLORS[b]?.color || "var(--tf-6366f1)";
 const daysAgoISO = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
-// stati REALI di calendar_tasks (04/08): prima le chiavi non esistevano a DB
-// e il contatore "impegni in scadenza" includeva anche le attivita' chiuse
 const CLOSED_TASK = ["fatta", "abbandonata"];
-// badge del widget bacheca sui type REALI delle comunicazioni (il vecchio
-// test /urgent/i non matchava mai 'warning': tutto usciva col badge verde)
-const COM_BADGE = {
-  info: { label: "ℹ️ Info", color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.15)" },
-  warning: { label: "🚨 Urgente", color: "var(--tf-f87171)", bg: "rgba(239,68,68,.15)" },
-  success: { label: "🎉 Buona notizia", color: "var(--tf-34d399)", bg: "rgba(16,185,129,.15)" },
-  update: { label: "🚀 Update", color: "var(--tf-a78bfa)", bg: "rgba(139,92,246,.15)" },
-  novita: { label: "💣 Novità", color: "var(--tf-fb923c)", bg: "rgba(251,146,60,.15)" },
-};
-
-// ── UI di base ──────────────────────────────────────────────────────────────
-function Kpi({ icon: Icon, label, value, sub, color }) {
-  return (
-    <div className="glass-card p-4 border-t-2" style={{ borderTopColor: color }}>
-      <div className="flex items-center gap-2 text-slate-400 text-[10px] uppercase tracking-widest font-bold mb-2">
-        <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
-      </div>
-      <p className="text-3xl font-black text-white leading-none">{Number(value).toLocaleString("it-IT")}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1.5">{sub}</p>}
-    </div>
-  );
-}
-
-function BarChart({ icon: Icon, title, rows, total, colorFor, accent }) {
-  const LIMIT = 4;
-  const [exp, setExp] = useState(false);
-  const shown = exp ? rows : rows.slice(0, LIMIT);
-  return (
-    <div className="glass-card overflow-hidden flex flex-col">
-      <div className="px-5 py-3.5 border-b border-white/5 flex items-center gap-2">
-        <Icon className="w-4 h-4" style={{ color: accent }} />
-        <h3 className="text-[13px] font-bold text-slate-200 tracking-wide">{title}</h3>
-      </div>
-      <div className="p-5 space-y-3.5 flex-1">
-        {rows.length === 0 ? <p className="text-sm text-slate-500 py-2">Nessun dato nel periodo.</p> :
-          shown.map(([label, n]) => (
-            <div key={label}>
-              <div className="flex items-center justify-between text-xs mb-1.5">
-                <span className="text-slate-300 truncate">{label}</span>
-                <span className="font-mono font-semibold text-slate-400">{n}</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${total ? Math.min((n / total) * 100, 100) : 0}%`, background: colorFor ? colorFor(label) : accent }} />
-              </div>
-            </div>
-          ))}
-      </div>
-      {rows.length > LIMIT && (
-        <div className="px-5 pb-3 -mt-1 flex justify-end">
-          <button onClick={() => setExp((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-200 transition-colors">
-            {exp ? <>Mostra meno <ChevronUp className="w-3.5 h-3.5" /></> : <>Mostra tutti ({rows.length}) <ChevronDown className="w-3.5 h-3.5" /></>}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// MOD-9 (Luca 08/08): bacheca degli accessi — chi ha fatto login, dal più
-// VECCHIO al più recente (last_seen_at asc). Amministrativo in su. Si possono
-// NASCONDERE utenti: la scelta è personale (localStorage per utente).
-function LoginBoardWidget({ uid }) {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const key = uid ? `tf_home_login_hidden_${uid}` : null;
-  const [hidden, setHidden] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(`tf_home_login_hidden_${uid}`) || "[]")); } catch { return new Set(); }
-  });
-  const [mostraNascosti, setMostraNascosti] = useState(false);
-  useEffect(() => {
-    supabase.from("app_users").select("id, full_name, role, last_seen_at, active")
-      .not("last_seen_at", "is", null).order("last_seen_at", { ascending: true }).limit(500)
-      .then(({ data }) => { setUsers((data || []).filter(u => u.active !== false)); setLoading(false); });
-  }, []);
-  const toggle = (id) => {
-    setHidden(prev => {
-      const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id);
-      if (key) { try { localStorage.setItem(key, JSON.stringify([...n])); } catch { /* storage negato */ } }
-      return n;
-    });
-  };
-  const fmtQuando = (s) => {
-    if (!s) return "—";
-    const d = new Date(s); if (isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
-  };
-  const visibili = mostraNascosti ? users : users.filter(u => !hidden.has(u.id));
-  return (
-    <WidgetShell icon={LogIn} title="Accessi collaboratori" accent="var(--tf-34d399)"
-      action={hidden.size > 0 ? <button onClick={() => setMostraNascosti(v => !v)} className="text-[10px] font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1">{mostraNascosti ? <><Eye className="w-3 h-3" /> nascondi ({hidden.size})</> : <><EyeOff className="w-3 h-3" /> mostra nascosti ({hidden.size})</>}</button> : <span className="text-[10px] text-slate-500">dal più vecchio</span>}>
-      <div className="p-3 space-y-1.5 overflow-y-auto max-h-[240px]">
-        {loading ? <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-slate-500" /></div>
-          : visibili.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun accesso registrato.</p>
-            : visibili.map(u => {
-              const nascosto = hidden.has(u.id);
-              return (
-                <div key={u.id} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 group", nascosto ? "opacity-40 bg-white/[0.01]" : "bg-white/[0.02] hover:bg-white/[0.05]")}>
-                  <div className="w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center justify-center text-[11px] font-black shrink-0">{(u.full_name || "?").charAt(0).toUpperCase()}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-slate-100 truncate">{u.full_name || "—"}</div>
-                    <div className="text-[10px] text-slate-500 truncate">{roleLabel(u.role)}</div>
-                  </div>
-                  <div className="text-[10px] text-slate-400 tabular-nums shrink-0">{fmtQuando(u.last_seen_at)}</div>
-                  <button onClick={() => toggle(u.id)} title={nascosto ? "Mostra di nuovo" : "Nascondi dalla mia vista"} className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-white/10 text-slate-500 shrink-0">
-                    {nascosto ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              );
-            })}
-      </div>
-    </WidgetShell>
-  );
-}
-
-function WidgetShell({ icon: Icon, title, accent = "var(--tf-818cf8)", action, children }) {
-  return (
-    <div className="glass-card overflow-hidden flex flex-col">
-      <div className="px-5 py-3.5 border-b border-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-2"><Icon className="w-4 h-4" style={{ color: accent }} /><h3 className="text-[13px] font-bold text-slate-200 tracking-wide">{title}</h3></div>
-        {action}
-      </div>
-      <div className="flex-1 min-h-0">{children}</div>
-    </div>
-  );
-}
-
-const DEFAULT_ORDER = ["kpi", "charts", "widgets", "leaderboard"];
+const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+const SPAN = { 1: "sm:col-span-1", 2: "sm:col-span-2", 4: "sm:col-span-2 xl:col-span-4" };
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const { seesAll, stores: myStores, loaded: visLoaded } = useVisibleStores();
-  const visKey = myStores.join("|");
+    const { user } = useAuth();
+    const { seesAll, stores: myStores, loaded: visLoaded } = useVisibleStores();
+    const visKey = myStores.join("|");
 
-  const [all, setAll] = useState([]);          // TUTTI i contratti (per la classifica globale)
-  const [comms, setComms] = useState([]);
-  const [targets, setTargets] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState("month");
-  // Filtro ANNO + MESE (Luca 01/08): sostituisce "Tutto". period="custom" con {y,m} (m 0-based).
-  const [filtro, setFiltro] = useState<{ y: number; m: number } | null>(null);
-  const [filtroOpen, setFiltroOpen] = useState(false);
-  const [tmpM, setTmpM] = useState<number>(new Date().getMonth());
-  const [tmpY, setTmpY] = useState<number>(new Date().getFullYear());
-  const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
-  const ANNI = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+    const [all, setAll] = useState([]);
+    const [comms, setComms] = useState([]);
+    const [targets, setTargets] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const [margCats, setMargCats] = useState([]);
+    const [margItems, setMargItems] = useState([]);
+    const [gl, setGl] = useState(null);
+    const [savedLayout, setSavedLayout] = useState(undefined);
+    const [loading, setLoading] = useState(true);
 
-  // layout personalizzabile
-  const [order, setOrder] = useState(DEFAULT_ORDER);
-  const [editMode, setEditMode] = useState(false);
-  const [dragKey, setDragKey] = useState(null);
+    const [period, setPeriod] = useState("month");
+    const [filtro, setFiltro] = useState(null);
+    const [filtroOpen, setFiltroOpen] = useState(false);
+    const [tmpM, setTmpM] = useState(new Date().getMonth());
+    const [tmpY, setTmpY] = useState(new Date().getFullYear());
+    const ANNI = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
-  useEffect(() => {
-    if (!user?.id || !visLoaded) return;
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      // comunicazioni: select ESTESA (mig. 112, per comunicazionePerMe) con
-      // fallback legacy se le colonne target non sono ancora migrate
-      const caricaComms = async () => {
-        const est = await supabase.from("comunicazioni").select("id, title, type, content, target_roles, target_stores, target_users, target_brands, created_by, created_at, date_display").order("created_at", { ascending: false }).limit(30);
-        if (!est.error) return est;
-        return supabase.from("comunicazioni").select("id, title, type, content, target_roles, created_at, date_display").order("created_at", { ascending: false }).limit(30);
-      };
-      const [{ data: cs }, { data: cm }, { data: tg }, { data: tk }, { data: me }] = await Promise.all([
-        // caricaTutte: il tetto server 1000 ignorava il .limit(3000) — con
-        // l'archivio oltre quota le statistiche perdevano le vendite in coda.
-        caricaTutte<Record<string, unknown>>((from, to) =>
-          supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data_registrazione").order("data_registrazione", { ascending: false }).order("id").range(from, to)),
-        caricaComms(),
-        supabase.from("dashboard_targets").select("*"),
-        supabase.from("calendar_tasks").select("id, date, status").or(`assigned_user_id.eq.${user.id},created_by_user_id.eq.${user.id}`).limit(500),
-        supabase.from("app_users").select("dashboard_layout").eq("id", user.id).maybeSingle(),
-      ]);
-      if (!alive) return;
-      setAll(cs || []); setComms(cm || []); setTargets(tg || []); setTasks(tk || []);
-      const l = me?.dashboard_layout;
-      if (Array.isArray(l) && l.length) {
-        const valid = l.filter((k) => DEFAULT_ORDER.includes(k));
-        setOrder([...valid, ...DEFAULT_ORDER.filter((k) => !valid.includes(k))]);
-      }
-      setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, [user?.id, visLoaded, visKey, seesAll]); // eslint-disable-line react-hooks/exhaustive-deps
+    const [layout, setLayout] = useState([]);
+    const layoutPronto = useRef(false);
+    const [editMode, setEditMode] = useState(false);
+    const [addOpen, setAddOpen] = useState(false);
+    const [dragKey, setDragKey] = useState(null);
 
-  const whole = seesWholeStore(user?.role);
-  const level = seesAll ? "global" : whole ? "store" : "own";
-  const multiStore = seesAll || myStores.length > 1;
+    const [negoziAss, setNegoziAss] = useState([]);
+    const [brandsNeg, setBrandsNeg] = useState([]);
+    const [motore, setMotore] = useState(null);
+    const motoreYm = useRef(null);
 
-  const byPeriod = (list) => {
-    if (period === "all") return list;
-    if (period === "custom" && filtro) {
-      const from = `${filtro.y}-${String(filtro.m + 1).padStart(2, "0")}-01`;
-      const ny = filtro.m === 11 ? filtro.y + 1 : filtro.y;
-      const nm = filtro.m === 11 ? 0 : filtro.m + 1;
-      const to = `${ny}-${String(nm + 1).padStart(2, "0")}-01`;
-      return list.filter((c) => { const d = c.data_registrazione || ""; return d >= from && d < to; });
-    }
-    const now = new Date();
-    const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    return list.filter((c) => (c.data_registrazione || "") >= from);
-  };
+    // ── caricamento dati ────────────────────────────────────────────────────
+    useEffect(() => {
+        if (!user?.id || !visLoaded) return;
+        let alive = true;
+        (async () => {
+            setLoading(true);
+            const caricaComms = async () => {
+                const est = await supabase.from("comunicazioni").select("id, title, type, content, target_roles, target_stores, target_users, target_brands, created_by, created_at, date_display").order("created_at", { ascending: false }).limit(30);
+                if (!est.error) return est;
+                return supabase.from("comunicazioni").select("id, title, type, content, target_roles, created_at, date_display").order("created_at", { ascending: false }).limit(30);
+            };
+            const oggi = new Date();
+            const meseISO = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-01`;
+            const [{ data: cs }, { data: cm }, { data: tg }, { data: tk }, { data: me }, { data: mc }, { data: mi }, glv] = await Promise.all([
+                // caricaTutte supera il tetto server 1000; qty è dettagli->>qty
+                // (pezzi marginalità) senza scaricare l'intero jsonb dettagli
+                caricaTutte((from, to) =>
+                    supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data, data_registrazione, nascosta_gestione, qty:dettagli->>qty").order("data_registrazione", { ascending: false }).order("id").range(from, to)),
+                caricaComms(),
+                supabase.from("dashboard_targets").select("*"),
+                supabase.from("calendar_tasks").select("id, date, status").or(`assigned_user_id.eq.${user.id},created_by_user_id.eq.${user.id}`).limit(500),
+                supabase.from("app_users").select("dashboard_layout").eq("id", user.id).maybeSingle(),
+                supabase.from("marg_categories").select("id, name, icon, active"),
+                supabase.from("marg_items").select("name, category_id"),
+                giorniLavorativiMese(meseISO).catch(() => null),
+            ]);
+            if (!alive) return;
+            setAll(cs || []); setComms(cm || []); setTargets(tg || []); setTasks(tk || []);
+            setMargCats((mc || []).filter((c) => c.active !== false)); setMargItems(mi || []);
+            setGl(glv);
+            setSavedLayout(Array.isArray(me?.dashboard_layout) ? me.dashboard_layout : []);
+            setLoading(false);
+        })();
+        return () => { alive = false; };
+    }, [user?.id, visLoaded, visKey, seesAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const scoped = useMemo(() => {
-    if (level === "global") return all;
-    if (level === "store") return all.filter((c) => myStores.some((s) => sameStore(c.negozio, s)));
-    return all.filter((c) => norm(c.venditore) === norm(user?.name));
-  }, [all, level, visKey, user?.name]);
+    useEffect(() => { negoziAssegnati(user?.id).then(setNegoziAss); }, [user?.id]);
+    useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNeg); }, [user?.negozio]);
 
-  const mine = useMemo(() => byPeriod(scoped), [scoped, period, filtro]);
-  const groupBy = (list, key) => {
-    const m = {};
-    list.forEach((c) => { const k = (c[key] || "—").toString(); m[k] = (m[k] || 0) + 1; });
-    return Object.entries(m).sort((a, b) => b[1] - a[1]);
-  };
+    // ── scala di visibilità (come il resto del CRM) ─────────────────────────
+    const whole = seesWholeStore(user?.role);
+    const level = seesAll ? "global" : whole ? "store" : "own";
+    const multiStore = seesAll || myStores.length > 1;
 
-  const byBrand = useMemo(() => groupBy(mine, "brand"), [mine]);
-  const byStato = useMemo(() => groupBy(mine, "stato"), [mine]);
-  const terzo = useMemo(() => {
-    if (level === "own") return null;
-    if (multiStore) return { title: level === "global" ? "Top negozi rete" : "Top negozi area", icon: StoreIcon, rows: groupBy(mine, "negozio").slice(0, 12), color: "var(--tf-a855f7)" };
-    return { title: "Top venditori negozio", icon: Users, rows: groupBy(mine, "venditore").slice(0, 12), color: "var(--tf-38bdf8)" };
-  }, [mine, level, multiStore]);
+    const oggiISO = new Date().toISOString().slice(0, 10);
+    const ymCorrente = oggiISO.slice(0, 7);
+    const ymShown = period === "month" ? ymCorrente : period === "custom" && filtro ? `${filtro.y}-${String(filtro.m + 1).padStart(2, "0")}` : null;
 
-  const attivi = mine.filter((c) => /attiv/i.test(c.stato || "")).length;
-  const lavorazione = mine.filter((c) => /lavorazione|nuovo/i.test(c.stato || "")).length;
-  const clienti = new Set(mine.map((c) => c.client_id).filter(Boolean)).size;
+    const byPeriod = (list) => {
+        if (period === "all") return list;
+        const ym = ymShown || ymCorrente;
+        return list.filter((c) => giornoDi(c).startsWith(ym));
+    };
 
-  // FASE 3 — reminder dinamici
-  const sevenAgo = daysAgoISO(7);
-  const oggi = new Date().toISOString().slice(0, 10);
-  const ferme = useMemo(() => scoped.filter((c) => /lavorazione|nuovo/i.test(c.stato || "") && (c.data_registrazione || "9999") < sevenAgo).length, [scoped]);
-  const impegni = useMemo(() => tasks.filter((t) => (t.date || "") && (t.date || "") <= oggi && !CLOSED_TASK.includes(norm(t.status))).length, [tasks]);
+    const scoped = useMemo(() => {
+        if (level === "global") return all;
+        if (level === "store") return all.filter((c) => myStores.some((s) => sameStore(c.negozio, s)));
+        return all.filter((c) => norm(c.venditore) === norm(user?.name));
+    }, [all, level, visKey, user?.name]);
 
-  // FASE 2b — obiettivo reale
-  const targetVal = useMemo(() => {
-    const find = (fn) => targets.find(fn)?.valore || 0;
-    if (level === "own") return find((x) => x.tipo === "venditore" && norm(x.riferimento) === norm(user?.name));
-    if (level === "store") return find((x) => x.tipo === "negozio" && myStores.some((s) => sameStore(x.riferimento, s)));
-    return find((x) => x.tipo === "rete");
-  }, [targets, level, user?.name, visKey]);
-  const targetTitle = level === "own" ? "Il tuo obiettivo" : level === "store" ? (multiStore ? "Target area" : "Target negozio") : "Target rete";
-  const targetSub = level === "own" ? "Contratti personali" : level === "store" ? "Contratti del negozio" : "Contratti della rete";
-  const perc = targetVal > 0 ? Math.round((mine.length / targetVal) * 100) : 0;
+    const mine = useMemo(() => byPeriod(scoped), [scoped, period, filtro]);
 
-  // Classifica GLOBALE
-  const classifica = useMemo(() => {
-    const periodAll = byPeriod(all);
-    const m = {};
-    periodAll.forEach((c) => {
-      const v = (c.venditore || "").trim();
-      if (!v || v === "—") return;
-      if (!m[v]) m[v] = { nome: v, n: 0, negozio: c.negozio || "" };
-      m[v].n++;
-      if (!m[v].negozio && c.negozio) m[v].negozio = c.negozio;
-    });
-    return Object.values(m).sort((a, b) => b.n - a.n).slice(0, 10).map((x, i) => ({ ...x, rank: i + 1 }));
-  }, [all, period, filtro]);
+    const storesRef = myStores.length ? myStores : (user?.negozio ? [user.negozio] : []);
+    const storeRows = useMemo(() => byPeriod(all.filter((c) => storesRef.some((s) => sameStore(c.negozio, s)))), [all, visKey, user?.negozio, period, filtro]);
 
-  const isVenditore = level === "own";
-  // BACHECA IN HOME (BAC-01): stessa regola comunicazionePerMe di popup e
-  // sidebar (ruolo+negozio+persona+brand) — prima filtrava solo target_roles
-  // e le comunicazioni mirate a persona/negozio/brand sparivano (o comparivano
-  // a chi non doveva vederle). L'autore continua a vedere le proprie.
-  const [negoziAss, setNegoziAss] = useState([]);
-  const [brandsNeg, setBrandsNeg] = useState([]);
-  useEffect(() => { negoziAssegnati(user?.id).then(setNegoziAss); }, [user?.id]);
-  useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNeg); }, [user?.negozio]);
-  const commsVisibili = useMemo(() => comms.filter((c) =>
-    comunicazionePerMe(c, { userId: user?.id, role: user?.role, negozio: user?.negozio, negozi: negoziAss, brandsNegozio: brandsNeg })
-    || (c.created_by && c.created_by === user?.id)
-  ).slice(0, 4), [comms, user?.id, user?.role, user?.negozio, negoziAss, brandsNeg]);
+    // brand osservati nella produzione (ultimi 60 giorni) → widget proposti
+    const brandsOsservati = useMemo(() => {
+        const da = daysAgoISO(60);
+        const m = {};
+        scoped.forEach((c) => { if (isCtr(c) && validaProduzione(c) && giornoDi(c) >= da && c.brand) m[c.brand] = (m[c.brand] || 0) + 1; });
+        return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([b]) => b);
+    }, [scoped]);
+    const brandsGallery = useMemo(() => {
+        const m = {};
+        scoped.forEach((c) => { if (isCtr(c) && validaProduzione(c) && c.brand) m[c.brand] = (m[c.brand] || 0) + 1; });
+        return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([b]) => b);
+    }, [scoped]);
 
-  // ── layout: salva l'ordine per utente ──
-  const saveOrder = async (o) => {
-    setOrder(o);
-    try { await supabase.from("app_users").update({ dashboard_layout: o }).eq("id", user.id); } catch { }
-  };
-  const onDrop = (targetKey) => {
-    if (!dragKey || dragKey === targetKey) { setDragKey(null); return; }
-    const o = [...order];
-    o.splice(o.indexOf(targetKey), 0, o.splice(o.indexOf(dragKey), 1)[0]);
-    saveOrder(o); setDragKey(null);
-  };
+    // ── Motore gare: vendite del mese W3/VF/FW + tabellari (per i punti) ────
+    // I punti dei widget brand usano le STESSE funzioni del Calcolatore
+    // (caricaContrattiMese + matchRigheAttivazione), ma aggregati sul negozio
+    // che registra. L'energia Fastweb serve al widget Vodafone (stessa gara).
+    useEffect(() => {
+        if (loading) return;
+        const ym = ymShown || ymCorrente;
+        if (motoreYm.current === ym) return;
+        motoreYm.current = ym;
+        setMotore(null);
+        let alive = true;
+        (async () => {
+            const iso = `${ym}-01`;
+            try {
+                const [rw3, rvf, rfw, tw3, tvf] = await Promise.all([
+                    caricaContrattiMese("WindTre", iso),
+                    caricaContrattiMese("Vodafone", iso),
+                    caricaContrattiMese("Fastweb", iso),
+                    caricaTabellareAzienda("windtre", iso).catch(() => null),
+                    caricaTabellareAzienda("vodafone", iso).catch(() => null),
+                ]);
+                if (alive) setMotore({ ym, w3: rw3 || [], vf: rvf || [], fw: rfw || [], tabW3: tw3, tabVF: tvf });
+            } catch { if (alive) setMotore({ ym, w3: [], vf: [], fw: [], tabW3: null, tabVF: null }); }
+        })();
+        return () => { alive = false; };
+    }, [loading, ymShown]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!user) return null;
+    // ── numeri dei widget storici (invariati) ───────────────────────────────
+    const groupBy = (list, key) => {
+        const m = {};
+        list.forEach((c) => { const k = (c[key] || "—").toString(); m[k] = (m[k] || 0) + 1; });
+        return Object.entries(m).sort((a, b) => b[1] - a[1]);
+    };
+    const byBrand = useMemo(() => groupBy(mine, "brand"), [mine]);
+    const byStato = useMemo(() => groupBy(mine, "stato"), [mine]);
+    const terzo = useMemo(() => {
+        if (level === "own") return null;
+        if (multiStore) return { title: level === "global" ? "Top negozi rete" : "Top negozi area", icon: StoreIcon, rows: groupBy(mine, "negozio").slice(0, 12), color: "var(--tf-a855f7)" };
+        return { title: "Top venditori negozio", icon: Users, rows: groupBy(mine, "venditore").slice(0, 12), color: "var(--tf-38bdf8)" };
+    }, [mine, level, multiStore]);
+    const attivi = mine.filter((c) => /attiv/i.test(c.stato || "")).length;
+    const lavorazione = mine.filter((c) => /lavorazione|nuovo/i.test(c.stato || "")).length;
+    const clienti = new Set(mine.map((c) => c.client_id).filter(Boolean)).size;
+    const sevenAgo = daysAgoISO(7);
+    const ferme = useMemo(() => scoped.filter((c) => /lavorazione|nuovo/i.test(c.stato || "") && (c.data_registrazione || "9999") < sevenAgo).length, [scoped]);
+    const impegni = useMemo(() => tasks.filter((t) => (t.date || "") && (t.date || "") <= oggiISO && !CLOSED_TASK.includes(norm(t.status))).length, [tasks]);
+    const targetVal = useMemo(() => {
+        const find = (fn) => targets.find(fn)?.valore || 0;
+        if (level === "own") return find((x) => x.tipo === "venditore" && norm(x.riferimento) === norm(user?.name));
+        if (level === "store") return find((x) => x.tipo === "negozio" && myStores.some((s) => sameStore(x.riferimento, s)));
+        return find((x) => x.tipo === "rete");
+    }, [targets, level, user?.name, visKey]);
+    const classifica = useMemo(() => {
+        const periodAll = byPeriod(all);
+        const m = {};
+        periodAll.forEach((c) => {
+            const v = (c.venditore || "").trim();
+            if (!v || v === "—") return;
+            if (!m[v]) m[v] = { nome: v, n: 0, negozio: c.negozio || "" };
+            m[v].n++;
+            if (!m[v].negozio && c.negozio) m[v].negozio = c.negozio;
+        });
+        return Object.values(m).sort((a, b) => b.n - a.n).slice(0, 10).map((x, i) => ({ ...x, rank: i + 1 }));
+    }, [all, period, filtro]);
 
-  // ── sezioni (rese nell'ordine scelto) ──
-  const SECTIONS = {
-    kpi: (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi icon={FileText} label="Contratti" value={mine.length} color="var(--tf-6366f1)" sub={period === "month" ? "registrati questo mese" : period === "custom" && filtro ? `registrati a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` : "totali a sistema"} />
-        <Kpi icon={CheckCircle2} label="Attivi" value={attivi} color="var(--tf-22c55e)" sub={mine.length ? `${Math.round((attivi / mine.length) * 100)}% del periodo` : "—"} />
-        <Kpi icon={Clock} label="In lavorazione" value={lavorazione} color="var(--tf-f59e0b)" sub="da completare" />
-        <Kpi icon={Users} label="Clienti" value={clienti} color="var(--tf-a855f7)" sub="serviti nel periodo" />
-      </div>
-    ),
-    charts: (
-      <div className={`grid gap-4 ${terzo ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
-        <BarChart icon={TrendingUp} title="Per brand" rows={byBrand} total={mine.length} colorFor={brandColor} accent="var(--tf-818cf8)" />
-        <BarChart icon={AlertTriangle} title="Per stato" rows={byStato} total={mine.length} colorFor={STATO_COLOR} accent="var(--tf-f59e0b)" />
-        {terzo && <BarChart icon={terzo.icon} title={terzo.title} rows={terzo.rows} total={mine.length} colorFor={() => terzo.color} accent={terzo.color} />}
-      </div>
-    ),
-    widgets: (
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {/* Direzione Inserimento (bussola, sola lettura) */}
-        <WidgetShell icon={Compass} title="Direzione inserimento" accent="var(--tf-38bdf8)"
-          action={!seesAll && myStores[0] ? <span className="text-[10px] text-slate-500">{myStores[0]}</span> : null}>
-          <BussolaWidget negozio={seesAll ? (myStores[0] || user.negozio) : (user.negozio || myStores[0])} />
-        </WidgetShell>
+    const commsVisibili = useMemo(() => comms.filter((c) =>
+        comunicazionePerMe(c, { userId: user?.id, role: user?.role, negozio: user?.negozio, negozi: negoziAss, brandsNegozio: brandsNeg })
+        || (c.created_by && c.created_by === user?.id)
+    ).slice(0, 8), [comms, user?.id, user?.role, user?.negozio, negoziAss, brandsNeg]);
 
-        {/* Obiettivo (reale dai target Home) */}
-        <WidgetShell icon={TargetIcon} title={targetTitle} accent="var(--tf-818cf8)" action={<span className="text-[10px] text-slate-500">{period === "month" ? "Mese corrente" : period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : "Totale"}</span>}>
-          <div className="p-5">
-            <div className="flex items-end justify-between mb-2">
-              <div>
-                <div className="text-[11px] text-slate-500 mb-1">{targetSub}</div>
-                <div className="text-3xl font-black text-white leading-none">{mine.length}{targetVal > 0 && <span className="text-base text-slate-500 font-bold"> / {targetVal}</span>}</div>
-              </div>
-              {targetVal > 0 && <div className="text-xl font-black" style={{ color: perc >= 100 ? "var(--tf-22c55e)" : "var(--tf-818cf8)" }}>{perc}%</div>}
-            </div>
-            {targetVal > 0 ? (
-              <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(perc, 100)}%`, background: perc >= 100 ? "linear-gradient(90deg,#16a34a,#22c55e)" : "linear-gradient(90deg,#4f46e5,#818cf8)" }} />
-              </div>
-            ) : (
-              <p className="text-[11px] text-slate-500 mt-1">Obiettivo non impostato — l'Admin lo configura in <b>Amministrazione → Obiettivi Home</b>.</p>
-            )}
-          </div>
-        </WidgetShell>
+    // marginalità: mappa prodotto→categoria (e icone) dal pannello Marginalità
+    const margMap = useMemo(() => {
+        const catName = new Map(margCats.map((c) => [c.id, c.name]));
+        const m = new Map();
+        margItems.forEach((it) => { const cat = catName.get(it.category_id); if (it.name && cat) m.set(norm(it.name), { cat }); });
+        return m;
+    }, [margCats, margItems]);
+    const margIcone = useMemo(() => new Map(margCats.map((c) => [c.name, c.icon || "🧩"])), [margCats]);
 
-        {/* Azioni e To-Do (reminder dinamici) */}
-        <WidgetShell icon={Zap} title="Azioni e to-do" accent="var(--tf-818cf8)">
-          <div className="p-4 grid grid-cols-2 gap-2 border-b border-white/5">
-            <Link href="/registra-vendita" className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500/12 border border-indigo-500/25 text-indigo-300 text-[11px] font-bold py-2 hover:bg-indigo-500/20"><Plus className="w-3.5 h-3.5" /> Nuova Vendita</Link>
-            <Link href="/clienti" className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-[11px] font-bold py-2 hover:bg-white/10"><Search className="w-3.5 h-3.5" /> Trova Cliente</Link>
-          </div>
-          <div className="p-4 space-y-2">
-            {ferme > 0 && (
-              <Link href="/pda/tracking" className="flex items-center gap-3 group">
-                <div className="w-8 h-8 rounded-lg bg-rose-500/15 flex items-center justify-center text-rose-400 shrink-0"><AlertTriangle className="w-4 h-4" /></div>
-                <div className="min-w-0"><div className="text-xs font-semibold text-slate-100">{ferme} pratiche ferme da &gt;7 giorni</div><div className="text-[10px] text-slate-500">da verificare nel Tracking PDA</div></div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-600 ml-auto group-hover:text-slate-400" />
-              </Link>
-            )}
-            {impegni > 0 && (
-              <Link href="/calendario" className="flex items-center gap-3 group">
-                <div className="w-8 h-8 rounded-lg bg-sky-500/15 flex items-center justify-center text-sky-400 shrink-0"><CalendarClock className="w-4 h-4" /></div>
-                <div className="min-w-0"><div className="text-xs font-semibold text-slate-100">{impegni} impegni in scadenza</div><div className="text-[10px] text-slate-500">da gestire in Calendario</div></div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-600 ml-auto group-hover:text-slate-400" />
-              </Link>
-            )}
-            {lavorazione > 0 && ferme === 0 && (
-              <Link href="/pda/tracking" className="flex items-center gap-3 group">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0"><Clock className="w-4 h-4" /></div>
-                <div className="min-w-0"><div className="text-xs font-semibold text-slate-100">{lavorazione} pratiche in lavorazione</div><div className="text-[10px] text-slate-500">da completare nel Tracking PDA</div></div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-600 ml-auto group-hover:text-slate-400" />
-              </Link>
-            )}
-            {ferme === 0 && impegni === 0 && lavorazione === 0 && <p className="text-xs text-slate-500 text-center py-3">Tutto in ordine — nessuna azione urgente. ✅</p>}
-          </div>
-        </WidgetShell>
+    // oggi conta già nei numeri di gara? (ora di scatto + giorni lavorativi)
+    const oggiContato = useMemo(() => {
+        if (!gl) return false;
+        const now = new Date();
+        if (now.getHours() < (gl.oraScatto ?? 19)) return false;
+        if (now.getDay() === 0) return false;
+        if ((gl.festivi || []).includes(oggiISO)) return false;
+        if ((gl.congelati || []).includes(now.getDate())) return false;
+        return true;
+    }, [gl, oggiISO]);
 
-        {/* Bacheca Aziendale */}
-        <WidgetShell icon={Megaphone} title="Bacheca aziendale" accent="var(--tf-38bdf8)"
-          action={!isVenditore ? <Link href="/comunicazioni" className="text-[10px] font-bold text-sky-300 bg-sky-500/10 px-2 py-1 rounded-md hover:bg-sky-500/20 flex items-center gap-1"><Plus className="w-3 h-3" /> Nuovo</Link> : null}>
-          <div className="p-4 space-y-3 overflow-y-auto max-h-[220px]">
-            {commsVisibili.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun annuncio.</p> :
-              commsVisibili.map((c) => {
-                const badge = COM_BADGE[c.type] || COM_BADGE.info;
-                return (
-                  // card CLICCABILE (BAC-01): porta alla comunicazione aperta in bacheca
-                  // card VIVA come in bacheca (Luca 04/08: "sembrano testi
-                  // normali"): tinta e bordo del genere, filigrana emoji,
-                  // hover che solleva — la comunicazione si riconosce a vista
-                  <Link key={c.id} href={`/comunicazioni?apri=${c.id}`}
-                    className="relative block overflow-hidden rounded-xl border p-2.5 mb-2 last:mb-0 cursor-pointer group transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                    style={{ borderColor: `color-mix(in srgb, ${badge.color} 35%, transparent)`, background: `linear-gradient(135deg, ${badge.bg}, transparent 65%)` }}>
-                    <span aria-hidden className="absolute -right-1 -bottom-2 text-4xl opacity-[0.12] group-hover:opacity-25 transition-opacity select-none">{badge.label.split(" ")[0]}</span>
-                    <div className="relative flex items-center justify-between mb-1">
-                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
-                      <span className="text-[10px] text-slate-500">{c.date_display || ""}</span>
-                    </div>
-                    <div className="relative text-xs font-bold text-slate-100 group-hover:text-white">{c.title}</div>
-                    {c.content && <div className="relative text-[11px] text-slate-400 line-clamp-2">{c.content}</div>}
-                    <div className="relative mt-1 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: badge.color }}>Apri la comunicazione →</div>
-                  </Link>
-                );
-              })}
-          </div>
-        </WidgetShell>
+    const ymScorso = useMemo(() => {
+        const ym = ymShown || ymCorrente;
+        const [y, m] = ym.split("-").map(Number);
+        const d = new Date(y, m - 2, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }, [ymShown, ymCorrente]);
 
-        {/* Accessi collaboratori (MOD-9): solo amministrativo in su */}
-        {seesAll && <LoginBoardWidget uid={user?.id} />}
-      </div>
-    ),
-    leaderboard: (
-      <div className="glass-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /><h3 className="text-[13px] font-bold text-slate-200 tracking-wide">Classifica generale venditori</h3></div>
-          <span className="text-[10px] text-slate-500">Per numero contratti · € con le provvigioni (in arrivo)</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-widest text-slate-500 bg-white/[0.01]">
-                <th className="py-3 px-5 text-center w-16">Pos.</th>
-                <th className="py-3 px-5 text-left">Venditore</th>
-                <th className="py-3 px-5 text-left">Negozio</th>
-                <th className="py-3 px-5 text-right">Contratti</th>
-              </tr>
-            </thead>
-            <tbody>
-              {classifica.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 text-center text-slate-500 text-sm">Nessun contratto nel periodo.</td></tr>
-              ) : classifica.map((v) => {
-                const isMe = isVenditore && norm(v.nome) === norm(user.name);
-                return (
-                  <tr key={v.nome} className="border-t border-white/[0.03]" style={isMe ? { background: "rgba(99,102,241,0.08)" } : undefined}>
-                    <td className="py-3 px-5 text-center">{v.rank === 1 ? "🥇" : v.rank === 2 ? "🥈" : v.rank === 3 ? "🥉" : <span className="text-slate-500 font-bold">{v.rank}</span>}</td>
-                    <td className="py-3 px-5"><span className="font-bold" style={{ color: isMe ? "var(--tf-a5b4fc)" : "var(--tf-f1f5f9)" }}>{v.nome}{isMe && <span className="ml-2 text-[9px] font-bold text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded">TU</span>}</span></td>
-                    <td className="py-3 px-5 text-slate-400">{v.negozio || "—"}</td>
-                    <td className="py-3 px-5 text-right font-black text-slate-200">{v.n}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    ),
-  };
-  const SECTION_LABEL = { kpi: "Indicatori", charts: "Grafici", widgets: "Widget", leaderboard: "Classifica" };
+    const periodoLabel = period === "month" ? "questo mese" : period === "custom" && filtro ? `a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` : "in totale";
+    const scopeLabel = level === "global" ? "Tutta la rete" : level === "store" ? (myStores.join(", ") || user?.negozio || "") : "I tuoi numeri";
 
-  return (
-    <div className="space-y-5">
-      {/* HEADER */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-white">Ciao, {(user.name || "").split(" ")[0] || "—"}</h1>
-          <p className="text-sm text-slate-500">{roleLabel(user.role)}{seesAll ? " · tutti i negozi" : myStores.length ? ` · ${myStores.join(", ")}` : ""}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setEditMode((v) => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${editMode ? "bg-emerald-500 text-white border-emerald-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10"}`}>
-            {editMode ? <><Check className="w-3.5 h-3.5" /> Fatto</> : <><LayoutGrid className="w-3.5 h-3.5" /> Modifica</>}
-          </button>
-          <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 relative">
-            <button onClick={() => { setPeriod("month"); setFiltroOpen(false); }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${period === "month" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>Questo mese</button>
-            <button onClick={() => { if (filtro) { setTmpM(filtro.m); setTmpY(filtro.y); } setFiltroOpen((o) => !o); }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1 ${period === "custom" || period === "all" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>
-              {period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : period === "all" ? "Tutto" : "Filtro"} <span className="text-[9px]">▾</span>
-            </button>
-            {filtroOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setFiltroOpen(false)} />
-                <div className="absolute right-0 top-full mt-2 z-30 w-60 glass-card p-3 space-y-2.5 border-white/10 shadow-2xl">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Scegli mese e anno</div>
-                  <div className="flex gap-2">
-                    <select value={tmpM} onChange={(e) => setTmpM(parseInt(e.target.value))} className="glass-input !h-9 text-xs flex-1">
-                      {MESI.map((mm, i) => <option key={i} value={i}>{mm}</option>)}
-                    </select>
-                    <select value={tmpY} onChange={(e) => setTmpY(parseInt(e.target.value))} className="glass-input !h-9 text-xs w-[84px]">
-                      {ANNI.map((yy) => <option key={yy} value={yy}>{yy}</option>)}
-                    </select>
-                  </div>
-                  <button onClick={() => { setFiltro({ y: tmpY, m: tmpM }); setPeriod("custom"); setFiltroOpen(false); }}
-                    className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold">Applica</button>
-                  <button onClick={() => { setPeriod("all"); setFiltro(null); setFiltroOpen(false); }}
-                    className="w-full text-[11px] text-slate-500 hover:text-slate-300 transition-colors">oppure mostra tutto lo storico</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+    const allPeriod = useMemo(() => byPeriod(all), [all, period, filtro]);
 
-      {editMode && (
-        <div className="glass-card px-4 py-2.5 flex items-center gap-2 text-xs text-indigo-200 bg-indigo-500/10 border-indigo-500/25">
-          <GripVertical className="w-4 h-4" /> Trascina i blocchi per riordinare la tua Home. L'ordine viene salvato solo per te.
-        </div>
-      )}
+    const ctx = {
+        user, level, seesAll, myStores, multiStore, scopeLabel, periodoLabel,
+        oggiISO, ymShown, periodoEMeseCorrente: (ymShown || ymCorrente) === ymCorrente && period !== "all",
+        oggiContato, gl,
+        w3: motore ? { ym: motore.ym, rows: motore.w3, tab: motore.tabW3 } : null,
+        vf: motore ? { ym: motore.ym, rows: motore.vf, rowsFw: motore.fw, tab: motore.tabVF } : null,
+        allPeriod,
+        aggiornaWidgetId: (vecchio, nuovo) => {
+            if (!nuovo || vecchio === nuovo) return;
+            salvaLayout(layout.map((w) => w.k === vecchio ? { ...w, k: nuovo } : w));
+        },
+        meseScorsoYm: ymScorso, meseScorsoLabel: MESI[Number(ymScorso.slice(5, 7)) - 1].slice(0, 3).toLowerCase(),
+        inMyStores: (neg) => storesRef.some((s) => sameStore(neg, s)),
+        mine, scoped, storeRows,
+        attivi, lavorazione, clienti, ferme, impegni,
+        byBrand, byStato, terzo, classifica, commsVisibili,
+        targetVal,
+        targetTitle: level === "own" ? "Il tuo obiettivo" : level === "store" ? (multiStore ? "Target area" : "Target negozio") : "Target rete",
+        targetSub: level === "own" ? "Contratti personali" : level === "store" ? "Contratti del negozio" : "Contratti della rete",
+        margMap, margIcone, brandsOsservati, brandsGallery,
+    };
 
-      {loading ? (
-        <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento dati…</div>
-      ) : (
+    // ── risoluzione layout (una volta, a dati pronti) ───────────────────────
+    useEffect(() => {
+        if (loading || savedLayout === undefined || layoutPronto.current) return;
+        layoutPronto.current = true;
+        setLayout(risolviLayout(savedLayout, ctx));
+    }, [loading, savedLayout]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const salvaLayout = async (next) => {
+        setLayout(next);
+        try { await supabase.from("app_users").update({ dashboard_layout: encodeLayout(next) }).eq("id", user.id); } catch { /* offline: resta locale */ }
+    };
+    const muovi = (k, dir) => {
+        const i = layout.findIndex((w) => w.k === k);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= layout.length) return;
+        const next = [...layout];[next[i], next[j]] = [next[j], next[i]];
+        salvaLayout(next);
+    };
+    const ridimensiona = (k, s) => salvaLayout(layout.map((w) => w.k === k ? { ...w, s } : w));
+    const rimuovi = (k) => salvaLayout(layout.filter((w) => w.k !== k));
+    const aggiungi = (id) => {
+        const info = infoWidget(id, ctx);
+        if (!info || layout.some((w) => w.k === id)) return;
+        salvaLayout([{ k: id, s: info.def }, ...layout]);
+    };
+    const onDrop = (targetKey) => {
+        if (!dragKey || dragKey === targetKey) { setDragKey(null); return; }
+        const next = [...layout];
+        const from = next.findIndex((w) => w.k === dragKey);
+        const to = next.findIndex((w) => w.k === targetKey);
+        if (from < 0 || to < 0) { setDragKey(null); return; }
+        next.splice(to, 0, next.splice(from, 1)[0]);
+        salvaLayout(next); setDragKey(null);
+    };
+
+    if (!user) return null;
+
+    const disponibili = widgetsDisponibili(ctx, layout.map((w) => w.k));
+    const GRUPPI = [
+        ["performance", "🏁 Performance"], ["confronto", "⚔️ Confronto"],
+        ["statistiche", "📊 Statistiche"], ["comunicazione", "📣 Comunicazione"],
+        ["squadra", "👥 Squadra"], ["strumenti", "🧰 Strumenti"],
+    ];
+
+    return (
         <div className="space-y-5">
-          {order.map((key) => (
-            <div key={key}
-              draggable={editMode}
-              onDragStart={() => setDragKey(key)}
-              onDragOver={(e) => { if (editMode) e.preventDefault(); }}
-              onDrop={() => onDrop(key)}
-              className={editMode ? `relative rounded-2xl p-2 border-2 border-dashed transition-colors cursor-grab active:cursor-grabbing ${dragKey === key ? "border-indigo-400 bg-indigo-500/5" : "border-white/15 hover:border-indigo-500/40"}` : ""}>
-              {editMode && (
-                <div className="absolute -top-2.5 left-4 z-10 flex items-center gap-1 text-[10px] font-bold bg-indigo-500 text-white px-2 py-0.5 rounded-full shadow-lg">
-                  <GripVertical className="w-3 h-3" /> {SECTION_LABEL[key]}
+            {/* HEADER */}
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h1 className="text-2xl font-black text-white">Ciao, {(user.name || "").split(" ")[0] || "—"}</h1>
+                    <p className="text-sm text-slate-500">{roleLabel(user.role)}{seesAll ? " · tutti i negozi" : myStores.length ? ` · ${myStores.join(", ")}` : ""}</p>
                 </div>
-              )}
-              <div className={editMode ? "pointer-events-none opacity-95" : ""}>{SECTIONS[key]}</div>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => { setEditMode((v) => !v); setAddOpen(false); }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${editMode ? "bg-emerald-500 text-white border-emerald-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10"}`}>
+                        {editMode ? <><Check className="w-3.5 h-3.5" /> Fatto</> : <><LayoutGrid className="w-3.5 h-3.5" /> Modifica</>}
+                    </button>
+                    <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 relative">
+                        <button onClick={() => { setPeriod("month"); setFiltroOpen(false); }}
+                            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${period === "month" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>Questo mese</button>
+                        <button onClick={() => { if (filtro) { setTmpM(filtro.m); setTmpY(filtro.y); } setFiltroOpen((o) => !o); }}
+                            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1 ${period === "custom" || period === "all" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>
+                            {period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : period === "all" ? "Tutto" : "Filtro"} <span className="text-[9px]">▾</span>
+                        </button>
+                        {filtroOpen && (
+                            <>
+                                <div className="fixed inset-0 z-20" onClick={() => setFiltroOpen(false)} />
+                                <div className="absolute right-0 top-full mt-2 z-30 w-60 glass-card p-3 space-y-2.5 border-white/10 shadow-2xl">
+                                    <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Scegli mese e anno</div>
+                                    <div className="flex gap-2">
+                                        <select value={tmpM} onChange={(e) => setTmpM(parseInt(e.target.value))} className="glass-input !h-9 text-xs flex-1">
+                                            {MESI.map((mm, i) => <option key={i} value={i}>{mm}</option>)}
+                                        </select>
+                                        <select value={tmpY} onChange={(e) => setTmpY(parseInt(e.target.value))} className="glass-input !h-9 text-xs w-[84px]">
+                                            {ANNI.map((yy) => <option key={yy} value={yy}>{yy}</option>)}
+                                        </select>
+                                    </div>
+                                    <button onClick={() => { setFiltro({ y: tmpY, m: tmpM }); setPeriod("custom"); setFiltroOpen(false); }}
+                                        className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold">Applica</button>
+                                    <button onClick={() => { setPeriod("all"); setFiltro(null); setFiltroOpen(false); }}
+                                        className="w-full text-[11px] text-slate-500 hover:text-slate-300 transition-colors">oppure mostra tutto lo storico</button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
             </div>
-          ))}
+
+            {editMode && (
+                <div className="glass-card px-4 py-2.5 flex flex-wrap items-center gap-3 text-xs text-indigo-200 bg-indigo-500/10 border-indigo-500/25">
+                    <span className="flex items-center gap-2"><GripVertical className="w-4 h-4" /> Trascina i widget, cambia taglia (1 · 2 · ½ pagina) o toglili. Tutto salvato solo per te.</span>
+                    <span className="flex items-center gap-2 ml-auto">
+                        <button onClick={() => setAddOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500 text-white font-bold hover:bg-indigo-600"><Plus className="w-3.5 h-3.5" /> Aggiungi widget</button>
+                        <button onClick={() => salvaLayout(layoutDefault(ctx))} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 text-slate-300 font-semibold hover:bg-white/20" title="Torna al layout consigliato"><RotateCcw className="w-3.5 h-3.5" /> Ripristina</button>
+                    </span>
+                </div>
+            )}
+
+            {loading ? (
+                <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento dati…</div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" style={{ gridAutoFlow: "row dense" }}>
+                    {layout.map(({ k, s }) => {
+                        const info = infoWidget(k, ctx);
+                        if (!info) return null;
+                        const contenuto = renderWidget(k, ctx, s);
+                        if (!contenuto) return null;
+                        return (
+                            <div key={k} className={cn(SPAN[s] || SPAN[1], editMode && "relative")}
+                                draggable={editMode}
+                                onDragStart={() => setDragKey(k)}
+                                onDragOver={(e) => { if (editMode) e.preventDefault(); }}
+                                onDrop={() => onDrop(k)}>
+                                {editMode && (
+                                    <div className={cn("absolute -inset-1 z-10 rounded-2xl border-2 border-dashed transition-colors", dragKey === k ? "border-indigo-400 bg-indigo-500/10" : "border-white/15 hover:border-indigo-500/40")}>
+                                        <div className="absolute -top-3 left-3 right-3 flex items-center gap-1 text-[10px] font-bold">
+                                            <span className="flex items-center gap-1 bg-indigo-500 text-white px-2 py-0.5 rounded-full shadow-lg cursor-grab active:cursor-grabbing"><GripVertical className="w-3 h-3" /> {info.label}</span>
+                                            <span className="flex items-center gap-0.5 ml-auto bg-slate-900/90 border border-white/10 rounded-full px-1 py-0.5 shadow-lg">
+                                                <button onClick={() => muovi(k, -1)} title="Sposta prima" className="p-0.5 rounded hover:bg-white/10 text-slate-300"><ChevronLeft className="w-3 h-3" /></button>
+                                                <button onClick={() => muovi(k, 1)} title="Sposta dopo" className="p-0.5 rounded hover:bg-white/10 text-slate-300"><ChevronRight className="w-3 h-3" /></button>
+                                                {(info.sizes || [1, 2, 4]).map((sz) => (
+                                                    <button key={sz} onClick={() => ridimensiona(k, sz)} title={SIZE_LABEL[sz]}
+                                                        className={cn("px-1.5 py-0.5 rounded text-[9px] font-black", s === sz ? "bg-indigo-500 text-white" : "text-slate-400 hover:bg-white/10")}>
+                                                        {sz === 4 ? "½" : sz}
+                                                    </button>
+                                                ))}
+                                                <button onClick={() => rimuovi(k)} title="Togli dalla Home" className="p-0.5 rounded hover:bg-rose-500/30 text-rose-300"><X className="w-3 h-3" /></button>
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className={cn("h-full", editMode && "pointer-events-none opacity-90")}>{contenuto}</div>
+                            </div>
+                        );
+                    })}
+                    {layout.length === 0 && (
+                        <div className="col-span-full glass-card p-8 text-center text-sm text-slate-400">
+                            Home vuota — premi <b>Modifica → Aggiungi widget</b> per comporla.
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* pannello Aggiungi widget */}
+            {addOpen && (
+                <>
+                    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={() => setAddOpen(false)} />
+                    <div className="fixed z-50 inset-x-3 top-16 bottom-6 sm:inset-x-auto sm:right-6 sm:w-[420px] glass-card border-white/10 shadow-2xl flex flex-col overflow-hidden">
+                        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2"><Plus className="w-4 h-4 text-indigo-300" /> Aggiungi widget</h3>
+                            <button onClick={() => setAddOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><X className="w-4 h-4" /></button>
+                        </div>
+                        <div className="p-4 space-y-4 overflow-y-auto">
+                            {GRUPPI.map(([gk, glabel]) => {
+                                const voci = disponibili[gk] || [];
+                                if (!voci.length) return null;
+                                return (
+                                    <div key={gk}>
+                                        <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">{glabel}</div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {voci.map((v) => {
+                                                const Icon = v.icon;
+                                                return (
+                                                    <button key={v.id} onClick={() => aggiungi(v.id)}
+                                                        className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] border border-white/10 px-3 py-2.5 text-left hover:bg-indigo-500/15 hover:border-indigo-500/40 transition-colors group">
+                                                        {v.logo ? <img src={v.logo} alt="" className="h-5 w-8 object-contain shrink-0" /> : <Icon className="w-4 h-4 shrink-0" style={{ color: v.accent || "var(--tf-818cf8)" }} />}
+                                                        <span className="text-xs font-semibold text-slate-200 truncate flex-1">{v.label}</span>
+                                                        <Plus className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-300 shrink-0" />
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {!GRUPPI.some(([gk]) => (disponibili[gk] || []).length) && (
+                                <p className="text-xs text-slate-500 text-center py-6">Hai già tutti i widget disponibili in Home. ✅</p>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 }
