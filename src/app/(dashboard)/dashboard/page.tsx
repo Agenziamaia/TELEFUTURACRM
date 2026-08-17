@@ -249,12 +249,19 @@ export default function Dashboard() {
 
     const allPeriod = useMemo(() => byPeriod(all), [all, period, filtro]);
 
+    // identità STABILI per i widget a motore: i loro useMemo interni si
+    // rifanno solo quando cambiano i dati, non a ogni re-render della pagina
+    // (senza, i match del motore giravano a ogni render e saturavano il main
+    // thread — incidente 17/08)
+    const w3Ctx = useMemo(() => motore ? { ym: motore.ym, rows: motore.w3, tab: motore.tabW3 } : null, [motore]);
+    const vfCtx = useMemo(() => motore ? { ym: motore.ym, rows: motore.vf, rowsFw: motore.fw, tab: motore.tabVF } : null, [motore]);
+
     const ctx = {
         user, level, seesAll, myStores, multiStore, scopeLabel, periodoLabel,
         oggiISO, ymShown, periodoEMeseCorrente: (ymShown || ymCorrente) === ymCorrente && period !== "all",
-        oggiContato, gl,
-        w3: motore ? { ym: motore.ym, rows: motore.w3, tab: motore.tabW3 } : null,
-        vf: motore ? { ym: motore.ym, rows: motore.vf, rowsFw: motore.fw, tab: motore.tabVF } : null,
+        oggiContato, gl, visKey,
+        w3: w3Ctx,
+        vf: vfCtx,
         allPeriod,
         aggiornaWidgetId: (vecchio, nuovo) => {
             if (!nuovo || vecchio === nuovo) return;

@@ -24,7 +24,7 @@
 // I widget futuri già immaginati: business Vodafone, badge/presenze per i
 // caller, qualità (KO/annullati), storico personale.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS } from "@/lib/roles";
@@ -310,11 +310,13 @@ function TileKpi({ label, value, sub, proj, color }) {
 function WidgetW3({ ctx, size }) {
     const color = colDiBrand("WindTre");
     const logo = TRK_BRAND_LOGOS.windtre;
-    const scope = (c) =>
+    // memo sui DATI (ctx.w3 ha identità stabile dalla page): il motore non
+    // rigira a ogni re-render — lezione incidente 17/08 (main thread saturo)
+    const per = useMemo(() => kpiW3(ctx, (c) =>
         ctx.level === "global" ? true :
         ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name);
-    const per = kpiW3(ctx, scope);
+        norm(c.venditore) === norm(ctx.user?.name)
+    ), [ctx.w3, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const ymW3 = ctx.w3?.ym || ctx.ymShown || ctx.oggiISO.slice(0, 7);
     const meseCorrente = ymW3 === ctx.oggiISO.slice(0, 7);
     const proj = (v, dec = false) => {
@@ -326,15 +328,14 @@ function WidgetW3({ ctx, size }) {
     // vendite di OGGI registrate dal negozio (vive: nei punti entrano all'ora di scatto)
     const oggiN = meseCorrente ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^windtre/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
     // gamification: posizione del consulente per PUNTI dentro il suo negozio
-    let rank = null;
-    if (per && ctx.level === "own" && ctx.w3?.rows) {
+    const rank = useMemo(() => {
+        if (!per || ctx.level !== "own" || !ctx.w3?.rows) return null;
         const perStore = kpiW3({ ...ctx, level: "store" }, (c) => ctx.inMyStores(c.negozio));
-        if (perStore) {
-            const cl = Object.entries(perStore.puntiPersona).sort((a, b) => b[1] - a[1]);
-            const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
-            if (i >= 0 && cl.length > 1) rank = { pos: i + 1, su: cl.length };
-        }
-    }
+        if (!perStore) return null;
+        const cl = Object.entries(perStore.puntiPersona).sort((a, b) => b[1] - a[1]);
+        const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
+        return (i >= 0 && cl.length > 1) ? { pos: i + 1, su: cl.length } : null;
+    }, [per, ctx.w3, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const caricamento = !per;
     const squadra = per ? Object.entries(per.puntiPersona).sort((a, b) => b[1] - a[1]) : [];
     const tabellaL = per ? [
@@ -454,11 +455,11 @@ function kpiVF(ctx, scopeFn) {
 function WidgetVodafone({ ctx, size }) {
     const color = colDiBrand("Vodafone");
     const logo = TRK_BRAND_LOGOS.vodafone;
-    const scope = (c) =>
+    const per = useMemo(() => kpiVF(ctx, (c) =>
         ctx.level === "global" ? true :
         ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name);
-    const per = kpiVF(ctx, scope);
+        norm(c.venditore) === norm(ctx.user?.name)
+    ), [ctx.vf, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const ymVf = ctx.vf?.ym || ctx.ymShown || ctx.oggiISO.slice(0, 7);
     const meseCorrente = ymVf === ctx.oggiISO.slice(0, 7);
     const proj = (v, dec = false) => {
@@ -468,15 +469,14 @@ function WidgetVodafone({ ctx, size }) {
         return r > v ? r.toLocaleString("it-IT") : null;
     };
     const oggiN = meseCorrente ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^vodafone/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
-    let rank = null;
-    if (per && ctx.level === "own" && ctx.vf?.rows) {
+    const rank = useMemo(() => {
+        if (!per || ctx.level !== "own" || !ctx.vf?.rows) return null;
         const perStore = kpiVF({ ...ctx, level: "store" }, (c) => ctx.inMyStores(c.negozio));
-        if (perStore) {
-            const cl = Object.entries(perStore.puntiPersona).sort((a, b) => b[1] - a[1]);
-            const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
-            if (i >= 0 && cl.length > 1) rank = { pos: i + 1, su: cl.length };
-        }
-    }
+        if (!perStore) return null;
+        const cl = Object.entries(perStore.puntiPersona).sort((a, b) => b[1] - a[1]);
+        const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
+        return (i >= 0 && cl.length > 1) ? { pos: i + 1, su: cl.length } : null;
+    }, [per, ctx.vf, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const squadra = per ? Object.entries(per.puntiPersona).sort((a, b) => b[1] - a[1]) : [];
     const tabellaL = per ? [
         ["Punti Mobile", fmtPunti(per.puntiMobile), proj(per.puntiMobile, true), `${per.pezziMobile} SIM`],
