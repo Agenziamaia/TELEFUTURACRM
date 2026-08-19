@@ -28,7 +28,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS } from "@/lib/roles";
-import { matchRigheAttivazione, puntiPerRighe, contestoVfFw } from "@/lib/commissioning";
+import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel } from "@/lib/commissioning";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -305,7 +305,7 @@ function kpiW3(ctx, scopeFn) {
         if (/reload/i.test(opz)) per.reload++;
         if (/\bkit\b/i.test(opz)) per.kit++;
         if (/^energia/i.test(cat)) { if (/gas/i.test(prod)) per.gas++; else per.luce++; }
-        const set = w3.tab ? matchRigheAttivazione(w3.tab.righe, c, "windtre") : [];
+        const set = w3.tab ? matchRigheAttivazione(w3.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
             if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
@@ -495,7 +495,10 @@ function kpiVF(ctx, scopeFn) {
             per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
             return;
         }
-        const set = vf.tab ? matchRigheAttivazione(vf.tab.righe, c, "vodafone") : [];
+        // brand della VENDITA al matcher (come il Calcolatore): le righe del
+        // tabellare VF hanno il gate brand_vendita — le FW T1 devono prendere
+        // le righe «FW» (Wallet 1,5 ecc.), non quelle native Vodafone
+        const set = vf.tab ? matchRigheAttivazione(vf.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
             if (pista === "mobile") per.puntiMobile += p;
