@@ -35,6 +35,28 @@ const REPARTI: { n: number; label: string }[] = [
     ...Array.from({ length: 30 }, (_, k) => ({ n: k + 11, label: `Reparto ${k + 11}` })),
 ];
 
+/* Sorgente UNICA editabile (Amministrazione → Reparti & IVA): il menù Reparto legge
+   da DB, col const REPARTI come fallback immediato finché arriva la fetch. Cache a
+   modulo → una sola chiamata per tutte le righe. */
+let _repartiCache: { n: number; label: string }[] | null = null;
+let _repartiPromise: Promise<void> | null = null;
+function useReparti(): { n: number; label: string }[] {
+    const [list, setList] = useState<{ n: number; label: string }[]>(_repartiCache || REPARTI);
+    useEffect(() => {
+        if (_repartiCache) { setList(_repartiCache); return; }
+        if (!_repartiPromise) {
+            _repartiPromise = fetch("/api/pos/reparti").then((r) => r.json()).then((j) => {
+                if (j?.ok && Array.isArray(j.reparti) && j.reparti.length) {
+                    _repartiCache = j.reparti.filter((x: any) => x.attivo !== false)
+                        .map((x: any) => ({ n: x.reparto, label: x.descrizione || `Reparto ${x.reparto}` }));
+                }
+            }).catch(() => { });
+        }
+        _repartiPromise.then(() => { if (_repartiCache) setList(_repartiCache); });
+    }, []);
+    return list;
+}
+
 /* AZIENDA / RAGIONE SOCIALE che emette il prodotto (multi-societario, spec Francesco #1):
    nello stesso negozio si fattura con P.IVA diverse su RT diversi. "default" = azienda
    principale del negozio (mappa pos_rt). Es.: "PLX" va assegnato a T1. */
@@ -327,6 +349,7 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
     const [f, setF] = useState(r);
     useEffect(() => setF(r), [r]);
     const [confirmDel, setConfirmDel] = useState(false);
+    const repartiList = useReparti();
 
     const save = async (patch?: Partial<MargItem>) => {
         const x = { ...f, ...patch };
@@ -364,7 +387,10 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
                 title="Reparto fiscale del registratore telematico — DECIDE l'IVA/natura sul documento. Verifica su Programmazione→Reparti del RT del negozio."
             >
                 <option value="">— reparto —</option>
-                {REPARTI.map((rp) => <option key={rp.n} value={rp.n}>{rp.n} · {rp.label}</option>)}
+                {(f.reparto != null && !repartiList.some((rp) => rp.n === f.reparto)
+                    ? [...repartiList, { n: f.reparto, label: `Reparto ${f.reparto}` }].sort((a, b) => a.n - b.n)
+                    : repartiList
+                ).map((rp) => <option key={rp.n} value={rp.n}>{rp.n} · {rp.label}</option>)}
             </select>
             <select
                 value={f.azienda ?? ""}
