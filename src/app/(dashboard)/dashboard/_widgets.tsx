@@ -747,39 +747,51 @@ function WidgetBrand({ ctx, size, brand }) {
     const kb = trkBrandKey(brand);
     const color = colDiBrand(brand);
     const logo = TRK_BRAND_LOGOS[kb];
-    const righe = ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
+    // FASTWEB = la SUA GARA, cioè il T2 (Luca 19/08 sera): il contatore usa
+    // il perimetro di gara smistato col codice di inserimento — le T1 NON
+    // contano qui (vivono nella gara Vodafone) ma le dice il chip 🟨.
+    const isFw = kb === "fastweb";
+    let righe, fwInGaraVF = 0, righeStore = null;
+    if (isFw && ctx.vf?.packs) {
+        const scopeDi = (liv) => (c) => liv === "global" ? true : liv === "store" ? ctx.inMyStores(c.negozio) : norm(c.venditore) === norm(ctx.user?.name);
+        const mio = scopeDi(ctx.level), store = scopeDi("store");
+        righe = []; righeStore = [];
+        ctx.vf.packs.forEach((p) => (p.rowsFw || []).forEach((c) => {
+            const t1 = contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
+            if (mio(c)) { if (t1) fwInGaraVF++; else righe.push(c); }
+            if (!t1 && store(c)) righeStore.push(c);
+        }));
+    } else {
+        righe = ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
+    }
     const { pezzi, oggiN, proiezione, perGiorno, best } = CorpoProduzione({ ctx, size, righe, pesa: () => 1, color });
-    const meseScorso = ctx.scoped.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand && giornoDi(c).startsWith(ctx.meseScorsoYm)).length;
+    const meseScorso = isFw ? 0 : ctx.scoped.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand && giornoDi(c).startsWith(ctx.meseScorsoYm)).length;
     const perCat = groupCount(righe, (c) => c.categoria || "Altro");
     // gamification: posizione del consulente nella classifica del SUO negozio
     let rank = null;
-    if (ctx.level === "own" && ctx.storeRows) {
-        const cl = groupCount(ctx.storeRows.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand), (c) => c.venditore);
+    if (ctx.level === "own") {
+        const base = isFw ? (righeStore || []) : (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
+        const cl = groupCount(base, (c) => c.venditore);
         const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
         if (i >= 0 && cl.length > 1) rank = { pos: i + 1, su: cl.length };
     }
     const classifica = size >= 4
-        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand) : righe, (c) => c.venditore))
+        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio) : groupCount(ctx.level === "own" ? (isFw ? (righeStore || []) : (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand)) : righe, (c) => c.venditore))
         : null;
-    // Fastweb: quante delle sue vendite stanno nella GARA VODAFONE (codici T1)
-    // — per togliere il dubbio del "doppione" (Luca 19/08): qui è la
-    // produzione registrata, i punti di quelle vendite vivono nel widget VF
-    let fwInGaraVF = 0;
-    if (trkBrandKey(brand) === "fastweb" && ctx.vf?.packs) {
-        const scopeFw = (c) => ctx.level === "global" ? true : ctx.level === "store" ? ctx.inMyStores(c.negozio) : norm(c.venditore) === norm(ctx.user?.name);
-        ctx.vf.packs.forEach((p) => { fwInGaraVF += (p.rowsFw || []).filter(scopeFw).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone").length; });
-    }
     return (
         <WidgetShell logo={logo} icon={Signal} title={brand} accent={color}
             action={<div className="flex items-center gap-2">{rank && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">🏅 {rank.pos}° su {rank.su}</span>}<ChipScope ctx={ctx} /></div>}>
             <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                 <div className="flex flex-col gap-3">
-                    <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={color} />
+                    <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={isFw ? `pezzi ${ctx.periodoLabel} · gara Fastweb (T2)` : `pezzi ${ctx.periodoLabel}`} color={color} />
                     {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={color} />}
-                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown ? meseScorso : null} pezzi={pezzi} color={color} />
+                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown && !isFw ? meseScorso : null} pezzi={pezzi} color={color} />
+                    {isFw && !ctx.oggiContato && ctx.includeOggi && (
+                        <p className="text-[10px] text-slate-600 -mt-1.5">Le vendite di oggi entrano nel conteggio di gara alle {ctx.gl?.oraScatto ?? 19}.</p>
+                    )}
                     {fwInGaraVF > 0 && (
                         <div className="flex flex-wrap gap-1.5">
-                            <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "qui contano come produzione registrata Fastweb,", "i PUNTI di gara stanno nel widget Vodafone (lettera A).", "Niente doppioni: pezzi qui, punti là."]} />
+                            <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "NON contano qui — stanno nella gara Vodafone", "(lettera A), punti compresi. Qui c'è solo il T2."]} />
                         </div>
                     )}
                     {size >= 2 && perCat.length > 0 && (
