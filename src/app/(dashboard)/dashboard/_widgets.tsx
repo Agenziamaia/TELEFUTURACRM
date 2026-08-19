@@ -133,26 +133,38 @@ function BarChart({ icon, title, rows, total, colorFor, accent, size }) {
     );
 }
 
-/** Barrette per giorno del mese: oggi evidenziato, giorni non lavorativi spenti. */
-function Sparkline({ perGiorno, ym, color, ctx }) {
-    if (!ym) return null;
-    const [y, m] = ym.split("-").map(Number);
-    const n = new Date(y, m, 0).getDate();
+/** Barrette per giorno — su un MESE o su un PERIODO dal–al (max 62 giorni):
+ *  oggi evidenziato, giorni non lavorativi spenti. */
+function Sparkline({ perGiorno, ym, range, color, ctx }) {
+    let giorniISO = [];
+    if (range) {
+        const d = new Date(range.da + "T12:00:00");
+        while (giorniISO.length <= 62) {
+            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            giorniISO.push(iso);
+            if (iso === range.a) break;
+            d.setDate(d.getDate() + 1);
+        }
+        if (giorniISO[giorniISO.length - 1] !== range.a) return null;   // periodo troppo lungo per le barrette
+    } else if (ym) {
+        const [y, m] = ym.split("-").map(Number);
+        const n = new Date(y, m, 0).getDate();
+        giorniISO = Array.from({ length: n }, (_, i) => `${ym}-${String(i + 1).padStart(2, "0")}`);
+    } else return null;
     const max = Math.max(1, ...Object.values(perGiorno));
-    const giorni = Array.from({ length: n }, (_, i) => i + 1);
     const fest = new Set(ctx.gl?.festivi || []);
     const cong = new Set(ctx.gl?.congelati || []);
-    const isCorrente = ym === ctx.oggiISO.slice(0, 7);
+    const ymCorrente = ctx.oggiISO.slice(0, 7);
     return (
         <div className="flex items-end gap-[2px] h-9" title="Pezzi per giorno">
-            {giorni.map((g) => {
-                const iso = `${ym}-${String(g).padStart(2, "0")}`;
+            {giorniISO.map((iso) => {
+                const g = Number(iso.slice(8, 10));
                 const v = perGiorno[iso] || 0;
-                const dow = new Date(y, m - 1, g).getDay();
-                const spento = dow === 0 || (isCorrente && (fest.has(iso) || cong.has(g)));
+                const dow = new Date(iso + "T12:00:00").getDay();
+                const spento = dow === 0 || (iso.slice(0, 7) === ymCorrente && (fest.has(iso) || cong.has(g)));
                 const oggi = iso === ctx.oggiISO;
                 return (
-                    <div key={g} className="flex-1 min-w-[2px] rounded-sm transition-all" title={`${g}/${m}: ${v}`}
+                    <div key={iso} className="flex-1 min-w-[2px] rounded-sm transition-all" title={`${g}/${Number(iso.slice(5, 7))}: ${v}`}
                         style={{
                             height: v ? `${Math.max(14, (v / max) * 100)}%` : "3px",
                             background: v ? color : "rgba(148,163,184,.15)",
@@ -214,7 +226,7 @@ function ChipSonda({ testo, righe, tono = "ambra" }) {
 /** Chip riepilogo: oggi / proiezione / record / confronto mese scorso. */
 function ChipsPerformance({ ctx, oggiN, proiezione, best, meseScorso, pezzi, color }) {
     const chips = [];
-    if (ctx.periodoEMeseCorrente) {
+    if (ctx.includeOggi) {
         chips.push(
             <span key="oggi" className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
                 {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
@@ -276,8 +288,7 @@ const fmtPunti = (n) => (Math.round(n * 100) / 100).toLocaleString("it-IT");
 
 function kpiW3(ctx, scopeFn) {
     const w3 = ctx.w3;
-    if (!w3 || !Array.isArray(w3.rows)) return null;
-    const rows = w3.rows.filter(scopeFn);
+    if (!w3 || !Array.isArray(w3.packs)) return null;
     const per = {
         // pezzi = registrato nel perimetro (quadra con Ricerca Vendite);
         // punti = agganciato dal motore. Vendite senza riga pay → sonda ⚠.
@@ -286,7 +297,13 @@ function kpiW3(ctx, scopeFn) {
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, luce: 0, gas: 0, kit: 0,
         puntiGiorno: {}, puntiPersona: {},
     };
-    rows.forEach((c) => {
+    // un pacchetto per mese del periodo: ogni mese matcha col SUO tabellare
+    w3.packs.forEach((pack) => {
+        if (!pack.tab) {
+            const nMf = pack.rows.filter(scopeFn).filter((c) => /^(mobile |fisso)/i.test(String(c.categoria || ""))).length;
+            if (nMf) per.senzaPayCombo[`(${pack.ym}: tabellare del mese non configurato)`] = nMf;
+        }
+        return pack.rows.filter(scopeFn).forEach((c) => {
         const cat = String(c.categoria || "");
         const prod = String(c.prodotto || "");
         const opz = String(c.opzioni || "");
@@ -305,7 +322,7 @@ function kpiW3(ctx, scopeFn) {
         if (/reload/i.test(opz)) per.reload++;
         if (/\bkit\b/i.test(opz)) per.kit++;
         if (/^energia/i.test(cat)) { if (/gas/i.test(prod)) per.gas++; else per.luce++; }
-        const set = w3.tab ? matchRigheAttivazione(w3.tab.righe, c, brandIdDaLabel(c.brand)) : [];
+        const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
             if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
@@ -322,6 +339,7 @@ function kpiW3(ctx, scopeFn) {
             const k = `${prod} / ${String(c.offerta || "")}`;
             per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
         }
+        });
     });
     return per;
 }
@@ -349,16 +367,15 @@ function WidgetW3({ ctx, size }) {
         ctx.level === "store" ? ctx.inMyStores(c.negozio) :
         norm(c.venditore) === norm(ctx.user?.name)
     ), [ctx.w3, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
-    const ymW3 = ctx.w3?.ym || ctx.ymShown || ctx.oggiISO.slice(0, 7);
-    const meseCorrente = ymW3 === ctx.oggiISO.slice(0, 7);
+    const ymW3 = ctx.w3?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
-        if (!ctx.gl || !meseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
+        if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
         const p = (v / ctx.gl.trascorsi) * ctx.gl.totali;
         const r = dec ? Math.round(p * 10) / 10 : Math.round(p);
         return r > v ? r.toLocaleString("it-IT") : null;
     };
     // vendite di OGGI registrate dal negozio (vive: nei punti entrano all'ora di scatto)
-    const oggiN = meseCorrente ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^windtre/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
+    const oggiN = ctx.includeOggi ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^windtre/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
     // gamification: posizione del consulente per PUNTI dentro il suo negozio
     const rank = useMemo(() => {
         if (!per || ctx.level !== "own" || !ctx.w3?.rows) return null;
@@ -398,7 +415,7 @@ function WidgetW3({ ctx, size }) {
                             {size >= 2 && <TileKpi label="Luce & Gas" value={per.luce + per.gas} sub={`${per.luce} luce · ${per.gas} gas`} proj={proj(per.luce + per.gas)} color={color} />}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                            {meseCorrente && (
+                            {ctx.includeOggi && (
                                 <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
                                     {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
@@ -411,7 +428,7 @@ function WidgetW3({ ctx, size }) {
                             {size >= 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 Protecta <b className="font-mono text-slate-100">{per.kit}</b></span>}
                             {per.senzaPay > 0 && <ChipSonda testo={`⚠ ${per.senzaPay} senza punti`} righe={senzaPayRigheW3} />}
                         </div>
-                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ymW3} color={color} ctx={ctx} />}
+                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymW3} range={ctx.rangeShown} color={color} ctx={ctx} />}
                     </div>
                     {size >= 4 && (
                         <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
@@ -443,15 +460,7 @@ function WidgetW3({ ctx, size }) {
 // viaggia col brand Fastweb). Il business avrà un widget dedicato.
 function kpiVF(ctx, scopeFn) {
     const vf = ctx.vf;
-    if (!vf || !Array.isArray(vf.rows)) return null;
-    const rows = vf.rows.filter(scopeFn);
-    // FASTWEB nella gara Vodafone (Luca 19/08): TUTTO il Fastweb allocato coi
-    // codici di inserimento dei Vodafone Store (T1: Acilia/Baleniere/Castani/
-    // Merulana) conta nella lettera A — mobile, fisso ed energia. Lo smista
-    // contestoVfFw, la STESSA funzione del Calcolatore (codice, ripiego sul
-    // negozio). Il Fastweb T2 resta fuori (gara sua). Lo scope resta sempre
-    // il negozio che registra / il venditore.
-    const rowsFw = (vf.rowsFw || []).filter(scopeFn).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone");
+    if (!vf || !Array.isArray(vf.packs)) return null;
     const per = {
         // pezzi = REGISTRATO nel perimetro (per quadrare con Ricerca Vendite);
         // punti = quello che il motore aggancia. Il business ha le sue piste
@@ -460,12 +469,20 @@ function kpiVF(ctx, scopeFn) {
         puntiMobile: 0, simReg: 0, puntiFisso: 0, fisReg: 0,
         bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0,
         mobSenzaPay: 0, fisSenzaPay: 0, senzaPayCombo: {}, esclLettera: 0,
-        fwGaraN: rowsFw.length,
+        fwGaraN: 0,
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0,
         rsGa: 0, rsCb: 0, luce: 0, gas: 0,
         puntiGiorno: {}, puntiPersona: {},
     };
-    [...rows, ...rowsFw].forEach((c) => {
+    // FASTWEB nella gara Vodafone (Luca 19/08): TUTTO il Fastweb allocato coi
+    // codici di inserimento dei Vodafone Store (T1: Acilia/Baleniere/Castani/
+    // Merulana) conta nella lettera A — mobile, fisso ed energia. Lo smista
+    // contestoVfFw, la STESSA funzione del Calcolatore. Il T2 resta fuori.
+    // Un pacchetto per mese del periodo: ogni mese matcha col SUO tabellare.
+    vf.packs.forEach((pack) => {
+        const fwGara = (pack.rowsFw || []).filter(scopeFn).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone");
+        per.fwGaraN += fwGara.length;
+        [...pack.rows.filter(scopeFn), ...fwGara].forEach((c) => {
         const cat = String(c.categoria || "");
         const prod = String(c.prodotto || "");
         const off = String(c.offerta || "");
@@ -498,7 +515,7 @@ function kpiVF(ctx, scopeFn) {
         // brand della VENDITA al matcher (come il Calcolatore): le righe del
         // tabellare VF hanno il gate brand_vendita — le FW T1 devono prendere
         // le righe «FW» (Wallet 1,5 ecc.), non quelle native Vodafone
-        const set = vf.tab ? matchRigheAttivazione(vf.tab.righe, c, brandIdDaLabel(c.brand)) : [];
+        const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
             if (pista === "mobile") per.puntiMobile += p;
@@ -518,6 +535,7 @@ function kpiVF(ctx, scopeFn) {
             const k = `${prod} / ${off}${/fastweb/i.test(String(c.brand || "")) ? " (FW)" : ""}`;
             per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
         }
+        });
     });
     return per;
 }
@@ -530,15 +548,14 @@ function WidgetVodafone({ ctx, size }) {
         ctx.level === "store" ? ctx.inMyStores(c.negozio) :
         norm(c.venditore) === norm(ctx.user?.name)
     ), [ctx.vf, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
-    const ymVf = ctx.vf?.ym || ctx.ymShown || ctx.oggiISO.slice(0, 7);
-    const meseCorrente = ymVf === ctx.oggiISO.slice(0, 7);
+    const ymVf = ctx.vf?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
-        if (!ctx.gl || !meseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
+        if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
         const p = (v / ctx.gl.trascorsi) * ctx.gl.totali;
         const r = dec ? Math.round(p * 10) / 10 : Math.round(p);
         return r > v ? r.toLocaleString("it-IT") : null;
     };
-    const oggiN = meseCorrente ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^vodafone/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
+    const oggiN = ctx.includeOggi ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^vodafone/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
     const rank = useMemo(() => {
         if (!per || ctx.level !== "own" || !ctx.vf?.rows) return null;
         const perStore = kpiVF({ ...ctx, level: "store" }, (c) => ctx.inMyStores(c.negozio));
@@ -578,7 +595,7 @@ function WidgetVodafone({ ctx, size }) {
                             {size >= 2 && <TileKpi label="Luce & Gas" value={per.luce + per.gas} sub={`${per.luce} luce · ${per.gas} gas (con FW)`} proj={proj(per.luce + per.gas)} color={color} />}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                            {meseCorrente && (
+                            {ctx.includeOggi && (
                                 <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
                                     {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
@@ -591,7 +608,7 @@ function WidgetVodafone({ ctx, size }) {
                             {per.fwGaraN > 0 && <ChipSonda tono="neutro" testo={<>🟨 FW in gara <b className="font-mono text-slate-100">{per.fwGaraN}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "per la lettera A contano qui — mobile, fisso ed energia.", "Il Fastweb T2 (multibrand) resta nella sua gara."]} />}
                             {senzaPay > 0 && <ChipSonda testo={`⚠ ${senzaPay} senza punti`} righe={senzaPayRighe} />}
                         </div>
-                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ymVf} color={color} ctx={ctx} />}
+                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymVf} range={ctx.rangeShown} color={color} ctx={ctx} />}
                     </div>
                     {size >= 4 && (
                         <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
@@ -730,7 +747,7 @@ function WidgetBrand({ ctx, size, brand }) {
                 <div className="flex flex-col gap-3">
                     <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={color} />
                     {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={color} />}
-                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 ? meseScorso : null} pezzi={pezzi} color={color} />
+                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown ? meseScorso : null} pezzi={pezzi} color={color} />
                     {size >= 2 && perCat.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {perCat.map(([cat, n]) => (
@@ -740,7 +757,7 @@ function WidgetBrand({ ctx, size, brand }) {
                             ))}
                         </div>
                     )}
-                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} color={color} ctx={ctx} />}
+                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} range={ctx.rangeShown} color={color} ctx={ctx} />}
                 </div>
                 {size >= 4 && classifica && (
                     <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
@@ -774,7 +791,7 @@ function WidgetMarginalita({ ctx, size }) {
                 <div className="flex flex-col gap-3">
                     <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={MARG_COLOR} />
                     {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={MARG_COLOR} />}
-                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 ? meseScorso : null} pezzi={pezzi} color={MARG_COLOR} />
+                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown ? meseScorso : null} pezzi={pezzi} color={MARG_COLOR} />
                     {perCat.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {(size >= 2 ? perCat : perCat.slice(0, 3)).map(([cat, n]) => (
@@ -784,7 +801,7 @@ function WidgetMarginalita({ ctx, size }) {
                             ))}
                         </div>
                     )}
-                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} color={MARG_COLOR} ctx={ctx} />}
+                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} range={ctx.rangeShown} color={MARG_COLOR} ctx={ctx} />}
                 </div>
                 {size >= 2 && (
                     <div className={cn("space-y-1.5", size >= 4 && "md:border-l md:border-white/5 md:pl-5")}>

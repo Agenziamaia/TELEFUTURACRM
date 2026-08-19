@@ -51,12 +51,18 @@ export default function Dashboard() {
     const [savedLayout, setSavedLayout] = useState(undefined);
     const [loading, setLoading] = useState(true);
 
+    // periodo: "month" (mese corrente) · "custom" (mese scelto) · "range"
+    // (dal–al libero, Luca 19/08) · "all" (tutto lo storico)
     const [period, setPeriod] = useState("month");
     const [filtro, setFiltro] = useState(null);
+    const [range, setRange] = useState(null);            // { da, a } ISO
     const [filtroOpen, setFiltroOpen] = useState(false);
     const [tmpM, setTmpM] = useState(new Date().getMonth());
     const [tmpY, setTmpY] = useState(new Date().getFullYear());
+    const [tmpDa, setTmpDa] = useState("");
+    const [tmpA, setTmpA] = useState("");
     const ANNI = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+    const fmtGiorno = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "";
 
     const [layout, setLayout] = useState([]);
     const layoutPronto = useRef(false);
@@ -116,12 +122,33 @@ export default function Dashboard() {
     const oggiISO = new Date().toISOString().slice(0, 10);
     const ymCorrente = oggiISO.slice(0, 7);
     const ymShown = period === "month" ? ymCorrente : period === "custom" && filtro ? `${filtro.y}-${String(filtro.m + 1).padStart(2, "0")}` : null;
+    const rangeShown = period === "range" && range ? range : null;
 
     const byPeriod = (list) => {
         if (period === "all") return list;
+        if (rangeShown) return list.filter((c) => { const g = giornoDi(c); return g >= rangeShown.da && g <= rangeShown.a; });
         const ym = ymShown || ymCorrente;
         return list.filter((c) => giornoDi(c).startsWith(ym));
     };
+
+    // mesi toccati dal periodo (i punti di gara sono mensili: per un range che
+    // scavalca i mesi ogni mese si calcola col SUO tabellare e si somma)
+    const mesiShown = useMemo(() => {
+        if (rangeShown) {
+            const out = [];
+            const [y0, m0] = rangeShown.da.slice(0, 7).split("-").map(Number);
+            const fine = rangeShown.a.slice(0, 7);
+            const d = new Date(y0, m0 - 1, 1, 12);
+            while (out.length < 12) {
+                const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                out.push(ym);
+                if (ym === fine) break;
+                d.setMonth(d.getMonth() + 1);
+            }
+            return out;
+        }
+        return [ymShown || ymCorrente];
+    }, [rangeShown?.da, rangeShown?.a, ymShown, ymCorrente]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const scoped = useMemo(() => {
         if (level === "global") return all;
@@ -147,32 +174,36 @@ export default function Dashboard() {
         return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([b]) => b);
     }, [scoped]);
 
-    // ── Motore gare: vendite del mese W3/VF/FW + tabellari (per i punti) ────
+    // ── Motore gare: vendite W3/VF/FW + tabellari dei mesi del periodo ──────
     // I punti dei widget brand usano le STESSE funzioni del Calcolatore
     // (caricaContrattiMese + matchRigheAttivazione), ma aggregati sul negozio
-    // che registra. L'energia Fastweb serve al widget Vodafone (stessa gara).
+    // che registra. Un pacchetto per OGNI mese del periodo: le gare sono
+    // mensili, ogni mese matcha col suo tabellare e i widget sommano.
     useEffect(() => {
         if (loading) return;
-        const ym = ymShown || ymCorrente;
-        if (motoreYm.current === ym) return;
-        motoreYm.current = ym;
+        const chiave = mesiShown.join("|");
+        if (motoreYm.current === chiave) return;
+        motoreYm.current = chiave;
         setMotore(null);
         let alive = true;
         (async () => {
-            const iso = `${ym}-01`;
             try {
-                const [rw3, rvf, rfw, tw3, tvf] = await Promise.all([
-                    caricaContrattiMese("WindTre", iso),
-                    caricaContrattiMese("Vodafone", iso),
-                    caricaContrattiMese("Fastweb", iso),
-                    caricaTabellareAzienda("windtre", iso).catch(() => null),
-                    caricaTabellareAzienda("vodafone", iso).catch(() => null),
-                ]);
-                if (alive) setMotore({ ym, w3: rw3 || [], vf: rvf || [], fw: rfw || [], tabW3: tw3, tabVF: tvf });
-            } catch { if (alive) setMotore({ ym, w3: [], vf: [], fw: [], tabW3: null, tabVF: null }); }
+                const packs = await Promise.all(mesiShown.map(async (ym) => {
+                    const iso = `${ym}-01`;
+                    const [rw3, rvf, rfw, tw3, tvf] = await Promise.all([
+                        caricaContrattiMese("WindTre", iso),
+                        caricaContrattiMese("Vodafone", iso),
+                        caricaContrattiMese("Fastweb", iso),
+                        caricaTabellareAzienda("windtre", iso).catch(() => null),
+                        caricaTabellareAzienda("vodafone", iso).catch(() => null),
+                    ]);
+                    return { ym, w3: rw3 || [], vf: rvf || [], fw: rfw || [], tabW3: tw3, tabVF: tvf };
+                }));
+                if (alive) setMotore({ chiave, packs });
+            } catch { if (alive) setMotore({ chiave, packs: [] }); }
         })();
         return () => { alive = false; };
-    }, [loading, ymShown]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [loading, mesiShown]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── numeri dei widget storici (invariati) ───────────────────────────────
     const groupBy = (list, key) => {
@@ -244,7 +275,10 @@ export default function Dashboard() {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     }, [ymShown, ymCorrente]);
 
-    const periodoLabel = period === "month" ? "questo mese" : period === "custom" && filtro ? `a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` : "in totale";
+    const periodoLabel =
+        period === "month" ? "questo mese" :
+        period === "custom" && filtro ? `a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` :
+        rangeShown ? `dal ${fmtGiorno(rangeShown.da)} al ${fmtGiorno(rangeShown.a)}` : "in totale";
     const scopeLabel = level === "global" ? "Tutta la rete" : level === "store" ? (myStores.join(", ") || user?.negozio || "") : "I tuoi numeri";
 
     const allPeriod = useMemo(() => byPeriod(all), [all, period, filtro]);
@@ -252,13 +286,24 @@ export default function Dashboard() {
     // identità STABILI per i widget a motore: i loro useMemo interni si
     // rifanno solo quando cambiano i dati, non a ogni re-render della pagina
     // (senza, i match del motore giravano a ogni render e saturavano il main
-    // thread — incidente 17/08)
-    const w3Ctx = useMemo(() => motore ? { ym: motore.ym, rows: motore.w3, tab: motore.tabW3 } : null, [motore]);
-    const vfCtx = useMemo(() => motore ? { ym: motore.ym, rows: motore.vf, rowsFw: motore.fw, tab: motore.tabVF } : null, [motore]);
+    // thread — incidente 17/08). Le righe dei pacchetti sono già ritagliate
+    // sul periodo selezionato (range dal–al compreso).
+    const taglia = (rows) => rangeShown ? rows.filter((c) => { const g = giornoDi(c); return g >= rangeShown.da && g <= rangeShown.a; }) : rows;
+    const w3Ctx = useMemo(() => motore ? {
+        ym: motore.packs.length === 1 ? motore.packs[0].ym : null,
+        packs: motore.packs.map((p) => ({ ym: p.ym, rows: taglia(p.w3), tab: p.tabW3 })),
+    } : null, [motore, rangeShown?.da, rangeShown?.a]); // eslint-disable-line react-hooks/exhaustive-deps
+    const vfCtx = useMemo(() => motore ? {
+        ym: motore.packs.length === 1 ? motore.packs[0].ym : null,
+        packs: motore.packs.map((p) => ({ ym: p.ym, rows: taglia(p.vf), rowsFw: taglia(p.fw), tab: p.tabVF })),
+    } : null, [motore, rangeShown?.da, rangeShown?.a]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const ctx = {
         user, level, seesAll, myStores, multiStore, scopeLabel, periodoLabel,
-        oggiISO, ymShown, periodoEMeseCorrente: (ymShown || ymCorrente) === ymCorrente && period !== "all",
+        oggiISO, ymShown, rangeShown,
+        periodoEMeseCorrente: !rangeShown && period !== "all" && (ymShown || ymCorrente) === ymCorrente,
+        // il chip "oggi" vive anche su un range che include oggi
+        includeOggi: (!rangeShown && period !== "all" && (ymShown || ymCorrente) === ymCorrente) || (!!rangeShown && rangeShown.da <= oggiISO && oggiISO <= rangeShown.a),
         oggiContato, gl, visKey,
         w3: w3Ctx,
         vf: vfCtx,
@@ -338,9 +383,9 @@ export default function Dashboard() {
                     <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 relative">
                         <button onClick={() => { setPeriod("month"); setFiltroOpen(false); }}
                             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${period === "month" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>Questo mese</button>
-                        <button onClick={() => { if (filtro) { setTmpM(filtro.m); setTmpY(filtro.y); } setFiltroOpen((o) => !o); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1 ${period === "custom" || period === "all" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>
-                            {period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : period === "all" ? "Tutto" : "Filtro"} <span className="text-[9px]">▾</span>
+                        <button onClick={() => { if (filtro) { setTmpM(filtro.m); setTmpY(filtro.y); } if (range) { setTmpDa(range.da); setTmpA(range.a); } setFiltroOpen((o) => !o); }}
+                            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1 ${period === "custom" || period === "all" || period === "range" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>
+                            {period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : period === "range" && range ? `${fmtGiorno(range.da)} – ${fmtGiorno(range.a)}` : period === "all" ? "Tutto" : "Filtro"} <span className="text-[9px]">▾</span>
                         </button>
                         {filtroOpen && (
                             <>
@@ -357,7 +402,16 @@ export default function Dashboard() {
                                     </div>
                                     <button onClick={() => { setFiltro({ y: tmpY, m: tmpM }); setPeriod("custom"); setFiltroOpen(false); }}
                                         className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold">Applica</button>
-                                    <button onClick={() => { setPeriod("all"); setFiltro(null); setFiltroOpen(false); }}
+                                    <div className="pt-1.5 border-t border-white/10 text-[10px] font-bold uppercase tracking-widest text-slate-500">oppure un periodo</div>
+                                    <div className="flex items-center gap-2">
+                                        <input type="date" value={tmpDa} onChange={(e) => setTmpDa(e.target.value)} className="glass-input !h-9 text-xs flex-1" aria-label="Dal" />
+                                        <span className="text-[10px] text-slate-500">→</span>
+                                        <input type="date" value={tmpA} onChange={(e) => setTmpA(e.target.value)} className="glass-input !h-9 text-xs flex-1" aria-label="Al" />
+                                    </div>
+                                    <button disabled={!tmpDa || !tmpA}
+                                        onClick={() => { const [da, a] = tmpDa <= tmpA ? [tmpDa, tmpA] : [tmpA, tmpDa]; setRange({ da, a }); setPeriod("range"); setFiltroOpen(false); }}
+                                        className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold">Applica periodo</button>
+                                    <button onClick={() => { setPeriod("all"); setFiltro(null); setRange(null); setFiltroOpen(false); }}
                                         className="w-full text-[11px] text-slate-500 hover:text-slate-300 transition-colors">oppure mostra tutto lo storico</button>
                                 </div>
                             </>
