@@ -655,6 +655,127 @@ function WidgetVodafone({ ctx, size }) {
     );
 }
 
+// ── WIDGET Sky: PUNTI come gli altri (Luca 19/08 notte) ─────────────────────
+// «Quello che comanda le soglie sono i punti»: 3P 3 · TV/Glass 2 · Fibra 1 ·
+// Mobile 0,5 (Wallet GA 0). I punti arrivano dal motore sulla pista "sky" —
+// oggi configurata SOLO lato ragazzi (gara interna a punti): quando nascerà
+// il tabellare azienda Sky si cambia fonte. I pezzi restano accanto.
+function kpiSky(ctx, scopeFn) {
+    const sky = ctx.sky;
+    if (!sky || !Array.isArray(sky.packs)) return null;
+    const per = { punti: 0, pezziPunti: 0, reg: 0, tre: 0, tv: 0, glass: 0, fibra: 0, mobMnp: 0, mobGa: 0, senzaPay: 0, senzaPayCombo: {}, puntiGiorno: {}, puntiPersona: {} };
+    sky.packs.forEach((pack) => pack.rows.filter(scopeFn).forEach((c) => {
+        const cat = String(c.categoria || "");
+        const prod = String(c.prodotto || "");
+        per.reg++;
+        if (/^3p/i.test(prod)) per.tre++;
+        else if (/glass|prova sky/i.test(prod)) per.glass++;
+        else if (/^tv$/i.test(prod) || /^tv$/i.test(cat)) per.tv++;
+        else if (/fibra/i.test(prod) || (/^fisso/i.test(cat) && /fibra/i.test(String(c.offerta || "")))) per.fibra++;
+        else if (/^mobile mnp/i.test(prod)) per.mobMnp++;
+        else if (/^mobile ga/i.test(prod)) per.mobGa++;
+        const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
+        if (set.length) {
+            const pnt = puntiPerRighe(set);
+            per.punti += pnt; per.pezziPunti++;
+            const g = giornoDi(c); if (g) per.puntiGiorno[g] = (per.puntiGiorno[g] || 0) + pnt;
+            const chi = ctx.level === "global" ? (c.negozio || "—") : (c.venditore || "—");
+            per.puntiPersona[chi] = (per.puntiPersona[chi] || 0) + pnt;
+        } else {
+            per.senzaPay++;
+            const k = cat + " | " + prod + " | " + String(c.offerta || "");
+            per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
+        }
+    }));
+    per.punti = Math.round(per.punti * 100) / 100;
+    return per;
+}
+
+function WidgetSky({ ctx, size }) {
+    const color = colDiBrand("Sky");
+    const logo = TRK_BRAND_LOGOS.sky;
+    const per = useMemo(() => kpiSky(ctx, (c) =>
+        ctx.level === "global" ? true :
+        ctx.level === "store" ? ctx.inMyStores(c.negozio) :
+        norm(c.venditore) === norm(ctx.user?.name)
+    ), [ctx.sky, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const ymSky = ctx.sky?.ym || ctx.ymShown;
+    const proj = (v, dec = false) => {
+        if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
+        const p = (v / ctx.gl.trascorsi) * ctx.gl.totali;
+        const r = dec ? Math.round(p * 10) / 10 : Math.round(p);
+        return r > v ? r.toLocaleString("it-IT") : null;
+    };
+    const oggiN = ctx.includeOggi ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^sky/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
+    const rank = useMemo(() => {
+        if (!per || ctx.level !== "own" || !ctx.sky?.packs) return null;
+        const perStore = kpiSky({ ...ctx, level: "store" }, (c) => ctx.inMyStores(c.negozio));
+        if (!perStore) return null;
+        const cl = Object.entries(perStore.puntiPersona).sort((a, b) => b[1] - a[1]);
+        const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
+        return (i >= 0 && cl.length > 1) ? { pos: i + 1, su: cl.length } : null;
+    }, [per, ctx.sky, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const squadra = per ? Object.entries(per.puntiPersona).sort((a, b) => b[1] - a[1]) : [];
+    const senzaPayRighe = per ? ["Registrate ma senza punti in gara:", ...Object.entries(per.senzaPayCombo).map(([k, n]) => n + "× " + k)] : [];
+    const tabellaL = per ? [
+        ["Punti Sky", fmtPunti(per.punti), proj(per.punti, true), per.pezziPunti + " pezzi in gara"],
+        ["3P (TV + Fibra)", per.tre, proj(per.tre), null],
+        ["Solo TV", per.tv, proj(per.tv), null],
+        ["Sky Glass", per.glass, proj(per.glass), null],
+        ["Solo Fibra", per.fibra, proj(per.fibra), null],
+        ["Mobile MNP", per.mobMnp, proj(per.mobMnp), null],
+        ["Mobile GA", per.mobGa, proj(per.mobGa), null],
+    ] : [];
+    return (
+        <WidgetShell logo={logo} icon={Signal} title="Sky" accent={color}
+            action={<div className="flex items-center gap-2">{rank && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">🏅 {rank.pos}° su {rank.su}</span>}<ChipScope ctx={ctx} /></div>}>
+            {!per ? (
+                <div className="p-6 flex items-center justify-center gap-2 text-slate-500 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Calcolo punti…</div>
+            ) : (
+                <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+                    <div className="flex flex-col gap-3">
+                        <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
+                            <TileKpi label="Punti Sky" value={fmtPunti(per.punti)} sub={per.pezziPunti + " pezzi in gara"} proj={proj(per.punti, true)} color={color} />
+                            <TileKpi label="3P" value={per.tre} sub="TV + Fibra" proj={proj(per.tre)} color={color} />
+                            {size >= 2 && <TileKpi label="TV & Glass" value={per.tv + per.glass} sub={per.tv + " TV · " + per.glass + " Glass"} proj={proj(per.tv + per.glass)} color={color} />}
+                            {size >= 2 && <TileKpi label="Fibra" value={per.fibra} sub="solo fibra" proj={proj(per.fibra)} color={color} />}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {ctx.includeOggi && (
+                                <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
+                                    {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
+                                    oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
+                                </span>
+                            )}
+                            <ChipSonda tono="neutro" testo={<>📱 MNP <b className="font-mono text-slate-100">{per.mobMnp}</b></>} righe={["SIM Sky Mobile in portabilità: 0,5 punti l\u2019una."]} />
+                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.mobGa}</b></>} righe={["SIM Sky Mobile nuove attivazioni:", "0,5 punti (Ric. Automatica) · 0 punti (ricarica pura)."]} />
+                            {per.senzaPay > 0 && <ChipSonda testo={"⚠ " + per.senzaPay + " senza punti"} righe={senzaPayRighe} />}
+                        </div>
+                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymSky} range={ctx.rangeShown} color={color} ctx={ctx} />}
+                    </div>
+                    {size >= 4 && (
+                        <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
+                            {squadra.length > 1 && (<>
+                                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1.5"><Crown className="w-3 h-3 text-amber-400" /> {ctx.level === "global" ? "Negozi (punti)" : "Squadra (punti)"}</div>
+                                {squadra.slice(0, 5).map(([nome, p], i) => (
+                                    <MedalRow key={nome} rank={i + 1} nome={nome} n={p} mostra={fmtPunti(p)} max={squadra[0][1]} color={color} isMe={ctx.level !== "global" && norm(nome) === norm(ctx.user?.name)} />
+                                ))}
+                            </>)}
+                            <div className="pt-1 text-[10px] uppercase tracking-widest font-bold text-slate-500">Tutti i numeri</div>
+                            {tabellaL.map(([lbl, v, pr, sub]) => (
+                                <div key={lbl} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]">
+                                    <span className="text-slate-300">{lbl}{sub ? <span className="text-slate-500"> · {sub}</span> : null}</span>
+                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-normal ml-1.5" style={{ color }}>≈{pr}</span>}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+
 // ── WIDGET Confronto: io/il mio negozio contro un riferimento (Luca 17/08) ──
 // Il bersaglio è salvato NEL layout (id "confronto:<tipo>:<nome>"), così la
 // scelta viaggia col profilo. Consulente → un collega; store manager → un
@@ -744,6 +865,7 @@ const sameStoreW = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y
 function WidgetBrand({ ctx, size, brand }) {
     if (trkBrandKey(brand) === "windtre") return <WidgetW3 ctx={ctx} size={size} />;
     if (trkBrandKey(brand) === "vodafone") return <WidgetVodafone ctx={ctx} size={size} />;
+    if (trkBrandKey(brand) === "sky") return <WidgetSky ctx={ctx} size={size} />;
     const kb = trkBrandKey(brand);
     const color = colDiBrand(brand);
     const logo = TRK_BRAND_LOGOS[kb];

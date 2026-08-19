@@ -18,7 +18,7 @@ import { roleLabel, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { giorniLavorativiMese, caricaContrattiMese, caricaTabellareAzienda } from "@/lib/commissioning";
+import { giorniLavorativiMese, caricaContrattiMese, caricaTabellareAzienda, caricaTabellare } from "@/lib/commissioning";
 import { cn } from "@/utils";
 import {
     Loader2, LayoutGrid, Check, GripVertical, Plus, X, ChevronLeft,
@@ -190,14 +190,19 @@ export default function Dashboard() {
             try {
                 const packs = await Promise.all(mesiShown.map(async (ym) => {
                     const iso = `${ym}-01`;
-                    const [rw3, rvf, rfw, tw3, tvf] = await Promise.all([
+                    const [rw3, rvf, rfw, rsky, tw3, tvf, tsky] = await Promise.all([
                         caricaContrattiMese("WindTre", iso),
                         caricaContrattiMese("Vodafone", iso),
                         caricaContrattiMese("Fastweb", iso),
+                        caricaContrattiMese("Sky", iso),
                         caricaTabellareAzienda("windtre", iso).catch(() => null),
                         caricaTabellareAzienda("vodafone", iso).catch(() => null),
+                        // Sky: il tabellare AZIENDA non esiste ancora — i punti
+                        // vivono nella pista "sky" lato ragazzi (gara interna a
+                        // punti): fonte dichiarata finché non nasce l'azienda
+                        caricaTabellare("sky", iso).catch(() => null),
                     ]);
-                    return { ym, w3: rw3 || [], vf: rvf || [], fw: rfw || [], tabW3: tw3, tabVF: tvf };
+                    return { ym, w3: rw3 || [], vf: rvf || [], fw: rfw || [], sky: rsky || [], tabW3: tw3, tabVF: tvf, tabSky: tsky };
                 }));
                 if (alive) setMotore({ chiave, packs });
             } catch { if (alive) setMotore({ chiave, packs: [] }); }
@@ -297,6 +302,10 @@ export default function Dashboard() {
         ym: motore.packs.length === 1 ? motore.packs[0].ym : null,
         packs: motore.packs.map((p) => ({ ym: p.ym, rows: taglia(p.vf), rowsFw: taglia(p.fw), tab: p.tabVF })),
     } : null, [motore, rangeShown?.da, rangeShown?.a]); // eslint-disable-line react-hooks/exhaustive-deps
+    const skyCtx = useMemo(() => motore ? {
+        ym: motore.packs.length === 1 ? motore.packs[0].ym : null,
+        packs: motore.packs.map((p) => ({ ym: p.ym, rows: taglia(p.sky || []), tab: p.tabSky })),
+    } : null, [motore, rangeShown?.da, rangeShown?.a]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const ctx = {
         user, level, seesAll, myStores, multiStore, scopeLabel, periodoLabel,
@@ -307,6 +316,7 @@ export default function Dashboard() {
         oggiContato, gl, visKey,
         w3: w3Ctx,
         vf: vfCtx,
+        sky: skyCtx,
         allPeriod,
         aggiornaWidgetId: (vecchio, nuovo) => {
             if (!nuovo || vecchio === nuovo) return;
