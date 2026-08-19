@@ -538,9 +538,11 @@ function kpiVF(ctx, scopeFn) {
         });
     });
     // CAP 35% (lettera VF, §Pista Mobile Consumer): gli smartphone valgono
-    // fino al 35% del valore delle SIM — l'eccedenza non conta in soglia
-    // (stessa regola nel motore/calcolaAvanzamento per il Calcolatore)
-    if (per.telP > 0) {
+    // fino al 35% del valore delle SIM. Correzione Luca 19/08 sera: il cap
+    // vale sul TOTALE DEL GRUPPO — si applica SOLO alla vista rete (admin),
+    // mai ai conteggi individuali di negozi e consulenti. Nel motore
+    // (calcolaAvanzamento) resta: lì il conteggio è sempre di gruppo.
+    if (ctx.level === "global" && per.telP > 0) {
         const sim = per.puntiMobile - per.telP;
         const ammessi = Math.round(sim * 0.35 * 100) / 100;
         if (per.telP > ammessi) {

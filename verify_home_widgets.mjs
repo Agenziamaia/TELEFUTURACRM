@@ -27,8 +27,9 @@ async function main() {
     // ── LATO WIDGET: stessa aggregazione di kpiW3/kpiVF in _widgets.tsx ──────
     // identica a kpiW3/kpiVF in _widgets.tsx (regole 19/08: pezzi = registrato,
     // business su piste dedicate, Rete Sicura CB anche come prodotto, sonda
-    // sulle vendite senza riga pay)
-    const aggrega = (rows, tab, brandId) => {
+    // sulle vendite senza riga pay; capGruppo = cap 35% smartphone SOLO sulla
+    // vista rete, come il widget)
+    const aggrega = (rows, tab, brandId, capGruppo = false) => {
         const per = { puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0, bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0, mobSenzaPay: 0, fisSenzaPay: 0, puntiAss: 0, pezziAss: 0, telP: 0, capTaglio: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
         rows.forEach((c) => {
             const cat = String(c.categoria || "");
@@ -69,8 +70,8 @@ async function main() {
                 if (isMob) per.mobSenzaPay++; else per.fisSenzaPay++;
             }
         });
-        // CAP 35% smartphone (solo Vodafone, come motore e widget)
-        if (brandId === "vodafone" && per.telP > 0) {
+        // CAP 35% smartphone (solo Vodafone, SOLO vista di gruppo/rete)
+        if (capGruppo && brandId === "vodafone" && per.telP > 0) {
             const sim = per.puntiMobile - per.telP;
             const ammessi = Math.round(sim * 0.35 * 100) / 100;
             if (per.telP > ammessi) { per.capTaglio = Math.round((per.telP - ammessi) * 100) / 100; per.puntiMobile = Math.round((sim + ammessi) * 100) / 100; }
@@ -162,7 +163,7 @@ async function main() {
     ];
     for (const caso of casiVf) {
         // gara Vodafone (lettera A) = VF + Fastweb dei codici T1, come il widget
-        const wid = aggrega([...rvf.filter(caso.scope), ...rfw.filter(caso.scope).filter(inLetteraA)], tvf, "vodafone");
+        const wid = aggrega([...rvf.filter(caso.scope), ...rfw.filter(caso.scope).filter(inLetteraA)], tvf, "vodafone", caso.nome.includes("RETE"));
         const ind = contaIndip([...ivf.filter(caso.scope), ...ifw.filter(caso.scope).filter(inLetteraA)]);
         const diff = [...quadra(wid)];
         for (const k of ["simReg", "fisReg", "telGa", "telGaFin", "telCb", "telCbFin", "opCb", "rsGa", "rsCb"]) if (wid[k] !== ind[k]) diff.push(`${k}: widget ${wid[k]} ≠ indip ${ind[k]}`);
