@@ -19,7 +19,8 @@ const norm = (s) => String(s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 
 async function main() {
-    const { caricaContrattiMese, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe } = await import("./src/lib/commissioning");
+    const { caricaContrattiMese, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, contestoVfFw } = await import("./src/lib/commissioning");
+    const inLetteraA = (c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
 
     const YM = "2026-08";
 
@@ -50,6 +51,11 @@ async function main() {
             if (/rete sicura/i.test(opz)) { if (isCb) per.rsCb++; else per.rsGa++; }
             else if (isCb && /rete sicura/i.test(prod + " " + off)) per.rsCb++;
             if (/^energia/i.test(cat)) { if (/gas/i.test(prod)) per.gas++; else per.luce++; }
+            // esclusioni lettera A (solo contesto vodafone): MNP da VF/FW/Ho.
+            if (brandId === "vodafone" && isMob && /mnp/i.test(prod) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || ""))) {
+                per.mobSenzaPay++;
+                return;
+            }
             const set = tab ? matchRigheAttivazione(tab.righe, c, brandId) : [];
             if (set.length) {
                 const pista = set[0].pista; const p = puntiPerRighe(set);
@@ -102,9 +108,11 @@ async function main() {
             ...r,
             categoria: (r.dettagli || {}).categoria_catalogo || null,
             opzioni: (r.dettagli || {}).Opzioni == null ? "" : String(r.dettagli.Opzioni),
+            cod_ins: (r.dettagli || {})["Cod.Ins."] ?? (r.dettagli || {})["Codice Inserimento"] ?? null,
+            provenienza: (r.dettagli || {})["Operatore di Provenienza"] ?? null,
         }));
     };
-    const [iw3, ivf] = await Promise.all([scarica("WindTre"), scarica("Vodafone")]);
+    const [iw3, ivf, ifw] = await Promise.all([scarica("WindTre"), scarica("Vodafone"), scarica("Fastweb")]);
 
     const contaIndip = (rows) => ({
         simReg: rows.filter(r => /^mobile /i.test(r.categoria || "")).length,
@@ -146,10 +154,9 @@ async function main() {
         { nome: "Eros Harzi (own)", scope: (c) => norm(c.venditore) === norm("Eros Harzi") },
     ];
     for (const caso of casiVf) {
-        const wid = aggrega(rvf.filter(caso.scope), tvf, "vodafone");
-        const fwEn = rfw.filter(caso.scope).filter((c) => /^energia/i.test(String(c.categoria || "")));
-        fwEn.forEach((c) => { if (/gas/i.test(String(c.prodotto || ""))) wid.gas++; else wid.luce++; });
-        const ind = contaIndip(ivf.filter(caso.scope));
+        // gara Vodafone (lettera A) = VF + Fastweb dei codici T1, come il widget
+        const wid = aggrega([...rvf.filter(caso.scope), ...rfw.filter(caso.scope).filter(inLetteraA)], tvf, "vodafone");
+        const ind = contaIndip([...ivf.filter(caso.scope), ...ifw.filter(caso.scope).filter(inLetteraA)]);
         const diff = [...quadra(wid)];
         for (const k of ["simReg", "fisReg", "telGa", "telGaFin", "telCb", "telCbFin", "opCb", "rsGa", "rsCb"]) if (wid[k] !== ind[k]) diff.push(`${k}: widget ${wid[k]} ≠ indip ${ind[k]}`);
         console.log(`\n■ VF — ${caso.nome}`);
