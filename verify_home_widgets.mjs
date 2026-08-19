@@ -96,7 +96,8 @@ async function main() {
     console.log(`Motore: W3 ${rw3.length} righe · VF ${rvf.length} · FW ${rfw.length} · tabellare W3 ${tw3 ? "ok" : "ASSENTE"} · VF ${tvf ? "ok" : "ASSENTE"}`);
 
     // ── RICONTEGGIO INDIPENDENTE via REST (percorso diverso) ────────────────
-    const oggiISO = new Date().toISOString().slice(0, 10);
+    const _d = new Date();   // ymd LOCALE: toISOString dopo mezzanotte è ancora ieri (UTC)
+    const oggiISO = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
     const oraScatto = 19;
     const oggiFuori = new Date().getHours() < oraScatto ? oggiISO : null;
     const scarica = async (brand) => {

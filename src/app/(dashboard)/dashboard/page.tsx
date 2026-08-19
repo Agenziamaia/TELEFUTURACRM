@@ -128,7 +128,10 @@ export default function Dashboard() {
     const level = seesAll ? "global" : whole ? "store" : "own";
     const multiStore = seesAll || myStores.length > 1;
 
-    const oggiISO = new Date().toISOString().slice(0, 10);
+    // ymd LOCALE (Roma), mai toISOString: dopo mezzanotte l'UTC è ancora ieri
+    // e il chip «oggi» mostrava il giorno sbagliato (visto 20/08 alle 00:38)
+    const _oggi = new Date();
+    const oggiISO = `${_oggi.getFullYear()}-${String(_oggi.getMonth() + 1).padStart(2, "0")}-${String(_oggi.getDate()).padStart(2, "0")}`;
     const ymCorrente = oggiISO.slice(0, 7);
     const ymShown = period === "month" ? ymCorrente : period === "custom" && filtro ? `${filtro.y}-${String(filtro.m + 1).padStart(2, "0")}` : null;
     const rangeShown = period === "range" && range ? range : null;
