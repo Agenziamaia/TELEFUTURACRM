@@ -161,9 +161,9 @@ async function main() {
     const pezziBal = bal.reduce((a, r) => a + qty(r), 0);
     const perCat = {}; bal.forEach(r => { const c = mappa.get(norm(r.prodotto)) || "Altro"; perCat[c] = (perCat[c] || 0) + qty(r); });
     const senzaMappa = ext.filter(r => !mappa.get(norm(r.prodotto))).length;
-    console.log(`\n■ MARGINALITÀ — Baleniere: ${bal.length} righe → ${pezziBal} pezzi (atteso 217) · categorie: ${JSON.stringify(perCat)}`);
+    // nota: niente baseline fissa — i pezzi crescono coi giorni (217 al 17/08)
+    console.log(`\n■ MARGINALITÀ — Baleniere: ${bal.length} righe → ${pezziBal} pezzi · categorie: ${JSON.stringify(perCat)}`);
     console.log(`  copertura mappa categorie su tutta la rete: ${ext.length - senzaMappa}/${ext.length} righe mappate (${senzaMappa} in "Altro")`);
-    if (pezziBal !== 217) { errori++; console.log("  ✗ pezzi Baleniere ≠ baseline 217"); } else console.log("  ✓ pezzi = baseline pre-implementazione");
 
     console.log(`\n${errori === 0 ? "✅ TUTTI I RISCONTRI COINCIDONO" : `❌ ${errori} riscontri con differenze`}`);
 }
