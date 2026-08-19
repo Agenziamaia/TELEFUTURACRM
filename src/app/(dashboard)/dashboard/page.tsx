@@ -390,7 +390,7 @@ export default function Dashboard() {
                         {filtroOpen && (
                             <>
                                 <div className="fixed inset-0 z-20" onClick={() => setFiltroOpen(false)} />
-                                <div className="absolute right-0 top-full mt-2 z-30 w-60 glass-card p-3 space-y-2.5 border-white/10 shadow-2xl">
+                                <div className="absolute right-0 top-full mt-2 z-30 w-64 glass-card p-3 space-y-2.5 border-white/10 shadow-2xl">
                                     <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Scegli mese e anno</div>
                                     <div className="flex gap-2">
                                         <select value={tmpM} onChange={(e) => setTmpM(parseInt(e.target.value))} className="glass-input !h-9 text-xs flex-1">
@@ -403,10 +403,15 @@ export default function Dashboard() {
                                     <button onClick={() => { setFiltro({ y: tmpY, m: tmpM }); setPeriod("custom"); setFiltroOpen(false); }}
                                         className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold">Applica</button>
                                     <div className="pt-1.5 border-t border-white/10 text-[10px] font-bold uppercase tracking-widest text-slate-500">oppure un periodo</div>
+                                    {/* le date native hanno larghezza minima incomprimibile:
+                                        su UNA riga sfondavano il pannello → due righe (Luca 19/08) */}
                                     <div className="flex items-center gap-2">
-                                        <input type="date" value={tmpDa} onChange={(e) => setTmpDa(e.target.value)} className="glass-input !h-9 text-xs flex-1" aria-label="Dal" />
-                                        <span className="text-[10px] text-slate-500">→</span>
-                                        <input type="date" value={tmpA} onChange={(e) => setTmpA(e.target.value)} className="glass-input !h-9 text-xs flex-1" aria-label="Al" />
+                                        <span className="text-[10px] font-bold uppercase text-slate-500 w-7 shrink-0">Dal</span>
+                                        <input type="date" value={tmpDa} onChange={(e) => setTmpDa(e.target.value)} className="glass-input !h-9 text-xs flex-1 min-w-0" aria-label="Dal" />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold uppercase text-slate-500 w-7 shrink-0">Al</span>
+                                        <input type="date" value={tmpA} onChange={(e) => setTmpA(e.target.value)} className="glass-input !h-9 text-xs flex-1 min-w-0" aria-label="Al" />
                                     </div>
                                     <button disabled={!tmpDa || !tmpA}
                                         onClick={() => { const [da, a] = tmpDa <= tmpA ? [tmpDa, tmpA] : [tmpA, tmpDa]; setRange({ da, a }); setPeriod("range"); setFiltroOpen(false); }}
