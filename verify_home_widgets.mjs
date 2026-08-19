@@ -197,11 +197,13 @@ async function main() {
     const mappa = new Map(mi.map((it) => [norm(it.name), catName.get(it.category_id)]));
     const bal = ext.filter(r => sameStore(r.negozio, "Baleniere"));
     const qty = (r) => Math.max(1, Number((r.dettagli || {}).qty) || 1);
+    const valDi = (r) => Number((r.dettagli || {}).price) || 0;   // TOTALE riga, come il widget
     const pezziBal = bal.reduce((a, r) => a + qty(r), 0);
-    const perCat = {}; bal.forEach(r => { const c = mappa.get(norm(r.prodotto)) || "Altro"; perCat[c] = (perCat[c] || 0) + qty(r); });
+    const valBal = Math.round(bal.reduce((a, r) => a + valDi(r), 0));
+    const perCat = {}; bal.forEach(r => { const c = mappa.get(norm(r.prodotto)) || "Altro"; perCat[c] = Math.round((perCat[c] || 0) + valDi(r)); });
     const senzaMappa = ext.filter(r => !mappa.get(norm(r.prodotto))).length;
-    // nota: niente baseline fissa — i pezzi crescono coi giorni (217 al 17/08)
-    console.log(`\n■ MARGINALITÀ — Baleniere: ${bal.length} righe → ${pezziBal} pezzi · categorie: ${JSON.stringify(perCat)}`);
+    const valRete = Math.round(ext.reduce((a, r) => a + valDi(r), 0));
+    console.log(`\n■ MARGINALITÀ A VALORE — rete: ${valRete} € · Baleniere: ${valBal} € (${bal.length} righe, ${pezziBal} pezzi) · categorie €: ${JSON.stringify(perCat)}`);
     console.log(`  copertura mappa categorie su tutta la rete: ${ext.length - senzaMappa}/${ext.length} righe mappate (${senzaMappa} in "Altro")`);
 
     console.log(`\n${errori === 0 ? "✅ TUTTI I RISCONTRI COINCIDONO" : `❌ ${errori} riscontri con differenze`}`);

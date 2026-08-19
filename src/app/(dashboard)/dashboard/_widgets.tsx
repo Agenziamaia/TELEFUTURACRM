@@ -25,6 +25,7 @@
 // caller, qualità (KO/annullati), storico personale.
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS } from "@/lib/roles";
@@ -203,25 +204,31 @@ function MedalRow({ rank, nome, n, max, color, isMe, mostra }) {
 }
 
 /** Chip con SONDA a bolla immediata (il title nativo è lento — stessa
- *  lezione del Commissioning): hover o tap mostrano subito il perché. */
+ *  lezione del Commissioning): hover o tap mostrano subito il perché.
+ *  ⚠️ La bolla vive in un PORTAL sul body: dentro la card non funzionava —
+ *  .glass-card:hover ha un transform, che per position:fixed diventa il
+ *  containing block, e l'overflow-hidden della card la tagliava via
+ *  (segnalazione Luca 19/08 «passandoci il mouse non succede niente»). */
 function ChipSonda({ testo, righe, tono = "ambra" }) {
     const [tip, setTip] = useState(null);
-    const muovi = (e) => setTip({ x: Math.min(e.clientX + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 280), y: Math.min(e.clientY + 14, (typeof window !== "undefined" ? window.innerHeight : 800) - 40 - righe.length * 18) });
+    const muovi = (e) => setTip({ x: Math.min(e.clientX + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 290), y: Math.min(e.clientY + 14, (typeof window !== "undefined" ? window.innerHeight : 800) - 40 - righe.length * 18) });
     const cls = tono === "ambra" ? "bg-amber-500/10 border-amber-500/20 text-amber-300" : "bg-white/[0.04] border-white/5 text-slate-300";
     return (
         <span className={cn("relative inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold cursor-help", cls)}
             onMouseEnter={muovi} onMouseMove={muovi} onMouseLeave={() => setTip(null)}
             onClick={(e) => { e.stopPropagation(); tip ? setTip(null) : muovi(e); }}>
             {testo}
-            {tip && (
-                <span className="fixed z-[80] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] font-normal text-slate-200 whitespace-pre leading-relaxed pointer-events-none"
+            {tip && typeof document !== "undefined" && createPortal(
+                <span className="fixed z-[90] max-w-[300px] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] font-normal text-slate-200 whitespace-pre-wrap leading-relaxed pointer-events-none"
                     style={{ left: tip.x, top: tip.y }}>
                     {righe.join("\n")}
-                </span>
-            )}
+                </span>, document.body)}
         </span>
     );
 }
+
+const fmtEuro = (n) => Math.round(Number(n) || 0).toLocaleString("it-IT") + " €";
+export const valoreDi = (c) => Number(c?.prezzo) || 0;   // dettagli.price = TOTALE riga (già ×qty)
 
 /** Chip riepilogo: oggi / proiezione / record / confronto mese scorso. */
 function ChipsPerformance({ ctx, oggiN, proiezione, best, meseScorso, pezzi, color }) {
@@ -421,10 +428,10 @@ function WidgetW3({ ctx, size }) {
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
                                 </span>
                             )}
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su nuova attivazione · di cui finanziati">📱 GA <b className="font-mono text-slate-100">{per.telGa}</b><span className="text-slate-500">fin {per.telGaFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su cliente già attivo · di cui finanziati">📱 CB <b className="font-mono text-slate-100">{per.telCb}</b><span className="text-slate-500">fin {per.telCbFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔄 Reload <b className="font-mono text-slate-100">{per.reload}</b></span>
+                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.telGa}</b> <span className="text-slate-500">fin {per.telGaFin}</span></>} righe={["Telefoni rateizzati su nuova attivazione (GA):", `${per.telGa} totali, di cui ${per.telGaFin} finanziati.`, "Il pay dei device arriva col cantiere analisi (listino)."]} />
+                            <ChipSonda tono="neutro" testo={<>📱 CB <b className="font-mono text-slate-100">{per.telCb}</b> <span className="text-slate-500">fin {per.telCbFin}</span></>} righe={["Telefoni rateizzati su cliente già attivo (CB):", `${per.telCb} totali, di cui ${per.telCbFin} finanziati.`]} />
+                            <ChipSonda tono="neutro" testo={<>🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></>} righe={["Operazioni Customer Base registrate nel periodo", "(cambi offerta e attività sui clienti già attivi)."]} />
+                            <ChipSonda tono="neutro" testo={<>🔄 Reload <b className="font-mono text-slate-100">{per.reload}</b></>} righe={["Vendite con opzione Reload", "(Reload, Reload EU, Forever, Plus, Exchange, Open)."]} />
                             {size >= 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 Protecta <b className="font-mono text-slate-100">{per.kit}</b></span>}
                             {per.senzaPay > 0 && <ChipSonda testo={`⚠ ${per.senzaPay} senza punti`} righe={senzaPayRigheW3} />}
                         </div>
@@ -614,10 +621,10 @@ function WidgetVodafone({ ctx, size }) {
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
                                 </span>
                             )}
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su nuova attivazione · di cui finanziati">📱 GA <b className="font-mono text-slate-100">{per.telGa}</b><span className="text-slate-500">fin {per.telGaFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su cliente già attivo · di cui finanziati">📱 CB <b className="font-mono text-slate-100">{per.telCb}</b><span className="text-slate-500">fin {per.telCbFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
-                            {size < 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></span>}
+                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.telGa}</b> <span className="text-slate-500">fin {per.telGaFin}</span></>} righe={["Telefoni su nuova attivazione (GA):", `${per.telGa} totali, di cui ${per.telGaFin} finanziati.`, "In pista mobile: rateale 0,5 pt · finanziato 1 pt", "(col cap del 35% sulla vista di rete)."]} />
+                            <ChipSonda tono="neutro" testo={<>📱 CB <b className="font-mono text-slate-100">{per.telCb}</b> <span className="text-slate-500">fin {per.telCbFin}</span></>} righe={["Telefoni su cliente già attivo (CB):", `${per.telCb} totali, di cui ${per.telCbFin} finanziati.`, "Stessi punti dei GA (0,5 rateale · 1 finanziato)."]} />
+                            <ChipSonda tono="neutro" testo={<>🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></>} righe={["Operazioni Customer Base (cambi offerta, MM4M,", "traslochi…): pay one-shot nei Gettoni delle Regole."]} />
+                            {size < 2 && <ChipSonda tono="neutro" testo={<>🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></>} righe={[`Rete Sicura: ${per.rsGa} su attivazioni (GA) · ${per.rsCb} su clienti attivi (CB).`]} />}
                             {per.fwGaraN > 0 && <ChipSonda tono="neutro" testo={<>🟨 FW in gara <b className="font-mono text-slate-100">{per.fwGaraN}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "per la lettera A contano qui — mobile, fisso ed energia.", "Il Fastweb T2 (multibrand) resta nella sua gara."]} />}
                             {per.capTaglio > 0 && <ChipSonda testo={`✂️ cap 35%: −${fmtPunti(per.capTaglio)}`} righe={["Lettera Vodafone: gli smartphone (0,5 rateale · 1 finanziato)", "valgono fino al 35% del valore delle SIM.", `Telefoni ${fmtPunti(per.telP)} pt · contati ${fmtPunti(per.telP - per.capTaglio)} pt`]} />}
                             {senzaPay > 0 && <ChipSonda testo={`⚠ ${senzaPay} senza punti`} righe={senzaPayRighe} />}
@@ -754,6 +761,14 @@ function WidgetBrand({ ctx, size, brand }) {
     const classifica = size >= 4
         ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand) : righe, (c) => c.venditore))
         : null;
+    // Fastweb: quante delle sue vendite stanno nella GARA VODAFONE (codici T1)
+    // — per togliere il dubbio del "doppione" (Luca 19/08): qui è la
+    // produzione registrata, i punti di quelle vendite vivono nel widget VF
+    let fwInGaraVF = 0;
+    if (trkBrandKey(brand) === "fastweb" && ctx.vf?.packs) {
+        const scopeFw = (c) => ctx.level === "global" ? true : ctx.level === "store" ? ctx.inMyStores(c.negozio) : norm(c.venditore) === norm(ctx.user?.name);
+        ctx.vf.packs.forEach((p) => { fwInGaraVF += (p.rowsFw || []).filter(scopeFw).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone").length; });
+    }
     return (
         <WidgetShell logo={logo} icon={Signal} title={brand} accent={color}
             action={<div className="flex items-center gap-2">{rank && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">🏅 {rank.pos}° su {rank.su}</span>}<ChipScope ctx={ctx} /></div>}>
@@ -762,6 +777,11 @@ function WidgetBrand({ ctx, size, brand }) {
                     <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={color} />
                     {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={color} />}
                     <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown ? meseScorso : null} pezzi={pezzi} color={color} />
+                    {fwInGaraVF > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                            <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "qui contano come produzione registrata Fastweb,", "i PUNTI di gara stanno nel widget Vodafone (lettera A).", "Niente doppioni: pezzi qui, punti là."]} />
+                        </div>
+                    )}
                     {size >= 2 && perCat.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {perCat.map(([cat, n]) => (
@@ -787,53 +807,115 @@ function WidgetBrand({ ctx, size, brand }) {
     );
 }
 
-// ── WIDGET: marginalità aggregata per categorie ─────────────────────────────
+// ── WIDGET: marginalità A VALORE (Luca 19/08: «sul pezzo non ha senso») ─────
+// Valore = dettagli.price (TOTALE riga, già ×qty). Torta per categorie del
+// pannello Marginalità col dettaglio al passaggio del mouse (portal), top
+// prodotti e squadra sempre a valore; i pezzi restano come sottotesto.
+const COLORI_TORTA = ["#818cf8", "#34d399", "#fbbf24", "#38bdf8", "#f472b6", "#a78bfa", "#64748b"];
+
+function TortaMarg({ dati, totale, colori }) {
+    const [tip, setTip] = useState(null);
+    const C = 2 * Math.PI * 40;
+    let acc = 0;
+    return (
+        <div className="relative shrink-0">
+            <svg viewBox="0 0 100 100" className="w-28 h-28 -rotate-90">
+                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(148,163,184,.12)" strokeWidth="14" />
+                {dati.map(([nome, v], i) => {
+                    const frac = totale > 0 ? v / totale : 0;
+                    const dash = Math.max(0, frac * C - 1);
+                    const offset = -acc * C;
+                    acc += frac;
+                    return (
+                        <circle key={nome} cx="50" cy="50" r="40" fill="none" stroke={colori[i % colori.length]} strokeWidth="14"
+                            strokeDasharray={dash + " " + (C - dash)} strokeDashoffset={offset} className="cursor-help"
+                            onMouseMove={(e) => setTip({ x: e.clientX + 12, y: e.clientY + 14, nome, v, pct: Math.round(frac * 100) })}
+                            onMouseLeave={() => setTip(null)} />
+                    );
+                })}
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-[10px] font-black text-slate-300 text-center leading-tight px-3">{fmtEuro(totale)}</span>
+            </div>
+            {tip && typeof document !== "undefined" && createPortal(
+                <span className="fixed z-[90] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] text-slate-200 pointer-events-none"
+                    style={{ left: tip.x, top: tip.y }}>
+                    <b>{tip.nome}</b> · {fmtEuro(tip.v)} ({tip.pct}%)
+                </span>, document.body)}
+        </div>
+    );
+}
+
 function WidgetMarginalita({ ctx, size }) {
     const righe = ctx.mine.filter((c) => isExt(c) && validaProduzione(c));
-    const { pezzi, oggiN, proiezione, perGiorno, best } = CorpoProduzione({ ctx, size, righe, pesa: qtyDi, color: MARG_COLOR });
-    const meseScorso = ctx.scoped.filter((c) => isExt(c) && validaProduzione(c) && giornoDi(c).startsWith(ctx.meseScorsoYm)).reduce((a, c) => a + qtyDi(c), 0);
-    const catDi = (c) => ctx.margMap?.get(norm(c.prodotto))?.cat || "Altro";
-    const iconaCat = (nome) => ctx.margIcone?.get(nome) || "🧩";
-    const perCat = groupCount(righe, catDi, qtyDi);
-    const topProdotti = groupCount(righe, (c) => c.prodotto, qtyDi);
+    const valore = righe.reduce((a, c) => a + valoreDi(c), 0);
+    const pezzi = righe.reduce((a, c) => a + qtyDi(c), 0);
+    const valOggi = righe.filter((c) => giornoDi(c) === ctx.oggiISO).reduce((a, c) => a + valoreDi(c), 0);
+    const proiezione = proiezioneFineMese(ctx, valore, valOggi);
+    // fallback per i prodotti-speciali del POS fuori pannello (TNP, E.Telefono…):
+    // a valore dominano — senza questa regola finivano tutti in «Altro»
+    const catDi = (c) => ctx.margMap?.get(norm(c.prodotto))?.cat || (/(telefono|tnp|smartphone|iphone)/i.test(String(c.prodotto || "")) ? "Telefoni" : "Altro");
+    const iconaCat = (nome) => nome === "Altre" ? "•" : nome === "Telefoni" ? "📱" : (ctx.margIcone?.get(nome) || "🧩");
+    const perCat = groupCount(righe, catDi, valoreDi);
+    const resto = perCat.slice(6).reduce((a, [, v]) => a + v, 0);
+    const datiTorta = resto > 0 ? [...perCat.slice(0, 6), ["Altre", resto]] : perCat.slice(0, 6);
+    const topProdotti = groupCount(righe, (c) => c.prodotto, valoreDi).slice(0, size >= 4 ? 7 : 5);
+    const meseScorsoVal = ctx.ymShown ? ctx.scoped.filter((c) => isExt(c) && validaProduzione(c) && giornoDi(c).startsWith(ctx.meseScorsoYm)).reduce((a, c) => a + valoreDi(c), 0) : 0;
     const classifica = size >= 4
-        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio, qtyDi) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isExt(c) && validaProduzione(c)) : righe, (c) => c.venditore, qtyDi))
+        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio, valoreDi) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isExt(c) && validaProduzione(c)) : righe, (c) => c.venditore, valoreDi))
         : null;
+    const perGiorno = {};
+    righe.forEach((c) => { const g = giornoDi(c); if (g) perGiorno[g] = (perGiorno[g] || 0) + valoreDi(c); });
     return (
         <WidgetShell icon={ShoppingBag} title="Marginalità" accent={MARG_COLOR} action={<ChipScope ctx={ctx} />}>
             <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                 <div className="flex flex-col gap-3">
-                    <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={MARG_COLOR} />
-                    {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={MARG_COLOR} />}
-                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown ? meseScorso : null} pezzi={pezzi} color={MARG_COLOR} />
-                    {perCat.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                            {(size >= 2 ? perCat : perCat.slice(0, 3)).map(([cat, n]) => (
-                                <span key={cat} className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">
-                                    <span aria-hidden>{iconaCat(cat)}</span> {cat} <b className="font-mono text-slate-100">{n}</b>
-                                </span>
-                            ))}
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <p className="text-3xl font-black text-white leading-none tabular-nums">{fmtEuro(valore)}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">venduto {ctx.periodoLabel} · {pezzi} pezzi</p>
                         </div>
-                    )}
-                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} range={ctx.rangeShown} color={MARG_COLOR} ctx={ctx} />}
+                        {size >= 2 && <TortaMarg dati={datiTorta} totale={valore} colori={COLORI_TORTA} />}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {ctx.includeOggi && (
+                            <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", valOggi > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
+                                {valOggi > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
+                                oggi +{fmtEuro(valOggi)}
+                            </span>
+                        )}
+                        {proiezione != null && proiezione > valore && (
+                            <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold border border-dashed" style={{ color: MARG_COLOR, borderColor: "color-mix(in srgb, " + MARG_COLOR + " 45%, transparent)" }}>≈ {fmtEuro(proiezione)} a fine mese</span>
+                        )}
+                        {meseScorsoVal > 0 && (
+                            <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold", (proiezione ?? valore) >= meseScorsoVal ? "bg-emerald-500/10 text-emerald-300" : "bg-rose-500/10 text-rose-300")}>{(proiezione ?? valore) >= meseScorsoVal ? "↗" : "↘"} {ctx.meseScorsoLabel}: {fmtEuro(meseScorsoVal)}</span>
+                        )}
+                    </div>
+                    <div className="space-y-1.5">
+                        {datiTorta.map(([cat, v], i) => (
+                            <div key={cat} className="flex items-center gap-2 text-xs">
+                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: COLORI_TORTA[i % COLORI_TORTA.length] }} />
+                                <span className="text-slate-300 truncate flex-1">{iconaCat(cat)} {cat}</span>
+                                <span className="font-mono font-bold text-slate-100">{fmtEuro(v)}</span>
+                                <span className="text-[10px] text-slate-500 w-9 text-right">{valore > 0 ? Math.round((v / valore) * 100) : 0}%</span>
+                            </div>
+                        ))}
+                        {datiTorta.length === 0 && <p className="text-xs text-slate-500 py-1">Nessuna vendita di marginalità nel periodo.</p>}
+                    </div>
                 </div>
                 {size >= 2 && (
                     <div className={cn("space-y-1.5", size >= 4 && "md:border-l md:border-white/5 md:pl-5")}>
-                        {size >= 4 && classifica ? (<>
-                            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1.5"><Crown className="w-3 h-3 text-amber-400" /> {ctx.level === "global" ? "Negozi" : "Squadra"}</div>
-                            {classifica.slice(0, 6).map(([nome, n], i) => (
-                                <MedalRow key={nome} rank={i + 1} nome={nome} n={n} max={classifica[0][1]} color={MARG_COLOR} isMe={ctx.level !== "global" && norm(nome) === norm(ctx.user?.name)} />
-                            ))}
-                            <div className="pt-1 text-[10px] uppercase tracking-widest font-bold text-slate-500">Top prodotti</div>
-                            {topProdotti.slice(0, 5).map(([p, n]) => (
-                                <div key={p} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]"><span className="text-slate-300 truncate">{p}</span><b className="font-mono text-slate-100 ml-2">{n}</b></div>
-                            ))}
-                        </>) : (<>
-                            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Top prodotti</div>
-                            {topProdotti.slice(0, 4).map(([p, n]) => (
-                                <div key={p} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]"><span className="text-slate-300 truncate">{p}</span><b className="font-mono text-slate-100 ml-2">{n}</b></div>
+                        {size >= 4 && classifica && classifica.length > 0 && (<>
+                            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1.5"><Crown className="w-3 h-3 text-amber-400" /> {ctx.level === "global" ? "Negozi (valore)" : "Squadra (valore)"}</div>
+                            {classifica.slice(0, 6).map(([nome, v], i) => (
+                                <MedalRow key={nome} rank={i + 1} nome={nome} n={v} mostra={fmtEuro(v)} max={classifica[0][1]} color={MARG_COLOR} isMe={ctx.level !== "global" && norm(nome) === norm(ctx.user?.name)} />
                             ))}
                         </>)}
+                        <div className="pt-1 text-[10px] uppercase tracking-widest font-bold text-slate-500">Top prodotti (valore)</div>
+                        {topProdotti.map(([p, v]) => (
+                            <div key={p} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]"><span className="text-slate-300 truncate">{p}</span><b className="font-mono text-slate-100 ml-2">{fmtEuro(v)}</b></div>
+                        ))}
+                        {size >= 4 && <div className="pt-1"><Sparkline perGiorno={perGiorno} ym={ctx.rangeShown ? null : ctx.ymShown} range={ctx.rangeShown} color={MARG_COLOR} ctx={ctx} /></div>}
                     </div>
                 )}
             </div>
