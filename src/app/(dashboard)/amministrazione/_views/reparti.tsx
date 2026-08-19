@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 /* Reparti & IVA (spec Luca) — SOLO Amministrazione. Sorgente UNICA della mappa
    reparto → aliquota/natura IVA. Il reparto decide l'IVA sul documento fiscale: qui
    si definisce, e il menù Reparto in Catalogo lo legge da qui. ⚠️ Gli RT del negozio
    (.50 e .219) vanno PROGRAMMATI uguali a questa tabella. */
 
-interface Reparto { reparto: number; descrizione: string | null; aliquota: number | null; natura: string | null; attivo: boolean; }
+interface Reparto { reparto: number; descrizione: string | null; aliquota: number | null; natura: string | null; attivo: boolean; prodotti?: string[]; }
 
 const NATURE = ["", "N1", "N2", "N3", "N4", "N5", "N6", "N7"];
 const NATURA_DESC: Record<string, string> = {
@@ -22,6 +22,8 @@ export function RepartiIvaView() {
     const [msg, setMsg] = useState("");
     const [dirty, setDirty] = useState(false);
     const [soloAttivi, setSoloAttivi] = useState(false);
+    const [senzaReparto, setSenzaReparto] = useState<string[]>([]);
+    const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
     const load = async () => {
         setLoading(true); setMsg("");
@@ -30,6 +32,7 @@ export function RepartiIvaView() {
             const j = await res.json().catch(() => ({}));
             if (!res.ok || !j.ok) throw new Error(j.error || "caricamento fallito");
             setRows(Array.isArray(j.reparti) ? j.reparti : []);
+            setSenzaReparto(Array.isArray(j.senzaReparto) ? j.senzaReparto : []);
             setDirty(false);
         } catch (e: any) { setMsg("Errore: " + String(e?.message || e)); }
         finally { setLoading(false); }
@@ -70,6 +73,11 @@ export function RepartiIvaView() {
                 ⚠️ Questa è la <b>sorgente unica</b> in uso dal CRM. Gli RT del negozio (.50 e .219) devono essere <b>programmati uguali</b> (Programmazione → Reparti sulla stampante). Cambiare l'aliquota qui NON riprogramma la stampante.
             </p>
             {msg && <p className={"text-sm rounded-lg p-2 " + (msg.startsWith("Errore") ? "text-rose-300 bg-rose-500/10 border border-rose-500/25" : "text-emerald-300 bg-emerald-500/10 border border-emerald-400/25")}>{msg}</p>}
+            {!!senzaReparto.length && (
+                <div className="text-[12px] text-rose-200 bg-rose-500/10 border border-rose-500/30 rounded-lg p-2">
+                    <b>{senzaReparto.length} prodotti senza reparto</b> (nessuna IVA definita → in modalità fiscale NON verrebbero stampati): {senzaReparto.slice(0, 15).join(", ")}{senzaReparto.length > 15 ? "…" : ""}. Assegna il reparto in Catalogo → Prodotti &amp; Marginalità.
+                </div>
+            )}
 
             {loading ? (
                 <p className="text-sm text-slate-400 py-6 text-center animate-pulse">Caricamento…</p>
@@ -83,11 +91,16 @@ export function RepartiIvaView() {
                                 <th className="text-right px-3 py-2 w-24">Aliquota %</th>
                                 <th className="text-left px-3 py-2 w-40">Natura (se non IVA)</th>
                                 <th className="text-center px-3 py-2 w-20">Attivo</th>
+                                <th className="text-center px-3 py-2 w-24">Prodotti</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {view.map((r) => (
-                                <tr key={r.reparto} className={"hover:bg-white/[0.03] " + (r.attivo ? "" : "opacity-50")}>
+                            {view.map((r) => {
+                                const nProd = r.prodotti?.length || 0;
+                                const isOpen = expanded.has(r.reparto);
+                                return (
+                                <Fragment key={r.reparto}>
+                                <tr className={"hover:bg-white/[0.03] " + (r.attivo ? "" : "opacity-50")}>
                                     <td className="px-3 py-1.5 text-center text-slate-400 font-mono">{r.reparto}</td>
                                     <td className="px-3 py-1.5">
                                         <input value={r.descrizione ?? ""} onChange={(e) => upd(r.reparto, { descrizione: e.target.value })}
@@ -107,8 +120,23 @@ export function RepartiIvaView() {
                                     <td className="px-3 py-1.5 text-center">
                                         <input type="checkbox" checked={r.attivo} onChange={(e) => upd(r.reparto, { attivo: e.target.checked })} />
                                     </td>
+                                    <td className="px-3 py-1.5 text-center">
+                                        {nProd > 0 ? (
+                                            <button type="button" onClick={() => setExpanded((s) => { const n = new Set(s); if (n.has(r.reparto)) n.delete(r.reparto); else n.add(r.reparto); return n; })}
+                                                className="text-xs font-semibold text-violet-300 hover:text-violet-200 tabular-nums">{nProd} {isOpen ? "▲" : "▾"}</button>
+                                        ) : <span className="text-slate-600 text-xs">—</span>}
+                                    </td>
                                 </tr>
-                            ))}
+                                {isOpen && nProd > 0 && (
+                                    <tr className="bg-white/[0.02]">
+                                        <td colSpan={6} className="px-4 py-2 text-[11px] text-slate-300">
+                                            <span className="text-slate-500">Prodotti su questo reparto:</span> {r.prodotti!.join("  ·  ")}
+                                        </td>
+                                    </tr>
+                                )}
+                                </Fragment>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

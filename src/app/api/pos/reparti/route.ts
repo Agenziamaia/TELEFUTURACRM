@@ -11,7 +11,20 @@ export async function GET() {
     const { data, error } = await supabase.from("pos_reparti")
         .select("reparto, descrizione, aliquota, natura, attivo").order("reparto");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, reparti: data || [] });
+
+    // Quali prodotti (che vanno sullo scontrino) usano ciascun reparto — per l'audit.
+    const { data: items } = await supabase.from("marg_items")
+        .select("name, reparto, va_in_scontrino, active");
+    const byReparto: Record<number, string[]> = {};
+    const senzaReparto: string[] = [];
+    (items || []).forEach((it: any) => {
+        if (it.active === false || it.va_in_scontrino === false) return; // non attivo o escluso dallo scontrino
+        const nome = String(it.name || "").trim() || "(senza nome)";
+        if (it.reparto == null) senzaReparto.push(nome);
+        else (byReparto[it.reparto] ||= []).push(nome);
+    });
+    const reparti = (data || []).map((r: any) => ({ ...r, prodotti: (byReparto[r.reparto] || []).sort() }));
+    return NextResponse.json({ ok: true, reparti, senzaReparto: senzaReparto.sort() });
 }
 
 export async function PUT(req: Request) {
