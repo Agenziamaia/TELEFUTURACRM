@@ -20,6 +20,7 @@ import {
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
+    BarChart3,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -48,6 +49,11 @@ export const OUTBOUND_NAV = ["agente", "direttore_ob", "direttore_commerciale", 
 
 export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: EVERYONE },
+    // ANALISI (Luca 20/08): la sezione-vetrina a punti/pezzi (Io · Negozio ·
+    // Rete · Regia). PER ORA solo admin/dev — Luca vuole vederla per primo;
+    // per aprirla a tutta la rete basta mettere EVERYONE (la pagina è già
+    // pensata per la visibilità aperta, la Regia resta comunque solo admin).
+    { type: "link", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"] },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
     {
         // CALL CENTER e' un GRUPPO (Luca 28/07): dentro la vecchia sezione Caller
