@@ -24,31 +24,52 @@ async function main() {
     const YM = "2026-08";
 
     // ── LATO WIDGET: stessa aggregazione di kpiW3/kpiVF in _widgets.tsx ──────
+    // identica a kpiW3/kpiVF in _widgets.tsx (regole 19/08: pezzi = registrato,
+    // business su piste dedicate, Rete Sicura CB anche come prodotto, sonda
+    // sulle vendite senza riga pay)
     const aggrega = (rows, tab, brandId) => {
-        const per = { puntiMobile: 0, pezziMobile: 0, puntiFisso: 0, pezziFisso: 0, puntiAss: 0, pezziAss: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
+        const per = { puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0, bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0, mobSenzaPay: 0, fisSenzaPay: 0, puntiAss: 0, pezziAss: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
         rows.forEach((c) => {
             const cat = String(c.categoria || "");
             const prod = String(c.prodotto || "");
+            const off = String(c.offerta || "");
             const opz = String(c.opzioni || "");
+            const isMob = /^mobile /i.test(cat);
+            const isFis = /^fisso/i.test(cat);
+            const isCb = /^customer base/i.test(cat);
+            if (isMob) per.simReg++;
+            if (isFis) per.fisReg++;
             if (/^telefono a rate/i.test(cat)) {
                 const fin = /^finanziato/i.test(prod);
                 if (/cb\s*$/i.test(prod)) { per.telCb++; if (fin) per.telCbFin++; }
                 else { per.telGa++; if (fin) per.telGaFin++; }
             }
-            if (/^customer base/i.test(cat)) per.opCb++;
+            if (isCb) per.opCb++;
             if (/reload/i.test(opz)) per.reload++;
             if (/\bkit\b/i.test(opz)) per.kit++;
-            if (/rete sicura/i.test(opz)) { if (/^customer base/i.test(cat)) per.rsCb++; else per.rsGa++; }
+            if (/rete sicura/i.test(opz)) { if (isCb) per.rsCb++; else per.rsGa++; }
+            else if (isCb && /rete sicura/i.test(prod + " " + off)) per.rsCb++;
             if (/^energia/i.test(cat)) { if (/gas/i.test(prod)) per.gas++; else per.luce++; }
             const set = tab ? matchRigheAttivazione(tab.righe, c, brandId) : [];
             if (set.length) {
                 const pista = set[0].pista; const p = puntiPerRighe(set);
                 if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
                 else if (pista === "fisso") { per.puntiFisso += p; per.pezziFisso++; }
+                else if (pista === "business_mobile") { per.bizMobN++; per.bizMobP += p; }
+                else if (pista === "business_fisso") { per.bizFisN++; per.bizFisP += p; }
                 else if (pista === "assicurazioni") { per.puntiAss += p; per.pezziAss++; }
+            } else if (isMob || isFis) {
+                if (isMob) per.mobSenzaPay++; else per.fisSenzaPay++;
             }
         });
         return per;
+    };
+    // invarianti di quadratura: il REGISTRATO si spiega per intero
+    const quadra = (per) => {
+        const errs = [];
+        if (per.pezziMobile + per.bizMobN + per.mobSenzaPay !== per.simReg) errs.push(`SIM: ${per.pezziMobile} cons + ${per.bizMobN} biz + ${per.mobSenzaPay} senza-pay ≠ ${per.simReg} registrate`);
+        if (per.pezziFisso + per.bizFisN + per.fisSenzaPay !== per.fisReg) errs.push(`Fisso: ${per.pezziFisso} cons + ${per.bizFisN} biz + ${per.fisSenzaPay} senza-pay ≠ ${per.fisReg} registrate`);
+        return errs;
     };
 
     const [rw3, rvf, rfw, tw3, tvf] = await Promise.all([
@@ -86,6 +107,8 @@ async function main() {
     const [iw3, ivf] = await Promise.all([scarica("WindTre"), scarica("Vodafone")]);
 
     const contaIndip = (rows) => ({
+        simReg: rows.filter(r => /^mobile /i.test(r.categoria || "")).length,
+        fisReg: rows.filter(r => /^fisso/i.test(r.categoria || "")).length,
         telGa: rows.filter(r => /^telefono a rate/i.test(r.categoria || "") && !/cb\s*$/i.test(r.prodotto || "")).length,
         telGaFin: rows.filter(r => /^telefono a rate/i.test(r.categoria || "") && !/cb\s*$/i.test(r.prodotto || "") && /^finanziato/i.test(r.prodotto || "")).length,
         telCb: rows.filter(r => /^telefono a rate/i.test(r.categoria || "") && /cb\s*$/i.test(r.prodotto || "")).length,
@@ -93,7 +116,7 @@ async function main() {
         opCb: rows.filter(r => /^customer base/i.test(r.categoria || "")).length,
         reload: rows.filter(r => /reload/i.test(r.opzioni)).length,
         rsGa: rows.filter(r => /rete sicura/i.test(r.opzioni) && !/^customer base/i.test(r.categoria || "")).length,
-        rsCb: rows.filter(r => /rete sicura/i.test(r.opzioni) && /^customer base/i.test(r.categoria || "")).length,
+        rsCb: rows.filter(r => /^customer base/i.test(r.categoria || "") && (/rete sicura/i.test(r.opzioni) || /rete sicura/i.test(String(r.prodotto || "") + " " + String(r.offerta || "")))).length,
         luce: rows.filter(r => /^energia/i.test(r.categoria || "") && !/gas/i.test(r.prodotto || "")).length,
         gas: rows.filter(r => /^energia/i.test(r.categoria || "") && /gas/i.test(r.prodotto || "")).length,
         kit: rows.filter(r => /\bkit\b/i.test(r.opzioni)).length,
@@ -108,17 +131,18 @@ async function main() {
     for (const caso of casi) {
         const wid = aggrega(rw3.filter(caso.scope), tw3, "windtre");
         const ind = contaIndip(iw3.filter(caso.scope));
-        const diff = [];
+        const diff = [...quadra(wid)];
         for (const k of Object.keys(ind)) if (wid[k] !== ind[k]) diff.push(`${k}: widget ${wid[k]} ≠ indip ${ind[k]}`);
         console.log(`\n■ W3 — ${caso.nome}`);
-        console.log(`  punti: mobile ${wid.puntiMobile.toFixed(2)} (${wid.pezziMobile} SIM) · fisso ${wid.puntiFisso.toFixed(2)} (${wid.pezziFisso}) · assic ${wid.puntiAss.toFixed(2)} (${wid.pezziAss})`);
+        console.log(`  punti: mobile ${wid.puntiMobile.toFixed(2)} (${wid.simReg} SIM reg.) · fisso ${wid.puntiFisso.toFixed(2)} (${wid.fisReg} reg.) · assic ${wid.puntiAss.toFixed(2)} (${wid.pezziAss}) · senza-pay ${wid.mobSenzaPay + wid.fisSenzaPay}`);
         console.log(`  conteggi: telGA ${wid.telGa}(fin ${wid.telGaFin}) · telCB ${wid.telCb}(fin ${wid.telCbFin}) · opCB ${wid.opCb} · reload ${wid.reload} · luce ${wid.luce} · gas ${wid.gas} · kit ${wid.kit}`);
-        if (diff.length) { errori++; console.log("  ✗ DIFFERENZE: " + diff.join(" | ")); } else console.log("  ✓ riconteggio indipendente identico");
+        if (diff.length) { errori++; console.log("  ✗ DIFFERENZE: " + diff.join(" | ")); } else console.log("  ✓ riconteggio indipendente identico + quadratura ok");
     }
 
     const casiVf = [
         { nome: "RETE (global)", scope: () => true },
         { nome: "Baleniere (store)", scope: (c) => sameStore(c.negozio, "Baleniere") },
+        { nome: "Magliana Multi+W3 (store di Emanuele)", scope: (c) => sameStore(c.negozio, "Magliana Multi") || sameStore(c.negozio, "Magliana W3") },
         { nome: "Eros Harzi (own)", scope: (c) => norm(c.venditore) === norm("Eros Harzi") },
     ];
     for (const caso of casiVf) {
@@ -126,12 +150,12 @@ async function main() {
         const fwEn = rfw.filter(caso.scope).filter((c) => /^energia/i.test(String(c.categoria || "")));
         fwEn.forEach((c) => { if (/gas/i.test(String(c.prodotto || ""))) wid.gas++; else wid.luce++; });
         const ind = contaIndip(ivf.filter(caso.scope));
-        const diff = [];
-        for (const k of ["telGa", "telGaFin", "telCb", "telCbFin", "opCb", "rsGa", "rsCb"]) if (wid[k] !== ind[k]) diff.push(`${k}: widget ${wid[k]} ≠ indip ${ind[k]}`);
+        const diff = [...quadra(wid)];
+        for (const k of ["simReg", "fisReg", "telGa", "telGaFin", "telCb", "telCbFin", "opCb", "rsGa", "rsCb"]) if (wid[k] !== ind[k]) diff.push(`${k}: widget ${wid[k]} ≠ indip ${ind[k]}`);
         console.log(`\n■ VF — ${caso.nome}`);
-        console.log(`  punti: mobile ${wid.puntiMobile.toFixed(2)} (${wid.pezziMobile} SIM) · fisso ${wid.puntiFisso.toFixed(2)} (${wid.pezziFisso})`);
+        console.log(`  punti: mobile ${wid.puntiMobile.toFixed(2)} (${wid.simReg} SIM reg.) · fisso ${wid.puntiFisso.toFixed(2)} (${wid.fisReg} linee reg.) · 💼 biz mob ${wid.bizMobN} (${wid.bizMobP.toFixed(1)} pt) · biz fis ${wid.bizFisN} (${wid.bizFisP.toFixed(1)} pt) · senza-pay ${wid.mobSenzaPay + wid.fisSenzaPay}`);
         console.log(`  conteggi: telGA ${wid.telGa}(fin ${wid.telGaFin}) · telCB ${wid.telCb}(fin ${wid.telCbFin}) · RS GA ${wid.rsGa} · RS CB ${wid.rsCb} · opCB ${wid.opCb} · luce ${wid.luce} · gas ${wid.gas} (con FW)`);
-        if (diff.length) { errori++; console.log("  ✗ DIFFERENZE: " + diff.join(" | ")); } else console.log("  ✓ riconteggio indipendente identico");
+        if (diff.length) { errori++; console.log("  ✗ DIFFERENZE: " + diff.join(" | ")); } else console.log("  ✓ riconteggio indipendente identico + quadratura ok");
     }
 
     // Scomposizione di 2 vendite campione (controllo a occhio dei punti)
