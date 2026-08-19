@@ -19,7 +19,7 @@ const norm = (s) => String(s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 
 async function main() {
-    const { caricaContrattiMese, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, contestoVfFw } = await import("./src/lib/commissioning");
+    const { caricaContrattiMese, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel } = await import("./src/lib/commissioning");
     const inLetteraA = (c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
 
     const YM = "2026-08";
@@ -56,7 +56,8 @@ async function main() {
                 per.mobSenzaPay++;
                 return;
             }
-            const set = tab ? matchRigheAttivazione(tab.righe, c, brandId) : [];
+            // brand della VENDITA (gate brand_vendita delle righe, come il Calcolatore)
+            const set = tab ? matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand) || brandId) : [];
             if (set.length) {
                 const pista = set[0].pista; const p = puntiPerRighe(set);
                 if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
