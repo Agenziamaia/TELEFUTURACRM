@@ -328,6 +328,11 @@ export function matchRigaTabellare(
         // da sole non significano nulla — senza questo skip una vendita qualsiasi
         // (es. una polizza) agganciava «GA base» a condizioni vuote (baco 14/08)
         if (r.componente) continue;
+        // le righe PARTNERSHIP sono un conteggio PARALLELO degli eventi CB
+        // (fase analisi dedicata), non alternative del pick-one — a condizioni
+        // vuote facevano da catch-all: un telefono finanziato prendeva i 2
+        // punti di «Cambio offerta MIA» (caso del direttore, 20/08)
+        if (r.pista === "partnership") continue;
         if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
         let score = 0;
         if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
