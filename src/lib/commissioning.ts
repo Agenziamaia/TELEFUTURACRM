@@ -411,7 +411,10 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     if (/professional staff/i.test(off)) f.add("punti_staff");
     // fisso: gli extra della slide agganciati alle opzioni del catalogo
     if (ha("netflix")) f.add("netflix");                       // 10 € + 0,5 punti
-    if (ha("più sicuri ufficio")) f.add("pscu");               // 2 € + 0,25 punti
+    // «Più Sicuri Casa&Ufficio» in lettera = a catalogo «Più Sicuri Ufficio»
+    // (business) E «Home Protect» (consumer) — senza il secondo nome le 27
+    // Home Protect di agosto non prendevano lo 0,25 (segnalazione Luca 19/08)
+    if (ha("più sicuri ufficio") || ha("home protect")) f.add("pscu");   // 2 € + 0,25 punti
     if (ha("cloud")) f.add("cloud");                           // 8 €, non conta in soglia
     if (/professional box/i.test(off)) f.add("fritz");         // +40 € e +1 punto (FRITZ!Box)
     // 2ª linea Professional (opzione a canone, chiarimento Luca 14/08): per

@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
+import { SelectMulti } from "@/components/SelectPersona";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { giorniLavorativiMese, caricaContrattiMese, caricaTabellareAzienda, caricaTabellare } from "@/lib/commissioning";
 import { cn } from "@/utils";
@@ -64,6 +65,11 @@ export default function Dashboard() {
     const ANNI = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
     const fmtGiorno = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "";
 
+    // FILTRO NEGOZI (Luca 19/08): chi gestisce più punti vendita (e l'admin)
+    // può guardare solo alcuni negozi — selezione salvata per utente
+    const [negoziSel, setNegoziSel] = useState([]);
+    const [elencoNegozi, setElencoNegozi] = useState([]);
+
     const [layout, setLayout] = useState([]);
     const layoutPronto = useRef(false);
     const [editMode, setEditMode] = useState(false);
@@ -88,7 +94,7 @@ export default function Dashboard() {
             };
             const oggi = new Date();
             const meseISO = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-01`;
-            const [{ data: cs }, { data: cm }, { data: tg }, { data: tk }, { data: me }, { data: mc }, { data: mi }, glv] = await Promise.all([
+            const [{ data: cs }, { data: cm }, { data: tg }, { data: tk }, { data: me }, { data: mc }, { data: mi }, glv, negs] = await Promise.all([
                 // caricaTutte supera il tetto server 1000; qty è dettagli->>qty
                 // (pezzi marginalità) senza scaricare l'intero jsonb dettagli
                 caricaTutte((from, to) =>
@@ -100,11 +106,14 @@ export default function Dashboard() {
                 supabase.from("marg_categories").select("id, name, icon, active"),
                 supabase.from("marg_items").select("name, category_id"),
                 giorniLavorativiMese(meseISO).catch(() => null),
+                supabase.from("stores").select("name").order("name").then(({ data }) => data || []),
             ]);
             if (!alive) return;
             setAll(cs || []); setComms(cm || []); setTargets(tg || []); setTasks(tk || []);
             setMargCats((mc || []).filter((c) => c.active !== false)); setMargItems(mi || []);
             setGl(glv);
+            setElencoNegozi((negs || []).map((x) => x.name).filter(Boolean));
+            try { const sel = JSON.parse(localStorage.getItem("tf_home_negozi_" + user.id) || "[]"); if (Array.isArray(sel)) setNegoziSel(sel); } catch { /* storage negato */ }
             setSavedLayout(Array.isArray(me?.dashboard_layout) ? me.dashboard_layout : []);
             setLoading(false);
         })();
@@ -150,11 +159,20 @@ export default function Dashboard() {
         return [ymShown || ymCorrente];
     }, [rangeShown?.da, rangeShown?.a, ymShown, ymCorrente]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // negozi VISIBILI = selezione del filtro (se attiva) — null = tutta la rete
+    const puoFiltrareNegozi = seesAll || myStores.length > 1;
+    const negoziVisibili = useMemo(() => {
+        if (!puoFiltrareNegozi || !negoziSel.length) return level === "global" ? null : myStores;
+        const sel = level === "global" ? negoziSel : negoziSel.filter((s) => myStores.some((m) => sameStore(m, s)));
+        return sel.length ? sel : (level === "global" ? null : myStores);
+    }, [negoziSel, level, visKey, puoFiltrareNegozi]); // eslint-disable-line react-hooks/exhaustive-deps
+    const negoziKey = (negoziVisibili || []).join("|");
+
     const scoped = useMemo(() => {
-        if (level === "global") return all;
-        if (level === "store") return all.filter((c) => myStores.some((s) => sameStore(c.negozio, s)));
-        return all.filter((c) => norm(c.venditore) === norm(user?.name));
-    }, [all, level, visKey, user?.name]);
+        if (level === "own") return all.filter((c) => norm(c.venditore) === norm(user?.name));
+        if (negoziVisibili === null) return all;
+        return all.filter((c) => negoziVisibili.some((s) => sameStore(c.negozio, s)));
+    }, [all, level, negoziKey, user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const mine = useMemo(() => byPeriod(scoped), [scoped, period, filtro]);
 
@@ -280,11 +298,16 @@ export default function Dashboard() {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     }, [ymShown, ymCorrente]);
 
+    const inNegoziVisibili = (neg) => negoziVisibili === null ? true : negoziVisibili.some((s) => sameStore(neg, s));
+
     const periodoLabel =
         period === "month" ? "questo mese" :
         period === "custom" && filtro ? `a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` :
         rangeShown ? `dal ${fmtGiorno(rangeShown.da)} al ${fmtGiorno(rangeShown.a)}` : "in totale";
-    const scopeLabel = level === "global" ? "Tutta la rete" : level === "store" ? (myStores.join(", ") || user?.negozio || "") : "I tuoi numeri";
+    const scopeLabel = level === "own" ? "I tuoi numeri"
+        : negoziVisibili === null ? "Tutta la rete"
+        : negoziVisibili.length <= 2 ? negoziVisibili.join(", ")
+        : negoziVisibili.length + " negozi selezionati";
 
     const allPeriod = useMemo(() => byPeriod(all), [all, period, filtro]);
 
@@ -313,7 +336,10 @@ export default function Dashboard() {
         periodoEMeseCorrente: !rangeShown && period !== "all" && (ymShown || ymCorrente) === ymCorrente,
         // il chip "oggi" vive anche su un range che include oggi
         includeOggi: (!rangeShown && period !== "all" && (ymShown || ymCorrente) === ymCorrente) || (!!rangeShown && rangeShown.da <= oggiISO && oggiISO <= rangeShown.a),
-        oggiContato, gl, visKey,
+        oggiContato, gl, visKey, negoziKey,
+        // scope condiviso dei widget: consulente = le sue vendite; negozio e
+        // rete = i negozi VISIBILI (filtro negozi rispettato anche dall'admin)
+        scopeVendita: (c) => level === "own" ? norm(c.venditore) === norm(user?.name) : inNegoziVisibili(c.negozio),
         w3: w3Ctx,
         vf: vfCtx,
         sky: skyCtx,
@@ -428,6 +454,20 @@ export default function Dashboard() {
                                         className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold">Applica periodo</button>
                                     <button onClick={() => { setPeriod("all"); setFiltro(null); setRange(null); setFiltroOpen(false); }}
                                         className="w-full text-[11px] text-slate-500 hover:text-slate-300 transition-colors">oppure mostra tutto lo storico</button>
+                                    {puoFiltrareNegozi && (
+                                        <>
+                                            <div className="pt-1.5 border-t border-white/10 text-[10px] font-bold uppercase tracking-widest text-slate-500">Negozi{negoziSel.length ? ` (${negoziSel.length})` : ""}</div>
+                                            <SelectMulti
+                                                values={negoziSel}
+                                                onChange={(v) => { setNegoziSel(v); try { localStorage.setItem("tf_home_negozi_" + user.id, JSON.stringify(v)); } catch { /* storage negato */ } }}
+                                                opzioni={seesAll ? elencoNegozi : myStores}
+                                                placeholder="Tutti — scrivi per scegliere" maxVoci={30} className="!h-9 text-xs" />
+                                            {negoziSel.length > 0 && (
+                                                <button onClick={() => { setNegoziSel([]); try { localStorage.setItem("tf_home_negozi_" + user.id, "[]"); } catch { /* ok */ } }}
+                                                    className="w-full text-[11px] text-slate-500 hover:text-slate-300 transition-colors">mostra tutti i negozi</button>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
                             </>
                         )}

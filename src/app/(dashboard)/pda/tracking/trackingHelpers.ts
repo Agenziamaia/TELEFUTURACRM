@@ -114,6 +114,37 @@ export function giorniApertiDa(dataStrIta: string, negozio?: string, venditore?:
   return count;
 }
 
+/** Giorni APERTI tra due date — conta i giorni dopo `a` fino a `b`, sullo
+ *  stesso calendario di giorniApertiDa (domeniche non domenicali, festivi,
+ *  chiusure del negozio e ferie del BO esclusi). Serve alla ricostruzione
+ *  degli episodi malus: i segmenti PASSATI misuravano coi lavorativi di
+ *  calendario e al primo tocco della pratica il congelamento evaporava
+ *  retroattivamente (bug segnalato da Luca 19/08, caso riaperture). */
+export function apertiTra(a: Date, b: Date, negozio?: string, venditore?: string): number {
+  const cur = new Date(a);
+  cur.setHours(0, 0, 0, 0);
+  const to = new Date(b);
+  to.setHours(0, 0, 0, 0);
+  let count = 0;
+  while (cur < to) {
+    cur.setDate(cur.getDate() + 1);
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) count++;
+  }
+  return count;
+}
+
+/** Avanza di n giorni APERTI (gemello di addLavorativi sul calendario aperto). */
+export function addAperti(d: Date, n: number, negozio?: string, venditore?: string): Date {
+  const cur = new Date(d);
+  cur.setHours(0, 0, 0, 0);
+  let k = 0;
+  while (k < n) {
+    cur.setDate(cur.getDate() + 1);
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) k++;
+  }
+  return cur;
+}
+
 export function giorniLavorativiDa(dataStrIta: string): number {
   const from = parseRuleDate(dataStrIta);
   if (!from) return 0;

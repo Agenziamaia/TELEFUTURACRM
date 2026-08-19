@@ -20,6 +20,8 @@ import {
   vocabolarioEtichette,
   isMalusRow,
   calcolaMalus,
+  apertiTra,
+  addAperti,
 } from "./trackingHelpers";
 
 export type StatoEpisodio = "in_corso" | "attivo" | "compensato";
@@ -173,16 +175,20 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
 
   const out: EpisodioDerivato[] = [];
   // Segmenti passati -> episodi CHIUSI, congelati alla data dell'evento.
+  // Misura sul calendario APERTO del negozio (chiusure/ferie BO escluse),
+  // come il calcolo live: coi lavorativi di calendario, al primo tocco della
+  // pratica il congelamento evaporava retroattivamente e nascevano malus per
+  // i giorni di negozio chiuso (bug riaperture, Luca 19/08).
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i];
     if (seg.completato || seg.soglia == null) continue;
     const fine = segs[i + 1].start;
-    const misura = lavorativiTra(seg.start, fine);
+    const misura = apertiTra(seg.start, fine, row.negozio, row.venditore);
     if (misura < seg.soglia) continue;
     const giorni = misura - seg.soglia + 1;
     out.push({
       ...base,
-      data_inizio: toISODate(addLavorativi(seg.start, seg.soglia)),
+      data_inizio: toISODate(addAperti(seg.start, seg.soglia, row.negozio, row.venditore)),
       data_fine: toISODate(fine),
       giorni,
       importo: giorni * euro,

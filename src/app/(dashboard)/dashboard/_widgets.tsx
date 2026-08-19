@@ -369,11 +369,7 @@ function WidgetW3({ ctx, size }) {
     const logo = TRK_BRAND_LOGOS.windtre;
     // memo sui DATI (ctx.w3 ha identità stabile dalla page): il motore non
     // rigira a ogni re-render — lezione incidente 17/08 (main thread saturo)
-    const per = useMemo(() => kpiW3(ctx, (c) =>
-        ctx.level === "global" ? true :
-        ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name)
-    ), [ctx.w3, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const per = useMemo(() => kpiW3(ctx, ctx.scopeVendita), [ctx.w3, ctx.level, ctx.visKey, ctx.negoziKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const ymW3 = ctx.w3?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
         if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
@@ -563,11 +559,7 @@ function kpiVF(ctx, scopeFn) {
 function WidgetVodafone({ ctx, size }) {
     const color = colDiBrand("Vodafone");
     const logo = TRK_BRAND_LOGOS.vodafone;
-    const per = useMemo(() => kpiVF(ctx, (c) =>
-        ctx.level === "global" ? true :
-        ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name)
-    ), [ctx.vf, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const per = useMemo(() => kpiVF(ctx, ctx.scopeVendita), [ctx.vf, ctx.level, ctx.visKey, ctx.negoziKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const ymVf = ctx.vf?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
         if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
@@ -694,11 +686,7 @@ function kpiSky(ctx, scopeFn) {
 function WidgetSky({ ctx, size }) {
     const color = colDiBrand("Sky");
     const logo = TRK_BRAND_LOGOS.sky;
-    const per = useMemo(() => kpiSky(ctx, (c) =>
-        ctx.level === "global" ? true :
-        ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name)
-    ), [ctx.sky, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const per = useMemo(() => kpiSky(ctx, ctx.scopeVendita), [ctx.sky, ctx.level, ctx.visKey, ctx.negoziKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const ymSky = ctx.sky?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
         if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
@@ -875,8 +863,8 @@ function WidgetBrand({ ctx, size, brand }) {
     const isFw = kb === "fastweb";
     let righe, fwInGaraVF = 0, righeStore = null;
     if (isFw && ctx.vf?.packs) {
-        const scopeDi = (liv) => (c) => liv === "global" ? true : liv === "store" ? ctx.inMyStores(c.negozio) : norm(c.venditore) === norm(ctx.user?.name);
-        const mio = scopeDi(ctx.level), store = scopeDi("store");
+        const mio = ctx.scopeVendita;
+        const store = (c) => ctx.inMyStores(c.negozio);
         righe = []; righeStore = [];
         ctx.vf.packs.forEach((p) => (p.rowsFw || []).forEach((c) => {
             const t1 = contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
