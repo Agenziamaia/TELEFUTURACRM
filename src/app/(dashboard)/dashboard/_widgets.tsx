@@ -28,7 +28,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS } from "@/lib/roles";
-import { matchRigheAttivazione, puntiPerRighe } from "@/lib/commissioning";
+import { matchRigheAttivazione, puntiPerRighe, contestoVfFw } from "@/lib/commissioning";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -190,6 +190,27 @@ function MedalRow({ rank, nome, n, max, color, isMe, mostra }) {
     );
 }
 
+/** Chip con SONDA a bolla immediata (il title nativo è lento — stessa
+ *  lezione del Commissioning): hover o tap mostrano subito il perché. */
+function ChipSonda({ testo, righe, tono = "ambra" }) {
+    const [tip, setTip] = useState(null);
+    const muovi = (e) => setTip({ x: Math.min(e.clientX + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 280), y: Math.min(e.clientY + 14, (typeof window !== "undefined" ? window.innerHeight : 800) - 40 - righe.length * 18) });
+    const cls = tono === "ambra" ? "bg-amber-500/10 border-amber-500/20 text-amber-300" : "bg-white/[0.04] border-white/5 text-slate-300";
+    return (
+        <span className={cn("relative inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold cursor-help", cls)}
+            onMouseEnter={muovi} onMouseMove={muovi} onMouseLeave={() => setTip(null)}
+            onClick={(e) => { e.stopPropagation(); tip ? setTip(null) : muovi(e); }}>
+            {testo}
+            {tip && (
+                <span className="fixed z-[80] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] font-normal text-slate-200 whitespace-pre leading-relaxed pointer-events-none"
+                    style={{ left: tip.x, top: tip.y }}>
+                    {righe.join("\n")}
+                </span>
+            )}
+        </span>
+    );
+}
+
 /** Chip riepilogo: oggi / proiezione / record / confronto mese scorso. */
 function ChipsPerformance({ ctx, oggiN, proiezione, best, meseScorso, pezzi, color }) {
     const chips = [];
@@ -258,7 +279,10 @@ function kpiW3(ctx, scopeFn) {
     if (!w3 || !Array.isArray(w3.rows)) return null;
     const rows = w3.rows.filter(scopeFn);
     const per = {
-        puntiMobile: 0, pezziMobile: 0, puntiFisso: 0, pezziFisso: 0, puntiAss: 0, pezziAss: 0,
+        // pezzi = registrato nel perimetro (quadra con Ricerca Vendite);
+        // punti = agganciato dal motore. Vendite senza riga pay → sonda ⚠.
+        puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0,
+        puntiAss: 0, pezziAss: 0, senzaPay: 0, senzaPayCombo: {},
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, luce: 0, gas: 0, kit: 0,
         puntiGiorno: {}, puntiPersona: {},
     };
@@ -266,6 +290,10 @@ function kpiW3(ctx, scopeFn) {
         const cat = String(c.categoria || "");
         const prod = String(c.prodotto || "");
         const opz = String(c.opzioni || "");
+        const isMob = /^mobile /i.test(cat);
+        const isFis = /^fisso/i.test(cat);
+        if (isMob) per.simReg++;
+        if (isFis) per.fisReg++;
         if (/^telefono a rate/i.test(cat)) {
             // rateizzati col "di cui finanziati" (prodotti: Tel. Rate[ CB] /
             // Finanziato[ CB]) — richiesta Luca 17/08
@@ -289,6 +317,10 @@ function kpiW3(ctx, scopeFn) {
                 const chi = ctx.level === "global" ? (c.negozio || "—") : (c.venditore || "—");
                 per.puntiPersona[chi] = (per.puntiPersona[chi] || 0) + p;
             }
+        } else if (isMob || isFis) {
+            per.senzaPay++;
+            const k = `${prod} / ${String(c.offerta || "")}`;
+            per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
         }
     });
     return per;
@@ -338,9 +370,10 @@ function WidgetW3({ ctx, size }) {
     }, [per, ctx.w3, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const caricamento = !per;
     const squadra = per ? Object.entries(per.puntiPersona).sort((a, b) => b[1] - a[1]) : [];
+    const senzaPayRigheW3 = per ? ["Registrate ma senza punti in gara:", ...Object.entries(per.senzaPayCombo).map(([k, n]) => `${n}× ${k}`)] : [];
     const tabellaL = per ? [
-        ["Punti Mobile", fmtPunti(per.puntiMobile), proj(per.puntiMobile, true), `${per.pezziMobile} SIM`],
-        ["Punti Fisso", fmtPunti(per.puntiFisso), proj(per.puntiFisso, true), `${per.pezziFisso} linee`],
+        ["Punti Mobile", fmtPunti(per.puntiMobile), proj(per.puntiMobile, true), `${per.simReg} SIM registrate`],
+        ["Punti Fisso", fmtPunti(per.puntiFisso), proj(per.puntiFisso, true), `${per.fisReg} linee registrate`],
         ["Punti Assicurazioni", fmtPunti(per.puntiAss), proj(per.puntiAss, true), `${per.pezziAss} polizze`],
         ["Telefoni GA", per.telGa, proj(per.telGa), `di cui fin. ${per.telGaFin}`],
         ["Telefoni CB", per.telCb, proj(per.telCb), `di cui fin. ${per.telCbFin}`],
@@ -359,8 +392,8 @@ function WidgetW3({ ctx, size }) {
                 <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                     <div className="flex flex-col gap-3">
                         <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
-                            <TileKpi label="Punti Mobile" value={fmtPunti(per.puntiMobile)} sub={`${per.pezziMobile} SIM`} proj={proj(per.puntiMobile, true)} color={color} />
-                            <TileKpi label="Punti Fisso" value={fmtPunti(per.puntiFisso)} sub={`${per.pezziFisso} linee`} proj={proj(per.puntiFisso, true)} color={color} />
+                            <TileKpi label="Punti Mobile" value={fmtPunti(per.puntiMobile)} sub={`${per.simReg} SIM`} proj={proj(per.puntiMobile, true)} color={color} />
+                            <TileKpi label="Punti Fisso" value={fmtPunti(per.puntiFisso)} sub={`${per.fisReg} linee`} proj={proj(per.puntiFisso, true)} color={color} />
                             {size >= 2 && <TileKpi label="Punti Assic." value={fmtPunti(per.puntiAss)} sub={`${per.pezziAss} polizze`} proj={proj(per.puntiAss, true)} color={color} />}
                             {size >= 2 && <TileKpi label="Luce & Gas" value={per.luce + per.gas} sub={`${per.luce} luce · ${per.gas} gas`} proj={proj(per.luce + per.gas)} color={color} />}
                         </div>
@@ -376,6 +409,7 @@ function WidgetW3({ ctx, size }) {
                             <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
                             <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔄 Reload <b className="font-mono text-slate-100">{per.reload}</b></span>
                             {size >= 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 Protecta <b className="font-mono text-slate-100">{per.kit}</b></span>}
+                            {per.senzaPay > 0 && <ChipSonda testo={`⚠ ${per.senzaPay} senza punti`} righe={senzaPayRigheW3} />}
                         </div>
                         {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ymW3} color={color} ctx={ctx} />}
                     </div>
@@ -411,43 +445,76 @@ function kpiVF(ctx, scopeFn) {
     const vf = ctx.vf;
     if (!vf || !Array.isArray(vf.rows)) return null;
     const rows = vf.rows.filter(scopeFn);
-    const rowsFw = (vf.rowsFw || []).filter(scopeFn);
+    // FASTWEB nella gara Vodafone (Luca 19/08): TUTTO il Fastweb allocato coi
+    // codici di inserimento dei Vodafone Store (T1: Acilia/Baleniere/Castani/
+    // Merulana) conta nella lettera A — mobile, fisso ed energia. Lo smista
+    // contestoVfFw, la STESSA funzione del Calcolatore (codice, ripiego sul
+    // negozio). Il Fastweb T2 resta fuori (gara sua). Lo scope resta sempre
+    // il negozio che registra / il venditore.
+    const rowsFw = (vf.rowsFw || []).filter(scopeFn).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone");
     const per = {
-        puntiMobile: 0, pezziMobile: 0, puntiFisso: 0, pezziFisso: 0,
+        // pezzi = REGISTRATO nel perimetro (per quadrare con Ricerca Vendite);
+        // punti = quello che il motore aggancia. Il business ha le sue piste
+        // (business_mobile/fisso) e viene contato A PARTE ma sempre mostrato —
+        // fix 19/08: prima spariva dal tile (caso Magliana 6 fissi → 3).
+        puntiMobile: 0, simReg: 0, puntiFisso: 0, fisReg: 0,
+        bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0,
+        mobSenzaPay: 0, fisSenzaPay: 0, senzaPayCombo: {}, esclLettera: 0,
+        fwGaraN: rowsFw.length,
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0,
         rsGa: 0, rsCb: 0, luce: 0, gas: 0,
         puntiGiorno: {}, puntiPersona: {},
     };
-    rows.forEach((c) => {
+    [...rows, ...rowsFw].forEach((c) => {
         const cat = String(c.categoria || "");
         const prod = String(c.prodotto || "");
+        const off = String(c.offerta || "");
         const opz = String(c.opzioni || "");
+        const isMob = /^mobile /i.test(cat);
+        const isFis = /^fisso/i.test(cat);
+        const isCb = /^customer base/i.test(cat);
+        if (isMob) per.simReg++;
+        if (isFis) per.fisReg++;
         if (/^telefono a rate/i.test(cat)) {
             const fin = /^finanziato/i.test(prod);
             if (/cb\s*$/i.test(prod)) { per.telCb++; if (fin) per.telCbFin++; }
             else { per.telGa++; if (fin) per.telGaFin++; }
         }
-        if (/^customer base/i.test(cat)) per.opCb++;
-        if (/rete sicura/i.test(opz)) {
-            if (/^customer base/i.test(cat)) per.rsCb++; else per.rsGa++;
-        }
+        if (isCb) per.opCb++;
+        // Rete Sicura: come OPZIONE sulle attivazioni (GA) e anche come
+        // PRODOTTO Customer Base (attivata su cliente già attivo — fix 19/08)
+        if (/rete sicura/i.test(opz)) { if (isCb) per.rsCb++; else per.rsGa++; }
+        else if (isCb && /rete sicura/i.test(prod + " " + off)) per.rsCb++;
         if (/^energia/i.test(cat)) { if (/gas/i.test(prod)) per.gas++; else per.luce++; }
+        // esclusioni della lettera A sul mobile: MNP di provenienza
+        // Vodafone/Fastweb/Ho. sono fuori da target e punteggio (stessa regola
+        // di caricaContrattiContesto) — restano nei pezzi, sonda col perché
+        if (isMob && /mnp/i.test(prod) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || ""))) {
+            per.esclLettera++; per.mobSenzaPay++;
+            const k = `${prod} / ${off} — esclusa da lettera (MNP da ${c.provenienza})`;
+            per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
+            return;
+        }
         const set = vf.tab ? matchRigheAttivazione(vf.tab.righe, c, "vodafone") : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
-            if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
-            else if (pista === "fisso") { per.puntiFisso += p; per.pezziFisso++; }
-            if (pista === "mobile" || pista === "fisso") {
+            if (pista === "mobile") per.puntiMobile += p;
+            else if (pista === "fisso") per.puntiFisso += p;
+            else if (pista === "business_mobile") { per.bizMobN++; per.bizMobP += p; }
+            else if (pista === "business_fisso") { per.bizFisN++; per.bizFisP += p; }
+            if (/^(mobile|fisso|business_mobile|business_fisso)$/.test(pista || "")) {
                 const g = giornoDi(c);
                 if (g) per.puntiGiorno[g] = (per.puntiGiorno[g] || 0) + p;
                 const chi = ctx.level === "global" ? (c.negozio || "—") : (c.venditore || "—");
                 per.puntiPersona[chi] = (per.puntiPersona[chi] || 0) + p;
             }
+        } else if (isMob || isFis) {
+            // SIM/linee registrate che la gara non paga (es. SIM dati, o
+            // mobile Fastweb senza righe nel tabellare): sonda, mai sparire
+            if (isMob) per.mobSenzaPay++; else per.fisSenzaPay++;
+            const k = `${prod} / ${off}${/fastweb/i.test(String(c.brand || "")) ? " (FW)" : ""}`;
+            per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
         }
-    });
-    // energia Fastweb: stessa gara dei Vodafone Store
-    rowsFw.forEach((c) => {
-        if (/^energia/i.test(String(c.categoria || ""))) { if (/gas/i.test(String(c.prodotto || ""))) per.gas++; else per.luce++; }
     });
     return per;
 }
@@ -478,9 +545,13 @@ function WidgetVodafone({ ctx, size }) {
         return (i >= 0 && cl.length > 1) ? { pos: i + 1, su: cl.length } : null;
     }, [per, ctx.vf, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
     const squadra = per ? Object.entries(per.puntiPersona).sort((a, b) => b[1] - a[1]) : [];
+    const senzaPay = per ? per.mobSenzaPay + per.fisSenzaPay : 0;
+    const senzaPayRighe = per ? ["Registrate ma senza punti in gara:", ...Object.entries(per.senzaPayCombo).map(([k, n]) => `${n}× ${k}`)] : [];
     const tabellaL = per ? [
-        ["Punti Mobile", fmtPunti(per.puntiMobile), proj(per.puntiMobile, true), `${per.pezziMobile} SIM`],
-        ["Punti Fisso", fmtPunti(per.puntiFisso), proj(per.puntiFisso, true), `${per.pezziFisso} linee`],
+        ["Punti Mobile", fmtPunti(per.puntiMobile), proj(per.puntiMobile, true), `${per.simReg} SIM registrate`],
+        ["Punti Fisso", fmtPunti(per.puntiFisso), proj(per.puntiFisso, true), `${per.fisReg} linee registrate`],
+        ["Business Mobile", fmtPunti(per.bizMobP), null, `${per.bizMobN} SIM`],
+        ["Business Fisso", fmtPunti(per.bizFisP), null, `${per.bizFisN} linee`],
         ["Telefoni GA", per.telGa, proj(per.telGa), `di cui fin. ${per.telGaFin}`],
         ["Telefoni CB", per.telCb, proj(per.telCb), `di cui fin. ${per.telCbFin}`],
         ["Rete Sicura GA", per.rsGa, proj(per.rsGa), null],
@@ -498,8 +569,8 @@ function WidgetVodafone({ ctx, size }) {
                 <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                     <div className="flex flex-col gap-3">
                         <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
-                            <TileKpi label="Punti Mobile" value={fmtPunti(per.puntiMobile)} sub={`${per.pezziMobile} SIM`} proj={proj(per.puntiMobile, true)} color={color} />
-                            <TileKpi label="Punti Fisso" value={fmtPunti(per.puntiFisso)} sub={`${per.pezziFisso} linee`} proj={proj(per.puntiFisso, true)} color={color} />
+                            <TileKpi label="Punti Mobile" value={fmtPunti(per.puntiMobile)} sub={`${per.simReg} SIM${per.bizMobN ? ` · 💼 ${per.bizMobN} biz (${fmtPunti(per.bizMobP)} pt)` : ""}`} proj={proj(per.puntiMobile, true)} color={color} />
+                            <TileKpi label="Punti Fisso" value={fmtPunti(per.puntiFisso)} sub={`${per.fisReg} linee${per.bizFisN ? ` · 💼 ${per.bizFisN} biz (${fmtPunti(per.bizFisP)} pt)` : ""}`} proj={proj(per.puntiFisso, true)} color={color} />
                             {size >= 2 && <TileKpi label="Rete Sicura" value={per.rsGa + per.rsCb} sub={`${per.rsGa} GA · ${per.rsCb} CB`} proj={proj(per.rsGa + per.rsCb)} color={color} />}
                             {size >= 2 && <TileKpi label="Luce & Gas" value={per.luce + per.gas} sub={`${per.luce} luce · ${per.gas} gas (con FW)`} proj={proj(per.luce + per.gas)} color={color} />}
                         </div>
@@ -514,6 +585,8 @@ function WidgetVodafone({ ctx, size }) {
                             <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su cliente già attivo · di cui finanziati">📱 CB <b className="font-mono text-slate-100">{per.telCb}</b><span className="text-slate-500">fin {per.telCbFin}</span></span>
                             <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
                             {size < 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></span>}
+                            {per.fwGaraN > 0 && <ChipSonda tono="neutro" testo={<>🟨 FW in gara <b className="font-mono text-slate-100">{per.fwGaraN}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "per la lettera A contano qui — mobile, fisso ed energia.", "Il Fastweb T2 (multibrand) resta nella sua gara."]} />}
+                            {senzaPay > 0 && <ChipSonda testo={`⚠ ${senzaPay} senza punti`} righe={senzaPayRighe} />}
                         </div>
                         {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ymVf} color={color} ctx={ctx} />}
                     </div>
