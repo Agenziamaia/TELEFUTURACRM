@@ -44,7 +44,7 @@ export type PayRiga = {
 };
 // derivato: il lato ragazzi non esiste a DB — è il lato AZIENDA scalato con
 // pay_piste.perc_ragazzi (Luca 11/08: es. Fastweb mobile 60%, fisso 70%).
-export type Tabellare = { brand: string; month: string; piste: PayPista[]; soglie: PaySoglia[]; righe: PayRiga[]; derivato?: boolean };
+export type Tabellare = { brand: string; month: string; lato?: string; piste: PayPista[]; soglie: PaySoglia[]; righe: PayRiga[]; derivato?: boolean };
 
 export type ContrattoPay = {
     id: string; brand: string | null; negozio: string | null; venditore: string | null;
@@ -99,7 +99,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
         pay_tiers: Array.isArray(r.pay_tiers) ? (r.pay_tiers as unknown[]).map(Number) : [],
     });
     return {
-        brand, month: monthISO, piste,
+        brand, month: monthISO, lato, piste,
         soglie: ((soglieRes.data || []) as Record<string, unknown>[]).map(s => ({
             pista: String(s.pista), tier: Number(s.tier),
             soglia_da: Number(s.soglia_da), soglia_a: s.soglia_a == null ? null : Number(s.soglia_a),
@@ -224,7 +224,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
             return taglia(p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave), p.chiave);
         });
         return {
-            ...azienda, derivato: true,
+            ...azienda, derivato: true, lato: "ragazzi",
             piste: pisteDer,
             soglie: [...soglieDer.filter(s => !manuali.has(s.pista)), ...soglieRag],
             righe: [...azienda.righe.filter(r => !r.pista || chiaviDer.has(r.pista)).map(deriva), ...orfani],
@@ -691,6 +691,7 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     let contati = 0;
     let pivaMobile = 0;
     let puntiTelMobile = 0;
+    let simSky = 0;
     for (const c of contratti) {
         // set additivo (componenti W3) o singola riga classica: la prima
         // riga porta la pista, i punti si sommano su tutto il set
@@ -712,6 +713,10 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
             if (pista === "mobile" && /^telefono a rate/i.test(String(c.categoria || ""))) puntiTelMobile += p;
         }
         if (pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) pivaMobile++;
+        // cancelletto Sky (lettera GOLD): contano MNP (qualsiasi ricarica) e
+        // GA con Ricarica automatica — la ricarica pura no
+        if (tab.brand === "sky" && (/^mobile mnp$/i.test(String(c.prodotto || ""))
+            || (/^mobile ga$/i.test(String(c.prodotto || "")) && /ric\.? ?auto/i.test(String(c.categoria || ""))))) simSky++;
     }
     // CAP 35% VF (lettera agosto, §Pista Mobile Consumer): gli smartphone
     // (0,5 rateale · 1 finanziato) valgono fino al 35% del valore delle SIM
@@ -746,6 +751,22 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
                 soglia: scalaM.find(s => s.tier === 3) || null,
                 prossima: scalaM.find(s => s.tier === 4) || null, mancano: null,
                 gate: "4ª soglia bloccata: serve la 2ª soglia del fisso",
+            };
+        }
+    }
+    // CANCELLETTO SKY (lettera GOLD agosto, lato AZIENDA): l'accesso alle
+    // soglie oltre la 1ª è subordinato ad almeno 6 vendite tra Sky Mobile MNP
+    // e no MNP con Ricarica automatica — senza, si resta in soglia 1. Vale
+    // solo per la gara GOLD (la gara ragazzi ha soglie proprie senza vincolo).
+    if (tab.brand === "sky" && tab.lato === "azienda") {
+        const sk = piste["sky"];
+        if (sk && sk.tier >= 2 && simSky < 6) {
+            const scala = tab.soglie.filter(s => s.pista === "sky").sort((a, b) => a.tier - b.tier);
+            piste["sky"] = {
+                ...sk, tier: 1,
+                soglia: scala.find(s => s.tier === 1) || null,
+                prossima: scala.find(s => s.tier === 2) || null, mancano: null,
+                gate: `soglie oltre la 1ª bloccate: servono 6 SIM (MNP + Ric. automatica), fatte ${simSky}`,
             };
         }
     }

@@ -2366,6 +2366,16 @@ export default function RicercaContratto() {
                 //    dettagli sono i "campi da compilare" — la sezione 🧾 li mostra
                 //    e si apre da sola per suggerirli.
                 const _norm = (s: string) => String(s || "").trim().toLowerCase();
+                // Il contratto può portare una grafia vecchia dell'offerta (caso
+                // Underground «9.99» vs catalogo «9,99», Luca 20/08): opzioni e
+                // campi si cercano per nome ESATTO e sparivano dal modale. Se il
+                // nome non è a catalogo ma esiste un gemello che differisce solo
+                // per punto/virgola/spazi/maiuscole, si usa quello.
+                const _offKey = (s: string) => _norm(s).replace(/\./g, ",");
+                const offertaCanonica = (nome: string): string => {
+                    if (!nome || !catalogoModale || (catalogoModale.offNames || []).includes(nome)) return nome;
+                    return (catalogoModale.offNames || []).find(n => _offKey(n) === _offKey(nome)) || nome;
+                };
                 const campiDinamiciDaOpzioni = (): string[] => {
                     const out: string[] = []; let nAcc = 0; let kasko = false;
                     opzSel.forEach(o => {
@@ -2382,7 +2392,7 @@ export default function RicercaContratto() {
                     const tipoCli = _norm(String(row.client?.tipo ?? "")) === "business" ? "Business" : "Consumer";
                     const cat = String(editValues["dettagli::categoria_catalogo"] || (row.raw?.dettagli as Record<string, unknown> | undefined)?.categoria_catalogo || row.raw?.categoria || "");
                     const prod = String(editValues["contract::prodotto"] || row.prodotto || "");
-                    const off = String(editValues["contract::offerta"] || "");
+                    const off = offertaCanonica(String(editValues["contract::offerta"] || ""));
                     const attive = opzSel.map(o => String(o.nome));
                     const base = risolviCampi(slug, tipoCli, cat, prod, off, attive).map(c => c.nome);
                     return Array.from(new Set([...base, ...campiDinamiciDaOpzioni()]));
@@ -2407,7 +2417,7 @@ export default function RicercaContratto() {
                             </div>
                         );
                     }
-                    const off = editValues["contract::offerta"] || "";
+                    const off = offertaCanonica(editValues["contract::offerta"] || "");
                     const meta = catalogoModale?.opzMetaByOff?.[off] || [];
                     const fuoriCat = opzSel.filter(o => !meta.some(m => m.nome === o.nome)).map(o => ({ nome: o.nome, tipo: null as string | null, gruppo: null as string | null }));
                     const tutte = [...meta, ...fuoriCat];
