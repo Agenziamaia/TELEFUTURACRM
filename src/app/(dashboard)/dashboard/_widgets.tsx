@@ -469,7 +469,7 @@ function kpiVF(ctx, scopeFn) {
         puntiMobile: 0, simReg: 0, puntiFisso: 0, fisReg: 0,
         bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0,
         mobSenzaPay: 0, fisSenzaPay: 0, senzaPayCombo: {}, esclLettera: 0,
-        fwGaraN: 0,
+        fwGaraN: 0, telP: 0, capTaglio: 0,
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0,
         rsGa: 0, rsCb: 0, luce: 0, gas: 0,
         puntiGiorno: {}, puntiPersona: {},
@@ -518,7 +518,7 @@ function kpiVF(ctx, scopeFn) {
         const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
-            if (pista === "mobile") per.puntiMobile += p;
+            if (pista === "mobile") { per.puntiMobile += p; if (/^telefono a rate/i.test(cat)) per.telP += p; }
             else if (pista === "fisso") per.puntiFisso += p;
             else if (pista === "business_mobile") { per.bizMobN++; per.bizMobP += p; }
             else if (pista === "business_fisso") { per.bizFisN++; per.bizFisP += p; }
@@ -537,6 +537,17 @@ function kpiVF(ctx, scopeFn) {
         }
         });
     });
+    // CAP 35% (lettera VF, §Pista Mobile Consumer): gli smartphone valgono
+    // fino al 35% del valore delle SIM — l'eccedenza non conta in soglia
+    // (stessa regola nel motore/calcolaAvanzamento per il Calcolatore)
+    if (per.telP > 0) {
+        const sim = per.puntiMobile - per.telP;
+        const ammessi = Math.round(sim * 0.35 * 100) / 100;
+        if (per.telP > ammessi) {
+            per.capTaglio = Math.round((per.telP - ammessi) * 100) / 100;
+            per.puntiMobile = Math.round((sim + ammessi) * 100) / 100;
+        }
+    }
     return per;
 }
 
@@ -606,6 +617,7 @@ function WidgetVodafone({ ctx, size }) {
                             <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
                             {size < 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></span>}
                             {per.fwGaraN > 0 && <ChipSonda tono="neutro" testo={<>🟨 FW in gara <b className="font-mono text-slate-100">{per.fwGaraN}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "per la lettera A contano qui — mobile, fisso ed energia.", "Il Fastweb T2 (multibrand) resta nella sua gara."]} />}
+                            {per.capTaglio > 0 && <ChipSonda testo={`✂️ cap 35%: −${fmtPunti(per.capTaglio)}`} righe={["Lettera Vodafone: gli smartphone (0,5 rateale · 1 finanziato)", "valgono fino al 35% del valore delle SIM.", `Telefoni ${fmtPunti(per.telP)} pt · contati ${fmtPunti(per.telP - per.capTaglio)} pt`]} />}
                             {senzaPay > 0 && <ChipSonda testo={`⚠ ${senzaPay} senza punti`} righe={senzaPayRighe} />}
                         </div>
                         {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymVf} range={ctx.rangeShown} color={color} ctx={ctx} />}

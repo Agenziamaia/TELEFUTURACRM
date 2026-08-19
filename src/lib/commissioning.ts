@@ -682,6 +682,7 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     const scartatiMap = new Map<string, { categoria: string | null; prodotto: string | null; offerta: string | null; n: number }>();
     let contati = 0;
     let pivaMobile = 0;
+    let puntiTelMobile = 0;
     for (const c of contratti) {
         // set additivo (componenti W3) o singola riga classica: la prima
         // riga porta la pista, i punti si sommano su tutto il set
@@ -695,10 +696,22 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
         contati++;
         const pista = set[0].pista;
         if (pista) {
-            punti[pista] = (punti[pista] || 0) + puntiPerRighe(set);
+            const p = puntiPerRighe(set);
+            punti[pista] = (punti[pista] || 0) + p;
             pezzi[pista] = (pezzi[pista] || 0) + 1;
+            // gli smartphone (categoria Telefono a Rate) si accumulano a parte:
+            // servono al cap VF qui sotto
+            if (pista === "mobile" && /^telefono a rate/i.test(String(c.categoria || ""))) puntiTelMobile += p;
         }
         if (pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) pivaMobile++;
+    }
+    // CAP 35% VF (lettera agosto, §Pista Mobile Consumer): gli smartphone
+    // (0,5 rateale · 1 finanziato) valgono fino al 35% del valore delle SIM
+    // Voce Mobile — l'eccedenza non conta verso la soglia.
+    if (tab.brand === "vodafone" && puntiTelMobile > 0) {
+        const sim = (punti["mobile"] || 0) - puntiTelMobile;
+        const ammessi = Math.round(sim * 0.35 * 100) / 100;
+        if (puntiTelMobile > ammessi) punti["mobile"] = sim + ammessi;
     }
     const piste: Record<string, AvanzamentoPista> = {};
     for (const p of tab.piste) {

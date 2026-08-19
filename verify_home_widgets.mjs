@@ -29,7 +29,7 @@ async function main() {
     // business su piste dedicate, Rete Sicura CB anche come prodotto, sonda
     // sulle vendite senza riga pay)
     const aggrega = (rows, tab, brandId) => {
-        const per = { puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0, bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0, mobSenzaPay: 0, fisSenzaPay: 0, puntiAss: 0, pezziAss: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
+        const per = { puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0, bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0, mobSenzaPay: 0, fisSenzaPay: 0, puntiAss: 0, pezziAss: 0, telP: 0, capTaglio: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
         rows.forEach((c) => {
             const cat = String(c.categoria || "");
             const prod = String(c.prodotto || "");
@@ -60,7 +60,7 @@ async function main() {
             const set = tab ? matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand) || brandId) : [];
             if (set.length) {
                 const pista = set[0].pista; const p = puntiPerRighe(set);
-                if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
+                if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; if (/^telefono a rate/i.test(cat)) { per.telP += p; per.pezziMobile--; } }
                 else if (pista === "fisso") { per.puntiFisso += p; per.pezziFisso++; }
                 else if (pista === "business_mobile") { per.bizMobN++; per.bizMobP += p; }
                 else if (pista === "business_fisso") { per.bizFisN++; per.bizFisP += p; }
@@ -69,6 +69,12 @@ async function main() {
                 if (isMob) per.mobSenzaPay++; else per.fisSenzaPay++;
             }
         });
+        // CAP 35% smartphone (solo Vodafone, come motore e widget)
+        if (brandId === "vodafone" && per.telP > 0) {
+            const sim = per.puntiMobile - per.telP;
+            const ammessi = Math.round(sim * 0.35 * 100) / 100;
+            if (per.telP > ammessi) { per.capTaglio = Math.round((per.telP - ammessi) * 100) / 100; per.puntiMobile = Math.round((sim + ammessi) * 100) / 100; }
+        }
         return per;
     };
     // invarianti di quadratura: il REGISTRATO si spiega per intero
