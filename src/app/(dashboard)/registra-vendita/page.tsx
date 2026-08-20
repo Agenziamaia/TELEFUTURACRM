@@ -62,7 +62,7 @@ const SIM_BRANDS={
   fastweb:   {logo:"/fastweb.png",          label:"Fastweb",     color:"var(--tf-cc9900)"},
   tim:       {logo:"/tim-logo-v2.png",      label:"TIM",         color:"var(--tf-0050ff)"},
   iliad:     {logo:"/iliad.png",            label:"Iliad",       color:"var(--tf-c00028)"},
-  sky:       {logo:"/sky.png",              label:"Sky",         color:"var(--tf-0072c6)"},
+  sky:       {logo:"/sky.png",              label:"Sky",         color:"var(--tf-8b5cf6)"},
   ho:        {logo:"/ho-mobile.png",        label:"Ho. Mobile",  color:"var(--tf-e6007e)"},
   very:      {logo:"/very-mobile.png",      label:"Very Mobile", color:"var(--tf-1fa300)"},
   kena:      {logo:"/kena-mobile-v2.png",   label:"Kena Mobile", color:"var(--tf-f5a623)"},
@@ -471,7 +471,7 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
 
 const BRANDS = [
   { id: "windtre", logo: "/windtre.png", label: "WindTre", short: "W3", color: "var(--tf-ff6b00)", gradient: "linear-gradient(135deg, #C24A00 0%, #FF6B00 100%)", icon: "📶", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
-  { id: "sky", logo: "/sky.png", label: "Sky", short: "SKY", color: "var(--tf-0072c6)", gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)", icon: "📺", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
+  { id: "sky", logo: "/sky.png", label: "Sky", short: "SKY", color: "var(--tf-8b5cf6)", gradient: "linear-gradient(135deg, #3b0764 0%, #8b5cf6 100%)", icon: "📺", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
   { id: "vodafone", logo: "/vodaphone - Copy.png", label: "Vodafone", short: "VF", color: "var(--tf-e60000)", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", desc: "Mobile, Fisso, Multi-Servizi, Verisure", ready: true },
   { id: "fastweb", logo: "/fastweb.png", label: "Fastweb", short: "FW", color: "var(--tf-cc9900)", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: true },
   { id: "iliad", logo: "/iliad.png", label: "Iliad", short: "IL", color: "var(--tf-c00028)", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: true },
@@ -6905,7 +6905,7 @@ select.rvIn{cursor:pointer}
       {/* SKY LEGACY: disattivato — Sky passa dal flusso catalogo come gli altri
           brand (aggancio 27/07). Il blocco resta come riferimento storico. */}
       {showAna&&showStep4&&brand==="__sky_legacy__"&&(()=>{
-        const SKY_COLOR="var(--tf-0072c6)";
+        const SKY_COLOR="var(--tf-8b5cf6)";   // Sky è VIOLA (Luca 21/08)
         const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:active?SKY_COLOR:"var(--tf-w40)",color:active?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
         const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:val===v?SKY_COLOR:"var(--tf-w40)",color:val===v?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
         const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.10)",borderRadius:8,padding:12,border:"1px solid var(--tf-w120)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;

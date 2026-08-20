@@ -20,6 +20,8 @@ export const fmtPt = (v) => {
     const n = Math.round(Number(v || 0) * 100) / 100;
     return n % 1 === 0 ? fmtN(n) : fmtN(n, Math.round(n * 10) % 10 === 0 ? 1 : 2);
 };
+// valore venduto: euro pieni (il dettaglio ai centesimi qui non serve)
+export const fmtEuro = (v) => `${fmtN(Math.round(Number(v) || 0))} €`;
 
 /* ── conteggio animato ─────────────────────────────────────────────────── */
 export function useCountUp(value, dur = 850) {
@@ -42,9 +44,9 @@ export function useCountUp(value, dur = 850) {
     return n;
 }
 
-export function Num({ v, dec = 0, punti = false, className }) {
+export function Num({ v, dec = 0, punti = false, euro = false, className }) {
     const n = useCountUp(v);
-    return <span className={cn("tabular-nums", className)}>{punti ? fmtPt(n) : fmtN(n, dec)}</span>;
+    return <span className={cn("tabular-nums", className)}>{euro ? fmtEuro(n) : punti ? fmtPt(n) : fmtN(n, dec)}</span>;
 }
 
 /* ── tooltip a portale (hover/tap istantaneo) ──────────────────────────── */
@@ -187,6 +189,64 @@ export function AreaChart({ serie, ghost, oggi = -1, colore = "var(--tf-818cf8)"
     );
 }
 
+/* ── barre GIORNALIERE impilate per categoria (Luca 21/08: «il cumulato è
+   un trend in crescita che non dice niente») ──────────────────────────────
+   giorni: [{ n, label, tot, parti: [{ label, val, colore, sub? }] }]
+   media: linea tratteggiata di riferimento (produzione media per giorno
+   lavorativo); il giorno di OGGI pulsa e mostra il tratto che manca alla
+   media come proiezione del giorno. */
+export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt" }) {
+    const [on, setOn] = useState(false);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
+    const max = Math.max(1, ...giorni.map((g) => g.tot), media || 0) * 1.08;
+    return (
+        <div>
+            <div className="relative w-full" style={{ height: h }}>
+                {[0.25, 0.5, 0.75].map((k) => <div key={k} className="absolute left-0 right-0 border-t border-white/[.05] pointer-events-none" style={{ bottom: `${k * 100}%` }} />)}
+                {media > 0 && (
+                    <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ bottom: `${Math.min(96, (media / max) * 100)}%` }}>
+                        <div className="border-t border-dashed border-white/30" />
+                        <span className="absolute right-0 -top-4 text-[9px] font-bold text-slate-400 bg-[#0d1022]/70 px-1 rounded">media {fmtPt(media)}/g</span>
+                    </div>
+                )}
+                <div className="absolute inset-0 flex items-end gap-[3px]">
+                    {giorni.map((g, i) => {
+                        const manca = i === oggi && media > 0 && g.tot < media ? media - g.tot : 0;
+                        return (
+                            <Tip key={i} block className="flex-1 h-full flex flex-col justify-end min-w-0 group/bar" tip={
+                                <div>
+                                    <TipTitolo>{g.label}{i === oggi ? " · OGGI" : ""}</TipTitolo>
+                                    <TipRiga l="totale" r={`${fmtPt(g.tot)} ${unit}`} />
+                                    {g.parti.filter((p) => p.val > 0).map((p, j) => <TipRiga key={j} l={p.label} r={p.sub ? `${fmtPt(p.val)} ${unit} · ${p.sub}` : `${fmtPt(p.val)} ${unit}`} colore={p.colore} />)}
+                                    {manca > 0 && <TipRiga l="per stare in media" r={`+${fmtPt(manca)} ${unit}`} />}
+                                    {!g.parti.length && <p className="text-[10px] text-slate-500">nessuna produzione</p>}
+                                </div>
+                            }>
+                                <div className="w-full flex flex-col justify-end h-full">
+                                    {manca > 0 && (
+                                        <div className="w-full rounded-t-[4px] border border-dashed border-white/25 bg-white/[.04] transition-all duration-700" style={{ height: on ? `${(manca / max) * 100}%` : 0 }} />
+                                    )}
+                                    <div className={cn("w-full flex flex-col-reverse overflow-hidden transition-all duration-700 ease-out group-hover/bar:brightness-125", manca > 0 ? "" : "rounded-t-[4px]", i === oggi && "ring-1 ring-white/60")}
+                                        style={{ height: on ? `${(g.tot / max) * 100}%` : "0%", minHeight: g.tot > 0 ? 3 : 0 }}>
+                                        {g.parti.filter((p) => p.val > 0).map((p, j) => (
+                                            <div key={j} className="w-full" style={{ height: `${(p.val / g.tot) * 100}%`, background: p.colore, boxShadow: `0 0 6px ${p.colore}44` }} />
+                                        ))}
+                                    </div>
+                                </div>
+                            </Tip>
+                        );
+                    })}
+                </div>
+            </div>
+            <div className="flex gap-[3px] mt-1">
+                {giorni.map((g, i) => (
+                    <span key={i} className={cn("flex-1 text-center text-[8px] tabular-nums min-w-0", i === oggi ? "text-white font-black" : "text-slate-600", !(i === oggi || g.n % 5 === 0 || g.n === 1) && "opacity-0")}>{g.n}</span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 /* ── classifica a barre (race bars) ────────────────────────────────────── */
 export function RaceBars({ righe, unit = "pt", max: maxProp, vuoto = "Nessun dato nel periodo." }) {
     const [on, setOn] = useState(false);
@@ -255,7 +315,7 @@ export function StackMix({ parti, unit = "pezzi" }) {
 }
 
 /* ── calendario a intensità (un quadretto per giorno) ──────────────────── */
-export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1 }) {
+export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1, unit = "punti" }) {
     const max = Math.max(1, ...giorni.map((g) => g.val));
     return (
         <div className="flex flex-wrap gap-[5px]">
@@ -263,7 +323,7 @@ export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1 }) {
                 <Tip key={i} tip={
                     <div>
                         <TipTitolo>{g.label}</TipTitolo>
-                        <TipRiga l="punti" r={fmtPt(g.val)} colore={colore} />
+                        <TipRiga l={unit} r={fmtPt(g.val)} colore={colore} />
                         {(g.det || []).map((d, j) => <TipRiga key={j} l={d.l} r={d.r} colore={d.colore} />)}
                         {g.chiuso && <p className="text-[10px] text-slate-500 mt-0.5">giorno non lavorativo</p>}
                     </div>
@@ -341,12 +401,12 @@ export function Donut({ slices, size = 150, spessore = 17, centro, unit = "pt" }
 }
 
 /* ── variazione vs periodo precedente ──────────────────────────────────── */
-export function Delta({ v, pct = false }) {
+export function Delta({ v, pct = false, euro = false }) {
     if (v == null || !isFinite(v) || Math.abs(v) < 0.005) return <span className="text-[10px] text-slate-500">＝</span>;
     const su = v > 0;
     return (
         <span className={cn("text-[10px] font-bold tabular-nums", su ? "text-emerald-300" : "text-rose-300")}>
-            {su ? "▲" : "▼"} {fmtPt(Math.abs(v))}{pct ? "%" : ""}
+            {su ? "▲" : "▼"} {euro ? fmtEuro(Math.abs(v)) : fmtPt(Math.abs(v))}{pct ? "%" : ""}
         </span>
     );
 }

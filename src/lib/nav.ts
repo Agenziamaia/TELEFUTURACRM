@@ -161,7 +161,7 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "vs", name: "Vodafone Store", roles: ["admin", "dev"], color: "var(--tf-e60000)" },
                     { id: "vnd", name: "Vodafone VND", roles: ["admin", "dev"], color: "var(--tf-ff6666)" },
                     { id: "fastweb", name: "Fastweb", roles: ["admin", "dev"], color: "var(--tf-ffd800)" },
-                    { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "var(--tf-0072c6)" },
+                    { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "var(--tf-8b5cf6)" },
                     { id: "s4", name: "S4", roles: ["admin", "dev"], color: "var(--tf-28a745)" },
                     { id: "tim", name: "TIM", roles: ["admin", "dev"], color: "var(--tf-0050ff)" },
                     { id: "kena", name: "Kena", roles: ["admin", "dev"], color: "#F5A623" },

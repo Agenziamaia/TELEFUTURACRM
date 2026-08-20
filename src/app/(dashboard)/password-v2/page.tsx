@@ -432,7 +432,7 @@ export default function PasswordV2Page() {
                        le scale li rendono omogenei; Energia è il logo tondo). */
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {BRANDS.map((b) => {
-                            const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-0072ce)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : b.id === "kipoint" ? "#0a58ca" : "var(--tf-10b981)";
+                            const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-8b5cf6)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : b.id === "kipoint" ? "#0a58ca" : "var(--tf-10b981)";
                             const tondo = b.id === "energia";
                             const ZOOM: Record<string, number> = { windtre: 2.0, tim: 2.2, kena: 2.2, fastweb: 1.9, vodafone: 1.7, sky: 1.35, iliad: 1.14, ho: 1.14, kipoint: 1 };
                             const z = ZOOM[b.id] ?? 1;
