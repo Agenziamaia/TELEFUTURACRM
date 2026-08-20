@@ -297,6 +297,49 @@ export function ScalaSoglie({ soglie, punti, colore }) {
     );
 }
 
+/* ── torta a ciambella con spicchi hover ───────────────────────────────── */
+// slices: [{ label, val, colore, emoji?, det?: [{l,r,colore}] }]
+export function Donut({ slices, size = 150, spessore = 17, centro, unit = "pt" }) {
+    const vive = slices.filter((s) => s.val > 0);
+    const tot = vive.reduce((s, x) => s + x.val, 0);
+    const r = (size - spessore) / 2, C = 2 * Math.PI * r;
+    const [on, setOn] = useState(false);
+    const [hov, setHov] = useState(null);   // { i, x, y }
+    useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
+    if (!tot) return <p className="text-xs text-slate-500 py-4 text-center">Nessun dato.</p>;
+    let acc = 0;
+    return (
+        <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+            <svg width={size} height={size} className="-rotate-90">
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={spessore} />
+                {vive.map((s, i) => {
+                    const len = (s.val / tot) * C, start = acc; acc += len;
+                    return (
+                        <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none"
+                            stroke={s.colore} strokeWidth={hov?.i === i ? spessore + 4 : spessore}
+                            strokeDasharray={`${on ? Math.max(0, len - 2) : 0} ${C}`} strokeDashoffset={-start}
+                            style={{ transition: "stroke-dasharray 1s cubic-bezier(.22,1,.36,1), stroke-width .15s", filter: hov?.i === i ? `drop-shadow(0 0 6px ${s.colore})` : undefined, cursor: "default" }}
+                            onMouseEnter={(e) => setHov({ i, x: e.clientX, y: e.clientY })}
+                            onMouseMove={(e) => setHov({ i, x: e.clientX, y: e.clientY })}
+                            onMouseLeave={() => setHov(null)}
+                        />
+                    );
+                })}
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none">{centro}</div>
+            {hov && typeof document !== "undefined" && createPortal(
+                <div className="fixed z-[9999] pointer-events-none" style={{ left: hov.x, top: hov.y - 14, transform: "translate(-50%,-100%)" }}>
+                    <div className="rounded-xl border border-white/15 bg-[#111527]/95 backdrop-blur-md px-3 py-2 shadow-2xl shadow-black/50">
+                        <TipTitolo>{vive[hov.i].emoji} {vive[hov.i].label}</TipTitolo>
+                        <TipRiga l={unit} r={fmtPt(vive[hov.i].val)} colore={vive[hov.i].colore} />
+                        <TipRiga l="quota" r={`${fmtN((vive[hov.i].val / tot) * 100, 1)}%`} />
+                        {(vive[hov.i].det || []).map((d, j) => <TipRiga key={j} l={d.l} r={d.r} colore={d.colore} />)}
+                    </div>
+                </div>, document.body)}
+        </div>
+    );
+}
+
 /* ── variazione vs periodo precedente ──────────────────────────────────── */
 export function Delta({ v, pct = false }) {
     if (v == null || !isFinite(v) || Math.abs(v) < 0.005) return <span className="text-[10px] text-slate-500">＝</span>;
