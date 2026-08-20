@@ -261,6 +261,61 @@ function CartaOperatore({ brand, ctx, size }) {
     );
 }
 
+/* ═══ CARTA "ALTRO OPERATORE" (Luca 21/08 notte-2: S4, TIM, Very e tutti
+   gli altri brand — «a disposizione nei widget», fuori dal layout di
+   default). Fuori dalle gare: si ragiona a PEZZI, partizione per categoria
+   coi prodotti nel tooltip e drill fino ai contratti. ══════════════════ */
+function CartaAltro({ chiave, nome, colore, ctx, size }) {
+    const [drill, setDrill] = useState(null);
+    const sue = useMemo(() => (ctx.altri || []).filter((a) => trkBrandKey(a.brand) === chiave), [ctx.altri, chiave]);
+    const righe = useMemo(() => {
+        const per = new Map();
+        for (const it of sue) { const c = it.categoria || "Altro"; (per.get(c) || per.set(c, []).get(c)).push(it); }
+        return [...per.entries()].map(([label, items2]) => ({ label, items: items2 })).sort((a, b) => b.items.length - a.items.length);
+    }, [sue]);
+    const COLORI = ["#818cf8", "#22c55e", "#f59e0b", "#8b5cf6", "#14b8a6", "#f97316", "#e879f9", "#64748b"];
+    if (!sue.length) return (
+        <div className="flex items-center gap-3 py-6 justify-center text-slate-500 text-xs">
+            <LogoBrand chiave={chiave} h={20} /> nessuna vendita {nome} nel periodo
+        </div>
+    );
+    return (
+        <div>
+            <p className="text-[10px] text-slate-500 mb-3 tabular-nums">{fmtN(sue.length)} pezzi <span className="text-slate-600">· fuori dalle gare a punti: si conta a pezzi</span></p>
+            <div className={cn("flex gap-4", size >= 4 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start")}>
+                <div className="shrink-0 mx-auto sm:mx-0">
+                    <Donut size={size >= 4 ? 160 : 132} unit="pezzi"
+                        slices={righe.map((r, i) => ({
+                            label: r.label, colore: COLORI[i % COLORI.length], val: r.items.length,
+                            det: Object.entries(r.items.reduce((m, it) => { const k = String(it.offerta || it.prodotto || "—").slice(0, 26); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, q]) => ({ l: p, r: fmtN(q) })),
+                        }))}
+                        centro={<><span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={sue.length} punti={false} /></span><span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">pezzi</span></>} />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                    {righe.map((r, i) => (
+                        <Tip key={r.label} block tip={<div>
+                            <TipTitolo>{r.label}</TipTitolo>
+                            <TipRiga l="pezzi" r={fmtN(r.items.length)} colore={COLORI[i % COLORI.length]} />
+                            {Object.entries(r.items.reduce((m, it) => { const k = String(it.offerta || it.prodotto || "—").slice(0, 28); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([p, q]) => <TipRiga key={p} l={p} r={fmtN(q)} />)}
+                            <p className="text-[10px] text-indigo-300 mt-1">👆 clicca per l'elenco contratti</p>
+                        </div>}>
+                            <div onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${nome} · ${r.label}`, items: r.items }); }}
+                                className="grid grid-cols-[minmax(110px,1.2fr)_2fr_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
+                                <span className="text-xs font-semibold text-slate-200 truncate">{r.label}</span>
+                                <span className="h-2 rounded-full bg-white/5 overflow-hidden">
+                                    <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, (r.items.length / sue.length) * 100)}%`, background: `linear-gradient(90deg, ${COLORI[i % COLORI.length]}55, ${COLORI[i % COLORI.length]})` }} />
+                                </span>
+                                <span className="text-[11px] font-black text-white tabular-nums text-right w-12">{fmtN(r.items.length)} pz</span>
+                            </div>
+                        </Tip>
+                    ))}
+                </div>
+            </div>
+            <DrillPanel drill={drill} chiudi={() => setDrill(null)} labels={ctx.labels} />
+        </div>
+    );
+}
+
 /* ═══ MARGINALITÀ in VALORE VENDUTO (Luca 21/08) ═══════════════════════
    Qui si parla di € VENDUTI (dettagli.price = totale riga, già ×qty), coi
    pezzi come dato di contorno. L'UTILE (pagato dei contratti + ricavo della
@@ -619,6 +674,15 @@ export const REGISTRO = {
     "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, logoChiave: "sky", logoColore: TRK_BRAND_COLORS.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
     "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, logoChiave: "fastweb", logoColore: TRK_BRAND_COLORS.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
     "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", logoColore: "#22c55e", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
+    // ── gli ALTRI operatori (Luca 21/08: «a disposizione nei widget», fuori
+    //    dal layout di default — si aggiungono dalla galleria) ─────────────
+    "op:s4": { nome: "S4 Energia", emoji: "🟢", gruppo: "operatori", def: 2, logoChiave: "s4", logoColore: TRK_BRAND_COLORS.s4, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="s4" nome="S4 Energia" ctx={ctx} size={size} /> },
+    "op:tim": { nome: "TIM", emoji: "🔵", gruppo: "operatori", def: 2, logoChiave: "tim", logoColore: TRK_BRAND_COLORS.tim, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="tim" nome="TIM" ctx={ctx} size={size} /> },
+    "op:very": { nome: "Very Mobile", emoji: "🟩", gruppo: "operatori", def: 2, logoChiave: "verymobile", logoColore: TRK_BRAND_COLORS.verymobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="verymobile" nome="Very Mobile" ctx={ctx} size={size} /> },
+    "op:iliad": { nome: "Iliad", emoji: "🟥", gruppo: "operatori", def: 2, logoChiave: "iliad", logoColore: TRK_BRAND_COLORS.iliad, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="iliad" nome="Iliad" ctx={ctx} size={size} /> },
+    "op:ho": { nome: "Ho. Mobile", emoji: "🟪", gruppo: "operatori", def: 2, logoChiave: "homobile", logoColore: TRK_BRAND_COLORS.homobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="homobile" nome="Ho. Mobile" ctx={ctx} size={size} /> },
+    "op:kena": { nome: "Kena Mobile", emoji: "🟠", gruppo: "operatori", def: 2, logoChiave: "kenamobile", logoColore: TRK_BRAND_COLORS.kenamobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="kenamobile" nome="Kena Mobile" ctx={ctx} size={size} /> },
+    "op:dojo": { nome: "Dojo", emoji: "🟦", gruppo: "operatori", def: 2, logoChiave: "dojo", logoColore: TRK_BRAND_COLORS.dojo, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="dojo" nome="Dojo" ctx={ctx} size={size} /> },
     "posizioni": { nome: "Posizioni per operatore", emoji: "🏅", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetPosizioni ctx={ctx} /> },
     "bersaglio": { nome: "Bersagli da superare", emoji: "🎯", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetBersaglio ctx={ctx} /> },
     "pesonegozi": { nome: "Il mio peso nei negozi", emoji: "⚖️", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetPesoNegozi ctx={ctx} /> },

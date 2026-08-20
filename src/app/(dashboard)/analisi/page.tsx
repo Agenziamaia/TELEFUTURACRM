@@ -149,7 +149,7 @@ export default function Analisi() {
                     .select("id, negozio, venditore, data, stato, nascosta_gestione, prodotto, qty:dettagli->>qty, prezzo:dettagli->>price")
                     .like("id", "EXT-%").gte("data", da).lte("data", a).order("id").range(from, to);
                 const selAltri = (from, to) => supabase.from("contracts")
-                    .select("id, brand, negozio, venditore, data, categoria, prodotto, stato, nascosta_gestione")
+                    .select('id, brand, negozio, venditore, data, categoria, prodotto, offerta, tipo_cliente, stato, nascosta_gestione, cod_ins:dettagli->>"Cod.Ins."')
                     .like("id", "CTR-%").gte("data", daISO).lte("data", aISO).order("id").range(from, to);
                 // un pacchetto per OGNI mese del periodo: le gare sono mensili,
                 // ogni mese matcha col suo tabellare
@@ -183,7 +183,7 @@ export default function Analisi() {
                 const gare4 = new Set(["windtre", "vodafone", "fastweb", "sky"]);
                 const altri = (altRes?.data || [])
                     .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || ""))
-                    .map((r) => ({ brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", categoria: r.categoria, prodotto: r.prodotto, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 }))
+                    .map((r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 }))
                     .filter((r) => r.g >= 1);
                 const catNome = new Map((mCats.data || []).map((c) => [c.id, c.name]));
                 const margMap = new Map((mItems.data || []).map((i) => [norm(i.name), { cat: catNome.get(i.category_id) || "Altro" }]));
@@ -284,6 +284,7 @@ export default function Analisi() {
         itemsStore: items.filter((it) => norm(it.negozio) === norm(negozioCasa)),
         ext: (dati?.ext || []).filter((r) => norm(r.venditore) === norm(persona)),
         extPrev: (dati?.extPrev || []).filter((r) => norm(r.venditore) === norm(persona)),
+        altri: (dati?.altri || []).filter((r) => norm(r.venditore) === norm(persona)),
         persona, negozio: negozioCasa, negozioCasa,
     }), [items, itemsPrev, mieiItems, persona, negozioCasa, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
     const ctxNegozio = useMemo(() => {
@@ -297,6 +298,7 @@ export default function Analisi() {
             itemsStore: store,
             ext: collab ? extStore.filter((r) => norm(r.venditore) === norm(collab)) : extStore,
             extPrev: (dati?.extPrev || []).filter((r) => norm(r.negozio) === norm(negozio) && (!collab || norm(r.venditore) === norm(collab))),
+            altri: (dati?.altri || []).filter((r) => norm(r.negozio) === norm(negozio) && (!collab || norm(r.venditore) === norm(collab))),
             persona: collab || persona, negozio, negozioCasa: negozio,
         };
     }, [items, itemsPrev, negozio, collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
