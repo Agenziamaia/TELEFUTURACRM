@@ -101,7 +101,7 @@ function righeOperatore(brand, sue) {
         const ga = prendi((it) => /^mobile/i.test(String(it.categoria || "")) || /^mobile ga/i.test(String(it.prodotto || "")));
         aggiungi("📺", "Sky TV", "#8b5cf6", tv, [["promo 14,99", sub(tv, (it) => /14,99/i.test(String(it.offerta || "")))]]);
         aggiungi("🖥", "Glass & Prova", "#a78bfa", glass, [["Glass", sub(glass, (it) => /glass/i.test(String(it.offerta || it.prodotto || "")))], ["Prova Sky", sub(glass, (it) => /^prova/i.test(String(it.offerta || "")))]]);
-        aggiungi("📦", "Triple Play", "#7c3aed", treP, [["promo 29,90/27,90", sub(treP, (it) => /2[79],90/.test(String(it.offerta || "")))]]);
+        aggiungi("📡", "Triple Play", "#7c3aed", treP, [["promo 29,90/27,90", sub(treP, (it) => /2[79],90/.test(String(it.offerta || "")))]]);
         aggiungi("🌐", "Sky Fibra", "#22c55e", fibra);
         aggiungi("📱", "Mobile MNP", "#818cf8", mnp);
         aggiungi("📱", "Mobile GA", "#c084fc", ga, [["ric. automatica", sub(ga, (it) => /ric\.? ?auto/i.test(String(it.categoria || "")))], ["ricarica pura", sub(ga, (it) => /wallet/i.test(String(it.categoria || "")))]]);
