@@ -80,11 +80,14 @@ export default function Analisi() {
     const [area, setArea] = useState("io");
     const [dati, setDati] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [errore, setErrore] = useState(null);
+    const [tentativo, setTentativo] = useState(0);
     const [layoutSalvato, setLayoutSalvato] = useState(null);   // {io:[], negozio:[]}
 
     useEffect(() => {
         let alive = true;
         setLoading(true);
+        setErrore(null);
         (async () => {
             const mISO = `${ymISO(ym)}-01`;
             const pv = ymPrec(ym); const pISO = `${ymISO(pv)}-01`;
@@ -111,7 +114,10 @@ export default function Analisi() {
                         user?.id ? supabase.from("app_users").select("analisi_layout").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
                     ]);
                 if (!alive) return;
-                const perExt = (rows) => (rows || []).filter(validaExt).map((r) => ({ negozio: r.negozio || "—", venditore: r.venditore || "—", prodotto: r.prodotto, qty: r.qty, g: Number(String(r.data || "").slice(8, 10)) || 0 }));
+                // caricaTutte restituisce { data, error }, NON l'array — il
+                // primo deploy passava l'oggetto a .filter e il loader
+                // restava appeso per sempre (bug visto da Luca 21/08)
+                const perExt = (res) => (res?.data || []).filter(validaExt).map((r) => ({ negozio: r.negozio || "—", venditore: r.venditore || "—", prodotto: r.prodotto, qty: r.qty, g: Number(String(r.data || "").slice(8, 10)) || 0 }));
                 const catNome = new Map((mCats.data || []).map((c) => [c.id, c.name]));
                 const margMap = new Map((mItems.data || []).map((i) => [norm(i.name), { cat: catNome.get(i.category_id) || "Altro" }]));
                 const margIcone = new Map((mCats.data || []).map((c) => [c.name, c.icon || "🧩"]));
@@ -121,10 +127,13 @@ export default function Analisi() {
                     prev: { rw3: pw3, rvf: pvf, rfw: pfw, rsky: psky, tw3: ptw3, tvf: ptvf, tsky: ptsky },
                     ext: perExt(extRes), extPrev: perExt(extPrevRes), margMap, margIcone,
                 });
+            } catch (e) {
+                // mai piu' un loader appeso in silenzio: l'errore si vede e si riprova
+                if (alive) setErrore(String(e?.message || e));
             } finally { if (alive) setLoading(false); }
         })();
         return () => { alive = false; };
-    }, [ym.y, ym.m, user?.id]);
+    }, [ym.y, ym.m, user?.id, tentativo]);
 
     const items = useMemo(() => dati ? arricchisci(dati.rw3, dati.rvf, dati.rfw, dati.rsky, dati.tw3, dati.tvf, dati.tsky) : [], [dati]);
     const itemsPrev = useMemo(() => dati ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky) : [], [dati]);
@@ -300,7 +309,13 @@ export default function Analisi() {
                 </div>
             </div>
 
-            {loading || !dati ? (
+            {errore && !loading ? (
+                <div className="glass-card rounded-2xl p-8 text-center an-in">
+                    <p className="text-sm font-bold text-rose-300">Qualcosa è andato storto nel caricamento</p>
+                    <p className="mt-1 text-xs text-slate-500 break-all max-w-lg mx-auto">{errore}</p>
+                    <button onClick={() => setTentativo((t) => t + 1)} className="mt-4 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-sm font-bold text-white hover:bg-white/15 transition-colors">↻ Riprova</button>
+                </div>
+            ) : loading || !dati ? (
                 <div className="flex items-center justify-center py-24 text-slate-400 gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Carico il motore delle gare…</div>
             ) : (
                 <>
