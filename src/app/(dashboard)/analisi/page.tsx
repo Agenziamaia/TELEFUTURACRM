@@ -1,18 +1,20 @@
 // @ts-nocheck
 "use client";
 
-// ANALISI (Luca 20/08, v2 dopo il suo feedback) — REGOLA CARDINE: «un punto
-// Sky è MOLTO diverso da un punto Vodafone, e un punto Vodafone mobile è
-// diverso da uno del fisso» → MAI somme di punti tra operatori o piste.
-// Le aree Io e Negozio sono GRIGLIE MODULARI come la Home (widget singoli:
-// ordine sparso, taglie 1/2/4, galleria, layout per utente in
-// app_users.analisi_layout {io:[...], negozio:[...]}), coi dati scoppiati
-// per operatore → categoria → dettaglio (finanziati, GA/CB, SIM dati, RS…)
-// e la Marginalità come spazio dedicato. Lo store manager vede la squadra
-// aggregata E ogni collaboratore (filtro); il consulente è bloccato su di sé.
-// Visibilità aperta sugli altri negozi (decisione Luca). Rete e Regia:
-// v1, in attesa delle sue direttive. Voce accesa solo admin/dev per ora.
-// Quantitativo oggi; lo switch a VALORE arriverà a operatori configurati.
+// ANALISI (Luca 20-21/08) — REGOLA CARDINE: «un punto Sky è MOLTO diverso da
+// un punto Vodafone, e un punto Vodafone mobile è diverso da uno del fisso»
+// → MAI somme di punti tra operatori o piste. Io e Negozio sono griglie
+// modulari (widget: drag, taglie, galleria; layout in app_users.analisi_layout)
+// coi dati scoppiati per operatore → categoria → dettaglio; Marginalità in
+// VALORE VENDUTO. PERIODO: mese con le frecce OPPURE un range libero dal–al
+// (anche un giorno solo) — multi-mese: ogni mese matcha col SUO tabellare;
+// le soglie/gare (Rete e Regia) hanno senso solo dentro un singolo mese.
+// VISIBILITÀ: la sezione è un hub per i PERMESSI (sezione + aree io/negozio/
+// rete/regia concedibili per ruolo o singolarmente); nell'area Negozio si
+// scelgono SOLO i punti vendita in visibilità nel profilo utente (sezione
+// Utenti — regola Luca 21/08); lo store manager filtra squadra/collaboratore;
+// il consulente è bloccato su di sé. Il confronto col mese scorso vive solo
+// in modalità mese. Quantitativo oggi; lo switch a VALORE arriverà.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -20,6 +22,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { seesWholeStore, isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
+import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { giorniLavorativiMese, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -37,20 +40,28 @@ const ymLocale = () => { const d = new Date(); return { y: d.getFullYear(), m: d
 const ymISO = ({ y, m }) => `${y}-${String(m).padStart(2, "0")}`;
 const ymPrec = ({ y, m }) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 });
 const giorniDelMese = ({ y, m }) => new Date(y, m, 0).getDate();
+const oggiISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const SPAN = { 1: "sm:col-span-1", 2: "sm:col-span-2", 4: "sm:col-span-2 xl:col-span-4" };
+const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
 
-/* ── arricchimento (lente ragazzi): ogni vendita → punti + campi dettaglio ─ */
-function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky) {
+/* ── arricchimento (lente ragazzi): vendita → punti + campi dettaglio.
+   idxDi (iso → indice 1..nG del periodo): fuori periodo si scarta; per il
+   mese precedente (solo confronto, niente grafici) si passa null. ─────── */
+function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, idxDi) {
     const items = [];
-    const push = (c, brandGara, set, flags = {}) => items.push({
-        id: c.id, brandGara,
-        negozio: c.negozio || "—", venditore: c.venditore || "—", cod_ins: c.cod_ins || "—",
-        g: Number(String(c.data || "").slice(8, 10)) || 0,
-        categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta,
-        opzioni: c.opzioni, tipo: c.tipo_cliente,
-        pista: set[0]?.pista || null, punti: set.length ? puntiPerRighe(set) : 0,
-        ...flags,
-    });
+    const push = (c, brandGara, set, flags = {}) => {
+        const iso = String(c.data || "").slice(0, 10);
+        const g = idxDi ? (idxDi.get(iso) || 0) : (Number(iso.slice(8, 10)) || 0);
+        if (idxDi && g < 1) return;
+        items.push({
+            id: c.id, brandGara,
+            negozio: c.negozio || "—", venditore: c.venditore || "—", cod_ins: c.cod_ins || "—", g,
+            categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta,
+            opzioni: c.opzioni, tipo: c.tipo_cliente,
+            pista: set[0]?.pista || null, punti: set.length ? puntiPerRighe(set) : 0,
+            ...flags,
+        });
+    };
     for (const c of rw3) {
         const set = tw3 ? matchRigheAttivazione(tw3.righe, c, brandIdDaLabel(c.brand) || "windtre") : [];
         push(c, "w3", set, { senzaRiga: !set.length });
@@ -74,9 +85,7 @@ const validaExt = (r) => !/annull/i.test(String(r.stato || "")) && r.nascosta_ge
 /* ════════════════════════════════════════════════════════════════════════ */
 export default function Analisi() {
     const { user } = useAuth();
-    // VISIBILITÀ DAI PERMESSI (Luca 21/08): la sezione è un hub — dalla pagina
-    // Permessi si abilita tutta (/analisi) o area per area (?sez=io|negozio|
-    // rete|regia), per ruolo o singolarmente. Default: solo admin/dev.
+    // VISIBILITÀ DAI PERMESSI: sezione + aree concedibili (hub /analisi)
     const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     const hubAnalisi = hubByHref("/analisi");
     const puoSezione = effectiveAllowed(user?.role, "/analisi", hubAnalisi?.roles || ["admin", "dev"], perms);
@@ -85,9 +94,39 @@ export default function Analisi() {
     ), [user?.role, perms]);
     const vedeTutto = isAdminOrAbove(user?.role) || ["admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
     const vedeNegozio = seesWholeStore(user?.role);
+    // negozi in visibilità dal PROFILO utente (sezione Utenti — Luca 21/08)
+    const { seesAll, stores: visStores } = useVisibleStores();
 
-    const [ym, setYm] = useState(ymLocale());
     const [area, setArea] = useState("io");
+    // ── PERIODO: mese con le frecce oppure range libero dal–al ────────────
+    const [ym, setYm] = useState(ymLocale());
+    const [tipoP, setTipoP] = useState("mese");          // "mese" | "range"
+    const [range, setRange] = useState({ da: oggiISO(), a: oggiISO() });
+    const giorniPeriodo = useMemo(() => {
+        const out = [];
+        if (tipoP === "range" && range.da && range.a && range.da <= range.a) {
+            const d = new Date(range.da + "T12:00:00"), fine = new Date(range.a + "T12:00:00");
+            let i = 1;
+            while (d <= fine && i <= MAX_GIORNI) {
+                const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                out.push({ iso, label: `${String(d.getDate()).padStart(2, "0")} ${MESI[d.getMonth()].slice(0, 3)}`, n: i++ });
+                d.setDate(d.getDate() + 1);
+            }
+        }
+        if (!out.length) {
+            const n = giorniDelMese(ym);
+            for (let g = 1; g <= n; g++) out.push({ iso: `${ymISO(ym)}-${String(g).padStart(2, "0")}`, label: `${String(g).padStart(2, "0")} ${MESI[ym.m - 1].slice(0, 3)}`, n: g });
+        }
+        return out;
+    }, [tipoP, range.da, range.a, ym.y, ym.m]);
+    const chiaveP = `${giorniPeriodo[0]?.iso}_${giorniPeriodo[giorniPeriodo.length - 1]?.iso}`;
+    const idxDi = useMemo(() => new Map(giorniPeriodo.map((g) => [g.iso, g.n])), [chiaveP]);
+    const labels = useMemo(() => giorniPeriodo.map((g) => g.label), [chiaveP]);
+    const nG = giorniPeriodo.length;
+    const oggi = idxDi.get(oggiISO()) ?? -1;
+    const inMese = tipoP === "mese";
+    const meseCorrente = inMese && oggi > 0;   // proiezioni solo sul mese in corso
+
     const [dati, setDati] = useState(null);
     const [loading, setLoading] = useState(true);
     const [errore, setErrore] = useState(null);
@@ -99,88 +138,106 @@ export default function Analisi() {
         setLoading(true);
         setErrore(null);
         (async () => {
-            const mISO = `${ymISO(ym)}-01`;
-            const pv = ymPrec(ym); const pISO = `${ymISO(pv)}-01`;
-            const ultimo = `${ymISO(ym)}-${String(giorniDelMese(ym)).padStart(2, "0")}`;
-            const ultimoPrev = `${ymISO(pv)}-${String(giorniDelMese(pv)).padStart(2, "0")}`;
-            const selExt = (da, a) => (from, to) => supabase.from("contracts")
-                .select("id, negozio, venditore, data, stato, nascosta_gestione, prodotto, qty:dettagli->>qty, prezzo:dettagli->>price")
-                .like("id", "EXT-%").gte("data", da).lte("data", a).order("id").range(from, to);
-            // gli ALTRI operatori (S4, TIM, Iliad…): pezzi per il peso per brand
-            const selAltri = (from, to) => supabase.from("contracts")
-                .select("id, brand, negozio, venditore, data, categoria, prodotto, stato, nascosta_gestione")
-                .like("id", "CTR-%").gte("data", mISO).lte("data", ultimo).order("id").range(from, to);
             try {
-                const [rw3, rvf, rfw, rsky, tw3, tvf, tsky, aw3, avf, asky, gl,
-                    pw3, pvf, pfw, psky, ptw3, ptvf, ptsky,
-                    extRes, extPrevRes, mCats, mItems, layRes, altRes] = await Promise.all([
+                const daISO = giorniPeriodo[0].iso, aISO = giorniPeriodo[giorniPeriodo.length - 1].iso;
+                const mesiISO = [...new Set(giorniPeriodo.map((g) => g.iso.slice(0, 7)))].map((m) => `${m}-01`);
+                const soloMese = mesiISO.length === 1;
+                const pv = ymPrec(ym); const pISO = `${ymISO(pv)}-01`;
+                const ultimoPrev = `${ymISO(pv)}-${String(giorniDelMese(pv)).padStart(2, "0")}`;
+                const selExt = (da, a) => (from, to) => supabase.from("contracts")
+                    .select("id, negozio, venditore, data, stato, nascosta_gestione, prodotto, qty:dettagli->>qty, prezzo:dettagli->>price")
+                    .like("id", "EXT-%").gte("data", da).lte("data", a).order("id").range(from, to);
+                const selAltri = (from, to) => supabase.from("contracts")
+                    .select("id, brand, negozio, venditore, data, categoria, prodotto, stato, nascosta_gestione")
+                    .like("id", "CTR-%").gte("data", daISO).lte("data", aISO).order("id").range(from, to);
+                // un pacchetto per OGNI mese del periodo: le gare sono mensili,
+                // ogni mese matcha col suo tabellare
+                const caricaPacchetto = async (mISO) => {
+                    const [rw3, rvf, rfw, rsky, tw3, tvf, tsky] = await Promise.all([
                         caricaContrattiMese("WindTre", mISO), caricaContrattiMese("Vodafone", mISO),
                         caricaContrattiMese("Fastweb", mISO), caricaContrattiMese("Sky", mISO),
                         caricaTabellare("windtre", mISO), caricaTabellare("vodafone", mISO), caricaTabellare("sky", mISO),
-                        caricaTabellareAzienda("windtre", mISO), caricaTabellareAzienda("vodafone", mISO), caricaTabellareAzienda("sky", mISO),
-                        giorniLavorativiMese(mISO),
-                        caricaContrattiMese("WindTre", pISO), caricaContrattiMese("Vodafone", pISO),
-                        caricaContrattiMese("Fastweb", pISO), caricaContrattiMese("Sky", pISO),
-                        caricaTabellare("windtre", pISO), caricaTabellare("vodafone", pISO), caricaTabellare("sky", pISO),
-                        caricaTutte(selExt(mISO, ultimo)), caricaTutte(selExt(pISO, ultimoPrev)),
-                        supabase.from("marg_categories").select("id, name, icon"),
-                        supabase.from("marg_items").select("name, category_id"),
-                        user?.id ? supabase.from("app_users").select("analisi_layout").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
-                        caricaTutte(selAltri),
                     ]);
+                    return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky };
+                };
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack] = await Promise.all([
+                    Promise.all(mesiISO.map(caricaPacchetto)),
+                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0])]) : Promise.resolve(null),
+                    soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
+                    caricaTutte(selExt(daISO, aISO)),
+                    inMese ? caricaTutte(selExt(pISO, ultimoPrev)) : Promise.resolve({ data: [] }),
+                    caricaTutte(selAltri),
+                    supabase.from("marg_categories").select("id, name, icon"),
+                    supabase.from("marg_items").select("name, category_id"),
+                    user?.id ? supabase.from("app_users").select("analisi_layout").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+                    inMese ? caricaPacchetto(pISO) : Promise.resolve(null),
+                ]);
                 if (!alive) return;
-                // caricaTutte restituisce { data, error }, NON l'array — il
-                // primo deploy passava l'oggetto a .filter e il loader
-                // restava appeso per sempre (bug visto da Luca 21/08)
-                // prezzo = dettagli.price: TOTALE riga, già moltiplicato per la qty
-                const perExt = (res) => (res?.data || []).filter(validaExt).map((r) => ({ negozio: r.negozio || "—", venditore: r.venditore || "—", prodotto: r.prodotto, qty: r.qty, prezzo: Number(r.prezzo) || 0, g: Number(String(r.data || "").slice(8, 10)) || 0 }));
+                // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
+                const perExt = (res, conIdx) => (res?.data || []).filter(validaExt).map((r) => {
+                    const iso = String(r.data || "").slice(0, 10);
+                    const g = conIdx ? (idxDi.get(iso) || 0) : (Number(iso.slice(8, 10)) || 0);
+                    return conIdx && g < 1 ? null : { negozio: r.negozio || "—", venditore: r.venditore || "—", prodotto: r.prodotto, qty: r.qty, prezzo: Number(r.prezzo) || 0, g };
+                }).filter(Boolean);
+                const gare4 = new Set(["windtre", "vodafone", "fastweb", "sky"]);
+                const altri = (altRes?.data || [])
+                    .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || ""))
+                    .map((r) => ({ brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", categoria: r.categoria, prodotto: r.prodotto, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 }))
+                    .filter((r) => r.g >= 1);
                 const catNome = new Map((mCats.data || []).map((c) => [c.id, c.name]));
                 const margMap = new Map((mItems.data || []).map((i) => [norm(i.name), { cat: catNome.get(i.category_id) || "Altro" }]));
                 const margIcone = new Map((mCats.data || []).map((c) => [c.name, c.icon || "🧩"]));
                 setLayoutSalvato(layRes?.data?.analisi_layout || null);
-                // brand fuori dalle 4 gare (S4, TIM…): solo pezzi, per il peso per brand
-                const gare4 = new Set(["windtre", "vodafone", "fastweb", "sky"]);
-                const altri = (altRes?.data || [])
-                    .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || ""))
-                    .map((r) => ({ brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", categoria: r.categoria, prodotto: r.prodotto, g: Number(String(r.data || "").slice(8, 10)) || 0 }));
                 setDati({
-                    rw3, rvf, rfw, rsky, tw3, tvf, tsky, aw3, avf, asky, gl,
-                    prev: { rw3: pw3, rvf: pvf, rfw: pfw, rsky: psky, tw3: ptw3, tvf: ptvf, tsky: ptsky },
-                    ext: perExt(extRes), extPrev: perExt(extPrevRes), margMap, margIcone, altri,
+                    pacchi, soloMese, gl,
+                    aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null,
+                    prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri,
                 });
             } catch (e) {
-                // mai piu' un loader appeso in silenzio: l'errore si vede e si riprova
                 if (alive) setErrore(String(e?.message || e));
             } finally { if (alive) setLoading(false); }
         })();
         return () => { alive = false; };
-    }, [ym.y, ym.m, user?.id, tentativo]);
+    }, [chiaveP, user?.id, tentativo]);
 
-    const items = useMemo(() => dati ? arricchisci(dati.rw3, dati.rvf, dati.rfw, dati.rsky, dati.tw3, dati.tvf, dati.tsky) : [], [dati]);
-    const itemsPrev = useMemo(() => dati ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky) : [], [dati]);
+    const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, idxDi)), [dati, idxDi]);
+    const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, null) : [], [dati]);
 
-    // ── venditori e negozi del mese (ordinati per PEZZI: mai per somme di punti)
+    // righe RAW del periodo per le gare di Rete/Regia (solo mese singolo:
+    // le soglie sono mensili) — ritagliate sui giorni scelti
+    const righeGara = useMemo(() => {
+        if (!dati?.soloMese) return null;
+        const p = dati.pacchi[0];
+        const dentro = (c) => idxDi.has(String(c.data || "").slice(0, 10));
+        return { tw3: p.tw3, tvf: p.tvf, tsky: p.tsky, w3: p.rw3.filter(dentro), vf: p.rvf.filter(dentro), fw: p.rfw.filter(dentro), sky: p.rsky.filter(dentro) };
+    }, [dati, idxDi]);
+
+    // ── venditori e negozi del periodo (ordinati per PEZZI, mai per punti)
     const venditoriTutti = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
     }, [items]);
-    const negoziTutti = useMemo(() => {
+    const negoziAttivi = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.negozio === "—") continue; per.set(it.negozio, (per.get(it.negozio) || 0) + 1); }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
     }, [items]);
+    // nell'area Negozio si vedono SOLO i PV in visibilità nel profilo (Utenti)
+    const negoziVisibili = useMemo(
+        () => seesAll ? negoziAttivi : negoziAttivi.filter((n) => (visStores || []).some((v) => sameStore(n, v))),
+        [negoziAttivi, seesAll, visStores],
+    );
 
-    // ── persona osservata: consulente = solo sé; store manager = la sua
-    //    squadra; direzione/admin = tutti (è anche l'anteprima dei ruoli)
+    // ── persona osservata: consulente = sé; store manager = squadra; direzione = tutti
     const opzioniPersona = useMemo(() => {
         if (vedeTutto) return venditoriTutti;
         if (vedeNegozio) {
-            const squadra = venditoriTutti.filter((v) => items.some((it) => norm(it.venditore) === norm(v) && sameStore(it.negozio, user?.negozio)));
+            const squadra = venditoriTutti.filter((v) => items.some((it) => norm(it.venditore) === norm(v) && (visStores || []).some((s) => sameStore(it.negozio, s))));
             return [...new Set([user?.name, ...squadra].filter(Boolean))];
         }
         return [user?.name].filter(Boolean);
-    }, [vedeTutto, vedeNegozio, venditoriTutti, items, user?.name, user?.negozio]);
+    }, [vedeTutto, vedeNegozio, venditoriTutti, items, user?.name, visStores]);
     const [personaSel, setPersonaSel] = useState("");
     const persona = useMemo(() => {
         if (personaSel && opzioniPersona.some((o) => norm(o) === norm(personaSel))) return personaSel;
@@ -194,14 +251,15 @@ export default function Analisi() {
         for (const it of mieiItems) per.set(it.negozio, (per.get(it.negozio) || 0) + 1);
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
     }, [mieiItems]);
-    const negozioCasa = mieiNegozi[0] || (user?.negozio && negoziTutti.find((n) => sameStore(n, user.negozio))) || negoziTutti[0] || "";
+    const negozioCasa = mieiNegozi[0] || (user?.negozio && negoziAttivi.find((n) => sameStore(n, user.negozio))) || negoziVisibili[0] || "";
 
-    // ── negozio osservato + filtro collaboratore (aggregato o individuale)
+    // ── negozio osservato (solo tra i visibili) + filtro collaboratore ────
     const [negozioSel, setNegozioSel] = useState("");
     const negozio = useMemo(() => {
-        if (negozioSel && negoziTutti.includes(negozioSel)) return negozioSel;
-        return negozioCasa;
-    }, [negozioSel, negoziTutti, negozioCasa]);
+        if (negozioSel && negoziVisibili.includes(negozioSel)) return negozioSel;
+        if (negoziVisibili.some((n) => sameStore(n, negozioCasa))) return negozioCasa;
+        return negoziVisibili[0] || "";
+    }, [negozioSel, negoziVisibili, negozioCasa]);
     const [collabSel, setCollabSel] = useState("");
     const TUTTI = "👥 Tutta la squadra";
     const squadraNegozio = useMemo(() => {
@@ -212,12 +270,12 @@ export default function Analisi() {
     const collab = collabSel && collabSel !== TUTTI && squadraNegozio.some((s) => norm(s) === norm(collabSel)) ? collabSel : "";
     useEffect(() => { setCollabSel(""); }, [negozio]);
 
-    const oggi = useMemo(() => { const d = new Date(); return d.getFullYear() === ym.y && d.getMonth() + 1 === ym.m ? d.getDate() : -1; }, [ym]);
-    const nG = giorniDelMese(ym);
-    const meseCorrente = oggi > 0;
-
-    // ── contesti dei widget (Io e Negozio) ─────────────────────────────────
-    const base = { itemsRete: items, margMap: dati?.margMap, margIcone: dati?.margIcone, nG, ym, oggi, gl: dati?.gl, meseCorrente, negoziTutti, extRete: dati?.ext || [], altriRete: dati?.altri || [] };
+    // ── contesti dei widget ───────────────────────────────────────────────
+    const base = {
+        itemsRete: items, margMap: dati?.margMap, margIcone: dati?.margIcone, nG, labels, oggi,
+        gl: dati?.gl, meseCorrente, confronto: inMese && !!dati?.prev,
+        negoziTutti: negoziVisibili, extRete: dati?.ext || [], altriRete: dati?.altri || [],
+    };
     const ctxIo = useMemo(() => ({
         ...base, areaKey: "io",
         items: mieiItems,
@@ -226,7 +284,7 @@ export default function Analisi() {
         ext: (dati?.ext || []).filter((r) => norm(r.venditore) === norm(persona)),
         extPrev: (dati?.extPrev || []).filter((r) => norm(r.venditore) === norm(persona)),
         persona, negozio: negozioCasa, negozioCasa,
-    }), [items, itemsPrev, mieiItems, persona, negozioCasa, dati, nG, ym, oggi, meseCorrente, negoziTutti]);
+    }), [items, itemsPrev, mieiItems, persona, negozioCasa, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
     const ctxNegozio = useMemo(() => {
         const store = items.filter((it) => norm(it.negozio) === norm(negozio));
         const scoped = collab ? store.filter((it) => norm(it.venditore) === norm(collab)) : store;
@@ -240,7 +298,7 @@ export default function Analisi() {
             extPrev: (dati?.extPrev || []).filter((r) => norm(r.negozio) === norm(negozio) && (!collab || norm(r.venditore) === norm(collab))),
             persona: collab || persona, negozio, negozioCasa: negozio,
         };
-    }, [items, itemsPrev, negozio, collab, persona, dati, nG, ym, oggi, meseCorrente, negoziTutti]);
+    }, [items, itemsPrev, negozio, collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
 
     // ── layout per area (app_users.analisi_layout) ────────────────────────
     const decode = (arr) => (Array.isArray(arr) ? arr : []).map((s) => { const [k, t] = String(s).split("@"); return REGISTRO[k] ? { k, s: [1, 2, 4].includes(Number(t)) ? Number(t) : (REGISTRO[k].def || 1) } : null; }).filter(Boolean);
@@ -264,7 +322,6 @@ export default function Analisi() {
         { id: "regia", emoji: "🎛", label: "Regia" },
     ];
     const AREE = TUTTE_LE_AREE.filter((a) => areePermesse.has(a.id));
-    // se l'area corrente non è (più) permessa, si scivola sulla prima concessa
     useEffect(() => {
         if (permsLoaded && AREE.length && !areePermesse.has(area)) setArea(AREE[0].id);
     }, [permsLoaded, areePermesse, area]);
@@ -284,6 +341,10 @@ export default function Analisi() {
         );
     }
 
+    const etichettaPeriodo = inMese ? `${MESI[ym.m - 1]} ${ym.y}`
+        : nG === 1 ? giorniPeriodo[0].label
+            : `${giorniPeriodo[0].label} → ${giorniPeriodo[nG - 1].label} · ${nG} gg`;
+
     return (
         <div className="space-y-5 pb-10">
             <style>{`
@@ -292,6 +353,7 @@ export default function Analisi() {
                 .an-in { animation: anFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
                 .an-card { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
                 .an-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,.18); box-shadow: 0 18px 40px -18px rgba(0,0,0,.7); }
+                .an-data { color-scheme: dark; }
             `}</style>
 
             {/* ── HERO ─────────────────────────────────────────────────── */}
@@ -303,11 +365,30 @@ export default function Analisi() {
                         <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">📊 Analisi</h1>
                         <p className="text-xs text-slate-400 mt-1">Tutto scoppiato per operatore e categoria — i punti non si sommano mai tra brand.</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setYm(ymPrec(ym))} className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-                        <span className="min-w-[150px] text-center text-sm font-bold text-white">{MESI[ym.m - 1]} {ym.y}</span>
-                        <button onClick={() => { const n = ym.m === 12 ? { y: ym.y + 1, m: 1 } : { y: ym.y, m: ym.m + 1 }; const adesso = ymLocale(); if (n.y > adesso.y || (n.y === adesso.y && n.m > adesso.m)) return; setYm(n); }}
-                            className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"><ChevronRight className="w-4 h-4" /></button>
+                    <div className="flex flex-wrap items-center gap-2 justify-end">
+                        <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
+                            {[["mese", "Mese"], ["range", "Periodo"]].map(([t, l]) => (
+                                <button key={t} onClick={() => setTipoP(t)} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", tipoP === t ? "bg-indigo-500/80 text-white shadow" : "text-slate-400 hover:text-white")}>{l}</button>
+                            ))}
+                        </div>
+                        {inMese ? (
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setYm(ymPrec(ym))} className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+                                <span className="min-w-[140px] text-center text-sm font-bold text-white">{MESI[ym.m - 1]} {ym.y}</span>
+                                <button onClick={() => { const n = ym.m === 12 ? { y: ym.y + 1, m: 1 } : { y: ym.y, m: ym.m + 1 }; const adesso = ymLocale(); if (n.y > adesso.y || (n.y === adesso.y && n.m > adesso.m)) return; setYm(n); }}
+                                    className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"><ChevronRight className="w-4 h-4" /></button>
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                                <span className="text-slate-500">dal</span>
+                                <input type="date" value={range.da} max={oggiISO()} onChange={(e) => setRange((r) => ({ da: e.target.value, a: r.a && r.a < e.target.value ? e.target.value : r.a }))}
+                                    className="an-data glass-input px-2 py-1.5 rounded-lg text-xs" />
+                                <span className="text-slate-500">al</span>
+                                <input type="date" value={range.a} min={range.da} max={oggiISO()} onChange={(e) => setRange((r) => ({ ...r, a: e.target.value }))}
+                                    className="an-data glass-input px-2 py-1.5 rounded-lg text-xs" />
+                                <button onClick={() => setRange({ da: oggiISO(), a: oggiISO() })} className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-slate-300 hover:bg-white/10">Oggi</button>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="relative mt-4 flex flex-wrap items-center gap-3">
@@ -321,6 +402,7 @@ export default function Analisi() {
                             )}>{a.emoji} {a.label}</button>
                         ))}
                     </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-slate-300">📅 {etichettaPeriodo}</span>
                     {area === "io" && opzioniPersona.length > 1 && (
                         <div className="flex items-center gap-2 text-xs text-slate-400">
                             <span>Guarda:</span>
@@ -330,7 +412,7 @@ export default function Analisi() {
                     {area === "negozio" && (
                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                             <span>Negozio:</span>
-                            <SelectOpzioni value={negozio} onChange={(v) => setNegozioSel(v)} opzioni={negoziTutti} placeholder="negozio…" className="min-w-[170px]" />
+                            <SelectOpzioni value={negozio} onChange={(v) => setNegozioSel(v)} opzioni={negoziVisibili} placeholder="negozio…" className="min-w-[170px]" />
                             <span className="pl-1">Collaboratore:</span>
                             <SelectOpzioni value={collab || TUTTI} onChange={(v) => setCollabSel(v)} opzioni={[TUTTI, ...squadraNegozio]} placeholder="tutti…" className="min-w-[180px]" />
                         </div>
@@ -349,15 +431,15 @@ export default function Analisi() {
             ) : (
                 <>
                     {area === "io" && layoutIo && (
-                        <GrigliaWidget key={`io-${persona}-${ymISO(ym)}`} areaKey="io" ctx={ctxIo} lista={layoutIo}
+                        <GrigliaWidget key={`io-${persona}-${chiaveP}`} areaKey="io" ctx={ctxIo} lista={layoutIo}
                             setLista={(l) => { setLayoutIo(l); salva("io", l); }} intestazione={`👤 ${persona || "—"}${mieiNegozi.length ? ` · ${mieiNegozi.join(" + ")}` : ""}`} />
                     )}
                     {area === "negozio" && layoutNeg && (
-                        <GrigliaWidget key={`ng-${negozio}-${collab}-${ymISO(ym)}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
+                        <GrigliaWidget key={`ng-${negozio}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
-                    {area === "rete" && <AreaRete key={`rt-${ymISO(ym)}`} {...{ items, itemsPrev, dati, ym, nG, oggi, gl: dati.gl, meseCorrente }} />}
-                    {area === "regia" && areePermesse.has("regia") && <AreaRegia key={`rg-${ymISO(ym)}`} {...{ items, dati, ym, nG, oggi, gl: dati.gl }} />}
+                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, meseCorrente }} />}
+                    {area === "regia" && areePermesse.has("regia") && <AreaRegia key={`rg-${chiaveP}`} {...{ items, righeGara, dati }} />}
                 </>
             )}
         </div>
@@ -395,7 +477,10 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                     <span draggable onDragStart={() => { dragDa.current = i; }} className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-300 shrink-0"><GripVertical className="w-3.5 h-3.5" /></span>
                                     {/* le carte operatore parlano col LOGO nel corpo: qui niente doppioni */}
                                     {def.senzaTitolo ? null : def.logoChiave
-                                        ? <span className="flex items-center gap-1.5 min-w-0"><span className="truncate">{def.emoji} {def.nomeBreve || def.nome}</span><LogoBrand chiave={def.logoChiave} h={16} /></span>
+                                        ? <span className="flex items-center gap-1.5 min-w-0">
+                                            {def.nomeBreve !== "" && <span className="truncate">{def.emoji} {def.nomeBreve || def.nome}</span>}
+                                            <LogoBrand chiave={def.logoChiave} h={16} />
+                                        </span>
                                         : <span className="truncate">{def.emoji} {def.nome}</span>}
                                 </p>
                                 <div className="flex gap-0.5 opacity-0 group-hover/wg:opacity-100 transition-opacity shrink-0">
@@ -444,10 +529,9 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
 }
 
 /* ═══ AREA RETE (v1 — in attesa delle direttive di Luca) ═══════════════ */
-function AreaRete({ items, itemsPrev, dati, ym, nG, oggi, gl, meseCorrente }) {
-    // produzione GIORNALIERA impilata per operatore (Luca 21/08: mai cumulati)
+function AreaRete({ items, righeGara, labels, nG, oggi, gl, meseCorrente }) {
     const giorniRete = useMemo(() => {
-        const v = Array.from({ length: nG }, (_, i) => ({ n: i + 1, label: `${String(i + 1).padStart(2, "0")} ${MESI[ym.m - 1]}`, tot: 0, _p: new Map() }));
+        const v = Array.from({ length: nG }, (_, i) => ({ n: i + 1, label: labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
         for (const it of items) {
             if (it.g < 1 || it.g > nG) continue;
             const g = v[it.g - 1]; const G = GARA[it.brandGara];
@@ -455,7 +539,7 @@ function AreaRete({ items, itemsPrev, dati, ym, nG, oggi, gl, meseCorrente }) {
             e.val++; g._p.set(G.label, e); g.tot++;
         }
         return v.map((g) => ({ n: g.n, label: g.label, tot: g.tot, parti: [...g._p.values()].sort((a, b) => b.val - a.val) }));
-    }, [items, nG, ym]);
+    }, [items, nG, labels]);
     const mediaRete = useMemo(() => {
         const tot = giorniRete.reduce((s, g) => s + g.tot, 0);
         const gLav = meseCorrente ? Math.max(1, gl?.trascorsi || 1) : (gl?.totali || nG);
@@ -469,11 +553,12 @@ function AreaRete({ items, itemsPrev, dati, ym, nG, oggi, gl, meseCorrente }) {
     }, [items]);
 
     const soglieBrand = useMemo(() => {
+        if (!righeGara) return [];
         const out = [];
         const conf = [
-            { id: "w3", tab: dati.tw3, rows: dati.rw3 },
-            { id: "vf", tab: dati.tvf, rows: [...dati.rvf, ...dati.rfw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
-            { id: "sky", tab: dati.tsky, rows: dati.rsky },
+            { id: "w3", tab: righeGara.tw3, rows: righeGara.w3 },
+            { id: "vf", tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
+            { id: "sky", tab: righeGara.tsky, rows: righeGara.sky },
         ];
         for (const c of conf) {
             if (!c.tab) continue;
@@ -486,46 +571,48 @@ function AreaRete({ items, itemsPrev, dati, ym, nG, oggi, gl, meseCorrente }) {
             }
         }
         return out;
-    }, [dati]);
+    }, [righeGara]);
 
     return (
         <div className="space-y-4">
             <div className="glass-card an-card rounded-2xl p-4 an-in">
                 <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🚦 Le soglie si prendono INSIEME — a che punto è la rete</p>
-                <div className="flex flex-wrap justify-around gap-x-6 gap-y-5">
-                    {soglieBrand.map(({ brand, pista, nome, st, scala }) => {
-                        const colore = GARA[brand].colore;
-                        const prossima = st.prossima?.soglia_da ?? null;
-                        const kMax = prossima ?? st.soglia?.soglia_da ?? Math.max(1, st.punti);
-                        let eta = null;
-                        if (meseCorrente && prossima && gl?.trascorsi > 0 && st.punti > 0) {
-                            const gServono = Math.ceil((prossima - st.punti) / (st.punti / gl.trascorsi));
-                            if (gl.trascorsi + gServono <= gl.totali) eta = gServono;
-                        }
-                        return (
-                            <Ring key={`${brand}-${pista}`} value={st.punti} max={kMax} colore={colore} size={140}
-                                centro={<>
-                                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">{GARA[brand].label}</span>
-                                    <span className="text-2xl font-black text-white tabular-nums leading-tight"><Num v={st.punti} punti /></span>
-                                    <span className="text-[9px] text-slate-400">{PISTA_LABEL[pista] || nome}</span>
-                                    {st.tier > 0 && <span className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{st.tier} presa</span>}
-                                </>}
-                                sotto={<div className="text-center max-w-[190px]">
-                                    {st.gate ? <p className="text-[10px] text-amber-300 font-semibold">⛔ {st.gate}</p>
-                                        : prossima ? <p className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(st.mancano ?? prossima - st.punti)}</b> alla S{st.prossima.tier}{eta ? <> · di questo passo <b className="text-emerald-300">~{eta} gg lavorativi</b></> : ""}</p>
-                                            : <p className="text-[10px] text-emerald-300 font-semibold">ultima soglia presa 👑</p>}
-                                    <div className="mt-1.5"><ScalaSoglie soglie={scala} punti={st.punti} colore={colore} /></div>
-                                </div>}
-                                tip={<div><TipTitolo>{GARA[brand].label} · {PISTA_LABEL[pista] || nome}</TipTitolo>
-                                    <TipRiga l="punti rete" r={fmtPt(st.punti)} colore={colore} />
-                                    <TipRiga l="pezzi in pista" r={fmtN(st.pezzi)} />
-                                    {scala.map((s) => <TipRiga key={s.tier} l={`Soglia ${s.tier}`} r={`da ${fmtN(s.soglia_da)}${st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
-                                </div>}
-                            />
-                        );
-                    })}
-                    {!soglieBrand.length && <p className="text-xs text-slate-500 py-6">Nessun tabellare per questo mese.</p>}
-                </div>
+                {!righeGara ? <p className="text-xs text-slate-500 py-4 text-center">Le gare sono mensili: per vedere le soglie scegli un periodo dentro un solo mese.</p> : (
+                    <div className="flex flex-wrap justify-around gap-x-6 gap-y-5">
+                        {soglieBrand.map(({ brand, pista, nome, st, scala }) => {
+                            const colore = GARA[brand].colore;
+                            const prossima = st.prossima?.soglia_da ?? null;
+                            const kMax = prossima ?? st.soglia?.soglia_da ?? Math.max(1, st.punti);
+                            let eta = null;
+                            if (meseCorrente && prossima && gl?.trascorsi > 0 && st.punti > 0) {
+                                const gServono = Math.ceil((prossima - st.punti) / (st.punti / gl.trascorsi));
+                                if (gl.trascorsi + gServono <= gl.totali) eta = gServono;
+                            }
+                            return (
+                                <Ring key={`${brand}-${pista}`} value={st.punti} max={kMax} colore={colore} size={140}
+                                    centro={<>
+                                        <LogoBrand chiave={GARA[brand].chiave} h={14} />
+                                        <span className="text-2xl font-black text-white tabular-nums leading-tight"><Num v={st.punti} punti /></span>
+                                        <span className="text-[9px] text-slate-400">{PISTA_LABEL[pista] || nome}</span>
+                                        {st.tier > 0 && <span className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{st.tier} presa</span>}
+                                    </>}
+                                    sotto={<div className="text-center max-w-[190px]">
+                                        {st.gate ? <p className="text-[10px] text-amber-300 font-semibold">⛔ {st.gate}</p>
+                                            : prossima ? <p className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(st.mancano ?? prossima - st.punti)}</b> alla S{st.prossima.tier}{eta ? <> · di questo passo <b className="text-emerald-300">~{eta} gg lavorativi</b></> : ""}</p>
+                                                : <p className="text-[10px] text-emerald-300 font-semibold">ultima soglia presa 👑</p>}
+                                        <div className="mt-1.5"><ScalaSoglie soglie={scala} punti={st.punti} colore={colore} /></div>
+                                    </div>}
+                                    tip={<div><TipTitolo>{GARA[brand].label} · {PISTA_LABEL[pista] || nome}</TipTitolo>
+                                        <TipRiga l="punti rete (periodo)" r={fmtPt(st.punti)} colore={colore} />
+                                        <TipRiga l="pezzi in pista" r={fmtN(st.pezzi)} />
+                                        {scala.map((s) => <TipRiga key={s.tier} l={`Soglia ${s.tier}`} r={`da ${fmtN(s.soglia_da)}${st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
+                                    </div>}
+                                />
+                            );
+                        })}
+                        {!soglieBrand.length && <p className="text-xs text-slate-500 py-6">Nessun tabellare per questo mese.</p>}
+                    </div>
+                )}
             </div>
 
             <div className="grid lg:grid-cols-3 gap-4">
@@ -546,7 +633,7 @@ function AreaRete({ items, itemsPrev, dati, ym, nG, oggi, gl, meseCorrente }) {
 }
 
 /* ═══ AREA REGIA (v1 — in attesa delle direttive di Luca) ══════════════ */
-function AreaRegia({ items, dati, ym, nG, oggi, gl }) {
+function AreaRegia({ items, righeGara, dati }) {
     const [lente, setLente] = useState("codice");
     const chiave = lente === "codice" ? "cod_ins" : "negozio";
     const gruppi = useMemo(() => {
@@ -556,11 +643,12 @@ function AreaRegia({ items, dati, ym, nG, oggi, gl }) {
     }, [items, chiave]);
 
     const gareAz = useMemo(() => {
+        if (!righeGara) return [];
         const out = [];
         const conf = [
-            { id: "w3", tab: dati.aw3, rows: dati.rw3 },
-            { id: "vf", tab: dati.avf, rows: [...dati.rvf, ...dati.rfw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
-            { id: "sky", tab: dati.asky, rows: dati.rsky },
+            { id: "w3", tab: dati.aw3, rows: righeGara.w3 },
+            { id: "vf", tab: dati.avf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
+            { id: "sky", tab: dati.asky, rows: righeGara.sky },
         ];
         for (const c of conf) {
             if (!c.tab) continue;
@@ -571,7 +659,7 @@ function AreaRegia({ items, dati, ym, nG, oggi, gl }) {
             }
         }
         return out;
-    }, [dati]);
+    }, [righeGara, dati]);
 
     return (
         <div className="space-y-4">
@@ -586,33 +674,35 @@ function AreaRegia({ items, dati, ym, nG, oggi, gl }) {
 
             <div className="glass-card an-card rounded-2xl p-4 an-in">
                 <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🏛 Gare aziendali — soglie, vincoli, cancelletti</p>
-                <div className="flex flex-wrap justify-around gap-x-6 gap-y-5">
-                    {gareAz.map(({ brand, pista, nome, st, scala, malus }) => {
-                        const colore = GARA[brand].colore;
-                        const kMax = st.prossima?.soglia_da ?? st.soglia?.soglia_da ?? Math.max(1, st.punti);
-                        return (
-                            <Ring key={`${brand}-${pista}`} value={st.punti} max={kMax} colore={colore} size={128}
-                                centro={<>
-                                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">{GARA[brand].label}</span>
-                                    <span className="text-xl font-black text-white tabular-nums"><Num v={st.punti} punti /></span>
-                                    <span className="text-[9px] text-slate-400">{PISTA_LABEL[pista] || nome}</span>
-                                    {st.tier > 0 && <span className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{st.tier}</span>}
-                                </>}
-                                sotto={<div className="text-center max-w-[180px]">
-                                    {st.gate && <p className="text-[10px] text-amber-300 font-semibold">⛔ {st.gate}</p>}
-                                    {malus && pista === "mobile" && <p className="text-[10px] text-rose-300 font-semibold">🔻 malus −30% attivo (fisso S1 o &lt;6 P.IVA)</p>}
-                                    {!st.gate && st.prossima && <p className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(st.mancano ?? 0)}</b> alla S{st.prossima.tier}</p>}
-                                    {scala.length > 0 && <div className="mt-1"><ScalaSoglie soglie={scala} punti={st.punti} colore={colore} /></div>}
-                                </div>}
-                                tip={<div><TipTitolo>{GARA[brand].label} · {PISTA_LABEL[pista] || nome} (azienda)</TipTitolo>
-                                    <TipRiga l="punti" r={fmtPt(st.punti)} colore={colore} /><TipRiga l="pezzi" r={fmtN(st.pezzi)} />
-                                    {scala.map((s) => <TipRiga key={s.tier} l={`S${s.tier}`} r={`da ${fmtN(s.soglia_da)}${st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
-                                </div>}
-                            />
-                        );
-                    })}
-                    {!gareAz.length && <p className="text-xs text-slate-500 py-4">Nessun tabellare azienda per questo mese.</p>}
-                </div>
+                {!righeGara ? <p className="text-xs text-slate-500 py-4 text-center">Le gare sono mensili: per vedere soglie e vincoli scegli un periodo dentro un solo mese.</p> : (
+                    <div className="flex flex-wrap justify-around gap-x-6 gap-y-5">
+                        {gareAz.map(({ brand, pista, nome, st, scala, malus }) => {
+                            const colore = GARA[brand].colore;
+                            const kMax = st.prossima?.soglia_da ?? st.soglia?.soglia_da ?? Math.max(1, st.punti);
+                            return (
+                                <Ring key={`${brand}-${pista}`} value={st.punti} max={kMax} colore={colore} size={128}
+                                    centro={<>
+                                        <LogoBrand chiave={GARA[brand].chiave} h={13} />
+                                        <span className="text-xl font-black text-white tabular-nums"><Num v={st.punti} punti /></span>
+                                        <span className="text-[9px] text-slate-400">{PISTA_LABEL[pista] || nome}</span>
+                                        {st.tier > 0 && <span className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{st.tier}</span>}
+                                    </>}
+                                    sotto={<div className="text-center max-w-[180px]">
+                                        {st.gate && <p className="text-[10px] text-amber-300 font-semibold">⛔ {st.gate}</p>}
+                                        {malus && pista === "mobile" && <p className="text-[10px] text-rose-300 font-semibold">🔻 malus −30% attivo (fisso S1 o &lt;6 P.IVA)</p>}
+                                        {!st.gate && st.prossima && <p className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(st.mancano ?? 0)}</b> alla S{st.prossima.tier}</p>}
+                                        {scala.length > 0 && <div className="mt-1"><ScalaSoglie soglie={scala} punti={st.punti} colore={colore} /></div>}
+                                    </div>}
+                                    tip={<div><TipTitolo>{GARA[brand].label} · {PISTA_LABEL[pista] || nome} (azienda)</TipTitolo>
+                                        <TipRiga l="punti (periodo)" r={fmtPt(st.punti)} colore={colore} /><TipRiga l="pezzi" r={fmtN(st.pezzi)} />
+                                        {scala.map((s) => <TipRiga key={s.tier} l={`S${s.tier}`} r={`da ${fmtN(s.soglia_da)}${st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
+                                    </div>}
+                                />
+                            );
+                        })}
+                        {!gareAz.length && <p className="text-xs text-slate-500 py-4">Nessun tabellare azienda per questo mese.</p>}
+                    </div>
+                )}
             </div>
 
             <div className="glass-card an-card rounded-2xl p-4 an-in">

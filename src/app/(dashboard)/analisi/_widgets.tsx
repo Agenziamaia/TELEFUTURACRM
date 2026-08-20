@@ -32,11 +32,18 @@ export const GARA = {
 // LOGO AL POSTO DELLE SCRITTE (Luca 21/08): i marchi 900×900 (W3, VF…) hanno
 // il logo annegato nel canvas trasparente — senza la scala ottica del
 // Tracking sembrano francobolli. Il logo PARLA, niente nome scritto accanto.
-export function LogoBrand({ chiave, colore, alt = "", h = 26, className }) {
+// origine "left": il logo grande delle carte si ancora al bordo sinistro e
+// RISERVA lo spazio della sua misura visiva — con l'origine centrata la scala
+// 1.95 di Vodafone sbordava fuori dalla carta (visto da Luca 21/08). La scala
+// qui è calmierata: siamo inline, non nelle tessere del Tracking.
+export function LogoBrand({ chiave, colore, alt = "", h = 26, className, origine = "center" }) {
+    const scala = Math.min(TRK_LOGO_SCALE[chiave] || 1.1, 1.55);
+    const sinistra = origine === "left";
     return (
-        <span className={cn("inline-grid place-items-center overflow-visible shrink-0", className)} style={{ height: h, width: h * 1.9 }}>
-            <img src={TRK_BRAND_LOGOS[chiave]} alt={alt || chiave} className="max-h-full max-w-full object-contain"
-                style={{ transform: `scale(${TRK_LOGO_SCALE[chiave] || 1.1})`, filter: colore ? `drop-shadow(0 0 7px ${colore}66)` : undefined }} />
+        <span className={cn("inline-grid overflow-visible shrink-0", sinistra ? "justify-items-start items-center" : "place-items-center", className)}
+            style={{ height: h, width: h * 1.9 * (sinistra ? scala : 1) }}>
+            <img src={TRK_BRAND_LOGOS[chiave]} alt={alt || chiave} className="object-contain"
+                style={{ height: h, maxWidth: h * 1.9, transform: `scale(${scala})`, transformOrigin: sinistra ? "left center" : "center", filter: colore ? `drop-shadow(0 0 7px ${colore}66)` : undefined }} />
         </span>
     );
 }
@@ -137,9 +144,9 @@ function CartaOperatore({ brand, ctx, size }) {
     return (
         <div>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-                <div className="flex items-center gap-3">
-                    <LogoBrand chiave={G.chiave} colore={G.colore} alt={G.label} h={34} />
-                    <p className="text-[10px] text-slate-500">{fmtN(pezzi)} pezzi · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso</span></p>
+                <div className="flex items-center gap-3 min-w-0">
+                    <LogoBrand chiave={G.chiave} colore={G.colore} alt={G.label} h={30} origine="left" />
+                    <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso</span></>}</p>
                 </div>
                 <div className="flex flex-wrap gap-1 justify-end">
                     {brand === "fw"
@@ -202,8 +209,10 @@ function CartaOperatore({ brand, ctx, size }) {
 function WidgetMarg({ ctx, size }) {
     const qtyDi = (r) => Math.max(1, Number(r.qty) || 1);
     const valDi = (r) => Number(r.prezzo) || 0;
-    const catDi = (p) => ctx.margMap?.get(norm(p))?.cat || (/(telefono|tnp|smartphone|iphone)/i.test(String(p || "")) ? "Telefoni" : "Altro");
-    const icona = (nome) => nome === "Telefoni" ? "📱" : (ctx.margIcone?.get(nome) || "🧩");
+    // fallback per i prodotti fuori pannello: i Bundle hanno la LORO categoria
+    // (Luca 21/08 — non finiscono in Altro), i telefoni idem
+    const catDi = (p) => ctx.margMap?.get(norm(p))?.cat || (/bundle/i.test(String(p || "")) ? "Bundle" : /(telefono|tnp|smartphone|iphone)/i.test(String(p || "")) ? "Telefoni" : "Altro");
+    const icona = (nome) => nome === "Telefoni" ? "📱" : nome === "Bundle" ? "🎁" : (ctx.margIcone?.get(nome) || "🧩");
     const righe = ctx.ext || [];
     const prev = ctx.extPrev || [];
     const venduto = righe.reduce((s, r) => s + valDi(r), 0);
@@ -221,11 +230,11 @@ function WidgetMarg({ ctx, size }) {
         return Object.entries(per).sort((a, b) => b[1].val - a[1].val).slice(0, size >= 4 ? 10 : 6);
     }, [righe, size]);
     const perGiorno = useMemo(() => {
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: `${String(i + 1).padStart(2, "0")} ${MESI[ctx.ym.m - 1]}`, val: 0, det: [] }));
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [] }));
         for (const r of righe) if (r.g >= 1 && r.g <= ctx.nG) { v[r.g - 1].val += valDi(r); }
         v.forEach((d) => { d.val = Math.round(d.val); });
         return v;
-    }, [righe, ctx.nG, ctx.ym]);
+    }, [righe, ctx.nG, ctx.labels]);
 
     if (!righe.length) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna vendita di marginalità nel periodo.</p>;
     return (
@@ -244,7 +253,7 @@ function WidgetMarg({ ctx, size }) {
                             <span className="text-[10px] text-slate-500 tabular-nums">{fmtN(v.qty)} pz</span>
                         </div>
                     ))}
-                    <p className="pt-1"><Delta v={venduto - vendutoPrev} euro /> <span className="text-[10px] text-slate-500">venduto vs mese scorso</span></p>
+                    {ctx.confronto && <p className="pt-1"><Delta v={venduto - vendutoPrev} euro /> <span className="text-[10px] text-slate-500">venduto vs mese scorso</span></p>}
                 </div>
             </div>
             <div className="flex-1 min-w-0">
@@ -366,11 +375,11 @@ function WidgetPesoNegozi({ ctx }) {
         if (storeExt.length) {
             const mieiExt = mio(storeExt);
             const val = (arr) => arr.reduce((s, r) => s + (Number(r.prezzo) || 0), 0);
-            const catDi = (p) => ctx.margMap?.get(norm(p))?.cat || (/(telefono|tnp|smartphone|iphone)/i.test(String(p || "")) ? "Telefoni" : "Altro");
+            const catDi = (p) => ctx.margMap?.get(norm(p))?.cat || (/bundle/i.test(String(p || "")) ? "Bundle" : /(telefono|tnp|smartphone|iphone)/i.test(String(p || "")) ? "Telefoni" : "Altro");
             const perCat = {};
             for (const r of mieiExt) perCat[catDi(r.prodotto)] = (perCat[catDi(r.prodotto)] || 0) + (Number(r.prezzo) || 0);
             out.push({
-                label: "Marginalità", colore: "#22c55e", perc: val(storeExt) > 0 ? (val(mieiExt) / val(storeExt)) * 100 : 0,
+                label: "Marginalità", logoChiave: "marginalita", colore: "#22c55e", perc: val(storeExt) > 0 ? (val(mieiExt) / val(storeExt)) * 100 : 0,
                 tip: <div><TipTitolo>💰 Marginalità · {n}</TipTitolo>
                     <TipRiga l="tuo venduto" r={`${fmtEuro(val(mieiExt))} / ${fmtEuro(val(storeExt))}`} colore="#22c55e" />
                     {Object.entries(perCat).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c, v]) => <TipRiga key={c} l={c} r={fmtEuro(v)} />)}
@@ -465,16 +474,19 @@ function WidgetDuello({ ctx }) {
 
 // PRODUZIONE GIORNALIERA (Luca 21/08: niente cumulati «sempre in crescita»):
 // barre del giorno impilate per CATEGORIA (stessi colori della carta
-// operatore), linea della media per giorno lavorativo, oggi col tratto che
-// manca alla media come proiezione del giorno.
+// operatore), linea della media, oggi col tratto che manca alla media come
+// proiezione del giorno. Nel tooltip il dettaglio PRECISO di cosa è stato
+// venduto (offerte/prodotti); pulsante che switcha PUNTI ↔ PEZZI.
 function WidgetMese({ ctx, brand }) {
-    const aPezzi = brand === "pezzi" || brand === "fw";
+    const puoPunti = brand !== "pezzi" && brand !== "fw";
+    const [metrica, setMetrica] = useState(puoPunti ? "punti" : "pezzi");
+    const aPezzi = metrica === "pezzi";
     const unit = aPezzi ? "pz" : "pt";
     const giorni = useMemo(() => {
         const filtrati = brand === "pezzi" ? ctx.items : ctx.items.filter((it) => it.brandGara === brand);
         const rigaDi = new Map();
         if (brand !== "pezzi") for (const r of righeOperatore(brand, filtrati)) for (const it of r.items) rigaDi.set(it, r);
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: `${String(i + 1).padStart(2, "0")} ${MESI[ctx.ym.m - 1]}`, tot: 0, _p: new Map() }));
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
         for (const it of filtrati) {
             if (it.g < 1 || it.g > ctx.nG) continue;
             const val = aPezzi ? 1 : it.punti;
@@ -482,30 +494,49 @@ function WidgetMese({ ctx, brand }) {
                 ? { label: GARA[it.brandGara].label, colore: GARA[it.brandGara].colore }
                 : (rigaDi.get(it) ? { label: `${rigaDi.get(it).emoji} ${rigaDi.get(it).label}`, colore: rigaDi.get(it).colore } : { label: "➕ Altro", colore: "#64748b" });
             const g = v[it.g - 1];
-            const e = g._p.get(r.label) || { label: r.label, colore: r.colore, val: 0, pz: 0 };
-            e.val += val; e.pz++; g._p.set(r.label, e); g.tot += val;
+            const e = g._p.get(r.label) || { label: r.label, colore: r.colore, val: 0, pz: 0, prod: new Map() };
+            e.val += val; e.pz++;
+            const nomeVend = String(it.offerta || it.prodotto || "—").slice(0, 30);
+            e.prod.set(nomeVend, (e.prod.get(nomeVend) || 0) + 1);
+            g._p.set(r.label, e); g.tot += val;
         }
-        return v.map((g) => ({ n: g.n, label: g.label, tot: Math.round(g.tot * 100) / 100, parti: [...g._p.values()].sort((a, b) => b.val - a.val).map((p) => ({ ...p, val: Math.round(p.val * 100) / 100, sub: `${fmtN(p.pz)} pz` })) }));
-    }, [ctx.items, ctx.nG, ctx.ym, brand]);
+        return v.map((g) => ({
+            n: g.n, label: g.label, tot: Math.round(g.tot * 100) / 100,
+            parti: [...g._p.values()].sort((a, b) => b.val - a.val).map((p) => {
+                const top = [...p.prod.entries()].sort((a, b) => b[1] - a[1]);
+                const prodotti = top.slice(0, 4).map(([nm, q]) => `${q}× ${nm}`).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
+                return { label: p.label, colore: p.colore, val: Math.round(p.val * 100) / 100, sub: `${fmtN(p.pz)} pz`, prodotti };
+            }),
+        }));
+    }, [ctx.items, ctx.nG, ctx.labels, brand, aPezzi]);
     const totale = giorni.reduce((s, g) => s + g.tot, 0);
     const gLav = ctx.meseCorrente ? Math.max(1, ctx.gl?.trascorsi || 1) : (ctx.gl?.totali || ctx.nG);
     const media = totale > 0 ? Math.round((totale / gLav) * 100) / 100 : null;
     return (
         <div>
+            {puoPunti && (
+                <div className="flex justify-end -mt-1 mb-1">
+                    <div className="flex gap-0.5 p-0.5 rounded-lg bg-white/5 border border-white/10">
+                        {[["punti", "pt"], ["pezzi", "pz"]].map(([m, l]) => (
+                            <button key={m} onClick={() => setMetrica(m)} className={cn("px-2 py-0.5 rounded-md text-[10px] font-black transition-all", metrica === m ? "bg-indigo-500/80 text-white" : "text-slate-500 hover:text-white")}>{l}</button>
+                        ))}
+                    </div>
+                </div>
+            )}
             <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={unit} h={180} />
-            <p className="mt-1.5 text-[10px] text-slate-500">{brand === "pezzi" ? "pezzi del giorno, impilati per operatore" : `${aPezzi ? "pezzi" : "punti"} ${GARA[brand].label} del giorno, impilati per categoria`} · tratteggio = media per giorno lavorativo · la barra di oggi mostra quanto manca alla media</p>
+            <p className="mt-1.5 text-[10px] text-slate-500">{brand === "pezzi" ? "pezzi del giorno, impilati per operatore" : `${aPezzi ? "pezzi" : "punti"} ${GARA[brand].label} del giorno, per categoria`} · tratteggio = media/giorno · passa il mouse: dentro c'è cosa hai venduto, voce per voce</p>
         </div>
     );
 }
 
 function WidgetRitmo({ ctx }) {
     const giorni = useMemo(() => {
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: `${String(i + 1).padStart(2, "0")} ${MESI[ctx.ym.m - 1]}`, val: 0, det: [] }));
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [] }));
         const perB = {};
         for (const it of ctx.items) { if (it.g < 1 || it.g > ctx.nG) continue; v[it.g - 1].val++; (perB[it.g] ??= {}); perB[it.g][it.brandGara] = (perB[it.g][it.brandGara] || 0) + 1; }
         v.forEach((d) => { d.det = Object.entries(perB[d.n] || {}).map(([k, n]) => ({ l: GARA[k].label, r: `${fmtN(n)} pz`, colore: GARA[k].colore })); });
         return v;
-    }, [ctx.items, ctx.nG, ctx.ym]);
+    }, [ctx.items, ctx.nG, ctx.labels]);
     return <HeatCal giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} colore="var(--tf-818cf8)" unit="pezzi" />;
 }
 
@@ -528,7 +559,7 @@ export const REGISTRO = {
     "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
     "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
     "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
-    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
+    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
     "posizioni": { nome: "Posizioni per operatore", emoji: "🏅", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetPosizioni ctx={ctx} /> },
     "bersaglio": { nome: "Bersagli da superare", emoji: "🎯", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetBersaglio ctx={ctx} /> },
     "pesonegozi": { nome: "Il mio peso nei negozi", emoji: "⚖️", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetPesoNegozi ctx={ctx} /> },

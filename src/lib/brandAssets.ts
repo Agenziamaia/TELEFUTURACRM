@@ -38,4 +38,7 @@ export const TRK_BRAND_LOGOS: Record<string, string> = {
   s4: "/energy - Copy.png", energy: "/energy - Copy.png", sky: "/sky.png",
   dojo: "/dojo-round.png", verymobile: "/very-mobile.png", homobile: "/ho-mobile.png",
   kenamobile: "/kena-mobile-v2.png", kena: "/kena-mobile-v2.png",
+  // la Marginalità è "brand di casa": il suo logo è quello Telefutura, come
+  // nel Registra Prodotto (Luca 21/08 — niente scritte, parla il logo)
+  marginalita: "/logo-crm.png", marginalit: "/logo-crm.png",
 };

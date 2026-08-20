@@ -217,7 +217,12 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
                                 <div>
                                     <TipTitolo>{g.label}{i === oggi ? " · OGGI" : ""}</TipTitolo>
                                     <TipRiga l="totale" r={`${fmtPt(g.tot)} ${unit}`} />
-                                    {g.parti.filter((p) => p.val > 0).map((p, j) => <TipRiga key={j} l={p.label} r={p.sub ? `${fmtPt(p.val)} ${unit} · ${p.sub}` : `${fmtPt(p.val)} ${unit}`} colore={p.colore} />)}
+                                    {g.parti.filter((p) => p.val > 0).map((p, j) => (
+                                        <div key={j}>
+                                            <TipRiga l={p.label} r={p.sub ? `${fmtPt(p.val)} ${unit} · ${p.sub}` : `${fmtPt(p.val)} ${unit}`} colore={p.colore} />
+                                            {p.prodotti && <p className="text-[10px] text-slate-500 pl-3.5 max-w-[240px] leading-4">{p.prodotti}</p>}
+                                        </div>
+                                    ))}
                                     {manca > 0 && <TipRiga l="per stare in media" r={`+${fmtPt(manca)} ${unit}`} />}
                                     {!g.parti.length && <p className="text-[10px] text-slate-500">nessuna produzione</p>}
                                 </div>
