@@ -623,7 +623,7 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, meseCorrente }) {
                 <div className="glass-card an-card rounded-2xl p-4 an-in lg:col-span-2">
                     <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🏁 La corsa dei negozi (per pezzi; i punti brand per brand nel dettaglio)</p>
                     <RaceBars unit="pz" righe={negoziPezzi.map(({ k, its }) => ({
-                        k, label: k, val: its.length, colore: "var(--tf-818cf8)",
+                        k, label: k, val: its.length, colore: "#818cf8",
                         det: Object.entries(GARA).map(([b, g]) => { const sue = its.filter((it) => it.brandGara === b); return sue.length ? { l: g.label, r: `${sue.length} pz · ${fmtPt(sue.reduce((s, x) => s + x.punti, 0))} pt`, colore: g.colore } : null; }).filter(Boolean),
                     }))} />
                 </div>

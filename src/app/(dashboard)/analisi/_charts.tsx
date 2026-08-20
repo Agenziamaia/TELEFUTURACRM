@@ -278,7 +278,7 @@ export function RaceBars({ righe, unit = "pt", max: maxProp, vuoto = "Nessun dat
                         </span>
                         <span className="relative h-3 rounded-full bg-white/5 overflow-hidden">
                             <span className="absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-out group-hover:brightness-125"
-                                style={{ width: on ? `${Math.max(2, (r.val / max) * 100)}%` : "0%", background: `linear-gradient(90deg, ${r.colore || "var(--tf-818cf8)"}66, ${r.colore || "var(--tf-818cf8)"})`, boxShadow: `0 0 8px ${r.colore || "var(--tf-818cf8)"}55` }} />
+                                style={{ width: on ? `${Math.max(2, (r.val / max) * 100)}%` : "0%", background: `linear-gradient(90deg, ${r.colore || "#818cf8"}66, ${r.colore || "#818cf8"})`, boxShadow: `0 0 8px ${r.colore || "#818cf8"}55` }} />
                         </span>
                         <span className="text-xs font-bold text-white tabular-nums pl-1">{fmtPt(r.val)}<span className="ml-1 text-[9px] text-slate-500 font-normal">{unit}</span></span>
                     </div>

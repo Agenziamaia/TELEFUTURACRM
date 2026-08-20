@@ -23,11 +23,19 @@ import { cn } from "@/utils";
 import { Num, Tip, TipRiga, TipTitolo, BarStack, RaceBars, HeatCal, Donut, Delta, fmtPt, fmtN, fmtEuro } from "./_charts";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
+// COLORI in HEX PIENO, mai var(--…): nei grafici si concatena l'alpha
+// (`${colore}55`) e con una var CSS il valore diventa invalido → riempimenti
+// TRASPARENTI (bug delle barre del Master, visto da Luca 21/08 notte).
+export const HEX_BRAND = {
+    windtre: "#f97316", vodafone: "#e60000", fastweb: "#eab308", sky: "#8b5cf6",
+    s4: "#22c55e", tim: "#0050ff", iliad: "#c00028", dojo: "#14b8a6",
+    verymobile: "#84cc16", homobile: "#9b26b6", kenamobile: "#e4002b", marginalita: "#22c55e",
+};
 export const GARA = {
-    w3: { label: "WindTre", chiave: "windtre", colore: TRK_BRAND_COLORS.windtre, logo: TRK_BRAND_LOGOS.windtre },
-    vf: { label: "Vodafone", chiave: "vodafone", colore: TRK_BRAND_COLORS.vodafone, logo: TRK_BRAND_LOGOS.vodafone },
-    fw: { label: "Fastweb", chiave: "fastweb", colore: TRK_BRAND_COLORS.fastweb, logo: TRK_BRAND_LOGOS.fastweb },
-    sky: { label: "Sky", chiave: "sky", colore: TRK_BRAND_COLORS.sky, logo: TRK_BRAND_LOGOS.sky },
+    w3: { label: "WindTre", chiave: "windtre", colore: HEX_BRAND.windtre, logo: TRK_BRAND_LOGOS.windtre },
+    vf: { label: "Vodafone", chiave: "vodafone", colore: HEX_BRAND.vodafone, logo: TRK_BRAND_LOGOS.vodafone },
+    fw: { label: "Fastweb", chiave: "fastweb", colore: HEX_BRAND.fastweb, logo: TRK_BRAND_LOGOS.fastweb },
+    sky: { label: "Sky", chiave: "sky", colore: HEX_BRAND.sky, logo: TRK_BRAND_LOGOS.sky },
 };
 // LOGO AL POSTO DELLE SCRITTE (Luca 21/08): i marchi 900×900 (W3, VF…) hanno
 // il logo annegato nel canvas trasparente — senza la scala ottica del
@@ -506,7 +514,7 @@ function WidgetPesoNegozi({ ctx }) {
         for (const it of altStore) (perBrand[it.brand] ??= []).push(it);
         for (const [brand, store] of Object.entries(perBrand).sort((a, b) => b[1].length - a[1].length)) {
             const miei = mio(store);
-            const colore = TRK_BRAND_COLORS[trkBrandKey(brand)] || "#64748b";
+            const colore = HEX_BRAND[trkBrandKey(brand)] || "#64748b";
             const perCat = {};
             for (const it of miei) perCat[it.categoria || "Altro"] = (perCat[it.categoria || "Altro"] || 0) + 1;
             out.push({
@@ -543,7 +551,7 @@ function WidgetSquadra({ ctx, metrica }) {
         const det = metrica === "pezzi"
             ? Object.entries(GARA).map(([b, g]) => { const n = its.filter((it) => it.brandGara === b).length; return n ? { l: g.label, r: `${fmtN(n)} pz`, colore: g.colore } : null; }).filter(Boolean)
             : righeOperatore(metrica, its.filter((it) => it.brandGara === metrica)).map((r) => ({ l: `${r.emoji} ${r.label}`, r: `${fmtPt(somma(r.items))} pt · ${r.items.length} pz`, colore: r.colore }));
-        return { k, label: k, val, det, me: norm(k) === norm(ctx.persona), colore: metrica === "pezzi" ? "var(--tf-818cf8)" : GARA[metrica].colore };
+        return { k, label: k, val, det, me: norm(k) === norm(ctx.persona), colore: metrica === "pezzi" ? "#818cf8" : GARA[metrica].colore };
     }).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
     return <RaceBars unit={metrica === "pezzi" ? "pz" : "pt"} righe={righe} vuoto="Nessuna vendita nel periodo." />;
 }
@@ -569,7 +577,7 @@ function WidgetDuello({ ctx }) {
                     return (
                         <div key={b}>
                             <div className="mb-0.5"><LogoBrand chiave={GARA[b].chiave} colore={GARA[b].colore} alt={GARA[b].label} h={18} /></div>
-                            {[[a, "var(--tf-818cf8)"], [c, GARA[b].colore]].map(([v, col], i) => (
+                            {[[a, "#818cf8"], [c, GARA[b].colore]].map(([v, col], i) => (
                                 <div key={i} className="flex items-center gap-2">
                                     <span className="h-2 flex-1 rounded-full bg-white/5 overflow-hidden"><span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(2, (v / max) * 100)}%`, background: col }} /></span>
                                     <span className="text-[10px] font-bold text-white tabular-nums w-12 text-right">{fmtPt(v)}</span>
@@ -669,20 +677,20 @@ function WidgetMixPezzi({ ctx }) {
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════ */
 export const REGISTRO = {
-    "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 2, solo: null, logoChiave: "windtre", logoColore: TRK_BRAND_COLORS.windtre, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
-    "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, logoChiave: "vodafone", logoColore: TRK_BRAND_COLORS.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
-    "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, logoChiave: "sky", logoColore: TRK_BRAND_COLORS.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
-    "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, logoChiave: "fastweb", logoColore: TRK_BRAND_COLORS.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
+    "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 2, solo: null, logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
+    "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
+    "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
+    "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
     "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", logoColore: "#22c55e", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
     // ── gli ALTRI operatori (Luca 21/08: «a disposizione nei widget», fuori
     //    dal layout di default — si aggiungono dalla galleria) ─────────────
-    "op:s4": { nome: "S4 Energia", emoji: "🟢", gruppo: "operatori", def: 2, logoChiave: "s4", logoColore: TRK_BRAND_COLORS.s4, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="s4" nome="S4 Energia" ctx={ctx} size={size} /> },
-    "op:tim": { nome: "TIM", emoji: "🔵", gruppo: "operatori", def: 2, logoChiave: "tim", logoColore: TRK_BRAND_COLORS.tim, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="tim" nome="TIM" ctx={ctx} size={size} /> },
-    "op:very": { nome: "Very Mobile", emoji: "🟩", gruppo: "operatori", def: 2, logoChiave: "verymobile", logoColore: TRK_BRAND_COLORS.verymobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="verymobile" nome="Very Mobile" ctx={ctx} size={size} /> },
-    "op:iliad": { nome: "Iliad", emoji: "🟥", gruppo: "operatori", def: 2, logoChiave: "iliad", logoColore: TRK_BRAND_COLORS.iliad, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="iliad" nome="Iliad" ctx={ctx} size={size} /> },
-    "op:ho": { nome: "Ho. Mobile", emoji: "🟪", gruppo: "operatori", def: 2, logoChiave: "homobile", logoColore: TRK_BRAND_COLORS.homobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="homobile" nome="Ho. Mobile" ctx={ctx} size={size} /> },
-    "op:kena": { nome: "Kena Mobile", emoji: "🟠", gruppo: "operatori", def: 2, logoChiave: "kenamobile", logoColore: TRK_BRAND_COLORS.kenamobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="kenamobile" nome="Kena Mobile" ctx={ctx} size={size} /> },
-    "op:dojo": { nome: "Dojo", emoji: "🟦", gruppo: "operatori", def: 2, logoChiave: "dojo", logoColore: TRK_BRAND_COLORS.dojo, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="dojo" nome="Dojo" ctx={ctx} size={size} /> },
+    "op:s4": { nome: "S4 Energia", emoji: "🟢", gruppo: "operatori", def: 2, logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="s4" nome="S4 Energia" ctx={ctx} size={size} /> },
+    "op:tim": { nome: "TIM", emoji: "🔵", gruppo: "operatori", def: 2, logoChiave: "tim", logoColore: HEX_BRAND.tim, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="tim" nome="TIM" ctx={ctx} size={size} /> },
+    "op:very": { nome: "Very Mobile", emoji: "🟩", gruppo: "operatori", def: 2, logoChiave: "verymobile", logoColore: HEX_BRAND.verymobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="verymobile" nome="Very Mobile" ctx={ctx} size={size} /> },
+    "op:iliad": { nome: "Iliad", emoji: "🟥", gruppo: "operatori", def: 2, logoChiave: "iliad", logoColore: HEX_BRAND.iliad, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="iliad" nome="Iliad" ctx={ctx} size={size} /> },
+    "op:ho": { nome: "Ho. Mobile", emoji: "🟪", gruppo: "operatori", def: 2, logoChiave: "homobile", logoColore: HEX_BRAND.homobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="homobile" nome="Ho. Mobile" ctx={ctx} size={size} /> },
+    "op:kena": { nome: "Kena Mobile", emoji: "🟠", gruppo: "operatori", def: 2, logoChiave: "kenamobile", logoColore: HEX_BRAND.kenamobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="kenamobile" nome="Kena Mobile" ctx={ctx} size={size} /> },
+    "op:dojo": { nome: "Dojo", emoji: "🟦", gruppo: "operatori", def: 2, logoChiave: "dojo", logoColore: HEX_BRAND.dojo, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="dojo" nome="Dojo" ctx={ctx} size={size} /> },
     "posizioni": { nome: "Posizioni per operatore", emoji: "🏅", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetPosizioni ctx={ctx} /> },
     "bersaglio": { nome: "Bersagli da superare", emoji: "🎯", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetBersaglio ctx={ctx} /> },
     "pesonegozi": { nome: "Il mio peso nei negozi", emoji: "⚖️", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetPesoNegozi ctx={ctx} /> },
