@@ -57,7 +57,7 @@ const èTel = (c) => /^telefono a rate/i.test(String(c || ""));
 const èCB = (p) => /cb\s*$/i.test(String(p || ""));
 const èFin = (p) => /^finanziato/i.test(String(p || ""));
 
-function righeOperatore(brand, sue) {
+export function righeOperatore(brand, sue) {
     const resto = new Set(sue);
     const prendi = (test) => { const out = []; for (const it of resto) if (test(it)) { out.push(it); resto.delete(it); } return out; };
     const R = [];
@@ -117,9 +117,68 @@ function righeOperatore(brand, sue) {
     return R;
 }
 
+/* ═══ DRILL-DOWN: dal numero alla LISTA DEI CONTRATTI (Luca 21/08) ═════
+   «devo poter arrivare alla lista dei singoli contratti»: ogni riga porta
+   data, negozio, venditore, codice, prodotto/offerta, punti e i link diretti
+   🔍 Ricerca Vendite (?id=) e 🧭 Tracking PDA (?id=). Ricerca interna. */
+export function DrillPanel({ drill, chiudi, labels }) {
+    const [q, setQ] = useState("");
+    if (!drill) return null;
+    const nq = norm(q);
+    const filtrati = (drill.items || []).filter((it) => !nq || [it.venditore, it.negozio, it.cod_ins, it.prodotto, it.offerta, it.categoria, it.id].some((v) => norm(v).includes(nq)))
+        .slice().sort((a, b) => b.g - a.g);
+    const punti = Math.round(filtrati.reduce((s, it) => s + (it.punti || 0), 0) * 100) / 100;
+    return (
+        <div className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm grid place-items-center p-3 sm:p-6" onClick={chiudi}>
+            <div className="glass-card rounded-2xl w-full max-w-3xl max-h-[84vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                <div className="p-4 pb-3 border-b border-white/10">
+                    <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-black text-white truncate">{drill.titolo}</p>
+                        <button onClick={chiudi} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 shrink-0">✕</button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] font-bold text-slate-200 tabular-nums">{fmtN(filtrati.length)} contratti</span>
+                        <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] font-bold text-slate-200 tabular-nums">{fmtPt(punti)} pt</span>
+                        {drill.sub && <span className="text-[10px] text-slate-500">{drill.sub}</span>}
+                        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cerca: venditore, negozio, codice, offerta…"
+                            className="glass-input ml-auto px-2.5 py-1.5 rounded-lg text-xs min-w-[220px]" />
+                    </div>
+                </div>
+                <div className="overflow-y-auto p-2">
+                    {filtrati.map((it) => (
+                        <div key={it.id} className="grid grid-cols-[52px_minmax(0,1.5fr)_minmax(0,2fr)_auto_auto] items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors">
+                            <span className="text-[10px] text-slate-500 tabular-nums">{labels?.[it.g - 1] || `g.${it.g}`}</span>
+                            <span className="min-w-0">
+                                <span className="block text-[11px] font-semibold text-slate-200 truncate">{it.venditore}</span>
+                                <span className="block text-[10px] text-slate-500 truncate">🏪 {it.negozio} · 🎯 {it.cod_ins}</span>
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block text-[11px] text-slate-300 truncate">{it.offerta || it.prodotto}</span>
+                                <span className="block text-[10px] text-slate-500 truncate">{it.categoria}{it.offerta && it.prodotto ? ` · ${it.prodotto}` : ""}</span>
+                            </span>
+                            <span className="text-right">
+                                <span className="block text-[11px] font-black text-white tabular-nums">{fmtPt(it.punti)} pt</span>
+                                {it.senzaRiga && <span className="text-[9px] text-amber-300">⚠ senza punti</span>}
+                                {it.esclusa && <span className="text-[9px] text-rose-300">🚫 esclusa</span>}
+                                {it.fwInA && <span className="text-[9px] text-yellow-200">🟨 lettera A</span>}
+                            </span>
+                            <span className="flex gap-1">
+                                <a href={`/ricerca-vendite?id=${encodeURIComponent(it.id)}`} title="Apri in Ricerca Vendite" className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[12px]">🔍</a>
+                                <a href={`/pda/tracking?id=${encodeURIComponent(it.id)}`} title="Apri nel Tracking PDA" className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[12px]">🧭</a>
+                            </span>
+                        </div>
+                    ))}
+                    {!filtrati.length && <p className="text-xs text-slate-500 text-center py-8">Nessun contratto{q ? " per questa ricerca" : ""}.</p>}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ═══ CARTA OPERATORE ══════════════════════════════════════════════════ */
 function CartaOperatore({ brand, ctx, size }) {
     const G = GARA[brand];
+    const [drill, setDrill] = useState(null);
     const sue = useMemo(() => ctx.items.filter((it) => it.brandGara === brand), [ctx.items, brand]);
     const prev = useMemo(() => ctx.itemsPrev.filter((it) => it.brandGara === brand), [ctx.itemsPrev, brand]);
     const righe = useMemo(() => righeOperatore(brand, sue), [brand, sue]);
@@ -174,8 +233,10 @@ function CartaOperatore({ brand, ctx, size }) {
                                 <TipRiga l="pezzi" r={fmtN(r.items.length)} colore={r.colore} />
                                 {brand !== "fw" && <TipRiga l="punti" r={fmtPt(pt)} />}
                                 {r.det.map(([l, v]) => <TipRiga key={l} l={l} r={fmtN(v)} />)}
+                                <p className="text-[10px] text-indigo-300 mt-1">👆 clicca per l'elenco contratti</p>
                             </div>}>
-                                <div className="grid grid-cols-[minmax(110px,1.1fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors">
+                                <div onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · ${r.label}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: r.items }); }}
+                                    className="grid grid-cols-[minmax(110px,1.1fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
                                     <span className="text-xs font-semibold text-slate-200 truncate">{r.emoji} {r.label}</span>
                                     <span className="h-2 rounded-full bg-white/5 overflow-hidden">
                                         <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, ((brand === "fw" ? r.items.length : pt) / Math.max(1, brand === "fw" ? pezzi : punti)) * 100)}%`, background: `linear-gradient(90deg, ${r.colore}55, ${r.colore})` }} />
@@ -189,12 +250,13 @@ function CartaOperatore({ brand, ctx, size }) {
                         );
                     })}
                     <div className="flex flex-wrap gap-1.5 pt-1.5">
-                        {escluse > 0 && <Tip tip={<div><TipTitolo>Esclusioni lettera A</TipTitolo><p className="text-[11px] text-slate-300 max-w-[220px]">MNP con provenienza Vodafone/Fastweb/Ho.: contano come pezzi ma la lettera non dà punti.</p></div>}><span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-400">🚫 {escluse} MNP escluse</span></Tip>}
-                        {senzaRiga > 0 && <Tip tip={<div><TipTitolo>Senza riga di gara</TipTitolo><p className="text-[11px] text-slate-300 max-w-[220px]">Vendite del perimetro che non agganciano nessuna riga del tabellare: pezzi sì, punti no.</p></div>}><span className="px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/25 text-[10px] text-amber-200">⚠ {senzaRiga} senza punti</span></Tip>}
-                        {t1 > 0 && <Tip tip={<div><TipTitolo>Fastweb su codici T1</TipTitolo><p className="text-[11px] text-slate-300 max-w-[220px]">Contano nella gara Vodafone (lettera A): i punti stanno nella carta Vodafone.</p></div>}><span className="px-2 py-0.5 rounded-md bg-yellow-400/10 border border-yellow-400/25 text-[10px] text-yellow-200">🟨 {t1} in gara Vodafone</span></Tip>}
+                        {escluse > 0 && <Tip tip={<div><TipTitolo>Esclusioni lettera A</TipTitolo><p className="text-[11px] text-slate-300 max-w-[220px]">MNP con provenienza Vodafone/Fastweb/Ho.: contano come pezzi ma la lettera non dà punti. Clicca per l'elenco.</p></div>}><span onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · MNP escluse da lettera`, items: sue.filter((it) => it.esclusa) }); }} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-400 cursor-pointer hover:bg-white/10">🚫 {escluse} MNP escluse</span></Tip>}
+                        {senzaRiga > 0 && <Tip tip={<div><TipTitolo>Senza riga di gara</TipTitolo><p className="text-[11px] text-slate-300 max-w-[220px]">Vendite del perimetro che non agganciano nessuna riga del tabellare: pezzi sì, punti no. Clicca per l'elenco.</p></div>}><span onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · senza punti`, items: sue.filter((it) => it.senzaRiga) }); }} className="px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/25 text-[10px] text-amber-200 cursor-pointer hover:bg-amber-400/20">⚠ {senzaRiga} senza punti</span></Tip>}
+                        {t1 > 0 && <Tip tip={<div><TipTitolo>Fastweb su codici T1</TipTitolo><p className="text-[11px] text-slate-300 max-w-[220px]">Contano nella gara Vodafone (lettera A): i punti stanno nella carta Vodafone. Clicca per l'elenco.</p></div>}><span onClick={(e) => { e.stopPropagation(); setDrill({ titolo: "Fastweb in gara Vodafone (lettera A)", items: ctx.items.filter((it) => it.brandGara === "vf" && it.fwInA) }); }} className="px-2 py-0.5 rounded-md bg-yellow-400/10 border border-yellow-400/25 text-[10px] text-yellow-200 cursor-pointer hover:bg-yellow-400/20">🟨 {t1} in gara Vodafone</span></Tip>}
                     </div>
                 </div>
             </div>
+            <DrillPanel drill={drill} chiudi={() => setDrill(null)} labels={ctx.labels} />
         </div>
     );
 }

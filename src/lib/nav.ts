@@ -63,7 +63,9 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Io", sez: "io", roles: ["admin", "dev"] },
             { name: "Negozio", sez: "negozio", roles: ["admin", "dev"] },
             { name: "Rete", sez: "rete", roles: ["admin", "dev"] },
-            { name: "Regia", sez: "regia", roles: ["admin", "dev"] },
+            // "Master" per Luca (21/08): la sez resta "regia" — è la chiave di
+            // permesso già concessa, cambiarla scollegherebbe le righe esistenti
+            { name: "Master", sez: "regia", roles: ["admin", "dev"] },
         ],
     },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },

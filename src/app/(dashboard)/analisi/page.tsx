@@ -30,6 +30,7 @@ import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
 import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, fmtN } from "./_charts";
 import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand } from "./_widgets";
+import { Master } from "./_master";
 
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const norm = (s) => String(s || "").trim().toLowerCase();
@@ -319,7 +320,7 @@ export default function Analisi() {
         { id: "io", emoji: "👤", label: "Io" },
         { id: "negozio", emoji: "🏪", label: "Negozio" },
         { id: "rete", emoji: "🌍", label: "Rete" },
-        { id: "regia", emoji: "🎛", label: "Regia" },
+        { id: "regia", emoji: "🎛", label: "Master" },
     ];
     const AREE = TUTTE_LE_AREE.filter((a) => areePermesse.has(a.id));
     useEffect(() => {
@@ -439,7 +440,7 @@ export default function Analisi() {
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
                     {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, meseCorrente }} />}
-                    {area === "regia" && areePermesse.has("regia") && <AreaRegia key={`rg-${chiaveP}`} {...{ items, righeGara, dati }} />}
+                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi }} />}
                 </>
             )}
         </div>
@@ -480,7 +481,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                     {def.senzaTitolo ? null : def.logoChiave
                                         ? <span className="flex items-center gap-1.5 min-w-0">
                                             {def.nomeBreve !== "" && <span className="truncate">{def.emoji} {def.nomeBreve || def.nome}</span>}
-                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? 30 : 17} origine="left" />
+                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? 44 : 20} origine="left" />
                                         </span>
                                         : <span className="truncate">{def.emoji} {def.nome}</span>}
                                 </p>
@@ -628,94 +629,6 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, meseCorrente }) {
                     <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">📊 La rete giorno per giorno (pezzi, per operatore)</p>
                     <BarStack giorni={giorniRete} oggi={oggi > 0 ? oggi - 1 : -1} media={mediaRete} unit="pz" h={200} />
                 </div>
-            </div>
-        </div>
-    );
-}
-
-/* ═══ AREA REGIA (v1 — in attesa delle direttive di Luca) ══════════════ */
-function AreaRegia({ items, righeGara, dati }) {
-    const [lente, setLente] = useState("codice");
-    const chiave = lente === "codice" ? "cod_ins" : "negozio";
-    const gruppi = useMemo(() => {
-        const per = new Map();
-        for (const it of items) { const k = it[chiave]; if (!k || k === "—") continue; (per.get(k) || per.set(k, []).get(k)).push(it); }
-        return [...per.entries()].map(([k, its]) => ({ k, its })).sort((a, b) => b.its.length - a.its.length);
-    }, [items, chiave]);
-
-    const gareAz = useMemo(() => {
-        if (!righeGara) return [];
-        const out = [];
-        const conf = [
-            { id: "w3", tab: dati.aw3, rows: righeGara.w3 },
-            { id: "vf", tab: dati.avf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
-            { id: "sky", tab: dati.asky, rows: righeGara.sky },
-        ];
-        for (const c of conf) {
-            if (!c.tab) continue;
-            const av = calcolaAvanzamento(c.tab, c.rows);
-            for (const p of c.tab.piste) {
-                const st = av.piste[p.chiave]; if (!st || (!st.punti && !st.pezzi)) continue;
-                out.push({ brand: c.id, pista: p.chiave, nome: p.nome, st, scala: c.tab.soglie.filter((s) => s.pista === p.chiave).sort((a, b) => a.tier - b.tier), malus: c.id === "w3" ? av.malus30Mobile : false });
-            }
-        }
-        return out;
-    }, [righeGara, dati]);
-
-    return (
-        <div className="space-y-4">
-            <div className="an-in rounded-2xl border border-fuchsia-400/25 bg-fuchsia-500/10 px-4 py-3 flex flex-wrap items-center gap-3 justify-between">
-                <p className="text-sm text-fuchsia-100"><b>🎛 Regia</b> — la vista che i negozi non vedono: produzione anche per <b>codice di inserimento</b>, per governare target e gare.</p>
-                <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
-                    {[{ id: "codice", l: "🎯 Codice di inserimento" }, { id: "negozio", l: "🏪 Negozio che registra" }].map((x) => (
-                        <button key={x.id} onClick={() => setLente(x.id)} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", lente === x.id ? "bg-fuchsia-500/80 text-white shadow" : "text-slate-400 hover:text-white")}>{x.l}</button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="glass-card an-card rounded-2xl p-4 an-in">
-                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🏛 Gare aziendali — soglie, vincoli, cancelletti</p>
-                {!righeGara ? <p className="text-xs text-slate-500 py-4 text-center">Le gare sono mensili: per vedere soglie e vincoli scegli un periodo dentro un solo mese.</p> : (
-                    <div className="flex flex-wrap justify-around gap-x-6 gap-y-5">
-                        {gareAz.map(({ brand, pista, nome, st, scala, malus }) => {
-                            const colore = GARA[brand].colore;
-                            const kMax = st.prossima?.soglia_da ?? st.soglia?.soglia_da ?? Math.max(1, st.punti);
-                            return (
-                                <Ring key={`${brand}-${pista}`} value={st.punti} max={kMax} colore={colore} size={128}
-                                    centro={<>
-                                        <LogoBrand chiave={GARA[brand].chiave} h={13} />
-                                        <span className="text-xl font-black text-white tabular-nums"><Num v={st.punti} punti /></span>
-                                        <span className="text-[9px] text-slate-400">{PISTA_LABEL[pista] || nome}</span>
-                                        {st.tier > 0 && <span className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{st.tier}</span>}
-                                    </>}
-                                    sotto={<div className="text-center max-w-[180px]">
-                                        {st.gate && <p className="text-[10px] text-amber-300 font-semibold">⛔ {st.gate}</p>}
-                                        {malus && pista === "mobile" && <p className="text-[10px] text-rose-300 font-semibold">🔻 malus −30% attivo (fisso S1 o &lt;6 P.IVA)</p>}
-                                        {!st.gate && st.prossima && <p className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(st.mancano ?? 0)}</b> alla S{st.prossima.tier}</p>}
-                                        {scala.length > 0 && <div className="mt-1"><ScalaSoglie soglie={scala} punti={st.punti} colore={colore} /></div>}
-                                    </div>}
-                                    tip={<div><TipTitolo>{GARA[brand].label} · {PISTA_LABEL[pista] || nome} (azienda)</TipTitolo>
-                                        <TipRiga l="punti (periodo)" r={fmtPt(st.punti)} colore={colore} /><TipRiga l="pezzi" r={fmtN(st.pezzi)} />
-                                        {scala.map((s) => <TipRiga key={s.tier} l={`S${s.tier}`} r={`da ${fmtN(s.soglia_da)}${st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
-                                    </div>}
-                                />
-                            );
-                        })}
-                        {!gareAz.length && <p className="text-xs text-slate-500 py-4">Nessun tabellare azienda per questo mese.</p>}
-                    </div>
-                )}
-            </div>
-
-            <div className="glass-card an-card rounded-2xl p-4 an-in">
-                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">{lente === "codice" ? "🎯 Produzione per codice di inserimento (pezzi; punti brand per brand nel dettaglio)" : "🏪 Produzione per negozio che registra (pezzi; punti nel dettaglio)"}</p>
-                <RaceBars unit="pz" righe={gruppi.map(({ k, its }) => ({
-                    k, label: k, val: its.length, colore: lente === "codice" ? "var(--tf-e879f9)" : "var(--tf-818cf8)",
-                    det: [
-                        ...Object.entries(GARA).map(([b, g]) => { const sue = its.filter((it) => it.brandGara === b); return sue.length ? { l: g.label, r: `${sue.length} pz · ${fmtPt(sue.reduce((s, x) => s + x.punti, 0))} pt`, colore: g.colore } : null; }).filter(Boolean),
-                        { l: "operazioni CB", r: fmtN(its.filter((it) => /^customer base/i.test(String(it.categoria || ""))).length) },
-                    ],
-                }))} />
-                <p className="mt-3 text-[10px] text-slate-500">🧩 La CB a <b>punti</b> (Partnership Reward W3) arriva col cantiere Partnership — le righe vanno prima condizionate; qui intanto le operazioni CB sono nei tooltip.</p>
             </div>
         </div>
     );

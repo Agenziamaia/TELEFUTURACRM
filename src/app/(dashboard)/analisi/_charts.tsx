@@ -343,6 +343,57 @@ export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1, unit =
     );
 }
 
+/* ── BARRA DELLE SOGLIE (Master, Luca 21/08): una pista di gara come corsa
+   orizzontale — tacche alle soglie (S1..S8), riempimento animato, la
+   prossima soglia pulsa; tutto hoverabile, il click apre il drill. ──────── */
+export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "var(--tf-818cf8)", gate, malus, onClick, unit = "pt" }) {
+    const [on, setOn] = useState(false);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
+    const ultima = soglie.length ? soglie[soglie.length - 1].soglia_da : 0;
+    const max = Math.max(ultima * 1.07, punti * 1.06, 1);
+    const pct = (v) => Math.min(100, (v / max) * 100);
+    const presa = [...soglie].reverse().find((s) => punti >= s.soglia_da) || null;
+    const prossima = soglie.find((s) => s.soglia_da > punti) || null;
+    return (
+        <div className={cn("rounded-xl px-3 py-2.5 bg-white/[.04] border border-white/[.06] transition-colors", onClick && "cursor-pointer hover:bg-white/[.08] hover:border-white/15")}
+            onClick={onClick} title={onClick ? "Clicca per l'elenco contratti" : undefined}>
+            <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                <span className="text-xs font-bold text-slate-200 truncate">{emoji} {label}</span>
+                <span className="text-sm font-black text-white tabular-nums shrink-0">{fmtPt(punti)} <span className="text-[9px] font-normal text-slate-500">{unit}</span>
+                    {pezzi != null && <span className="ml-1.5 text-[10px] font-normal text-slate-500 tabular-nums">{fmtN(pezzi)} pz</span>}</span>
+            </div>
+            <div className="relative h-3.5 rounded-full bg-white/[.06]">
+                <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000 ease-out"
+                    style={{ width: on ? `${Math.max(punti > 0 ? 1.5 : 0, pct(punti))}%` : "0%", background: `linear-gradient(90deg, ${colore}55, ${colore})`, boxShadow: `0 0 10px ${colore}66` }} />
+                {soglie.map((s) => {
+                    const raggiunta = punti >= s.soglia_da;
+                    const èProssima = prossima && s.tier === prossima.tier;
+                    return (
+                        <Tip key={s.tier} className="absolute -inset-y-1 w-4 -translate-x-1/2 items-center justify-center" style={{ left: `${pct(s.soglia_da)}%` }} tip={
+                            <div>
+                                <TipTitolo>Soglia {s.tier}</TipTitolo>
+                                <TipRiga l="scatta a" r={fmtN(s.soglia_da)} colore={colore} />
+                                <TipRiga l={raggiunta ? "presa" : "mancano"} r={raggiunta ? "✓" : fmtPt(s.soglia_da - punti)} />
+                            </div>
+                        }>
+                            <span className={cn("block w-[3px] h-full rounded-full", èProssima && "animate-pulse")}
+                                style={{ background: raggiunta ? "#fff" : "rgba(255,255,255,.28)", boxShadow: raggiunta ? `0 0 6px ${colore}` : undefined }} />
+                        </Tip>
+                    );
+                })}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 min-h-[18px]">
+                {presa ? <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{presa.tier} presa</span>
+                    : soglie.length > 0 && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-400 bg-white/5">sotto la S1</span>}
+                {prossima && <span className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(prossima.soglia_da - punti)}</b> alla S{prossima.tier}</span>}
+                {!prossima && presa && soglie.length > 0 && <span className="text-[10px] text-emerald-300 font-semibold">ultima soglia presa 👑</span>}
+                {gate && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-amber-300 bg-amber-400/10 border border-amber-400/25">⛔ {gate}</span>}
+                {malus && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-rose-300 bg-rose-400/10 border border-rose-400/25">🔻 {malus}</span>}
+            </div>
+        </div>
+    );
+}
+
 /* ── scala delle soglie (S1..Sn) ───────────────────────────────────────── */
 export function ScalaSoglie({ soglie, punti, colore }) {
     return (
