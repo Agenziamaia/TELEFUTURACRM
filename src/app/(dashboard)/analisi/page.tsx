@@ -473,13 +473,14 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                         <div key={`${w.k}-${i}`} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg", SPAN[w.s])} style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
                             onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragDa.current != null) muovi(dragDa.current, i); dragDa.current = null; }}>
                             <div className="flex items-center justify-between gap-2 mb-3">
-                                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5 min-w-0">
+                                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0">
                                     <span draggable onDragStart={() => { dragDa.current = i; }} className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-300 shrink-0"><GripVertical className="w-3.5 h-3.5" /></span>
-                                    {/* le carte operatore parlano col LOGO nel corpo: qui niente doppioni */}
+                                    {/* il LOGO è il titolo dello schema: grande, subito a destra
+                                        del grip (Luca 21/08) — niente nomi brand scritti */}
                                     {def.senzaTitolo ? null : def.logoChiave
                                         ? <span className="flex items-center gap-1.5 min-w-0">
                                             {def.nomeBreve !== "" && <span className="truncate">{def.emoji} {def.nomeBreve || def.nome}</span>}
-                                            <LogoBrand chiave={def.logoChiave} h={16} />
+                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? 30 : 17} origine="left" />
                                         </span>
                                         : <span className="truncate">{def.emoji} {def.nome}</span>}
                                 </p>

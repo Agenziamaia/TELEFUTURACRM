@@ -144,10 +144,7 @@ function CartaOperatore({ brand, ctx, size }) {
     return (
         <div>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-                <div className="flex items-center gap-3 min-w-0">
-                    <LogoBrand chiave={G.chiave} colore={G.colore} alt={G.label} h={30} origine="left" />
-                    <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso</span></>}</p>
-                </div>
+                <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso</span></>}</p>
                 <div className="flex flex-wrap gap-1 justify-end">
                     {brand === "fw"
                         ? <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white/5 text-slate-300 border border-white/10">gara T2 · a pezzi</span>
@@ -555,11 +552,11 @@ function WidgetMixPezzi({ ctx }) {
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════ */
 export const REGISTRO = {
-    "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 2, solo: null, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
-    "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
-    "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
-    "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, senzaTitolo: true, render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
-    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
+    "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 2, solo: null, logoChiave: "windtre", logoColore: TRK_BRAND_COLORS.windtre, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
+    "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, logoChiave: "vodafone", logoColore: TRK_BRAND_COLORS.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
+    "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, logoChiave: "sky", logoColore: TRK_BRAND_COLORS.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
+    "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, logoChiave: "fastweb", logoColore: TRK_BRAND_COLORS.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
+    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", logoColore: "#22c55e", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
     "posizioni": { nome: "Posizioni per operatore", emoji: "🏅", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetPosizioni ctx={ctx} /> },
     "bersaglio": { nome: "Bersagli da superare", emoji: "🎯", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetBersaglio ctx={ctx} /> },
     "pesonegozi": { nome: "Il mio peso nei negozi", emoji: "⚖️", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetPesoNegozi ctx={ctx} /> },
