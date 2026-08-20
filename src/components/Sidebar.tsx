@@ -304,6 +304,17 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                 const inHub = pathname.startsWith(hub.href);
                                 const isExpanded = expandedGroups[hub.name] ?? false;
                                 const HubIcon = hub.icon;
+                                // hub SOLO permessi (Analisi): voce semplice, niente
+                                // sottomenu — le aree si cambiano in pagina
+                                if (hub.senzaSottomenu) {
+                                    return (
+                                        <Link key={hub.name} href={hub.href} onClick={() => setIsOpen?.(false)}
+                                            className={cn("nav-link", inHub ? "active" : "")}>
+                                            <HubIcon className={cn("w-5 h-5", inHub ? "text-indigo-400" : "text-slate-500")} />
+                                            {hub.name}
+                                        </Link>
+                                    );
+                                }
                                 return (
                                     <div key={hub.name} className="space-y-0.5">
                                         <div className="flex items-center gap-0.5">

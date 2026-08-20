@@ -37,7 +37,10 @@ export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: str
 // i link vanno a ?sez=<voce>&tab=<sub.id> (gruppo Utenti). Le subs restano
 // amministrabili una a una dalla pagina Permessi (chiavi hubSubKey).
 export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean; subsSez?: boolean };
-export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[] };
+// senzaSottomenu: hub SOLO per i permessi (sezione + aree amministrabili una
+// a una) — in sidebar resta una voce semplice: le aree si cambiano coi
+// pulsanti dentro la pagina, non con un menù a sinistra (Analisi, Luca 21/08)
+export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[]; senzaSottomenu?: boolean };
 export type NavEntry = NavGroup | NavItem | NavHub;
 
 export const EVERYONE = ["*"];
@@ -49,11 +52,20 @@ export const OUTBOUND_NAV = ["agente", "direttore_ob", "direttore_commerciale", 
 
 export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: EVERYONE },
-    // ANALISI (Luca 20/08): la sezione-vetrina a punti/pezzi (Io · Negozio ·
-    // Rete · Regia). PER ORA solo admin/dev — Luca vuole vederla per primo;
-    // per aprirla a tutta la rete basta mettere EVERYONE (la pagina è già
-    // pensata per la visibilità aperta, la Regia resta comunque solo admin).
-    { type: "link", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"] },
+    // ANALISI (Luca 20-21/08): la sezione-vetrina a punti/pezzi. È un HUB per
+    // i PERMESSI (sezione intera + ogni area concedibile per ruolo dalla
+    // pagina Permessi: /analisi e /analisi?sez=io|negozio|rete|regia) ma
+    // SENZA sottomenu in sidebar: le aree si cambiano coi pulsanti in pagina.
+    // Default: tutto solo admin/dev finché Luca non apre; la Regia resta sua.
+    {
+        type: "hub", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"], senzaSottomenu: true,
+        children: [
+            { name: "Io", sez: "io", roles: ["admin", "dev"] },
+            { name: "Negozio", sez: "negozio", roles: ["admin", "dev"] },
+            { name: "Rete", sez: "rete", roles: ["admin", "dev"] },
+            { name: "Regia", sez: "regia", roles: ["admin", "dev"] },
+        ],
+    },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
     {
         // CALL CENTER e' un GRUPPO (Luca 28/07): dentro la vecchia sezione Caller

@@ -18,6 +18,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { giorniLavorativiMese, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -72,7 +74,15 @@ const validaExt = (r) => !/annull/i.test(String(r.stato || "")) && r.nascosta_ge
 /* ════════════════════════════════════════════════════════════════════════ */
 export default function Analisi() {
     const { user } = useAuth();
-    const admin = ["admin", "dev"].includes(user?.role || "");
+    // VISIBILITÀ DAI PERMESSI (Luca 21/08): la sezione è un hub — dalla pagina
+    // Permessi si abilita tutta (/analisi) o area per area (?sez=io|negozio|
+    // rete|regia), per ruolo o singolarmente. Default: solo admin/dev.
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const hubAnalisi = hubByHref("/analisi");
+    const puoSezione = effectiveAllowed(user?.role, "/analisi", hubAnalisi?.roles || ["admin", "dev"], perms);
+    const areePermesse = useMemo(() => new Set(
+        (hubAnalisi?.children || []).filter((c) => effectiveAllowed(user?.role, hubChildKey(hubAnalisi, c), c.roles ?? hubAnalisi.roles, perms)).map((c) => c.sez),
+    ), [user?.role, perms]);
     const vedeTutto = isAdminOrAbove(user?.role) || ["admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
     const vedeNegozio = seesWholeStore(user?.role);
 
@@ -247,24 +257,32 @@ export default function Analisi() {
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
 
-    if (!admin) {
+    const TUTTE_LE_AREE = [
+        { id: "io", emoji: "👤", label: "Io" },
+        { id: "negozio", emoji: "🏪", label: "Negozio" },
+        { id: "rete", emoji: "🌍", label: "Rete" },
+        { id: "regia", emoji: "🎛", label: "Regia" },
+    ];
+    const AREE = TUTTE_LE_AREE.filter((a) => areePermesse.has(a.id));
+    // se l'area corrente non è (più) permessa, si scivola sulla prima concessa
+    useEffect(() => {
+        if (permsLoaded && AREE.length && !areePermesse.has(area)) setArea(AREE[0].id);
+    }, [permsLoaded, areePermesse, area]);
+
+    if (!permsLoaded) {
+        return <div className="flex items-center justify-center py-24 text-slate-400 gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Carico…</div>;
+    }
+    if (!puoSezione || !AREE.length) {
         return (
             <div className="min-h-[60vh] grid place-items-center">
                 <div className="glass-card rounded-2xl p-10 text-center max-w-sm">
                     <Lock className="w-8 h-8 mx-auto text-slate-500" />
                     <p className="mt-3 text-white font-bold">Analisi in anteprima</p>
-                    <p className="mt-1 text-sm text-slate-400">La sezione sta per aprirsi a tutta la rete. Ancora qualche giorno. 👀</p>
+                    <p className="mt-1 text-sm text-slate-400">{puoSezione ? "Nessuna area è abilitata per il tuo ruolo: si accendono dai Permessi." : "La sezione sta per aprirsi a tutta la rete. Ancora qualche giorno. 👀"}</p>
                 </div>
             </div>
         );
     }
-
-    const AREE = [
-        { id: "io", emoji: "👤", label: "Io" },
-        { id: "negozio", emoji: "🏪", label: "Negozio" },
-        { id: "rete", emoji: "🌍", label: "Rete" },
-        ...(admin ? [{ id: "regia", emoji: "🎛", label: "Regia" }] : []),
-    ];
 
     return (
         <div className="space-y-5 pb-10">
@@ -339,7 +357,7 @@ export default function Analisi() {
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
                     {area === "rete" && <AreaRete key={`rt-${ymISO(ym)}`} {...{ items, itemsPrev, dati, ym, nG, oggi, gl: dati.gl, meseCorrente }} />}
-                    {area === "regia" && admin && <AreaRegia key={`rg-${ymISO(ym)}`} {...{ items, dati, ym, nG, oggi, gl: dati.gl }} />}
+                    {area === "regia" && areePermesse.has("regia") && <AreaRegia key={`rg-${ymISO(ym)}`} {...{ items, dati, ym, nG, oggi, gl: dati.gl }} />}
                 </>
             )}
         </div>
