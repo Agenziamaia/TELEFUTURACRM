@@ -616,7 +616,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   // isStoreManager PRIMA di canCreateOrder: l'ordine inverso lanciava un
   // ReferenceError (TDZ) al render client e la pagina moriva in errore.
   const isStoreManager = role === "store_manager";
-  const canCreateOrder = isStoreManager || isAdmin;
+  // CHI HA IL PERMESSO DELLA PAGINA PUÒ ORDINARE (Luca 21/08, caso Bezzucchi:
+  // entrava dai Permessi ma vedeva solo lo storico) — l'accesso è già
+  // governato dalla pagina Permessi, qui non si rifiltra per ruolo.
+  const canCreateOrder = true;
   const [orderStore, setOrderStore] = useState("");
   // Un solo negozio -> automatico; piu' negozi (o nessuno, es. admin) -> scelta esplicita.
   const storeOrdine = negoziMiei.length === 1 ? negoziMiei[0] : orderStore;
