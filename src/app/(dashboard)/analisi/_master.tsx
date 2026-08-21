@@ -122,11 +122,12 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
     // GRUPPI in tendina (solo W3): ⭐ si espande nei codici del gruppo, così
     // la selezione resta fatta di codici veri e le regole delle soglie leggono
     // la tipologia da sole
-    const GRUPPI_W3 = { fr: "⭐ Franchising (tutto il gruppo)", t1: "⭐ Multibrand T1 · Donna", t2: "⭐ Multibrand T2 · Promontori+Garbatella" };
+    const GRUPPI_W3 = { fr: "Franchising", t1: "Multibrand", t2: "Multibrand T2" };
     const codiciGruppo = (righeTarget) => codiciBrand.filter((c) => (righeTarget || []).some((r) => String(r.negozio).split("+").some((x) => stessoNome(x.trim(), c)) || stessoNome(r.negozio, c)));
     const opzioniCodici = b === "w3" ? [GRUPPI_W3.fr, GRUPPI_W3.t1, GRUPPI_W3.t2, ...codiciBrand] : codiciBrand;
+    const etichetteGruppo = Object.values(GRUPPI_W3);
     const espandiGruppi = (vals) => {
-        if (b !== "w3" || !w3) return vals.filter((v) => !String(v).startsWith("⭐"));
+        if (b !== "w3" || !w3) return vals.filter((v) => !etichetteGruppo.includes(v));
         const out = [];
         for (const v of vals) {
             if (v === GRUPPI_W3.fr) out.push(...codiciGruppo(w3.fr));
@@ -135,6 +136,21 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
             else out.push(v);
         }
         return [...new Set(out)];
+    };
+    // gruppo PIENO + click su UN codice = «voglio solo quello» (Luca 21/08):
+    // la spunta che si toglierebbe diventa il filtro unico
+    const gestisciCodici = (vals) => {
+        const nuovo = espandiGruppi(vals);
+        const prev = codici;
+        if (b === "w3" && w3 && prev.length > 1 && nuovo.length === prev.length - 1) {
+            const tolto = prev.find((c) => !nuovo.includes(c));
+            const gruppoPieno = [w3.fr, w3.t1 ? [w3.t1] : [], w3.t2 ? [w3.t2] : []].some((rt) => {
+                const cods = codiciGruppo(rt || []);
+                return cods.length > 1 && cods.length === prev.length && cods.every((c) => prev.includes(c));
+            });
+            if (gruppoPieno && tolto) { setCodici([tolto]); return; }
+        }
+        setCodici(nuovo);
     };
 
     // proiezione fine mese sul ritmo dei giorni lavorativi trascorsi
@@ -214,11 +230,11 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
     };
 
     const NOTE_MODO = {
-        nessuna: "tipologie diverse insieme: scegli un PDV o un gruppo ⭐ dalla tendina per le soglie",
-        parzialeFr: "le soglie sono dei SINGOLI negozi: scegline uno (o ⭐ Franchising per quelle di gruppo)",
+        nessuna: "tipologie diverse insieme: scegli un PDV o un gruppo (Franchising · Multibrand · Multibrand T2) per le soglie",
+        parzialeFr: "le soglie sono dei SINGOLI negozi: scegline uno (o «Franchising» per quelle di gruppo)",
         t1: "confluisce nella gara On Top qui sotto",
         t2: "confluisce nella gara On Top qui sotto",
-        t2parz: "la gara T2 è CONGIUNTA (Promontori+Garbatella): seleziona ⭐ Multibrand T2",
+        t2parz: "la gara T2 è CONGIUNTA (Promontori+Garbatella): seleziona «Multibrand T2»",
     };
     const barraPista = (p) => {
         const st = av?.piste?.[p.chiave];
@@ -238,7 +254,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
             // soglie DI GRUPPO: solo col gruppo Franchising al completo
             if (modo !== "gruppoFr") {
                 scala = [];
-                nota = p.chiave === "business_piva" ? "🌍 di Ragione Sociale — ⭐ Franchising per vederla" : "🌍 di gruppo — seleziona ⭐ Franchising per vederle";
+                nota = p.chiave === "business_piva" ? "🌍 di Ragione Sociale — «Franchising» per vederla" : "🌍 di gruppo — seleziona «Franchising» per vederle";
             } else nota = "🌍 soglia di gruppo (franchising al completo)";
         } else if (b !== "w3" && filtroAttivo) {
             scala = [];
@@ -269,7 +285,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                 {lente === "codici" && (
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">🎯 Codici</span>
-                        <SelectMulti values={codici} onChange={(v) => setCodici(espandiGruppi(v))} opzioni={opzioniCodici} placeholder="tutti…" maxVoci={100} className="min-w-[200px]" />
+                        <SelectMulti values={codici} onChange={gestisciCodici} opzioni={opzioniCodici} placeholder="tutti…" maxVoci={100} className="min-w-[200px]" />
                     </div>
                 )}
             </div>
