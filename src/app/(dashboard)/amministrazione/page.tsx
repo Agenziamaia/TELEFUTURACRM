@@ -29,6 +29,7 @@ import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel }
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
 import { SelectOpzioni, SelectPersona } from "@/components/SelectPersona";
+import { sameStore } from "@/lib/visibleStores";
 import {
     ROLES,
     AREAS,
@@ -1405,10 +1406,56 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
                 ? { status: "licenziato", active: false, data_licenziamento: d, sospeso_dal: null }
                 : { data_licenziamento: d })
             : { sospeso_dal: d };
-        if (await aggiornaStato(payload)) setAzione(null);
+        if (await aggiornaStato(payload)) { setAzione(null); avviaRiassegnazione(); }
     };
     // Riassumi / riattiva / annulla programmazione: si torna pienamente attivi
     const riattiva = () => aggiornaStato({ status: "attivo", active: true, data_licenziamento: null, sospeso_dal: null });
+    // ── RIASSEGNAZIONE PRATICHE (Luca 21/08, caso Verdile): al licenzia/
+    //    sospendi le pratiche APERTE del collaboratore vanno in carico a
+    //    qualcun altro — DEFAULT lo store manager del suo negozio (mai sé
+    //    stesso); senza SM si sceglie a mano. Altrimenti restano orfane e
+    //    continuano a maturare malus senza nessuno che le lavori. Il popup
+    //    esce da solo dopo l'azione; il bottone 📦 lo apre anche a mano
+    //    (per chi è già stato licenziato in passato).
+    const ESITI_FINE_TRK = ["attivato", "re_inserita", "liquidato", "completo_sky", "attivo_sky", "annullato"];
+    const [riass, setRiass] = useState<null | { aperte: { id: string }[]; opzioni: { id: string; nome: string; delNegozio: boolean }[]; scelto: string; smNome: string | null; busy: boolean; fatto?: number }>(null);
+    const [riassInfo, setRiassInfo] = useState("");
+    const avviaRiassegnazione = async () => {
+        setRiassInfo("");
+        const { data: pr } = await supabase.from("contracts")
+            .select("id, stato, stato_negozio, nascosta_gestione")
+            .eq("venditore", matchName).like("id", "CTR-%").limit(1000);
+        const aperte = ((pr ?? []) as { id: string; stato: string | null; stato_negozio: string | null; nascosta_gestione: boolean | null }[]).filter((c) => {
+            const sn = String(c.stato_negozio || "nuovo").toLowerCase();
+            return c.nascosta_gestione !== true && !/annull/i.test(String(c.stato || "")) && !ESITI_FINE_TRK.includes(sn) && !sn.startsWith("ko");
+        });
+        if (!aperte.length) { setRiassInfo("Nessuna pratica aperta da riassegnare: tutto già chiuso. ✅"); return; }
+        const { data: ute } = await supabase.from("app_users")
+            .select("id, full_name, role, primary_store").eq("active", true).neq("id", u.id).order("full_name");
+        const tutti = ((ute ?? []) as { id: string; full_name: string | null; role: string | null; primary_store: string | null }[]).filter((x) => x.full_name);
+        const negozioU = u.primary_store || "";
+        const sm = tutti.find((x) => x.role === "store_manager" && negozioU && sameStore(x.primary_store, negozioU)) || null;
+        const opzioni = [...tutti].sort((x, y) => {
+            const px = negozioU && sameStore(x.primary_store, negozioU) ? 0 : 1;
+            const py = negozioU && sameStore(y.primary_store, negozioU) ? 0 : 1;
+            return px - py || String(x.full_name).localeCompare(String(y.full_name));
+        }).map((x) => ({ id: x.id, nome: x.full_name as string, delNegozio: !!(negozioU && sameStore(x.primary_store, negozioU)) }));
+        setRiass({ aperte, opzioni, scelto: sm?.full_name || "", smNome: sm?.full_name || null, busy: false });
+    };
+    const confermaRiassegnazione = async () => {
+        if (!riass || riass.busy) return;
+        const dest = riass.opzioni.find((o) => o.nome === riass.scelto);
+        if (!dest) return;
+        setRiass({ ...riass, busy: true });
+        const ids = riass.aperte.map((c) => c.id);
+        let fatte = 0;
+        for (let i = 0; i < ids.length; i += 100) {
+            const blocco = ids.slice(i, i + 100);
+            const { error } = await supabase.from("contracts").update({ delegated_to: dest.id }).in("id", blocco);
+            if (!error) fatte += blocco.length;
+        }
+        setRiass({ ...riass, busy: false, fatto: fatte });
+    };
     // ── ALIAS (mig. 142, 03/08): l'alias diventa l'UNICO nome del gestionale
     //    (applica_alias sostituisce il nome in ogni colonna testo/jsonb);
     //    il nome vero resta in nome_riservato, visibile solo qui.
@@ -1757,6 +1804,11 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                         🔴 Licenzia
                                     </button>
                                 </>)}
+                                <button onClick={avviaRiassegnazione} disabled={azioneBusy}
+                                    className="w-full py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-colors disabled:opacity-50">
+                                    📦 Riassegna le pratiche aperte del Tracking
+                                </button>
+                                {riassInfo && <p className="text-[11px] text-emerald-300">{riassInfo}</p>}
                             </div>
                             {/* modale IN-CRM per data + conferma (MOD-33: niente popup browser) */}
                             {azione && (
@@ -1802,6 +1854,40 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                                 Annulla
                                             </button>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+                            {/* ── POPUP RIASSEGNAZIONE (Luca 21/08): dopo licenzia/sospendi, o dal bottone 📦 ── */}
+                            {riass && (
+                                <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                                    onClick={() => { if (!riass.busy) setRiass(null); }}>
+                                    <div className="w-full max-w-md rounded-2xl border border-white/10 p-6"
+                                        style={{ background: "var(--tf-0e1526)", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
+                                        onClick={(e) => e.stopPropagation()}>
+                                        <div className="text-lg font-extrabold text-slate-100 mb-1.5">📦 Riassegna le pratiche di {u.full_name}</div>
+                                        {riass.fatto != null ? (<>
+                                            <p className="text-[13px] text-slate-300 mb-4">✅ <b>{riass.fatto}</b> pratiche ora in carico a <b>{riass.scelto}</b>: le trova nel suo Tracking PDA e la lavorazione riparte da lì.</p>
+                                            <button onClick={() => setRiass(null)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black">Chiudi</button>
+                                        </>) : (<>
+                                            <p className="text-[13px] text-slate-400 mb-3 leading-relaxed">
+                                                Ha <b className="text-slate-200">{riass.aperte.length} pratiche APERTE</b> nel Tracking: senza qualcuno che le lavori continuano a maturare malus.
+                                                {riass.smNome
+                                                    ? <> Preflaggato lo store manager del negozio (<b className="text-slate-200">{riass.smNome}</b>): confermalo o scegli un altro.</>
+                                                    : <> Il negozio <b className="text-slate-200">non ha uno store manager attivo</b>: scegli tu chi le prende in carico.</>}
+                                            </p>
+                                            <SelectOpzioni value={riass.scelto} onChange={(v) => setRiass({ ...riass, scelto: v })}
+                                                opzioni={riass.opzioni.map((o) => o.delNegozio ? `${o.nome}` : o.nome)} placeholder="assegna a…" className="w-full mb-4" />
+                                            <div className="flex gap-2">
+                                                <button onClick={confermaRiassegnazione} disabled={riass.busy || !riass.scelto}
+                                                    className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-black transition-colors disabled:opacity-50">
+                                                    {riass.busy ? "…" : `📦 Riassegna ${riass.aperte.length} pratiche`}
+                                                </button>
+                                                <button onClick={() => setRiass(null)} disabled={riass.busy}
+                                                    className="px-4 py-3 rounded-xl bg-white/[0.06] hover:bg-white/10 text-slate-300 text-sm font-bold disabled:opacity-50">
+                                                    Non ora
+                                                </button>
+                                            </div>
+                                        </>)}
                                     </div>
                                 </div>
                             )}

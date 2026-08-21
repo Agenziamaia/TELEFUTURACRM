@@ -84,6 +84,21 @@ function inFerieResp(d: Date, venditore?: string): boolean {
   const ymd = _ymd(d);
   return periodi.some((p) => ymd >= p.dal && ymd <= p.al);
 }
+// FERIE PERSONALI DEL VENDITORE (Luca 21/08): come una chiusura di negozio
+// ma per la SINGOLA persona — nei giorni di ferie approvate della persona le
+// SUE pratiche congelano warning e malus (il resto del negozio continua a
+// correre). Mappa full_name → periodi approvati (vacation_requests).
+let FERIE_VENDITORI: Record<string, { dal: string; al: string }[]> | null = null;
+export function impostaFerieVenditori(m: Record<string, { dal: string; al: string }[]> | null | undefined) {
+  FERIE_VENDITORI = m && Object.keys(m).length ? m : null;
+}
+function inFerieVenditore(d: Date, venditore?: string): boolean {
+  if (!venditore || !FERIE_VENDITORI) return false;
+  const periodi = FERIE_VENDITORI[venditore];
+  if (!periodi?.length) return false;
+  const ymd = _ymd(d);
+  return periodi.some((p) => ymd >= p.dal && ymd <= p.al);
+}
 function giornoChiuso(d: Date, negozio?: string): boolean {
   if (d.getDay() === 0) {
     const apertoDomenica = !!negozio && !!DOMENICALI?.some((s) => sameStore(s, negozio));
@@ -109,7 +124,7 @@ export function giorniApertiDa(dataStrIta: string, negozio?: string, venditore?:
   while (cur < to) {
     cur.setDate(cur.getDate() + 1);
     // ferie del responsabile (BO agenzia) = giorno congelato per la pratica
-    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) count++;
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore) && !inFerieVenditore(cur, venditore)) count++;
   }
   return count;
 }
@@ -128,7 +143,7 @@ export function apertiTra(a: Date, b: Date, negozio?: string, venditore?: string
   let count = 0;
   while (cur < to) {
     cur.setDate(cur.getDate() + 1);
-    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) count++;
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore) && !inFerieVenditore(cur, venditore)) count++;
   }
   return count;
 }
@@ -140,7 +155,7 @@ export function addAperti(d: Date, n: number, negozio?: string, venditore?: stri
   let k = 0;
   while (k < n) {
     cur.setDate(cur.getDate() + 1);
-    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) k++;
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore) && !inFerieVenditore(cur, venditore)) k++;
   }
   return cur;
 }

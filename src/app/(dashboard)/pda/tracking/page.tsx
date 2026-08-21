@@ -30,7 +30,7 @@ import {
   impostaRegoleTracking,
   impostaEsitiTracking,
   impostaCalendarioChiusure,
-  impostaFerieResponsabili,
+  impostaFerieResponsabili, impostaFerieVenditori,
   esitoCompletato,
   getStatiAdminPerCategoria,
   esitoAdminDefinitivo,
@@ -1518,6 +1518,31 @@ export default function TrackingPdaPage() {
           });
         }
         impostaFerieResponsabili(ferieResp);
+      }
+      // FERIE PERSONALI (Luca 21/08): la persona in ferie congela warning e
+      // malus delle SUE pratiche — come la chiusura del negozio, ma solo per
+      // lei. Preciso anche quando il PV resta aperto con altri al lavoro.
+      {
+        const nomi = [...new Set(lavorabili.map((r: Record<string, unknown>) => String(r.venditore || "")).filter(Boolean))];
+        const ferieVend: Record<string, { dal: string; al: string }[]> = {};
+        if (nomi.length) {
+          const { data: ute } = await supabase.from("app_users").select("id, full_name").in("full_name", nomi);
+          const nomeDi: Record<string, string> = {};
+          ((ute ?? []) as { id: string; full_name: string | null }[]).forEach((u) => { if (u.full_name) nomeDi[u.id] = u.full_name; });
+          const ids = Object.keys(nomeDi);
+          if (ids.length) {
+            const { data: fer } = await supabase.from("vacation_requests")
+              .select("user_id, date_from, date_to, status, tipo").in("user_id", ids);
+            ((fer ?? []) as { user_id: string; date_from: string; date_to: string; status: string | null; tipo: string | null }[])
+              .filter((f) => /approv/i.test(String(f.status || "")) && String(f.tipo || "ferie") !== "corsi")
+              .forEach((f) => {
+                const nome = nomeDi[f.user_id];
+                if (!nome) return;
+                (ferieVend[nome] = ferieVend[nome] || []).push({ dal: String(f.date_from).slice(0, 10), al: String(f.date_to).slice(0, 10) });
+              });
+          }
+        }
+        impostaFerieVenditori(ferieVend);
       }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
