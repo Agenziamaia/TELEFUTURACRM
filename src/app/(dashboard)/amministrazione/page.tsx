@@ -328,8 +328,11 @@ function AmministrazioneInner() {
 
     const filteredUsers = useMemo(() => {
         return users.filter((u) => {
-            // I licenziati sono nascosti finché non si spunta "Mostra licenziati"
-            if (!showFired && u.status === "licenziato") return false;
+            // Flag ESCLUSIVO (Luca 21/08): spuntato = SOLO licenziati/sospesi,
+            // senza spunta = la lista normale (licenziati nascosti come sempre)
+            const oggiFlag = new Date().toISOString().slice(0, 10);
+            const fuoriServizio = u.status === "licenziato" || (!!u.sospeso_dal && u.sospeso_dal <= oggiFlag);
+            if (showFired ? !fuoriServizio : u.status === "licenziato") return false;
             if (fArea && areaOf(u.role) !== fArea) return false;
             if (fRole && u.role !== fRole) return false;
             if (search) {
@@ -509,7 +512,7 @@ function AmministrazioneInner() {
                                 onChange={(e) => setShowFired(e.target.checked)}
                                 className="accent-rose-500 w-4 h-4"
                             />
-                            Mostra licenziati{firedCount > 0 ? ` (${firedCount})` : ""}
+                            Solo licenziati/sospesi{firedCount > 0 ? ` (${firedCount})` : ""}
                         </label>
                         <span className="text-xs text-slate-500 ml-auto">
                             {filteredUsers.length} utenti
@@ -1907,7 +1910,12 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                             }))}
                         />
                     ) : subtab === "pratiche" ? (
-                        <PraticheView contracts={act.contracts} />
+                        <div className="space-y-5">
+                            {/* MALUS DELLA PERSONA (Luca 21/08): per i licenziati/sospesi
+                                spariscono dallo storico del Tracking — QUI restano visibili */}
+                            <MalusUtente nome={matchName} />
+                            <PraticheView contracts={act.contracts} />
+                        </div>
                     ) : subtab === "presenze" ? (
                         <div className="space-y-5">
                             <div>
@@ -3033,6 +3041,53 @@ function UserAllegati({ userId }: { userId: string }) {
                             </div>
                         );
                     })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+/* ── MALUS DELLA PERSONA (Luca 21/08): episodi di malus_storico intestati a
+   lei — visibili QUI anche quando (da licenziata/sospesa) spariscono dallo
+   storico del Tracking. Sola lettura, compensazioni sempre dal Tracking. */
+function MalusUtente({ nome }: { nome: string }) {
+    const [eps, setEps] = useState<{ id: string; contract_id: string; categoria: string; negozio: string | null; data_inizio: string; data_fine: string | null; giorni: number; importo: number; stato: string }[]>([]);
+    const [caricati, setCaricati] = useState(false);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const { data } = await supabase.from("malus_storico")
+                .select("id, contract_id, categoria, negozio, data_inizio, data_fine, giorni, importo, stato, eliminato")
+                .eq("venditore", nome).order("data_inizio", { ascending: false }).limit(200);
+            if (!vivo) return;
+            setEps(((data ?? []) as (typeof eps[number] & { eliminato?: boolean | null })[]).filter((e) => !e.eliminato));
+            setCaricati(true);
+        })();
+        return () => { vivo = false; };
+    }, [nome]);
+    if (!caricati) return <p className="text-xs text-slate-500">Carico i malus…</p>;
+    const attivi = eps.filter((e) => e.stato !== "compensato");
+    const eur = (v: number) => `${Number(v || 0).toLocaleString("it-IT")} €`;
+    const tot = attivi.reduce((s2, e) => s2 + (Number(e.importo) || 0), 0);
+    return (
+        <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                🔴 Malus {eps.length ? `— ${eps.length} episodi · ${eur(tot)} non compensati` : ""}
+            </h4>
+            {!eps.length ? <p className="text-sm text-slate-500">Nessun malus registrato.</p> : (
+                <div className="space-y-1.5">
+                    {eps.slice(0, 30).map((e) => (
+                        <div key={e.id} className="flex items-center gap-2 rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 text-[12px]">
+                            <span className="font-mono text-slate-400">{e.contract_id}</span>
+                            <span className="text-slate-500">{e.categoria}{e.negozio ? ` · ${e.negozio}` : ""}</span>
+                            <span className="text-slate-500">{e.data_inizio}{e.data_fine ? ` → ${e.data_fine}` : " → in corso"}</span>
+                            <span className="ml-auto font-bold text-slate-200 tabular-nums">{eur(e.importo)}</span>
+                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${e.stato === "compensato" ? "bg-emerald-500/15 text-emerald-300" : e.data_fine ? "bg-rose-500/15 text-rose-300" : "bg-amber-500/15 text-amber-300"}`}>
+                                {e.stato === "compensato" ? "compensato" : e.data_fine ? "attivo" : "in corso"}
+                            </span>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

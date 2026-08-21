@@ -38,7 +38,7 @@ import {
 import { RegoleTracking } from "./RegoleTracking";
 import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
-import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus } from "./malusStorico";
+import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus, impostaDelegheMalus } from "./malusStorico";
 
 type RawRow = Record<string, unknown> & {
   clients?: Record<string, unknown> | null;
@@ -51,6 +51,9 @@ type RawRow = Record<string, unknown> & {
 // così ANCHE chi vede tutto (admin) capisce a colpo d'occhio quali pratiche
 // sono degli agenti e chi ne risponde.
 let AGENTI_BO: Record<string, string> = {};
+// pratiche RIASSEGNATE (licenziamenti): contract_id → nome del delegato, per
+// il badge 📦 in riga e l'intestazione dei malus (Luca 21/08)
+let DELEGHE: Record<string, string> = {};
 // nel FILTRO utente e nelle tendine l'agente compare col nome del suo
 // responsabile (risposta Luca 13/08: «trovo ancora Berdini e non Coviello»)
 const nomeResponsabile = (v: string) => AGENTI_BO[v] || v;
@@ -677,6 +680,12 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                   <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>{row.negozio}</td>
                   <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>
                     {row.venditore}
+                    {DELEGHE[row.id] && (
+                      <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-fuchsia-500/15 border border-fuchsia-400/30 text-[10px] font-bold text-fuchsia-200"
+                        title={`Pratica riassegnata: era di ${row.venditore}, ora in carico a ${DELEGHE[row.id]}`}>
+                        📦 {DELEGHE[row.id]}
+                      </span>
+                    )}
                     {AGENTI_BO[row.venditore] && (
                       <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-indigo-500/10 border-indigo-500/30 text-indigo-300 whitespace-nowrap"
                         title={`Agente esterno: la pratica è in carico al back office ${AGENTI_BO[row.venditore]}`}>
@@ -1544,6 +1553,22 @@ export default function TrackingPdaPage() {
         }
         impostaFerieVenditori(ferieVend);
       }
+      // DELEGHE (Luca 21/08): risolvi i nomi dei delegati per badge e malus
+      {
+        const ids = [...new Set(lavorabili.map((r: Record<string, unknown>) => String(r.delegated_to || "")).filter(Boolean))];
+        const mappa: Record<string, string> = {};
+        if (ids.length) {
+          const { data: del } = await supabase.from("app_users").select("id, full_name").in("id", ids);
+          const nomi: Record<string, string> = {};
+          ((del ?? []) as { id: string; full_name: string | null }[]).forEach((d) => { if (d.full_name) nomi[d.id] = d.full_name; });
+          lavorabili.forEach((r: Record<string, unknown>) => {
+            const n = nomi[String(r.delegated_to || "")];
+            if (n) mappa[String(r.id)] = n;
+          });
+        }
+        DELEGHE = mappa;
+        impostaDelegheMalus(mappa);
+      }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
         // Le pratiche FATTE DA ME si vedono SEMPRE, anche se registrate su un
@@ -1652,6 +1677,17 @@ export default function TrackingPdaPage() {
       try {
         const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
         if (error) throw error;
+        // ARCHIVIO SENZA LICENZIATI/SOSPESI (Luca 21/08): i loro episodi non
+        // interessano nello storico del Tracking — restano a DB e si vedono
+        // nella SCHEDA UTENTE in Amministrazione. La sync continua a
+        // lavorare su tutto (gli episodi vanno comunque chiusi/allineati).
+        const { data: fuoriUt } = await supabase.from("app_users")
+          .select("full_name, status, sospeso_dal").or("status.eq.licenziato,sospeso_dal.not.is.null");
+        const oggiX = (() => { const d = new Date(); const pp = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pp(d.getMonth() + 1)}-${pp(d.getDate())}`; })();
+        const fuori = new Set(((fuoriUt ?? []) as { full_name: string | null; status: string | null; sospeso_dal: string | null }[])
+          .filter((x) => x.status === "licenziato" || (x.sospeso_dal && String(x.sospeso_dal).slice(0, 10) <= oggiX))
+          .map((x) => x.full_name).filter(Boolean) as string[]);
+        const soloVisibili = (lista: EpisodioMalus[]) => lista.filter((e) => !e.venditore || !fuori.has(e.venditore));
         // le pratiche CESTINATE (tracking_nascosto) escono dalle righe della
         // sync: cosi' lo spazzino congela A OGGI il loro episodio aperto —
         // prima restavano dentro e il malus continuava a maturare per sempre
@@ -1662,9 +1698,9 @@ export default function TrackingPdaPage() {
         if (scritture > 0) {
           const { data: eps2, error: err2 } = await supabase.from("malus_storico").select("*").limit(5000);
           if (err2) throw err2;
-          if (vivo) setEpisodi((eps2 ?? []) as EpisodioMalus[]);
+          if (vivo) setEpisodi(soloVisibili((eps2 ?? []) as EpisodioMalus[]));
         } else if (vivo) {
-          setEpisodi((eps ?? []) as EpisodioMalus[]);
+          setEpisodi(soloVisibili((eps ?? []) as EpisodioMalus[]));
         }
         if (vivo) setMalusErr(null);
       } catch (e) {

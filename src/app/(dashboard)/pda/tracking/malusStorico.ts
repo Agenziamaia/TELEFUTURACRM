@@ -127,6 +127,12 @@ function subLavorativi(d: Date, n: number): Date {
 // episodio (contract+categoria+data) non cambia, quindi niente doppioni.
 let AGENTI_BO_MALUS: Record<string, string> = {};
 export function impostaAgentiBOMalus(mappa: Record<string, string>) { AGENTI_BO_MALUS = mappa; }
+// PRATICHE RIASSEGNATE (Luca 21/08, licenziamenti/sospensioni): il malus si
+// intesta a CHI LE HA IN CARICO — la partita del licenziato si chiude, i
+// suoi episodi restano in archivio a suo nome ma i nuovi (e l'eventuale
+// aperto) passano al delegato. Mappa contract_id → nome delegato.
+let DELEGHE_MALUS: Record<string, string> = {};
+export function impostaDelegheMalus(mappa: Record<string, string>) { DELEGHE_MALUS = mappa || {}; }
 
 export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
@@ -147,7 +153,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     brand: row.brand || null,
     negozio: row.negozio || null,
     // agente associato → il malus è del suo back office (Luca 13/08)
-    venditore: (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null,
+    venditore: DELEGHE_MALUS[row.id] || (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null,
     nominativo: row.nominativo || null,
     malus_euro: euro,
   };
@@ -282,8 +288,9 @@ export async function sincronizzaMalusStorico(
       if (aperto) {
         // refresh del maturato (data_inizio resta quella registrata alla prima
         // rilevazione: cambiarla romperebbe la chiave univoca).
-        if (aperto.giorni !== derivatoAperto.giorni || Number(aperto.importo) !== derivatoAperto.importo) {
-          updates.push({ id: aperto.id, patch: { giorni: derivatoAperto.giorni, importo: derivatoAperto.importo } });
+        const cambioIntestazione = !!derivatoAperto.venditore && aperto.venditore !== derivatoAperto.venditore;
+        if (aperto.giorni !== derivatoAperto.giorni || Number(aperto.importo) !== derivatoAperto.importo || cambioIntestazione) {
+          updates.push({ id: aperto.id, patch: { giorni: derivatoAperto.giorni, importo: derivatoAperto.importo, ...(cambioIntestazione ? { venditore: derivatoAperto.venditore } : {}) } });
         }
       } else if (!match) {
         inserts.push(derivatoAperto);
