@@ -783,7 +783,19 @@ function CallerPageInner() {
                 const r = regoleCaller.get(c.stato);
                 return { id: c.id, stato: c.stato, caller: c.caller, fase: fi.fase, giorniMalus: fi.giorniMalus, malusGiorno: r?.malus_giorno || 0, dalMalus: fi.dalMalus };
             });
-            await sincronizzaMalusCaller(pratiche);
+            // FUORI SERVIZIO (Luca 21/08 sera, come il Tracking PDA): i malus
+            // dei caller licenziati/sospesi finiscono nello spazio ARCHIVIATI
+            // — partita chiusa, credito in traccia, niente piu' maturazione
+            const { data: fuoriUt, error: errFuori } = await supabase.from("app_users")
+                .select("full_name, status, sospeso_dal").or("status.eq.licenziato,sospeso_dal.not.is.null");
+            const oggiF = giornoYmd(new Date());
+            // query fallita ≠ "nessun fuori servizio": con l'insieme vuoto il
+            // giro archiviati de-archivierebbe tutto in massa — meglio saltare
+            // il giro (undefined) e riprovarci alla prossima sync
+            const fuori = errFuori ? undefined : new Set(((fuoriUt ?? []) as { full_name: string | null; status: string | null; sospeso_dal: string | null }[])
+                .filter((x) => x.status === "licenziato" || (x.sospeso_dal && String(x.sospeso_dal).slice(0, 10) <= oggiF))
+                .map((x) => x.full_name).filter(Boolean) as string[]);
+            await sincronizzaMalusCaller(pratiche, fuori);
             setMalusSyncVersione((v) => v + 1);
         } finally { malusSyncInCorso.current = false; }
     }, [isDirector, malusDatiPronti, calls, regoleCaller, faseInfo]);
@@ -812,11 +824,13 @@ function CallerPageInner() {
     useEffect(() => {
         let vivo = true;
         (async () => {
-            let q = supabase.from("caller_malus").select("importo, caller").eq("eliminato", false);
+            // gli ARCHIVIATI (licenziati/sospesi) restano fuori dal numerone
+            // operativo: si vedono nel loro spazio dentro l'archivio
+            let q = supabase.from("caller_malus").select("importo, caller, stato").eq("eliminato", false);
             if (!isDirector && currentCaller) q = q.eq("caller", currentCaller);
             const { data, error } = await q;
             if (!vivo || error) return;
-            setMalusTotStorico((data ?? []).reduce((t, r) => t + (Number(r.importo) || 0), 0));
+            setMalusTotStorico((data ?? []).filter((r) => r.stato !== "archiviato").reduce((t, r) => t + (Number(r.importo) || 0), 0));
         })();
         return () => { vivo = false; };
     }, [isDirector, currentCaller, malusSyncVersione]);

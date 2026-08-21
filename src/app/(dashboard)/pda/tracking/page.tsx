@@ -38,7 +38,7 @@ import {
 import { RegoleTracking } from "./RegoleTracking";
 import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
-import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus, impostaDelegheMalus } from "./malusStorico";
+import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus, impostaDelegheMalus, impostaFuoriServizio } from "./malusStorico";
 
 type RawRow = Record<string, unknown> & {
   clients?: Record<string, unknown> | null;
@@ -1677,17 +1677,30 @@ export default function TrackingPdaPage() {
       try {
         const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
         if (error) throw error;
-        // ARCHIVIO SENZA LICENZIATI/SOSPESI (Luca 21/08): i loro episodi non
-        // interessano nello storico del Tracking — restano a DB e si vedono
-        // nella SCHEDA UTENTE in Amministrazione. La sync continua a
-        // lavorare su tutto (gli episodi vanno comunque chiusi/allineati).
-        const { data: fuoriUt } = await supabase.from("app_users")
+        // GATE SCRITTURE (revisione indipendente 21/08, come il call center):
+        // la sync scrive SOLO per chi vede tutto — con le righe scopate di un
+        // consulente/SM lo spazzino chiuderebbe "a oggi" gli episodi aperti
+        // delle pratiche fuori dal suo perimetro, troncandoli in silenzio.
+        // Gli altri ricevono comunque l'archivio in sola lettura.
+        if (!seesAll) {
+          if (vivo) { setEpisodi((eps ?? []) as EpisodioMalus[]); setMalusErr(null); }
+          return;
+        }
+        // FUORI SERVIZIO → SPAZIO ARCHIVIATI (Luca 21/08 sera): gli episodi
+        // di licenziati/sospesi non spariscono piu' dall'archivio — la sync
+        // li marca "archiviato" (aperti congelati a oggi, la partita si
+        // chiude) e l'Archivio Malus li mostra nel loro spazio dedicato,
+        // fuori dai conteggi operativi della squadra attiva.
+        const { data: fuoriUt, error: errFuori } = await supabase.from("app_users")
           .select("full_name, status, sospeso_dal").or("status.eq.licenziato,sospeso_dal.not.is.null");
+        // query fallita ≠ "nessun fuori servizio": proseguire con l'insieme
+        // vuoto de-archivierebbe TUTTO in massa (revisione 21/08, rilievo 5)
+        if (errFuori) throw errFuori;
         const oggiX = (() => { const d = new Date(); const pp = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pp(d.getMonth() + 1)}-${pp(d.getDate())}`; })();
         const fuori = new Set(((fuoriUt ?? []) as { full_name: string | null; status: string | null; sospeso_dal: string | null }[])
           .filter((x) => x.status === "licenziato" || (x.sospeso_dal && String(x.sospeso_dal).slice(0, 10) <= oggiX))
           .map((x) => x.full_name).filter(Boolean) as string[]);
-        const soloVisibili = (lista: EpisodioMalus[]) => lista.filter((e) => !e.venditore || !fuori.has(e.venditore));
+        impostaFuoriServizio(fuori);
         // le pratiche CESTINATE (tracking_nascosto) escono dalle righe della
         // sync: cosi' lo spazzino congela A OGGI il loro episodio aperto —
         // prima restavano dentro e il malus continuava a maturare per sempre
@@ -1698,9 +1711,9 @@ export default function TrackingPdaPage() {
         if (scritture > 0) {
           const { data: eps2, error: err2 } = await supabase.from("malus_storico").select("*").limit(5000);
           if (err2) throw err2;
-          if (vivo) setEpisodi(soloVisibili((eps2 ?? []) as EpisodioMalus[]));
+          if (vivo) setEpisodi((eps2 ?? []) as EpisodioMalus[]);
         } else if (vivo) {
-          setEpisodi(soloVisibili((eps ?? []) as EpisodioMalus[]));
+          setEpisodi((eps ?? []) as EpisodioMalus[]);
         }
         if (vivo) setMalusErr(null);
       } catch (e) {
@@ -1710,7 +1723,7 @@ export default function TrackingPdaPage() {
       }
     })();
     return () => { vivo = false; };
-  }, [data, loading, regoleV]);
+  }, [data, loading, regoleV, seesAll]);
 
   // Scoping dell'archivio per ruolo, stessa regola delle pratiche: consulente
   // i suoi episodi, store manager i negozi visibili, amministrazione tutto.
@@ -1734,7 +1747,13 @@ export default function TrackingPdaPage() {
     return m;
   }, [episodiVisibili]);
 
-  const storicoTotale = useMemo(() => totaliEpisodi(episodiVisibili).totale, [episodiVisibili]);
+  // Il numerone "storico" del riquadro Malus e' quello della squadra OPERATIVA:
+  // gli archiviati (licenziati/sospesi) restano fuori — si vedono nel loro
+  // spazio dentro l'Archivio, non nei conteggi di chi lavora oggi.
+  const storicoTotale = useMemo(() => {
+    const t = totaliEpisodi(episodiVisibili);
+    return t.totale - t.archiviati.eur;
+  }, [episodiVisibili]);
 
   // Dall'archivio si apre la pratica: stessa riga (id+categoria) del tracking.
   const apriPraticaDaArchivio = useCallback((cid: string, cat: string) => {

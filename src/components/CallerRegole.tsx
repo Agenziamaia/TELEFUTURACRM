@@ -99,9 +99,10 @@ export function CallerRegoleModal({ stati, soloLettura = false, onClose, onSaved
 const CHIP: Record<string, string> = {
     in_corso: "bg-rose-500/15 text-rose-300 border-rose-500/30",
     attivo: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    archiviato: "bg-slate-500/15 text-slate-300 border-slate-500/30",
     compensato: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
 };
-const LABEL: Record<string, string> = { in_corso: "⏳ In corso", attivo: "🟠 Attivo (da compensare)", compensato: "✅ Compensato" };
+const LABEL: Record<string, string> = { in_corso: "⏳ In corso", attivo: "🟠 Attivo (da compensare)", archiviato: "📦 Archiviato", compensato: "✅ Compensato" };
 
 export function ArchivioMalusCallerModal({ puoCompensare, utente, soloCaller, onClose }: { puoCompensare: boolean; utente: string; soloCaller?: string; onClose: () => void }) {
     const [episodi, setEpisodi] = useState<EpisodioCaller[]>([]);
@@ -129,7 +130,7 @@ export function ArchivioMalusCallerModal({ puoCompensare, utente, soloCaller, on
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="px-4 pt-3 flex gap-2 flex-wrap text-[11px]">
-                    {(["in_corso", "attivo", "compensato"] as const).map((st) => (
+                    {(["in_corso", "attivo", "archiviato", "compensato"] as const).map((st) => (
                         <span key={st} className={`px-2.5 py-1 rounded-full border font-semibold ${CHIP[st]}`}>{LABEL[st]}: {tot(st).toFixed(2).replace(".", ",")} €</span>
                     ))}
                 </div>
@@ -143,7 +144,7 @@ export function ArchivioMalusCallerModal({ puoCompensare, utente, soloCaller, on
                                     <span className="text-xs text-slate-400">{ep.stato_pratica || "—"}</span>
                                     <span className="text-xs text-slate-500">dal {ep.dal}{ep.al ? ` al ${ep.al}` : ""} · {ep.giorni} gg</span>
                                     <span className="ml-auto text-sm font-bold text-rose-300">−{Number(ep.importo).toFixed(2).replace(".", ",")} €</span>
-                                    {ep.stato === "attivo" && puoCompensare && (
+                                    {(ep.stato === "attivo" || ep.stato === "archiviato") && puoCompensare && (
                                         <button onClick={() => compensa(ep)} className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold hover:bg-emerald-500/25">Compensa</button>
                                     )}
                                     {ep.stato === "compensato" && ep.compensato_da && <span className="text-[10px] text-slate-600">da {ep.compensato_da}</span>}
