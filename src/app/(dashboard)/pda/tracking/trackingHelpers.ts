@@ -489,15 +489,23 @@ function misure(row: TrackingRow) {
   // cui il negozio della pratica era aperto (festivi e chiusure esclusi)
   const aGg = giorniApertiDa(row.dataInserimento, row.negozio, row.venditore);
   const aUltimo = ultimo ? giorniApertiDa(ultimo.data, row.negozio, row.venditore) : null;
+  // RIASSEGNAZIONE (Luca 21/08): la pratica consegnata in MALUS al delegato
+  // NON puo' arrivargli in malus — al massimo in WARNING. L'evento
+  // "riassegnazione" (scritto solo sulle pratiche in malus alla consegna)
+  // riparte i contatori GIA' alla soglia warning: il livello di oggi e'
+  // Warning e il malus rimatura solo dopo (succ_malus − succ_warning)
+  // giorni aperti. Appena il delegato la lavora, l'evento nuovo supera
+  // questo e tutto torna al ritmo normale.
+  const off = ultimo?.tipo === "riassegnazione" ? (Number(regolaDi(row.categoria)?.succ_warning) || 0) : 0;
   return {
     gg,
     ggSenza: ultimo ? null : gg,
-    ggSucc: ggUltimo,
-    ggAgg: ultimo ? (ggUltimo as number) : gg,
+    ggSucc: ggUltimo == null ? null : ggUltimo + off,
+    ggAgg: ultimo ? (ggUltimo as number) + off : gg,
     aGg,
     aSenza: ultimo ? null : aGg,
-    aSucc: aUltimo,
-    aAgg: ultimo ? (aUltimo as number) : aGg,
+    aSucc: aUltimo == null ? null : aUltimo + off,
+    aAgg: ultimo ? (aUltimo as number) + off : aGg,
   };
 }
 const _hit = (soglia: number | null | undefined, valore: number | null) =>

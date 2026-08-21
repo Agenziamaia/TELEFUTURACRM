@@ -1421,7 +1421,7 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
     //    esce da solo dopo l'azione; il bottone 📦 lo apre anche a mano
     //    (per chi è già stato licenziato in passato).
     const ESITI_FINE_TRK = ["attivato", "re_inserita", "liquidato", "completo_sky", "attivo_sky", "annullato"];
-    const [riass, setRiass] = useState<null | { aperte: { id: string }[]; opzioni: { id: string; nome: string; delNegozio: boolean }[]; scelto: string; smNome: string | null; busy: boolean; fatto?: number }>(null);
+    const [riass, setRiass] = useState<null | { aperte: { id: string }[]; opzioni: { id: string; nome: string; delNegozio: boolean }[]; scelto: string; smNome: string | null; busy: boolean; fatto?: number; inMalus?: number }>(null);
     const [riassInfo, setRiassInfo] = useState("");
     const avviaRiassegnazione = async () => {
         setRiassInfo("");
@@ -1457,7 +1457,32 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
             const { error } = await supabase.from("contracts").update({ delegated_to: dest.id }).in("id", blocco);
             if (!error) fatte += blocco.length;
         }
-        setRiass({ ...riass, busy: false, fatto: fatte });
+        // Le pratiche IN MALUS non possono arrivare al delegato in malus
+        // (Luca 21/08): al massimo in WARNING. Sulle sole pratiche con un
+        // episodio di malus APERTO si scrive l'evento «riassegnazione»: il
+        // motore le riparte già alla soglia warning e l'episodio del vecchio
+        // venditore si chiude alla consegna.
+        let inMalus = 0;
+        const { data: aperti } = await supabase.from("malus_storico")
+            .select("contract_id, eliminato").in("contract_id", ids).is("data_fine", null);
+        const idsMalus = [...new Set(((aperti ?? []) as { contract_id: string; eliminato: boolean | null }[])
+            .filter((e) => !e.eliminato).map((e) => e.contract_id))];
+        if (idsMalus.length) {
+            const { data: conStoria } = await supabase.from("contracts").select("id, storia").in("id", idsMalus);
+            const evento = {
+                data: new Date().toLocaleDateString("it-IT"),
+                tipo: "riassegnazione",
+                testo: `Pratica riassegnata a ${dest.nome} (era di ${matchName}) — consegnata in Warning`,
+                utente: "Amministrazione",
+                ruolo: "admin",
+            };
+            for (const c of ((conStoria ?? []) as { id: string; storia: unknown }[])) {
+                const storia = Array.isArray(c.storia) ? c.storia : [];
+                const { error } = await supabase.from("contracts").update({ storia: [...storia, evento] }).eq("id", c.id);
+                if (!error) inMalus++;
+            }
+        }
+        setRiass({ ...riass, busy: false, fatto: fatte, inMalus });
     };
     // ── ALIAS (mig. 142, 03/08): l'alias diventa l'UNICO nome del gestionale
     //    (applica_alias sostituisce il nome in ogni colonna testo/jsonb);
@@ -1869,7 +1894,7 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                         onClick={(e) => e.stopPropagation()}>
                                         <div className="text-lg font-extrabold text-slate-100 mb-1.5">📦 Riassegna le pratiche di {u.full_name}</div>
                                         {riass.fatto != null ? (<>
-                                            <p className="text-[13px] text-slate-300 mb-4">✅ <b>{riass.fatto}</b> pratiche ora in carico a <b>{riass.scelto}</b>: le trova nel suo Tracking PDA e la lavorazione riparte da lì.</p>
+                                            <p className="text-[13px] text-slate-300 mb-4">✅ <b>{riass.fatto}</b> pratiche ora in carico a <b>{riass.scelto}</b>: le trova nel suo Tracking PDA e la lavorazione riparte da lì.{riass.inMalus ? <> Le <b>{riass.inMalus}</b> che erano in malus gli arrivano in <b className="text-amber-300">Warning</b> (il malus del vecchio venditore si chiude alla consegna).</> : null}</p>
                                             <button onClick={() => setRiass(null)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black">Chiudi</button>
                                         </>) : (<>
                                             <p className="text-[13px] text-slate-400 mb-3 leading-relaxed">

@@ -147,13 +147,17 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const oggi = new Date();
   oggi.setHours(0, 0, 0, 0);
 
+  // intestazioni: i segmenti PRIMA della riassegnazione restano al venditore
+  // originale (o al suo BO), quelli DOPO — e l'episodio in corso — passano
+  // al delegato (Luca 21/08: la partita del licenziato si chiude)
+  const nomeOriginale = (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null;
+  const nomeDelegato = DELEGHE_MALUS[row.id] || null;
   const base = {
     contract_id: row.id,
     categoria: row.categoria,
     brand: row.brand || null,
     negozio: row.negozio || null,
-    // agente associato → il malus è del suo back office (Luca 13/08)
-    venditore: DELEGHE_MALUS[row.id] || (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null,
+    venditore: nomeOriginale,
     nominativo: row.nominativo || null,
     malus_euro: euro,
   };
@@ -168,6 +172,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const t0 = parseData(row.dataInserimento);
   if (t0) segs.push({ start: t0, soglia: r.senza_malus, completato: false });
   let flagCompletato = false;
+  let delegaD: Date | null = null;
   for (const { ev, d } of eventi) {
     if (ev.tipo === "stato_negozio") {
       const m = ev.testo.match(/aggiornato:\s*(.+)$/i);
@@ -176,7 +181,13 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       // maturazione: i segmenti successivi non generano piu' malus.
       if (id) flagCompletato = fermaMalus(id, row.categoria, row.brand);
     }
-    segs.push({ start: d, soglia: r.succ_malus, completato: flagCompletato });
+    // RIASSEGNAZIONE: il segmento post-consegna riparte dal livello WARNING
+    // (come il live): il malus rimatura dopo succ_malus − succ_warning aperti
+    const sogliaSeg = ev.tipo === "riassegnazione" && r.succ_malus != null
+      ? Math.max(1, r.succ_malus - (Number(r.succ_warning) || 0))
+      : r.succ_malus;
+    if (ev.tipo === "riassegnazione") delegaD = d;
+    segs.push({ start: d, soglia: sogliaSeg, completato: flagCompletato });
   }
 
   const out: EpisodioDerivato[] = [];
@@ -194,6 +205,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     const giorni = misura - seg.soglia + 1;
     out.push({
       ...base,
+      venditore: nomeDelegato && delegaD && seg.start >= delegaD ? nomeDelegato : nomeOriginale,
       data_inizio: toISODate(addAperti(seg.start, seg.soglia, row.negozio, row.venditore)),
       data_fine: toISODate(fine),
       giorni,
@@ -210,6 +222,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       const giorni = Math.max(1, Math.round(importo / euro));
       out.push({
         ...base,
+        venditore: nomeDelegato || nomeOriginale,
         data_inizio: toISODate(subLavorativi(oggi, giorni - 1)),
         data_fine: null,
         giorni,
