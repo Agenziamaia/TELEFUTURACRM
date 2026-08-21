@@ -3,24 +3,28 @@
 import { useAuth } from "@/context/AuthContext";
 import OrdineMerceContent from "./OrdineMerceContent";
 import { useVisibleStores } from "@/lib/visibleStores";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { effectiveAllowed, MANAGERS } from "@/lib/nav";
 
-// ruoli reali: prima "dev"/"direttore_generale" restavano fuori dalla pagina
-const ALLOWED_ROLES = ["admin", "dev", "direttore_generale", "amministrativo", "store_manager", "direttore_commerciale", "back_office_caller", "back_office"];
-
+// NIENTE PIÙ elenco ruoli cablato (Luca 21/08: il collaboratore era abilitato
+// dai Permessi ma la pagina lo respingeva con la sua lista privata). Comanda
+// la STESSA verifica della voce di menù: default MANAGERS + le righe della
+// pagina Permessi, per ruolo o per singola persona.
 export default function OrdineMercePage() {
   const { user } = useAuth();
   // Negozi visibili dalla fonte unica (primary + user_stores + user_store_visibility).
   const { seesAll, stores: myStores } = useVisibleStores();
+  const { perms, loaded } = useRolePermissions(user?.role, user?.grade, user?.id);
 
-  if (!user) {
+  if (!user || !loaded) {
     return (
       <div className="p-8 text-slate-400">Caricamento...</div>
     );
   }
 
-  if (!ALLOWED_ROLES.includes(user.role)) {
+  if (!effectiveAllowed(user.role, "/ordine-merce", MANAGERS, perms)) {
     return (
-      <div className="p-8 text-amber-400">Non autorizzato. Solo Store Manager, Back Office e Admin possono accedere a Ordine Merce.</div>
+      <div className="p-8 text-amber-400">Non autorizzato: l&apos;accesso a Ordine Merce si concede dalla pagina Permessi (per ruolo o per persona).</div>
     );
   }
 
