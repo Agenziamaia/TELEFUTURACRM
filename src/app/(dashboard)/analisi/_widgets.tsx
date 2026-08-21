@@ -573,8 +573,10 @@ function WidgetSquadra({ ctx, metrica }) {
 
 function WidgetDuello({ ctx }) {
     const [rivaleSel, setRivaleSel] = useState("");
-    const rivale = rivaleSel || ctx.negoziTutti.find((n) => norm(n) !== norm(ctx.negozio)) || "";
-    const mio = ctx.itemsRete.filter((it) => norm(it.negozio) === norm(ctx.negozio));
+    const miei = ctx.negozi || [ctx.negozio];
+    const èMio = (n) => miei.some((m) => norm(m) === norm(n));
+    const rivale = rivaleSel || ctx.negoziTutti.find((n) => !èMio(n)) || "";
+    const mio = ctx.itemsRete.filter((it) => èMio(it.negozio));
     const suo = ctx.itemsRete.filter((it) => norm(it.negozio) === norm(rivale));
     const brands = ["w3", "vf", "sky"];
     return (
@@ -582,7 +584,7 @@ function WidgetDuello({ ctx }) {
             <div className="flex items-center justify-between gap-2 mb-2">
                 <span className="text-xs font-bold text-white">{ctx.negozio}</span>
                 <span className="text-[10px] text-slate-500">vs</span>
-                <SelectOpzioni value={rivale} onChange={setRivaleSel} opzioni={ctx.negoziTutti.filter((n) => norm(n) !== norm(ctx.negozio))} placeholder="sfida…" className="min-w-[130px]" />
+                <SelectOpzioni value={rivale} onChange={setRivaleSel} opzioni={ctx.negoziTutti.filter((n) => !èMio(n))} placeholder="sfida…" className="min-w-[130px]" />
             </div>
             <div className="space-y-2.5">
                 {brands.map((b) => {

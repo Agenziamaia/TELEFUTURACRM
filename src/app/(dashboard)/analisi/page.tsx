@@ -25,7 +25,7 @@ import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { giorniLavorativiMese, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
-import { SelectOpzioni } from "@/components/SelectPersona";
+import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
 import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, fmtN } from "./_charts";
@@ -259,21 +259,28 @@ export default function Analisi() {
     const negozioCasa = mieiNegozi[0] || (user?.negozio && negoziAttivi.find((n) => sameStore(n, user.negozio))) || negoziVisibili[0] || "";
 
     // ── negozio osservato (solo tra i visibili) + filtro collaboratore ────
-    const [negozioSel, setNegozioSel] = useState("");
-    const negozio = useMemo(() => {
-        if (negozioSel && negoziVisibili.includes(negozioSel)) return negozioSel;
-        if (negoziVisibili.some((n) => sameStore(n, negozioCasa))) return negozioCasa;
-        return negoziVisibili[0] || "";
-    }, [negozioSel, negoziVisibili, negozioCasa]);
+    // MULTI-selezione (Luca 21/08): Emanuele gestisce Magliana divisa in W3 e
+    // Multi e deve poterle sommare. Default: per chi NON vede tutto, i SUOI
+    // negozi del profilo (i gemelli insieme); per l'admin il negozio "casa".
+    const [negoziSelN, setNegoziSelN] = useState([]);
+    const negozi = useMemo(() => {
+        const validi = negoziSelN.filter((n) => negoziVisibili.includes(n));
+        if (validi.length) return validi;
+        if (!seesAll && negoziVisibili.length) return negoziVisibili;
+        const casa = negoziVisibili.find((n) => sameStore(n, negozioCasa)) || negoziVisibili[0];
+        return casa ? [casa] : [];
+    }, [negoziSelN, negoziVisibili, seesAll, negozioCasa]);
+    const inNegozi = (nome) => negozi.some((n) => norm(n) === norm(nome));
+    const negozio = negozi.join(" + ");   // etichetta (duello, intestazioni, drill)
     const [collabSel, setCollabSel] = useState("");
     const TUTTI = "👥 Tutta la squadra";
     const squadraNegozio = useMemo(() => {
         const per = new Map();
-        for (const it of items) { if (norm(it.negozio) !== norm(negozio) || it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
+        for (const it of items) { if (!inNegozi(it.negozio) || it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
-    }, [items, negozio]);
+    }, [items, negozi.join("|")]);
     const collab = collabSel && collabSel !== TUTTI && squadraNegozio.some((s) => norm(s) === norm(collabSel)) ? collabSel : "";
-    useEffect(() => { setCollabSel(""); }, [negozio]);
+    useEffect(() => { setCollabSel(""); }, [negozi.join("|")]);
 
     // ── contesti dei widget ───────────────────────────────────────────────
     // media/giorno: lavorativi TRASCORSI se mese in corso, altrimenti i
@@ -299,20 +306,20 @@ export default function Analisi() {
         persona, negozio: negozioCasa, negozioCasa,
     }), [items, itemsPrev, mieiItems, persona, negozioCasa, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
     const ctxNegozio = useMemo(() => {
-        const store = items.filter((it) => norm(it.negozio) === norm(negozio));
+        const store = items.filter((it) => inNegozi(it.negozio));
         const scoped = collab ? store.filter((it) => norm(it.venditore) === norm(collab)) : store;
-        const extStore = (dati?.ext || []).filter((r) => norm(r.negozio) === norm(negozio));
+        const extStore = (dati?.ext || []).filter((r) => inNegozi(r.negozio));
         return {
             ...base, areaKey: "negozio",
             items: scoped,
-            itemsPrev: itemsPrev.filter((it) => norm(it.negozio) === norm(negozio) && (!collab || norm(it.venditore) === norm(collab))),
+            itemsPrev: itemsPrev.filter((it) => inNegozi(it.negozio) && (!collab || norm(it.venditore) === norm(collab))),
             itemsStore: store,
             ext: collab ? extStore.filter((r) => norm(r.venditore) === norm(collab)) : extStore,
-            extPrev: (dati?.extPrev || []).filter((r) => norm(r.negozio) === norm(negozio) && (!collab || norm(r.venditore) === norm(collab))),
-            altri: (dati?.altri || []).filter((r) => norm(r.negozio) === norm(negozio) && (!collab || norm(r.venditore) === norm(collab))),
-            persona: collab || persona, negozio, negozioCasa: negozio,
+            extPrev: (dati?.extPrev || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
+            altri: (dati?.altri || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
+            persona: collab || persona, negozio, negozi, negozioCasa: negozio,
         };
-    }, [items, itemsPrev, negozio, collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
+    }, [items, itemsPrev, negozi.join("|"), collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
 
     // ── layout per area (app_users.analisi_layout) ────────────────────────
     const decode = (arr) => (Array.isArray(arr) ? arr : []).map((s) => { const [k, t] = String(s).split("@"); return REGISTRO[k] ? { k, s: [1, 2, 4].includes(Number(t)) ? Number(t) : (REGISTRO[k].def || 1) } : null; }).filter(Boolean);
@@ -428,8 +435,8 @@ export default function Analisi() {
                     )}
                     {area === "negozio" && (
                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                            <span>Negozio:</span>
-                            <SelectOpzioni value={negozio} onChange={(v) => setNegozioSel(v)} opzioni={negoziVisibili} placeholder="negozio…" className="min-w-[170px]" />
+                            <span>Negozi:</span>
+                            <SelectMulti values={negoziSelN.length ? negoziSelN : negozi} onChange={setNegoziSelN} opzioni={negoziVisibili} placeholder="i tuoi negozi…" maxVoci={100} className="min-w-[200px]" />
                             <span className="pl-1">Collaboratore:</span>
                             <SelectOpzioni value={collab || TUTTI} onChange={(v) => setCollabSel(v)} opzioni={[TUTTI, ...squadraNegozio]} placeholder="tutti…" className="min-w-[180px]" />
                         </div>
@@ -452,7 +459,7 @@ export default function Analisi() {
                             setLista={(l) => { setLayoutIo(l); salva("io", l); }} intestazione={`👤 ${persona || "—"}${mieiNegozi.length ? ` · ${mieiNegozi.join(" + ")}` : ""}`} />
                     )}
                     {area === "negozio" && layoutNeg && (
-                        <GrigliaWidget key={`ng-${negozio}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
+                        <GrigliaWidget key={`ng-${negozi.join("|")}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
                     {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente }} />}
