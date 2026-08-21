@@ -119,26 +119,57 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         return [...per.entries()].sort((x, y) => y[1] - x[1]).map(([k]) => k);
     }, [sueTutte]);
 
+    // GRUPPI in tendina (solo W3): ⭐ si espande nei codici del gruppo, così
+    // la selezione resta fatta di codici veri e le regole delle soglie leggono
+    // la tipologia da sole
+    const GRUPPI_W3 = { fr: "⭐ Franchising (tutto il gruppo)", t1: "⭐ Multibrand T1 · Donna", t2: "⭐ Multibrand T2 · Promontori+Garbatella" };
+    const codiciGruppo = (righeTarget) => codiciBrand.filter((c) => (righeTarget || []).some((r) => String(r.negozio).split("+").some((x) => stessoNome(x.trim(), c)) || stessoNome(r.negozio, c)));
+    const opzioniCodici = b === "w3" ? [GRUPPI_W3.fr, GRUPPI_W3.t1, GRUPPI_W3.t2, ...codiciBrand] : codiciBrand;
+    const espandiGruppi = (vals) => {
+        if (b !== "w3" || !w3) return vals.filter((v) => !String(v).startsWith("⭐"));
+        const out = [];
+        for (const v of vals) {
+            if (v === GRUPPI_W3.fr) out.push(...codiciGruppo(w3.fr));
+            else if (v === GRUPPI_W3.t1) out.push(...codiciGruppo(w3.t1 ? [w3.t1] : []));
+            else if (v === GRUPPI_W3.t2) out.push(...codiciGruppo(w3.t2 ? [w3.t2] : []));
+            else out.push(v);
+        }
+        return [...new Set(out)];
+    };
+
     // proiezione fine mese sul ritmo dei giorni lavorativi trascorsi
     const prj = (v) => (meseCorrente && gl?.mostraProiezione !== false && gl?.trascorsi > 0 && v > 0) ? Math.round((v / gl.trascorsi) * gl.totali * 100) / 100 : null;
 
-    // ── W3: target per PDV (pannello) — franchising vs Multibrand ────────
+    // ── W3: TRE GRUPPI di gara (Luca 21/08 mattina) — FR (franchising, soglie
+    //    PER SINGOLO PDV), MB T1 (Donna) e MB T2 (Promontori+Garbatella, gara
+    //    congiunta). Le soglie si mostrano SOLO quando la selezione coincide
+    //    con la loro tipologia: un PDV → le sue; il gruppo FR intero → quelle
+    //    di gruppo (assicurazioni/L&G/business); T1 o T2 completi → l'On Top.
+    //    Tutti insieme o gruppi misti → produzione aggregata, NESSUNA soglia
+    //    («non esiste una soglia che raccoglie tipologie diverse»).
     const w3 = useMemo(() => {
         if (b !== "w3" || !tab || !raw) return null;
         const fr = targetW3.filter((r) => /^\d+$/.test(r.cod_gara || ""));
-        const mb = targetW3.filter((r) => /^MB-/.test(r.cod_gara || ""));
+        const t1 = targetW3.find((r) => /^MB-T1/.test(r.cod_gara || "")) || null;
+        const t2 = targetW3.find((r) => /^MB-T2/.test(r.cod_gara || "")) || null;
         const copre = (rigaNeg, v) => String(rigaNeg).split("+").some((x) => stessoNome(x, v)) || stessoNome(rigaNeg, v);
+        const grpDi = (v) => fr.some((r) => copre(r.negozio, v)) ? "fr" : (t1 && copre(t1.negozio, v)) ? "t1" : (t2 && copre(t2.negozio, v)) ? "t2" : "altro";
         const frSel = filtroAttivo ? fr.filter((r) => selezione.some((v) => copre(r.negozio, v))) : fr;
-        const mbSel = filtroAttivo ? mb.filter((r) => selezione.some((v) => copre(r.negozio, v))) : mb;
+        const t2Nomi = t2 ? String(t2.negozio).split("+").map((x) => x.trim()) : [];
+        // "completo" tollera i PDV senza vendite nel periodo (non sono in tendina)
+        const attivo = (nome) => codiciBrand.some((c) => stessoNome(nome, c));
+        const t2Completo = !!t2 && t2Nomi.every((n) => !attivo(n) || selezione.some((v) => stessoNome(n, v)));
+        const frCompleto = fr.length > 0 && fr.every((r) => !attivo(r.negozio) || selezione.some((v) => copre(r.negozio, v)));
+        const gruppi = [...new Set(selezione.map(grpDi))];
+        let modo = "nessuna";
+        if (filtroAttivo && gruppi.length === 1) {
+            if (gruppi[0] === "fr") modo = frSel.length === 1 ? "pdv" : (frCompleto ? "gruppoFr" : "parzialeFr");
+            else if (gruppi[0] === "t1") modo = "t1";
+            else if (gruppi[0] === "t2") modo = t2Completo ? "t2" : "t2parz";
+        }
         const nomiFr = fr.map((r) => r.negozio);
         const rawFr = raw.filter((c) => nomiFr.some((n) => stessoNome(n, c.cod_ins || "")));
-        const somme = (campo) => {
-            const arr = frSel.map((r) => r[campo]).filter((a) => Array.isArray(a) && a.length);
-            if (!arr.length) return [];
-            const len = Math.max(...arr.map((a) => a.length));
-            return Array.from({ length: len }, (_, i) => ({ tier: i + 1, soglia_da: Math.round(arr.reduce((s, a) => s + (a[i] ?? a[a.length - 1] ?? 0), 0)) }));
-        };
-        // Partnership: eventi CB (righe condizionate) contro il target dei PDV scelti
+        // Partnership: eventi CB del franchising dentro la selezione
         const eventi = [];
         let puntiPr = 0;
         for (const c of rawFr) {
@@ -147,15 +178,20 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
             puntiPr += Number(r.punti || 0);
             eventi.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: Number(r.punti || 0), g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
         }
-        const pr = frSel.reduce((s, r) => ({ target: s.target + (r.extra?.pr?.target || 0), premio: s.premio + (r.extra?.pr?.premio || 0), premio80: s.premio80 + (r.extra?.pr?.premio80 || 0) }), { target: 0, premio: 0, premio80: 0 });
-        return { fr, frSel, mbSel, rawFr, somme, eventi, puntiPr, pr };
-    }, [b, tab, raw, targetW3, filtroAttivo, selezione, idxDi]);
+        // target/premi Partnership SOLO sul singolo PDV (le soglie sono sue)
+        const rowPdv = modo === "pdv" ? frSel[0] : null;
+        const pr = rowPdv?.extra?.pr
+            ? { target: rowPdv.extra.pr.target || 0, premio: rowPdv.extra.pr.premio || 0, premio80: rowPdv.extra.pr.premio80 || 0 }
+            : { target: 0, premio: 0, premio80: 0 };
+        return { fr, t1, t2, t2Nomi, frSel, rawFr, modo, eventi, puntiPr, pr };
+    }, [b, tab, raw, targetW3, filtroAttivo, selezione.join("|"), idxDi, codiciBrand]);
 
-    // motore azienda: per W3 sul solo franchising (il Multibrand ha la sua gara)
+    // motore azienda sulla PRODUZIONE della selezione (le soglie decidono da
+    // sole quando comparire, la produzione aggregata c'è sempre)
     const av = useMemo(() => {
         if (!tab || !raw) return null;
-        return calcolaAvanzamento(tab, b === "w3" && w3 ? w3.rawFr : raw);
-    }, [tab, raw, b, w3]);
+        return calcolaAvanzamento(tab, raw);
+    }, [tab, raw]);
 
     const righe = useMemo(() => righeOperatore(b, sue), [b, sue]);
     const punti = av
@@ -167,7 +203,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
     const drillPista = (chiave, nome) => {
         // il drill nasce dallo STESSO motore delle barre (tabellare azienda,
         // stesse righe raw): così i conteggi combaciano sempre
-        const base = b === "w3" && w3 ? w3.rawFr : (raw || []);
+        const base = raw || [];
         const lista = [];
         for (const c of base) {
             const set = matchRigheAttivazione(tab?.righe || [], c, brandIdDaLabel(c.brand) || G.chiave);
@@ -177,30 +213,45 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         apri({ titolo: `${G.label} · ${nome} — contratti nel filtro`, sub: filtroLabel, items: lista });
     };
 
-    // quali piste hanno soglie di RETE (tacche solo senza filtro)
-    const scopoRete = (chiave) => b !== "w3" || ["assicurazioni", "lucegas", "business_piva"].includes(chiave);
-    const notaRete = (chiave) => b === "w3" && chiave === "business_piva" ? "🌍 soglia di Ragione Sociale" : "🌍 soglie di RETE — togli il filtro per vederle";
-
+    const NOTE_MODO = {
+        nessuna: "tipologie diverse insieme: scegli un PDV o un gruppo ⭐ dalla tendina per le soglie",
+        parzialeFr: "le soglie sono dei SINGOLI negozi: scegline uno (o ⭐ Franchising per quelle di gruppo)",
+        t1: "confluisce nella gara On Top qui sotto",
+        t2: "confluisce nella gara On Top qui sotto",
+        t2parz: "la gara T2 è CONGIUNTA (Promontori+Garbatella): seleziona ⭐ Multibrand T2",
+    };
     const barraPista = (p) => {
         const st = av?.piste?.[p.chiave];
         if (!st || (!st.punti && !st.pezzi)) return null;
         if (b === "w3" && (p.chiave === "cb" || p.chiave === "partnership")) return null;   // la CB vive nella barra Partnership
         let scala = (tab?.soglie || []).filter((s) => s.pista === p.chiave).sort((x, y) => x.tier - y.tier);
         let nota = null;
+        const modo = w3?.modo;
         if (b === "w3" && (p.chiave === "mobile" || p.chiave === "fisso")) {
-            scala = w3 ? w3.somme(p.chiave === "mobile" ? "soglie_mobile" : "soglie_fisso") : [];
-            nota = w3 && w3.frSel.length ? `🎯 target di ${w3.frSel.length} PDV${w3.frSel.length > 1 ? " sommati" : ` (${w3.frSel[0].negozio})`}` : null;
-        } else if (scopoRete(p.chiave) && filtroAttivo) {
+            // soglie DEL SINGOLO PDV, solo quando ne è selezionato uno
+            if (modo === "pdv") {
+                const arr = w3.frSel[0]?.[p.chiave === "mobile" ? "soglie_mobile" : "soglie_fisso"] || [];
+                scala = arr.map((v, i) => ({ tier: i + 1, soglia_da: v }));
+                nota = `🎯 target ${w3.frSel[0].negozio}`;
+            } else { scala = []; nota = NOTE_MODO[modo] || NOTE_MODO.nessuna; }
+        } else if (b === "w3" && ["assicurazioni", "lucegas", "business_piva"].includes(p.chiave)) {
+            // soglie DI GRUPPO: solo col gruppo Franchising al completo
+            if (modo !== "gruppoFr") {
+                scala = [];
+                nota = p.chiave === "business_piva" ? "🌍 di Ragione Sociale — ⭐ Franchising per vederla" : "🌍 di gruppo — seleziona ⭐ Franchising per vederle";
+            } else nota = "🌍 soglia di gruppo (franchising al completo)";
+        } else if (b !== "w3" && filtroAttivo) {
             scala = [];
-            nota = notaRete(p.chiave);
+            nota = "🌍 soglie di RETE — togli il filtro per vederle";
         }
+        const conVincoli = b === "w3" ? modo === "gruppoFr" : !filtroAttivo;
         return (
             <SogliaBar key={p.chiave}
                 emoji={PISTA_EMOJI[p.chiave] || "▫️"} label={PISTA_LABEL[p.chiave] || p.nome}
                 punti={st.punti} pezzi={st.pezzi} soglie={scala} colore={G.colore}
                 proiezione={prj(st.punti)}
-                gate={!filtroAttivo ? (st.gate || null) : null}
-                malus={!filtroAttivo && b === "w3" && p.chiave === "mobile" && av?.malus30Mobile ? "malus −30% (fisso S1 o <6 P.IVA)" : null}
+                gate={conVincoli ? (st.gate || null) : null}
+                malus={conVincoli && b === "w3" && p.chiave === "mobile" && (av?.pivaMobile ?? 99) < 6 ? `P.IVA mobile ${av.pivaMobile}/6 → rischio malus −30%` : null}
                 nota={nota}
                 onClick={() => drillPista(p.chiave, PISTA_LABEL[p.chiave] || p.nome)}
             />
@@ -218,7 +269,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                 {lente === "codici" && (
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">🎯 Codici</span>
-                        <SelectMulti values={codici} onChange={setCodici} opzioni={codiciBrand} placeholder="tutti…" maxVoci={100} className="min-w-[200px]" />
+                        <SelectMulti values={codici} onChange={(v) => setCodici(espandiGruppi(v))} opzioni={opzioniCodici} placeholder="tutti…" maxVoci={100} className="min-w-[200px]" />
                     </div>
                 )}
             </div>
@@ -231,26 +282,26 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                         ) : av ? (
                             <>
                                 {[...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine).map(barraPista)}
-                                {b === "w3" && w3 && (w3.pr.target > 0 || w3.puntiPr > 0) && (
+                                {b === "w3" && w3 && w3.puntiPr > 0 && (
                                     <SogliaBar emoji="🏅" label="Partnership Reward (eventi CB)"
                                         punti={w3.puntiPr} pezzi={w3.eventi.length}
-                                        soglie={w3.pr.target > 0 ? [{ tier: 1, soglia_da: Math.round(w3.pr.target * 0.8) }, { tier: 2, soglia_da: w3.pr.target }] : []}
+                                        soglie={w3.modo === "pdv" && w3.pr.target > 0 ? [{ tier: 1, soglia_da: Math.round(w3.pr.target * 0.8) }, { tier: 2, soglia_da: w3.pr.target }] : []}
                                         colore={G.colore} proiezione={prj(w3.puntiPr)}
-                                        nota={w3.pr.target > 0
+                                        nota={w3.modo === "pdv" && w3.pr.target > 0
                                             ? (w3.puntiPr >= w3.pr.target ? `🎁 premio pieno ${fmtN(w3.pr.premio)} € preso!`
                                                 : w3.puntiPr >= w3.pr.target * 0.8 ? `🎁 ${fmtN(w3.pr.premio80)} € in tasca · pieni ${fmtN(w3.pr.premio)} € tra ${fmtN(Math.ceil(w3.pr.target - w3.puntiPr))} pt`
                                                     : `🎁 ${fmtN(w3.pr.premio80)} € tra ${fmtN(Math.ceil(w3.pr.target * 0.8 - w3.puntiPr))} pt (80%) · ${fmtN(w3.pr.premio)} € al target`)
-                                            : "🎯 target: seleziona PDV franchising"}
+                                            : "🎯 target e premi sono del SINGOLO PDV: selezionane uno"}
                                         onClick={() => apri({ titolo: "Partnership Reward — eventi Customer Base", sub: filtroLabel, items: w3.eventi })}
                                     />
                                 )}
-                                {b === "w3" && w3 && w3.mbSel.map((r) => {
+                                {b === "w3" && w3 && [["t1", w3.t1], ["t2", w3.t2]].filter(([m, r]) => r && w3.modo === m).map(([m, r]) => {
                                     const negozi = String(r.negozio).split("+").map((x) => x.trim());
                                     const rowsMb = raw.filter((c) => negozi.some((n) => stessoNome(n, c.cod_ins || "")));
                                     const avMb = calcolaAvanzamento(tab, rowsMb);
                                     const pMb = Math.round(((avMb.piste?.mobile?.punti || 0) + (avMb.piste?.fisso?.punti || 0)) * 100) / 100;
                                     return (
-                                        <SogliaBar key={r.cod_gara} emoji="🚀" label={`On Top · ${r.negozio}`}
+                                        <SogliaBar key={r.cod_gara} emoji="🚀" label={`On Top ${m === "t1" ? "T1" : "T2"} · ${r.negozio}`}
                                             punti={pMb} pezzi={rowsMb.length}
                                             soglie={(r.soglie_mobile || []).map((v, i) => ({ tier: i + 1, soglia_da: v }))}
                                             colore={G.colore} proiezione={prj(pMb)}
