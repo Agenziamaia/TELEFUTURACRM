@@ -1521,9 +1521,13 @@ export default function TrackingPdaPage() {
       }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
-        if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
-        return (!!r.venditore && !!user?.name && r.venditore === user.name)
+        // Le pratiche FATTE DA ME si vedono SEMPRE, anche se registrate su un
+        // negozio fuori dalla mia visibilità (coperture in altri PV — Luca
+        // 21/08, caso Lorenzo a Magliana): la responsabilità malus resta mia.
+        const mie = (!!r.venditore && !!user?.name && r.venditore === user.name)
             || (!!r.delegated_to && r.delegated_to === user?.id);
+        if (seesWhole) return mie || visibleStores.some((st) => sameStore(r.negozio as string, st));
+        return mie;
       });
       setRawList(scoped as RawRow[]);
     } catch (err: unknown) {
