@@ -62,7 +62,7 @@ export function Tip({ children, tip, block = false, className, style }) {
         >
             {children}
             {pos && typeof document !== "undefined" && createPortal(
-                <div className="fixed z-[9999] pointer-events-none" style={{ left: pos.x, top: pos.y - 14, transform: "translate(-50%,-100%)" }}>
+                <div className="fixed z-[9999] pointer-events-none an-scuro" style={{ left: pos.x, top: pos.y - 14, transform: "translate(-50%,-100%)" }}>
                     <div className="rounded-xl border border-white/15 bg-[#111527]/95 backdrop-blur-md px-3 py-2 shadow-2xl shadow-black/50 max-w-[300px]">
                         {tip}
                     </div>
@@ -83,7 +83,7 @@ export const TipTitolo = ({ children }) => (
 );
 
 /* ── anello di soglia (progress ring animato) ──────────────────────────── */
-export function Ring({ value, max, colore = "var(--tf-818cf8)", size = 132, centro, sotto, tip }) {
+export function Ring({ value, max, colore = "#818cf8", size = 132, centro, sotto, tip }) {
     const r = (size - 14) / 2, C = 2 * Math.PI * r;
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
@@ -177,7 +177,7 @@ export function AreaChart({ serie, ghost, oggi = -1, colore = "var(--tf-818cf8)"
                 {hov && <circle cx={pts[hov.i][0]} cy={pts[hov.i][1]} r="5" fill="#fff" stroke={colore} strokeWidth="3" />}
             </svg>
             {hov && typeof document !== "undefined" && createPortal(
-                <div className="fixed z-[9999] pointer-events-none" style={{ left: hov.x, top: hov.y - 14, transform: "translate(-50%,-100%)" }}>
+                <div className="fixed z-[9999] pointer-events-none an-scuro" style={{ left: hov.x, top: hov.y - 14, transform: "translate(-50%,-100%)" }}>
                     <div className="rounded-xl border border-white/15 bg-[#111527]/95 backdrop-blur-md px-3 py-2 shadow-2xl shadow-black/50">
                         <TipTitolo>{serie[hov.i].x}</TipTitolo>
                         <TipRiga l={`totale`} r={`${fmtPt(serie[hov.i].y)} ${unit}`} colore={colore} />
@@ -199,6 +199,10 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
     const max = Math.max(1, ...giorni.map((g) => g.tot), media || 0) * 1.08;
+    // 🏆 record del periodo: un bersaglio quotidiano concreto (revisione 21/08)
+    const record = giorni.reduce((mx, g, i) => (g.tot > (giorni[mx]?.tot || 0) ? i : mx), 0);
+    const cRecord = giorni[record]?.tot > 0 ? record : -1;
+    const ggDi = (g) => { const n = parseInt(String(g.label || "")); return Number.isFinite(n) ? n : g.n; };
     return (
         <div>
             <div className="relative w-full" style={{ height: h }}>
@@ -206,7 +210,7 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
                 {media > 0 && (
                     <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ bottom: `${Math.min(96, (media / max) * 100)}%` }}>
                         <div className="border-t border-dashed border-white/30" />
-                        <span className="absolute right-0 -top-4 text-[9px] font-bold text-slate-400 bg-[#0d1022]/70 px-1 rounded">media {fmtPt(media)}/g</span>
+                        <span className="absolute right-0 -top-4 text-[9px] font-bold text-slate-400 bg-[#0d1022]/70 px-1 rounded an-scuro">media {fmtPt(media)}/g</span>
                     </div>
                 )}
                 <div className="absolute inset-0 flex items-end gap-[3px]">
@@ -215,7 +219,7 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
                         return (
                             <Tip key={i} block className="flex-1 h-full flex flex-col justify-end min-w-0 group/bar" tip={
                                 <div>
-                                    <TipTitolo>{g.label}{i === oggi ? " · OGGI" : ""}</TipTitolo>
+                                    <TipTitolo>{g.label}{i === oggi ? " · OGGI" : ""}{i === cRecord ? " · 🏆 record" : ""}</TipTitolo>
                                     <TipRiga l="totale" r={`${fmtPt(g.tot)} ${unit}`} />
                                     {g.parti.filter((p) => p.val > 0).map((p, j) => (
                                         <div key={j}>
@@ -231,7 +235,7 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
                                     {manca > 0 && (
                                         <div className="w-full rounded-t-[4px] border border-dashed border-white/25 bg-white/[.04] transition-all duration-700" style={{ height: on ? `${(manca / max) * 100}%` : 0 }} />
                                     )}
-                                    <div className={cn("w-full flex flex-col-reverse overflow-hidden transition-all duration-700 ease-out group-hover/bar:brightness-125", manca > 0 ? "" : "rounded-t-[4px]", i === oggi && "ring-1 ring-white/60")}
+                                    <div className={cn("w-full flex flex-col-reverse overflow-hidden transition-all duration-700 ease-out group-hover/bar:brightness-125", manca > 0 ? "" : "rounded-t-[4px]", i === oggi && "ring-1 ring-white/60", i === cRecord && "ring-1 ring-amber-300/80")}
                                         style={{ height: on ? `${(g.tot / max) * 100}%` : "0%", minHeight: g.tot > 0 ? 3 : 0 }}>
                                         {g.parti.filter((p) => p.val > 0).map((p, j) => (
                                             <div key={j} className="w-full" style={{ height: `${(p.val / g.tot) * 100}%`, background: p.colore, boxShadow: `0 0 6px ${p.colore}44` }} />
@@ -245,7 +249,7 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
             </div>
             <div className="flex gap-[3px] mt-1">
                 {giorni.map((g, i) => (
-                    <span key={i} className={cn("flex-1 text-center text-[8px] tabular-nums min-w-0", i === oggi ? "text-white font-black" : "text-slate-600", !(i === oggi || g.n % 5 === 0 || g.n === 1) && "opacity-0")}>{g.n}</span>
+                    <span key={i} className={cn("flex-1 text-center text-[8px] tabular-nums min-w-0", i === oggi ? "text-white font-black" : i === cRecord ? "text-amber-300 font-bold" : "text-slate-600", !(i === oggi || i === cRecord || ggDi(g) % 5 === 0 || i === 0) && "opacity-0")}>{ggDi(g)}</span>
                 ))}
             </div>
         </div>
@@ -346,49 +350,78 @@ export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1, unit =
 /* ── BARRA DELLE SOGLIE (Master, Luca 21/08): una pista di gara come corsa
    orizzontale — tacche alle soglie (S1..S8), riempimento animato, la
    prossima soglia pulsa; tutto hoverabile, il click apre il drill. ──────── */
-export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "var(--tf-818cf8)", gate, malus, onClick, unit = "pt" }) {
+export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#818cf8", gate, malus, nota, proiezione = null, onClick, unit = "pt" }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
+    // il PROSPECT guida le considerazioni (Luca 21/08): barra piena = attuale,
+    // coda a strisce = proiezione fine mese
+    const proj = proiezione != null && proiezione > punti ? Math.round(proiezione * 100) / 100 : null;
     const ultima = soglie.length ? soglie[soglie.length - 1].soglia_da : 0;
-    const max = Math.max(ultima * 1.07, punti * 1.06, 1);
+    const max = Math.max(ultima * 1.07, punti * 1.06, (proj || 0) * 1.04, 1);
     const pct = (v) => Math.min(100, (v / max) * 100);
     const presa = [...soglie].reverse().find((s) => punti >= s.soglia_da) || null;
     const prossima = soglie.find((s) => s.soglia_da > punti) || null;
+    const rif = proj ?? punti;   // le valutazioni si fanno sul prospect
+    const presaProj = [...soglie].reverse().find((s) => rif >= s.soglia_da) || null;
+    const prossimaProj = soglie.find((s) => s.soglia_da > rif) || null;
     return (
         <div className={cn("rounded-xl px-3 py-2.5 bg-white/[.04] border border-white/[.06] transition-colors", onClick && "cursor-pointer hover:bg-white/[.08] hover:border-white/15")}
             onClick={onClick} title={onClick ? "Clicca per l'elenco contratti" : undefined}>
             <div className="flex items-baseline justify-between gap-2 mb-1.5">
                 <span className="text-xs font-bold text-slate-200 truncate">{emoji} {label}</span>
                 <span className="text-sm font-black text-white tabular-nums shrink-0">{fmtPt(punti)} <span className="text-[9px] font-normal text-slate-500">{unit}</span>
+                    {proj && <span className="ml-1 text-[10px] font-bold tabular-nums" style={{ color: colore }}>🔮 {fmtPt(proj)}</span>}
                     {pezzi != null && <span className="ml-1.5 text-[10px] font-normal text-slate-500 tabular-nums">{fmtN(pezzi)} pz</span>}</span>
             </div>
             <div className="relative h-3.5 rounded-full bg-white/[.06]">
+                {proj && (
+                    <Tip className="absolute inset-y-0 rounded-r-full overflow-hidden" style={{ left: `${pct(punti)}%`, width: on ? `${Math.max(0, pct(proj) - pct(punti))}%` : 0, transition: "width 1.2s .2s cubic-bezier(.22,1,.36,1)" }} tip={
+                        <div><TipTitolo>🔮 Proiezione fine mese</TipTitolo>
+                            <TipRiga l="di questo passo" r={`${fmtPt(proj)} ${unit}`} colore={colore} />
+                            <TipRiga l="fatti finora" r={`${fmtPt(punti)} ${unit}`} />
+                            {presaProj && <TipRiga l="in proiezione" r={`S${presaProj.tier} presa`} />}
+                        </div>
+                    }>
+                        <span className="block w-full h-full" style={{ background: `repeating-linear-gradient(45deg, ${colore}55 0 5px, ${colore}18 5px 10px)` }} />
+                    </Tip>
+                )}
                 <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000 ease-out"
                     style={{ width: on ? `${Math.max(punti > 0 ? 1.5 : 0, pct(punti))}%` : "0%", background: `linear-gradient(90deg, ${colore}55, ${colore})`, boxShadow: `0 0 10px ${colore}66` }} />
                 {soglie.map((s) => {
                     const raggiunta = punti >= s.soglia_da;
-                    const èProssima = prossima && s.tier === prossima.tier;
+                    const inProj = !raggiunta && rif >= s.soglia_da;
+                    const èProssima = prossimaProj && s.tier === prossimaProj.tier;
                     return (
-                        <Tip key={s.tier} className="absolute -inset-y-1 w-4 -translate-x-1/2 items-center justify-center" style={{ left: `${pct(s.soglia_da)}%` }} tip={
+                        <Tip key={s.tier} className="absolute -inset-y-1 w-4 -translate-x-1/2 items-center justify-center z-10" style={{ left: `${pct(s.soglia_da)}%` }} tip={
                             <div>
                                 <TipTitolo>Soglia {s.tier}</TipTitolo>
                                 <TipRiga l="scatta a" r={fmtN(s.soglia_da)} colore={colore} />
-                                <TipRiga l={raggiunta ? "presa" : "mancano"} r={raggiunta ? "✓" : fmtPt(s.soglia_da - punti)} />
+                                <TipRiga l={raggiunta ? "presa" : "mancano (reali)"} r={raggiunta ? "✓" : fmtPt(s.soglia_da - punti)} />
+                                {inProj && <TipRiga l="in proiezione" r="✓ ci arrivi" />}
                             </div>
                         }>
                             <span className={cn("block w-[3px] h-full rounded-full", èProssima && "animate-pulse")}
-                                style={{ background: raggiunta ? "#fff" : "rgba(255,255,255,.28)", boxShadow: raggiunta ? `0 0 6px ${colore}` : undefined }} />
+                                style={{ background: raggiunta ? "#fff" : inProj ? `${colore}` : "rgba(255,255,255,.28)", boxShadow: raggiunta || inProj ? `0 0 6px ${colore}` : undefined }} />
                         </Tip>
                     );
                 })}
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 min-h-[18px]">
+            {soglie.length > 0 && (
+                <div className="relative h-3 mt-0.5">
+                    {soglie.map((s) => (
+                        <span key={s.tier} className="absolute -translate-x-1/2 text-[8px] text-slate-500 tabular-nums whitespace-nowrap" style={{ left: `${pct(s.soglia_da)}%` }}>{fmtN(s.soglia_da)}</span>
+                    ))}
+                </div>
+            )}
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 min-h-[18px]">
                 {presa ? <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{presa.tier} presa</span>
                     : soglie.length > 0 && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-400 bg-white/5">sotto la S1</span>}
-                {prossima && <span className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(prossima.soglia_da - punti)}</b> alla S{prossima.tier}</span>}
-                {!prossima && presa && soglie.length > 0 && <span className="text-[10px] text-emerald-300 font-semibold">ultima soglia presa 👑</span>}
+                {proj && presaProj && (!presa || presaProj.tier > presa.tier) && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white border border-white/20" style={{ background: `repeating-linear-gradient(45deg, ${colore}aa 0 4px, ${colore}55 4px 8px)` }}>🔮 S{presaProj.tier} in proiezione</span>}
+                {prossimaProj && <span className="text-[10px] text-slate-400">{proj ? "in proiezione " : ""}mancano <b className="text-white tabular-nums">{fmtPt(prossimaProj.soglia_da - rif)}</b> alla S{prossimaProj.tier}</span>}
+                {!prossimaProj && presaProj && soglie.length > 0 && <span className="text-[10px] text-emerald-300 font-semibold">{proj ? "in proiezione " : ""}ultima soglia presa 👑</span>}
                 {gate && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-amber-300 bg-amber-400/10 border border-amber-400/25">⛔ {gate}</span>}
                 {malus && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-rose-300 bg-rose-400/10 border border-rose-400/25">🔻 {malus}</span>}
+                {nota && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-300 bg-white/5 border border-white/10">{nota}</span>}
             </div>
         </div>
     );
@@ -443,8 +476,8 @@ export function Donut({ slices, size = 150, spessore = 17, centro, unit = "pt" }
                 })}
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none">{centro}</div>
-            {hov && typeof document !== "undefined" && createPortal(
-                <div className="fixed z-[9999] pointer-events-none" style={{ left: hov.x, top: hov.y - 14, transform: "translate(-50%,-100%)" }}>
+            {hov && vive[hov.i] && typeof document !== "undefined" && createPortal(
+                <div className="fixed z-[9999] pointer-events-none an-scuro" style={{ left: hov.x, top: hov.y - 14, transform: "translate(-50%,-100%)" }}>
                     <div className="rounded-xl border border-white/15 bg-[#111527]/95 backdrop-blur-md px-3 py-2 shadow-2xl shadow-black/50">
                         <TipTitolo>{vive[hov.i].emoji} {vive[hov.i].label}</TipTitolo>
                         <TipRiga l={unit} r={fmtPt(vive[hov.i].val)} colore={vive[hov.i].colore} />

@@ -667,6 +667,51 @@ export async function caricaContrattiContesto(
     return { contratti, nonAllocate: 0, escluseVodafone };
 }
 
+/**
+ * PARTNERSHIP REWARD W3 (cantiere acceso 21/08 notte): conteggio PARALLELO
+ * degli eventi Customer Base — pick-one tra le SOLE righe pista "partnership"
+ * che abbiano ALMENO una condizione (le righe senza condizioni restano voci
+ * di listino in attesa di mappatura: mai più catch-all, lezione del 20/08).
+ * Stessa semantica del pick-one classico: uguaglianze esatte, offerta pesa
+ * di più, opzioni tutte richieste (separate da |).
+ */
+export function matchRigaPartnership(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
+): PayRiga | null {
+    let best: PayRiga | null = null;
+    let bestScore = -1;
+    for (const r of righe) {
+        if (!r.attivo || r.pista !== "partnership") continue;
+        // la stringa vuota NON è una condizione (una riga svuotata dal pannello
+        // tornerebbe quasi-catch-all sui contratti col campo vuoto)
+        const piena = (x: unknown) => x != null && String(x).trim() !== "";
+        const haCondizioni = piena(r.tipo_cliente) || piena(r.categoria) || piena(r.prodotto)
+            || piena(r.offerta) || piena(r.opzione) || piena(r.provenienza);
+        if (!haCondizioni) continue;
+        let score = 0;
+        if (piena(r.tipo_cliente)) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
+        if (piena(r.categoria)) { if (!eq(r.categoria, c.categoria)) continue; score++; }
+        if (piena(r.prodotto)) { if (!eq(r.prodotto, c.prodotto)) continue; score++; }
+        if (piena(r.offerta)) { if (!eq(r.offerta, c.offerta)) continue; score += 2; }
+        if (r.provenienza != null && r.provenienza.trim() !== "") {
+            if (!provenienzaOk(r.provenienza, c.provenienza)) continue;
+            score += 2;
+        }
+        if (r.opzione != null && r.opzione.trim() !== "") {
+            const scelte = String(c.opzioni || "").split(",")
+                .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
+            const req = r.opzione.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
+            if (!req.every(t => scelte.includes(t))) continue;
+            score += 2 * req.length;
+        }
+        if (score > bestScore || (score === bestScore && best && r.ordine < best.ordine)) {
+            best = r; bestScore = score;
+        }
+    }
+    return best;
+}
+
 export type AvanzamentoPista = {
     chiave: string; nome: string; punti: number; pezzi: number;
     tier: number;                       // 0 = sotto la prima soglia

@@ -16,8 +16,9 @@
 // (righe marginalità EXT del scope), margMap/margIcone, persona, negozio,
 // negoziTutti, nG, ym, oggi, gl, meseCorrente, areaKey.
 
-import { useMemo, useState } from "react";
-import { TRK_BRAND_COLORS, TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Num, Tip, TipRiga, TipTitolo, BarStack, RaceBars, HeatCal, Donut, Delta, fmtPt, fmtN, fmtEuro } from "./_charts";
@@ -131,13 +132,23 @@ export function righeOperatore(brand, sue) {
    🔍 Ricerca Vendite (?id=) e 🧭 Tracking PDA (?id=). Ricerca interna. */
 export function DrillPanel({ drill, chiudi, labels }) {
     const [q, setQ] = useState("");
-    if (!drill) return null;
+    const [copiato, setCopiato] = useState(false);
+    // Esc chiude (revisione 21/08)
+    useEffect(() => {
+        if (!drill) return;
+        const giu = (e) => { if (e.key === "Escape") chiudi(); };
+        window.addEventListener("keydown", giu);
+        return () => window.removeEventListener("keydown", giu);
+    }, [drill, chiudi]);
+    if (!drill || typeof document === "undefined") return null;
     const nq = norm(q);
     const filtrati = (drill.items || []).filter((it) => !nq || [it.venditore, it.negozio, it.cod_ins, it.prodotto, it.offerta, it.categoria, it.id].some((v) => norm(v).includes(nq)))
         .slice().sort((a, b) => b.g - a.g);
     const punti = Math.round(filtrati.reduce((s, it) => s + (it.punti || 0), 0) * 100) / 100;
-    return (
-        <div className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm grid place-items-center p-3 sm:p-6" onClick={chiudi}>
+    // PORTALE sul body: dentro le card l'hover-transform (translate-y) le rende
+    // containing block dei fixed e il pannello restava CONFINATO nella card
+    return createPortal(
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm grid place-items-center p-3 sm:p-6" onClick={chiudi}>
             <div className="glass-card rounded-2xl w-full max-w-3xl max-h-[84vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                 <div className="p-4 pb-3 border-b border-white/10">
                     <div className="flex items-center justify-between gap-2">
@@ -150,6 +161,10 @@ export function DrillPanel({ drill, chiudi, labels }) {
                         {drill.sub && <span className="text-[10px] text-slate-500">{drill.sub}</span>}
                         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cerca: venditore, negozio, codice, offerta…"
                             className="glass-input ml-auto px-2.5 py-1.5 rounded-lg text-xs min-w-[220px]" />
+                        <button onClick={() => {
+                            const testo = [drill.titolo, ...filtrati.map((it) => `${labels?.[it.g - 1] || ""} · ${it.venditore} · ${it.negozio} · ${it.offerta || it.prodotto} · ${fmtPt(it.punti)} pt`)].join("\n");
+                            navigator.clipboard?.writeText(testo).then(() => { setCopiato(true); setTimeout(() => setCopiato(false), 1500); });
+                        }} className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-slate-300 hover:bg-white/10">{copiato ? "✓ copiato" : "📋 copia"}</button>
                     </div>
                 </div>
                 <div className="overflow-y-auto p-2">
@@ -179,7 +194,7 @@ export function DrillPanel({ drill, chiudi, labels }) {
                     {!filtrati.length && <p className="text-xs text-slate-500 text-center py-8">Nessun contratto{q ? " per questa ricerca" : ""}.</p>}
                 </div>
             </div>
-        </div>
+        </div>, document.body
     );
 }
 
@@ -211,12 +226,12 @@ function CartaOperatore({ brand, ctx, size }) {
     return (
         <div>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-                <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso</span></>}</p>
+                <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso intero</span></>}</p>
                 <div className="flex flex-wrap gap-1 justify-end">
                     {brand === "fw"
                         ? <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white/5 text-slate-300 border border-white/10">gara T2 · a pezzi</span>
                         : perPista.map(([p, v]) => (
-                            <span key={p} className="px-2 py-1 rounded-lg text-[10px] font-bold border border-white/10" style={{ background: `${G.colore}14`, color: "#fff" }}>
+                            <span key={p} className="px-2 py-1 rounded-lg text-[10px] font-bold border border-white/10 text-white" style={{ background: `${G.colore}14` }}>
                                 {PISTA_L[p] || p} <span className="tabular-nums" style={{ color: G.colore }}>{fmtPt(v)}</span> pt
                             </span>
                         ))}
@@ -348,11 +363,11 @@ function WidgetMarg({ ctx, size }) {
     }, [righe]);
     const topProdotti = useMemo(() => {
         const per = {};
-        for (const r of righe) { (per[r.prodotto] ??= { val: 0, qty: 0 }); per[r.prodotto].val += valDi(r); per[r.prodotto].qty += qtyDi(r); }
+        for (const r of righe) { const k = r.prodotto || "—"; (per[k] ??= { val: 0, qty: 0 }); per[k].val += valDi(r); per[k].qty += qtyDi(r); }
         return Object.entries(per).sort((a, b) => b[1].val - a[1].val).slice(0, size >= 4 ? 10 : 6);
     }, [righe, size]);
     const perGiorno = useMemo(() => {
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [] }));
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [], chiuso: !!ctx.chiusi?.[i] }));
         for (const r of righe) if (r.g >= 1 && r.g <= ctx.nG) { v[r.g - 1].val += valDi(r); }
         v.forEach((d) => { d.val = Math.round(d.val); });
         return v;
@@ -375,7 +390,7 @@ function WidgetMarg({ ctx, size }) {
                             <span className="text-[10px] text-slate-500 tabular-nums">{fmtN(v.qty)} pz</span>
                         </div>
                     ))}
-                    {ctx.confronto && <p className="pt-1"><Delta v={venduto - vendutoPrev} euro /> <span className="text-[10px] text-slate-500">venduto vs mese scorso</span></p>}
+                    {ctx.confronto && <p className="pt-1"><Delta v={venduto - vendutoPrev} euro /> <span className="text-[10px] text-slate-500">venduto vs mese scorso intero</span></p>}
                 </div>
             </div>
             <div className="flex-1 min-w-0">
@@ -453,7 +468,7 @@ function AnelloPeso({ perc, colore, label, logoChiave, tip }) {
         <Tip tip={tip}>
             <div className="text-center">
                 <div className="relative w-[76px] h-[76px] mx-auto grid place-items-center rounded-full transition-transform hover:scale-110" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
-                    <div className="w-[58px] h-[58px] rounded-full bg-[#10132a] grid place-items-center">
+                    <div className="w-[58px] h-[58px] rounded-full bg-[#10132a] grid place-items-center an-scuro">
                         <span className="text-sm font-black text-white tabular-nums">{Math.round(perc)}%</span>
                     </div>
                 </div>
@@ -632,8 +647,7 @@ function WidgetMese({ ctx, brand }) {
         }));
     }, [ctx.items, ctx.nG, ctx.labels, brand, aPezzi]);
     const totale = giorni.reduce((s, g) => s + g.tot, 0);
-    const gLav = ctx.meseCorrente ? Math.max(1, ctx.gl?.trascorsi || 1) : (ctx.gl?.totali || ctx.nG);
-    const media = totale > 0 ? Math.round((totale / gLav) * 100) / 100 : null;
+    const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
     return (
         <div>
             {puoPunti && (
@@ -653,7 +667,7 @@ function WidgetMese({ ctx, brand }) {
 
 function WidgetRitmo({ ctx }) {
     const giorni = useMemo(() => {
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [] }));
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [], chiuso: !!ctx.chiusi?.[i] }));
         const perB = {};
         for (const it of ctx.items) { if (it.g < 1 || it.g > ctx.nG) continue; v[it.g - 1].val++; (perB[it.g] ??= {}); perB[it.g][it.brandGara] = (perB[it.g][it.brandGara] || 0) + 1; }
         v.forEach((d) => { d.det = Object.entries(perB[d.n] || {}).map(([k, n]) => ({ l: GARA[k].label, r: `${fmtN(n)} pz`, colore: GARA[k].colore })); });

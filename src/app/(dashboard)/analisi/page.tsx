@@ -127,6 +127,8 @@ export default function Analisi() {
     const oggi = idxDi.get(oggiISO()) ?? -1;
     const inMese = tipoP === "mese";
     const meseCorrente = inMese && oggi > 0;   // proiezioni solo sul mese in corso
+    // domeniche del periodo (i festivi arrivano da gl quando è un mese solo)
+    const domeniche = useMemo(() => giorniPeriodo.map((g) => new Date(g.iso + "T12:00:00").getDay() === 0), [chiaveP]);
 
     const [dati, setDati] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -161,7 +163,7 @@ export default function Analisi() {
                     ]);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0])]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -172,6 +174,8 @@ export default function Analisi() {
                     supabase.from("marg_items").select("name, category_id"),
                     user?.id ? supabase.from("app_users").select("analisi_layout").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
                     inMese ? caricaPacchetto(pISO) : Promise.resolve(null),
+                    // target PER PDV del pannello W3 (soglie mobile/fisso + Partnership)
+                    soloMese ? supabase.from("pay_target_pdv").select("cod_gara, negozio, soglie_mobile, soglie_fisso, soglie_piva, extra").eq("brand", "windtre").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -182,7 +186,7 @@ export default function Analisi() {
                 }).filter(Boolean);
                 const gare4 = new Set(["windtre", "vodafone", "fastweb", "sky"]);
                 const altri = (altRes?.data || [])
-                    .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || ""))
+                    .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || "") && !/sostituzione/i.test(String(r.prodotto || "")))
                     .map((r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 }))
                     .filter((r) => r.g >= 1);
                 const catNome = new Map((mCats.data || []).map((c) => [c.id, c.name]));
@@ -190,7 +194,7 @@ export default function Analisi() {
                 const margIcone = new Map((mCats.data || []).map((c) => [c.name, c.icon || "🧩"]));
                 setLayoutSalvato(layRes?.data?.analisi_layout || null);
                 setDati({
-                    pacchi, soloMese, gl,
+                    pacchi, soloMese, gl, targetW3: targetRes?.data || [],
                     aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null,
                     prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri,
                 });
@@ -272,9 +276,16 @@ export default function Analisi() {
     useEffect(() => { setCollabSel(""); }, [negozio]);
 
     // ── contesti dei widget ───────────────────────────────────────────────
+    // media/giorno: lavorativi TRASCORSI se mese in corso, altrimenti i
+    // lavorativi DENTRO il periodo scelto (lun-sab meno festivi noti)
+    const festiviSet = new Set(dati?.gl?.festivi || []);
+    const gLav = meseCorrente
+        ? Math.max(1, dati?.gl?.trascorsi || 1)
+        : Math.max(1, giorniPeriodo.filter((g, i) => !domeniche[i] && !festiviSet.has(g.iso)).length);
+    const chiusi = giorniPeriodo.map((g, i) => domeniche[i] || festiviSet.has(g.iso));
     const base = {
         itemsRete: items, margMap: dati?.margMap, margIcone: dati?.margIcone, nG, labels, oggi,
-        gl: dati?.gl, meseCorrente, confronto: inMese && !!dati?.prev,
+        gl: dati?.gl, gLav, chiusi, meseCorrente, confronto: inMese && !!dati?.prev,
         negoziTutti: negoziVisibili, extRete: dati?.ext || [], altriRete: dati?.altri || [],
     };
     const ctxIo = useMemo(() => ({
@@ -357,10 +368,13 @@ export default function Analisi() {
                 .an-card { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
                 .an-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,.18); box-shadow: 0 18px 40px -18px rgba(0,0,0,.7); }
                 .an-data { color-scheme: dark; }
+                /* i box a fondo scuro FISSO (tooltip, hero) restano bianchi anche
+                   col tema chiaro, che altrove ribalta text-white (revisione 21/08) */
+                html.light .an-scuro, html.light .an-scuro [class~="text-white"] { color: #f8fafc !important; }
             `}</style>
 
             {/* ── HERO ─────────────────────────────────────────────────── */}
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d1022]/80 p-5 sm:p-6 an-in">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d1022]/80 p-5 sm:p-6 an-in an-scuro">
                 <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-25 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-818cf8), transparent 65%)", animation: "anAurora 16s ease-in-out infinite" }} />
                 <div className="pointer-events-none absolute -bottom-32 -right-16 w-[28rem] h-[28rem] rounded-full opacity-20 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-e60000), transparent 65%)", animation: "anAurora 22s ease-in-out infinite reverse" }} />
                 <div className="relative flex flex-wrap items-center gap-3 justify-between">
@@ -441,8 +455,8 @@ export default function Analisi() {
                         <GrigliaWidget key={`ng-${negozio}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
-                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, meseCorrente }} />}
-                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi }} />}
+                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente }} />}
+                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente }} />}
                 </>
             )}
         </div>
@@ -473,7 +487,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 {lista.map((w, i) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
-                        <div key={`${w.k}-${i}`} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg", SPAN[w.s])} style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
+                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg", SPAN[w.s])} style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
                             onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragDa.current != null) muovi(dragDa.current, i); dragDa.current = null; }}>
                             <div className="flex items-center justify-between gap-2 mb-3">
                                 <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0">
@@ -502,7 +516,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
             {!lista.length && <p className="text-center text-xs text-slate-500 py-10">Griglia vuota — «＋ Aggiungi» per popolare l'area.</p>}
 
             {galleria && (
-                <div className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setGalleria(false)}>
+                <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setGalleria(false)}>
                     <div className="glass-card rounded-2xl p-5 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
                             <p className="text-sm font-black text-white">＋ Aggiungi un widget</p>
@@ -533,7 +547,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
 }
 
 /* ═══ AREA RETE (v1 — in attesa delle direttive di Luca) ═══════════════ */
-function AreaRete({ items, righeGara, labels, nG, oggi, gl, meseCorrente }) {
+function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente }) {
     const giorniRete = useMemo(() => {
         const v = Array.from({ length: nG }, (_, i) => ({ n: i + 1, label: labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
         for (const it of items) {
@@ -546,9 +560,8 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, meseCorrente }) {
     }, [items, nG, labels]);
     const mediaRete = useMemo(() => {
         const tot = giorniRete.reduce((s, g) => s + g.tot, 0);
-        const gLav = meseCorrente ? Math.max(1, gl?.trascorsi || 1) : (gl?.totali || nG);
-        return tot > 0 ? Math.round((tot / gLav) * 10) / 10 : null;
-    }, [giorniRete, gl, meseCorrente, nG]);
+        return tot > 0 ? Math.round((tot / Math.max(1, gLav || 1)) * 10) / 10 : null;
+    }, [giorniRete, gLav]);
 
     const negoziPezzi = useMemo(() => {
         const per = new Map();
