@@ -1710,8 +1710,15 @@ export default function TrackingPdaPage() {
 
   // Opzioni con dipendenza UNIDIREZIONALE (niente prune a cascata):
   // NEGOZIO ← base; UTENTE ← base+negozio; CATEGORIA ← base+negozio+utente.
+  // La tendina Negozio compare anche a chi ha PIÙ punti vendita in visibilità
+  // (Luca 21/08, caso Eros/Gianluca): senza, le pratiche arrivano tutte miste.
+  // baseVisibile è già ritagliata sulla loro visibilità, quindi l'elenco sono
+  // solo i LORO negozi; con un negozio solo la tendina resta nascosta.
   const negoziAttivi = useMemo(
-    () => (seesAll ? Array.from(new Set(baseVisibile.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []),
+    () => {
+      const tutti = Array.from(new Set(baseVisibile.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort();
+      return seesAll || tutti.length > 1 ? tutti : [];
+    },
     [baseVisibile, seesAll]
   );
   const venditoriAttivi = useMemo(
