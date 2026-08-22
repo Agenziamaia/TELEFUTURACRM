@@ -2,7 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { DayPicker } from "react-day-picker";
+import dynamic from "next/dynamic";
+// react-day-picker caricato SOLO quando il calendario si apre (perf): sta in 4 pagine
+// pesanti (calendario, ricerca-vendite, gestione, chiusura-linea) ma il calendario
+// appare solo al click → fuori dal bundle iniziale di tutte e quattro.
+const DayPicker = dynamic(() => import("react-day-picker").then((m) => m.DayPicker), { ssr: false });
 import { format, parse, isValid } from "date-fns";
 import { it } from "date-fns/locale";
 import { Calendar } from "lucide-react";

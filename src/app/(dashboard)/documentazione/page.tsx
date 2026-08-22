@@ -174,8 +174,11 @@ function formatDateForDoc(d: Date): string {
     return `${day}/${month}/${year}`;
 }
 
-import { ImportListino } from "./_importListino";
-import PdfFillEditor from "./_pdfEditor";
+import dynamic from "next/dynamic";
+// Caricati SOLO all'apertura (perf): il pannello import listini (usa xlsx) e l'editor
+// PDF (usa pdf-lib) sono pesanti e si aprono su azione → fuori dal bundle iniziale.
+const ImportListino = dynamic(() => import("./_importListino").then((m) => m.ImportListino), { ssr: false });
+const PdfFillEditor = dynamic(() => import("./_pdfEditor"), { ssr: false });
 
 export default function DocumentazionePage() {
     const [view, setView] = useState<{ brandId: string | null; catId: string | null }>({ brandId: null, catId: null });
