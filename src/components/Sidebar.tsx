@@ -188,7 +188,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_messages" }, () => load())
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "email_messages" }, () => load())
             .subscribe();
-        const stop = visibleInterval(load, 20000);
+        const stop = visibleInterval(load, 60000);  // perf: era 20s. Il realtime (canale sotto) aggiorna subito i non-letti; questo è solo un backup → 60s basta.
         return () => { alive = false; off(); supabase.removeChannel(ch); stop(); };
     }, [user?.id, myStores]);
 
