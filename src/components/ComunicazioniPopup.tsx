@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { visibleInterval } from "@/lib/visibleInterval";
 import { useAuth } from "@/context/AuthContext";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
-import { sanificaHtml } from "@/components/EditorRicco";
+import { sanificaHtml } from "@/lib/sanificaHtml";
 
 type ComPopup = {
     id: number;
