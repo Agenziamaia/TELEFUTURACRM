@@ -44,7 +44,7 @@ export type PayRiga = {
 };
 // derivato: il lato ragazzi non esiste a DB — è il lato AZIENDA scalato con
 // pay_piste.perc_ragazzi (Luca 11/08: es. Fastweb mobile 60%, fisso 70%).
-export type Tabellare = { brand: string; month: string; piste: PayPista[]; soglie: PaySoglia[]; righe: PayRiga[]; derivato?: boolean };
+export type Tabellare = { brand: string; month: string; lato?: string; piste: PayPista[]; soglie: PaySoglia[]; righe: PayRiga[]; derivato?: boolean };
 
 export type ContrattoPay = {
     id: string; brand: string | null; negozio: string | null; venditore: string | null;
@@ -99,7 +99,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
         pay_tiers: Array.isArray(r.pay_tiers) ? (r.pay_tiers as unknown[]).map(Number) : [],
     });
     return {
-        brand, month: monthISO, piste,
+        brand, month: monthISO, lato, piste,
         soglie: ((soglieRes.data || []) as Record<string, unknown>[]).map(s => ({
             pista: String(s.pista), tier: Number(s.tier),
             soglia_da: Number(s.soglia_da), soglia_a: s.soglia_a == null ? null : Number(s.soglia_a),
@@ -224,7 +224,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
             return taglia(p.soglie_pct == null ? azS : scalaSoglie(azS, Number(p.soglie_pct), p.chiave), p.chiave);
         });
         return {
-            ...azienda, derivato: true,
+            ...azienda, derivato: true, lato: "ragazzi",
             piste: pisteDer,
             soglie: [...soglieDer.filter(s => !manuali.has(s.pista)), ...soglieRag],
             righe: [...azienda.righe.filter(r => !r.pista || chiaviDer.has(r.pista)).map(deriva), ...orfani],
@@ -328,6 +328,11 @@ export function matchRigaTabellare(
         // da sole non significano nulla — senza questo skip una vendita qualsiasi
         // (es. una polizza) agganciava «GA base» a condizioni vuote (baco 14/08)
         if (r.componente) continue;
+        // le righe PARTNERSHIP sono un conteggio PARALLELO degli eventi CB
+        // (fase analisi dedicata), non alternative del pick-one — a condizioni
+        // vuote facevano da catch-all: un telefono finanziato prendeva i 2
+        // punti di «Cambio offerta MIA» (caso del direttore, 20/08)
+        if (r.pista === "partnership") continue;
         if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
         let score = 0;
         if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
@@ -411,7 +416,10 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     if (/professional staff/i.test(off)) f.add("punti_staff");
     // fisso: gli extra della slide agganciati alle opzioni del catalogo
     if (ha("netflix")) f.add("netflix");                       // 10 € + 0,5 punti
-    if (ha("più sicuri ufficio")) f.add("pscu");               // 2 € + 0,25 punti
+    // «Più Sicuri Casa&Ufficio» in lettera = a catalogo «Più Sicuri Ufficio»
+    // (business) E «Home Protect» (consumer) — senza il secondo nome le 27
+    // Home Protect di agosto non prendevano lo 0,25 (segnalazione Luca 19/08)
+    if (ha("più sicuri ufficio") || ha("home protect")) f.add("pscu");   // 2 € + 0,25 punti
     if (ha("cloud")) f.add("cloud");                           // 8 €, non conta in soglia
     if (/professional box/i.test(off)) f.add("fritz");         // +40 € e +1 punto (FRITZ!Box)
     // 2ª linea Professional (opzione a canone, chiarimento Luca 14/08): per
@@ -659,6 +667,51 @@ export async function caricaContrattiContesto(
     return { contratti, nonAllocate: 0, escluseVodafone };
 }
 
+/**
+ * PARTNERSHIP REWARD W3 (cantiere acceso 21/08 notte): conteggio PARALLELO
+ * degli eventi Customer Base — pick-one tra le SOLE righe pista "partnership"
+ * che abbiano ALMENO una condizione (le righe senza condizioni restano voci
+ * di listino in attesa di mappatura: mai più catch-all, lezione del 20/08).
+ * Stessa semantica del pick-one classico: uguaglianze esatte, offerta pesa
+ * di più, opzioni tutte richieste (separate da |).
+ */
+export function matchRigaPartnership(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
+): PayRiga | null {
+    let best: PayRiga | null = null;
+    let bestScore = -1;
+    for (const r of righe) {
+        if (!r.attivo || r.pista !== "partnership") continue;
+        // la stringa vuota NON è una condizione (una riga svuotata dal pannello
+        // tornerebbe quasi-catch-all sui contratti col campo vuoto)
+        const piena = (x: unknown) => x != null && String(x).trim() !== "";
+        const haCondizioni = piena(r.tipo_cliente) || piena(r.categoria) || piena(r.prodotto)
+            || piena(r.offerta) || piena(r.opzione) || piena(r.provenienza);
+        if (!haCondizioni) continue;
+        let score = 0;
+        if (piena(r.tipo_cliente)) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
+        if (piena(r.categoria)) { if (!eq(r.categoria, c.categoria)) continue; score++; }
+        if (piena(r.prodotto)) { if (!eq(r.prodotto, c.prodotto)) continue; score++; }
+        if (piena(r.offerta)) { if (!eq(r.offerta, c.offerta)) continue; score += 2; }
+        if (r.provenienza != null && r.provenienza.trim() !== "") {
+            if (!provenienzaOk(r.provenienza, c.provenienza)) continue;
+            score += 2;
+        }
+        if (r.opzione != null && r.opzione.trim() !== "") {
+            const scelte = String(c.opzioni || "").split(",")
+                .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
+            const req = r.opzione.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
+            if (!req.every(t => scelte.includes(t))) continue;
+            score += 2 * req.length;
+        }
+        if (score > bestScore || (score === bestScore && best && r.ordine < best.ordine)) {
+            best = r; bestScore = score;
+        }
+    }
+    return best;
+}
+
 export type AvanzamentoPista = {
     chiave: string; nome: string; punti: number; pezzi: number;
     tier: number;                       // 0 = sotto la prima soglia
@@ -682,6 +735,8 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     const scartatiMap = new Map<string, { categoria: string | null; prodotto: string | null; offerta: string | null; n: number }>();
     let contati = 0;
     let pivaMobile = 0;
+    let puntiTelMobile = 0;
+    let simSky = 0;
     for (const c of contratti) {
         // set additivo (componenti W3) o singola riga classica: la prima
         // riga porta la pista, i punti si sommano su tutto il set
@@ -695,10 +750,26 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
         contati++;
         const pista = set[0].pista;
         if (pista) {
-            punti[pista] = (punti[pista] || 0) + puntiPerRighe(set);
+            const p = puntiPerRighe(set);
+            punti[pista] = (punti[pista] || 0) + p;
             pezzi[pista] = (pezzi[pista] || 0) + 1;
+            // gli smartphone (categoria Telefono a Rate) si accumulano a parte:
+            // servono al cap VF qui sotto
+            if (pista === "mobile" && /^telefono a rate/i.test(String(c.categoria || ""))) puntiTelMobile += p;
         }
         if (pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) pivaMobile++;
+        // cancelletto Sky (lettera GOLD): contano MNP (qualsiasi ricarica) e
+        // GA con Ricarica automatica — la ricarica pura no
+        if (tab.brand === "sky" && (/^mobile mnp$/i.test(String(c.prodotto || ""))
+            || (/^mobile ga$/i.test(String(c.prodotto || "")) && /ric\.? ?auto/i.test(String(c.categoria || ""))))) simSky++;
+    }
+    // CAP 35% VF (lettera agosto, §Pista Mobile Consumer): gli smartphone
+    // (0,5 rateale · 1 finanziato) valgono fino al 35% del valore delle SIM
+    // Voce Mobile — l'eccedenza non conta verso la soglia.
+    if (tab.brand === "vodafone" && puntiTelMobile > 0) {
+        const sim = (punti["mobile"] || 0) - puntiTelMobile;
+        const ammessi = Math.round(sim * 0.35 * 100) / 100;
+        if (puntiTelMobile > ammessi) punti["mobile"] = sim + ammessi;
     }
     const piste: Record<string, AvanzamentoPista> = {};
     for (const p of tab.piste) {
@@ -725,6 +796,22 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
                 soglia: scalaM.find(s => s.tier === 3) || null,
                 prossima: scalaM.find(s => s.tier === 4) || null, mancano: null,
                 gate: "4ª soglia bloccata: serve la 2ª soglia del fisso",
+            };
+        }
+    }
+    // CANCELLETTO SKY (lettera GOLD agosto, lato AZIENDA): l'accesso alle
+    // soglie oltre la 1ª è subordinato ad almeno 6 vendite tra Sky Mobile MNP
+    // e no MNP con Ricarica automatica — senza, si resta in soglia 1. Vale
+    // solo per la gara GOLD (la gara ragazzi ha soglie proprie senza vincolo).
+    if (tab.brand === "sky" && tab.lato === "azienda") {
+        const sk = piste["sky"];
+        if (sk && sk.tier >= 2 && simSky < 6) {
+            const scala = tab.soglie.filter(s => s.pista === "sky").sort((a, b) => a.tier - b.tier);
+            piste["sky"] = {
+                ...sk, tier: 1,
+                soglia: scala.find(s => s.tier === 1) || null,
+                prossima: scala.find(s => s.tier === 2) || null, mancano: null,
+                gate: `soglie oltre la 1ª bloccate: servono 6 SIM (MNP + Ric. automatica), fatte ${simSky}`,
             };
         }
     }

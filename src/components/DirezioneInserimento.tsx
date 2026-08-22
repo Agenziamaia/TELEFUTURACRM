@@ -14,7 +14,7 @@ export const DIR_BRANDS = [
   { id: "fastweb", label: "Fastweb", color: "var(--tf-cc9900)" },
   { id: "tim", label: "TIM", color: "var(--tf-0050ff)" },
   { id: "iliad", label: "Iliad", color: "var(--tf-c00028)" },
-  { id: "sky", label: "Sky", color: "var(--tf-0072c6)" },
+  { id: "sky", label: "Sky", color: "var(--tf-8b5cf6)" },
   { id: "very", label: "Very Mobile", color: "var(--tf-1fa300)" },
   { id: "ho", label: "Ho. Mobile", color: "var(--tf-e6007e)" },
   { id: "kena", label: "Kena Mobile", color: "var(--tf-f5a623)" },

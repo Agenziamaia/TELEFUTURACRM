@@ -27,9 +27,10 @@ async function main() {
     // ── LATO WIDGET: stessa aggregazione di kpiW3/kpiVF in _widgets.tsx ──────
     // identica a kpiW3/kpiVF in _widgets.tsx (regole 19/08: pezzi = registrato,
     // business su piste dedicate, Rete Sicura CB anche come prodotto, sonda
-    // sulle vendite senza riga pay)
-    const aggrega = (rows, tab, brandId) => {
-        const per = { puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0, bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0, mobSenzaPay: 0, fisSenzaPay: 0, puntiAss: 0, pezziAss: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
+    // sulle vendite senza riga pay; capGruppo = cap 35% smartphone SOLO sulla
+    // vista rete, come il widget)
+    const aggrega = (rows, tab, brandId, capGruppo = false) => {
+        const per = { puntiMobile: 0, pezziMobile: 0, simReg: 0, puntiFisso: 0, pezziFisso: 0, fisReg: 0, bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0, mobSenzaPay: 0, fisSenzaPay: 0, puntiAss: 0, pezziAss: 0, telP: 0, capTaglio: 0, telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, rsGa: 0, rsCb: 0, luce: 0, gas: 0, kit: 0 };
         rows.forEach((c) => {
             const cat = String(c.categoria || "");
             const prod = String(c.prodotto || "");
@@ -60,7 +61,7 @@ async function main() {
             const set = tab ? matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand) || brandId) : [];
             if (set.length) {
                 const pista = set[0].pista; const p = puntiPerRighe(set);
-                if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
+                if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; if (/^telefono a rate/i.test(cat)) { per.telP += p; per.pezziMobile--; } }
                 else if (pista === "fisso") { per.puntiFisso += p; per.pezziFisso++; }
                 else if (pista === "business_mobile") { per.bizMobN++; per.bizMobP += p; }
                 else if (pista === "business_fisso") { per.bizFisN++; per.bizFisP += p; }
@@ -69,6 +70,12 @@ async function main() {
                 if (isMob) per.mobSenzaPay++; else per.fisSenzaPay++;
             }
         });
+        // CAP 35% smartphone (solo Vodafone, SOLO vista di gruppo/rete)
+        if (capGruppo && brandId === "vodafone" && per.telP > 0) {
+            const sim = per.puntiMobile - per.telP;
+            const ammessi = Math.round(sim * 0.35 * 100) / 100;
+            if (per.telP > ammessi) { per.capTaglio = Math.round((per.telP - ammessi) * 100) / 100; per.puntiMobile = Math.round((sim + ammessi) * 100) / 100; }
+        }
         return per;
     };
     // invarianti di quadratura: il REGISTRATO si spiega per intero
@@ -89,7 +96,8 @@ async function main() {
     console.log(`Motore: W3 ${rw3.length} righe · VF ${rvf.length} · FW ${rfw.length} · tabellare W3 ${tw3 ? "ok" : "ASSENTE"} · VF ${tvf ? "ok" : "ASSENTE"}`);
 
     // ── RICONTEGGIO INDIPENDENTE via REST (percorso diverso) ────────────────
-    const oggiISO = new Date().toISOString().slice(0, 10);
+    const _d = new Date();   // ymd LOCALE: toISOString dopo mezzanotte è ancora ieri (UTC)
+    const oggiISO = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
     const oraScatto = 19;
     const oggiFuori = new Date().getHours() < oraScatto ? oggiISO : null;
     const scarica = async (brand) => {
@@ -156,7 +164,7 @@ async function main() {
     ];
     for (const caso of casiVf) {
         // gara Vodafone (lettera A) = VF + Fastweb dei codici T1, come il widget
-        const wid = aggrega([...rvf.filter(caso.scope), ...rfw.filter(caso.scope).filter(inLetteraA)], tvf, "vodafone");
+        const wid = aggrega([...rvf.filter(caso.scope), ...rfw.filter(caso.scope).filter(inLetteraA)], tvf, "vodafone", caso.nome.includes("RETE"));
         const ind = contaIndip([...ivf.filter(caso.scope), ...ifw.filter(caso.scope).filter(inLetteraA)]);
         const diff = [...quadra(wid)];
         for (const k of ["simReg", "fisReg", "telGa", "telGaFin", "telCb", "telCbFin", "opCb", "rsGa", "rsCb"]) if (wid[k] !== ind[k]) diff.push(`${k}: widget ${wid[k]} ≠ indip ${ind[k]}`);
@@ -190,11 +198,13 @@ async function main() {
     const mappa = new Map(mi.map((it) => [norm(it.name), catName.get(it.category_id)]));
     const bal = ext.filter(r => sameStore(r.negozio, "Baleniere"));
     const qty = (r) => Math.max(1, Number((r.dettagli || {}).qty) || 1);
+    const valDi = (r) => Number((r.dettagli || {}).price) || 0;   // TOTALE riga, come il widget
     const pezziBal = bal.reduce((a, r) => a + qty(r), 0);
-    const perCat = {}; bal.forEach(r => { const c = mappa.get(norm(r.prodotto)) || "Altro"; perCat[c] = (perCat[c] || 0) + qty(r); });
+    const valBal = Math.round(bal.reduce((a, r) => a + valDi(r), 0));
+    const perCat = {}; bal.forEach(r => { const c = mappa.get(norm(r.prodotto)) || "Altro"; perCat[c] = Math.round((perCat[c] || 0) + valDi(r)); });
     const senzaMappa = ext.filter(r => !mappa.get(norm(r.prodotto))).length;
-    // nota: niente baseline fissa — i pezzi crescono coi giorni (217 al 17/08)
-    console.log(`\n■ MARGINALITÀ — Baleniere: ${bal.length} righe → ${pezziBal} pezzi · categorie: ${JSON.stringify(perCat)}`);
+    const valRete = Math.round(ext.reduce((a, r) => a + valDi(r), 0));
+    console.log(`\n■ MARGINALITÀ A VALORE — rete: ${valRete} € · Baleniere: ${valBal} € (${bal.length} righe, ${pezziBal} pezzi) · categorie €: ${JSON.stringify(perCat)}`);
     console.log(`  copertura mappa categorie su tutta la rete: ${ext.length - senzaMappa}/${ext.length} righe mappate (${senzaMappa} in "Altro")`);
 
     console.log(`\n${errori === 0 ? "✅ TUTTI I RISCONTRI COINCIDONO" : `❌ ${errori} riscontri con differenze`}`);

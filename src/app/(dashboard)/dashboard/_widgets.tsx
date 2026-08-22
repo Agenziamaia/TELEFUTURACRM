@@ -25,6 +25,7 @@
 // caller, qualità (KO/annullati), storico personale.
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS } from "@/lib/roles";
@@ -133,26 +134,38 @@ function BarChart({ icon, title, rows, total, colorFor, accent, size }) {
     );
 }
 
-/** Barrette per giorno del mese: oggi evidenziato, giorni non lavorativi spenti. */
-function Sparkline({ perGiorno, ym, color, ctx }) {
-    if (!ym) return null;
-    const [y, m] = ym.split("-").map(Number);
-    const n = new Date(y, m, 0).getDate();
+/** Barrette per giorno — su un MESE o su un PERIODO dal–al (max 62 giorni):
+ *  oggi evidenziato, giorni non lavorativi spenti. */
+function Sparkline({ perGiorno, ym, range, color, ctx }) {
+    let giorniISO = [];
+    if (range) {
+        const d = new Date(range.da + "T12:00:00");
+        while (giorniISO.length <= 62) {
+            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            giorniISO.push(iso);
+            if (iso === range.a) break;
+            d.setDate(d.getDate() + 1);
+        }
+        if (giorniISO[giorniISO.length - 1] !== range.a) return null;   // periodo troppo lungo per le barrette
+    } else if (ym) {
+        const [y, m] = ym.split("-").map(Number);
+        const n = new Date(y, m, 0).getDate();
+        giorniISO = Array.from({ length: n }, (_, i) => `${ym}-${String(i + 1).padStart(2, "0")}`);
+    } else return null;
     const max = Math.max(1, ...Object.values(perGiorno));
-    const giorni = Array.from({ length: n }, (_, i) => i + 1);
     const fest = new Set(ctx.gl?.festivi || []);
     const cong = new Set(ctx.gl?.congelati || []);
-    const isCorrente = ym === ctx.oggiISO.slice(0, 7);
+    const ymCorrente = ctx.oggiISO.slice(0, 7);
     return (
         <div className="flex items-end gap-[2px] h-9" title="Pezzi per giorno">
-            {giorni.map((g) => {
-                const iso = `${ym}-${String(g).padStart(2, "0")}`;
+            {giorniISO.map((iso) => {
+                const g = Number(iso.slice(8, 10));
                 const v = perGiorno[iso] || 0;
-                const dow = new Date(y, m - 1, g).getDay();
-                const spento = dow === 0 || (isCorrente && (fest.has(iso) || cong.has(g)));
+                const dow = new Date(iso + "T12:00:00").getDay();
+                const spento = dow === 0 || (iso.slice(0, 7) === ymCorrente && (fest.has(iso) || cong.has(g)));
                 const oggi = iso === ctx.oggiISO;
                 return (
-                    <div key={g} className="flex-1 min-w-[2px] rounded-sm transition-all" title={`${g}/${m}: ${v}`}
+                    <div key={iso} className="flex-1 min-w-[2px] rounded-sm transition-all" title={`${g}/${Number(iso.slice(5, 7))}: ${v}`}
                         style={{
                             height: v ? `${Math.max(14, (v / max) * 100)}%` : "3px",
                             background: v ? color : "rgba(148,163,184,.15)",
@@ -191,30 +204,36 @@ function MedalRow({ rank, nome, n, max, color, isMe, mostra }) {
 }
 
 /** Chip con SONDA a bolla immediata (il title nativo è lento — stessa
- *  lezione del Commissioning): hover o tap mostrano subito il perché. */
+ *  lezione del Commissioning): hover o tap mostrano subito il perché.
+ *  ⚠️ La bolla vive in un PORTAL sul body: dentro la card non funzionava —
+ *  .glass-card:hover ha un transform, che per position:fixed diventa il
+ *  containing block, e l'overflow-hidden della card la tagliava via
+ *  (segnalazione Luca 19/08 «passandoci il mouse non succede niente»). */
 function ChipSonda({ testo, righe, tono = "ambra" }) {
     const [tip, setTip] = useState(null);
-    const muovi = (e) => setTip({ x: Math.min(e.clientX + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 280), y: Math.min(e.clientY + 14, (typeof window !== "undefined" ? window.innerHeight : 800) - 40 - righe.length * 18) });
+    const muovi = (e) => setTip({ x: Math.min(e.clientX + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 290), y: Math.min(e.clientY + 14, (typeof window !== "undefined" ? window.innerHeight : 800) - 40 - righe.length * 18) });
     const cls = tono === "ambra" ? "bg-amber-500/10 border-amber-500/20 text-amber-300" : "bg-white/[0.04] border-white/5 text-slate-300";
     return (
         <span className={cn("relative inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold cursor-help", cls)}
             onMouseEnter={muovi} onMouseMove={muovi} onMouseLeave={() => setTip(null)}
             onClick={(e) => { e.stopPropagation(); tip ? setTip(null) : muovi(e); }}>
             {testo}
-            {tip && (
-                <span className="fixed z-[80] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] font-normal text-slate-200 whitespace-pre leading-relaxed pointer-events-none"
+            {tip && typeof document !== "undefined" && createPortal(
+                <span className="fixed z-[90] max-w-[300px] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] font-normal text-slate-200 whitespace-pre-wrap leading-relaxed pointer-events-none"
                     style={{ left: tip.x, top: tip.y }}>
                     {righe.join("\n")}
-                </span>
-            )}
+                </span>, document.body)}
         </span>
     );
 }
 
+const fmtEuro = (n) => Math.round(Number(n) || 0).toLocaleString("it-IT") + " €";
+export const valoreDi = (c) => Number(c?.prezzo) || 0;   // dettagli.price = TOTALE riga (già ×qty)
+
 /** Chip riepilogo: oggi / proiezione / record / confronto mese scorso. */
 function ChipsPerformance({ ctx, oggiN, proiezione, best, meseScorso, pezzi, color }) {
     const chips = [];
-    if (ctx.periodoEMeseCorrente) {
+    if (ctx.includeOggi) {
         chips.push(
             <span key="oggi" className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
                 {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
@@ -276,8 +295,7 @@ const fmtPunti = (n) => (Math.round(n * 100) / 100).toLocaleString("it-IT");
 
 function kpiW3(ctx, scopeFn) {
     const w3 = ctx.w3;
-    if (!w3 || !Array.isArray(w3.rows)) return null;
-    const rows = w3.rows.filter(scopeFn);
+    if (!w3 || !Array.isArray(w3.packs)) return null;
     const per = {
         // pezzi = registrato nel perimetro (quadra con Ricerca Vendite);
         // punti = agganciato dal motore. Vendite senza riga pay → sonda ⚠.
@@ -286,7 +304,13 @@ function kpiW3(ctx, scopeFn) {
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0, reload: 0, luce: 0, gas: 0, kit: 0,
         puntiGiorno: {}, puntiPersona: {},
     };
-    rows.forEach((c) => {
+    // un pacchetto per mese del periodo: ogni mese matcha col SUO tabellare
+    w3.packs.forEach((pack) => {
+        if (!pack.tab) {
+            const nMf = pack.rows.filter(scopeFn).filter((c) => /^(mobile |fisso)/i.test(String(c.categoria || ""))).length;
+            if (nMf) per.senzaPayCombo[`(${pack.ym}: tabellare del mese non configurato)`] = nMf;
+        }
+        return pack.rows.filter(scopeFn).forEach((c) => {
         const cat = String(c.categoria || "");
         const prod = String(c.prodotto || "");
         const opz = String(c.opzioni || "");
@@ -305,7 +329,7 @@ function kpiW3(ctx, scopeFn) {
         if (/reload/i.test(opz)) per.reload++;
         if (/\bkit\b/i.test(opz)) per.kit++;
         if (/^energia/i.test(cat)) { if (/gas/i.test(prod)) per.gas++; else per.luce++; }
-        const set = w3.tab ? matchRigheAttivazione(w3.tab.righe, c, brandIdDaLabel(c.brand)) : [];
+        const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
             if (pista === "mobile") { per.puntiMobile += p; per.pezziMobile++; }
@@ -322,6 +346,7 @@ function kpiW3(ctx, scopeFn) {
             const k = `${prod} / ${String(c.offerta || "")}`;
             per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
         }
+        });
     });
     return per;
 }
@@ -344,21 +369,16 @@ function WidgetW3({ ctx, size }) {
     const logo = TRK_BRAND_LOGOS.windtre;
     // memo sui DATI (ctx.w3 ha identità stabile dalla page): il motore non
     // rigira a ogni re-render — lezione incidente 17/08 (main thread saturo)
-    const per = useMemo(() => kpiW3(ctx, (c) =>
-        ctx.level === "global" ? true :
-        ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name)
-    ), [ctx.w3, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
-    const ymW3 = ctx.w3?.ym || ctx.ymShown || ctx.oggiISO.slice(0, 7);
-    const meseCorrente = ymW3 === ctx.oggiISO.slice(0, 7);
+    const per = useMemo(() => kpiW3(ctx, ctx.scopeVendita), [ctx.w3, ctx.level, ctx.visKey, ctx.negoziKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const ymW3 = ctx.w3?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
-        if (!ctx.gl || !meseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
+        if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
         const p = (v / ctx.gl.trascorsi) * ctx.gl.totali;
         const r = dec ? Math.round(p * 10) / 10 : Math.round(p);
         return r > v ? r.toLocaleString("it-IT") : null;
     };
     // vendite di OGGI registrate dal negozio (vive: nei punti entrano all'ora di scatto)
-    const oggiN = meseCorrente ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^windtre/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
+    const oggiN = ctx.includeOggi ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^windtre/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
     // gamification: posizione del consulente per PUNTI dentro il suo negozio
     const rank = useMemo(() => {
         if (!per || ctx.level !== "own" || !ctx.w3?.rows) return null;
@@ -398,20 +418,20 @@ function WidgetW3({ ctx, size }) {
                             {size >= 2 && <TileKpi label="Luce & Gas" value={per.luce + per.gas} sub={`${per.luce} luce · ${per.gas} gas`} proj={proj(per.luce + per.gas)} color={color} />}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                            {meseCorrente && (
+                            {ctx.includeOggi && (
                                 <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
                                     {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
                                 </span>
                             )}
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su nuova attivazione · di cui finanziati">📱 GA <b className="font-mono text-slate-100">{per.telGa}</b><span className="text-slate-500">fin {per.telGaFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su cliente già attivo · di cui finanziati">📱 CB <b className="font-mono text-slate-100">{per.telCb}</b><span className="text-slate-500">fin {per.telCbFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔄 Reload <b className="font-mono text-slate-100">{per.reload}</b></span>
+                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.telGa}</b> <span className="text-slate-500">fin {per.telGaFin}</span></>} righe={["Telefoni rateizzati su nuova attivazione (GA):", `${per.telGa} totali, di cui ${per.telGaFin} finanziati.`, "Il pay dei device arriva col cantiere analisi (listino)."]} />
+                            <ChipSonda tono="neutro" testo={<>📱 CB <b className="font-mono text-slate-100">{per.telCb}</b> <span className="text-slate-500">fin {per.telCbFin}</span></>} righe={["Telefoni rateizzati su cliente già attivo (CB):", `${per.telCb} totali, di cui ${per.telCbFin} finanziati.`]} />
+                            <ChipSonda tono="neutro" testo={<>🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></>} righe={["Operazioni Customer Base registrate nel periodo", "(cambi offerta e attività sui clienti già attivi)."]} />
+                            <ChipSonda tono="neutro" testo={<>🔄 Reload <b className="font-mono text-slate-100">{per.reload}</b></>} righe={["Vendite con opzione Reload", "(Reload, Reload EU, Forever, Plus, Exchange, Open)."]} />
                             {size >= 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 Protecta <b className="font-mono text-slate-100">{per.kit}</b></span>}
                             {per.senzaPay > 0 && <ChipSonda testo={`⚠ ${per.senzaPay} senza punti`} righe={senzaPayRigheW3} />}
                         </div>
-                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ymW3} color={color} ctx={ctx} />}
+                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymW3} range={ctx.rangeShown} color={color} ctx={ctx} />}
                     </div>
                     {size >= 4 && (
                         <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
@@ -443,15 +463,7 @@ function WidgetW3({ ctx, size }) {
 // viaggia col brand Fastweb). Il business avrà un widget dedicato.
 function kpiVF(ctx, scopeFn) {
     const vf = ctx.vf;
-    if (!vf || !Array.isArray(vf.rows)) return null;
-    const rows = vf.rows.filter(scopeFn);
-    // FASTWEB nella gara Vodafone (Luca 19/08): TUTTO il Fastweb allocato coi
-    // codici di inserimento dei Vodafone Store (T1: Acilia/Baleniere/Castani/
-    // Merulana) conta nella lettera A — mobile, fisso ed energia. Lo smista
-    // contestoVfFw, la STESSA funzione del Calcolatore (codice, ripiego sul
-    // negozio). Il Fastweb T2 resta fuori (gara sua). Lo scope resta sempre
-    // il negozio che registra / il venditore.
-    const rowsFw = (vf.rowsFw || []).filter(scopeFn).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone");
+    if (!vf || !Array.isArray(vf.packs)) return null;
     const per = {
         // pezzi = REGISTRATO nel perimetro (per quadrare con Ricerca Vendite);
         // punti = quello che il motore aggancia. Il business ha le sue piste
@@ -460,12 +472,20 @@ function kpiVF(ctx, scopeFn) {
         puntiMobile: 0, simReg: 0, puntiFisso: 0, fisReg: 0,
         bizMobN: 0, bizMobP: 0, bizFisN: 0, bizFisP: 0,
         mobSenzaPay: 0, fisSenzaPay: 0, senzaPayCombo: {}, esclLettera: 0,
-        fwGaraN: rowsFw.length,
+        fwGaraN: 0, telP: 0, capTaglio: 0,
         telGa: 0, telGaFin: 0, telCb: 0, telCbFin: 0, opCb: 0,
         rsGa: 0, rsCb: 0, luce: 0, gas: 0,
         puntiGiorno: {}, puntiPersona: {},
     };
-    [...rows, ...rowsFw].forEach((c) => {
+    // FASTWEB nella gara Vodafone (Luca 19/08): TUTTO il Fastweb allocato coi
+    // codici di inserimento dei Vodafone Store (T1: Acilia/Baleniere/Castani/
+    // Merulana) conta nella lettera A — mobile, fisso ed energia. Lo smista
+    // contestoVfFw, la STESSA funzione del Calcolatore. Il T2 resta fuori.
+    // Un pacchetto per mese del periodo: ogni mese matcha col SUO tabellare.
+    vf.packs.forEach((pack) => {
+        const fwGara = (pack.rowsFw || []).filter(scopeFn).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone");
+        per.fwGaraN += fwGara.length;
+        [...pack.rows.filter(scopeFn), ...fwGara].forEach((c) => {
         const cat = String(c.categoria || "");
         const prod = String(c.prodotto || "");
         const off = String(c.offerta || "");
@@ -498,10 +518,10 @@ function kpiVF(ctx, scopeFn) {
         // brand della VENDITA al matcher (come il Calcolatore): le righe del
         // tabellare VF hanno il gate brand_vendita — le FW T1 devono prendere
         // le righe «FW» (Wallet 1,5 ecc.), non quelle native Vodafone
-        const set = vf.tab ? matchRigheAttivazione(vf.tab.righe, c, brandIdDaLabel(c.brand)) : [];
+        const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
         if (set.length) {
             const pista = set[0].pista; const p = puntiPerRighe(set);
-            if (pista === "mobile") per.puntiMobile += p;
+            if (pista === "mobile") { per.puntiMobile += p; if (/^telefono a rate/i.test(cat)) per.telP += p; }
             else if (pista === "fisso") per.puntiFisso += p;
             else if (pista === "business_mobile") { per.bizMobN++; per.bizMobP += p; }
             else if (pista === "business_fisso") { per.bizFisN++; per.bizFisP += p; }
@@ -518,27 +538,36 @@ function kpiVF(ctx, scopeFn) {
             const k = `${prod} / ${off}${/fastweb/i.test(String(c.brand || "")) ? " (FW)" : ""}`;
             per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
         }
+        });
     });
+    // CAP 35% (lettera VF, §Pista Mobile Consumer): gli smartphone valgono
+    // fino al 35% del valore delle SIM. Correzione Luca 19/08 sera: il cap
+    // vale sul TOTALE DEL GRUPPO — si applica SOLO alla vista rete (admin),
+    // mai ai conteggi individuali di negozi e consulenti. Nel motore
+    // (calcolaAvanzamento) resta: lì il conteggio è sempre di gruppo.
+    if (ctx.level === "global" && per.telP > 0) {
+        const sim = per.puntiMobile - per.telP;
+        const ammessi = Math.round(sim * 0.35 * 100) / 100;
+        if (per.telP > ammessi) {
+            per.capTaglio = Math.round((per.telP - ammessi) * 100) / 100;
+            per.puntiMobile = Math.round((sim + ammessi) * 100) / 100;
+        }
+    }
     return per;
 }
 
 function WidgetVodafone({ ctx, size }) {
     const color = colDiBrand("Vodafone");
     const logo = TRK_BRAND_LOGOS.vodafone;
-    const per = useMemo(() => kpiVF(ctx, (c) =>
-        ctx.level === "global" ? true :
-        ctx.level === "store" ? ctx.inMyStores(c.negozio) :
-        norm(c.venditore) === norm(ctx.user?.name)
-    ), [ctx.vf, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
-    const ymVf = ctx.vf?.ym || ctx.ymShown || ctx.oggiISO.slice(0, 7);
-    const meseCorrente = ymVf === ctx.oggiISO.slice(0, 7);
+    const per = useMemo(() => kpiVF(ctx, ctx.scopeVendita), [ctx.vf, ctx.level, ctx.visKey, ctx.negoziKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const ymVf = ctx.vf?.ym || ctx.ymShown;
     const proj = (v, dec = false) => {
-        if (!ctx.gl || !meseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
+        if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
         const p = (v / ctx.gl.trascorsi) * ctx.gl.totali;
         const r = dec ? Math.round(p * 10) / 10 : Math.round(p);
         return r > v ? r.toLocaleString("it-IT") : null;
     };
-    const oggiN = meseCorrente ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^vodafone/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
+    const oggiN = ctx.includeOggi ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^vodafone/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
     const rank = useMemo(() => {
         if (!per || ctx.level !== "own" || !ctx.vf?.rows) return null;
         const perStore = kpiVF({ ...ctx, level: "store" }, (c) => ctx.inMyStores(c.negozio));
@@ -578,20 +607,21 @@ function WidgetVodafone({ ctx, size }) {
                             {size >= 2 && <TileKpi label="Luce & Gas" value={per.luce + per.gas} sub={`${per.luce} luce · ${per.gas} gas (con FW)`} proj={proj(per.luce + per.gas)} color={color} />}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                            {meseCorrente && (
+                            {ctx.includeOggi && (
                                 <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
                                     {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
                                 </span>
                             )}
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su nuova attivazione · di cui finanziati">📱 GA <b className="font-mono text-slate-100">{per.telGa}</b><span className="text-slate-500">fin {per.telGaFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300" title="Telefoni rateizzati su cliente già attivo · di cui finanziati">📱 CB <b className="font-mono text-slate-100">{per.telCb}</b><span className="text-slate-500">fin {per.telCbFin}</span></span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></span>
-                            {size < 2 && <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></span>}
+                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.telGa}</b> <span className="text-slate-500">fin {per.telGaFin}</span></>} righe={["Telefoni su nuova attivazione (GA):", `${per.telGa} totali, di cui ${per.telGaFin} finanziati.`, "In pista mobile: rateale 0,5 pt · finanziato 1 pt", "(col cap del 35% sulla vista di rete)."]} />
+                            <ChipSonda tono="neutro" testo={<>📱 CB <b className="font-mono text-slate-100">{per.telCb}</b> <span className="text-slate-500">fin {per.telCbFin}</span></>} righe={["Telefoni su cliente già attivo (CB):", `${per.telCb} totali, di cui ${per.telCbFin} finanziati.`, "Stessi punti dei GA (0,5 rateale · 1 finanziato)."]} />
+                            <ChipSonda tono="neutro" testo={<>🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></>} righe={["Operazioni Customer Base (cambi offerta, MM4M,", "traslochi…): pay one-shot nei Gettoni delle Regole."]} />
+                            {size < 2 && <ChipSonda tono="neutro" testo={<>🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></>} righe={[`Rete Sicura: ${per.rsGa} su attivazioni (GA) · ${per.rsCb} su clienti attivi (CB).`]} />}
                             {per.fwGaraN > 0 && <ChipSonda tono="neutro" testo={<>🟨 FW in gara <b className="font-mono text-slate-100">{per.fwGaraN}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "per la lettera A contano qui — mobile, fisso ed energia.", "Il Fastweb T2 (multibrand) resta nella sua gara."]} />}
+                            {per.capTaglio > 0 && <ChipSonda testo={`✂️ cap 35%: −${fmtPunti(per.capTaglio)}`} righe={["Lettera Vodafone: gli smartphone (0,5 rateale · 1 finanziato)", "valgono fino al 35% del valore delle SIM.", `Telefoni ${fmtPunti(per.telP)} pt · contati ${fmtPunti(per.telP - per.capTaglio)} pt`]} />}
                             {senzaPay > 0 && <ChipSonda testo={`⚠ ${senzaPay} senza punti`} righe={senzaPayRighe} />}
                         </div>
-                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ymVf} color={color} ctx={ctx} />}
+                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymVf} range={ctx.rangeShown} color={color} ctx={ctx} />}
                     </div>
                     {size >= 4 && (
                         <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
@@ -609,6 +639,123 @@ function WidgetVodafone({ ctx, size }) {
                                 </div>
                             ))}
                             <p className="text-[10px] text-slate-600 pt-1">Il business Vodafone avrà un widget dedicato.</p>
+                        </div>
+                    )}
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+
+// ── WIDGET Sky: PUNTI come gli altri (Luca 19/08 notte) ─────────────────────
+// «Quello che comanda le soglie sono i punti»: 3P 3 · TV/Glass 2 · Fibra 1 ·
+// Mobile 0,5 (Wallet GA 0). I punti arrivano dal motore sulla pista "sky" —
+// oggi configurata SOLO lato ragazzi (gara interna a punti): quando nascerà
+// il tabellare azienda Sky si cambia fonte. I pezzi restano accanto.
+function kpiSky(ctx, scopeFn) {
+    const sky = ctx.sky;
+    if (!sky || !Array.isArray(sky.packs)) return null;
+    const per = { punti: 0, pezziPunti: 0, reg: 0, tre: 0, tv: 0, glass: 0, fibra: 0, mobMnp: 0, mobGa: 0, senzaPay: 0, senzaPayCombo: {}, puntiGiorno: {}, puntiPersona: {} };
+    sky.packs.forEach((pack) => pack.rows.filter(scopeFn).forEach((c) => {
+        const cat = String(c.categoria || "");
+        const prod = String(c.prodotto || "");
+        per.reg++;
+        if (/^3p/i.test(prod)) per.tre++;
+        else if (/glass|prova sky/i.test(prod)) per.glass++;
+        else if (/^tv$/i.test(prod) || /^tv$/i.test(cat)) per.tv++;
+        else if (/fibra/i.test(prod) || (/^fisso/i.test(cat) && /fibra/i.test(String(c.offerta || "")))) per.fibra++;
+        else if (/^mobile mnp/i.test(prod)) per.mobMnp++;
+        else if (/^mobile ga/i.test(prod)) per.mobGa++;
+        const set = pack.tab ? matchRigheAttivazione(pack.tab.righe, c, brandIdDaLabel(c.brand)) : [];
+        if (set.length) {
+            const pnt = puntiPerRighe(set);
+            per.punti += pnt; per.pezziPunti++;
+            const g = giornoDi(c); if (g) per.puntiGiorno[g] = (per.puntiGiorno[g] || 0) + pnt;
+            const chi = ctx.level === "global" ? (c.negozio || "—") : (c.venditore || "—");
+            per.puntiPersona[chi] = (per.puntiPersona[chi] || 0) + pnt;
+        } else {
+            per.senzaPay++;
+            const k = cat + " | " + prod + " | " + String(c.offerta || "");
+            per.senzaPayCombo[k] = (per.senzaPayCombo[k] || 0) + 1;
+        }
+    }));
+    per.punti = Math.round(per.punti * 100) / 100;
+    return per;
+}
+
+function WidgetSky({ ctx, size }) {
+    const color = colDiBrand("Sky");
+    const logo = TRK_BRAND_LOGOS.sky;
+    const per = useMemo(() => kpiSky(ctx, ctx.scopeVendita), [ctx.sky, ctx.level, ctx.visKey, ctx.negoziKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const ymSky = ctx.sky?.ym || ctx.ymShown;
+    const proj = (v, dec = false) => {
+        if (!ctx.gl || !ctx.periodoEMeseCorrente || !ctx.gl.mostraProiezione || ctx.gl.trascorsi <= 0 || !v) return null;
+        const p = (v / ctx.gl.trascorsi) * ctx.gl.totali;
+        const r = dec ? Math.round(p * 10) / 10 : Math.round(p);
+        return r > v ? r.toLocaleString("it-IT") : null;
+    };
+    const oggiN = ctx.includeOggi ? ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && /^sky/i.test(c.brand || "") && giornoDi(c) === ctx.oggiISO).length : 0;
+    const rank = useMemo(() => {
+        if (!per || ctx.level !== "own" || !ctx.sky?.packs) return null;
+        const perStore = kpiSky({ ...ctx, level: "store" }, (c) => ctx.inMyStores(c.negozio));
+        if (!perStore) return null;
+        const cl = Object.entries(perStore.puntiPersona).sort((a, b) => b[1] - a[1]);
+        const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
+        return (i >= 0 && cl.length > 1) ? { pos: i + 1, su: cl.length } : null;
+    }, [per, ctx.sky, ctx.level, ctx.visKey, ctx.user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    const squadra = per ? Object.entries(per.puntiPersona).sort((a, b) => b[1] - a[1]) : [];
+    const senzaPayRighe = per ? ["Registrate ma senza punti in gara:", ...Object.entries(per.senzaPayCombo).map(([k, n]) => n + "× " + k)] : [];
+    const tabellaL = per ? [
+        ["Punti Sky", fmtPunti(per.punti), proj(per.punti, true), per.pezziPunti + " pezzi in gara"],
+        ["3P (TV + Fibra)", per.tre, proj(per.tre), null],
+        ["Solo TV", per.tv, proj(per.tv), null],
+        ["Sky Glass", per.glass, proj(per.glass), null],
+        ["Solo Fibra", per.fibra, proj(per.fibra), null],
+        ["Mobile MNP", per.mobMnp, proj(per.mobMnp), null],
+        ["Mobile GA", per.mobGa, proj(per.mobGa), null],
+    ] : [];
+    return (
+        <WidgetShell logo={logo} icon={Signal} title="Sky" accent={color}
+            action={<div className="flex items-center gap-2">{rank && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">🏅 {rank.pos}° su {rank.su}</span>}<ChipScope ctx={ctx} /></div>}>
+            {!per ? (
+                <div className="p-6 flex items-center justify-center gap-2 text-slate-500 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Calcolo punti…</div>
+            ) : (
+                <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+                    <div className="flex flex-col gap-3">
+                        <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
+                            <TileKpi label="Punti Sky" value={fmtPunti(per.punti)} sub={per.pezziPunti + " pezzi in gara"} proj={proj(per.punti, true)} color={color} />
+                            <TileKpi label="3P" value={per.tre} sub="TV + Fibra" proj={proj(per.tre)} color={color} />
+                            {size >= 2 && <TileKpi label="TV & Glass" value={per.tv + per.glass} sub={per.tv + " TV · " + per.glass + " Glass"} proj={proj(per.tv + per.glass)} color={color} />}
+                            {size >= 2 && <TileKpi label="Fibra" value={per.fibra} sub="solo fibra" proj={proj(per.fibra)} color={color} />}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {ctx.includeOggi && (
+                                <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", oggiN > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
+                                    {oggiN > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
+                                    oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
+                                </span>
+                            )}
+                            <ChipSonda tono="neutro" testo={<>📱 MNP <b className="font-mono text-slate-100">{per.mobMnp}</b></>} righe={["SIM Sky Mobile in portabilità: 0,5 punti l\u2019una."]} />
+                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.mobGa}</b></>} righe={["SIM Sky Mobile nuove attivazioni:", "0,5 punti (Ric. Automatica) · 0 punti (ricarica pura)."]} />
+                            {per.senzaPay > 0 && <ChipSonda testo={"⚠ " + per.senzaPay + " senza punti"} righe={senzaPayRighe} />}
+                        </div>
+                        {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymSky} range={ctx.rangeShown} color={color} ctx={ctx} />}
+                    </div>
+                    {size >= 4 && (
+                        <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
+                            {squadra.length > 1 && (<>
+                                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1.5"><Crown className="w-3 h-3 text-amber-400" /> {ctx.level === "global" ? "Negozi (punti)" : "Squadra (punti)"}</div>
+                                {squadra.slice(0, 5).map(([nome, p], i) => (
+                                    <MedalRow key={nome} rank={i + 1} nome={nome} n={p} mostra={fmtPunti(p)} max={squadra[0][1]} color={color} isMe={ctx.level !== "global" && norm(nome) === norm(ctx.user?.name)} />
+                                ))}
+                            </>)}
+                            <div className="pt-1 text-[10px] uppercase tracking-widest font-bold text-slate-500">Tutti i numeri</div>
+                            {tabellaL.map(([lbl, v, pr, sub]) => (
+                                <div key={lbl} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]">
+                                    <span className="text-slate-300">{lbl}{sub ? <span className="text-slate-500"> · {sub}</span> : null}</span>
+                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-normal ml-1.5" style={{ color }}>≈{pr}</span>}</span>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -706,31 +853,57 @@ const sameStoreW = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y
 function WidgetBrand({ ctx, size, brand }) {
     if (trkBrandKey(brand) === "windtre") return <WidgetW3 ctx={ctx} size={size} />;
     if (trkBrandKey(brand) === "vodafone") return <WidgetVodafone ctx={ctx} size={size} />;
+    if (trkBrandKey(brand) === "sky") return <WidgetSky ctx={ctx} size={size} />;
     const kb = trkBrandKey(brand);
     const color = colDiBrand(brand);
     const logo = TRK_BRAND_LOGOS[kb];
-    const righe = ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
+    // FASTWEB = la SUA GARA, cioè il T2 (Luca 19/08 sera): il contatore usa
+    // il perimetro di gara smistato col codice di inserimento — le T1 NON
+    // contano qui (vivono nella gara Vodafone) ma le dice il chip 🟨.
+    const isFw = kb === "fastweb";
+    let righe, fwInGaraVF = 0, righeStore = null;
+    if (isFw && ctx.vf?.packs) {
+        const mio = ctx.scopeVendita;
+        const store = (c) => ctx.inMyStores(c.negozio);
+        righe = []; righeStore = [];
+        ctx.vf.packs.forEach((p) => (p.rowsFw || []).forEach((c) => {
+            const t1 = contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
+            if (mio(c)) { if (t1) fwInGaraVF++; else righe.push(c); }
+            if (!t1 && store(c)) righeStore.push(c);
+        }));
+    } else {
+        righe = ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
+    }
     const { pezzi, oggiN, proiezione, perGiorno, best } = CorpoProduzione({ ctx, size, righe, pesa: () => 1, color });
-    const meseScorso = ctx.scoped.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand && giornoDi(c).startsWith(ctx.meseScorsoYm)).length;
+    const meseScorso = isFw ? 0 : ctx.scoped.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand && giornoDi(c).startsWith(ctx.meseScorsoYm)).length;
     const perCat = groupCount(righe, (c) => c.categoria || "Altro");
     // gamification: posizione del consulente nella classifica del SUO negozio
     let rank = null;
-    if (ctx.level === "own" && ctx.storeRows) {
-        const cl = groupCount(ctx.storeRows.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand), (c) => c.venditore);
+    if (ctx.level === "own") {
+        const base = isFw ? (righeStore || []) : (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
+        const cl = groupCount(base, (c) => c.venditore);
         const i = cl.findIndex(([n]) => norm(n) === norm(ctx.user?.name));
         if (i >= 0 && cl.length > 1) rank = { pos: i + 1, su: cl.length };
     }
     const classifica = size >= 4
-        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand) : righe, (c) => c.venditore))
+        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio) : groupCount(ctx.level === "own" ? (isFw ? (righeStore || []) : (ctx.storeRows || []).filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand)) : righe, (c) => c.venditore))
         : null;
     return (
         <WidgetShell logo={logo} icon={Signal} title={brand} accent={color}
             action={<div className="flex items-center gap-2">{rank && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">🏅 {rank.pos}° su {rank.su}</span>}<ChipScope ctx={ctx} /></div>}>
             <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                 <div className="flex flex-col gap-3">
-                    <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={color} />
+                    <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={isFw ? `pezzi ${ctx.periodoLabel} · gara Fastweb (T2)` : `pezzi ${ctx.periodoLabel}`} color={color} />
                     {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={color} />}
-                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 ? meseScorso : null} pezzi={pezzi} color={color} />
+                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 && ctx.ymShown && !isFw ? meseScorso : null} pezzi={pezzi} color={color} />
+                    {isFw && !ctx.oggiContato && ctx.includeOggi && (
+                        <p className="text-[10px] text-slate-600 -mt-1.5">Le vendite di oggi entrano nel conteggio di gara alle {ctx.gl?.oraScatto ?? 19}.</p>
+                    )}
+                    {fwInGaraVF > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                            <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "NON contano qui — stanno nella gara Vodafone", "(lettera A), punti compresi. Qui c'è solo il T2."]} />
+                        </div>
+                    )}
                     {size >= 2 && perCat.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {perCat.map(([cat, n]) => (
@@ -740,7 +913,7 @@ function WidgetBrand({ ctx, size, brand }) {
                             ))}
                         </div>
                     )}
-                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} color={color} ctx={ctx} />}
+                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} range={ctx.rangeShown} color={color} ctx={ctx} />}
                 </div>
                 {size >= 4 && classifica && (
                     <div className="space-y-1.5 md:border-l md:border-white/5 md:pl-5">
@@ -756,53 +929,115 @@ function WidgetBrand({ ctx, size, brand }) {
     );
 }
 
-// ── WIDGET: marginalità aggregata per categorie ─────────────────────────────
+// ── WIDGET: marginalità A VALORE (Luca 19/08: «sul pezzo non ha senso») ─────
+// Valore = dettagli.price (TOTALE riga, già ×qty). Torta per categorie del
+// pannello Marginalità col dettaglio al passaggio del mouse (portal), top
+// prodotti e squadra sempre a valore; i pezzi restano come sottotesto.
+const COLORI_TORTA = ["#818cf8", "#34d399", "#fbbf24", "#38bdf8", "#f472b6", "#a78bfa", "#64748b"];
+
+function TortaMarg({ dati, totale, colori }) {
+    const [tip, setTip] = useState(null);
+    const C = 2 * Math.PI * 40;
+    let acc = 0;
+    return (
+        <div className="relative shrink-0">
+            <svg viewBox="0 0 100 100" className="w-28 h-28 -rotate-90">
+                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(148,163,184,.12)" strokeWidth="14" />
+                {dati.map(([nome, v], i) => {
+                    const frac = totale > 0 ? v / totale : 0;
+                    const dash = Math.max(0, frac * C - 1);
+                    const offset = -acc * C;
+                    acc += frac;
+                    return (
+                        <circle key={nome} cx="50" cy="50" r="40" fill="none" stroke={colori[i % colori.length]} strokeWidth="14"
+                            strokeDasharray={dash + " " + (C - dash)} strokeDashoffset={offset} className="cursor-help"
+                            onMouseMove={(e) => setTip({ x: e.clientX + 12, y: e.clientY + 14, nome, v, pct: Math.round(frac * 100) })}
+                            onMouseLeave={() => setTip(null)} />
+                    );
+                })}
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-[10px] font-black text-slate-300 text-center leading-tight px-3">{fmtEuro(totale)}</span>
+            </div>
+            {tip && typeof document !== "undefined" && createPortal(
+                <span className="fixed z-[90] rounded-lg border border-white/10 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] text-slate-200 pointer-events-none"
+                    style={{ left: tip.x, top: tip.y }}>
+                    <b>{tip.nome}</b> · {fmtEuro(tip.v)} ({tip.pct}%)
+                </span>, document.body)}
+        </div>
+    );
+}
+
 function WidgetMarginalita({ ctx, size }) {
     const righe = ctx.mine.filter((c) => isExt(c) && validaProduzione(c));
-    const { pezzi, oggiN, proiezione, perGiorno, best } = CorpoProduzione({ ctx, size, righe, pesa: qtyDi, color: MARG_COLOR });
-    const meseScorso = ctx.scoped.filter((c) => isExt(c) && validaProduzione(c) && giornoDi(c).startsWith(ctx.meseScorsoYm)).reduce((a, c) => a + qtyDi(c), 0);
-    const catDi = (c) => ctx.margMap?.get(norm(c.prodotto))?.cat || "Altro";
-    const iconaCat = (nome) => ctx.margIcone?.get(nome) || "🧩";
-    const perCat = groupCount(righe, catDi, qtyDi);
-    const topProdotti = groupCount(righe, (c) => c.prodotto, qtyDi);
+    const valore = righe.reduce((a, c) => a + valoreDi(c), 0);
+    const pezzi = righe.reduce((a, c) => a + qtyDi(c), 0);
+    const valOggi = righe.filter((c) => giornoDi(c) === ctx.oggiISO).reduce((a, c) => a + valoreDi(c), 0);
+    const proiezione = proiezioneFineMese(ctx, valore, valOggi);
+    // fallback per i prodotti-speciali del POS fuori pannello (TNP, E.Telefono…):
+    // a valore dominano — senza questa regola finivano tutti in «Altro»
+    const catDi = (c) => ctx.margMap?.get(norm(c.prodotto))?.cat || (/(telefono|tnp|smartphone|iphone)/i.test(String(c.prodotto || "")) ? "Telefoni" : "Altro");
+    const iconaCat = (nome) => nome === "Altre" ? "•" : nome === "Telefoni" ? "📱" : (ctx.margIcone?.get(nome) || "🧩");
+    const perCat = groupCount(righe, catDi, valoreDi);
+    const resto = perCat.slice(6).reduce((a, [, v]) => a + v, 0);
+    const datiTorta = resto > 0 ? [...perCat.slice(0, 6), ["Altre", resto]] : perCat.slice(0, 6);
+    const topProdotti = groupCount(righe, (c) => c.prodotto, valoreDi).slice(0, size >= 4 ? 7 : 5);
+    const meseScorsoVal = ctx.ymShown ? ctx.scoped.filter((c) => isExt(c) && validaProduzione(c) && giornoDi(c).startsWith(ctx.meseScorsoYm)).reduce((a, c) => a + valoreDi(c), 0) : 0;
     const classifica = size >= 4
-        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio, qtyDi) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isExt(c) && validaProduzione(c)) : righe, (c) => c.venditore, qtyDi))
+        ? (ctx.level === "global" ? groupCount(righe, (c) => c.negozio, valoreDi) : groupCount(ctx.level === "own" ? (ctx.storeRows || []).filter((c) => isExt(c) && validaProduzione(c)) : righe, (c) => c.venditore, valoreDi))
         : null;
+    const perGiorno = {};
+    righe.forEach((c) => { const g = giornoDi(c); if (g) perGiorno[g] = (perGiorno[g] || 0) + valoreDi(c); });
     return (
         <WidgetShell icon={ShoppingBag} title="Marginalità" accent={MARG_COLOR} action={<ChipScope ctx={ctx} />}>
             <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                 <div className="flex flex-col gap-3">
-                    <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={`pezzi ${ctx.periodoLabel}`} color={MARG_COLOR} />
-                    {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={MARG_COLOR} />}
-                    <ChipsPerformance ctx={ctx} oggiN={oggiN} proiezione={proiezione} best={size >= 2 ? best : null} meseScorso={size >= 2 ? meseScorso : null} pezzi={pezzi} color={MARG_COLOR} />
-                    {perCat.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                            {(size >= 2 ? perCat : perCat.slice(0, 3)).map(([cat, n]) => (
-                                <span key={cat} className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.04] border border-white/5 px-2 py-1 text-[11px] text-slate-300">
-                                    <span aria-hidden>{iconaCat(cat)}</span> {cat} <b className="font-mono text-slate-100">{n}</b>
-                                </span>
-                            ))}
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <p className="text-3xl font-black text-white leading-none tabular-nums">{fmtEuro(valore)}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">venduto {ctx.periodoLabel} · {pezzi} pezzi</p>
                         </div>
-                    )}
-                    {size >= 2 && <Sparkline perGiorno={perGiorno} ym={ctx.ymShown} color={MARG_COLOR} ctx={ctx} />}
+                        {size >= 2 && <TortaMarg dati={datiTorta} totale={valore} colori={COLORI_TORTA} />}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {ctx.includeOggi && (
+                            <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold", valOggi > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-slate-500")}>
+                                {valOggi > 0 && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span>}
+                                oggi +{fmtEuro(valOggi)}
+                            </span>
+                        )}
+                        {proiezione != null && proiezione > valore && (
+                            <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold border border-dashed" style={{ color: MARG_COLOR, borderColor: "color-mix(in srgb, " + MARG_COLOR + " 45%, transparent)" }}>≈ {fmtEuro(proiezione)} a fine mese</span>
+                        )}
+                        {meseScorsoVal > 0 && (
+                            <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold", (proiezione ?? valore) >= meseScorsoVal ? "bg-emerald-500/10 text-emerald-300" : "bg-rose-500/10 text-rose-300")}>{(proiezione ?? valore) >= meseScorsoVal ? "↗" : "↘"} {ctx.meseScorsoLabel}: {fmtEuro(meseScorsoVal)}</span>
+                        )}
+                    </div>
+                    <div className="space-y-1.5">
+                        {datiTorta.map(([cat, v], i) => (
+                            <div key={cat} className="flex items-center gap-2 text-xs">
+                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: COLORI_TORTA[i % COLORI_TORTA.length] }} />
+                                <span className="text-slate-300 truncate flex-1">{iconaCat(cat)} {cat}</span>
+                                <span className="font-mono font-bold text-slate-100">{fmtEuro(v)}</span>
+                                <span className="text-[10px] text-slate-500 w-9 text-right">{valore > 0 ? Math.round((v / valore) * 100) : 0}%</span>
+                            </div>
+                        ))}
+                        {datiTorta.length === 0 && <p className="text-xs text-slate-500 py-1">Nessuna vendita di marginalità nel periodo.</p>}
+                    </div>
                 </div>
                 {size >= 2 && (
                     <div className={cn("space-y-1.5", size >= 4 && "md:border-l md:border-white/5 md:pl-5")}>
-                        {size >= 4 && classifica ? (<>
-                            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1.5"><Crown className="w-3 h-3 text-amber-400" /> {ctx.level === "global" ? "Negozi" : "Squadra"}</div>
-                            {classifica.slice(0, 6).map(([nome, n], i) => (
-                                <MedalRow key={nome} rank={i + 1} nome={nome} n={n} max={classifica[0][1]} color={MARG_COLOR} isMe={ctx.level !== "global" && norm(nome) === norm(ctx.user?.name)} />
-                            ))}
-                            <div className="pt-1 text-[10px] uppercase tracking-widest font-bold text-slate-500">Top prodotti</div>
-                            {topProdotti.slice(0, 5).map(([p, n]) => (
-                                <div key={p} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]"><span className="text-slate-300 truncate">{p}</span><b className="font-mono text-slate-100 ml-2">{n}</b></div>
-                            ))}
-                        </>) : (<>
-                            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Top prodotti</div>
-                            {topProdotti.slice(0, 4).map(([p, n]) => (
-                                <div key={p} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]"><span className="text-slate-300 truncate">{p}</span><b className="font-mono text-slate-100 ml-2">{n}</b></div>
+                        {size >= 4 && classifica && classifica.length > 0 && (<>
+                            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500 flex items-center gap-1.5"><Crown className="w-3 h-3 text-amber-400" /> {ctx.level === "global" ? "Negozi (valore)" : "Squadra (valore)"}</div>
+                            {classifica.slice(0, 6).map(([nome, v], i) => (
+                                <MedalRow key={nome} rank={i + 1} nome={nome} n={v} mostra={fmtEuro(v)} max={classifica[0][1]} color={MARG_COLOR} isMe={ctx.level !== "global" && norm(nome) === norm(ctx.user?.name)} />
                             ))}
                         </>)}
+                        <div className="pt-1 text-[10px] uppercase tracking-widest font-bold text-slate-500">Top prodotti (valore)</div>
+                        {topProdotti.map(([p, v]) => (
+                            <div key={p} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]"><span className="text-slate-300 truncate">{p}</span><b className="font-mono text-slate-100 ml-2">{fmtEuro(v)}</b></div>
+                        ))}
+                        {size >= 4 && <div className="pt-1"><Sparkline perGiorno={perGiorno} ym={ctx.rangeShown ? null : ctx.ymShown} range={ctx.rangeShown} color={MARG_COLOR} ctx={ctx} /></div>}
                     </div>
                 )}
             </div>

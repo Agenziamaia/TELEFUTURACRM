@@ -160,7 +160,10 @@ export function faseDi(giorni: number, r: RegolaCaller): FaseCaller {
 export type EpisodioCaller = {
     id: number; call_id: string; stato_pratica: string | null; caller: string | null;
     dal: string; al: string | null; giorni: number; importo: number;
-    stato: "in_corso" | "attivo" | "compensato";
+    // archiviato (Luca 21/08 sera, come il Tracking PDA): malus di caller
+    // LICENZIATI/SOSPESI non recuperati — partita chiusa ma in traccia, si
+    // compensa se mai escono crediti a favore della persona
+    stato: "in_corso" | "attivo" | "compensato" | "archiviato";
     compensato_il: string | null; compensato_da: string | null;
 };
 
@@ -174,9 +177,14 @@ export type MalusLive = { dal: string; giorni: number; importo: number };
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Allinea gli episodi alle pratiche: aggiorna gli in_corso, chiude (→ attivo)
- *  quelli delle pratiche sanate, apre i nuovi. Torna l'archivio aggiornato. */
+ *  quelli delle pratiche sanate, apre i nuovi. Con `fuoriServizio` (nomi dei
+ *  caller licenziati/sospesi, Luca 21/08 sera) la loro partita si CHIUDE: gli
+ *  episodi non compensati passano ad "archiviato" (gli aperti congelati a
+ *  oggi) e non rimaturano piu'; al rientro si torna indietro.
+ *  Torna l'archivio aggiornato. */
 export async function sincronizzaMalusCaller(
     pratiche: { id: string; stato: string; caller: string; fase: FaseCaller; giorniMalus: number; malusGiorno: number; dalMalus: Date | null }[],
+    fuoriServizio?: Set<string>,
 ): Promise<EpisodioCaller[]> {
     try {
         // i tombstone (eliminato=true) sono malus ANNULLATI dal match/backfill:
@@ -185,7 +193,12 @@ export async function sincronizzaMalusCaller(
         if (error) return [];   // mig. 119 non ancora applicata
         const episodi = (data ?? []) as EpisodioCaller[];
         const oggi = ymd(new Date());
-        const inMalus = new Map(pratiche.filter((p) => p.fase === "malus" && p.dalMalus).map((p) => [p.id, p]));
+        const eFuori = (nome: string | null | undefined) => !!nome && !!fuoriServizio?.has(nome);
+        // `vive` resta INTATTA (il main loop svuota inMalus man mano): serve
+        // al giro archiviati per capire se la pratica di un rientrato e'
+        // ancora in fase malus (revisione 21/08, rilievo 13)
+        const vive = new Map(pratiche.filter((p) => p.fase === "malus" && p.dalMalus).map((p) => [p.id, p]));
+        const inMalus = new Map(vive);
         for (const ep of episodi) {
             if (ep.stato !== "in_corso") continue;
             const p = inMalus.get(ep.call_id);
@@ -205,15 +218,53 @@ export async function sincronizzaMalusCaller(
         for (const p of inMalus.values()) {
             const giorni = Math.max(1, p.giorniMalus);
             const importo = Math.round(giorni * p.malusGiorno * 100) / 100;
-            // niente `stato` nel payload: sul conflitto un episodio gia' chiuso
-            // NON viene riaperto; sull'inserimento vale il default in_corso
-            const { data: ins } = await supabase.from("caller_malus")
-                .upsert({ call_id: p.id, stato_pratica: p.stato, caller: p.caller || null, dal: ymd(p.dalMalus!), giorni, importo }, { onConflict: "call_id,dal" })
-                .select().maybeSingle();
+            const base = { call_id: p.id, stato_pratica: p.stato, caller: p.caller || null, dal: ymd(p.dalMalus!), giorni, importo };
+            // caller FUORI SERVIZIO: un malus nuovo nasce GIA' congelato
+            // (archiviato, fine=oggi — la traccia resta, la maturazione no) e
+            // sul conflitto NON si tocca la riga congelata (DO NOTHING).
+            // Altrimenti: niente `stato` nel payload — sul conflitto un
+            // episodio gia' chiuso NON viene riaperto, sull'inserimento vale
+            // il default in_corso.
+            const { data: ins } = eFuori(p.caller)
+                ? await supabase.from("caller_malus")
+                    .upsert({ ...base, stato: "archiviato", al: oggi }, { onConflict: "call_id,dal", ignoreDuplicates: true })
+                    .select().maybeSingle()
+                : await supabase.from("caller_malus")
+                    .upsert(base, { onConflict: "call_id,dal" })
+                    .select().maybeSingle();
             if (ins) {
                 const senza = episodi.filter((e) => e.id !== (ins as EpisodioCaller).id);
                 senza.unshift(ins as EpisodioCaller);
                 episodi.length = 0; episodi.push(...senza);
+            }
+        }
+        // ── GIRO ARCHIVIATI (Luca 21/08 sera, identico al Tracking PDA):
+        // fuori servizio → aperti congelati a oggi + chiusi marcati
+        // "archiviato"; rientrati → si torna ad "attivo" (i compensati non
+        // si toccano MAI).
+        if (fuoriServizio) {
+            for (const ep of episodi) {
+                if (ep.stato === "compensato") continue;
+                if (eFuori(ep.caller)) {
+                    if (ep.stato !== "archiviato") {
+                        const patch = ep.al ? { stato: "archiviato" as const } : { stato: "archiviato" as const, al: oggi };
+                        await supabase.from("caller_malus").update(patch).eq("id", ep.id);
+                        ep.stato = "archiviato"; if (!ep.al) ep.al = oggi;
+                    }
+                } else if (ep.stato === "archiviato") {
+                    // RIENTRO (revisione 21/08, rilievo 13): pratica ancora in
+                    // malus con lo stesso `dal` → l'episodio si RIAPRE (in
+                    // corso, fine azzerata) e il main loop riprende ad
+                    // aggiornarlo; altrimenti resta chiuso come attivo.
+                    const p = vive.get(ep.call_id);
+                    if (p && ymd(p.dalMalus!) === ep.dal) {
+                        await supabase.from("caller_malus").update({ stato: "in_corso", al: null }).eq("id", ep.id);
+                        ep.stato = "in_corso"; ep.al = null;
+                    } else {
+                        await supabase.from("caller_malus").update({ stato: "attivo" }).eq("id", ep.id);
+                        ep.stato = "attivo";
+                    }
+                }
             }
         }
         return episodi;

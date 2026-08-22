@@ -455,7 +455,10 @@ export function MalusUtenteBox({ nome }: { nome: string }) {
     useEffect(() => {
         (async () => {
             const [p, l, d] = await Promise.all([
-                supabase.from("malus_storico").select("importo,stato").eq("venditore", nome).limit(500),
+                // i TOMBSTONE (eliminato, mig. 150) spariscono ovunque — anche
+                // da questo box (revisione 21/08, rilievo 16)
+                supabase.from("malus_storico").select("importo,stato").eq("venditore", nome)
+                    .or("eliminato.is.null,eliminato.eq.false").limit(500),
                 supabase.from("usati_malus").select("importo,stato").eq("tecnico", nome).limit(500),
                 // disdette (Luca 06/08): 5€/gg oltre i 3gg di franchigia in "da_verificare";
                 // calcolato LIVE dalle date del ciclo (vivo se ancora da verificare,

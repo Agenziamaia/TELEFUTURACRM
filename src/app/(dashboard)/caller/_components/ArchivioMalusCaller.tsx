@@ -27,9 +27,13 @@ function badgeStato(ep: EpisodioCaller) {
     const s =
         ep.stato === "compensato"
             ? { label: "Compensato", color: "var(--tf-4ade80)", bg: "var(--tf-052e16)", border: "var(--tf-22c55e)" }
-            : ep.stato === "in_corso"
-                ? { label: "In corso", color: "var(--tf-fca5a5)", bg: "var(--tf-450a0a)", border: "var(--tf-dc2626)" }
-                : { label: "Attivo — da scalare", color: "var(--tf-fbbf24)", bg: "var(--tf-451a03)", border: "var(--tf-f59e0b)" };
+            : ep.stato === "archiviato"
+                // Luca 21/08 sera: malus di licenziati/sospesi non recuperati —
+                // partita chiusa ma credito in traccia (come il Tracking PDA)
+                ? { label: "📦 Archiviato", color: "var(--tf-cbd5e1)", bg: "var(--tf-1e293b)", border: "var(--tf-64748b)" }
+                : ep.stato === "in_corso"
+                    ? { label: "In corso", color: "var(--tf-fca5a5)", bg: "var(--tf-450a0a)", border: "var(--tf-dc2626)" }
+                    : { label: "Attivo — da scalare", color: "var(--tf-fbbf24)", bg: "var(--tf-451a03)", border: "var(--tf-f59e0b)" };
     return (
         <span
             className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap border"
@@ -128,7 +132,7 @@ export function ArchivioMalusCaller({
         })();
     }, [episodi]);
 
-    const [statoSel, setStatoSel] = useState<"tutti" | "in_corso" | "attivo" | "compensato">("tutti");
+    const [statoSel, setStatoSel] = useState<"tutti" | "in_corso" | "attivo" | "archiviato" | "compensato">("tutti");
     const [callerSel, setCallerSel] = useState("");
     const [search, setSearch] = useState("");
     const [confermaId, setConfermaId] = useState<number | null>(null);
@@ -155,11 +159,12 @@ export function ArchivioMalusCaller({
     );
 
     const tot = useMemo(() => {
-        const t = { inCorso: { n: 0, eur: 0 }, attivi: { n: 0, eur: 0 }, compensati: { n: 0, eur: 0 }, totale: 0 };
+        const t = { inCorso: { n: 0, eur: 0 }, attivi: { n: 0, eur: 0 }, archiviati: { n: 0, eur: 0 }, compensati: { n: 0, eur: 0 }, totale: 0 };
         for (const e of filtratiBase) {
             const imp = Number(e.importo) || 0;
             t.totale += imp;
             if (e.stato === "compensato") { t.compensati.n++; t.compensati.eur += imp; }
+            else if (e.stato === "archiviato") { t.archiviati.n++; t.archiviati.eur += imp; }
             else if (e.stato === "in_corso") { t.inCorso.n++; t.inCorso.eur += imp; }
             else { t.attivi.n++; t.attivi.eur += imp; }
         }
@@ -174,14 +179,15 @@ export function ArchivioMalusCaller({
     // Totali per collaboratore: quanto ha generato, quanto e' ancora da
     // scalare, quanto e' gia' stato compensato (come su Ricerca Vendite).
     const perCaller = useMemo(() => {
-        const m = new Map<string, { n: number; inCorso: number; attivi: number; compensati: number }>();
+        const m = new Map<string, { n: number; inCorso: number; attivi: number; archiviati: number; compensati: number }>();
         for (const e of filtratiBase) {
             const k = e.caller || "—";
-            const r = m.get(k) || { n: 0, inCorso: 0, attivi: 0, compensati: 0 };
+            const r = m.get(k) || { n: 0, inCorso: 0, attivi: 0, archiviati: 0, compensati: 0 };
             r.n++;
             const imp = Number(e.importo) || 0;
             if (e.stato === "in_corso") r.inCorso += imp;
             else if (e.stato === "attivo") r.attivi += imp;
+            else if (e.stato === "archiviato") r.archiviati += imp;
             else r.compensati += imp;
             m.set(k, r);
         }
@@ -206,10 +212,12 @@ export function ArchivioMalusCaller({
         setEpisodi((prev) => prev.map((e) => (e.id === ep.id ? { ...e, ...patch } : e)));
     };
 
-    const cards: { id: "tutti" | "in_corso" | "attivo" | "compensato"; label: string; n: number; val: number; color: string; hint?: string }[] = [
+    // I 4 SPAZI di Luca (21/08 sera), identici all'Archivio del Tracking PDA
+    const cards: { id: "tutti" | "in_corso" | "attivo" | "archiviato" | "compensato"; label: string; n: number; val: number; color: string; hint?: string }[] = [
         { id: "tutti", label: "Totale generato", n: filtratiBase.length, val: tot.totale, color: "var(--tf-94a3b8)" },
         { id: "in_corso", label: "In corso ora", n: tot.inCorso.n, val: tot.inCorso.eur, color: "var(--tf-dc2626)", hint: "stanno ancora maturando" },
         { id: "attivo", label: "Attivi — da scalare", n: tot.attivi.n, val: tot.attivi.eur, color: "var(--tf-f59e0b)", hint: "chiusi, in attesa di compensazione" },
+        { id: "archiviato", label: "📦 Archiviati", n: tot.archiviati.n, val: tot.archiviati.eur, color: "var(--tf-94a3b8)", hint: "di licenziati/sospesi — si compensano se escono crediti" },
         { id: "compensato", label: "Compensati", n: tot.compensati.n, val: tot.compensati.eur, color: "var(--tf-22c55e)", hint: "gia' scalati dai pagamenti" },
     ];
 
@@ -232,8 +240,9 @@ export function ArchivioMalusCaller({
                             {soloCaller ? "💰 Il mio storico malus" : "💰 Archivio Malus Call Center"}
                         </div>
                         <div className="text-xs text-slate-500 mt-0.5">
-                            Ogni periodo di malus resta archiviato anche dopo che la pratica e&apos; stata ri-esitata ·
-                            attivi = non ancora scalati · compensati = gia&apos; scalati dai pagamenti
+                            Ogni periodo di malus resta in traccia anche dopo che la pratica e&apos; stata ri-esitata ·
+                            attivi = non ancora scalati · archiviati = di licenziati/sospesi, da recuperare se escono crediti ·
+                            compensati = gia&apos; scalati dai pagamenti
                         </div>
                     </div>
                     <button type="button" onClick={onClose} className="bg-transparent border-none text-slate-500 text-xl cursor-pointer leading-none p-0">
@@ -257,7 +266,7 @@ export function ArchivioMalusCaller({
                     )}
 
                     {/* Riepilogo: le card filtrano l'elenco per stato */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-5">
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-5">
                         {cards.map((c) => {
                             const active = statoSel === c.id;
                             return (
@@ -318,6 +327,7 @@ export function ArchivioMalusCaller({
                                                 <th className={thStyle + " text-center"}>Episodi</th>
                                                 <th className={thStyle + " text-right"}>In corso</th>
                                                 <th className={thStyle + " text-right"}>Attivi</th>
+                                                <th className={thStyle + " text-right"}>Archiviati</th>
                                                 <th className={thStyle + " text-right"}>Compensati</th>
                                                 <th className={thStyle + " text-right"}>Totale</th>
                                             </tr>
@@ -333,8 +343,9 @@ export function ArchivioMalusCaller({
                                                     <td className={tdStyle + " text-center text-slate-300"}>{r.n}</td>
                                                     <td className={tdStyle + " text-right font-bold text-red-300"}>{r.inCorso ? eur(r.inCorso) : "—"}</td>
                                                     <td className={tdStyle + " text-right font-bold text-amber-300"}>{r.attivi ? eur(r.attivi) : "—"}</td>
+                                                    <td className={tdStyle + " text-right text-slate-300"}>{r.archiviati ? eur(r.archiviati) : "—"}</td>
                                                     <td className={tdStyle + " text-right text-emerald-300"}>{r.compensati ? eur(r.compensati) : "—"}</td>
-                                                    <td className={tdStyle + " text-right font-black text-slate-100"}>{eur(r.inCorso + r.attivi + r.compensati)}</td>
+                                                    <td className={tdStyle + " text-right font-black text-slate-100"}>{eur(r.inCorso + r.attivi + r.archiviati + r.compensati)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -410,7 +421,9 @@ export function ArchivioMalusCaller({
                                                     </td>
                                                     {puoCompensare && (
                                                         <td className={tdStyle + " whitespace-nowrap text-right"} onClick={(e) => e.stopPropagation()}>
-                                                            {ep.stato === "attivo" && (
+                                                            {/* anche gli ARCHIVIATI si compensano: e' il caso "sono
+                                                                usciti crediti a favore del licenziato" (Luca 21/08) */}
+                                                            {(ep.stato === "attivo" || ep.stato === "archiviato") && (
                                                                 confermaId === ep.id ? (
                                                                     <span className="inline-flex gap-1.5">
                                                                         <button

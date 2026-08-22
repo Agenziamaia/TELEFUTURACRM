@@ -46,7 +46,10 @@ export function W3PartnershipPanel({ mese, colore }: { mese: string; colore: str
         ]);
         // solo il franchising: il cod_gara dei PDV è numerico (i multibrand usano MB-*)
         setPdv(((t.data ?? []) as PdvPr[]).filter(r => /^\d+$/.test(r.cod_gara) && r.extra?.pr));
-        setEventi((e.data ?? []) as RigaEvento[]);
+        // gli eventi con più offerte vivono come righe GEMELLE omonime (una per
+        // condizione esatta, cantiere Analisi 21/08): qui l'elenco è per nome
+        const visti = new Set<string>();
+        setEventi(((e.data ?? []) as RigaEvento[]).filter(r => { if (visti.has(r.nome)) return false; visti.add(r.nome); return true; }));
     };
     useEffect(() => { setEditId(null); carica(); }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -29,6 +29,7 @@ import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel }
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
 import { SelectOpzioni, SelectPersona } from "@/components/SelectPersona";
+import { sameStore } from "@/lib/visibleStores";
 import {
     ROLES,
     AREAS,
@@ -292,6 +293,13 @@ function AmministrazioneInner() {
 
     // scheda attività
     const [detail, setDetail] = useState<AppUser | null>(null);
+    // La scheda resta APERTA dopo licenzia/sospendi/riattiva (Luca 21/08, caso
+    // Verdile: la chiusura smontava il componente e il popup di riassegnazione
+    // non compariva mai). Al refresh della lista la scheda si ri-punta da sola
+    // sull'utente aggiornato; se la riga non c'e' piu' si tiene quella vecchia.
+    useEffect(() => {
+        setDetail((d) => (d ? users.find((x) => x.id === d.id) ?? d : d));
+    }, [users]);
 
     const isTableMissing = (err: { message?: string; code?: string } | null) =>
         !!err && ((err.message || "").includes("schema cache") || err.code === "42P01");
@@ -327,8 +335,11 @@ function AmministrazioneInner() {
 
     const filteredUsers = useMemo(() => {
         return users.filter((u) => {
-            // I licenziati sono nascosti finché non si spunta "Mostra licenziati"
-            if (!showFired && u.status === "licenziato") return false;
+            // Flag ESCLUSIVO (Luca 21/08): spuntato = SOLO licenziati/sospesi,
+            // senza spunta = la lista normale (licenziati nascosti come sempre)
+            const oggiFlag = new Date().toISOString().slice(0, 10);
+            const fuoriServizio = u.status === "licenziato" || (!!u.sospeso_dal && u.sospeso_dal <= oggiFlag);
+            if (showFired ? !fuoriServizio : u.status === "licenziato") return false;
             if (fArea && areaOf(u.role) !== fArea) return false;
             if (fRole && u.role !== fRole) return false;
             if (search) {
@@ -508,7 +519,7 @@ function AmministrazioneInner() {
                                 onChange={(e) => setShowFired(e.target.checked)}
                                 className="accent-rose-500 w-4 h-4"
                             />
-                            Mostra licenziati{firedCount > 0 ? ` (${firedCount})` : ""}
+                            Solo licenziati/sospesi{firedCount > 0 ? ` (${firedCount})` : ""}
                         </label>
                         <span className="text-xs text-slate-500 ml-auto">
                             {filteredUsers.length} utenti
@@ -629,7 +640,10 @@ function AmministrazioneInner() {
                         setShowForm(true);
                         setDetail(null);
                     }}
-                    onStatoCambiato={() => { setDetail(null); fetchAll(); }}
+                    // NIENTE setDetail(null): chiudere qui smontava la scheda e
+                    // il popup di riassegnazione post-licenziamento moriva sul
+                    // nascere (bug Verdile 21/08). La scheda si aggiorna da sola.
+                    onStatoCambiato={() => fetchAll()}
                 />
             )}
         </div>
@@ -1405,10 +1419,89 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
                 ? { status: "licenziato", active: false, data_licenziamento: d, sospeso_dal: null }
                 : { data_licenziamento: d })
             : { sospeso_dal: d };
-        if (await aggiornaStato(payload)) setAzione(null);
+        if (await aggiornaStato(payload)) { setAzione(null); avviaRiassegnazione(); }
     };
     // Riassumi / riattiva / annulla programmazione: si torna pienamente attivi
     const riattiva = () => aggiornaStato({ status: "attivo", active: true, data_licenziamento: null, sospeso_dal: null });
+    // ── RIASSEGNAZIONE PRATICHE (Luca 21/08, caso Verdile): al licenzia/
+    //    sospendi le pratiche APERTE del collaboratore vanno in carico a
+    //    qualcun altro — DEFAULT lo store manager del suo negozio (mai sé
+    //    stesso); senza SM si sceglie a mano. Altrimenti restano orfane e
+    //    continuano a maturare malus senza nessuno che le lavori. Il popup
+    //    esce da solo dopo l'azione; il bottone 📦 lo apre anche a mano
+    //    (per chi è già stato licenziato in passato).
+    const ESITI_FINE_TRK = ["attivato", "re_inserita", "liquidato", "completo_sky", "attivo_sky", "annullato"];
+    const [riass, setRiass] = useState<null | { aperte: { id: string }[]; opzioni: { id: string; nome: string; delNegozio: boolean }[]; scelto: string; smNome: string | null; busy: boolean; caricamento?: boolean; fatto?: number; inMalus?: number }>(null);
+    const [riassInfo, setRiassInfo] = useState("");
+    const avviaRiassegnazione = async () => {
+        setRiassInfo("");
+        // il popup si apre SUBITO in modalità "carico" (revisione 21/08,
+        // rilievo 2): senza, tra la conferma e l'arrivo delle query c'era una
+        // finestra in cui chiudere la scheda o cambiare tab lo faceva morire
+        setRiass({ aperte: [], opzioni: [], scelto: "", smNome: null, busy: true, caricamento: true });
+        const { data: pr } = await supabase.from("contracts")
+            .select("id, stato, stato_negozio, nascosta_gestione")
+            .eq("venditore", matchName).like("id", "CTR-%").limit(1000);
+        const aperte = ((pr ?? []) as { id: string; stato: string | null; stato_negozio: string | null; nascosta_gestione: boolean | null }[]).filter((c) => {
+            const sn = String(c.stato_negozio || "nuovo").toLowerCase();
+            return c.nascosta_gestione !== true && !/annull/i.test(String(c.stato || "")) && !ESITI_FINE_TRK.includes(sn) && !sn.startsWith("ko");
+        });
+        if (!aperte.length) { setRiass(null); setRiassInfo("Nessuna pratica aperta da riassegnare: tutto già chiuso. ✅"); return; }
+        const { data: ute } = await supabase.from("app_users")
+            .select("id, full_name, role, primary_store").eq("active", true).neq("id", u.id).order("full_name");
+        const tutti = ((ute ?? []) as { id: string; full_name: string | null; role: string | null; primary_store: string | null }[]).filter((x) => x.full_name);
+        const negozioU = u.primary_store || "";
+        const sm = tutti.find((x) => x.role === "store_manager" && negozioU && sameStore(x.primary_store, negozioU)) || null;
+        const opzioni = [...tutti].sort((x, y) => {
+            const px = negozioU && sameStore(x.primary_store, negozioU) ? 0 : 1;
+            const py = negozioU && sameStore(y.primary_store, negozioU) ? 0 : 1;
+            return px - py || String(x.full_name).localeCompare(String(y.full_name));
+        }).map((x) => ({ id: x.id, nome: x.full_name as string, delNegozio: !!(negozioU && sameStore(x.primary_store, negozioU)) }));
+        setRiass({ aperte, opzioni, scelto: sm?.full_name || "", smNome: sm?.full_name || null, busy: false });
+    };
+    const confermaRiassegnazione = async () => {
+        if (!riass || riass.busy) return;
+        const dest = riass.opzioni.find((o) => o.nome === riass.scelto);
+        if (!dest) return;
+        setRiass({ ...riass, busy: true });
+        const ids = riass.aperte.map((c) => c.id);
+        let fatte = 0;
+        for (let i = 0; i < ids.length; i += 100) {
+            const blocco = ids.slice(i, i + 100);
+            const { error } = await supabase.from("contracts").update({ delegated_to: dest.id }).in("id", blocco);
+            if (!error) fatte += blocco.length;
+        }
+        // Le pratiche IN MALUS non possono arrivare al delegato in malus
+        // (Luca 21/08): al massimo in WARNING. L'evento «riassegnazione» si
+        // scrive sulle pratiche con un episodio APERTO **o ARCHIVIATO**
+        // (revisione 21/08, rilievo 3): il congelamento del licenziato chiude
+        // l'episodio prima che Luca arrivi al bottone 📦 — senza includerlo,
+        // la pratica arriverebbe al delegato in malus pieno. Il motore le
+        // riparte già alla soglia warning e la partita del vecchio venditore
+        // resta congelata a suo nome.
+        let inMalus = 0;
+        const { data: aperti } = await supabase.from("malus_storico")
+            .select("contract_id, eliminato, stato").in("contract_id", ids)
+            .or("data_fine.is.null,stato.eq.archiviato");
+        const idsMalus = [...new Set(((aperti ?? []) as { contract_id: string; eliminato: boolean | null; stato: string | null }[])
+            .filter((e) => !e.eliminato && e.stato !== "compensato").map((e) => e.contract_id))];
+        if (idsMalus.length) {
+            const { data: conStoria } = await supabase.from("contracts").select("id, storia").in("id", idsMalus);
+            const evento = {
+                data: new Date().toLocaleDateString("it-IT"),
+                tipo: "riassegnazione",
+                testo: `Pratica riassegnata a ${dest.nome} (era di ${matchName}) — consegnata in Warning`,
+                utente: "Amministrazione",
+                ruolo: "admin",
+            };
+            for (const c of ((conStoria ?? []) as { id: string; storia: unknown }[])) {
+                const storia = Array.isArray(c.storia) ? c.storia : [];
+                const { error } = await supabase.from("contracts").update({ storia: [...storia, evento] }).eq("id", c.id);
+                if (!error) inMalus++;
+            }
+        }
+        setRiass({ ...riass, busy: false, fatto: fatte, inMalus });
+    };
     // ── ALIAS (mig. 142, 03/08): l'alias diventa l'UNICO nome del gestionale
     //    (applica_alias sostituisce il nome in ogni colonna testo/jsonb);
     //    il nome vero resta in nome_riservato, visibile solo qui.
@@ -1757,6 +1850,11 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                         🔴 Licenzia
                                     </button>
                                 </>)}
+                                <button onClick={avviaRiassegnazione} disabled={azioneBusy}
+                                    className="w-full py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-bold transition-colors disabled:opacity-50">
+                                    📦 Riassegna le pratiche aperte del Tracking
+                                </button>
+                                {riassInfo && <p className="text-[11px] text-emerald-300">{riassInfo}</p>}
                             </div>
                             {/* modale IN-CRM per data + conferma (MOD-33: niente popup browser) */}
                             {azione && (
@@ -1805,6 +1903,42 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                     </div>
                                 </div>
                             )}
+                            {/* ── POPUP RIASSEGNAZIONE (Luca 21/08): dopo licenzia/sospendi, o dal bottone 📦 ── */}
+                            {riass && (
+                                <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                                    onClick={() => { if (!riass.busy) setRiass(null); }}>
+                                    <div className="w-full max-w-md rounded-2xl border border-white/10 p-6"
+                                        style={{ background: "var(--tf-0e1526)", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
+                                        onClick={(e) => e.stopPropagation()}>
+                                        <div className="text-lg font-extrabold text-slate-100 mb-1.5">📦 Riassegna le pratiche di {u.full_name}</div>
+                                        {riass.caricamento ? (
+                                            <p className="text-[13px] text-slate-400 py-2">Cerco le sue pratiche aperte nel Tracking…</p>
+                                        ) : riass.fatto != null ? (<>
+                                            <p className="text-[13px] text-slate-300 mb-4">✅ <b>{riass.fatto}</b> pratiche ora in carico a <b>{riass.scelto}</b>: le trova nel suo Tracking PDA e la lavorazione riparte da lì.{riass.inMalus ? <> Le <b>{riass.inMalus}</b> che erano in malus gli arrivano in <b className="text-amber-300">Warning</b> (il malus del vecchio venditore si chiude alla consegna).</> : null}</p>
+                                            <button onClick={() => setRiass(null)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black">Chiudi</button>
+                                        </>) : (<>
+                                            <p className="text-[13px] text-slate-400 mb-3 leading-relaxed">
+                                                Ha <b className="text-slate-200">{riass.aperte.length} pratiche APERTE</b> nel Tracking: senza qualcuno che le lavori continuano a maturare malus.
+                                                {riass.smNome
+                                                    ? <> Preflaggato lo store manager del negozio (<b className="text-slate-200">{riass.smNome}</b>): confermalo o scegli un altro.</>
+                                                    : <> Il negozio <b className="text-slate-200">non ha uno store manager attivo</b>: scegli tu chi le prende in carico.</>}
+                                            </p>
+                                            <SelectOpzioni value={riass.scelto} onChange={(v) => setRiass({ ...riass, scelto: v })}
+                                                opzioni={riass.opzioni.map((o) => o.delNegozio ? `${o.nome}` : o.nome)} placeholder="assegna a…" className="w-full mb-4" />
+                                            <div className="flex gap-2">
+                                                <button onClick={confermaRiassegnazione} disabled={riass.busy || !riass.scelto}
+                                                    className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-black transition-colors disabled:opacity-50">
+                                                    {riass.busy ? "…" : `📦 Riassegna ${riass.aperte.length} pratiche`}
+                                                </button>
+                                                <button onClick={() => setRiass(null)} disabled={riass.busy}
+                                                    className="px-4 py-3 rounded-xl bg-white/[0.06] hover:bg-white/10 text-slate-300 text-sm font-bold disabled:opacity-50">
+                                                    Non ora
+                                                </button>
+                                            </div>
+                                        </>)}
+                                    </div>
+                                </div>
+                            )}
                             <p className="text-xs text-slate-500">
                                 L&apos;attività è collegata tramite il nome <span className="text-slate-300">{matchName}</span> presente nelle
                                 varie sezioni del CRM.
@@ -1821,7 +1955,12 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                             }))}
                         />
                     ) : subtab === "pratiche" ? (
-                        <PraticheView contracts={act.contracts} />
+                        <div className="space-y-5">
+                            {/* MALUS DELLA PERSONA (Luca 21/08): per i licenziati/sospesi
+                                spariscono dallo storico del Tracking — QUI restano visibili */}
+                            <MalusUtente nome={matchName} />
+                            <PraticheView contracts={act.contracts} />
+                        </div>
                     ) : subtab === "presenze" ? (
                         <div className="space-y-5">
                             <div>
@@ -2947,6 +3086,54 @@ function UserAllegati({ userId }: { userId: string }) {
                             </div>
                         );
                     })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+/* ── MALUS DELLA PERSONA (Luca 21/08): episodi di malus_storico intestati a
+   lei. Per i licenziati/sospesi sono nello spazio ARCHIVIATI dell'Archivio
+   Malus del Tracking (il box in panoramica ci linka gia' filtrato sulla
+   persona). Sola lettura, compensazioni sempre dal Tracking. */
+function MalusUtente({ nome }: { nome: string }) {
+    const [eps, setEps] = useState<{ id: string; contract_id: string; categoria: string; negozio: string | null; data_inizio: string; data_fine: string | null; giorni: number; importo: number; stato: string }[]>([]);
+    const [caricati, setCaricati] = useState(false);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const { data } = await supabase.from("malus_storico")
+                .select("id, contract_id, categoria, negozio, data_inizio, data_fine, giorni, importo, stato, eliminato")
+                .eq("venditore", nome).order("data_inizio", { ascending: false }).limit(200);
+            if (!vivo) return;
+            setEps(((data ?? []) as (typeof eps[number] & { eliminato?: boolean | null })[]).filter((e) => !e.eliminato));
+            setCaricati(true);
+        })();
+        return () => { vivo = false; };
+    }, [nome]);
+    if (!caricati) return <p className="text-xs text-slate-500">Carico i malus…</p>;
+    const attivi = eps.filter((e) => e.stato !== "compensato");
+    const eur = (v: number) => `${Number(v || 0).toLocaleString("it-IT")} €`;
+    const tot = attivi.reduce((s2, e) => s2 + (Number(e.importo) || 0), 0);
+    return (
+        <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                🔴 Malus {eps.length ? `— ${eps.length} episodi · ${eur(tot)} non compensati` : ""}
+            </h4>
+            {!eps.length ? <p className="text-sm text-slate-500">Nessun malus registrato.</p> : (
+                <div className="space-y-1.5">
+                    {eps.slice(0, 30).map((e) => (
+                        <div key={e.id} className="flex items-center gap-2 rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 text-[12px]">
+                            <span className="font-mono text-slate-400">{e.contract_id}</span>
+                            <span className="text-slate-500">{e.categoria}{e.negozio ? ` · ${e.negozio}` : ""}</span>
+                            <span className="text-slate-500">{e.data_inizio}{e.data_fine ? ` → ${e.data_fine}` : " → in corso"}</span>
+                            <span className="ml-auto font-bold text-slate-200 tabular-nums">{eur(e.importo)}</span>
+                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${e.stato === "compensato" ? "bg-emerald-500/15 text-emerald-300" : e.stato === "archiviato" ? "bg-slate-500/20 text-slate-300" : e.data_fine ? "bg-rose-500/15 text-rose-300" : "bg-amber-500/15 text-amber-300"}`}>
+                                {e.stato === "compensato" ? "compensato" : e.stato === "archiviato" ? "📦 archiviato" : e.data_fine ? "attivo" : "in corso"}
+                            </span>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

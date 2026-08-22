@@ -84,6 +84,21 @@ function inFerieResp(d: Date, venditore?: string): boolean {
   const ymd = _ymd(d);
   return periodi.some((p) => ymd >= p.dal && ymd <= p.al);
 }
+// FERIE PERSONALI DEL VENDITORE (Luca 21/08): come una chiusura di negozio
+// ma per la SINGOLA persona — nei giorni di ferie approvate della persona le
+// SUE pratiche congelano warning e malus (il resto del negozio continua a
+// correre). Mappa full_name → periodi approvati (vacation_requests).
+let FERIE_VENDITORI: Record<string, { dal: string; al: string }[]> | null = null;
+export function impostaFerieVenditori(m: Record<string, { dal: string; al: string }[]> | null | undefined) {
+  FERIE_VENDITORI = m && Object.keys(m).length ? m : null;
+}
+function inFerieVenditore(d: Date, venditore?: string): boolean {
+  if (!venditore || !FERIE_VENDITORI) return false;
+  const periodi = FERIE_VENDITORI[venditore];
+  if (!periodi?.length) return false;
+  const ymd = _ymd(d);
+  return periodi.some((p) => ymd >= p.dal && ymd <= p.al);
+}
 function giornoChiuso(d: Date, negozio?: string): boolean {
   if (d.getDay() === 0) {
     const apertoDomenica = !!negozio && !!DOMENICALI?.some((s) => sameStore(s, negozio));
@@ -109,9 +124,40 @@ export function giorniApertiDa(dataStrIta: string, negozio?: string, venditore?:
   while (cur < to) {
     cur.setDate(cur.getDate() + 1);
     // ferie del responsabile (BO agenzia) = giorno congelato per la pratica
-    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore)) count++;
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore) && !inFerieVenditore(cur, venditore)) count++;
   }
   return count;
+}
+
+/** Giorni APERTI tra due date — conta i giorni dopo `a` fino a `b`, sullo
+ *  stesso calendario di giorniApertiDa (domeniche non domenicali, festivi,
+ *  chiusure del negozio e ferie del BO esclusi). Serve alla ricostruzione
+ *  degli episodi malus: i segmenti PASSATI misuravano coi lavorativi di
+ *  calendario e al primo tocco della pratica il congelamento evaporava
+ *  retroattivamente (bug segnalato da Luca 19/08, caso riaperture). */
+export function apertiTra(a: Date, b: Date, negozio?: string, venditore?: string): number {
+  const cur = new Date(a);
+  cur.setHours(0, 0, 0, 0);
+  const to = new Date(b);
+  to.setHours(0, 0, 0, 0);
+  let count = 0;
+  while (cur < to) {
+    cur.setDate(cur.getDate() + 1);
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore) && !inFerieVenditore(cur, venditore)) count++;
+  }
+  return count;
+}
+
+/** Avanza di n giorni APERTI (gemello di addLavorativi sul calendario aperto). */
+export function addAperti(d: Date, n: number, negozio?: string, venditore?: string): Date {
+  const cur = new Date(d);
+  cur.setHours(0, 0, 0, 0);
+  let k = 0;
+  while (k < n) {
+    cur.setDate(cur.getDate() + 1);
+    if (!giornoChiuso(cur, negozio) && !inFerieResp(cur, venditore) && !inFerieVenditore(cur, venditore)) k++;
+  }
+  return cur;
 }
 
 export function giorniLavorativiDa(dataStrIta: string): number {
@@ -443,15 +489,23 @@ function misure(row: TrackingRow) {
   // cui il negozio della pratica era aperto (festivi e chiusure esclusi)
   const aGg = giorniApertiDa(row.dataInserimento, row.negozio, row.venditore);
   const aUltimo = ultimo ? giorniApertiDa(ultimo.data, row.negozio, row.venditore) : null;
+  // RIASSEGNAZIONE (Luca 21/08): la pratica consegnata in MALUS al delegato
+  // NON puo' arrivargli in malus — al massimo in WARNING. L'evento
+  // "riassegnazione" (scritto solo sulle pratiche in malus alla consegna)
+  // riparte i contatori GIA' alla soglia warning: il livello di oggi e'
+  // Warning e il malus rimatura solo dopo (succ_malus − succ_warning)
+  // giorni aperti. Appena il delegato la lavora, l'evento nuovo supera
+  // questo e tutto torna al ritmo normale.
+  const off = ultimo?.tipo === "riassegnazione" ? (Number(regolaDi(row.categoria)?.succ_warning) || 0) : 0;
   return {
     gg,
     ggSenza: ultimo ? null : gg,
-    ggSucc: ggUltimo,
-    ggAgg: ultimo ? (ggUltimo as number) : gg,
+    ggSucc: ggUltimo == null ? null : ggUltimo + off,
+    ggAgg: ultimo ? (ggUltimo as number) + off : gg,
     aGg,
     aSenza: ultimo ? null : aGg,
-    aSucc: aUltimo,
-    aAgg: ultimo ? (aUltimo as number) : aGg,
+    aSucc: aUltimo == null ? null : aUltimo + off,
+    aAgg: ultimo ? (aUltimo as number) + off : aGg,
   };
 }
 const _hit = (soglia: number | null | undefined, valore: number | null) =>

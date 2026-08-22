@@ -9,7 +9,8 @@ export const trkBrandKey = (b: string) => String(b).toLowerCase().replace(/[^a-z
 export const TRK_BRAND_COLORS: Record<string, string> = {
   vodafone: "var(--tf-e60000)", fastweb: "var(--tf-eab308)", windtre: "var(--tf-f97316)", wind3: "var(--tf-f97316)",
   iliad: "var(--tf-c00028)", tim: "var(--tf-0050ff)", s4: "var(--tf-22c55e)", energy: "var(--tf-22c55e)",
-  sky: "var(--tf-0072c6)", dojo: "var(--tf-14b8a6)", verymobile: "var(--tf-84cc16)", homobile: "var(--tf-9b26b6)",
+  // Sky è VIOLA ovunque (Luca 21/08)
+  sky: "var(--tf-8b5cf6)", dojo: "var(--tf-14b8a6)", verymobile: "var(--tf-84cc16)", homobile: "var(--tf-9b26b6)",
   kenamobile: "var(--tf-e4002b)", kena: "var(--tf-e4002b)",
 };
 
@@ -38,4 +39,7 @@ export const TRK_BRAND_LOGOS: Record<string, string> = {
   s4: "/energy - Copy.png", energy: "/energy - Copy.png", sky: "/sky.png",
   dojo: "/dojo-round.png", verymobile: "/very-mobile.png", homobile: "/ho-mobile.png",
   kenamobile: "/kena-mobile-v2.png", kena: "/kena-mobile-v2.png",
+  // la Marginalità è "brand di casa": il suo logo è quello Telefutura, come
+  // nel Registra Prodotto (Luca 21/08 — niente scritte, parla il logo)
+  marginalita: "/logo-crm.png", marginalit: "/logo-crm.png",
 };

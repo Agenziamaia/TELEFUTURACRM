@@ -20,9 +20,17 @@ import {
   vocabolarioEtichette,
   isMalusRow,
   calcolaMalus,
+  apertiTra,
+  addAperti,
 } from "./trackingHelpers";
 
-export type StatoEpisodio = "in_corso" | "attivo" | "compensato";
+// I 4 SPAZI del malus (Luca 21/08 sera): in_corso = la pratica lo sta ancora
+// generando; attivo = generato e definitivo, in attesa di compensazione;
+// compensato = scalato (compensazioni interne oggi, pagamento gare domani);
+// archiviato = di LICENZIATI/SOSPESI, non recuperato — la partita e' chiusa ma
+// resta in traccia: se mai escono crediti a favore della persona, si sa che
+// c'e' un malus da compensare.
+export type StatoEpisodio = "in_corso" | "attivo" | "compensato" | "archiviato";
 
 export type EpisodioMalus = {
   id: string;
@@ -125,6 +133,24 @@ function subLavorativi(d: Date, n: number): Date {
 // episodio (contract+categoria+data) non cambia, quindi niente doppioni.
 let AGENTI_BO_MALUS: Record<string, string> = {};
 export function impostaAgentiBOMalus(mappa: Record<string, string>) { AGENTI_BO_MALUS = mappa; }
+// PRATICHE RIASSEGNATE (Luca 21/08, licenziamenti/sospensioni): il malus si
+// intesta a CHI LE HA IN CARICO — la partita del licenziato si chiude, i
+// suoi episodi restano in archivio a suo nome ma i nuovi (e l'eventuale
+// aperto) passano al delegato. Mappa contract_id → nome delegato.
+let DELEGHE_MALUS: Record<string, string> = {};
+export function impostaDelegheMalus(mappa: Record<string, string>) { DELEGHE_MALUS = mappa || {}; }
+// FUORI SERVIZIO (Luca 21/08 sera): nomi dei venditori licenziati o sospesi
+// AD OGGI — i loro episodi non compensati diventano "archiviato" e quelli
+// ancora aperti si CONGELANO a oggi (la partita si chiude qui: da quel
+// momento non matura piu' niente a loro nome). Se la persona rientra
+// (riassunzione / fine sospensione) la sync riporta gli stati indietro.
+let FUORI_SERVIZIO: Set<string> = new Set();
+export function impostaFuoriServizio(nomi: Set<string>) { FUORI_SERVIZIO = nomi || new Set(); }
+const eFuori = (venditore: string | null | undefined) => !!venditore && FUORI_SERVIZIO.has(venditore);
+/** Stato giusto per un episodio CHIUSO: compensato non si tocca mai,
+ *  fuori servizio → archiviato, altrimenti attivo. */
+const statoChiusura = (venditore: string | null | undefined, statoAttuale?: string | null): StatoEpisodio =>
+  statoAttuale === "compensato" ? "compensato" : eFuori(venditore) ? "archiviato" : "attivo";
 
 export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
@@ -139,13 +165,17 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const oggi = new Date();
   oggi.setHours(0, 0, 0, 0);
 
+  // intestazioni: i segmenti PRIMA della riassegnazione restano al venditore
+  // originale (o al suo BO), quelli DOPO — e l'episodio in corso — passano
+  // al delegato (Luca 21/08: la partita del licenziato si chiude)
+  const nomeOriginale = (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null;
+  const nomeDelegato = DELEGHE_MALUS[row.id] || null;
   const base = {
     contract_id: row.id,
     categoria: row.categoria,
     brand: row.brand || null,
     negozio: row.negozio || null,
-    // agente associato → il malus è del suo back office (Luca 13/08)
-    venditore: (row.venditore && AGENTI_BO_MALUS[row.venditore]) || row.venditore || null,
+    venditore: nomeOriginale,
     nominativo: row.nominativo || null,
     malus_euro: euro,
   };
@@ -160,6 +190,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const t0 = parseData(row.dataInserimento);
   if (t0) segs.push({ start: t0, soglia: r.senza_malus, completato: false });
   let flagCompletato = false;
+  let delegaD: Date | null = null;
   for (const { ev, d } of eventi) {
     if (ev.tipo === "stato_negozio") {
       const m = ev.testo.match(/aggiornato:\s*(.+)$/i);
@@ -168,21 +199,32 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       // maturazione: i segmenti successivi non generano piu' malus.
       if (id) flagCompletato = fermaMalus(id, row.categoria, row.brand);
     }
-    segs.push({ start: d, soglia: r.succ_malus, completato: flagCompletato });
+    // RIASSEGNAZIONE: il segmento post-consegna riparte dal livello WARNING
+    // (come il live): il malus rimatura dopo succ_malus − succ_warning aperti
+    const sogliaSeg = ev.tipo === "riassegnazione" && r.succ_malus != null
+      ? Math.max(1, r.succ_malus - (Number(r.succ_warning) || 0))
+      : r.succ_malus;
+    if (ev.tipo === "riassegnazione") delegaD = d;
+    segs.push({ start: d, soglia: sogliaSeg, completato: flagCompletato });
   }
 
   const out: EpisodioDerivato[] = [];
   // Segmenti passati -> episodi CHIUSI, congelati alla data dell'evento.
+  // Misura sul calendario APERTO del negozio (chiusure/ferie BO escluse),
+  // come il calcolo live: coi lavorativi di calendario, al primo tocco della
+  // pratica il congelamento evaporava retroattivamente e nascevano malus per
+  // i giorni di negozio chiuso (bug riaperture, Luca 19/08).
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i];
     if (seg.completato || seg.soglia == null) continue;
     const fine = segs[i + 1].start;
-    const misura = lavorativiTra(seg.start, fine);
+    const misura = apertiTra(seg.start, fine, row.negozio, row.venditore);
     if (misura < seg.soglia) continue;
     const giorni = misura - seg.soglia + 1;
     out.push({
       ...base,
-      data_inizio: toISODate(addLavorativi(seg.start, seg.soglia)),
+      venditore: nomeDelegato && delegaD && seg.start >= delegaD ? nomeDelegato : nomeOriginale,
+      data_inizio: toISODate(addAperti(seg.start, seg.soglia, row.negozio, row.venditore)),
       data_fine: toISODate(fine),
       giorni,
       importo: giorni * euro,
@@ -198,6 +240,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       const giorni = Math.max(1, Math.round(importo / euro));
       out.push({
         ...base,
+        venditore: nomeDelegato || nomeOriginale,
         data_inizio: toISODate(subLavorativi(oggi, giorni - 1)),
         data_fine: null,
         giorni,
@@ -237,8 +280,17 @@ export async function sincronizzaMalusStorico(
   }
 
   const inserts: EpisodioDerivato[] = [];
-  const updates: { id: string; patch: Record<string, unknown> }[] = [];
+  // patch per id FUSE in un'unica scrittura: il giro archiviati qui sotto
+  // deve poter correggere lo stato di una riga gia' toccata in questo stesso
+  // passaggio senza produrre due update in sequenza
+  const updates = new Map<string, Record<string, unknown>>();
+  const addUpd = (id: string, patch: Record<string, unknown>) =>
+    updates.set(id, { ...(updates.get(id) || {}), ...patch });
   const visti = new Set<string>();
+  // pratica#categoria → data_inizio del derivato APERTO di questo giro: serve
+  // al giro archiviati per RIAPRIRE l'episodio giusto quando un sospeso
+  // rientra con la pratica ancora in malus (revisione 21/08, rilievo 6)
+  const apertiDerivati = new Map<string, string>();
 
   for (const row of rows) {
     const k = `${row.id}#${row.categoria}`;
@@ -254,33 +306,59 @@ export async function sincronizzaMalusStorico(
       if (d.data_fine === null) continue;
       const match = db.find((e) => e.data_inizio === d.data_inizio);
       if (!match) {
-        inserts.push(d);
+        // GUARDIA DI COPERTURA (revisione 21/08, rilievi 7-8): un chiuso
+        // ricostruito il cui inizio cade DENTRO un periodo gia' registrato
+        // (tipicamente il congelato di un licenziato, ma vale per qualsiasi
+        // episodio chiuso) non deve rinascergli accanto — stesso malus
+        // contato due volte.
+        const coperto = db.some((e) => !e.eliminato
+          && e.data_fine !== null && e.data_inizio <= d.data_inizio && d.data_inizio <= e.data_fine);
+        if (!coperto) inserts.push(eFuori(d.venditore) ? { ...d, stato: "archiviato" } : d);
       } else if (match.data_fine === null) {
         // l'episodio che a DB risultava in corso nel frattempo e' stato sanato:
         // si congela alla data dell'evento, non a oggi.
-        updates.push({
-          id: match.id,
-          patch: {
-            data_fine: d.data_fine,
-            giorni: d.giorni,
-            importo: d.importo,
-            stato: match.stato === "compensato" ? "compensato" : "attivo",
-          },
+        addUpd(match.id, {
+          data_fine: d.data_fine,
+          giorni: d.giorni,
+          importo: d.importo,
+          stato: statoChiusura(d.venditore ?? match.venditore, match.stato),
         });
       }
     }
 
     if (derivatoAperto) {
+      apertiDerivati.set(k, derivatoAperto.data_inizio);
       const match = db.find((e) => e.data_inizio === derivatoAperto.data_inizio);
       const aperto = match && match.data_fine === null ? match : dbAperto;
       if (aperto) {
         // refresh del maturato (data_inizio resta quella registrata alla prima
-        // rilevazione: cambiarla romperebbe la chiave univoca).
-        if (aperto.giorni !== derivatoAperto.giorni || Number(aperto.importo) !== derivatoAperto.importo) {
-          updates.push({ id: aperto.id, patch: { giorni: derivatoAperto.giorni, importo: derivatoAperto.importo } });
+        // rilevazione: cambiarla romperebbe la chiave univoca). Se pero'
+        // l'intestatario e' FUORI SERVIZIO la partita e' congelata: niente
+        // refresh, ci pensa il giro archiviati a chiuderla.
+        const cambioIntestazione = !!derivatoAperto.venditore && aperto.venditore !== derivatoAperto.venditore;
+        if (!eFuori(derivatoAperto.venditore) && (aperto.giorni !== derivatoAperto.giorni || Number(aperto.importo) !== derivatoAperto.importo || cambioIntestazione)) {
+          addUpd(aperto.id, { giorni: derivatoAperto.giorni, importo: derivatoAperto.importo, ...(cambioIntestazione ? { venditore: derivatoAperto.venditore } : {}) });
         }
       } else if (!match) {
-        inserts.push(derivatoAperto);
+        if (eFuori(derivatoAperto.venditore)) {
+          // malus nato quando la persona era GIA' fuori servizio: si registra
+          // direttamente congelato — la traccia del credito resta, la
+          // maturazione a nome suo no. UNA fotografia sola PER PERSONA
+          // (revisione 21/08, rilievo 8): il derivato che nei giorni
+          // successivi DERIVA la data d'inizio (chiusure negozio) non deve
+          // partorire un doppione, ma un DELEGATO poi licenziato a sua volta
+          // ha diritto alla sua fotografia.
+          const giaCongelato = db.some((e) => !e.eliminato && e.stato === "archiviato" && e.venditore === derivatoAperto.venditore);
+          if (!giaCongelato) inserts.push({ ...derivatoAperto, data_fine: toISODate(new Date()), stato: "archiviato" });
+        } else {
+          // GUARDIA RIENTRO (revisione 21/08, rilievo 6b): se l'inizio del
+          // derivato e' scivolato (chiusure/ferie) dentro un periodo gia'
+          // registrato — tipicamente il congelato di una sospensione —
+          // l'insert duplicherebbe quel maturato con l'importo totale.
+          const copertoAperto = db.some((e) => !e.eliminato && e.data_fine !== null
+            && e.data_inizio <= derivatoAperto.data_inizio && derivatoAperto.data_inizio <= e.data_fine);
+          if (!copertoAperto) inserts.push(derivatoAperto);
+        }
       }
     } else if (dbAperto) {
       // a DB in corso ma la pratica non e' piu' in malus e nessun episodio
@@ -288,10 +366,7 @@ export async function sincronizzaMalusStorico(
       // con l'ultimo maturato noto.
       const giaChiuso = derivati.some((d) => d.data_fine !== null && d.data_inizio === dbAperto.data_inizio);
       if (!giaChiuso) {
-        updates.push({
-          id: dbAperto.id,
-          patch: { data_fine: toISODate(new Date()), stato: dbAperto.stato === "compensato" ? "compensato" : "attivo" },
-        });
+        addUpd(dbAperto.id, { data_fine: toISODate(new Date()), stato: statoChiusura(dbAperto.venditore, dbAperto.stato) });
       }
     }
   }
@@ -304,10 +379,34 @@ export async function sincronizzaMalusStorico(
     if (e.data_fine !== null) continue;
     const k = `${e.contract_id}#${e.categoria}`;
     if (visti.has(k)) continue;
-    updates.push({
-      id: e.id,
-      patch: { data_fine: toISODate(new Date()), stato: e.stato === "compensato" ? "compensato" : "attivo" },
-    });
+    addUpd(e.id, { data_fine: toISODate(new Date()), stato: statoChiusura(e.venditore, e.stato) });
+  }
+
+  // ── GIRO ARCHIVIATI (Luca 21/08 sera): allinea lo stato di TUTTI gli
+  // episodi alla situazione delle persone. Fuori servizio → aperti congelati
+  // a oggi + chiusi marcati "archiviato"; rientrati → si torna ad
+  // attivo/in_corso. I compensati non si toccano MAI, i tombstone nemmeno.
+  for (const e of esistenti) {
+    if (e.eliminato || e.stato === "compensato") continue;
+    const pend = updates.get(e.id);
+    // la verita' del giro corrente: una patch in coda puo' aver gia' chiuso
+    // la riga o averle cambiato intestatario (consegna al delegato)
+    const vend = (pend && "venditore" in pend ? pend.venditore : e.venditore) as string | null;
+    const fine = (pend && "data_fine" in pend ? pend.data_fine : e.data_fine) as string | null;
+    const stato = (pend && "stato" in pend ? pend.stato : e.stato) as StatoEpisodio;
+    if (eFuori(vend)) {
+      if (fine === null) addUpd(e.id, { data_fine: toISODate(new Date()), stato: "archiviato" });
+      else if (stato !== "archiviato") addUpd(e.id, { stato: "archiviato" });
+    } else if (stato === "archiviato") {
+      // RIENTRO (revisione 21/08, rilievo 6): se la pratica e' ANCORA in
+      // malus e il derivato aperto combacia con questo episodio, si RIAPRE —
+      // il maturato riprende da dove il congelamento l'aveva fermato, senza
+      // perdere il periodo ne' duplicarlo. Altrimenti il congelato resta
+      // chiuso come "attivo — da scalare".
+      const inizioVivo = apertiDerivati.get(`${e.contract_id}#${e.categoria}`);
+      if (inizioVivo && inizioVivo === e.data_inizio) addUpd(e.id, { stato: "in_corso", data_fine: null });
+      else addUpd(e.id, { stato: fine ? "attivo" : "in_corso" });
+    }
   }
 
   // Scritture RESILIENTI: un errore su una riga non deve piu' bloccare tutte
@@ -323,14 +422,14 @@ export async function sincronizzaMalusStorico(
       console.error("[SYNC-MALUS] insert fallito:", error.message);
     } else scritture += inserts.length;
   }
-  for (const u of updates) {
+  for (const [id, patch] of updates) {
     const { error } = await supabase
       .from("malus_storico")
-      .update({ ...u.patch, updated_at: new Date().toISOString() })
-      .eq("id", u.id);
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", id);
     if (error) {
-      errori.push(u.id + ": " + error.message);
-      console.error("[SYNC-MALUS] update fallito:", u.id, error.message);
+      errori.push(id + ": " + error.message);
+      console.error("[SYNC-MALUS] update fallito:", id, error.message);
     } else scritture++;
   }
   if (errori.length) throw new Error(`${errori.length} scritture fallite — ${errori[0]}`);
@@ -340,6 +439,7 @@ export async function sincronizzaMalusStorico(
 export type TotaliMalus = {
   inCorso: { n: number; eur: number };
   attivi: { n: number; eur: number };
+  archiviati: { n: number; eur: number };
   compensati: { n: number; eur: number };
   totale: number;
 };
@@ -348,6 +448,7 @@ export function totaliEpisodi(eps: EpisodioMalus[]): TotaliMalus {
   const t: TotaliMalus = {
     inCorso: { n: 0, eur: 0 },
     attivi: { n: 0, eur: 0 },
+    archiviati: { n: 0, eur: 0 },
     compensati: { n: 0, eur: 0 },
     totale: 0,
   };
@@ -355,6 +456,7 @@ export function totaliEpisodi(eps: EpisodioMalus[]): TotaliMalus {
     const eur = Number(e.importo) || 0;
     t.totale += eur;
     if (e.stato === "compensato") { t.compensati.n++; t.compensati.eur += eur; }
+    else if (e.stato === "archiviato") { t.archiviati.n++; t.archiviati.eur += eur; }
     else if (e.data_fine === null) { t.inCorso.n++; t.inCorso.eur += eur; }
     else { t.attivi.n++; t.attivi.eur += eur; }
   }

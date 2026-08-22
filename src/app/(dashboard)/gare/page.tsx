@@ -17,6 +17,7 @@ import { TabellareEditor } from "./_views/tabellare";
 import { W3PdvPanel } from "./_views/w3_pdv";
 import { W3CommissioningPanel } from "./_views/w3_commissioning";
 import { W3PartnershipPanel } from "./_views/w3_partnership";
+import { LettereGara } from "./_views/lettere";
 import { CalendarioGareView } from "./_views/calendario_gare";
 
 /* GARE — le condizioni degli operatori (lato AZIENDA) e la gara interna della squadra
@@ -30,7 +31,7 @@ const GARE_BRANDS = [
     { id: "vs", label: "Vodafone Store", desc: "Soglie e commissioning dei Vodafone Store.", color: "var(--tf-e60000)", logo: "/vodaphone - Copy.png" },
     { id: "vnd", label: "Vodafone VND", desc: "Target Vodafone dei negozi multi brand (gestione VND).", color: "var(--tf-e60000)", logo: "/vodaphone - Copy.png" },
     { id: "fastweb", label: "Fastweb", desc: "Target Fastweb dei multi brand (nessun franchising).", color: "var(--tf-cc9900)", logo: "/fastweb.png" },
-    { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "var(--tf-0072c6)", logo: "/sky.png" },
+    { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "var(--tf-8b5cf6)", logo: "/sky.png" },
     { id: "s4", label: "S4", desc: "Soglie e commissioning energia S4.", color: "var(--tf-28a745)", logo: "/energy - Copy.png" },
     { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "var(--tf-0050ff)", logo: "/tim-logo-v2.png" },
     { id: "kena", label: "Kena", desc: "Soglie e commissioning Kena.", color: "#F5A623", logo: "/kena-mobile-v2.png" },
@@ -225,6 +226,10 @@ function GareInner() {
                             </button>
                         </div>
                     </div>
+
+                    {/* ARCHIVIO LETTERE (Luca 19/08): l'unico posto delle lettere
+                        mensili del brand — lato azienda */}
+                    {lato === "azienda" && <LettereGara brand={brand.id} month={month} colore={brand.color} />}
 
                     {/* W3 AZIENDA A SCHEDE (riordino Luca 14/08, «era confusionario»):
                         il pannello PDV con segmento e target resta sempre in testa;

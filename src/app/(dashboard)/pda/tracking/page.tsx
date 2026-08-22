@@ -30,7 +30,7 @@ import {
   impostaRegoleTracking,
   impostaEsitiTracking,
   impostaCalendarioChiusure,
-  impostaFerieResponsabili,
+  impostaFerieResponsabili, impostaFerieVenditori,
   esitoCompletato,
   getStatiAdminPerCategoria,
   esitoAdminDefinitivo,
@@ -38,7 +38,7 @@ import {
 import { RegoleTracking } from "./RegoleTracking";
 import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
-import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus } from "./malusStorico";
+import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt, impostaAgentiBOMalus, impostaDelegheMalus, impostaFuoriServizio } from "./malusStorico";
 
 type RawRow = Record<string, unknown> & {
   clients?: Record<string, unknown> | null;
@@ -51,6 +51,9 @@ type RawRow = Record<string, unknown> & {
 // così ANCHE chi vede tutto (admin) capisce a colpo d'occhio quali pratiche
 // sono degli agenti e chi ne risponde.
 let AGENTI_BO: Record<string, string> = {};
+// pratiche RIASSEGNATE (licenziamenti): contract_id → nome del delegato, per
+// il badge 📦 in riga e l'intestazione dei malus (Luca 21/08)
+let DELEGHE: Record<string, string> = {};
 // nel FILTRO utente e nelle tendine l'agente compare col nome del suo
 // responsabile (risposta Luca 13/08: «trovo ancora Berdini e non Coviello»)
 const nomeResponsabile = (v: string) => AGENTI_BO[v] || v;
@@ -677,6 +680,12 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                   <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>{row.negozio}</td>
                   <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>
                     {row.venditore}
+                    {DELEGHE[row.id] && (
+                      <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-fuchsia-500/15 border border-fuchsia-400/30 text-[10px] font-bold text-fuchsia-200"
+                        title={`Pratica riassegnata: era di ${row.venditore}, ora in carico a ${DELEGHE[row.id]}`}>
+                        📦 {DELEGHE[row.id]}
+                      </span>
+                    )}
                     {AGENTI_BO[row.venditore] && (
                       <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border bg-indigo-500/10 border-indigo-500/30 text-indigo-300 whitespace-nowrap"
                         title={`Agente esterno: la pratica è in carico al back office ${AGENTI_BO[row.venditore]}`}>
@@ -1519,11 +1528,56 @@ export default function TrackingPdaPage() {
         }
         impostaFerieResponsabili(ferieResp);
       }
+      // FERIE PERSONALI (Luca 21/08): la persona in ferie congela warning e
+      // malus delle SUE pratiche — come la chiusura del negozio, ma solo per
+      // lei. Preciso anche quando il PV resta aperto con altri al lavoro.
+      {
+        const nomi = [...new Set(lavorabili.map((r: Record<string, unknown>) => String(r.venditore || "")).filter(Boolean))];
+        const ferieVend: Record<string, { dal: string; al: string }[]> = {};
+        if (nomi.length) {
+          const { data: ute } = await supabase.from("app_users").select("id, full_name").in("full_name", nomi);
+          const nomeDi: Record<string, string> = {};
+          ((ute ?? []) as { id: string; full_name: string | null }[]).forEach((u) => { if (u.full_name) nomeDi[u.id] = u.full_name; });
+          const ids = Object.keys(nomeDi);
+          if (ids.length) {
+            const { data: fer } = await supabase.from("vacation_requests")
+              .select("user_id, date_from, date_to, status, tipo").in("user_id", ids);
+            ((fer ?? []) as { user_id: string; date_from: string; date_to: string; status: string | null; tipo: string | null }[])
+              .filter((f) => /approv/i.test(String(f.status || "")) && String(f.tipo || "ferie") !== "corsi")
+              .forEach((f) => {
+                const nome = nomeDi[f.user_id];
+                if (!nome) return;
+                (ferieVend[nome] = ferieVend[nome] || []).push({ dal: String(f.date_from).slice(0, 10), al: String(f.date_to).slice(0, 10) });
+              });
+          }
+        }
+        impostaFerieVenditori(ferieVend);
+      }
+      // DELEGHE (Luca 21/08): risolvi i nomi dei delegati per badge e malus
+      {
+        const ids = [...new Set(lavorabili.map((r: Record<string, unknown>) => String(r.delegated_to || "")).filter(Boolean))];
+        const mappa: Record<string, string> = {};
+        if (ids.length) {
+          const { data: del } = await supabase.from("app_users").select("id, full_name").in("id", ids);
+          const nomi: Record<string, string> = {};
+          ((del ?? []) as { id: string; full_name: string | null }[]).forEach((d) => { if (d.full_name) nomi[d.id] = d.full_name; });
+          lavorabili.forEach((r: Record<string, unknown>) => {
+            const n = nomi[String(r.delegated_to || "")];
+            if (n) mappa[String(r.id)] = n;
+          });
+        }
+        DELEGHE = mappa;
+        impostaDelegheMalus(mappa);
+      }
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
-        if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
-        return (!!r.venditore && !!user?.name && r.venditore === user.name)
+        // Le pratiche FATTE DA ME si vedono SEMPRE, anche se registrate su un
+        // negozio fuori dalla mia visibilità (coperture in altri PV — Luca
+        // 21/08, caso Lorenzo a Magliana): la responsabilità malus resta mia.
+        const mie = (!!r.venditore && !!user?.name && r.venditore === user.name)
             || (!!r.delegated_to && r.delegated_to === user?.id);
+        if (seesWhole) return mie || visibleStores.some((st) => sameStore(r.negozio as string, st));
+        return mie;
       });
       setRawList(scoped as RawRow[]);
     } catch (err: unknown) {
@@ -1623,6 +1677,30 @@ export default function TrackingPdaPage() {
       try {
         const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
         if (error) throw error;
+        // GATE SCRITTURE (revisione indipendente 21/08, come il call center):
+        // la sync scrive SOLO per chi vede tutto — con le righe scopate di un
+        // consulente/SM lo spazzino chiuderebbe "a oggi" gli episodi aperti
+        // delle pratiche fuori dal suo perimetro, troncandoli in silenzio.
+        // Gli altri ricevono comunque l'archivio in sola lettura.
+        if (!seesAll) {
+          if (vivo) { setEpisodi((eps ?? []) as EpisodioMalus[]); setMalusErr(null); }
+          return;
+        }
+        // FUORI SERVIZIO → SPAZIO ARCHIVIATI (Luca 21/08 sera): gli episodi
+        // di licenziati/sospesi non spariscono piu' dall'archivio — la sync
+        // li marca "archiviato" (aperti congelati a oggi, la partita si
+        // chiude) e l'Archivio Malus li mostra nel loro spazio dedicato,
+        // fuori dai conteggi operativi della squadra attiva.
+        const { data: fuoriUt, error: errFuori } = await supabase.from("app_users")
+          .select("full_name, status, sospeso_dal").or("status.eq.licenziato,sospeso_dal.not.is.null");
+        // query fallita ≠ "nessun fuori servizio": proseguire con l'insieme
+        // vuoto de-archivierebbe TUTTO in massa (revisione 21/08, rilievo 5)
+        if (errFuori) throw errFuori;
+        const oggiX = (() => { const d = new Date(); const pp = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${pp(d.getMonth() + 1)}-${pp(d.getDate())}`; })();
+        const fuori = new Set(((fuoriUt ?? []) as { full_name: string | null; status: string | null; sospeso_dal: string | null }[])
+          .filter((x) => x.status === "licenziato" || (x.sospeso_dal && String(x.sospeso_dal).slice(0, 10) <= oggiX))
+          .map((x) => x.full_name).filter(Boolean) as string[]);
+        impostaFuoriServizio(fuori);
         // le pratiche CESTINATE (tracking_nascosto) escono dalle righe della
         // sync: cosi' lo spazzino congela A OGGI il loro episodio aperto —
         // prima restavano dentro e il malus continuava a maturare per sempre
@@ -1645,7 +1723,7 @@ export default function TrackingPdaPage() {
       }
     })();
     return () => { vivo = false; };
-  }, [data, loading, regoleV]);
+  }, [data, loading, regoleV, seesAll]);
 
   // Scoping dell'archivio per ruolo, stessa regola delle pratiche: consulente
   // i suoi episodi, store manager i negozi visibili, amministrazione tutto.
@@ -1669,7 +1747,13 @@ export default function TrackingPdaPage() {
     return m;
   }, [episodiVisibili]);
 
-  const storicoTotale = useMemo(() => totaliEpisodi(episodiVisibili).totale, [episodiVisibili]);
+  // Il numerone "storico" del riquadro Malus e' quello della squadra OPERATIVA:
+  // gli archiviati (licenziati/sospesi) restano fuori — si vedono nel loro
+  // spazio dentro l'Archivio, non nei conteggi di chi lavora oggi.
+  const storicoTotale = useMemo(() => {
+    const t = totaliEpisodi(episodiVisibili);
+    return t.totale - t.archiviati.eur;
+  }, [episodiVisibili]);
 
   // Dall'archivio si apre la pratica: stessa riga (id+categoria) del tracking.
   const apriPraticaDaArchivio = useCallback((cid: string, cat: string) => {
@@ -1710,8 +1794,15 @@ export default function TrackingPdaPage() {
 
   // Opzioni con dipendenza UNIDIREZIONALE (niente prune a cascata):
   // NEGOZIO ← base; UTENTE ← base+negozio; CATEGORIA ← base+negozio+utente.
+  // La tendina Negozio compare anche a chi ha PIÙ punti vendita in visibilità
+  // (Luca 21/08, caso Eros/Gianluca): senza, le pratiche arrivano tutte miste.
+  // baseVisibile è già ritagliata sulla loro visibilità, quindi l'elenco sono
+  // solo i LORO negozi; con un negozio solo la tendina resta nascosta.
   const negoziAttivi = useMemo(
-    () => (seesAll ? Array.from(new Set(baseVisibile.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []),
+    () => {
+      const tutti = Array.from(new Set(baseVisibile.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort();
+      return seesAll || tutti.length > 1 ? tutti : [];
+    },
     [baseVisibile, seesAll]
   );
   const venditoriAttivi = useMemo(

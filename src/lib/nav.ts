@@ -20,6 +20,7 @@ import {
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
+    BarChart3,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -36,7 +37,10 @@ export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: str
 // i link vanno a ?sez=<voce>&tab=<sub.id> (gruppo Utenti). Le subs restano
 // amministrabili una a una dalla pagina Permessi (chiavi hubSubKey).
 export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean; subsSez?: boolean };
-export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[] };
+// senzaSottomenu: hub SOLO per i permessi (sezione + aree amministrabili una
+// a una) — in sidebar resta una voce semplice: le aree si cambiano coi
+// pulsanti dentro la pagina, non con un menù a sinistra (Analisi, Luca 21/08)
+export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[]; senzaSottomenu?: boolean };
 export type NavEntry = NavGroup | NavItem | NavHub;
 
 export const EVERYONE = ["*"];
@@ -48,6 +52,22 @@ export const OUTBOUND_NAV = ["agente", "direttore_ob", "direttore_commerciale", 
 
 export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: EVERYONE },
+    // ANALISI (Luca 20-21/08): la sezione-vetrina a punti/pezzi. È un HUB per
+    // i PERMESSI (sezione intera + ogni area concedibile per ruolo dalla
+    // pagina Permessi: /analisi e /analisi?sez=io|negozio|rete|regia) ma
+    // SENZA sottomenu in sidebar: le aree si cambiano coi pulsanti in pagina.
+    // Default: tutto solo admin/dev finché Luca non apre; la Regia resta sua.
+    {
+        type: "hub", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"], senzaSottomenu: true,
+        children: [
+            { name: "Io", sez: "io", roles: ["admin", "dev"] },
+            { name: "Negozio", sez: "negozio", roles: ["admin", "dev"] },
+            { name: "Rete", sez: "rete", roles: ["admin", "dev"] },
+            // "Master" per Luca (21/08): la sez resta "regia" — è la chiave di
+            // permesso già concessa, cambiarla scollegherebbe le righe esistenti
+            { name: "Master", sez: "regia", roles: ["admin", "dev"] },
+        ],
+    },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
     {
         // CALL CENTER e' un GRUPPO (Luca 28/07): dentro la vecchia sezione Caller
@@ -155,7 +175,7 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "vs", name: "Vodafone Store", roles: ["admin", "dev"], color: "var(--tf-e60000)" },
                     { id: "vnd", name: "Vodafone VND", roles: ["admin", "dev"], color: "var(--tf-ff6666)" },
                     { id: "fastweb", name: "Fastweb", roles: ["admin", "dev"], color: "var(--tf-ffd800)" },
-                    { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "var(--tf-0072c6)" },
+                    { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "var(--tf-8b5cf6)" },
                     { id: "s4", name: "S4", roles: ["admin", "dev"], color: "var(--tf-28a745)" },
                     { id: "tim", name: "TIM", roles: ["admin", "dev"], color: "var(--tf-0050ff)" },
                     { id: "kena", name: "Kena", roles: ["admin", "dev"], color: "#F5A623" },
