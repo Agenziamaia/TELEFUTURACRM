@@ -4,6 +4,7 @@
 // canale condiviso e "traccia" il proprio id. onlineIds = chi e' presente ora.
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { visibleInterval } from "@/lib/visibleInterval";
 import { useAuth } from "@/context/AuthContext";
 import { touchLastSeen } from "@/lib/chat";
 
@@ -30,8 +31,8 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           touchLastSeen(user.id);
         }
       });
-    const interval = setInterval(() => touchLastSeen(user.id), 45000);
-    return () => { clearInterval(interval); supabase.removeChannel(channel); };
+    const stop = visibleInterval(() => touchLastSeen(user.id), 45000);
+    return () => { stop(); supabase.removeChannel(channel); };
   }, [user?.id]);
 
   const isOnline = (id?: string | null) => !!id && onlineIds.has(id);

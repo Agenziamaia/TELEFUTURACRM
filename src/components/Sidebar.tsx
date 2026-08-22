@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { visibleInterval } from "@/lib/visibleInterval";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
@@ -80,8 +81,8 @@ function useFeriePendenti(userId: string | undefined, role: string | undefined):
             } catch { /* pallino best-effort */ }
         };
         load();
-        const t = setInterval(load, 90000);
-        return () => { vivo = false; clearInterval(t); };
+        const stop = visibleInterval(load, 90000);
+        return () => { vivo = false; stop(); };
     }, [userId, role]);
     return n;
 }
@@ -187,8 +188,8 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_messages" }, () => load())
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "email_messages" }, () => load())
             .subscribe();
-        const t = setInterval(load, 20000);
-        return () => { alive = false; off(); supabase.removeChannel(ch); clearInterval(t); };
+        const stop = visibleInterval(load, 20000);
+        return () => { alive = false; off(); supabase.removeChannel(ch); stop(); };
     }, [user?.id, myStores]);
 
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {

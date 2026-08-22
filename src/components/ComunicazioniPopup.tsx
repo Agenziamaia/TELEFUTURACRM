@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, AlertTriangle, CheckCircle2, Rocket, Bomb, Flame } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { visibleInterval } from "@/lib/visibleInterval";
 import { useAuth } from "@/context/AuthContext";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
 import { sanificaHtml } from "@/components/EditorRicco";
@@ -240,8 +241,8 @@ export function ComunicazioniPopup() {
             .channel("comunicazioni_popup")
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "comunicazioni" }, () => carica())
             .subscribe();
-        const t = setInterval(carica, 5 * 60 * 1000);
-        return () => { supabase.removeChannel(ch); clearInterval(t); };
+        const stop = visibleInterval(carica, 5 * 60 * 1000);
+        return () => { supabase.removeChannel(ch); stop(); };
     }, [user?.id, carica]);
 
     // "PIU' TARDI" con ritorno ORARIO (Luca 31/07): niente archiviazione
@@ -255,8 +256,8 @@ export function ComunicazioniPopup() {
         try { setRinvii(JSON.parse(localStorage.getItem(`popup_rinvii_${user.id}`) || "{}")); } catch { /* no-op */ }
     }, [user?.id]);
     useEffect(() => {
-        const t = setInterval(() => setTick((x) => x + 1), 60 * 1000);
-        return () => clearInterval(t);
+        const stop = visibleInterval(() => setTick((x) => x + 1), 60 * 1000);
+        return () => stop();
     }, []);
     const adesso = Date.now();
     const visibili = coda.filter((c) => !(rinvii[c.id] > adesso));
