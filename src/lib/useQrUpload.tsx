@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import QRCode from "qrcode";
+// qrcode: import dinamico on-demand (perf, non nel bundle iniziale)
 import { supabase } from "@/lib/supabaseClient";
 
 type QrFile = { url: string; name?: string; mime?: string };
@@ -34,6 +34,7 @@ export function useQrUpload(onFiles: (files: File[]) => void) {
             const t = (window.crypto?.randomUUID?.() || (Date.now() + "-" + Math.random().toString(36).slice(2)));
             const { error } = await supabase.from("qr_uploads").insert({ token: t, box_type: boxType, kind, status: "attesa" });
             if (error) { alert("QR non generato: " + error.message); closeQr(); return; }
+            const { default: QRCode } = await import("qrcode");
             const dataUrl = await QRCode.toDataURL(`${window.location.origin}/m/u/${t}`, { width: 240, margin: 1 });
             setToken(t); setImg(dataUrl);
         } catch (e) { alert("QR non generato: " + ((e as Error)?.message || e)); closeQr(); }

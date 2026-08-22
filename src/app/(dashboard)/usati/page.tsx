@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
-import QRCode from "qrcode";
+// qrcode: import dinamico on-demand (perf, non nel bundle iniziale)
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { numeroNazionale } from "@/lib/telefono";
@@ -1182,6 +1182,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       const { error } = await supabase.from("qr_uploads").insert({ token, box_type: box === "doc" ? "documento_usato" : "dichiarazione_usato", kind: "doc", status: "attesa" });
       if (error) { alert("QR non generato: " + error.message); return; }
       const url = `${window.location.origin}/m/u/${token}`;
+      const { default: QRCode } = await import("qrcode");
       const img = await QRCode.toDataURL(url, { width: 240, margin: 1 });
       setQrBox(box); setQrToken(token); setQrImg(img); setQrRecv(null);
     } catch (e) { alert("QR non generato: " + ((e as Error)?.message || e)); }
