@@ -1732,8 +1732,13 @@ export default function TrackingPdaPage() {
     // fuori da archivio, contatori e badge per chiunque
     const vivi = episodi.filter((e) => !e.eliminato);
     if (seesAll) return vivi;
-    if (seesWhole) return vivi.filter((e) => visibleStores.some((st) => sameStore(e.negozio, st)));
-    return vivi.filter((e) => !!e.venditore && !!user?.name && e.venditore === user.name);
+    // Gli episodi MIEI si vedono SEMPRE, anche se maturati su un negozio fuori
+    // dalla mia visibilità (coperture — Luca 23/08, caso Staicu a Magliana: la
+    // penale è sua ma da SM di Promontori non gli compariva nello storico).
+    // Stessa clausola già applicata alle PRATICHE il 21/08.
+    const mio = (e: EpisodioMalus) => !!e.venditore && !!user?.name && e.venditore === user.name;
+    if (seesWhole) return vivi.filter((e) => mio(e) || visibleStores.some((st) => sameStore(e.negozio, st)));
+    return vivi.filter(mio);
   }, [episodi, seesAll, seesWhole, visibleStores, user?.name]);
 
   const episodiPerRiga = useMemo(() => {

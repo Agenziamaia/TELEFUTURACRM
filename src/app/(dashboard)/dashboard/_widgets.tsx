@@ -617,6 +617,9 @@ function WidgetVodafone({ ctx, size }) {
                             <ChipSonda tono="neutro" testo={<>📱 CB <b className="font-mono text-slate-100">{per.telCb}</b> <span className="text-slate-500">fin {per.telCbFin}</span></>} righe={["Telefoni su cliente già attivo (CB):", `${per.telCb} totali, di cui ${per.telCbFin} finanziati.`, "Stessi punti dei GA (0,5 rateale · 1 finanziato)."]} />
                             <ChipSonda tono="neutro" testo={<>🔁 Op. CB <b className="font-mono text-slate-100">{per.opCb}</b></>} righe={["Operazioni Customer Base (cambi offerta, MM4M,", "traslochi…): pay one-shot nei Gettoni delle Regole."]} />
                             {size < 2 && <ChipSonda tono="neutro" testo={<>🛡 R.Sicura <b className="font-mono text-slate-100">{per.rsGa + per.rsCb}</b></>} righe={[`Rete Sicura: ${per.rsGa} su attivazioni (GA) · ${per.rsCb} su clienti attivi (CB).`]} />}
+                            {/* Luce&Gas visibile a OGNI taglia (Luca 23/08, caso Bazzucchi:
+                                alla taglia 1 l'energia non compariva da nessuna parte) */}
+                            {size < 2 && (per.luce + per.gas) > 0 && <ChipSonda tono="neutro" testo={<>⚡ L&G <b className="font-mono text-slate-100">{per.luce + per.gas}</b></>} righe={[`Luce & Gas della gara: ${per.luce} luce · ${per.gas} gas,`, "compresa l'energia Fastweb sui codici T1 dei Vodafone Store."]} />}
                             {per.fwGaraN > 0 && <ChipSonda tono="neutro" testo={<>🟨 FW in gara <b className="font-mono text-slate-100">{per.fwGaraN}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "per la lettera A contano qui — mobile, fisso ed energia.", "Il Fastweb T2 (multibrand) resta nella sua gara."]} />}
                             {per.capTaglio > 0 && <ChipSonda testo={`✂️ cap 35%: −${fmtPunti(per.capTaglio)}`} righe={["Lettera Vodafone: gli smartphone (0,5 rateale · 1 finanziato)", "valgono fino al 35% del valore delle SIM.", `Telefoni ${fmtPunti(per.telP)} pt · contati ${fmtPunti(per.telP - per.capTaglio)} pt`]} />}
                             {senzaPay > 0 && <ChipSonda testo={`⚠ ${senzaPay} senza punti`} righe={senzaPayRighe} />}
@@ -861,19 +864,22 @@ function WidgetBrand({ ctx, size, brand }) {
     // il perimetro di gara smistato col codice di inserimento — le T1 NON
     // contano qui (vivono nella gara Vodafone) ma le dice il chip 🟨.
     const isFw = kb === "fastweb";
-    let righe, fwInGaraVF = 0, righeStore = null;
+    let righe, fwInGaraVF = 0, fwEnT1 = 0, righeStore = null;
     if (isFw && ctx.vf?.packs) {
         const mio = ctx.scopeVendita;
         const store = (c) => ctx.inMyStores(c.negozio);
         righe = []; righeStore = [];
         ctx.vf.packs.forEach((p) => (p.rowsFw || []).forEach((c) => {
             const t1 = contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
-            if (mio(c)) { if (t1) fwInGaraVF++; else righe.push(c); }
+            // spacco energia nel chip 🟨 (Luca 23/08, caso Bazzucchi: le sue
+            // Luce&Gas T1 sembravano sparite — vanno DETTE, non solo contate)
+            if (mio(c)) { if (t1) { fwInGaraVF++; if (/^energia/i.test(String(c.categoria || ""))) fwEnT1++; } else righe.push(c); }
             if (!t1 && store(c)) righeStore.push(c);
         }));
     } else {
         righe = ctx.mine.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand);
     }
+    const enT2 = righe.filter((c) => /^energia/i.test(String(c.categoria || ""))).length;
     const { pezzi, oggiN, proiezione, perGiorno, best } = CorpoProduzione({ ctx, size, righe, pesa: () => 1, color });
     const meseScorso = isFw ? 0 : ctx.scoped.filter((c) => isCtr(c) && validaProduzione(c) && c.brand === brand && giornoDi(c).startsWith(ctx.meseScorsoYm)).length;
     const perCat = groupCount(righe, (c) => c.categoria || "Altro");
@@ -899,9 +905,11 @@ function WidgetBrand({ ctx, size, brand }) {
                     {isFw && !ctx.oggiContato && ctx.includeOggi && (
                         <p className="text-[10px] text-slate-600 -mt-1.5">Le vendite di oggi entrano nel conteggio di gara alle {ctx.gl?.oraScatto ?? 19}.</p>
                     )}
-                    {fwInGaraVF > 0 && (
+                    {(fwInGaraVF > 0 || enT2 > 0) && (
                         <div className="flex flex-wrap gap-1.5">
-                            <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "NON contano qui — stanno nella gara Vodafone", "(lettera A), punti compresi. Qui c'è solo il T2."]} />
+                            {fwInGaraVF > 0 && <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "NON contano qui — stanno nella gara Vodafone", "(lettera A), punti compresi. Qui c'è solo il T2.", ...(fwEnT1 > 0 ? [`Di queste, ${fwEnT1} sono Luce & Gas.`] : [])]} />}
+                            {/* energia T2 sempre DETTA, a ogni taglia (Luca 23/08) */}
+                            {enT2 > 0 && <ChipSonda tono="neutro" testo={<>⚡ Energia <b className="font-mono text-slate-100">{enT2}</b></>} righe={["Luce & Gas Fastweb sui codici multibrand (T2):", "contano qui, nella gara Fastweb."]} />}
                         </div>
                     )}
                     {size >= 2 && perCat.length > 0 && (
