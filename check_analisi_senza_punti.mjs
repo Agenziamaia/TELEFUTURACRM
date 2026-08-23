@@ -37,11 +37,12 @@ async function main() {
     console.log(`\nCon punti (piste ragazzi): ${conPunti} · ⚠ SENZA punti: ${senza.length}`);
     console.log("con punti per pista:", [...perPista.entries()].map(([k, n]) => `${k}=${n}`).join(" · "));
 
-    // REGOLA GA PAY-ONLY (Luca 23/08): i telefoni GA a rate non avanzano in
-    // punteggio (solo pay) → fuori dal triangolo. Sonda attesa dopo la regola:
-    const gaPayOnly = senza.filter((c) => /^telefono a rate/i.test(String(c.categoria || "")) && !/cb\s*$/i.test(String(c.prodotto || "")));
-    console.log(`telefoni GA a rate (pay-only, esclusi dal triangolo): ${gaPayOnly.length}`);
-    console.log(`⚠ TRIANGOLO ATTESO dopo la regola: ${senza.length - gaPayOnly.length}`);
+    // TRIANGOLO = SOLO ANOMALIE VERE (Luca 23/08): fuori telefoni a rate
+    // (GA pay-only + CB in Partnership) e assicurazioni (target di gruppo)
+    const altreRegole = senza.filter((c) => /^telefono a rate/i.test(String(c.categoria || ""))
+        || /assicurazion/i.test(String(c.prodotto || "") + " " + String(c.categoria || "")));
+    console.log(`in altre regole (telefoni + assicurazioni, esclusi dal triangolo): ${altreRegole.length}`);
+    console.log(`⚠ TRIANGOLO ATTESO dopo la regola: ${senza.length - altreRegole.length}`);
 
     // spacco dei senza-punti: partnership (righe AZIENDA) vs orfani veri
     const righePr = aw3?.righe || [];

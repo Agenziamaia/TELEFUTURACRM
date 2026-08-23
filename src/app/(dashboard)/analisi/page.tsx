@@ -65,12 +65,19 @@ function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, idxDi) {
     };
     for (const c of rw3) {
         const set = tw3 ? matchRigheAttivazione(tw3.righe, c, brandIdDaLabel(c.brand) || "windtre") : [];
-        // TELEFONI GA A RATE W3 (Luca 23/08): «non fanno avanzamento in
-        // punteggio ma solo pay» — pezzi nella barra dei telefoni GA e BASTA,
-        // mai nel triangolo «senza punti» (non sono un'anomalia). I finanziati
-        // GA hanno l'1,25 e agganciano le loro righe; i CB vivono in Partnership.
-        const gaPayOnly = !set.length && /^telefono a rate/i.test(String(c.categoria || "")) && !/cb\s*$/i.test(String(c.prodotto || ""));
-        push(c, "w3", set, { senzaRiga: !set.length && !gaPayOnly });
+        // TRIANGOLO = SOLO ANOMALIE VERE (Luca 23/08): chi «fa parte di altre
+        // regole» non va segnalato come senza punti. Fuori dal triangolo:
+        // — telefoni GA a rate: solo pay, niente avanzamento (pezzi in barra);
+        // — telefoni CB (Tel. Rate CB / Finanziato CB): maturano nella gara
+        //   Partnership, conteggio parallelo con le sue regole;
+        // — assicurazioni: contano a pezzi sui target di gruppo, non a punti.
+        const cat = String(c.categoria || ""), prod = String(c.prodotto || "");
+        const telRate = /^telefono a rate/i.test(cat);
+        const altreRegole = !set.length && (
+            telRate                                              // GA (pay-only) e CB (Partnership)
+            || /assicurazion/i.test(prod + " " + cat)            // target di gruppo
+        );
+        push(c, "w3", set, { senzaRiga: !set.length && !altreRegole });
     }
     const inA = (c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
     for (const c of [...rvf, ...rfw.filter(inA)]) {
