@@ -812,7 +812,7 @@ function CartaOperatore({ brand, ctx, size }) {
                 dettaglio, click sull'anello = ANALISI ESPLOSA, lente 🔍 =
                 elenco contratti, countUp al centro e delta vs mese scorso. */}
             {contatori.length > 0 && (
-                <div className={cn("grid gap-3 mb-4 justify-items-center", size >= 4 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
+                <div className={cn("grid gap-3 mb-4 justify-items-center", size >= 6 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
                     {contatori.map((ct) => {
                         const toni = [G.colore, `${G.colore}B3`, `${G.colore}66`, `${G.colore}40`];
                         const fmtV = (v, u) => (u === "pt" ? `${fmtPt(v)} pt` : `${fmtN(v)} pz`);
@@ -827,7 +827,7 @@ function CartaOperatore({ brand, ctx, size }) {
                                 className="flex flex-col items-center gap-1 cursor-pointer group select-none"
                                 title="Clicca per l'analisi della pista: sottogruppi e spaccato per offerta">
                                 <div className="transition-transform duration-200 group-hover:scale-[1.05]">
-                                    <Donut size={size >= 4 ? 126 : 112} spessore={13} unit={ct.unit === "pt" ? "punti" : "pezzi"} slices={slices}
+                                    <Donut size={size >= 6 ? 126 : 112} spessore={13} unit={ct.unit === "pt" ? "punti" : "pezzi"} slices={slices}
                                         centro={<>
                                             <span className="text-lg font-black text-white tabular-nums leading-none"><Num v={ct.val} punti={ct.unit === "pt"} /></span>
                                             <span className="text-[8px] text-slate-500 uppercase tracking-wider mt-0.5">{ct.unit === "pt" ? "punti" : "pezzi"}</span>
@@ -852,10 +852,10 @@ function CartaOperatore({ brand, ctx, size }) {
                 </div>
             )}
 
-            <div className={cn(brand === "sky" ? cn("flex gap-4", size >= 4 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start") : "")}>
+            <div className={cn(brand === "sky" ? cn("flex gap-4", size >= 6 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start") : "")}>
                 {brand === "sky" && (
                     <div className="shrink-0 mx-auto sm:mx-0">
-                        <Donut size={size >= 4 ? 168 : 138} unit="punti"
+                        <Donut size={size >= 6 ? 168 : 138} unit="punti"
                             slices={righe.map((r) => ({ label: r.label, emoji: r.emoji, colore: r.colore, val: somma(r.items), det: [{ l: "pezzi", r: fmtN(r.items.length) }, { l: "punti", r: fmtPt(somma(r.items)) }] }))}
                             centro={<>
                                 <span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={punti} punti /></span>
@@ -930,9 +930,9 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
     return (
         <div>
             <p className="text-[10px] text-slate-500 mb-3 tabular-nums">{fmtN(sue.length)} pezzi <span className="text-slate-600">· fuori dalle gare a punti: si conta a pezzi</span></p>
-            <div className={cn("flex gap-4", size >= 4 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start")}>
+            <div className={cn("flex gap-4", size >= 6 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start")}>
                 <div className="shrink-0 mx-auto sm:mx-0">
-                    <Donut size={size >= 4 ? 160 : 132} unit="pezzi"
+                    <Donut size={size >= 6 ? 160 : 132} unit="pezzi"
                         slices={righe.map((r, i) => ({
                             label: r.label, colore: coloreRiga(r.label, i), val: r.items.length,
                             det: Object.entries(r.items.reduce((m, it) => { const k = String(it.offerta || it.prodotto || "—").slice(0, 26); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, q]) => ({ l: p, r: fmtN(q) })),
@@ -989,7 +989,7 @@ function WidgetMarg({ ctx, size }) {
     const topProdotti = useMemo(() => {
         const per = {};
         for (const r of righe) { const k = r.prodotto || "—"; (per[k] ??= { val: 0, qty: 0 }); per[k].val += valDi(r); per[k].qty += qtyDi(r); }
-        return Object.entries(per).sort((a, b) => b[1].val - a[1].val).slice(0, size >= 4 ? 10 : 6);
+        return Object.entries(per).sort((a, b) => b[1].val - a[1].val).slice(0, size >= 6 ? 10 : 6);
     }, [righe, size]);
     const perGiorno = useMemo(() => {
         const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [], chiuso: !!ctx.chiusi?.[i] }));
@@ -1000,7 +1000,7 @@ function WidgetMarg({ ctx, size }) {
 
     if (!righe.length) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna vendita di marginalità nel periodo.</p>;
     return (
-        <div className={cn("flex gap-5", size >= 4 ? "flex-col lg:flex-row" : "flex-col")}>
+        <div className={cn("flex gap-5", size >= 6 ? "flex-col lg:flex-row" : "flex-col")}>
             <div className="flex items-start gap-4 shrink-0">
                 <Donut size={156} unit="€ venduti"
                     slices={perCat.map(([c, v], i) => ({ label: c, emoji: icona(c), colore: COLORI[i % COLORI.length], val: Math.round(v.val), det: [{ l: "pezzi", r: fmtN(v.qty) }, ...Object.entries(v.prodotti).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, q]) => ({ l: p.slice(0, 26), r: fmtEuro(q) }))] }))}
@@ -1021,7 +1021,7 @@ function WidgetMarg({ ctx, size }) {
             <div className="flex-1 min-w-0">
                 <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1.5">Top prodotti (per venduto)</p>
                 <RaceBars unit="€" righe={topProdotti.map(([p, v], i) => ({ k: p, label: p, val: Math.round(v.val), colore: COLORI[i % COLORI.length], det: [{ l: "venduto", r: fmtEuro(v.val) }, { l: "pezzi", r: fmtN(v.qty) }, { l: "categoria", r: catDi(p) }] }))} />
-                {size >= 4 && <div className="mt-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1.5">Ritmo del mese (€ venduti)</p><HeatCal giorni={perGiorno} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} colore="#22c55e" unit="€ venduti" /></div>}
+                {size >= 6 && <div className="mt-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1.5">Ritmo del mese (€ venduti)</p><HeatCal giorni={perGiorno} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} colore="#22c55e" unit="€ venduti" /></div>}
                 <p className="mt-2 text-[10px] text-slate-600">valore VENDUTO · nella sezione a valore arriverà l'UTILE: pagato dei contratti + ricavo marginalità al netto di IVA e costi</p>
             </div>
         </div>
@@ -1376,32 +1376,32 @@ function WidgetMixPezzi({ ctx }) {
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════ */
 export const REGISTRO = {
-    "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 2, solo: null, logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
-    "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
-    "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
-    "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
-    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", logoColore: "#06b6d4", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
+    "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 4, solo: null, logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
+    "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 4, logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
+    "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 4, logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
+    "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 4, logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
+    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 8, logoChiave: "marginalita", logoColore: "#06b6d4", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
     // ── gli ALTRI operatori (Luca 21/08: «a disposizione nei widget», fuori
     //    dal layout di default — si aggiungono dalla galleria) ─────────────
-    "op:s4": { nome: "S4 Energia", emoji: "🟢", gruppo: "operatori", def: 2, logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="s4" nome="S4 Energia" ctx={ctx} size={size} /> },
-    "op:tim": { nome: "TIM", emoji: "🔵", gruppo: "operatori", def: 2, logoChiave: "tim", logoColore: HEX_BRAND.tim, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="tim" nome="TIM" ctx={ctx} size={size} /> },
-    "op:very": { nome: "Very Mobile", emoji: "🟩", gruppo: "operatori", def: 2, logoChiave: "verymobile", logoColore: HEX_BRAND.verymobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="verymobile" nome="Very Mobile" ctx={ctx} size={size} /> },
-    "op:iliad": { nome: "Iliad", emoji: "🟥", gruppo: "operatori", def: 2, logoChiave: "iliad", logoColore: HEX_BRAND.iliad, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="iliad" nome="Iliad" ctx={ctx} size={size} /> },
-    "op:ho": { nome: "Ho. Mobile", emoji: "🟪", gruppo: "operatori", def: 2, logoChiave: "homobile", logoColore: HEX_BRAND.homobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="homobile" nome="Ho. Mobile" ctx={ctx} size={size} /> },
-    "op:kena": { nome: "Kena Mobile", emoji: "🟠", gruppo: "operatori", def: 2, logoChiave: "kenamobile", logoColore: HEX_BRAND.kenamobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="kenamobile" nome="Kena Mobile" ctx={ctx} size={size} /> },
-    "op:dojo": { nome: "Dojo", emoji: "🟦", gruppo: "operatori", def: 2, logoChiave: "dojo", logoColore: HEX_BRAND.dojo, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="dojo" nome="Dojo" ctx={ctx} size={size} /> },
-    "posizioni": { nome: "Posizioni per operatore", emoji: "🏅", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetPosizioni ctx={ctx} /> },
-    "bersaglio": { nome: "Bersagli da superare", emoji: "🎯", gruppo: "obiettivi", def: 1, solo: "io", render: (ctx) => <WidgetBersaglio ctx={ctx} /> },
-    "pesonegozi": { nome: "Il mio peso nei negozi", emoji: "⚖️", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetPesoNegozi ctx={ctx} /> },
-    "squadra:pezzi": { nome: "Squadra — per pezzi", emoji: "🏆", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="pezzi" /> },
-    "squadra:w3": { nome: "Squadra — punti WindTre", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "windtre", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="w3" /> },
-    "squadra:vf": { nome: "Squadra — punti Vodafone", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "vodafone", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="vf" /> },
-    "squadra:sky": { nome: "Squadra — punti Sky", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "sky", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="sky" /> },
-    "duello": { nome: "Duello tra negozi", emoji: "⚔️", gruppo: "squadra", def: 1, solo: "negozio", render: (ctx) => <WidgetDuello ctx={ctx} /> },
-    "mix:pezzi": { nome: "Mix operatori (pezzi)", emoji: "🧬", gruppo: "andamento", def: 1, render: (ctx) => <WidgetMixPezzi ctx={ctx} /> },
+    "op:s4": { nome: "S4 Energia", emoji: "🟢", gruppo: "operatori", def: 4, logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="s4" nome="S4 Energia" ctx={ctx} size={size} /> },
+    "op:tim": { nome: "TIM", emoji: "🔵", gruppo: "operatori", def: 4, logoChiave: "tim", logoColore: HEX_BRAND.tim, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="tim" nome="TIM" ctx={ctx} size={size} /> },
+    "op:very": { nome: "Very Mobile", emoji: "🟩", gruppo: "operatori", def: 4, logoChiave: "verymobile", logoColore: HEX_BRAND.verymobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="verymobile" nome="Very Mobile" ctx={ctx} size={size} /> },
+    "op:iliad": { nome: "Iliad", emoji: "🟥", gruppo: "operatori", def: 4, logoChiave: "iliad", logoColore: HEX_BRAND.iliad, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="iliad" nome="Iliad" ctx={ctx} size={size} /> },
+    "op:ho": { nome: "Ho. Mobile", emoji: "🟪", gruppo: "operatori", def: 4, logoChiave: "homobile", logoColore: HEX_BRAND.homobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="homobile" nome="Ho. Mobile" ctx={ctx} size={size} /> },
+    "op:kena": { nome: "Kena Mobile", emoji: "🟠", gruppo: "operatori", def: 4, logoChiave: "kenamobile", logoColore: HEX_BRAND.kenamobile, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="kenamobile" nome="Kena Mobile" ctx={ctx} size={size} /> },
+    "op:dojo": { nome: "Dojo", emoji: "🟦", gruppo: "operatori", def: 4, logoChiave: "dojo", logoColore: HEX_BRAND.dojo, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="dojo" nome="Dojo" ctx={ctx} size={size} /> },
+    "posizioni": { nome: "Posizioni per operatore", emoji: "🏅", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetPosizioni ctx={ctx} /> },
+    "bersaglio": { nome: "Bersagli da superare", emoji: "🎯", gruppo: "obiettivi", def: 2, solo: "io", render: (ctx) => <WidgetBersaglio ctx={ctx} /> },
+    "pesonegozi": { nome: "Il mio peso nei negozi", emoji: "⚖️", gruppo: "obiettivi", def: 4, solo: "io", render: (ctx) => <WidgetPesoNegozi ctx={ctx} /> },
+    "squadra:pezzi": { nome: "Squadra — per pezzi", emoji: "🏆", gruppo: "squadra", def: 4, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="pezzi" /> },
+    "squadra:w3": { nome: "Squadra — punti WindTre", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "windtre", gruppo: "squadra", def: 4, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="w3" /> },
+    "squadra:vf": { nome: "Squadra — punti Vodafone", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "vodafone", gruppo: "squadra", def: 4, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="vf" /> },
+    "squadra:sky": { nome: "Squadra — punti Sky", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "sky", gruppo: "squadra", def: 4, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="sky" /> },
+    "duello": { nome: "Duello tra negozi", emoji: "⚔️", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetDuello ctx={ctx} /> },
+    "mix:pezzi": { nome: "Mix operatori (pezzi)", emoji: "🧬", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMixPezzi ctx={ctx} /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
 export const DEFAULT_LAYOUT = {
-    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "op:s4@1", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mix:pezzi@1"],
-    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "op:s4@1", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "squadra:w3@2"],
+    io: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "posizioni@2", "bersaglio@2", "pesonegozi@4", "marg@8", "mix:pezzi@2"],
+    negozio: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "squadra:pezzi@4", "duello@2", "mix:pezzi@2", "marg@8", "squadra:w3@4"],
 };

@@ -45,7 +45,19 @@ const ymISO = ({ y, m }) => `${y}-${String(m).padStart(2, "0")}`;
 const ymPrec = ({ y, m }) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 });
 const giorniDelMese = ({ y, m }) => new Date(y, m, 0).getDate();
 const oggiISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-const SPAN = { 1: "sm:col-span-1", 2: "sm:col-span-2", 4: "sm:col-span-2 xl:col-span-4" };
+// GRIGLIA A 8 COLONNE (Luca 24/08: «più misure» + resize a scatto): le
+// taglie sono OTTAVI della riga su desktop; su tablet degradano a 1-2
+// colonne, su telefono tutto in colonna. Classi literal per il JIT.
+const SPAN = {
+    1: "xl:col-span-1",
+    2: "sm:col-span-1 xl:col-span-2",
+    3: "sm:col-span-2 xl:col-span-3",
+    4: "sm:col-span-2 xl:col-span-4",
+    5: "sm:col-span-2 xl:col-span-5",
+    6: "sm:col-span-2 xl:col-span-6",
+    7: "sm:col-span-2 xl:col-span-7",
+    8: "sm:col-span-2 xl:col-span-8",
+};
 const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
 
 /* ── arricchimento (lente ragazzi): vendita → punti + campi dettaglio.
@@ -428,16 +440,25 @@ function AnalisiInner() {
     }, [items, itemsPrev, negozi.join("|"), collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
 
     // ── layout per area (app_users.analisi_layout) ────────────────────────
-    const decode = (arr) => (Array.isArray(arr) ? arr : []).map((s) => { const [k, t] = String(s).split("@"); return REGISTRO[k] ? { k, s: [1, 2, 4].includes(Number(t)) ? Number(t) : (REGISTRO[k].def || 1) } : null; }).filter(Boolean);
+    // taglie in OTTAVI (1..8). I layout salvati prima della griglia a 8
+    // (senza __v) vengono rimappati: 1→2, 2→4, 4→8.
+    const decode = (arr, vecchio = false) => (Array.isArray(arr) ? arr : []).map((s) => {
+        const [k, t] = String(s).split("@");
+        if (!REGISTRO[k]) return null;
+        let n = Number(t);
+        if (vecchio) n = n === 1 ? 2 : n === 2 ? 4 : n === 4 ? 8 : n;
+        return { k, s: n >= 1 && n <= 8 ? Math.round(n) : (REGISTRO[k].def || 2) };
+    }).filter(Boolean);
     const [layoutIo, setLayoutIo] = useState(null);
     const [layoutNeg, setLayoutNeg] = useState(null);
     useEffect(() => {
         if (loading) return;
-        setLayoutIo((cur) => cur ?? (decode(layoutSalvato?.io).length ? decode(layoutSalvato.io) : decode(DEFAULT_LAYOUT.io)));
-        setLayoutNeg((cur) => cur ?? (decode(layoutSalvato?.negozio).length ? decode(layoutSalvato.negozio) : decode(DEFAULT_LAYOUT.negozio)));
+        const vecchio = !((layoutSalvato?.__v || 0) >= 8);
+        setLayoutIo((cur) => cur ?? (decode(layoutSalvato?.io, vecchio).length ? decode(layoutSalvato.io, vecchio) : decode(DEFAULT_LAYOUT.io)));
+        setLayoutNeg((cur) => cur ?? (decode(layoutSalvato?.negozio, vecchio).length ? decode(layoutSalvato.negozio, vecchio) : decode(DEFAULT_LAYOUT.negozio)));
     }, [loading, layoutSalvato]);
     const salva = async (areaKey, lista) => {
-        const next = { ...(layoutSalvato || {}), [areaKey]: lista.map((w) => `${w.k}@${w.s}`) };
+        const next = { ...(layoutSalvato || {}), __v: 8, [areaKey]: lista.map((w) => `${w.k}@${w.s}`) };
         setLayoutSalvato(next);
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
@@ -612,8 +633,31 @@ function AnalisiInner() {
 function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     const [galleria, setGalleria] = useState(false);
     const dragDa = useRef(null);
+    const listaRef = useRef(lista);
+    useEffect(() => { listaRef.current = lista; }, [lista]);
     const muovi = (da, a) => { if (a < 0 || a >= lista.length) return; const next = [...lista]; const [w] = next.splice(da, 1); next.splice(a, 0, w); setLista(next); };
-    const taglia = (i) => { const next = [...lista]; next[i] = { ...next[i], s: next[i].s === 1 ? 2 : next[i].s === 2 ? 4 : 1 }; setLista(next); };
+    const taglia = (i) => { const STEP = { 1: 2, 2: 4, 3: 4, 4: 6, 5: 6, 6: 8, 7: 8, 8: 2 }; const next = [...lista]; next[i] = { ...next[i], s: STEP[next[i].s] || 4 }; setLista(next); };
+    // RESIZE A SCATTO (Luca 24/08: «come le finestre, ma che non si rompa»):
+    // trascini l'angolo, la card segue LIVE scattando sulle 8 colonne; al
+    // rilascio la taglia è già salvata dall'ultimo scatto applicato.
+    const iniziaResize = (e, i) => {
+        e.preventDefault(); e.stopPropagation();
+        const grid = e.currentTarget.closest(".tf-griglia");
+        const card = e.currentTarget.closest(".an-card");
+        if (!grid || !card) return;
+        const colW = grid.getBoundingClientRect().width / 8;
+        const left = card.getBoundingClientRect().left;
+        let ultimo = lista[i]?.s;
+        const onMove = (ev) => {
+            const span = Math.min(8, Math.max(1, Math.round((ev.clientX - left) / colW)));
+            if (span === ultimo) return;
+            ultimo = span;
+            setLista(listaRef.current.map((w, j) => (j === i ? { ...w, s: span } : w)));
+        };
+        const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    };
     const rimuovi = (i) => setLista(lista.filter((_, j) => j !== i));
     const aggiungi = (k) => { setLista([...lista, { k, s: REGISTRO[k].def || 1 }]); setGalleria(false); };
     const presenti = new Set(lista.map((w) => w.k));
@@ -628,11 +672,11 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                     <button onClick={() => setLista(DEFAULT_LAYOUT[areaKey].map((s) => { const [k, t] = s.split("@"); return { k, s: Number(t) }; }))} title="Ripristina layout" className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 transition-colors"><RotateCcw className="w-3 h-3" /></button>
                 </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" style={{ gridAutoFlow: "row dense" }}>
+            <div className="tf-griglia grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-8 gap-4 items-start" style={{ gridAutoFlow: "row dense" }}>
                 {lista.map((w, i) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
-                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg", SPAN[w.s])} style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
+                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative", SPAN[w.s])} style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
                             onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragDa.current != null) muovi(dragDa.current, i); dragDa.current = null; }}>
                             <div className="flex items-center justify-between gap-2 mb-3">
                                 <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0">
@@ -649,11 +693,16 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                 <div className="flex gap-0.5 opacity-0 group-hover/wg:opacity-100 transition-opacity shrink-0">
                                     <button onClick={() => muovi(i, i - 1)} title="Sposta prima" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-white/10">◀</button>
                                     <button onClick={() => muovi(i, i + 1)} title="Sposta dopo" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-white/10">▶</button>
-                                    <button onClick={() => taglia(i)} title="Cambia taglia" className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-slate-400 hover:bg-white/10">{w.s === 1 ? "1️⃣" : w.s === 2 ? "2️⃣" : "🖥"}</button>
+                                    <button onClick={() => taglia(i)} title="Cambia taglia — o trascina l'angolo in basso a destra" className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-slate-400 hover:bg-white/10 tabular-nums">{w.s}∕8</button>
                                     <button onClick={() => rimuovi(i)} title="Rimuovi" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="w-3 h-3" /></button>
                                 </div>
                             </div>
                             {def.render(ctx, w.s)}
+                            <span onPointerDown={(e) => iniziaResize(e, i)}
+                                title="Trascina: la card scatta sulle colonne della griglia"
+                                className="absolute bottom-1 right-1 w-4 h-4 cursor-ew-resize opacity-0 group-hover/wg:opacity-60 hover:!opacity-100 text-slate-400 hover:text-white z-10 touch-none select-none">
+                                <svg viewBox="0 0 16 16" className="w-4 h-4"><path d="M14 6 L6 14 M14 10 L10 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /></svg>
+                            </span>
                         </div>
                     );
                 })}
