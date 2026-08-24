@@ -297,19 +297,24 @@ export function TimelineHero({ ctx, tecnico = false }) {
             sr.giorni.set(g, gg);
             out.set(key, sr);
         };
+        // gare + altri operatori per TUTTI (correzione Luca 24/08: il tecnico
+        // che «vende qualcosa in servizi» deve vedere anche quello)
+        for (const it of ctx.items) {
+            const G = GARA[it.brandGara];
+            if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto, 1, pistaTimelineDi(it.brandGara, it));
+        }
+        for (const r of (ctx.altri || [])) {
+            const k = trkBrandKey(r.brand);
+            if (!k) continue;
+            add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto, 1, k === "s4" ? pistaTimelineDi("s4", r) : null);
+        }
         if (tecnico) {
-            // il tecnico vede la SUA produzione: la marginalità in FATTURATO
+            // …e SOLO il tecnico ha in più la Marginalità, in FATTURATO €:
+            // unità incompatibile coi pezzi → mai nella stessa barra (la pill
+            // attraversa i due mondi isolando)
             for (const r of (ctx.ext || [])) add("marg", "Marginalità", HEX_BRAND.marginalita || "#06b6d4", "marginalita", r.g, r.prodotto, Number(r.prezzo) || 0);
-        } else {
-            for (const it of ctx.items) {
-                const G = GARA[it.brandGara];
-                if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto, 1, pistaTimelineDi(it.brandGara, it));
-            }
-            for (const r of (ctx.altri || [])) {
-                const k = trkBrandKey(r.brand);
-                if (!k) continue;
-                add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto, 1, k === "s4" ? pistaTimelineDi("s4", r) : null);
-            }
+            const m = out.get("marg");
+            if (m) m.euro = true;
         }
         const ordine = ["w3", "vf", "fw", "sky", "marg"];
         return [...out.values()].sort((a, b) => {
@@ -325,15 +330,23 @@ export function TimelineHero({ ctx, tecnico = false }) {
     // cambio di persona osservata, area o modalità → pill tutte riaccese
     // (rilievo revisore: la selezione su A non deve svuotare il grafico di B)
     useEffect(() => { setSpenti(new Set()); setPisteSpente(new Set()); }, [tecnico, ctx.areaKey, ctx.persona, ctx.negozio]);
+    // la marg (€) DOMINA quando accesa: le serie a pezzi restano fuori dalla
+    // barra (unità diverse) — le loro pill appaiono spente e il click le isola
+    const margAccesa = useMemo(() => serie.some((sr) => sr.key === "marg" && !spenti.has(sr.key)), [serie, spenti]);
     // cambio del brand isolato (o uscita dal drill) → piste tutte riaccese
     const soloKey = useMemo(() => {
-        const accese = serie.filter((sr) => !spenti.has(sr.key));
+        const accese = margAccesa ? serie.filter((sr) => sr.key === "marg") : serie.filter((sr) => !spenti.has(sr.key));
         return accese.length === 1 ? accese[0].key : null;
-    }, [serie, spenti]);
+    }, [serie, spenti, margAccesa]);
     useEffect(() => { setPisteSpente(new Set()); }, [soloKey]);
     const toggle = (k) => setSpenti((prev) => {
         const tutte = serie.map((sr) => sr.key);
+        const haMarg = tutte.includes("marg");
         const accese = tutte.filter((key) => !prev.has(key));
+        const margAcc = haMarg && accese.includes("marg");
+        // € e pezzi non convivono: il click che attraversa i mondi ISOLA
+        if (haMarg && k === "marg" && !margAcc) return new Set(tutte.filter((key) => key !== "marg"));
+        if (haMarg && margAcc && k !== "marg") return new Set(tutte.filter((key) => key !== k));
         // dalla situazione generale il click ISOLA il brand (Luca 24/08)…
         if (accese.length === tutte.length && tutte.length > 1) return new Set(tutte.filter((key) => key !== k));
         // …il click sull'unico acceso riporta al totale (mai grafico vuoto)
@@ -345,9 +358,9 @@ export function TimelineHero({ ctx, tecnico = false }) {
     });
     const { giorni, legenda } = useMemo(() => {
         const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, parti: [] }));
-        const topProd = (prod) => {
+        const topProd = (prod, euro = false) => {
             const top = [...prod.entries()].sort((a, b) => b[1] - a[1]);
-            return top.slice(0, 4).map(([nm, q]) => (tecnico ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
+            return top.slice(0, 4).map(([nm, q]) => (euro ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
         };
         // DRILL: un solo operatore acceso e con piste note → barre per pista
         const solo = soloKey ? serie.find((sr) => sr.key === soloKey) : null;
@@ -372,15 +385,15 @@ export function TimelineHero({ ctx, tecnico = false }) {
             return { giorni: v, legenda };
         }
         for (const sr of serie) {
-            if (spenti.has(sr.key)) continue;
+            if (spenti.has(sr.key) || (margAccesa && sr.key !== "marg")) continue;
             for (const [g, gg] of sr.giorni) {
-                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, prodotti: topProd(gg.prod) });
+                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, prodotti: topProd(gg.prod, !!sr.euro) });
                 v[g - 1].tot += gg.val;
             }
         }
         for (const g of v) g.parti.sort((a, b) => b.val - a.val);
         return { giorni: v, legenda: null };
-    }, [serie, spenti, soloKey, pisteSpente, ctx.nG, ctx.labels, tecnico]);
+    }, [serie, spenti, soloKey, pisteSpente, margAccesa, ctx.nG, ctx.labels, tecnico]);
     // «isola poi aggiungi» anche per le piste: dal drill completo il click
     // isola la categoria, i successivi aggiungono, l'ultimo acceso → tutte
     const togglePista = (pk) => setPisteSpente((prev) => {
@@ -396,20 +409,23 @@ export function TimelineHero({ ctx, tecnico = false }) {
     const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
     if (!serie.length) return tecnico ? (
         <div className="mt-3 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] text-[11px] text-slate-400">
-            Nessuna marginalità registrata nel periodo.
+            Nessuna produzione registrata nel periodo.
         </div>
     ) : null;
     return (
         <div className="relative mt-3">
-            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={tecnico ? "€" : "pz"} h={92} />
+            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={margAccesa ? "€" : "pz"} h={92} />
             <div className="mt-2 flex items-center gap-2 flex-wrap">
                 {serie.map((sr) => {
-                    const off = spenti.has(sr.key);
-                    const nAccese = serie.filter((x) => !spenti.has(x.key)).length;
-                    const azione = spenti.size === 0 && serie.length > 1 ? `Isola ${sr.label}` : off ? `Aggiungi ${sr.label}` : nAccese === 1 ? "Rimetti tutti i brand" : `Togli ${sr.label}`;
+                    const off = spenti.has(sr.key) || (margAccesa && sr.key !== "marg");
+                    const nAccese = margAccesa ? 1 : serie.filter((x) => !spenti.has(x.key)).length;
+                    const azione = sr.key === "marg" && !margAccesa ? "Passa alla marginalità (€)"
+                        : margAccesa && sr.key !== "marg" ? `Isola ${sr.label} (pezzi)`
+                        : spenti.size === 0 && serie.length > 1 && !margAccesa ? `Isola ${sr.label}`
+                        : off ? `Aggiungi ${sr.label}` : nAccese === 1 ? (tecnico ? "Torna alla marginalità" : "Rimetti tutti i brand") : `Togli ${sr.label}`;
                     return (
                         <button key={sr.key} onClick={() => toggle(sr.key)}
-                            title={`${azione} · ${fmtN(sr.tot)} ${tecnico ? "€" : "pz"} nel periodo`}
+                            title={`${azione} · ${fmtN(sr.tot)} ${sr.euro ? "€" : "pz"} nel periodo`}
                             className={cn("flex items-center px-2.5 py-1.5 rounded-lg border transition-all", off ? "border-white/10 bg-white/[0.02] opacity-35 grayscale" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.09]")}>
                             <LogoBrand chiave={sr.chiave} h={15} />
                         </button>
@@ -426,7 +442,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
                         </button>
                     );
                 })}
-                <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : legenda ? "barre per pista · click sulle categorie per isolarle o aggiungerle" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
+                <span className="text-[10px] text-slate-500 ml-1">{margAccesa ? "fatturato marginalità giorno per giorno · click su un logo per i pezzi" : legenda ? "barre per pista · click sulle categorie per isolarle o aggiungerle" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
             </div>
         </div>
     );
