@@ -319,9 +319,18 @@ export function TimelineHero({ ctx, tecnico = false }) {
         });
     }, [ctx.items, ctx.ext, ctx.altri, ctx.nG, tecnico]);
     const [spenti, setSpenti] = useState(() => new Set());
+    // dentro il drill si possono filtrare anche le SINGOLE PISTE (Luca 24/08:
+    // «il day by day delle singole categorie»): stessa logica isola/aggiungi
+    const [pisteSpente, setPisteSpente] = useState(() => new Set());
     // cambio di persona osservata, area o modalità → pill tutte riaccese
     // (rilievo revisore: la selezione su A non deve svuotare il grafico di B)
-    useEffect(() => { setSpenti(new Set()); }, [tecnico, ctx.areaKey, ctx.persona, ctx.negozio]);
+    useEffect(() => { setSpenti(new Set()); setPisteSpente(new Set()); }, [tecnico, ctx.areaKey, ctx.persona, ctx.negozio]);
+    // cambio del brand isolato (o uscita dal drill) → piste tutte riaccese
+    const soloKey = useMemo(() => {
+        const accese = serie.filter((sr) => !spenti.has(sr.key));
+        return accese.length === 1 ? accese[0].key : null;
+    }, [serie, spenti]);
+    useEffect(() => { setPisteSpente(new Set()); }, [soloKey]);
     const toggle = (k) => setSpenti((prev) => {
         const tutte = serie.map((sr) => sr.key);
         const accese = tutte.filter((key) => !prev.has(key));
@@ -341,8 +350,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
             return top.slice(0, 4).map(([nm, q]) => (tecnico ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
         };
         // DRILL: un solo operatore acceso e con piste note → barre per pista
-        const accese = serie.filter((sr) => !spenti.has(sr.key));
-        const solo = accese.length === 1 ? accese[0] : null;
+        const solo = soloKey ? serie.find((sr) => sr.key === soloKey) : null;
         const bk = solo ? (solo.key.startsWith("alt:") ? solo.key.slice(4) : solo.key) : null;
         const pisteDef = bk && PISTE_TL[bk] ? PISTE_TL[bk] : null;
         if (solo && pisteDef) {
@@ -353,13 +361,14 @@ export function TimelineHero({ ctx, tecnico = false }) {
             for (const [g, gg] of solo.giorni) {
                 // ordine piste FISSO giorno su giorno: stack leggibile, niente sort per valore
                 for (const [pk, lbl] of presenti) {
+                    if (pisteSpente.has(pk)) continue;
                     const pp = gg.pi?.get(pk);
                     if (!pp?.val) continue;
                     v[g - 1].parti.push({ label: lbl, colore: colori.get(pk), val: Math.round(pp.val * 100) / 100, prodotti: topProd(pp.prod) });
                     v[g - 1].tot += pp.val;
                 }
             }
-            const legenda = presenti.map(([pk, lbl]) => ({ k: pk, label: lbl, colore: colori.get(pk), tot: totPista.get(pk) || 0 }));
+            const legenda = presenti.map(([pk, lbl]) => ({ k: pk, label: lbl, colore: colori.get(pk), tot: totPista.get(pk) || 0, off: pisteSpente.has(pk) }));
             return { giorni: v, legenda };
         }
         for (const sr of serie) {
@@ -371,7 +380,18 @@ export function TimelineHero({ ctx, tecnico = false }) {
         }
         for (const g of v) g.parti.sort((a, b) => b.val - a.val);
         return { giorni: v, legenda: null };
-    }, [serie, spenti, ctx.nG, ctx.labels, tecnico]);
+    }, [serie, spenti, soloKey, pisteSpente, ctx.nG, ctx.labels, tecnico]);
+    // «isola poi aggiungi» anche per le piste: dal drill completo il click
+    // isola la categoria, i successivi aggiungono, l'ultimo acceso → tutte
+    const togglePista = (pk) => setPisteSpente((prev) => {
+        const tutte = (legenda || []).map((pz) => pz.k);
+        const accese = tutte.filter((key) => !prev.has(key));
+        if (accese.length === tutte.length && tutte.length > 1) return new Set(tutte.filter((key) => key !== pk));
+        if (accese.length === 1 && accese[0] === pk) return new Set();
+        const n = new Set(prev);
+        if (n.has(pk)) n.delete(pk); else n.add(pk);
+        return n;
+    });
     const totale = giorni.reduce((sm, g) => sm + g.tot, 0);
     const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
     if (!serie.length) return tecnico ? (
@@ -395,13 +415,18 @@ export function TimelineHero({ ctx, tecnico = false }) {
                         </button>
                     );
                 })}
-                {legenda && legenda.map((pz) => (
-                    <span key={pz.k} className="flex items-center gap-1.5 text-[10px] text-slate-300 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/10">
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pz.colore, boxShadow: `0 0 5px ${pz.colore}66` }} />
-                        {pz.label} · <b className="text-slate-100">{fmtPt(pz.tot)}</b> pz
-                    </span>
-                ))}
-                <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : legenda ? "un solo operatore acceso: barre spaccate per pista" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
+                {legenda && legenda.map((pz) => {
+                    const nAcc = legenda.filter((x) => !x.off).length;
+                    const az = legenda.every((x) => !x.off) && legenda.length > 1 ? `Isola ${pz.label}` : pz.off ? `Aggiungi ${pz.label}` : nAcc === 1 ? "Rimetti tutte le categorie" : `Togli ${pz.label}`;
+                    return (
+                        <button key={pz.k} onClick={() => togglePista(pz.k)} title={az}
+                            className={cn("flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-lg border transition-all", pz.off ? "border-white/10 bg-white/[0.02] text-slate-500 opacity-40 grayscale" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.09]")}>
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pz.colore, boxShadow: pz.off ? "none" : `0 0 5px ${pz.colore}66` }} />
+                            {pz.label} · <b className="text-slate-100">{fmtPt(pz.tot)}</b> pz
+                        </button>
+                    );
+                })}
+                <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : legenda ? "barre per pista · click sulle categorie per isolarle o aggiungerle" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
             </div>
         </div>
     );
@@ -426,7 +451,10 @@ function contatoriPiste(brand, sue, prev) {
     // sorgenti: {l, v, u, items} — u "pt" o "pz"; righe a 0 non si mostrano;
     // gli items della sorgente alimentano l'ANALISI ESPLOSA (📊, Luca 24/08)
     const add = (chiave, label, emoji, unit, items, prevItems, sorgenti = [], nota = null) => {
-        if (!items.length && !(prevItems || []).length) return;
+        // REGOLA LUCA 24/08 (caso Damiano/Assicurazioni): i contatori di
+        // pista si mostrano SEMPRE, anche a 0 — sparisce solo il catch-all
+        // "Altro", che non è una pista di gara ma un residuo
+        if (chiave === "altro" && !items.length && !(prevItems || []).length) return;
         out.push({
             chiave, label, emoji, unit, items,
             val: unit === "pt" ? S(items) : items.length,
