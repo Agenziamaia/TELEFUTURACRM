@@ -31,6 +31,7 @@ import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
 import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, fmtN } from "./_charts";
 import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero } from "./_widgets";
+import { CoronaOro } from "@/components/IconaCorona";
 import { Master } from "./_master";
 
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
@@ -494,7 +495,7 @@ function AnalisiInner() {
                         <button key={a.id} onClick={() => vaiArea(a.id)}
                             className="an-in text-left rounded-3xl border border-white/10 bg-[#0d1022]/80 p-6 hover:border-indigo-400/50 hover:-translate-y-1 transition-all duration-300 group"
                             style={{ animationDelay: `${i * 70}ms` }}>
-                            <div className="text-4xl mb-3 transition-transform duration-300 group-hover:scale-110">{a.emoji}</div>
+                            <div className="text-4xl mb-3 transition-transform duration-300 group-hover:scale-110">{a.id === "regia" ? <CoronaOro h={40} /> : a.emoji}</div>
                             <p className="text-lg font-black text-white">{a.label}</p>
                             <p className="text-xs text-slate-400 mt-1 leading-relaxed">{DESC[a.id]}</p>
                             <p className="text-[11px] font-bold text-indigo-300 mt-3">Entra →</p>
@@ -526,7 +527,7 @@ function AnalisiInner() {
                 <div className="relative flex flex-wrap items-center gap-3 justify-between">
                     <div className="flex items-center gap-2.5">
                         <button onClick={() => vaiArea("")} title="Tutte le aree" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-                        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">📊 Analisi <span className="text-slate-500 font-bold">·</span> {AREE.find((a) => a.id === area)?.emoji} {AREE.find((a) => a.id === area)?.label}</h1>
+                        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">📊 Analisi <span className="text-slate-500 font-bold">·</span> {area === "regia" ? <CoronaOro h={22} className="-mt-1 mr-0.5" /> : AREE.find((a) => a.id === area)?.emoji} {AREE.find((a) => a.id === area)?.label}</h1>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 justify-end">
                         <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">

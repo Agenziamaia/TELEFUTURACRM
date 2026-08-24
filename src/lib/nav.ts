@@ -20,8 +20,9 @@ import {
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
-    BarChart3, Receipt,
+    BarChart3, Receipt, User, Globe,
 } from "lucide-react";
+import { CoronaIcona } from "@/components/IconaCorona";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
 export type NavLink = { name: string; href: string; icon: NavIcon; roles: string[] };
@@ -62,12 +63,12 @@ export const NAVIGATION: NavEntry[] = [
         // freccetta → sottomenu con le aree; prima era senzaSottomenu.
         type: "hub", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"],
         children: [
-            { name: "Io", sez: "io", emoji: "👤", roles: ["admin", "dev"] },
-            { name: "Negozio", sez: "negozio", emoji: "🏪", roles: ["admin", "dev"] },
-            { name: "Rete", sez: "rete", emoji: "🌍", roles: ["admin", "dev"] },
+            { name: "Io", sez: "io", icon: User, roles: ["admin", "dev"] },
+            { name: "Negozio", sez: "negozio", icon: Store, roles: ["admin", "dev"] },
+            { name: "Rete", sez: "rete", icon: Globe, roles: ["admin", "dev"] },
             // "Master" per Luca (21/08): la sez resta "regia" — è la chiave di
             // permesso già concessa, cambiarla scollegherebbe le righe esistenti
-            { name: "Master", sez: "regia", emoji: "🎛", roles: ["admin", "dev"] },
+            { name: "Master", sez: "regia", icon: CoronaIcona, roles: ["admin", "dev"] },
         ],
     },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
