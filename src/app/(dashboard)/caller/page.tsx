@@ -448,10 +448,15 @@ function VenditeSegnalateApprovazione({ lista, calls, utente, chiudi, onDecisa }
         if (mancanti.length) { setBusy(false); setErrA(`Vendite non trovate: ${mancanti.join(", ")}`); return; }
         const c = callDi(a);
         const now = new Date().toISOString();
+        // rilievo revisore: se il match VERO ha già attivato la lead, lo
+        // stato non si tocca (niente declassamenti) — resta la traccia
+        const giaAttivata = /^attivat/i.test(String(c?.stato || ""));
         const storico = [...((c?.storico as StoricoEntry[]) || []),
             { data: now, caller: utente, campo: "Vendita collegata", da: "", a: `✅ Cooperation APPROVATA da ${utente} — vendite di ${a.cliente_nome} ${a.cliente_cognome}: ${ids.join(", ")}` },
-            { data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Cooperation" }];
-        const { error } = await supabase.from("calls").update({ stato: "Attivato Cooperation", da_esitare: false, storico }).eq("id", a.call_id);
+            ...(giaAttivata ? [] : [{ data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Cooperation" }])];
+        const upd: Record<string, unknown> = { da_esitare: false, storico };
+        if (!giaAttivata) upd.stato = "Attivato Cooperation";
+        const { error } = await supabase.from("calls").update(upd).eq("id", a.call_id);
         if (error) { setBusy(false); setErrA(error.message); return; }
         await supabase.from("caller_vendite_segnalate").update({ stato: "approvata", contract_ids: ids, decisa_da: utente, decisa_il: now }).eq("id", a.id);
         setBusy(false); setApertaId(null);
@@ -1139,7 +1144,7 @@ function CallerPageInner() {
             tipo: "vendita_segnalata",
             titolo: `🔗 Vendita collegata da approvare: ${f.nome.trim()} ${f.cognome.trim()} (${f.negozio.trim()})`,
             dettaglio: `${currentCaller} segnala che dall'appuntamento della lead è nata una vendita a nome ${f.nome.trim()} ${f.cognome.trim()} il ${f.giorno} presso ${f.negozio.trim()}. Dal Caller, bottone 🔗 «Vendite segnalate»: approva collegando la vendita.`,
-            link: "/caller", target_role: "admin", created_by: currentCaller,
+            link: "/caller", target_role: "direzione", created_by: currentCaller,
         }).then(({ error: eT }) => { if (eT) console.warn("admin_tasks:", eT.message); });
         setSegnalaBusy(false); setSegnalaOpen(false);
         caricaSegnalate();
@@ -2374,14 +2379,14 @@ function CallerPageInner() {
                         ) : null;
                     })()}
                     {/* ANOMALIE IN APPROVAZIONE (Luca 24/08): coda amministrazione */}
-                    {puoApprovareAnomalie && anomalieAttesa.length > 0 && (
+                    {puoApprovareAnomalie && !isListeView && anomalieAttesa.length > 0 && (
                         <button type="button" onClick={() => setShowAnomalie(true)}
                             title="Proposte «Attivato Anomalia» da approvare collegando la vendita"
                             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors border-rose-400 bg-rose-500/20 text-rose-200 hover:bg-rose-500/30 shadow-lg shadow-rose-500/10">
                             🚩 Anomalie: {anomalieAttesa.length}
                         </button>
                     )}
-                    {puoApprovareAnomalie && vendSegnalate.length > 0 && (
+                    {puoApprovareAnomalie && !isListeView && vendSegnalate.length > 0 && (
                         <button type="button" onClick={() => setShowSegnalate(true)}
                             title="Vendite con altro nominativo segnalate dai caller: approva collegando la vendita → cooperation"
                             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors border-emerald-400 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 shadow-lg shadow-emerald-500/10">

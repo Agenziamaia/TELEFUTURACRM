@@ -1,4 +1,4 @@
-// APPLICA la migrazione 20260824190000 (tabella caller_vendite_segnalate —
+// APPLICA la migrazione 20260824260000 (tabella caller_vendite_segnalate —
 // segnalazioni vendita collegata dal caller). Idempotente.
 // Lancio: node apply_mig_caller_vendite_segnalate.js
 const fs = require("fs");
