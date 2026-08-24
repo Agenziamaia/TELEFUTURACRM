@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { aircallGet, puoAscoltareRegistrazioniServer } from "@/lib/aircall";
-import { capKey, CAP_CLIENTI_REGISTRAZIONI } from "@/lib/capabilities";
+import { capKey, capAllowed, CAP_CLIENTI_REGISTRAZIONI, CAP_CALLER_REG_STORICO } from "@/lib/capabilities";
+import type { PermMap } from "@/lib/nav";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,23 @@ export async function GET(request: Request) {
         if (u.grade) chiavi.push(`${u.role}@${u.grade}`);
         const { data: righe } = await supabase.from("role_permissions")
             .select("role, perm_key, allowed").in("role", chiavi)
-            .eq("perm_key", capKey("/clienti", CAP_CLIENTI_REGISTRAZIONI.id));
-        if (!puoAscoltareRegistrazioniServer(u.role, u.grade, (righe ?? []) as { role: string; perm_key: string; allowed: boolean }[], uid)) {
+            .in("perm_key", [capKey("/clienti", CAP_CLIENTI_REGISTRAZIONI.id), capKey("/caller", CAP_CALLER_REG_STORICO.id)]);
+        const righeArr = (righe ?? []) as { role: string; perm_key: string; allowed: boolean }[];
+        // seconda strada (Luca 24/08): la capability DEDICATA dello storico
+        // lavorazioni Caller (default solo admin) apre il proxy anche a chi
+        // NON ha la cap Clienti. Bypass righe solo per admin: cosi' un dev o
+        // qualsiasi ruolo si governa davvero dalla rotellina.
+        const okCallerStorico = (() => {
+            const m: PermMap = new Map();
+            const chiave = capKey("/caller", CAP_CALLER_REG_STORICO.id);
+            if (u.role !== "admin") {
+                righeArr.filter((r) => r.role === u.role && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
+                if (u.grade) righeArr.filter((r) => r.role === `${u.role}@${u.grade}` && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
+                righeArr.filter((r) => r.role === `user:${uid}` && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
+            }
+            return capAllowed(u.role, "/caller", CAP_CALLER_REG_STORICO, m);
+        })();
+        if (!puoAscoltareRegistrazioniServer(u.role, u.grade, righeArr, uid) && !okCallerStorico) {
             return NextResponse.json({ error: "Non hai il permesso di ascoltare le registrazioni (si abilita da Amministrazione → Permessi)" }, { status: 403 });
         }
         const info = await aircallGet(`/calls/${id}`);

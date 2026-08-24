@@ -345,6 +345,10 @@ export default function Analisi() {
             extPrev: (dati?.extPrev || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             altri: (dati?.altri || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             persona: collab || persona, negozio, negozi, negozioCasa: negozio,
+            // il sub di drill/pannelli nell'area NEGOZIO dice il negozio (o il
+            // collaboratore filtrato) — MAI la persona dell'area Io (refuso
+            // «di Eros Harzi» aprendo l'analisi di Acilia, Luca 24/08)
+            etichettaScope: collab ? `di ${collab}` : (negozi.length > 1 ? `${negozi.length} negozi` : negozio),
         };
     }, [items, itemsPrev, negozi.join("|"), collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
 

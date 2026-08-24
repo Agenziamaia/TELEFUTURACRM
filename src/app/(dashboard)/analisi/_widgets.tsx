@@ -374,24 +374,38 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
         const m = new Map();
         for (const it of items) {
             const k = String(it.offerta || it.prodotto || "—");
-            const r = m.get(k) || { pt: 0, pz: 0 };
+            const r = m.get(k) || { pt: 0, pz: 0, mnpPt: 0, mnpPz: 0 };
             r.pt = Math.round((r.pt + (it.punti || 0)) * 100) / 100; r.pz++;
+            // SPLIT MNP vs GA (Luca 24/08: «di quegli otto pezzi quanti hanno
+            // MNP e quanti no» — punteggi diversi): si legge dal prodotto
+            if (/mnp/i.test(String(it.prodotto || ""))) { r.mnpPt = Math.round((r.mnpPt + (it.punti || 0)) * 100) / 100; r.mnpPz++; }
             m.set(k, r);
         }
         return [...m.entries()].sort((a, b) => (aPunti ? b[1].pt - a[1].pt : b[1].pz - a[1].pz));
     };
+    // c'è almeno un'offerta MISTA nel tab attivo? → si accende la legenda
+    const conMix = useMemo(() => gruppi.some((g) => {
+        const m = new Map();
+        for (const it of g.items) {
+            const k = String(it.offerta || it.prodotto || "—");
+            const r = m.get(k) || { pz: 0, mnp: 0 };
+            r.pz++; if (/mnp/i.test(String(it.prodotto || ""))) r.mnp++;
+            m.set(k, r);
+        }
+        return [...m.values()].some((r) => r.mnp > 0 && r.mnp < r.pz);
+    }), [gruppi]);
     return createPortal(
         <div className={cn("an-scuro fixed inset-0 z-[9990] flex items-center justify-center p-4 transition-opacity duration-300", on ? "opacity-100" : "opacity-0")}
             style={{ background: "rgba(2,6,17,.78)", backdropFilter: "blur(6px)" }} onClick={chiudi}>
             <div onClick={(e) => e.stopPropagation()}
-                className={cn("w-full max-w-5xl max-h-[88vh] overflow-y-auto rounded-3xl border p-6 transition-all duration-300", on ? "scale-100 translate-y-0" : "scale-[.96] translate-y-3")}
+                className={cn("w-full max-w-[min(94vw,1420px)] max-h-[92vh] overflow-y-auto rounded-3xl border p-6 transition-all duration-300", on ? "scale-100 translate-y-0" : "scale-[.96] translate-y-3")}
                 style={{ background: "linear-gradient(160deg, #0c1224, #090d1c 60%)", borderColor: `${G.colore}55`, boxShadow: `0 24px 90px rgba(0,0,0,.6), 0 0 60px ${G.colore}22` }}>
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
                     <div className="flex items-center gap-3">
                         <LogoBrand chiave={G.chiave} h={30} />
                         <div>
                             <p className="text-sm font-black text-white leading-tight">{ct.emoji} Pista {ct.label} <span className="text-slate-500 font-semibold">· analisi</span></p>
-                            <p className="text-[10px] text-slate-500">{ctx.persona ? `di ${ctx.persona}` : ctx.negozio}{(ctx.etichettaPeriodo || ctx.periodoLabel) ? ` · ${ctx.etichettaPeriodo || ctx.periodoLabel}` : ""}</p>
+                            <p className="text-[10px] text-slate-500">{ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio)}{(ctx.etichettaPeriodo || ctx.periodoLabel) ? ` · ${ctx.etichettaPeriodo || ctx.periodoLabel}` : ""}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -430,7 +444,7 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                                         <p className="text-xs font-black text-slate-100">{g.nome}</p>
                                         <div className="flex items-center gap-2">
                                             <span className="text-sm font-black tabular-nums" style={{ color: G.colore }}>{aPunti ? `${fmtPt(g.val)} pt` : `${fmtN(g.val)} pz`}</span>
-                                            <button onClick={() => apriDrill({ titolo: `${G.label} · ${ct.label} · ${g.nome}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: g.items })}
+                                            <button onClick={() => apriDrill({ titolo: `${G.label} · ${ct.label} · ${g.nome}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: g.items })}
                                                 className="text-[10px] font-bold text-indigo-300 border border-indigo-400/30 bg-indigo-500/10 rounded-md px-2 py-0.5 hover:bg-indigo-500/20" title="Elenco contratti del sottogruppo">🔍 contratti</button>
                                         </div>
                                     </div>
@@ -446,11 +460,23 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                                                         <p className="text-[11px] text-slate-300 truncate" title={off}>
                                                             <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: coloreDi(off) }} />{off}
                                                         </p>
-                                                        <span className="block h-1 rounded-full bg-white/5 overflow-hidden mt-0.5">
-                                                            <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(4, ((aPunti ? r.pt : r.pz) / Math.max(0.01, g.val)) * 100)}%`, background: coloreDi(off) }} />
+                                                        <span className="flex h-1.5 rounded-full bg-white/5 overflow-hidden mt-0.5">
+                                                            {(() => {
+                                                                const tot = Math.max(0.01, g.val);
+                                                                const vTot = aPunti ? r.pt : r.pz;
+                                                                const vMnp = aPunti ? r.mnpPt : r.mnpPz;
+                                                                const wTot = Math.max(4, (vTot / tot) * 100);
+                                                                const misto = r.mnpPz > 0 && r.mnpPz < r.pz;
+                                                                if (!misto) return <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${wTot}%`, background: r.mnpPz ? coloreDi(off) : `${coloreDi(off)}80` }} />;
+                                                                const wMnp = wTot * (vMnp / Math.max(0.01, vTot));
+                                                                return <>
+                                                                    <span className="block h-full transition-all duration-700" style={{ width: `${wMnp}%`, background: coloreDi(off) }} title={`MNP: ${aPunti ? fmtPt(r.mnpPt) + " pt" : fmtN(r.mnpPz) + " pz"}`} />
+                                                                    <span className="block h-full transition-all duration-700" style={{ width: `${wTot - wMnp}%`, background: `${coloreDi(off)}66` }} title={`GA/nuove: ${aPunti ? fmtPt(r.pt - r.mnpPt) + " pt" : fmtN(r.pz - r.mnpPz) + " pz"}`} />
+                                                                </>;
+                                                            })()}
                                                         </span>
                                                     </div>
-                                                    <span className="text-[11px] font-black text-white tabular-nums whitespace-nowrap">{aPunti ? `${fmtPt(r.pt)} pt` : `${fmtN(r.pz)} pz`}<span className="text-slate-500 font-semibold"> · {fmtN(r.pz)} pz</span></span>
+                                                    <span className="text-[11px] font-black text-white tabular-nums whitespace-nowrap">{aPunti ? `${fmtPt(r.pt)} pt` : `${fmtN(r.pz)} pz`}<span className="text-slate-500 font-semibold"> · {fmtN(r.pz)} pz{r.mnpPz > 0 && r.mnpPz < r.pz ? ` · ${fmtN(r.mnpPz)} MNP (${Math.round((r.mnpPz / r.pz) * 100)}%) · ${fmtN(r.pz - r.mnpPz)} GA` : r.mnpPz === r.pz && r.pz > 0 ? " · tutte MNP" : ""}</span></span>
                                                 </div>
                                             ))}
                                             {offerte.length > 6 && <p className="text-[10px] text-slate-600">… e altre {offerte.length - 6} offerte (nel drill 🔍 ci sono tutte)</p>}
@@ -460,6 +486,12 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                             );
                         })}
                     </div>
+                )}
+                {conMix && (
+                    <p className="text-[10px] text-slate-500 mt-3 flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-1.5 rounded-full" style={{ background: G.colore }} /> tinta piena = MNP</span>
+                        <span className="inline-flex items-center gap-1"><span className="inline-block w-4 h-1.5 rounded-full" style={{ background: `${G.colore}66` }} /> tinta chiara = GA / nuove attivazioni</span>
+                    </p>
                 )}
             </div>
         </div>, document.body
@@ -528,7 +560,7 @@ function CartaOperatore({ brand, ctx, size }) {
                                 : [{ label: ct.label, colore: G.colore, val: ct.val, det: [{ l: ct.unit === "pt" ? "punti" : "pezzi", r: ct.unit === "pt" ? fmtPt(ct.val) : fmtN(ct.val) }] }];
                         return (
                             <div key={ct.chiave}
-                                onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: ct.items }); }}
+                                onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: ct.items }); }}
                                 className="flex flex-col items-center gap-1 cursor-pointer group select-none"
                                 title="Clicca per l'elenco contratti della pista">
                                 <div className="transition-transform duration-200 group-hover:scale-[1.05]">
@@ -579,7 +611,7 @@ function CartaOperatore({ brand, ctx, size }) {
                                 {r.det.map(([l, v]) => <TipRiga key={l} l={l} r={fmtN(v)} />)}
                                 <p className="text-[10px] text-indigo-300 mt-1">👆 clicca per l'elenco contratti</p>
                             </div>}>
-                                <div onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · ${r.label}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: r.items }); }}
+                                <div onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · ${r.label}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: r.items }); }}
                                     className="grid grid-cols-[minmax(110px,1.1fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
                                     <span className="text-xs font-semibold text-slate-200 truncate">{r.emoji} {r.label}</span>
                                     <span className="h-2 rounded-full bg-white/5 overflow-hidden">

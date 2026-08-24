@@ -20,6 +20,7 @@ import { useStores, useSellers, useCallers } from "@/lib/org";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesAllStores, seesWholeStore, areaOf } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_CALLER_REG_STORICO } from "@/lib/capabilities";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
@@ -29,7 +30,6 @@ import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
 import { ArchivioMalusCaller } from "./_components/ArchivioMalusCaller";
 import { trkBrandKey, TRK_LOGO_SCALE } from "@/lib/brandAssets";
-import { puoAscoltareRegistrazioni } from "@/lib/aircall";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -441,7 +441,10 @@ function CallerPageInner() {
     // AUDIO delle registrazioni a capability (cap:/clienti:ascolta_registrazioni,
     // Luca 04/08): senza permesso il player nello storico voce non compare —
     // i dettagli della chiamata (operatore, direzione, durata) restano visibili.
-    const puoAudio = puoAscoltareRegistrazioni(user?.role, hubPerms);
+    // AUDIO NELLO STORICO LAVORAZIONI (Luca 24/08): capability DEDICATA della
+    // rotellina Caller — default solo admin; si concede a ruoli o persone dai
+    // Permessi. (Il player di Clienti/Registro resta sulla cap Clienti.)
+    const puoAudio = capAllowed(user?.role, "/caller", CAP_CALLER_REG_STORICO, hubPerms);
     const hubPills = (
         <div className="flex items-center gap-2">
             {[{ id: "caller", l: "📞 Caller", href: "/caller" }, ...(badgeVisibile ? [{ id: "badge", l: "🕒 Badge", href: "/caller?tab=badge" }] : [])].map(t => (

@@ -209,6 +209,24 @@ export const CAP_USATO: CapGroupFlags = {
     caps: [CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI],
 };
 
+// ─── CALLER: rotellina della sezione (Luca 24/08) ────────────────────────────
+// L'audio delle chiamate DENTRO lo storico lavorazioni della pratica e' una
+// concessione a parte: di default la sente SOLO l'admin, ogni altro ruolo o
+// persona si accende da qui (il player degli altri posti — Clienti, Registro
+// Chiamate — resta governato dalla capability della rotellina Clienti).
+export const CAP_CALLER_REG_STORICO: CapDef = {
+    id: "registrazioni_storico",
+    label: "Ascolta le chiamate dallo storico lavorazioni",
+    desc: "Player e download della registrazione sulle voci «Chiamata Aircall» dentro lo storico lavorazioni della pratica caller. Default: solo admin.",
+    default: (r) => r === "admin",
+};
+export const CAP_CALLER: CapGroupFlags = {
+    mode: "flags",
+    section: "/caller",
+    sectionLabel: "Caller",
+    caps: [CAP_CALLER_REG_STORICO],
+};
+
 // ─── FERIE (Collaboratori): maschera della sezione ───────────────────────────
 // Luca 27/07: store manager e direttore commerciale vedevano la maschera del
 // team; devono avere quella del consulente (solo le PROPRIE richieste). Qui il
@@ -459,4 +477,4 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
 //  in là". Tolte pagina, API e capacità; la tabella riunione_deck e il motore
 //  contoEconomico restano dormienti per la ripresa futura.)
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
