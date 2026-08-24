@@ -910,11 +910,18 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
     const [drill, setDrill] = useState(null);
     const sue = useMemo(() => (ctx.altri || []).filter((a) => trkBrandKey(a.brand) === chiave), [ctx.altri, chiave]);
     const righe = useMemo(() => {
+        // S4: la categoria è un contenitore unico («Energia») — la differenza
+        // vera è LUCE vs GAS, che vive nel prodotto (Luca 24/08)
+        const gruppoDi = (it) => chiave === "s4"
+            ? (/gas/i.test(String(it.prodotto || "")) ? "🔥 Gas" : "💡 Luce")
+            : (it.categoria || "Altro");
         const per = new Map();
-        for (const it of sue) { const c = it.categoria || "Altro"; (per.get(c) || per.set(c, []).get(c)).push(it); }
+        for (const it of sue) { const c = gruppoDi(it); (per.get(c) || per.set(c, []).get(c)).push(it); }
         return [...per.entries()].map(([label, items2]) => ({ label, items: items2 })).sort((a, b) => b.items.length - a.items.length);
-    }, [sue]);
+    }, [sue, chiave]);
     const COLORI = ["#818cf8", "#22c55e", "#f59e0b", "#8b5cf6", "#14b8a6", "#f97316", "#e879f9", "#64748b"];
+    // colori semantici per l'energia: luce gialla, gas fiamma
+    const coloreRiga = (label, i) => label === "💡 Luce" ? "#facc15" : label === "🔥 Gas" ? "#fb923c" : COLORI[i % COLORI.length];
     if (!sue.length) return (
         <div className="flex items-center gap-3 py-6 justify-center text-slate-500 text-xs">
             <LogoBrand chiave={chiave} h={20} /> nessuna vendita {nome} nel periodo
@@ -927,7 +934,7 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
                 <div className="shrink-0 mx-auto sm:mx-0">
                     <Donut size={size >= 4 ? 160 : 132} unit="pezzi"
                         slices={righe.map((r, i) => ({
-                            label: r.label, colore: COLORI[i % COLORI.length], val: r.items.length,
+                            label: r.label, colore: coloreRiga(r.label, i), val: r.items.length,
                             det: Object.entries(r.items.reduce((m, it) => { const k = String(it.offerta || it.prodotto || "—").slice(0, 26); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, q]) => ({ l: p, r: fmtN(q) })),
                         }))}
                         centro={<><span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={sue.length} punti={false} /></span><span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">pezzi</span></>} />
@@ -936,7 +943,7 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
                     {righe.map((r, i) => (
                         <Tip key={r.label} block tip={<div>
                             <TipTitolo>{r.label}</TipTitolo>
-                            <TipRiga l="pezzi" r={fmtN(r.items.length)} colore={COLORI[i % COLORI.length]} />
+                            <TipRiga l="pezzi" r={fmtN(r.items.length)} colore={coloreRiga(r.label, i)} />
                             {Object.entries(r.items.reduce((m, it) => { const k = String(it.offerta || it.prodotto || "—").slice(0, 28); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([p, q]) => <TipRiga key={p} l={p} r={fmtN(q)} />)}
                             <p className="text-[10px] text-indigo-300 mt-1">👆 clicca per l'elenco contratti</p>
                         </div>}>
@@ -944,7 +951,7 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
                                 className="grid grid-cols-[minmax(110px,1.2fr)_2fr_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
                                 <span className="text-xs font-semibold text-slate-200 truncate">{r.label}</span>
                                 <span className="h-2 rounded-full bg-white/5 overflow-hidden">
-                                    <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, (r.items.length / sue.length) * 100)}%`, background: `linear-gradient(90deg, ${COLORI[i % COLORI.length]}55, ${COLORI[i % COLORI.length]})` }} />
+                                    <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, (r.items.length / sue.length) * 100)}%`, background: `linear-gradient(90deg, ${coloreRiga(r.label, i)}55, ${coloreRiga(r.label, i)})` }} />
                                 </span>
                                 <span className="text-[11px] font-black text-white tabular-nums text-right w-12">{fmtN(r.items.length)} pz</span>
                             </div>
