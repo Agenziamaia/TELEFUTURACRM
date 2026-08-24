@@ -20,6 +20,7 @@ import { CouponView } from "./_views/coupon";
 import { CassaScontriniView } from "./_views/pos";
 import { RepartiIvaView } from "./_views/reparti";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
+import { verificaCoerenzaCFNomeCompleto } from "@/lib/coerenzaCF";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { useRoles } from "@/lib/useRoles";
@@ -967,6 +968,15 @@ function UserForm({
         // compilati il numero civico è OBBLIGATORIO.
         if (civicoMancante(String(f.address ?? ""))) { setErr("Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto."); return; }
         if (f.different_domicile && civicoMancante(String(f.domicile ?? ""))) { setErr("Nel domicilio manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto."); return; }
+        // COERENZA CF ↔ NOME del dipendente (Luca 24/08): il nome è in un
+        // campo unico → verifica ordine-insensibile su tutti gli split
+        {
+            const eCF = verificaCoerenzaCFNomeCompleto(f.full_name, f.codice_fiscale);
+            if (!eCF.ok) {
+                const okCF = window.confirm(`⚠️ Il codice fiscale non torna col nome del dipendente:\n— ${eCF.motivi.join("\n— ")}\n\nOK = salva comunque.\nAnnulla = torna a correggere.`);
+                if (!okCF) return;
+            }
+        }
         setSaving(true);
         setErr("");
         const status = f.status || "attivo";

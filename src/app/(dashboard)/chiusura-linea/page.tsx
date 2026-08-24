@@ -29,6 +29,7 @@ import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import { trovaDuplicati } from "@/lib/clientChecks";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
+import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { cn } from "@/utils";
 import { Loader2, Scissors, Upload, X, FileText, Search } from "lucide-react";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -165,6 +166,14 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
         const dup = await trovaDuplicati({ cellulare: tel, tipoNuovo: ana.tipo });
         if (dup.cellulare) { msg(`⚠️ Cellulare già di “${dup.cellulare.label}” (stesso tipo): cercalo e selezionalo, oppure usa un altro numero`); return null; }
 
+        // COERENZA CF ↔ NOME (Luca 24/08): bloccante ma forzabile
+        {
+            const eCF = business ? verificaCoerenzaCF(ana.nomeRef, ana.cognomeRef, cfPiva) : verificaCoerenzaCF(ana.nome, ana.cognome, cfPiva);
+            if (!eCF.ok) {
+                const okCF = window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${eCF.motivi.join("\n— ")}\n\nOK = salva comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
+                if (!okCF) { msg("Anagrafica non creata: codice fiscale incoerente coi dati."); return null; }
+            }
+        }
         const idBase = cfPiva || tel.replace(/\D/g, "") || "ND";
         const id = `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`;
         const { error } = await supabase.from("clients").insert({

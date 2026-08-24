@@ -7,6 +7,7 @@ import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
+import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { designatiIncarico } from "@/lib/incarichi";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
@@ -2048,6 +2049,14 @@ function GestioneUsatiInner() {
           creato_da: data.venditore || "",
           acquisito_da: data.negozio || null,
         };
+        // COERENZA CF ↔ NOME (Luca 24/08): bloccante ma forzabile
+        {
+            const eCF = isBus ? verificaCoerenzaCF("", "", idf) : verificaCoerenzaCF(anaD.nome, anaD.cognome, idf);
+            if (!eCF.ok) {
+                const okCF = window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${eCF.motivi.join("\n— ")}\n\nOK = salva comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
+                if (!okCF) throw new Error("Codice fiscale incoerente: correggi i dati del cliente.");
+            }
+        }
         const { data: nuovo, error: eCli } = await supabase.from("clients").insert(payloadCli).select("id").single();
         if (!eCli && nuovo?.id) clientId = nuovo.id as string;
       }

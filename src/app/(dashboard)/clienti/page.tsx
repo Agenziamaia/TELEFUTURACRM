@@ -11,6 +11,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
+import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useStores } from "@/lib/org";
 import { SelectMulti } from "@/components/SelectPersona";
@@ -986,6 +987,9 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
     // Univocita' (regole Luca): CF/P.IVA bloccanti, cellulare con scelta
     // sposta/cambia, email solo segnalata.
     const [dupCell, setDupCell] = useState<DupCliente | null>(null);
+    // COERENZA CF ↔ nome (Luca 24/08, caso Stefania/Anna): bloccante ma forzabile
+    const [cfInc, setCfInc] = useState<string[] | null>(null);
+    const cfForzaRef = useRef(false);
     const [emailDup, setEmailDup] = useState<DupCliente | null>(null);
     const spostaRef = useRef(false);
     const checkEmail = async () => {
@@ -1027,6 +1031,14 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
             setError("Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto.");
             return;
         }
+
+        // COERENZA CF ↔ NOME (Luca 24/08): consumer sul CF del cliente,
+        // business sul CF del referente (nel form nome/cognome SONO il
+        // referente). Blocca, ma si può forzare con conferma esplicita.
+        setCfInc(null);
+        const esCF = tipo === "consumer" ? verificaCoerenzaCF(nome, cognome, cfPiva) : verificaCoerenzaCF(nome, cognome, cfRef);
+        if (!esCF.ok && !cfForzaRef.current) { setCfInc(esCF.motivi); return; }
+        cfForzaRef.current = false;
 
         // tipoNuovo: il cellulare blocca solo tra anagrafiche dello STESSO tipo —
         // la coppia consumer+business puo' condividerlo (Luca 01/08)
@@ -1129,6 +1141,22 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+                    {cfInc && (
+                        <div className="mx-6 mb-2 p-4 rounded-xl bg-red-500/10 border border-red-500/40 space-y-2">
+                            <p className="text-sm text-red-200 font-medium">🪪 Il codice fiscale non torna coi dati scritti:</p>
+                            <ul className="text-xs text-red-200/90 list-disc pl-5 space-y-0.5">{cfInc.map((m) => <li key={m}>{m}</li>)}</ul>
+                            <div className="flex gap-2 flex-wrap">
+                                <button type="button" onClick={() => { cfForzaRef.current = true; handleSave(); }}
+                                    className="text-xs px-3 py-2 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 hover:bg-red-500/30 font-bold">
+                                    ⚠️ Salva comunque — mi assumo l&apos;errore
+                                </button>
+                                <button type="button" onClick={() => setCfInc(null)}
+                                    className="text-xs px-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:bg-white/10 font-bold">
+                                    Correggo i dati
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {dupCell && (
                         <div className="mx-6 mb-2 p-4 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2">
                             <p className="text-sm text-amber-200 font-medium">📱 Questo cellulare è già associato a <strong>“{dupCell.label}”</strong>, un&apos;anagrafica dello <strong>stesso tipo</strong> — lo stesso numero può stare solo su una consumer e una business insieme.</p>

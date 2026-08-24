@@ -21,6 +21,7 @@ import { ContiSospesi, type SospesoRow } from "./ContiSospesi";
 const POS_STORES_ENV = (process.env.NEXT_PUBLIC_POS_SCONTRINO_STORES || "").split(",").map((s) => s.trim()).filter(Boolean);
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
+import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { erroreIbanIT } from "@/lib/iban";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
@@ -5588,6 +5589,24 @@ function CRM() {
         turista: tipoCliente === "privato" ? !!turista : false
       };
 
+      // COERENZA CF ↔ NOME (Luca 24/08, caso Stefania/Anna): consumer sul CF
+      // del cliente, business sul CF del referente, più l'eventuale
+      // INTESTATARIO diverso. Bloccante ma forzabile con conferma esplicita.
+      {
+        const motiviCF = [];
+        const eCli = tipoCliente === "privato"
+          ? verificaCoerenzaCF(clientData.nome, clientData.cognome, clientData.cf_piva)
+          : verificaCoerenzaCF(clientData.nome_ref, clientData.cognome_ref, clientData.cf_ref);
+        if (!eCli.ok) motiviCF.push(...eCli.motivi);
+        if (ana.intDiverso) {
+          const eInt = verificaCoerenzaCF(clientData.intestatario_nome, clientData.intestatario_cognome, clientData.intestatario_cf);
+          if (!eInt.ok) motiviCF.push(...eInt.motivi.map((m) => `intestatario: ${m}`));
+        }
+        if (motiviCF.length) {
+          const ok = window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${motiviCF.join("\n— ")}\n\nOK = salva comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
+          if (!ok) throw new Error("Codice fiscale incoerente coi dati del cliente: correggi e riprova.");
+        }
+      }
       const { error: clientErr } = await supabase.from("clients").upsert(clientData, { onConflict: "id" });
       if (clientErr) throw clientErr;
 
@@ -5977,6 +5996,14 @@ function CRM() {
         const keep=(nuovo,campo)=>{const v=(nuovo??"").toString().trim();if(v)return v;const old=prev[campo];return old==null?"":String(old);};
         const idBase=cfPiva||tel.replace(/\D/g,"")||"ND";
         clientId=(existing&&existing.id)||`CL-${idBase.replace(/\s/g,"")}-${Date.now()}`;
+        // COERENZA CF ↔ NOME (Luca 24/08): stessa verifica del flusso completo
+        {
+          const eCli=business?verificaCoerenzaCF(keep(f.nomeRef,"nome_ref"),keep(f.cognomeRef,"cognome_ref"),keep(f.cfRef,"cf_ref")||null):verificaCoerenzaCF(keep(f.nome,"nome"),keep(f.cognome,"cognome"),cfPiva);
+          if(!eCli.ok){
+            const ok=window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${eCli.motivi.join("\n— ")}\n\nOK = salva comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
+            if(!ok){setMargSaving(false);return;}
+          }
+        }
         const {error:ce}=await supabase.from("clients").upsert({
           id:clientId,tipo:business?"business":"consumer",
           nome:keep(f.nome,"nome"),cognome:keep(f.cognome,"cognome"),

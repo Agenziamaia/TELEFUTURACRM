@@ -9,6 +9,7 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, unisciCataloghi, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
@@ -1337,8 +1338,8 @@ export default function RicercaContratto() {
     // Ritorno: null = ok · string = errore · {cfConflitto} = il CF richiesto
     // appartiene GIÀ a un altro cliente → il chiamante offre lo spostamento
     // guidato della vendita su quella scheda (10/08, caso Butnaru/Fei v2).
-    type EsitoApplica = string | { cfConflitto: { id: string; nome: string; cf: string } } | null;
-    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string): Promise<EsitoApplica> => {
+    type EsitoApplica = string | { cfConflitto: { id: string; nome: string; cf: string } } | { cfIncoerente: { motivi: string[] } } | null;
+    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string, opts: { forzaCF?: boolean } = {}): Promise<EsitoApplica> => {
         const { data: c } = await supabase.from("contracts").select("*").eq("id", contractId).single();
         if (!c) return "Contratto " + contractId + " non trovato.";
         const contractPatch: Record<string, unknown> = {};
@@ -1396,6 +1397,20 @@ export default function RicercaContratto() {
         }
         if (detTouched) contractPatch.dettagli = det;
         contractPatch.storia = storia;
+        // COERENZA CF ↔ NOME (Luca 24/08, caso Stefania/Anna): se la modifica
+        // tocca nome/cognome/CF si verifica il risultato FINALE (patch +
+        // valori attuali della scheda); incoerente → il chiamante chiede la
+        // conferma esplicita e ripassa con { forzaCF: true }.
+        if (!opts.forzaCF && c.client_id && ["nome", "cognome", "cf_piva", "nome_ref", "cognome_ref", "cf_ref"].some((k) => k in clientPatch)) {
+            const { data: attuale } = await supabase.from("clients").select("nome, cognome, cf_piva, nome_ref, cognome_ref, cf_ref").eq("id", c.client_id).maybeSingle();
+            const fin = (k: string) => (k in clientPatch ? clientPatch[k] : (attuale as any)?.[k]) as string | null;
+            const motivi: string[] = [];
+            const e1 = verificaCoerenzaCF(fin("nome"), fin("cognome"), fin("cf_piva"));
+            if (!e1.ok) motivi.push(...e1.motivi);
+            const e2 = verificaCoerenzaCF(fin("nome_ref"), fin("cognome_ref"), fin("cf_ref"));
+            if (!e2.ok) motivi.push(...e2.motivi.map((m) => `referente: ${m}`));
+            if (motivi.length) return { cfIncoerente: { motivi } };
+        }
         // GUARDIA CF PRIMA DI OGNI SCRITTURA (fix 10/08): prima stava DOPO
         // l'update del contratto → applicazione PARZIALE (campi contratto
         // scritti, cliente no) e righe di storia duplicate a ogni ritentativo.
@@ -1464,8 +1479,16 @@ export default function RicercaContratto() {
     const salvaDiretto = async () => {
         if (!selectedContract || Object.keys(pendingChanges).length === 0 || saving) return;
         setSaving(true);
-        const esito = await applicaCambiamenti(selectedContract.id, pendingChanges,
+        let esito = await applicaCambiamenti(selectedContract.id, pendingChanges,
             `${user?.name || "—"} (modifica diretta)`);
+        if (esito && typeof esito === "object" && "cfIncoerente" in esito) {
+            const ok = window.confirm(
+                `⚠️ Il codice fiscale non torna coi dati del cliente:\n— ${esito.cfIncoerente.motivi.join("\n— ")}\n\n` +
+                `OK = salva comunque (te ne assumi l'errore).\nAnnulla = non applicare nulla.`);
+            if (!ok) { setSaving(false); setReqMsg("Modifica NON applicata: codice fiscale incoerente coi dati scritti."); return; }
+            esito = await applicaCambiamenti(selectedContract.id, pendingChanges,
+                `${user?.name || "—"} (modifica diretta, CF forzato)`, { forzaCF: true });
+        }
         if (esito && typeof esito === "object" && "cfConflitto" in esito) {
             // stesso flusso guidato dell'approvazione: qui l'admin è già nel
             // modale, quindi in alternativa può usare il bottone 🔀 Sposta cliente
@@ -1519,6 +1542,13 @@ export default function RicercaContratto() {
             // resta in attesa (gli errori non venivano letti — segnalazione 32).
             const firma = `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`;
             let esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma);
+            if (esito && typeof esito === "object" && "cfIncoerente" in esito) {
+                const ok = window.confirm(
+                    `⚠️ Il codice fiscale non torna coi dati del cliente:\n— ${esito.cfIncoerente.motivi.join("\n— ")}\n\n` +
+                    `OK = approva comunque (l'incoerenza resta a verbale).\nAnnulla = la richiesta resta in attesa.`);
+                if (!ok) { setReqBusy(null); return; }
+                esito = await applicaCambiamenti(req.contract_id, req.changes || {}, `${firma} (CF forzato)`, { forzaCF: true });
+            }
             // ── FLUSSO GUIDATO CF DUPLICATO (10/08, caso Butnaru/Fei) ──
             // La richiesta "cambia CF" in realtà significa quasi sempre "la
             // vendita è intestata al cliente sbagliato". Invece del vicolo

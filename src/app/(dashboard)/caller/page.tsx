@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
+import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { useStores, useSellers, useCallers } from "@/lib/org";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesAllStores, seesWholeStore, areaOf } from "@/lib/roles";
@@ -1434,6 +1435,17 @@ function CallerPageInner() {
                 creato_da: c.caller || currentCaller,
                 acquisito_da: "Ufficio Commerciale",
             };
+            // COERENZA CF ↔ NOME (Luca 24/08): consumer sul CF, business sul
+            // CF del referente. Annulla = niente anagrafica: correggi la lead.
+            {
+                const eCF = c.tipo_cliente === "business"
+                    ? verificaCoerenzaCF(c.nome, c.cognome, c.cf)
+                    : verificaCoerenzaCF(c.nome, c.cognome, idf);
+                if (!eCF.ok) {
+                    const okCF = window.confirm(`⚠️ Il codice fiscale non torna coi dati della lead:\n— ${eCF.motivi.join("\n— ")}\n\nOK = crea comunque l'anagrafica.\nAnnulla = non crearla (correggi il CF nella lead e risalva).`);
+                    if (!okCF) return;
+                }
+            }
             let { error } = await supabase.from("clients").insert(payload);
             if (error && /column/i.test(error.message)) {
                 // mig. 108 non ancora applicata: meglio l'anagrafica senza
