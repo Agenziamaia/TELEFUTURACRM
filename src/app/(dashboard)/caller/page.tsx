@@ -497,7 +497,7 @@ function VenditeSegnalateApprovazione({ lista, calls, utente, chiudi, onDecisa }
                                         <p className="text-[11px] text-slate-400">segnalata da <b>{a.caller}</b> · lead: {c ? `${c.nome || ""} ${c.cognome || ""}`.trim() || c.ragione_sociale || "—" : "—"}{a.nota ? ` · nota: ${a.nota}` : ""}</p>
                                     </div>
                                     {!aperta && (
-                                        <button onClick={() => apriApprova(a)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0">Gestisci</button>
+                                        <button onClick={() => apriApprova(a)} title="Apre le vendite che matchano coi dati segnalati: valuti tu quali associare" className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0">🔗 Collega…</button>
                                     )}
                                 </div>
                                 {aperta && (
@@ -627,7 +627,7 @@ function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
                                     </div>
                                     {apertaId !== a.id && (
                                         <div className="flex gap-2">
-                                            <button type="button" onClick={() => apriApprova(a)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">✓ Approva…</button>
+                                            <button type="button" onClick={() => apriApprova(a)} title="Apre le attivazioni registrate che matchano col cliente: valuti tu se associarne una" className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">🔗 Collega…</button>
                                             <button type="button" onClick={() => { setApertaId(-a.id); setErrA(null); }} className="px-3 py-1.5 rounded-lg border border-rose-500/50 text-rose-300 text-xs font-bold hover:bg-rose-500/10">✗ Rifiuta…</button>
                                         </div>
                                     )}
@@ -648,7 +648,7 @@ function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
                                         <input value={ctrManuale} onChange={(e) => setCtrManuale(e.target.value)} placeholder="…oppure incolla l'ID vendita (CTR-XXXXXXXX)" className="glass-input w-full text-sm rounded-lg py-2 font-mono" />
                                         {errA && <p className="text-[12px] text-rose-400">{errA}</p>}
                                         <div className="flex gap-2">
-                                            <button type="button" disabled={busy} onClick={() => conferma(a)} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black disabled:opacity-50">{busy ? "…" : "✅ Approva e collega la vendita"}</button>
+                                            <button type="button" disabled={busy} onClick={() => conferma(a)} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black disabled:opacity-50">{busy ? "…" : "🔗 Collega questa vendita e approva"}</button>
                                             <button type="button" disabled={busy} onClick={() => setApertaId(null)} className="px-4 py-2 rounded-lg bg-white/[0.06] text-slate-300 text-sm font-bold">Annulla</button>
                                         </div>
                                     </div>
