@@ -24,7 +24,7 @@ import { NewChatModal } from "./_components/NewChatModal";
 import { ScreenshotEditor } from "./_components/ScreenshotEditor";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { AvatarUtente } from "@/components/AvatarUtente";
@@ -141,14 +141,26 @@ function ChatPageInner() {
     } catch (e) { alert((e as Error)?.message || "Modifica non riuscita"); }
   };
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  // INOLTRO MULTIPLO stile WhatsApp (Luca 24/08): selezioni N messaggi e li
+  // inoltri in un colpo solo, in ordine cronologico
+  const [multiSel, setMultiSel] = useState<Set<string>>(new Set());
+  const [forwardList, setForwardList] = useState<ChatMessage[] | null>(null);
+  const toggleSel = (m: ChatMessage) => setMultiSel((prev) => {
+    const n = new Set(prev);
+    if (n.has(m.id)) n.delete(m.id); else n.add(m.id);
+    return n;
+  });
   const [forwardCerca, setForwardCerca] = useState("");
   const [forwardBusy, setForwardBusy] = useState(false);
   const inoltraA = async (targetConvId: string) => {
-    if (!forwardMsg || forwardBusy) return;
+    const daInoltrare = forwardList ?? (forwardMsg ? [forwardMsg] : []);
+    if (!daInoltrare.length || forwardBusy) return;
     setForwardBusy(true);
     try {
-      await forwardMessage(forwardMsg, meId!, targetConvId);
-      setForwardMsg(null); setForwardCerca("");
+      // ordine cronologico: arrivano nella chat di destinazione come li leggi
+      const ordinati = [...daInoltrare].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      for (const m of ordinati) await forwardMessage(m, meId!, targetConvId);
+      setForwardMsg(null); setForwardList(null); setMultiSel(new Set()); setForwardCerca("");
       setSelId(targetConvId);                       // come Telegram: salta alla chat
       await reloadInbox();
     } catch (e) { alert("Inoltro non riuscito: " + ((e as Error)?.message || e)); }
@@ -378,6 +390,7 @@ function ChatPageInner() {
   // Luca 05/08: aprire una chat dalla lista = cursore GIÀ nel campo di
   // scrittura, senza cliccarci (il rAF aspetta il render del thread)
   useEffect(() => {
+    setMultiSel(new Set());
     if (selId) requestAnimationFrame(() => composerRef.current?.focus());
   }, [selId]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -961,6 +974,12 @@ function ChatPageInner() {
                     <Forward className="w-4 h-4" />
                   </button>
                 );
+                const btnSeleziona = (
+                  <button type="button" title="Seleziona più messaggi da inoltrare insieme" onClick={() => toggleSel(m)}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-white/10 transition-opacity">
+                    <CheckSquare className="w-4 h-4" />
+                  </button>
+                );
                 // REAZIONI stile Telegram (mig. 130): faccina al passaggio, menu rapido
                 const btnReagisci = (
                   <span className="relative shrink-0">
@@ -1012,10 +1031,14 @@ function ChatPageInner() {
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
                     {/* Doppio click A FIANCO del messaggio = rispondi (Luca 02/08):
                         sul testo il doppio click deve solo selezionare, come nativo. */}
-                    <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}
-                      title="Doppio click a fianco del messaggio per rispondere"
+                    <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"} ${multiSel.size > 0 ? "cursor-pointer rounded-xl " + (multiSel.has(m.id) ? "bg-indigo-500/10" : "hover:bg-white/[0.03]") : ""}`}
+                      title={multiSel.size > 0 ? "Clicca per selezionare/deselezionare" : "Doppio click a fianco del messaggio per rispondere"}
+                      onClickCapture={(e) => { if (multiSel.size > 0) { e.preventDefault(); e.stopPropagation(); toggleSel(m); } }}
                       onDoubleClick={(e) => { if ((e.target as HTMLElement).closest("button")) return; rispondiA(m); }}>
-                      {mine && <>{btnInfo}{btnModifica}{btnInoltra}{btnReagisci}{btnRispondi}</>}
+                      {multiSel.size > 0 && (
+                        <span className={`shrink-0 w-5 h-5 rounded-full border grid place-items-center text-[11px] font-black transition-colors ${multiSel.has(m.id) ? "bg-indigo-500 border-indigo-400 text-white" : "border-white/25 text-transparent"}`}>✓</span>
+                      )}
+                      {mine && <>{btnInfo}{btnModifica}{btnInoltra}{btnSeleziona}{btnReagisci}{btnRispondi}</>}
                       <div onDoubleClick={(e) => e.stopPropagation()}
                         className={`max-w-[75%] rounded-2xl px-3.5 py-2 select-text ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
@@ -1107,13 +1130,26 @@ function ChatPageInner() {
                           })()}
                         </p>
                       </div>
-                      {!mine && <>{btnRispondi}{btnReagisci}{btnInoltra}{btnInfo}</>}
+                      {!mine && <>{btnRispondi}{btnReagisci}{btnInoltra}{btnSeleziona}{btnInfo}</>}
                     </div>
                   </div>
                 );
               })}
             </div>
 
+            {multiSel.size > 0 && (
+              <div className="flex items-center justify-between gap-2 px-4 py-2 border-t border-white/10 bg-[#14131f]">
+                <span className="text-xs font-bold text-slate-200">☑ {multiSel.size} {multiSel.size === 1 ? "messaggio selezionato" : "messaggi selezionati"}</span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { const lista = messages.filter((x) => multiSel.has(x.id)); if (lista.length) { setForwardList(lista); setForwardCerca(""); } }}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold inline-flex items-center gap-1.5">
+                    <Forward className="w-3.5 h-3.5" /> Inoltra {multiSel.size > 1 ? `tutti e ${multiSel.size}` : ""}
+                  </button>
+                  <button type="button" onClick={() => setMultiSel(new Set())}
+                    className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10">Annulla</button>
+                </div>
+              </div>
+            )}
             {/* composer */}
             <div className="relative border-t border-white/5 px-4 py-3 shrink-0">
               {/* Segnalazione 74: anteprima del messaggio a cui si risponde */}
@@ -1309,12 +1345,12 @@ function ChatPageInner() {
           onCancel={() => setShotEdit(null)} />
       )}
 
-      {forwardMsg && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setForwardMsg(null)}>
+      {(forwardMsg || forwardList) && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => { setForwardMsg(null); setForwardList(null); }}>
           <div className="glass-card w-full max-w-md max-h-[75vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-white/5">
-              <h3 className="text-base font-bold text-white flex items-center gap-2"><Forward className="w-4 h-4 text-indigo-300" /> Inoltra a…</h3>
-              <button onClick={() => setForwardMsg(null)} className="text-slate-400 hover:text-white p-1"><X className="w-5 h-5" /></button>
+              <h3 className="text-base font-bold text-white flex items-center gap-2"><Forward className="w-4 h-4 text-indigo-300" /> Inoltra {forwardList && forwardList.length > 1 ? `${forwardList.length} messaggi` : ""} a…</h3>
+              <button onClick={() => { setForwardMsg(null); setForwardList(null); }} className="text-slate-400 hover:text-white p-1"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-3 border-b border-white/5">
               <input autoFocus value={forwardCerca} onChange={(e) => setForwardCerca(e.target.value)} placeholder="Cerca persona o gruppo…" className="glass-input w-full text-sm" />
