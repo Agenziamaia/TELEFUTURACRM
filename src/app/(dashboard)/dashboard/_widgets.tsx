@@ -28,7 +28,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { roleLabel, BRAND_COLORS } from "@/lib/roles";
+import { roleLabel, BRAND_COLORS , areaOf } from "@/lib/roles";
 import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel } from "@/lib/commissioning";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
@@ -1180,8 +1180,14 @@ function WidgetAccessi({ ctx }) {
             .then(({ data }) => {
                 if (!vivo) return;
                 let lista = (data || []).filter((u) => u.active !== false);
-                // store manager: solo la squadra dei suoi negozi (Luca 17/08)
-                if (!ctx.seesAll) lista = lista.filter((u) => ctx.inMyStores(u.primary_store));
+                // MANAGER: solo il PROPRIO team (Luca 24/08) — store manager
+                // per negozi; i direttori di reparto per AREA (cc/outbound)
+                if (!ctx.seesAll) {
+                    const r = ctx.user?.role;
+                    if (r === "direttore_cc") lista = lista.filter((u) => areaOf(u.role) === "cc");
+                    else if (r === "direttore_ob") lista = lista.filter((u) => areaOf(u.role) === "ob");
+                    else lista = lista.filter((u) => ctx.inMyStores(u.primary_store));
+                }
                 setUsers(lista);
             });
         return () => { vivo = false; };
@@ -1340,7 +1346,7 @@ export function renderWidget(id, ctx, size) {
         case "obiettivo": return <WidgetObiettivo ctx={ctx} />;
         case "azioni": return <WidgetAzioni ctx={ctx} />;
         case "bacheca": return <WidgetBacheca ctx={ctx} size={size} />;
-        case "accessi": return ctx.seesAll ? <WidgetAccessi ctx={ctx} /> : null;
+        case "accessi": return (ctx.seesAll || ctx.level === "store" || ["direttore_cc", "direttore_ob"].includes(ctx.user?.role)) ? <WidgetAccessi ctx={ctx} /> : null;
         default: return null;
     }
 }

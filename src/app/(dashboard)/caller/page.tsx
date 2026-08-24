@@ -391,6 +391,142 @@ const defaultCallerView = {
    (nota obbligatoria) si approva COLLEGANDO la vendita — senza vendita lo
    stato non genererebbe commissioning in cooperation — o si rifiuta con
    nota (la pratica torna in lavorazione al caller). ─────────────────────── */
+/* ═══ VENDITE SEGNALATE (Luca 24/08): dall'appuntamento è nata una vendita
+   con un ALTRO nominativo — l'amministrazione approva selezionando UNA O
+   PIÙ vendite coerenti (nome+cognome, ±3 giorni dal giorno indicato) →
+   cooperation al caller; la lead diventa «Attivato Cooperation» (completa,
+   senza countdown) ma l'appuntamento resta agganciabile dal match se anche
+   l'intestatario originale attiva nei tempi. ═══════════════════════════ */
+function VenditeSegnalateApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
+    lista: { id: number; call_id: string; caller: string; cliente_nome: string; cliente_cognome: string; negozio: string; giorno: string; nota: string | null; created_at: string | null }[];
+    calls: Call[];
+    utente: string;
+    chiudi: () => void;
+    onDecisa: () => void;
+}) {
+    const [apertaId, setApertaId] = useState<number | null>(null);
+    const [candidate, setCandidate] = useState<{ id: string; label: string; esatta: boolean }[] | null>(null);
+    const [scelte, setScelte] = useState<Set<string>>(new Set());
+    const [ctrManuale, setCtrManuale] = useState("");
+    const [notaRifiuto, setNotaRifiuto] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [errA, setErrA] = useState<string | null>(null);
+    const callDi = (a: { call_id: string }) => calls.find((c) => String(c.id) === String(a.call_id)) || null;
+    const diffG = (a: string, b: string) => Math.round((new Date(a + "T12:00:00").getTime() - new Date(b + "T12:00:00").getTime()) / 86400000);
+    const apriApprova = async (a: (typeof lista)[number]) => {
+        setApertaId(a.id); setCandidate(null); setScelte(new Set()); setCtrManuale(""); setErrA(null);
+        const { data: cli } = await supabase.from("clients").select("id")
+            .ilike("nome", a.cliente_nome.trim()).ilike("cognome", a.cliente_cognome.trim()).limit(10);
+        const ids = (cli ?? []).map((x: { id: string }) => x.id);
+        let out: { id: string; label: string; esatta: boolean }[] = [];
+        if (ids.length) {
+            const { data: ctr } = await supabase.from("contracts")
+                .select("id, brand, offerta, prodotto, negozio, venditore, data, stato")
+                .in("client_id", ids).like("id", "CTR-%").order("data", { ascending: false }).limit(40);
+            out = ((ctr ?? []) as { id: string; brand: string | null; offerta: string | null; prodotto: string | null; negozio: string | null; venditore: string | null; data: string | null; stato: string | null }[])
+                .filter((x) => !/annull/i.test(String(x.stato || "")))
+                .map((x) => { const d = String(x.data || "").slice(0, 10); const df = d ? Math.abs(diffG(d, a.giorno)) : 99; return { x, d, df }; })
+                .filter((r) => r.df <= 3)
+                .sort((r1, r2) => r1.df - r2.df)
+                .map(({ x, d, df }) => ({
+                    id: x.id, esatta: df === 0,
+                    label: `${x.id} · ${x.brand || "—"} · ${x.offerta || x.prodotto || "—"} · ${x.negozio || "—"} · ${d}${df > 0 ? ` (±${df}g)` : ""} · ${x.venditore || "—"}`,
+                }));
+        }
+        setCandidate(out);
+    };
+    const toggleScelta = (id: string) => setScelte((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    const conferma = async (a: (typeof lista)[number]) => {
+        const setIds = new Set(scelte);
+        for (const raw of ctrManuale.split(/[\s,;]+/)) { const t = raw.trim().toUpperCase(); if (t.startsWith("CTR-")) setIds.add(t); }
+        const ids = [...setIds];
+        if (!ids.length) { setErrA("Seleziona almeno una vendita coerente (o incolla gli ID CTR-)."); return; }
+        setBusy(true); setErrA(null);
+        const { data: ver } = await supabase.from("contracts").select("id").in("id", ids);
+        const trovate = new Set((ver ?? []).map((x: { id: string }) => x.id));
+        const mancanti = ids.filter((x) => !trovate.has(x));
+        if (mancanti.length) { setBusy(false); setErrA(`Vendite non trovate: ${mancanti.join(", ")}`); return; }
+        const c = callDi(a);
+        const now = new Date().toISOString();
+        const storico = [...((c?.storico as StoricoEntry[]) || []),
+            { data: now, caller: utente, campo: "Vendita collegata", da: "", a: `✅ Cooperation APPROVATA da ${utente} — vendite di ${a.cliente_nome} ${a.cliente_cognome}: ${ids.join(", ")}` },
+            { data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Cooperation" }];
+        const { error } = await supabase.from("calls").update({ stato: "Attivato Cooperation", da_esitare: false, storico }).eq("id", a.call_id);
+        if (error) { setBusy(false); setErrA(error.message); return; }
+        await supabase.from("caller_vendite_segnalate").update({ stato: "approvata", contract_ids: ids, decisa_da: utente, decisa_il: now }).eq("id", a.id);
+        setBusy(false); setApertaId(null);
+        onDecisa();
+    };
+    const rifiuta = async (a: (typeof lista)[number]) => {
+        setBusy(true); setErrA(null);
+        const c = callDi(a);
+        const now = new Date().toISOString();
+        const storico = [...((c?.storico as StoricoEntry[]) || []),
+            { data: now, caller: utente, campo: "Vendita collegata", da: "", a: `✗ Segnalazione RIFIUTATA da ${utente}${notaRifiuto.trim() ? ` — ${notaRifiuto.trim()}` : ""}` }];
+        const { error } = await supabase.from("calls").update({ storico }).eq("id", a.call_id);
+        if (error) { setBusy(false); setErrA(error.message); return; }
+        await supabase.from("caller_vendite_segnalate").update({ stato: "rifiutata", decisa_da: utente, decisa_il: now, nota_decisione: notaRifiuto.trim() || null }).eq("id", a.id);
+        setBusy(false); setApertaId(null); setNotaRifiuto("");
+        onDecisa();
+    };
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={chiudi} role="dialog" aria-modal="true">
+            <div className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between py-4 px-6 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">
+                    <div>
+                        <div className="text-lg font-extrabold text-slate-100">🔗 Vendite segnalate dai caller</div>
+                        <div className="text-[11px] text-slate-500">vendita con altro nominativo nata da un appuntamento: collega e va in cooperation</div>
+                    </div>
+                    <button onClick={chiudi} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-6 space-y-3">
+                    {lista.length === 0 && <p className="text-sm text-slate-500 text-center py-6">Nessuna segnalazione in attesa.</p>}
+                    {lista.map((a) => {
+                        const c = callDi(a);
+                        const aperta = apertaId === a.id;
+                        return (
+                            <div key={a.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 space-y-2">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-bold text-slate-100">👤 {a.cliente_nome} {a.cliente_cognome} <span className="text-slate-500 font-normal">· {a.negozio} · {a.giorno}</span></p>
+                                        <p className="text-[11px] text-slate-400">segnalata da <b>{a.caller}</b> · lead: {c ? `${c.nome || ""} ${c.cognome || ""}`.trim() || c.ragione_sociale || "—" : "—"}{a.nota ? ` · nota: ${a.nota}` : ""}</p>
+                                    </div>
+                                    {!aperta && (
+                                        <button onClick={() => apriApprova(a)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0">Gestisci</button>
+                                    )}
+                                </div>
+                                {aperta && (
+                                    <div className="space-y-2 pt-2 border-t border-white/10">
+                                        {candidate === null ? <p className="text-xs text-slate-500">Cerco le vendite coerenti…</p> : (
+                                            <>
+                                                <p className="text-[11px] text-slate-400">{candidate.length ? `Vendite di ${a.cliente_nome} ${a.cliente_cognome} entro ±3 giorni (seleziona una o più):` : "Nessuna vendita trovata con quel nome in ±3 giorni: controlla i dati o incolla gli ID CTR-."}</p>
+                                                {candidate.map((x) => (
+                                                    <label key={x.id} className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer text-[11px] ${scelte.has(x.id) ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100" : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/[0.05]"}`}>
+                                                        <input type="checkbox" className="mt-0.5 accent-emerald-500" checked={scelte.has(x.id)} onChange={() => toggleScelta(x.id)} />
+                                                        <span className="min-w-0">{x.esatta ? "🎯 " : ""}{x.label}</span>
+                                                    </label>
+                                                ))}
+                                                <input className="glass-input w-full text-xs" value={ctrManuale} onChange={(e) => setCtrManuale(e.target.value)} placeholder="ID manuali: CTR-XXXX, CTR-YYYY (facoltativo)" />
+                                                {errA && <p className="text-xs text-rose-300">{errA}</p>}
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <button disabled={busy} onClick={() => conferma(a)} className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50">✅ Approva e collega {scelte.size > 1 ? `${scelte.size} vendite` : ""}</button>
+                                                    <input className="glass-input flex-1 min-w-[140px] text-xs" value={notaRifiuto} onChange={(e) => setNotaRifiuto(e.target.value)} placeholder="nota di rifiuto…" />
+                                                    <button disabled={busy} onClick={() => rifiuta(a)} className="px-3.5 py-2 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-bold disabled:opacity-50">Rifiuta</button>
+                                                    <button disabled={busy} onClick={() => setApertaId(null)} className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-bold">Chiudi</button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
     lista: { id: number; call_id: string; caller: string; nota: string; created_at: string | null }[];
     calls: Call[];
@@ -971,6 +1107,44 @@ function CallerPageInner() {
     interface AnomaliaRow { id: number; call_id: string; caller: string; nota: string; stato: string; created_at: string | null }
     const [anomalieAttesa, setAnomalieAttesa] = useState<AnomaliaRow[]>([]);
     const [showAnomalie, setShowAnomalie] = useState(false);
+    // SEGNALAZIONE VENDITA COLLEGATA (Luca 24/08): il caller segnala una
+    // vendita nata dall'appuntamento ma fatta con un ALTRO nominativo
+    const [vendSegnalate, setVendSegnalate] = useState<{ id: number; call_id: string; caller: string; cliente_nome: string; cliente_cognome: string; negozio: string; giorno: string; nota: string | null; created_at: string | null }[]>([]);
+    const [showSegnalate, setShowSegnalate] = useState(false);
+    const [segnalaOpen, setSegnalaOpen] = useState(false);
+    const [segnalaForm, setSegnalaForm] = useState({ nome: "", cognome: "", negozio: "", giorno: "", nota: "" });
+    const [segnalaBusy, setSegnalaBusy] = useState(false);
+    const caricaSegnalate = useCallback(async () => {
+        if (!puoApprovareAnomalie) return;
+        const { data } = await supabase.from("caller_vendite_segnalate").select("id, call_id, caller, cliente_nome, cliente_cognome, negozio, giorno, nota, created_at").eq("stato", "in_attesa").order("created_at");
+        setVendSegnalate((data as typeof vendSegnalate) || []);
+    }, [puoApprovareAnomalie]);
+    useEffect(() => { caricaSegnalate(); }, [caricaSegnalate]);
+    const inviaSegnalazione = async () => {
+        if (!editCall) return;
+        const f = segnalaForm;
+        if (!f.nome.trim() || !f.cognome.trim() || !f.negozio.trim() || !f.giorno) { alert("Nome, cognome, negozio e giorno sono obbligatori."); return; }
+        setSegnalaBusy(true);
+        const { error } = await supabase.from("caller_vendite_segnalate").insert({
+            call_id: editCall.id, caller: currentCaller,
+            cliente_nome: f.nome.trim(), cliente_cognome: f.cognome.trim(),
+            negozio: f.negozio.trim(), giorno: f.giorno, nota: f.nota.trim() || null,
+        });
+        if (error) { setSegnalaBusy(false); alert("Segnalazione NON inviata: " + error.message); return; }
+        const now = new Date().toISOString();
+        const voce: StoricoEntry = { data: now, caller: currentCaller, campo: "Vendita collegata", da: "", a: `🔗 Segnalata vendita di ${f.nome.trim()} ${f.cognome.trim()} · ${f.negozio.trim()} · ${f.giorno} — in approvazione all'amministrazione${f.nota.trim() ? ` · nota: ${f.nota.trim()}` : ""}` };
+        const storico = [...((editCall.storico as StoricoEntry[]) || []), voce];
+        await supabase.from("calls").update({ storico }).eq("id", editCall.id);
+        await supabase.from("admin_tasks").insert({
+            tipo: "vendita_segnalata",
+            titolo: `🔗 Vendita collegata da approvare: ${f.nome.trim()} ${f.cognome.trim()} (${f.negozio.trim()})`,
+            dettaglio: `${currentCaller} segnala che dall'appuntamento della lead è nata una vendita a nome ${f.nome.trim()} ${f.cognome.trim()} il ${f.giorno} presso ${f.negozio.trim()}. Dal Caller, bottone 🔗 «Vendite segnalate»: approva collegando la vendita.`,
+            link: "/caller", target_role: "admin", created_by: currentCaller,
+        }).then(({ error: eT }) => { if (eT) console.warn("admin_tasks:", eT.message); });
+        setSegnalaBusy(false); setSegnalaOpen(false);
+        caricaSegnalate();
+        alert("🔗 Segnalazione inviata: l'amministrazione collegherà la vendita.");
+    };
     const caricaAnomalie = useCallback(async () => {
         if (!puoApprovareAnomalie) return;
         const { data } = await supabase.from("caller_anomalie").select("id, call_id, caller, nota, stato, created_at").eq("stato", "in_attesa").order("created_at");
@@ -2207,6 +2381,13 @@ function CallerPageInner() {
                             🚩 Anomalie: {anomalieAttesa.length}
                         </button>
                     )}
+                    {puoApprovareAnomalie && vendSegnalate.length > 0 && (
+                        <button type="button" onClick={() => setShowSegnalate(true)}
+                            title="Vendite con altro nominativo segnalate dai caller: approva collegando la vendita → cooperation"
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors border-emerald-400 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                            🔗 Vendite segnalate: {vendSegnalate.length}
+                        </button>
+                    )}
                     {/* ARCHIVIATE (Luca 11/08): stati col comportamento 🏁 Definitivo —
                         fuori dal lavoro e dal malus; il toggle le rimostra (solo loro) */}
                     {(() => {
@@ -2380,6 +2561,38 @@ function CallerPageInner() {
                                 card-filtro, totali per collaboratore, tabella episodi.
                                 malusAttuali = vista coerente col filtro anche senza scritture;
                                 versione = ricarica a sincronizzazione finita (dati POST-sync) */}
+                            {showSegnalate && puoApprovareAnomalie && (
+                                <VenditeSegnalateApprovazione lista={vendSegnalate} calls={calls} utente={user?.name || "Amministrazione"}
+                                    chiudi={() => setShowSegnalate(false)}
+                                    onDecisa={() => { caricaSegnalate(); fetchCalls(); }} />
+                            )}
+                            {segnalaOpen && editCall && (
+                                <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSegnalaOpen(false)}>
+                                    <div className="glass-panel w-full max-w-md shadow-2xl border-white/10 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-base font-bold text-white">🔗 Segnala vendita collegata</h3>
+                                            <button onClick={() => setSegnalaOpen(false)} className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+                                        </div>
+                                        <p className="text-[11px] text-slate-400">Dall'appuntamento di questa lead è nata una vendita con un <b>altro nominativo</b> (es. il coniuge). L'amministrazione la collegherà: andrà in cooperation al caller.</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Nome cliente *</label>
+                                                <input className="glass-input w-full" value={segnalaForm.nome} onChange={(e) => setSegnalaForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Maria" /></div>
+                                            <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Cognome cliente *</label>
+                                                <input className="glass-input w-full" value={segnalaForm.cognome} onChange={(e) => setSegnalaForm((f) => ({ ...f, cognome: e.target.value }))} placeholder="Bianchi" /></div>
+                                        </div>
+                                        <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Negozio *</label>
+                                            <SelectOpzioni value={segnalaForm.negozio} onChange={(v) => setSegnalaForm((f) => ({ ...f, negozio: v }))} opzioni={NEGOZI} placeholder="negozio…" className="w-full" /></div>
+                                        <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Giorno della vendita *</label>
+                                            <input type="date" className="glass-input w-full" value={segnalaForm.giorno} onChange={(e) => setSegnalaForm((f) => ({ ...f, giorno: e.target.value }))} /></div>
+                                        <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Nota (facoltativa)</label>
+                                            <input className="glass-input w-full" value={segnalaForm.nota} onChange={(e) => setSegnalaForm((f) => ({ ...f, nota: e.target.value }))} placeholder="es. moglie del sig. Rossi" /></div>
+                                        <button disabled={segnalaBusy} onClick={inviaSegnalazione}
+                                            className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
+                                            {segnalaBusy ? "Invio…" : "Invia all'amministrazione"}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {showAnomalie && puoApprovareAnomalie && (
                                 <AnomalieApprovazione lista={anomalieAttesa} calls={calls} utente={user?.name || "Amministrazione"}
                                     chiudi={() => setShowAnomalie(false)}
@@ -2832,7 +3045,16 @@ function CallerPageInner() {
                     <div className="glass-panel w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={(e) => e.stopPropagation()}>
                         <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                             <h2 className="text-lg font-bold text-white uppercase tracking-tight">{modalMode === "new" ? "Inserimento Manuale (emergenza)" : "Dettaglio Call"}</h2>
-                            <button onClick={closeModal} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                            <div className="flex items-center gap-1">
+                                {modalMode !== "new" && (
+                                    <button onClick={() => { setSegnalaForm({ nome: "", cognome: "", negozio: editCall.negozio_pertinenza || "", giorno: new Date().toISOString().slice(0, 10), nota: "" }); setSegnalaOpen(true); }}
+                                        title="Da questo appuntamento è nata una vendita con un ALTRO nominativo (es. il coniuge)? Segnalala: l'amministrazione la collega e va in cooperation."
+                                        className="px-2.5 py-2 rounded-xl hover:bg-emerald-500/10 text-emerald-300/90 hover:text-emerald-200 text-xs font-bold flex items-center gap-1.5 border border-emerald-400/20">
+                                        🔗 <span className="hidden sm:inline">Vendita collegata</span>
+                                    </button>
+                                )}
+                                <button onClick={closeModal} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-hide">
