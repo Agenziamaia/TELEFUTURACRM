@@ -640,29 +640,31 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     useEffect(() => { listaRef.current = lista; }, [lista]);
     // DRAG A MANO (Luca 24/08 sera): tutta la TESTATA è trascinabile; la
     // card in volo va in trasparenza e il bersaglio si illumina
-    const [dragIdx, setDragIdx] = useState(null);
-    const [overIdx, setOverIdx] = useState(null);
-    const [ghost, setGhost] = useState(null);
-    // DRAG POINTER-BASED (Luca 24/08 sera, secondo giro): il drag nativo del
-    // browser moriva appena il re-render toccava il nodo trascinato — qui è
-    // tutto pointer events: soglia 6px anti-click, etichetta fantasma che
-    // segue il mouse, bersaglio via elementFromPoint, rilascio = spostamento.
+    const [dragKey, setDragKey] = useState(null);
+    // DRAG "COME UNA FINESTRA" (Luca 24/08, quarto giro): la CARD VERA
+    // (clone a grandezza reale) segue il mouse e le altre si scansano IN
+    // DIRETTA — il riordino avviene durante il passaggio, non al rilascio.
+    // Tutto pointer events; il rilascio sul vuoto aggancia la card più
+    // vicina; throttle sul riordino per non far sfarfallare il riflow.
     const trascinaCard = (e, i) => {
         if (e.button !== 0) return;
         if (e.target.closest("button")) return;
         e.preventDefault();
+        const grid = e.currentTarget.closest(".tf-griglia");
+        const cardEl = e.currentTarget.closest(".an-card");
+        if (!grid || !cardEl) return;
         try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* vecchi browser */ }
         const startX = e.clientX, startY = e.clientY;
-        const grid = e.currentTarget.closest(".tf-griglia");
+        const chiave = listaRef.current[i]?.k;
+        const r0 = cardEl.getBoundingClientRect();
+        let curIdx = i;
         let attivo = false;
-        // il bersaglio vale ANCHE sul vuoto della griglia (video Luca ×3:
-        // rilasciava tra le card, dove il drop cadeva nel nulla): se il punto
-        // non è sopra una card, vince la card geometricamente più vicina
+        let clone = null;
+        let ultimoMuovi = 0;
         const bersaglio = (ev) => {
             const el = document.elementFromPoint(ev.clientX, ev.clientY);
             const card = el && el.closest ? el.closest("[data-wgi]") : null;
             if (card) return Number(card.getAttribute("data-wgi"));
-            if (!grid) return null;
             const g = grid.getBoundingClientRect();
             if (ev.clientX < g.left - 60 || ev.clientX > g.right + 60 || ev.clientY < g.top - 60 || ev.clientY > g.bottom + 160) return null;
             let best = null, bestD = Infinity;
@@ -679,27 +681,39 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
             if (!attivo) {
                 if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
                 attivo = true;
-                setDragIdx(i);
                 document.body.style.userSelect = "none";
+                clone = cardEl.cloneNode(true);
+                Object.assign(clone.style, {
+                    position: "fixed", left: `${r0.left}px`, top: `${r0.top}px`,
+                    width: `${r0.width}px`, height: `${r0.height}px`, margin: "0",
+                    zIndex: "10001", pointerEvents: "none", opacity: "0.92",
+                    boxShadow: "0 26px 70px rgba(0,0,0,.6)", transition: "none",
+                });
+                document.body.appendChild(clone);
+                setDragKey(chiave);
             }
-            setGhost({ x: ev.clientX, y: ev.clientY });
+            clone.style.transform = `translate(${ev.clientX - startX}px, ${ev.clientY - startY}px) scale(1.02)`;
             const a = bersaglio(ev);
-            setOverIdx(a != null && a !== i ? a : null);
+            if (a != null && a !== curIdx && Date.now() - ultimoMuovi > 160) {
+                muoviRef.current(curIdx, a);
+                curIdx = a;
+                ultimoMuovi = Date.now();
+            }
         };
         const onUp = (ev) => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
             document.body.style.userSelect = "";
+            if (clone) clone.remove();
             if (attivo) {
                 const a = bersaglio(ev);
-                if (a != null && a !== i) muovi(i, a);
+                if (a != null && a !== curIdx) muoviRef.current(curIdx, a);
             }
-            setDragIdx(null); setOverIdx(null); setGhost(null);
+            setDragKey(null);
         };
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
     };
-    const muovi = (da, a) => { if (a < 0 || a >= lista.length) return; const next = [...lista]; const [w] = next.splice(da, 1); next.splice(a, 0, w); setLista(next); };
     const taglia = (i) => { const STEP = { 1: 2, 2: 4, 3: 4, 4: 6, 5: 6, 6: 8, 7: 8, 8: 2 }; const next = [...lista]; next[i] = { ...next[i], s: STEP[next[i].s] || 4 }; setLista(next); };
     // RESIZE A SCATTO (Luca 24/08: «come le finestre, ma che non si rompa»):
     // trascini l'angolo, la card segue LIVE scattando sulle 8 colonne; al
@@ -750,7 +764,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 {lista.map((w, i) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
-                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative @container transition-opacity", w.h && "flex flex-col", SPAN[w.s], dragIdx === i && "opacity-40", overIdx === i && dragIdx !== i && "ring-2 ring-indigo-400/70")}
+                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative @container transition-opacity", w.h && "flex flex-col", SPAN[w.s], dragKey === w.k && "opacity-25")}
                             style={{ animationDelay: `${Math.min(i * 40, 320)}ms`, ...(w.h ? { height: w.h * 112 - 16 } : {}) }}
                             data-wgi={i}>
                             <div className="flex items-center justify-between gap-2 mb-3">
@@ -787,12 +801,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 })}
             </div>
             {!lista.length && <p className="text-center text-xs text-slate-500 py-10">Griglia vuota — «＋ Aggiungi» per popolare l'area.</p>}
-            {ghost && dragIdx != null && lista[dragIdx] && (
-                <div className="fixed z-[10001] pointer-events-none px-3 py-1.5 rounded-lg bg-indigo-600/90 text-white text-xs font-bold shadow-2xl flex items-center gap-1.5"
-                    style={{ left: ghost.x + 14, top: ghost.y + 12 }}>
-                    <GripVertical className="w-3 h-3 opacity-70" /> {REGISTRO[lista[dragIdx].k]?.nome || "widget"}
-                </div>
-            )}
+
 
             {galleria && (
                 <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setGalleria(false)}>
