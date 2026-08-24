@@ -996,6 +996,10 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
         setEmailDup(email.trim() ? (await trovaDuplicati({ excludeId: cliente?.id || null, email })).email : null);
     };
     const handleSave = async () => {
+        // il «forza» del check CF si CONSUMA alla prima riga: qualunque
+        // early-return successivo non lo lascia armato per il giro dopo
+        const forzaCF = cfForzaRef.current;
+        cfForzaRef.current = false;
         // Richiesta Luca: se il codice fiscale non esiste si deve poter salvare
         // lo stesso; restano obbligatori solo nome, cognome e cellulare.
         const missing = [
@@ -1037,8 +1041,7 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
         // referente). Blocca, ma si può forzare con conferma esplicita.
         setCfInc(null);
         const esCF = tipo === "consumer" ? verificaCoerenzaCF(nome, cognome, cfPiva) : verificaCoerenzaCF(nome, cognome, cfRef);
-        if (!esCF.ok && !cfForzaRef.current) { setCfInc(esCF.motivi); return; }
-        cfForzaRef.current = false;
+        if (!esCF.ok && !forzaCF) { setCfInc(esCF.motivi); return; }
 
         // tipoNuovo: il cellulare blocca solo tra anagrafiche dello STESSO tipo —
         // la coppia consumer+business puo' condividerlo (Luca 01/08)

@@ -1568,8 +1568,12 @@ export default function RicercaContratto() {
                 // riapplica la richiesta sulla scheda giusta: il cf_piva ora
                 // coincide col cliente puntato → nessun conflitto; gli altri
                 // campi (contratto/dettagli/cliente) vengono applicati normalmente
-                esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma);
-                if (esito && typeof esito === "string") { setReqBusy(null); alert("Vendita spostata, ma il resto della richiesta non è passato: " + esito); return; }
+                // rilievo revisore: l'admin ha GIÀ confermato lo spostamento —
+                // un cfIncoerente legacy sulla scheda di destinazione non deve
+                // marcare la richiesta approvata senza applicarla
+                esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma, { forzaCF: true });
+                if (esito && typeof esito !== "string") { setReqBusy(null); alert("Vendita spostata, ma il resto della richiesta non è passato (esito inatteso)."); return; }
+                if (esito) { setReqBusy(null); alert("Vendita spostata, ma il resto della richiesta non è passato: " + esito); return; }
                 await supabase.from("contract_change_requests").update({
                     status: "approved",
                     reviewed_by: user?.id || null,

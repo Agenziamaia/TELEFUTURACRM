@@ -2023,10 +2023,20 @@ function GestioneUsatiInner() {
     // acquisito_da = negozio). L'usato si registra comunque anche se il
     // cliente fallisce: meglio un telefono senza aggancio che nessun telefono.
     let clientId: string | null = data.clientId || null;
+    const anaD = (data.anagrafica ?? {}) as Record<string, string>;
+    const isBus = data.tipoCliente === "business";
+    const idf = String((isBus ? anaD.piva : anaD.cf) || "").trim().toUpperCase();
+    // COERENZA CF ↔ NOME (Luca 24/08) — FUORI dal try best-effort (rilievo
+    // revisore: l'Annulla deve fermare DAVVERO la registrazione, non essere
+    // inghiottito dal catch)
+    if (!clientId && (idf || anaD.nome || anaD.ragioneSociale)) {
+      const eCF = isBus ? verificaCoerenzaCF("", "", idf) : verificaCoerenzaCF(anaD.nome, anaD.cognome, idf);
+      if (!eCF.ok) {
+        const okCF = window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${eCF.motivi.join("\n— ")}\n\nOK = registra comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
+        if (!okCF) { alert("Registrazione annullata: correggi i dati del cliente e riprova."); return; }
+      }
+    }
     try {
-      const anaD = (data.anagrafica ?? {}) as Record<string, string>;
-      const isBus = data.tipoCliente === "business";
-      const idf = String((isBus ? anaD.piva : anaD.cf) || "").trim().toUpperCase();
       if (!clientId && idf) {
         const { data: ex } = await supabase.from("clients").select("id").ilike("cf_piva", idf).limit(1);
         if (ex?.length) clientId = ex[0].id as string;
@@ -2049,14 +2059,6 @@ function GestioneUsatiInner() {
           creato_da: data.venditore || "",
           acquisito_da: data.negozio || null,
         };
-        // COERENZA CF ↔ NOME (Luca 24/08): bloccante ma forzabile
-        {
-            const eCF = isBus ? verificaCoerenzaCF("", "", idf) : verificaCoerenzaCF(anaD.nome, anaD.cognome, idf);
-            if (!eCF.ok) {
-                const okCF = window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${eCF.motivi.join("\n— ")}\n\nOK = salva comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
-                if (!okCF) throw new Error("Codice fiscale incoerente: correggi i dati del cliente.");
-            }
-        }
         const { data: nuovo, error: eCli } = await supabase.from("clients").insert(payloadCli).select("id").single();
         if (!eCli && nuovo?.id) clientId = nuovo.id as string;
       }

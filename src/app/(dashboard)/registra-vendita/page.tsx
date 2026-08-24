@@ -5509,30 +5509,6 @@ function CRM() {
         existingClient = data && data[0];
       }
 
-      // UNIVOCITA' (regole Luca, agg. 01/08): se stiamo per creare un cliente
-      // NUOVO ma il cellulare appartiene gia' a un altro DELLO STESSO TIPO, ci
-      // si ferma e si sceglie: spostare il numero qui o inserirne un altro.
-      // La coppia consumer+business (amministratore di societa') puo' invece
-      // condividere il numero. L'email non blocca ma avvisa.
-      if (!existingClient && tel) {
-        const dup = await trovaDuplicati({ cellulare: tel, tipoNuovo: tipoCliente === "business" ? "business" : "consumer" });
-        if (dup.cellulare) {
-          if (spostaCellRef.current) {
-            await liberaCellulare(dup.cellulare.id);
-            spostaCellRef.current = false;
-          } else {
-            setDupCellCliente(dup.cellulare);
-            setShowCart(true);
-            sT("⚠️ Cellulare già associato a un altro cliente: scegli come procedere");
-            return false;
-          }
-        }
-      }
-      if ((ana.email || "").trim()) {
-        const dupM = await trovaDuplicati({ excludeId: existingClient?.id || null, email: ana.email });
-        if (dupM.email) sT(`ℹ️ Email già registrata sotto “${dupM.email.label}” — si prosegue comunque`);
-      }
-
       const idBase = cfPiva || tel.replace(/\D/g, "") || "ND";
       const clientId = existingClient?.id || `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`;
 
@@ -5607,6 +5583,31 @@ function CRM() {
           if (!ok) throw new Error("Codice fiscale incoerente coi dati del cliente: correggi e riprova.");
         }
       }
+
+      // UNIVOCITA' (regole Luca, agg. 01/08): se stiamo per creare un cliente
+      // NUOVO ma il cellulare appartiene gia' a un altro DELLO STESSO TIPO, ci
+      // si ferma e si sceglie: spostare il numero qui o inserirne un altro.
+      // La coppia consumer+business (amministratore di societa') puo' invece
+      // condividere il numero. L'email non blocca ma avvisa.
+      if (!existingClient && tel) {
+        const dup = await trovaDuplicati({ cellulare: tel, tipoNuovo: tipoCliente === "business" ? "business" : "consumer" });
+        if (dup.cellulare) {
+          if (spostaCellRef.current) {
+            await liberaCellulare(dup.cellulare.id);
+            spostaCellRef.current = false;
+          } else {
+            setDupCellCliente(dup.cellulare);
+            setShowCart(true);
+            sT("⚠️ Cellulare già associato a un altro cliente: scegli come procedere");
+            return false;
+          }
+        }
+      }
+      if ((ana.email || "").trim()) {
+        const dupM = await trovaDuplicati({ excludeId: existingClient?.id || null, email: ana.email });
+        if (dupM.email) sT(`ℹ️ Email già registrata sotto “${dupM.email.label}” — si prosegue comunque`);
+      }
+
       const { error: clientErr } = await supabase.from("clients").upsert(clientData, { onConflict: "id" });
       if (clientErr) throw clientErr;
 
