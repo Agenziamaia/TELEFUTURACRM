@@ -940,3 +940,10 @@ html.light .com-scura input, html.light .com-scura textarea { color: #f1f5f9; }
 html.light .com-scura input::placeholder, html.light .com-scura textarea::placeholder { color: #64748b !important; }
 /* la card ESPANSA della bacheca: in chiaro prende il fondo scuro del popup */
 html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1e 100%) !important; border-color: rgba(255,255,255,0.14) !important; }
+
+/* ── react-grid-layout sul tema scuro (griglia Analisi, Luca 24/08) ────── */
+.tf-griglia .react-grid-item.react-grid-placeholder { background: rgba(99, 102, 241, .22) !important; border: 1px dashed rgba(129, 140, 248, .6); border-radius: 16px; }
+.tf-griglia .react-grid-item > .react-resizable-handle { opacity: .35; transition: opacity .15s; }
+.tf-griglia .react-grid-item:hover > .react-resizable-handle { opacity: .9; }
+.tf-griglia .react-grid-item > .react-resizable-handle::after { border-color: rgba(148, 163, 184, .85) !important; }
+.tf-griglia .react-grid-item.react-draggable-dragging { z-index: 40; box-shadow: 0 26px 70px rgba(0, 0, 0, .6); }

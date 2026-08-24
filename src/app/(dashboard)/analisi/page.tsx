@@ -33,6 +33,8 @@ import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, 
 import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero, HEX_BRAND } from "./_widgets";
 import { trkBrandKey } from "@/lib/brandAssets";
 import { CoronaOro } from "@/components/IconaCorona";
+import { GridLayout, useContainerWidth } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
 import { Master } from "./_master";
 
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
@@ -45,20 +47,36 @@ const ymISO = ({ y, m }) => `${y}-${String(m).padStart(2, "0")}`;
 const ymPrec = ({ y, m }) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 });
 const giorniDelMese = ({ y, m }) => new Date(y, m, 0).getDate();
 const oggiISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-// GRIGLIA A 8 COLONNE (Luca 24/08: «più misure» + resize a scatto): le
-// taglie sono OTTAVI della riga su desktop; su tablet degradano a 1-2
-// colonne, su telefono tutto in colonna. Classi literal per il JIT.
-const SPAN = {
-    1: "xl:col-span-1",
-    2: "sm:col-span-1 xl:col-span-2",
-    3: "sm:col-span-2 xl:col-span-3",
-    4: "sm:col-span-2 xl:col-span-4",
-    5: "sm:col-span-2 xl:col-span-5",
-    6: "sm:col-span-2 xl:col-span-6",
-    7: "sm:col-span-2 xl:col-span-7",
-    8: "sm:col-span-2 xl:col-span-8",
-};
-const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
+// LAYOUT A COORDINATE (Luca 24/08, «come Tetris»): ogni card ha posizione
+// x,y e dimensioni w,h in celle (8 colonne, riga = 96px). Il motore è
+// react-grid-layout: drag dalla testata, resize dall'angolo, compattazione
+// verticale — la card va ESATTAMENTE dove la molli.
+const hDef = (k) => { const g = REGISTRO[k]?.gruppo; return g === "operatori" ? 4 : g === "marginalità" ? 5 : 3; };
+// decodifica k@x,y,w,h (v9); i formati vecchi (k@s / k@s:h) vengono
+// convertiti con un packing per righe, senza perdere nulla
+const decodeLayout = (arr, versione = 0) => {
+    const items = (Array.isArray(arr) ? arr : []).map((str) => {
+        const [k, resto] = String(str).split("@");
+        if (!REGISTRO[k]) return null;
+        if (versione >= 9) {
+            const [x, y, w, h] = String(resto || "").split(",").map(Number);
+            return { k, x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0, s: w >= 1 && w <= 8 ? Math.round(w) : (REGISTRO[k].def || 2), h: h >= 2 && h <= 12 ? Math.round(h) : hDef(k) };
+        }
+        const [ts, th] = String(resto || "").split(":");
+        let nS = Number(ts);
+        if (versione < 8) nS = nS === 1 ? 2 : nS === 2 ? 4 : nS === 4 ? 8 : nS;
+        const hh = Number(th);
+        return { k, s: nS >= 1 && nS <= 8 ? Math.round(nS) : (REGISTRO[k].def || 2), h: hh >= 2 && hh <= 10 ? Math.round(hh) : hDef(k) };
+    }).filter(Boolean);
+    if (versione < 9) {
+        let x = 0, y = 0, rigaH = 0;
+        for (const w of items) {
+            if (x + w.s > 8) { x = 0; y += rigaH; rigaH = 0; }
+            w.x = x; w.y = y; x += w.s; rigaH = Math.max(rigaH, w.h);
+        }
+    }
+    return items;
+};const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
 
 /* ── arricchimento (lente ragazzi): vendita → punti + campi dettaglio.
    idxDi (iso → indice 1..nG del periodo): fuori periodo si scarta; per il
@@ -440,29 +458,17 @@ function AnalisiInner() {
     }, [items, itemsPrev, negozi.join("|"), collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
 
     // ── layout per area (app_users.analisi_layout) ────────────────────────
-    // taglie in OTTAVI (1..8). I layout salvati prima della griglia a 8
-    // (senza __v) vengono rimappati: 1→2, 2→4, 4→8.
-    const decode = (arr, vecchio = false) => (Array.isArray(arr) ? arr : []).map((s) => {
-        const [k, t] = String(s).split("@");
-        if (!REGISTRO[k]) return null;
-        // formato k@s oppure k@s:h — h = ALTEZZA in scatti (Luca 24/08 sera:
-        // «finestre»); assente = altezza automatica dal contenuto
-        const [ts, th] = String(t || "").split(":");
-        let n = Number(ts);
-        if (vecchio) n = n === 1 ? 2 : n === 2 ? 4 : n === 4 ? 8 : n;
-        const h = Number(th);
-        return { k, s: n >= 1 && n <= 8 ? Math.round(n) : (REGISTRO[k].def || 2), ...(h >= 2 && h <= 10 ? { h: Math.round(h) } : {}) };
-    }).filter(Boolean);
+
     const [layoutIo, setLayoutIo] = useState(null);
     const [layoutNeg, setLayoutNeg] = useState(null);
     useEffect(() => {
         if (loading) return;
-        const vecchio = !((layoutSalvato?.__v || 0) >= 8);
-        setLayoutIo((cur) => cur ?? (decode(layoutSalvato?.io, vecchio).length ? decode(layoutSalvato.io, vecchio) : decode(DEFAULT_LAYOUT.io)));
-        setLayoutNeg((cur) => cur ?? (decode(layoutSalvato?.negozio, vecchio).length ? decode(layoutSalvato.negozio, vecchio) : decode(DEFAULT_LAYOUT.negozio)));
+        const ver = Number(layoutSalvato?.__v || 0);
+        setLayoutIo((cur) => cur ?? (decodeLayout(layoutSalvato?.io, ver).length ? decodeLayout(layoutSalvato.io, ver) : decodeLayout(DEFAULT_LAYOUT.io, 8)));
+        setLayoutNeg((cur) => cur ?? (decodeLayout(layoutSalvato?.negozio, ver).length ? decodeLayout(layoutSalvato.negozio, ver) : decodeLayout(DEFAULT_LAYOUT.negozio, 8)));
     }, [loading, layoutSalvato]);
     const salva = async (areaKey, lista) => {
-        const next = { ...(layoutSalvato || {}), __v: 8, [areaKey]: lista.map((w) => `${w.k}@${w.s}${w.h ? `:${w.h}` : ""}`) };
+        const next = { ...(layoutSalvato || {}), __v: 9, [areaKey]: lista.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || hDef(w.k)}`) };
         setLayoutSalvato(next);
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
@@ -636,115 +642,16 @@ function AnalisiInner() {
 /* ═══ GRIGLIA MODULARE (come la Home: drag, taglie, galleria) ══════════ */
 function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     const [galleria, setGalleria] = useState(false);
-    const listaRef = useRef(lista);
-    useEffect(() => { listaRef.current = lista; }, [lista]);
-    // DRAG A MANO (Luca 24/08 sera): tutta la TESTATA è trascinabile; la
-    // card in volo va in trasparenza e il bersaglio si illumina
-    const [dragKey, setDragKey] = useState(null);
-    // DRAG "COME UNA FINESTRA" (Luca 24/08, quarto giro): la CARD VERA
-    // (clone a grandezza reale) segue il mouse e le altre si scansano IN
-    // DIRETTA — il riordino avviene durante il passaggio, non al rilascio.
-    // Tutto pointer events; il rilascio sul vuoto aggancia la card più
-    // vicina; throttle sul riordino per non far sfarfallare il riflow.
-    const trascinaCard = (e, i) => {
-        if (e.button !== 0) return;
-        if (e.target.closest("button")) return;
-        e.preventDefault();
-        const grid = e.currentTarget.closest(".tf-griglia");
-        const cardEl = e.currentTarget.closest(".an-card");
-        if (!grid || !cardEl) return;
-        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* vecchi browser */ }
-        const startX = e.clientX, startY = e.clientY;
-        const chiave = listaRef.current[i]?.k;
-        const r0 = cardEl.getBoundingClientRect();
-        let curIdx = i;
-        let attivo = false;
-        let clone = null;
-        let ultimoMuovi = 0;
-        const bersaglio = (ev) => {
-            const el = document.elementFromPoint(ev.clientX, ev.clientY);
-            const card = el && el.closest ? el.closest("[data-wgi]") : null;
-            if (card) return Number(card.getAttribute("data-wgi"));
-            const g = grid.getBoundingClientRect();
-            if (ev.clientX < g.left - 60 || ev.clientX > g.right + 60 || ev.clientY < g.top - 60 || ev.clientY > g.bottom + 160) return null;
-            let best = null, bestD = Infinity;
-            grid.querySelectorAll("[data-wgi]").forEach((n2) => {
-                const r = n2.getBoundingClientRect();
-                const cx = Math.max(r.left, Math.min(ev.clientX, r.right));
-                const cy = Math.max(r.top, Math.min(ev.clientY, r.bottom));
-                const d = Math.hypot(ev.clientX - cx, ev.clientY - cy);
-                if (d < bestD) { bestD = d; best = n2; }
-            });
-            return best ? Number(best.getAttribute("data-wgi")) : null;
-        };
-        const onMove = (ev) => {
-            if (!attivo) {
-                if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
-                attivo = true;
-                document.body.style.userSelect = "none";
-                clone = cardEl.cloneNode(true);
-                Object.assign(clone.style, {
-                    position: "fixed", left: `${r0.left}px`, top: `${r0.top}px`,
-                    width: `${r0.width}px`, height: `${r0.height}px`, margin: "0",
-                    zIndex: "10001", pointerEvents: "none", opacity: "0.92",
-                    boxShadow: "0 26px 70px rgba(0,0,0,.6)", transition: "none",
-                });
-                document.body.appendChild(clone);
-                setDragKey(chiave);
-            }
-            clone.style.transform = `translate(${ev.clientX - startX}px, ${ev.clientY - startY}px) scale(1.02)`;
-            const a = bersaglio(ev);
-            if (a != null && a !== curIdx && Date.now() - ultimoMuovi > 160) {
-                muoviRef.current(curIdx, a);
-                curIdx = a;
-                ultimoMuovi = Date.now();
-            }
-        };
-        const onUp = (ev) => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-            document.body.style.userSelect = "";
-            if (clone) clone.remove();
-            if (attivo) {
-                const a = bersaglio(ev);
-                if (a != null && a !== curIdx) muoviRef.current(curIdx, a);
-            }
-            setDragKey(null);
-        };
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
+    const { width, containerRef, mounted } = useContainerWidth();
+    const rglLayout = lista.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || hDef(w.k), minW: 1, minH: 2 }));
+    const onLayout = (l) => {
+        const mappa = new Map(l.map((it) => [it.i, it]));
+        const next = lista.map((w) => { const it = mappa.get(w.k); return it ? { ...w, x: it.x, y: it.y, s: it.w, h: it.h } : w; });
+        const uguale = next.length === lista.length && next.every((w, i2) => { const pr = lista[i2]; return pr.k === w.k && pr.x === w.x && pr.y === w.y && pr.s === w.s && pr.h === w.h; });
+        if (!uguale) setLista(next);
     };
-    const taglia = (i) => { const STEP = { 1: 2, 2: 4, 3: 4, 4: 6, 5: 6, 6: 8, 7: 8, 8: 2 }; const next = [...lista]; next[i] = { ...next[i], s: STEP[next[i].s] || 4 }; setLista(next); };
-    // RESIZE A SCATTO (Luca 24/08: «come le finestre, ma che non si rompa»):
-    // trascini l'angolo, la card segue LIVE scattando sulle 8 colonne; al
-    // rilascio la taglia è già salvata dall'ultimo scatto applicato.
-    const iniziaResize = (e, i) => {
-        e.preventDefault(); e.stopPropagation();
-        const grid = e.currentTarget.closest(".tf-griglia");
-        const card = e.currentTarget.closest(".an-card");
-        if (!grid || !card) return;
-        const colW = grid.getBoundingClientRect().width / 8;
-        const STEP_H = 112;      // uno scatto d'altezza ≈ 96px utili + gap
-        let ultimoS = lista[i]?.s;
-        let ultimoH = lista[i]?.h || 0;
-        const onMove = (ev) => {
-            // bordi riletti VIVI: lo scatto resta ancorato alla card vera
-            const r = card.getBoundingClientRect();
-            const span = Math.min(8, Math.max(1, Math.round((ev.clientX - r.left) / colW)));
-            const hRaw = Math.round((ev.clientY - r.top) / STEP_H);
-            // l'altezza entra in gioco solo trascinando VERSO IL BASSO oltre
-            // 2 scatti: i drag orizzontali puri non impongono un'altezza
-            const h = hRaw >= 2 ? Math.min(10, hRaw) : ultimoH;
-            if (span === ultimoS && h === ultimoH) return;
-            ultimoS = span; ultimoH = h;
-            setLista(listaRef.current.map((w, j) => (j === i ? { ...w, s: span, ...(h ? { h } : {}) } : w)));
-        };
-        const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
-    };
-    const rimuovi = (i) => setLista(lista.filter((_, j) => j !== i));
-    const aggiungi = (k) => { setLista([...lista, { k, s: REGISTRO[k].def || 1 }]); setGalleria(false); };
+    const rimuovi = (k) => setLista(lista.filter((w) => w.k !== k));
+    const aggiungi = (k) => { setLista([...lista, { k, s: REGISTRO[k].def || 2, h: hDef(k), x: 0, y: Infinity }]); setGalleria(false); };
     const presenti = new Set(lista.map((w) => w.k));
     const disponibili = Object.entries(REGISTRO).filter(([k, d]) => !presenti.has(k) && (!d.solo || d.solo === areaKey));
 
@@ -754,24 +661,22 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 <p className="text-xs font-bold text-slate-300">{intestazione}</p>
                 <div className="flex gap-1.5">
                     <button onClick={() => setGalleria(true)} className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-slate-300 hover:bg-white/10 transition-colors inline-flex items-center gap-1"><Plus className="w-3 h-3" /> Aggiungi</button>
-                    <button onClick={() => setLista(DEFAULT_LAYOUT[areaKey].map((s) => { const [k, t] = s.split("@"); return { k, s: Number(t) }; }))} title="Ripristina layout" className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 transition-colors"><RotateCcw className="w-3 h-3" /></button>
+                    <button onClick={() => setLista(decodeLayout(DEFAULT_LAYOUT[areaKey], 8))} title="Ripristina layout" className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 transition-colors"><RotateCcw className="w-3 h-3" /></button>
                 </div>
             </div>
-            {/* NIENTE "dense" (bug video Luca 24/08): re-impacchettava le card
-                e annullava visivamente ogni riordino (frecce e drag del grip),
-                e faceva saltare la card sotto il mouse durante il resize */}
-            <div className="tf-griglia grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-8 gap-4 items-start">
-                {lista.map((w, i) => {
+            {/* TETRIS VERO (Luca 24/08, quinto giro): react-grid-layout — la
+                card si trascina dalla TESTATA e va dove la molli, le altre si
+                compattano in verticale; resize dall'angolo in basso a destra */}
+            <div ref={containerRef}>
+            {mounted && <GridLayout className="tf-griglia" layout={rglLayout} width={width} cols={8} rowHeight={96} margin={[16, 16]} containerPadding={[0, 0]}
+                draggableHandle=".tf-drag" draggableCancel="button" compactType="vertical" onLayoutChange={onLayout}>
+                {lista.map((w) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
-                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative @container transition-opacity", w.h && "flex flex-col", SPAN[w.s], dragKey === w.k && "opacity-25")}
-                            style={{ animationDelay: `${Math.min(i * 40, 320)}ms`, ...(w.h ? { height: w.h * 112 - 16 } : {}) }}
-                            data-wgi={i}>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                                <p onPointerDown={(e) => trascinaCard(e, i)}
-                                    onDragStart={(e) => e.preventDefault()}
-                                    title="Trascina la testata per spostare la card"
-                                    className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 cursor-grab active:cursor-grabbing select-none touch-none">
+                        <div key={w.k} className="glass-card an-card rounded-2xl p-4 group/wg relative @container flex flex-col overflow-hidden">
+                            <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                                <p title="Trascina la testata per spostare la card"
+                                    className="tf-drag text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 flex-1 cursor-grab active:cursor-grabbing select-none touch-none">
                                     <span className="text-slate-600 group-hover/wg:text-slate-300 shrink-0"><GripVertical className="w-3.5 h-3.5" /></span>
                                     {/* il LOGO è il titolo dello schema: grande, subito a destra
                                         del grip (Luca 21/08) — niente nomi brand scritti */}
@@ -783,22 +688,14 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                         : <span className="truncate">{def.emoji} {def.nome}</span>}
                                 </p>
                                 <div className="flex gap-0.5 opacity-0 group-hover/wg:opacity-100 transition-opacity shrink-0">
-                                    <button onClick={() => muovi(i, i - 1)} title="Sposta prima" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-white/10">◀</button>
-                                    <button onClick={() => muovi(i, i + 1)} title="Sposta dopo" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-white/10">▶</button>
-                                    <button onClick={() => taglia(i)} title="Cambia taglia — o trascina l'angolo in basso a destra" className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-slate-400 hover:bg-white/10 tabular-nums">{w.s}∕8</button>
-                                    <button onClick={() => rimuovi(i)} title="Rimuovi" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="w-3 h-3" /></button>
+                                    <button onClick={() => rimuovi(w.k)} title="Rimuovi" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="w-3 h-3" /></button>
                                 </div>
                             </div>
-                            {w.h ? <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">{def.render(ctx, w.s)}</div> : def.render(ctx, w.s)}
-                            <span onPointerDown={(e) => iniziaResize(e, i)}
-                                onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setLista(listaRef.current.map((w2, j) => { if (j !== i) return w2; const { h: _h, ...resto } = w2; return resto; })); }}
-                                title="Trascina: larghezza a colonne, verso il basso anche l'ALTEZZA (la card diventa una finestra con scroll). Doppio click = altezza automatica."
-                                className="absolute bottom-1 right-1 w-6 h-6 grid place-items-center cursor-ew-resize opacity-40 group-hover/wg:opacity-90 hover:!opacity-100 text-slate-400 hover:text-white z-10 touch-none select-none">
-                                <svg viewBox="0 0 16 16" className="w-4 h-4"><path d="M14 6 L6 14 M14 10 L10 14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none" /></svg>
-                            </span>
+                            <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">{def.render(ctx, w.s)}</div>
                         </div>
                     );
                 })}
+            </GridLayout>}
             </div>
             {!lista.length && <p className="text-center text-xs text-slate-500 py-10">Griglia vuota — «＋ Aggiungi» per popolare l'area.</p>}
 
