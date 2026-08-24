@@ -646,10 +646,11 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
         const card = e.currentTarget.closest(".an-card");
         if (!grid || !card) return;
         const colW = grid.getBoundingClientRect().width / 8;
-        const left = card.getBoundingClientRect().left;
         let ultimo = lista[i]?.s;
         const onMove = (ev) => {
-            const span = Math.min(8, Math.max(1, Math.round((ev.clientX - left) / colW)));
+            // il bordo sinistro si rilegge VIVO: se la griglia riflow-a, lo
+            // scatto resta ancorato alla card vera, non a una foto vecchia
+            const span = Math.min(8, Math.max(1, Math.round((ev.clientX - card.getBoundingClientRect().left) / colW)));
             if (span === ultimo) return;
             ultimo = span;
             setLista(listaRef.current.map((w, j) => (j === i ? { ...w, s: span } : w)));
@@ -672,7 +673,10 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                     <button onClick={() => setLista(DEFAULT_LAYOUT[areaKey].map((s) => { const [k, t] = s.split("@"); return { k, s: Number(t) }; }))} title="Ripristina layout" className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 transition-colors"><RotateCcw className="w-3 h-3" /></button>
                 </div>
             </div>
-            <div className="tf-griglia grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-8 gap-4 items-start" style={{ gridAutoFlow: "row dense" }}>
+            {/* NIENTE "dense" (bug video Luca 24/08): re-impacchettava le card
+                e annullava visivamente ogni riordino (frecce e drag del grip),
+                e faceva saltare la card sotto il mouse durante il resize */}
+            <div className="tf-griglia grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-8 gap-4 items-start">
                 {lista.map((w, i) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
@@ -700,8 +704,8 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                             {def.render(ctx, w.s)}
                             <span onPointerDown={(e) => iniziaResize(e, i)}
                                 title="Trascina: la card scatta sulle colonne della griglia"
-                                className="absolute bottom-1 right-1 w-4 h-4 cursor-ew-resize opacity-0 group-hover/wg:opacity-60 hover:!opacity-100 text-slate-400 hover:text-white z-10 touch-none select-none">
-                                <svg viewBox="0 0 16 16" className="w-4 h-4"><path d="M14 6 L6 14 M14 10 L10 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /></svg>
+                                className="absolute bottom-1 right-1 w-6 h-6 grid place-items-center cursor-ew-resize opacity-40 group-hover/wg:opacity-90 hover:!opacity-100 text-slate-400 hover:text-white z-10 touch-none select-none">
+                                <svg viewBox="0 0 16 16" className="w-4 h-4"><path d="M14 6 L6 14 M14 10 L10 14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none" /></svg>
                             </span>
                         </div>
                     );
