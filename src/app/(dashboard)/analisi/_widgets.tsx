@@ -1290,14 +1290,27 @@ function WidgetRitmo({ ctx }) {
 }
 
 function WidgetMixPezzi({ ctx }) {
+    // % DI MIX in chiaro (Luca 24/08: «quale % stanno attivando di quel
+    // brand e quale di un altro»): legenda sotto l'anello + quota nel tip
+    const tot = ctx.items.length;
+    const righe = Object.entries(GARA).map(([b, g]) => {
+        const sue = ctx.items.filter((it) => it.brandGara === b);
+        return { b, g, sue, pct: tot > 0 ? Math.round((sue.length / tot) * 100) : 0 };
+    });
     return (
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-3">
             <Donut size={160} unit="pezzi"
-                slices={Object.entries(GARA).map(([b, g]) => {
-                    const sue = ctx.items.filter((it) => it.brandGara === b);
-                    return { label: g.label, colore: g.colore, val: sue.length, det: righeOperatore(b, sue).slice(0, 5).map((r) => ({ l: `${r.emoji} ${r.label}`, r: fmtN(r.items.length), colore: r.colore })) };
-                })}
-                centro={<><span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={ctx.items.length} punti={false} /></span><span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">pezzi totali</span></>} />
+                slices={righe.map(({ b, g, sue, pct }) => ({ label: g.label, colore: g.colore, val: sue.length, det: [{ l: "quota mix", r: `${pct}%` }, ...righeOperatore(b, sue).slice(0, 5).map((r) => ({ l: `${r.emoji} ${r.label}`, r: fmtN(r.items.length), colore: r.colore }))] }))}
+                centro={<><span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={tot} punti={false} /></span><span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">pezzi totali</span></>} />
+            <div className="flex flex-wrap justify-center gap-1.5">
+                {righe.filter((r) => r.sue.length > 0).map(({ b, g, sue, pct }) => (
+                    <span key={b} className="flex items-center gap-1.5 text-[10px] text-slate-300 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/10">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.colore, boxShadow: `0 0 5px ${g.colore}66` }} />
+                        {g.label} · <b className="text-slate-100 tabular-nums">{pct}%</b>
+                        <span className="text-slate-500 tabular-nums">({fmtN(sue.length)} pz)</span>
+                    </span>
+                ))}
+            </div>
         </div>
     );
 }
