@@ -203,10 +203,11 @@ export function DrillPanel({ drill, chiudi, labels }) {
    Negozio, con i brand piccolini cliccabili che filtrano lo schema. Stessa
    interattività del widget (tooltip con le vendite voce per voce, media,
    giorno di oggi evidenziato). ═══════════════════════════════════════════ */
-export function TimelineHero({ ctx, ruolo }) {
+export function TimelineHero({ ctx, tecnico = false }) {
     // RIPENSAMENTO Luca 24/08: la Marginalità sta nella timeline SOLO per i
     // TECNICI (è il loro mondo) e in FATTURATO €; per tutti gli altri, fuori.
-    const tecnico = ruolo === "tecnico";
+    // `tecnico` = ruolo della PERSONA OSSERVATA (o del collaboratore
+    // filtrato), calcolato dalla pagina — non di chi sta guardando.
     // TUTTA la produzione della persona/negozio (Luca 24/08): i 4 brand in
     // gara + la MARGINALITÀ (vendite EXT, a pezzi) + gli ALTRI operatori
     // (S4, TIM, Very…). Ogni serie ha logo e colore; le pill sotto (solo
@@ -257,7 +258,7 @@ export function TimelineHero({ ctx, ruolo }) {
             for (const [g, gg] of sr.giorni) {
                 const top = [...gg.prod.entries()].sort((a, b) => b[1] - a[1]);
                 const prodotti = top.slice(0, 4).map(([nm, q]) => (tecnico ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
-                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, sub: tecnico ? `${fmtN(gg.val)} €` : `${fmtN(gg.val)} pz`, prodotti });
+                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, prodotti });
                 v[g - 1].tot += gg.val;
             }
         }

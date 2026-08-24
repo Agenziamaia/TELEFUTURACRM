@@ -210,7 +210,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0])]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -223,6 +223,8 @@ function AnalisiInner() {
                     inMese ? caricaPacchetto(pISO) : Promise.resolve(null),
                     // target PER PDV del pannello W3 (soglie mobile/fisso + Partnership)
                     soloMese ? supabase.from("pay_target_pdv").select("cod_gara, negozio, soglie_mobile, soglie_fisso, soglie_piva, extra").eq("brand", "windtre").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
+                    // chi è TECNICO: la timeline per loro parla in € (Luca 24/08)
+                    supabase.from("app_users").select("full_name, match_name").eq("role", "tecnico"),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -244,6 +246,7 @@ function AnalisiInner() {
                     pacchi, soloMese, gl, targetW3: targetRes?.data || [],
                     aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null,
                     prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri,
+                    tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -265,11 +268,19 @@ function AnalisiInner() {
     }, [dati, idxDi]);
 
     // ── venditori e negozi del periodo (ordinati per PEZZI, mai per punti)
+    // ── ruolo TECNICO della persona OSSERVATA (Luca 24/08): per loro la
+    // timeline parla in fatturato €. Il set copre full_name E match_name
+    // (lezione Verdile: 22 utenti coi due nomi divergenti).
+    const nomiTecnici = useMemo(() => new Set((dati?.tecnici || []).map((n) => norm(n))), [dati]);
+    const eTecnico = (n) => !!n && nomiTecnici.has(norm(n));
     const venditoriTutti = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
+        // i tecnici vivono quasi solo di EXT (marginalità): senza questo giro
+        // non comparirebbero mai nella tendina persona
+        for (const r of (dati?.ext || [])) { if (r.venditore !== "—" && eTecnico(r.venditore) && !per.has(r.venditore)) per.set(r.venditore, 0); }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
-    }, [items]);
+    }, [items, dati, nomiTecnici]);
     const negoziAttivi = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.negozio === "—") continue; per.set(it.negozio, (per.get(it.negozio) || 0) + 1); }
@@ -285,11 +296,12 @@ function AnalisiInner() {
     const opzioniPersona = useMemo(() => {
         if (vedeTutto) return venditoriTutti;
         if (vedeNegozio) {
-            const squadra = venditoriTutti.filter((v) => items.some((it) => norm(it.venditore) === norm(v) && (visStores || []).some((s) => sameStore(it.negozio, s))));
+            const squadra = venditoriTutti.filter((v) => items.some((it) => norm(it.venditore) === norm(v) && (visStores || []).some((s) => sameStore(it.negozio, s)))
+                || (eTecnico(v) && (dati?.ext || []).some((r) => norm(r.venditore) === norm(v) && (visStores || []).some((s) => sameStore(r.negozio, s)))));
             return [...new Set([user?.name, ...squadra].filter(Boolean))];
         }
         return [user?.name].filter(Boolean);
-    }, [vedeTutto, vedeNegozio, venditoriTutti, items, user?.name, visStores]);
+    }, [vedeTutto, vedeNegozio, venditoriTutti, items, user?.name, visStores, dati, nomiTecnici]);
     const [personaSel, setPersonaSel] = useState("");
     // FILTRI PERSISTENTI (Luca 24/08: «l'ultimo filtro che ho messo è quello
     // che mi ritrovo»): persona e negozi vivono in localStorage per utente —
@@ -357,8 +369,9 @@ function AnalisiInner() {
     const squadraNegozio = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (!inNegozi(it.negozio) || it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
+        for (const r of (dati?.ext || [])) { if (inNegozi(r.negozio) && r.venditore !== "—" && eTecnico(r.venditore) && !per.has(r.venditore)) per.set(r.venditore, 0); }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
-    }, [items, negozi.join("|")]);
+    }, [items, negozi.join("|"), dati, nomiTecnici]);
     const collab = collabSel && collabSel !== TUTTI && squadraNegozio.some((s) => norm(s) === norm(collabSel)) ? collabSel : "";
     useEffect(() => { setCollabSel(""); }, [negozi.join("|")]);
 
@@ -556,7 +569,7 @@ function AnalisiInner() {
                 {/* TIMELINE DI PRODUZIONE nell'header (Luca 24/08): tutta la
                     produzione giorno per giorno, brand cliccabili per filtrare */}
                 {!loading && !errore && (area === "io" || area === "negozio") && (
-                    <TimelineHero ctx={area === "io" ? ctxIo : ctxNegozio} ruolo={user?.role} />
+                    <TimelineHero ctx={area === "io" ? ctxIo : ctxNegozio} tecnico={eTecnico(area === "io" ? persona : collab)} />
                 )}
             </div>
 
