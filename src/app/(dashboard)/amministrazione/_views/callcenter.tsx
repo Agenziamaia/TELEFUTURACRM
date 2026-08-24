@@ -324,6 +324,53 @@ function ModelliWaView({ opzioniCaller }: { opzioniCaller: Opzione[] }) {
     );
 }
 
+/* ── REGOLE DEL MATCH vendita ↔ appuntamento (Luca 24/08): la finestra
+   temporale — dalla chiamata che fissa l'appuntamento a +N giorni dalla data
+   fissata — si governa da qui, non più cablata nel codice. Gli esiti
+   «Attivato» e «Attivato Altro Negozio» li scrive SOLO il match. ────────── */
+function MatchConfigCard() {
+    const [gg, setGg] = useState<string>("");
+    const [caricato, setCaricato] = useState(false);
+    const [salvato, setSalvato] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+    useEffect(() => {
+        (async () => {
+            const { data, error } = await supabase.from("caller_match_config").select("finestra_giorni").eq("id", 1).maybeSingle();
+            if (error) { setErr(error.message + " — probabilmente manca la migrazione caller_match_config"); return; }
+            setGg(String(data?.finestra_giorni ?? 30));
+            setCaricato(true);
+        })();
+    }, []);
+    const salva = async () => {
+        const v = Math.round(Number(gg));
+        if (!Number.isFinite(v) || v < 1 || v > 365) { setErr("Inserisci un numero di giorni tra 1 e 365."); return; }
+        setErr(null);
+        const { error } = await supabase.from("caller_match_config").update({ finestra_giorni: v, updated_at: new Date().toISOString() }).eq("id", 1);
+        if (error) { setErr(error.message); return; }
+        try { const m = await import("@/lib/matchAppuntamento"); m.resetCacheMatchConfig(); } catch { /* ok */ }
+        setSalvato(true); setTimeout(() => setSalvato(false), 2000);
+    };
+    return (
+        <div className="glass-card p-4 rounded-xl space-y-2">
+            <p className="text-sm font-bold text-white">🎯 Match vendita ↔ appuntamento</p>
+            <p className="text-[12px] text-slate-400 leading-relaxed">Gli esiti <b className="text-slate-200">«Attivato»</b> e <b className="text-slate-200">«Attivato Altro Negozio»</b> non si scelgono a mano: li scrive il match quando una vendita col CF del cliente arriva <b className="text-slate-200">dalla chiamata che ha fissato l&apos;appuntamento fino a N giorni dopo la data fissata</b> (il cliente in anticipo conta; gemelli per sede fisica).</p>
+            {err && <p className="text-[12px] text-rose-400">{err}</p>}
+            <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-[12px] text-slate-400">Finestra dopo la data dell&apos;appuntamento:</label>
+                <input type="number" min={1} max={365} value={gg} disabled={!caricato}
+                    onChange={(e) => setGg(e.target.value)}
+                    className="glass-input w-24 text-sm rounded-lg py-1.5 text-center font-mono" />
+                <span className="text-[12px] text-slate-500">giorni</span>
+                <span className="text-[11px] text-slate-600">· le sessioni già aperte usano il valore nuovo dal prossimo ricaricamento</span>
+                <button onClick={salva} disabled={!caricato}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] font-bold disabled:opacity-40">
+                    {salvato ? "✓ Salvato" : "Salva"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export function CallCenterView() {
     const [righe, setRighe] = useState<Opzione[]>([]);
     const [err, setErr] = useState<string | null>(null);
@@ -378,6 +425,7 @@ export function CallCenterView() {
 
     return (
         <div className="space-y-6">
+            <MatchConfigCard />
             <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20">
                     <Phone className="w-5 h-5 text-violet-400" />

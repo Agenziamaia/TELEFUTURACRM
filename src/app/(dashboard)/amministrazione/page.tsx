@@ -258,6 +258,12 @@ function AmministrazioneInner() {
             const sub = costiChild?.subs?.find((x) => x.id === id);
             return costiChild && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, costiChild, id), sub.roles, perms) : true;
         }
+        // stesse chiavi granulari per il mini-hub FISCALITÀ (Luca 24/08)
+        if (FISC_IDS.includes(id)) {
+            const fiscChild = hubAmm.children.find((c) => c.sez === "fiscalita");
+            const sub = fiscChild?.subs?.find((x) => x.id === id);
+            return fiscChild && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, fiscChild, id), sub.roles, perms) : true;
+        }
         const child = hubAmm.children.find((c) => c.sez === id);
         return child ? effectiveAllowed(user?.role, hubChildKey(hubAmm, child), child.roles ?? hubAmm.roles, perms) : true;
     };

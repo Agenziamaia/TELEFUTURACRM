@@ -20,7 +20,7 @@ import {
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
-    BarChart3,
+    BarChart3, Receipt,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -237,6 +237,19 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
             // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
             { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
+            // MINI-HUB Fiscalità (Luca 24/08): le tre sezioni fiscali del
+            // registratore telematico. REGOLA (già sbagliata troppe volte,
+            // vedi Orari & Chiusure 03/08): ogni sezione nuova della pagina
+            // Amministrazione VA REGISTRATA QUI — la tendina a sinistra e i
+            // permessi nascono da QUESTO file, non dalla pagina.
+            {
+                name: "Fiscalità", sez: "fiscalita", icon: Receipt, roles: [...ADMINS, "amministrativo"], esplodi: true, subsSez: true,
+                subs: [
+                    { id: "reparti", name: "Reparti & IVA", roles: [...ADMINS, "amministrativo"], emoji: "🧮" },
+                    { id: "cassascontrini", name: "Cassa & Scontrini", roles: [...ADMINS, "amministrativo"], emoji: "🧾" },
+                    { id: "coupon", name: "Coupon", roles: [...ADMINS, "amministrativo"], emoji: "🎟" },
+                ],
+            },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

@@ -23,7 +23,21 @@
 import { supabase } from "@/lib/supabaseClient";
 import { storeRoot } from "@/lib/storeRoot";
 
-const FINESTRA_GG = 30;
+// FINESTRA CONFIGURABILE (Luca 24/08): la regola dei 30 giorni si governa
+// dal pannello Amministrazione → Call Center (caller_match_config, riga
+// singola). Cache di modulo con fallback 30; resetCacheMatchConfig() la
+// invalida dopo un salvataggio dal pannello.
+let _finestraGg: number | null = null;
+export function resetCacheMatchConfig() { _finestraGg = null; }
+async function finestraGg(): Promise<number> {
+    if (_finestraGg != null) return _finestraGg;
+    try {
+        const { data } = await supabase.from("caller_match_config").select("finestra_giorni").eq("id", 1).maybeSingle();
+        const v = Number(data?.finestra_giorni);
+        _finestraGg = Number.isFinite(v) && v > 0 ? v : 30;
+    } catch { _finestraGg = 30; }
+    return _finestraGg;
+}
 const normCf = (s: unknown) => String(s || "").trim().toUpperCase();
 const soloData = (s: unknown) => { const m = String(s || "").match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null; };
 const addGiorni = (ymd: string, n: number) => { const [y, m, d] = ymd.split("-").map(Number); const x = new Date(y, m - 1, d + n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
@@ -63,6 +77,7 @@ export async function trovaAppuntamentoDaAgganciare(
 ): Promise<CandidatoMatch | null> {
     const dv = soloData(dataVendita);
     if (!dv) return null;
+    const gg = await finestraGg();
     const radiceVendita = negozioVendita ? storeRoot(negozioVendita) : null;
     // già attivato* = non si ri-tocca (evita che una seconda vendita in altro
     // negozio declassi una cooperation già assegnata). KO/ANNULLATO invece si
@@ -74,11 +89,12 @@ export async function trovaAppuntamentoDaAgganciare(
             if (a.status && CHIUSI.has(a.status)) return false;
             const ad = soloData(a.date);
             if (!ad) return false;
-            // FINESTRA (regola Luca 10/08): dalla DATA DELLA CHIAMATA (quando il
-            // caller ha fissato l'appuntamento) a +30gg dalla data fissata — il
-            // cliente che si presenta IN ANTICIPO conta, prima della chiamata no.
+            // FINESTRA (regola Luca 10/08, N configurabile dal 24/08 in
+            // Amministrazione → Call Center): dalla DATA DELLA CHIAMATA (quando
+            // il caller ha fissato l'appuntamento) a +N giorni dalla data
+            // fissata — il cliente in ANTICIPO conta, prima della chiamata no.
             const dallaChiamata = soloData(a.created_at) || ad;
-            return dv >= dallaChiamata && dv <= addGiorni(ad, FINESTRA_GG);
+            return dv >= dallaChiamata && dv <= addGiorni(ad, gg);
         })
         .sort((x, y) => String(y.date).localeCompare(String(x.date)));
     const a = cand[0];

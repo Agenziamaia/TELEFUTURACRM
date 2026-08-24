@@ -849,11 +849,12 @@ function CallerPageInner() {
         {
             const isAtt = /^attivat/i.test(String(c.stato || ""));
             if (mostraAttivate ? !isAtt : isAtt) return false;
-        }
-        // ARCHIVIATE (Luca 11/08): comportamento 🏁 Definitivo = la pratica è
-        // chiusa e archiviata — esce dal lavoro; col toggle vedo SOLO le archiviate
-        {
-            const isArch = comportamenti[String(c.stato || "")] === "definitivo";
+            // ARCHIVIATE (Luca 11/08): comportamento 🏁 Definitivo = chiusa e
+            // archiviata — esce dal lavoro; col toggle vedo SOLO le archiviate.
+            // Le ATTIVATE ne restano FUORI (bug 24/08: anche loro sono
+            // "definitive" e il blocco le rimangiava — il toggle Attivate
+            // mostrava il nulla): attivate e archiviate sono due famiglie.
+            const isArch = !isAtt && comportamenti[String(c.stato || "")] === "definitivo";
             if (mostraArchiviate ? !isArch : isArch) return false;
         }
         if (soloDaEsitare && !c.da_esitare) return false;
@@ -1461,12 +1462,18 @@ function CallerPageInner() {
             {
                 const enG = esitiNegozio[String((editCall as { appointment_id?: number | string | null }).appointment_id ?? "")];
                 if (enG && /^attivato/.test(enG.status) && /anomal/i.test(editCall.statoNew || "")) {
-                    alert("Questo appuntamento risulta GIÀ ATTIVATO dal punto vendita: la pratica va segnata «Attivato» (o si aggancia da sola alla vendita col match) — non «Attivato Anomalia». Se c'è un problema vero, segnalalo al direttore.");
+                    alert("Questo appuntamento risulta GIÀ ATTIVATO dal punto vendita: la pratica si aggancia DA SOLA alla vendita col match (l'esito «Attivato» lo scrive il sistema) — non serve «Attivato Anomalia». Se c'è un problema vero, segnalalo al direttore.");
                     return;
                 }
             }
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
+            // CINTURA (revisione 24/08): gli esiti del match non si scrivono a
+            // mano nemmeno arrivando qui per vie traverse
+            if (AUTO_MATCH.includes(editCall.statoNew)) {
+                alert("«" + editCall.statoNew + "» lo scrive SOLO il match vendita↔appuntamento (Regole in Amministrazione → Call Center). Per i casi anomali usa «Attivato Anomalia».");
+                return;
+            }
             const newStorico: StoricoEntry[] = [
                 ...(original.storico || []),
                 {
@@ -1857,7 +1864,12 @@ function CallerPageInner() {
     const canNext4 = colsAttive.some(c => listaMappa[c] === "Numero");
     const canConfirm = splitsValidi;
 
-    const statiDisponibili = isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo");
+    // ESITI AUTOMATICI del match vendita↔appuntamento (Luca 24/08):
+    // «Attivato» e «Attivato Altro Negozio» NON si scelgono a mano — li
+    // scrive SOLO il match, con la finestra temporale delle Regole. A mano
+    // resta «Attivato Anomalia» per i casi da segnalare.
+    const AUTO_MATCH = ["Attivato", "Attivato Altro Negozio"];
+    const statiDisponibili = (isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo")).filter((s) => !AUTO_MATCH.includes(s));
 
     /* ── Detail mode flags ── */
     // scenario del modello WhatsApp (CAL-01): dal COMPORTAMENTO dello stato in
@@ -3088,7 +3100,7 @@ function CallerPageInner() {
                                                 {/* le voci arrivano dal PANNELLO AMMINISTRATIVO (caller_opzioni):
                                                     prima la lista era hardcoded e mostrava ancora i DTS rimossi */}
                                                 <div className="mt-1">
-                                                    <SelectOpzioni value={editCall.statoNew || ""} onChange={(v) => updateField("statoNew", v)} opzioni={STATI_OPT.filter(s => s !== "Nuovo")} placeholder="Scrivi o scegli il nuovo stato…" className="glass-input rounded-lg py-2 w-full" />
+                                                    <SelectOpzioni value={editCall.statoNew || ""} onChange={(v) => updateField("statoNew", v)} opzioni={statiDisponibili} placeholder="Scrivi o scegli il nuovo stato…" className="glass-input rounded-lg py-2 w-full" />
                                                 </div>
                                             </div>
                                         </div>
