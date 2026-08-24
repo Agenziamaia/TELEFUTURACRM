@@ -198,6 +198,105 @@ export function DrillPanel({ drill, chiudi, labels }) {
     );
 }
 
+/* ═══ CONTATORI PER PISTA (Luca 24/08): su Wind3/Vodafone/Fastweb le piste
+   sono GARE DIVERSE — niente totalone: un piccolo contatore per ognuna, con
+   la SORGENTE dei punti scomposta dentro (SIM, finanziamenti, business…).
+   Sky resta con l'anello unico: lì è una sola gara che somma tutto. ═══════ */
+function contatoriPiste(brand, sue, prev) {
+    const S = (arr) => somma(arr);
+    const biz = (it) => /business/i.test(String(it.tipo || ""));
+    const telefono = (it) => /^telefono a rate/i.test(String(it.categoria || ""));
+    const opCb = (it) => /^customer base/i.test(String(it.categoria || ""));
+    const assic = (it) => /assicurazion/i.test(String(it.prodotto || "") + " " + String(it.categoria || ""));
+    const gasDi = (it) => /gas/i.test(String(it.prodotto || ""));
+    const pista = (arr, p) => arr.filter((it) => it.pista === p);
+    const catMob = (it) => /^mobile/i.test(String(it.categoria || ""));
+    const catFis = (it) => /^fisso/i.test(String(it.categoria || ""));
+    const catEn = (it) => /^energia/i.test(String(it.categoria || ""));
+    const out = [];
+    // sorgenti: {l, v, u} — u "pt" o "pz"; righe a 0 non si mostrano
+    const add = (chiave, label, emoji, unit, items, prevItems, sorgenti = [], nota = null) => {
+        if (!items.length && !(prevItems || []).length) return;
+        out.push({
+            chiave, label, emoji, unit, items,
+            val: unit === "pt" ? S(items) : items.length,
+            prevVal: unit === "pt" ? S(prevItems || []) : (prevItems || []).length,
+            sorgenti: sorgenti.filter((s) => s.v > 0), nota,
+        });
+    };
+    if (brand === "w3") {
+        const mob = pista(sue, "mobile"), mobP = pista(prev, "mobile");
+        // partizione PULITA (Σ sorgenti = totale pista): SIM consumer /
+        // telefoni finanziati (tutti) / SIM business
+        add("mobile", "Mobile", "📶", "pt", mob, mobP, [
+            { l: "SIM", v: S(mob.filter((it) => !biz(it) && !telefono(it))), u: "pt" },
+            { l: "finanziamenti", v: S(mob.filter(telefono)), u: "pt" },
+            { l: "business", v: S(mob.filter((it) => biz(it) && !telefono(it))), u: "pt" },
+        ]);
+        const fis = pista(sue, "fisso"), fisP = pista(prev, "fisso");
+        add("fisso", "Fisso", "🌐", "pt", fis, fisP, [
+            { l: "consumer", v: S(fis.filter((it) => !biz(it))), u: "pt" },
+            { l: "business", v: S(fis.filter(biz)), u: "pt" },
+        ]);
+        const cb = pista(sue, "cb"), cbP = pista(prev, "cb");
+        add("cb", "Customer Base", "🔁", "pt", cb, cbP, [
+            { l: "operazioni SIM", v: S(cb.filter(opCb)), u: "pt" },
+            { l: "telefoni CB", v: S(cb.filter(telefono)), u: "pt" },
+        ]);
+        const lg = pista(sue, "lucegas"), lgP = pista(prev, "lucegas");
+        add("lucegas", "Luce & Gas", "⚡", "pt", lg, lgP, [
+            { l: "luce", v: S(lg.filter((it) => !gasDi(it))), u: "pt" },
+            { l: "gas", v: S(lg.filter(gasDi)), u: "pt" },
+        ]);
+        const ass = sue.filter(assic), assP = prev.filter(assic);
+        add("assic", "Assicurazioni", "🛡", "pz", ass, assP, [], "a pezzi · verso i target di gruppo");
+        const bz = sue.filter(biz), bzP = prev.filter(biz);
+        add("business", "Business", "💼", "pz", bz, bzP, [
+            { l: "mobile", v: bz.filter(catMob).length, u: "pz" },
+            { l: "fisso", v: bz.filter(catFis).length, u: "pz" },
+            { l: "altro", v: bz.filter((it) => !catMob(it) && !catFis(it)).length, u: "pz" },
+        ], "eventi · i punti sono dentro Mobile e Fisso");
+    } else if (brand === "vf") {
+        const mob = pista(sue, "mobile"), mobP = pista(prev, "mobile");
+        add("mobile", "Mobile", "📶", "pt", mob, mobP, [
+            { l: "SIM", v: S(mob.filter((it) => !telefono(it))), u: "pt" },
+            { l: "telefoni", v: S(mob.filter(telefono)), u: "pt" },
+        ]);
+        const fis = pista(sue, "fisso"), fisP = pista(prev, "fisso");
+        add("fisso", "Fisso", "🌐", "pt", fis, fisP, [
+            { l: "di cui FW lettera A", v: S(fis.filter((it) => it.fwInA)), u: "pt" },
+        ]);
+        const lg = pista(sue, "lucegas"), lgP = pista(prev, "lucegas");
+        add("lucegas", "Luce & Gas", "⚡", "pt", lg, lgP, [
+            { l: "luce", v: S(lg.filter((it) => !gasDi(it))), u: "pt" },
+            { l: "gas", v: S(lg.filter(gasDi)), u: "pt" },
+        ]);
+        const bm = pista(sue, "business_mobile"), bf = pista(sue, "business_fisso");
+        const bmP = pista(prev, "business_mobile"), bfP = pista(prev, "business_fisso");
+        add("business", "Business", "💼", "pz", [...bm, ...bf], [...bmP, ...bfP], [
+            { l: "biz mobile", v: S(bm), u: "pt" },
+            { l: "biz fisso", v: S(bf), u: "pt" },
+        ], "piste business della lettera");
+    } else if (brand === "fw") {
+        // mobile = SIM + telefoni, allineato alla riga Mobile delle categorie
+        // sotto (rilievo del revisore: i due numeri non devono divergere)
+        const eMob = (it) => catMob(it) || telefono(it);
+        const mob = sue.filter(eMob), mobP = prev.filter(eMob);
+        add("mobile", "Mobile", "📶", "pz", mob, mobP);
+        const fis = sue.filter(catFis), fisP = prev.filter(catFis);
+        add("fisso", "Fisso", "🌐", "pz", fis, fisP);
+        const en = sue.filter(catEn), enP = prev.filter(catEn);
+        add("energia", "Energia", "⚡", "pz", en, enP, [
+            { l: "luce", v: en.filter((it) => !gasDi(it)).length, u: "pz" },
+            { l: "gas", v: en.filter(gasDi).length, u: "pz" },
+        ]);
+        const resto = sue.filter((it) => !eMob(it) && !catFis(it) && !catEn(it));
+        const restoP = prev.filter((it) => !eMob(it) && !catFis(it) && !catEn(it));
+        add("altro", "Altro", "📦", "pz", resto, restoP);
+    }
+    return out;
+}
+
 /* ═══ CARTA OPERATORE ══════════════════════════════════════════════════ */
 function CartaOperatore({ brand, ctx, size }) {
     const G = GARA[brand];
@@ -223,30 +322,64 @@ function CartaOperatore({ brand, ctx, size }) {
         </div>
     );
 
+    // Su W3/VF/FW niente totalone (piste = gare diverse, Luca 24/08): al
+    // posto dell'anello, i CONTATORI PER PISTA con le sorgenti dentro e il
+    // confronto col mese scorso PISTA PER PISTA. Sky tiene l'anello unico.
+    const contatori = brand === "sky" ? [] : contatoriPiste(brand, sue, prev);
     return (
         <div>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-                <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso intero</span></>}</p>
+                <p className="text-[10px] text-slate-500 whitespace-nowrap">{fmtN(pezzi)} pezzi{brand === "sky" && ctx.confronto && <> · <Delta v={punti - puntiPrev} /> <span className="text-slate-600">pt vs mese scorso intero</span></>}</p>
                 <div className="flex flex-wrap gap-1 justify-end">
-                    {brand === "fw"
-                        ? <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white/5 text-slate-300 border border-white/10">gara T2 · a pezzi</span>
-                        : perPista.map(([p, v]) => (
-                            <span key={p} className="px-2 py-1 rounded-lg text-[10px] font-bold border border-white/10 text-white" style={{ background: `${G.colore}14` }}>
-                                {PISTA_L[p] || p} <span className="tabular-nums" style={{ color: G.colore }}>{fmtPt(v)}</span> pt
-                            </span>
-                        ))}
+                    {brand === "fw" && <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white/5 text-slate-300 border border-white/10">gara T2 · a pezzi</span>}
+                    {brand === "sky" && perPista.map(([p, v]) => (
+                        <span key={p} className="px-2 py-1 rounded-lg text-[10px] font-bold border border-white/10 text-white" style={{ background: `${G.colore}14` }}>
+                            {PISTA_L[p] || p} <span className="tabular-nums" style={{ color: G.colore }}>{fmtPt(v)}</span> pt
+                        </span>
+                    ))}
                 </div>
             </div>
 
-            <div className={cn("flex gap-4", size >= 4 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start")}>
-                <div className="shrink-0 mx-auto sm:mx-0">
-                    <Donut size={size >= 4 ? 168 : 138} unit={brand === "fw" ? "pezzi" : "punti"}
-                        slices={righe.map((r) => ({ label: r.label, emoji: r.emoji, colore: r.colore, val: brand === "fw" ? r.items.length : somma(r.items), det: [{ l: "pezzi", r: fmtN(r.items.length) }, ...(brand === "fw" ? [] : [{ l: "punti", r: fmtPt(somma(r.items)) }])] }))}
-                        centro={<>
-                            <span className="text-2xl font-black text-white tabular-nums leading-none">{brand === "fw" ? <Num v={pezzi} punti={false} /> : <Num v={punti} punti />}</span>
-                            <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">{brand === "fw" ? "pezzi" : "punti totali"}</span>
-                        </>} />
+            {contatori.length > 0 && (
+                <div className={cn("grid gap-2 mb-3", size >= 4 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
+                    {contatori.map((ct) => (
+                        <div key={ct.chiave}
+                            onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: ct.items }); }}
+                            className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5 cursor-pointer hover:bg-white/[0.06] transition-colors"
+                            title="Clicca per l'elenco contratti della pista">
+                            <div className="text-[9px] uppercase tracking-widest font-bold text-slate-500 mb-1 truncate">{ct.emoji} {ct.label}</div>
+                            <div className="flex items-end gap-1.5">
+                                <span className="text-xl font-black text-white tabular-nums leading-none"><Num v={ct.val} punti={ct.unit === "pt"} /></span>
+                                <span className="text-[9px] text-slate-500 mb-0.5">{ct.unit}</span>
+                                {ctx.confronto && ct.val !== ct.prevVal && <span className="ml-auto text-[10px]"><Delta v={Math.round((ct.val - ct.prevVal) * 100) / 100} /></span>}
+                            </div>
+                            {ct.sorgenti.length > 0 && (
+                                <div className="mt-1.5 space-y-0.5">
+                                    {ct.sorgenti.map((s) => (
+                                        <div key={s.l} className="flex justify-between gap-1 text-[10px] leading-tight">
+                                            <span className="text-slate-500 truncate">{s.l}</span>
+                                            <span className="text-slate-300 tabular-nums font-semibold whitespace-nowrap">{s.u === "pt" ? `${fmtPt(s.v)} pt` : fmtN(s.v)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {ct.nota && <p className="text-[9px] text-slate-600 mt-1 leading-tight">{ct.nota}</p>}
+                        </div>
+                    ))}
                 </div>
+            )}
+
+            <div className={cn(brand === "sky" ? cn("flex gap-4", size >= 4 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start") : "")}>
+                {brand === "sky" && (
+                    <div className="shrink-0 mx-auto sm:mx-0">
+                        <Donut size={size >= 4 ? 168 : 138} unit="punti"
+                            slices={righe.map((r) => ({ label: r.label, emoji: r.emoji, colore: r.colore, val: somma(r.items), det: [{ l: "pezzi", r: fmtN(r.items.length) }, { l: "punti", r: fmtPt(somma(r.items)) }] }))}
+                            centro={<>
+                                <span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={punti} punti /></span>
+                                <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">punti totali</span>
+                            </>} />
+                    </div>
+                )}
                 <div className="flex-1 min-w-0 space-y-1">
                     {righe.map((r) => {
                         const pt = somma(r.items);
