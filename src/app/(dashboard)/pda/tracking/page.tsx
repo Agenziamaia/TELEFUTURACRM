@@ -61,6 +61,14 @@ const nomeResponsabile = (v: string) => AGENTI_BO[v] || v;
 // pratica DELEGATA risponde al filtro del delegato — il badge 📦 in riga
 // continua a dire che è stata attivata dal vecchio venditore
 const respRiga = (row: { id?: unknown; venditore?: unknown }) => DELEGHE[String(row.id || "")] || nomeResponsabile(String(row.venditore || ""));
+// REGOLA DELEGHE (Luca 24/08 sera): la pratica delegata è di ENTRAMBI —
+// warning e malus pesano sia sul delegato sia sul venditore che l'ha
+// venduta, quindi filtri e tendine devono trovarla con TUTTI E DUE i nomi.
+const respRigaTutti = (row: { id?: unknown; venditore?: unknown }): string[] => {
+    const base = nomeResponsabile(String(row.venditore || ""));
+    const del = DELEGHE[String(row.id || "")];
+    return del && del !== base ? [del, base] : [base];
+};
 
 function formatDataInserimento(val: string | undefined): string {
   const d = parseDataRiga(val);
@@ -1815,16 +1823,16 @@ export default function TrackingPdaPage() {
     [baseVisibile, seesAll]
   );
   const venditoriAttivi = useMemo(
-    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.map((r) => respRiga(r)).filter((n) => n && n !== "—"))).sort() : []),
+    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, seesWhole, seesAll]
   );
   const utentiAttivi = useMemo(
-    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => respRiga(r)).filter((n) => n && n !== "—"))).sort() : []),
+    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, seesAll, negozioSel]
   );
   const catAttive = useMemo(() => new Set(
     baseVisibile
-      .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || utentiSel.includes(respRiga(r))))
+      .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || respRigaTutti(r).some((n) => utentiSel.includes(n))))
       .map((r) => r.categoria)
   ), [baseVisibile, negozioSel, utentiSel]);
   const categorieAttive = useMemo(() => CATEGORIE.filter((c) => catAttive.has(c.id)), [catAttive]);
@@ -1839,7 +1847,7 @@ export default function TrackingPdaPage() {
   // (altrimenti resta un filtro-fantasma che svuota la tabella).
   useEffect(() => {
     setUtentiSel((prev) => {
-      const next = prev.filter((n) => baseVisibile.some((r) => respRiga(r) === n && (!negozioSel || r.negozio === negozioSel)));
+      const next = prev.filter((n) => baseVisibile.some((r) => respRigaTutti(r).includes(n) && (!negozioSel || r.negozio === negozioSel)));
       return next.length === prev.length ? prev : next;
     });
   }, [negozioSel, baseVisibile]);
@@ -1889,8 +1897,8 @@ export default function TrackingPdaPage() {
       }
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
-      if (utentiSel.length > 0 && !utentiSel.includes(respRiga(row))) return false;
-      if (venditoreSel && respRiga(row) !== venditoreSel) return false;
+      if (utentiSel.length > 0 && !respRigaTutti(row).some((n) => utentiSel.includes(n))) return false;
+      if (venditoreSel && !respRigaTutti(row).includes(venditoreSel)) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
@@ -1932,8 +1940,8 @@ export default function TrackingPdaPage() {
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
       if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
-      if (utentiSel.length > 0 && !utentiSel.includes(respRiga(row))) return false;
-      if (venditoreSel && respRiga(row) !== venditoreSel) return false;
+      if (utentiSel.length > 0 && !respRigaTutti(row).some((n) => utentiSel.includes(n))) return false;
+      if (venditoreSel && !respRigaTutti(row).includes(venditoreSel)) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
