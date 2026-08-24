@@ -214,7 +214,8 @@ function contatoriPiste(brand, sue, prev) {
     const catFis = (it) => /^fisso/i.test(String(it.categoria || ""));
     const catEn = (it) => /^energia/i.test(String(it.categoria || ""));
     const out = [];
-    // sorgenti: {l, v, u} — u "pt" o "pz"; righe a 0 non si mostrano
+    // sorgenti: {l, v, u, items} — u "pt" o "pz"; righe a 0 non si mostrano;
+    // gli items della sorgente alimentano l'ANALISI ESPLOSA (📊, Luca 24/08)
     const add = (chiave, label, emoji, unit, items, prevItems, sorgenti = [], nota = null) => {
         if (!items.length && !(prevItems || []).length) return;
         out.push({
@@ -228,54 +229,58 @@ function contatoriPiste(brand, sue, prev) {
         const mob = pista(sue, "mobile"), mobP = pista(prev, "mobile");
         // partizione PULITA (Σ sorgenti = totale pista): SIM consumer /
         // telefoni finanziati (tutti) / SIM business
+        const srg = (l, arr, u = "pt") => ({ l, v: u === "pt" ? S(arr) : arr.length, u, items: arr });
         add("mobile", "Mobile", "📶", "pt", mob, mobP, [
-            { l: "SIM", v: S(mob.filter((it) => !biz(it) && !telefono(it))), u: "pt" },
-            { l: "finanziamenti", v: S(mob.filter(telefono)), u: "pt" },
-            { l: "business", v: S(mob.filter((it) => biz(it) && !telefono(it))), u: "pt" },
+            srg("SIM", mob.filter((it) => !biz(it) && !telefono(it))),
+            srg("finanziamenti", mob.filter(telefono)),
+            srg("business", mob.filter((it) => biz(it) && !telefono(it))),
         ]);
         const fis = pista(sue, "fisso"), fisP = pista(prev, "fisso");
         add("fisso", "Fisso", "🌐", "pt", fis, fisP, [
-            { l: "consumer", v: S(fis.filter((it) => !biz(it))), u: "pt" },
-            { l: "business", v: S(fis.filter(biz)), u: "pt" },
+            srg("consumer", fis.filter((it) => !biz(it))),
+            srg("business", fis.filter(biz)),
         ]);
         const cb = pista(sue, "cb"), cbP = pista(prev, "cb");
         add("cb", "Customer Base", "🔁", "pt", cb, cbP, [
-            { l: "operazioni SIM", v: S(cb.filter(opCb)), u: "pt" },
-            { l: "telefoni CB", v: S(cb.filter(telefono)), u: "pt" },
+            srg("operazioni SIM", cb.filter(opCb)),
+            srg("telefoni CB", cb.filter(telefono)),
         ]);
         const lg = pista(sue, "lucegas"), lgP = pista(prev, "lucegas");
         add("lucegas", "Luce & Gas", "⚡", "pt", lg, lgP, [
-            { l: "luce", v: S(lg.filter((it) => !gasDi(it))), u: "pt" },
-            { l: "gas", v: S(lg.filter(gasDi)), u: "pt" },
+            srg("luce", lg.filter((it) => !gasDi(it))),
+            srg("gas", lg.filter(gasDi)),
         ]);
         const ass = sue.filter(assic), assP = prev.filter(assic);
         add("assic", "Assicurazioni", "🛡", "pz", ass, assP, [], "a pezzi · verso i target di gruppo");
         const bz = sue.filter(biz), bzP = prev.filter(biz);
         add("business", "Business", "💼", "pz", bz, bzP, [
-            { l: "mobile", v: bz.filter(catMob).length, u: "pz" },
-            { l: "fisso", v: bz.filter(catFis).length, u: "pz" },
-            { l: "altro", v: bz.filter((it) => !catMob(it) && !catFis(it)).length, u: "pz" },
+            srg("mobile", bz.filter(catMob), "pz"),
+            srg("fisso", bz.filter(catFis), "pz"),
+            srg("altro", bz.filter((it) => !catMob(it) && !catFis(it)), "pz"),
         ], "eventi · i punti sono dentro Mobile e Fisso");
     } else if (brand === "vf") {
+        const srg = (l, arr, u = "pt") => ({ l, v: u === "pt" ? S(arr) : arr.length, u, items: arr });
         const mob = pista(sue, "mobile"), mobP = pista(prev, "mobile");
         add("mobile", "Mobile", "📶", "pt", mob, mobP, [
-            { l: "SIM", v: S(mob.filter((it) => !telefono(it))), u: "pt" },
-            { l: "telefoni", v: S(mob.filter(telefono)), u: "pt" },
+            srg("SIM", mob.filter((it) => !telefono(it))),
+            srg("telefoni", mob.filter(telefono)),
         ]);
         const fis = pista(sue, "fisso"), fisP = pista(prev, "fisso");
+        // partizione vera (rilievo revisore): native VF + FW lettera A
         add("fisso", "Fisso", "🌐", "pt", fis, fisP, [
-            { l: "di cui FW lettera A", v: S(fis.filter((it) => it.fwInA)), u: "pt" },
+            srg("Vodafone", fis.filter((it) => !it.fwInA)),
+            srg("FW lettera A", fis.filter((it) => it.fwInA)),
         ]);
         const lg = pista(sue, "lucegas"), lgP = pista(prev, "lucegas");
         add("lucegas", "Luce & Gas", "⚡", "pt", lg, lgP, [
-            { l: "luce", v: S(lg.filter((it) => !gasDi(it))), u: "pt" },
-            { l: "gas", v: S(lg.filter(gasDi)), u: "pt" },
+            srg("luce", lg.filter((it) => !gasDi(it))),
+            srg("gas", lg.filter(gasDi)),
         ]);
         const bm = pista(sue, "business_mobile"), bf = pista(sue, "business_fisso");
         const bmP = pista(prev, "business_mobile"), bfP = pista(prev, "business_fisso");
         add("business", "Business", "💼", "pz", [...bm, ...bf], [...bmP, ...bfP], [
-            { l: "biz mobile", v: S(bm), u: "pt" },
-            { l: "biz fisso", v: S(bf), u: "pt" },
+            srg("biz mobile", bm),
+            srg("biz fisso", bf),
         ], "piste business della lettera");
     } else if (brand === "fw") {
         // mobile = SIM + telefoni, allineato alla riga Mobile delle categorie
@@ -286,9 +291,10 @@ function contatoriPiste(brand, sue, prev) {
         const fis = sue.filter(catFis), fisP = prev.filter(catFis);
         add("fisso", "Fisso", "🌐", "pz", fis, fisP);
         const en = sue.filter(catEn), enP = prev.filter(catEn);
+        const srg = (l, arr) => ({ l, v: arr.length, u: "pz", items: arr });
         add("energia", "Energia", "⚡", "pz", en, enP, [
-            { l: "luce", v: en.filter((it) => !gasDi(it)).length, u: "pz" },
-            { l: "gas", v: en.filter(gasDi).length, u: "pz" },
+            srg("luce", en.filter((it) => !gasDi(it))),
+            srg("gas", en.filter(gasDi)),
         ]);
         const resto = sue.filter((it) => !eMob(it) && !catFis(it) && !catEn(it));
         const restoP = prev.filter((it) => !eMob(it) && !catFis(it) && !catEn(it));
@@ -297,10 +303,153 @@ function contatoriPiste(brand, sue, prev) {
     return out;
 }
 
+/* ═══ ANALISI ESPLOSA DELLA PISTA (📊, Luca 24/08: «una finestra che si
+   apre con effetto scenico bellissimo») ═══════════════════════════════════
+   Fuori si vedono le macro-sorgenti (SIM/telefoni, FWA/fisso…); qui dentro
+   ogni sorgente ESPLODE per sottogruppo — Ric. Automatica, MNP, Wallet,
+   FWA vs fisso, rateali vs finanziati — e ogni sottogruppo è una torta con
+   lo spaccato dei punti PER OFFERTA (Dolce Vita Pro, Start MNP…), fino al
+   drill dei contratti. Tutto data-driven dagli items della pista. */
+function gruppoAnalisiDi(ct, it) {
+    const cat = String(it.categoria || ""), prod = String(it.prodotto || ""), off = String(it.offerta || "");
+    if (ct.chiave === "fisso") return /fwa|super internet/i.test(prod + " " + off) ? "📡 FWA" : "🌐 Fisso";
+    if (/^telefono a rate/i.test(cat)) return /^finanziato/i.test(prod) ? "🏦 Finanziati" : "💳 Rateali";
+    if (/^mobile/i.test(cat)) {
+        const sub = cat.replace(/^mobile\s*/i, "").trim();
+        return sub ? `📶 ${sub}` : "📶 SIM";
+    }
+    if (/^energia/i.test(cat)) return /gas/i.test(prod) ? "🔥 Gas" : "💡 Luce";
+    if (/^customer base/i.test(cat)) return "🔁 " + (prod || "Operazioni");
+    return cat || "Altro";
+}
+
+function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false }) {
+    const [on, setOn] = useState(false);
+    const [tab, setTab] = useState(0);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 40); return () => clearTimeout(t); }, []);
+    useEffect(() => {
+        // col DRILL aperto sopra, Esc chiude solo quello (rilievo revisore)
+        const h = (e) => { if (e.key === "Escape" && !drillAperto) chiudi(); };
+        window.addEventListener("keydown", h);
+        return () => window.removeEventListener("keydown", h);
+    }, [chiudi, drillAperto]);
+    const tabs = ct.sorgenti.length ? ct.sorgenti : [{ l: ct.label, v: ct.val, u: ct.unit, items: ct.items }];
+    const att = tabs[Math.min(tab, tabs.length - 1)];
+    const aPunti = (att.u || ct.unit) === "pt";
+    // sottogruppi della sorgente attiva → dentro ognuno lo spaccato per offerta
+    const gruppi = useMemo(() => {
+        const m = new Map();
+        for (const it of (att.items || [])) {
+            const g = gruppoAnalisiDi(ct, it);
+            (m.get(g) || m.set(g, []).get(g)).push(it);
+        }
+        return [...m.entries()]
+            .map(([nome, items]) => ({ nome, items, val: aPunti ? somma(items) : items.length }))
+            .sort((a, b) => b.val - a.val);
+    }, [att, ct, aPunti]);
+    const TONI = ["#818cf8", "#22c55e", "#f59e0b", "#e879f9", "#14b8a6", "#f97316", "#38bdf8", "#a3e635", "#f43f5e", "#64748b"];
+    const perOfferta = (items) => {
+        const m = new Map();
+        for (const it of items) {
+            const k = String(it.offerta || it.prodotto || "—");
+            const r = m.get(k) || { pt: 0, pz: 0 };
+            r.pt = Math.round((r.pt + (it.punti || 0)) * 100) / 100; r.pz++;
+            m.set(k, r);
+        }
+        return [...m.entries()].sort((a, b) => (aPunti ? b[1].pt - a[1].pt : b[1].pz - a[1].pz));
+    };
+    return createPortal(
+        <div className={cn("an-scuro fixed inset-0 z-[9990] flex items-center justify-center p-4 transition-opacity duration-300", on ? "opacity-100" : "opacity-0")}
+            style={{ background: "rgba(2,6,17,.78)", backdropFilter: "blur(6px)" }} onClick={chiudi}>
+            <div onClick={(e) => e.stopPropagation()}
+                className={cn("w-full max-w-5xl max-h-[88vh] overflow-y-auto rounded-3xl border p-6 transition-all duration-300", on ? "scale-100 translate-y-0" : "scale-[.96] translate-y-3")}
+                style={{ background: "linear-gradient(160deg, #0c1224, #090d1c 60%)", borderColor: `${G.colore}55`, boxShadow: `0 24px 90px rgba(0,0,0,.6), 0 0 60px ${G.colore}22` }}>
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+                    <div className="flex items-center gap-3">
+                        <LogoBrand chiave={G.chiave} h={30} />
+                        <div>
+                            <p className="text-sm font-black text-white leading-tight">{ct.emoji} Pista {ct.label} <span className="text-slate-500 font-semibold">· analisi</span></p>
+                            <p className="text-[10px] text-slate-500">{ctx.persona ? `di ${ctx.persona}` : ctx.negozio}{(ctx.etichettaPeriodo || ctx.periodoLabel) ? ` · ${ctx.etichettaPeriodo || ctx.periodoLabel}` : ""}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="text-right">
+                            <span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={ct.val} punti={ct.unit === "pt"} /></span>
+                            <span className="text-[9px] text-slate-500 uppercase tracking-wider ml-1">{ct.unit === "pt" ? "punti" : "pezzi"}</span>
+                        </div>
+                        <button onClick={chiudi} className="text-slate-500 hover:text-white text-xl leading-none px-1">✕</button>
+                    </div>
+                </div>
+                {tabs.length > 1 && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                        {tabs.map((s, i) => (
+                            <button key={s.l} onClick={() => setTab(i)}
+                                className={cn("px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all", i === tab ? "text-white" : "text-slate-400 border-white/10 bg-white/[0.03] hover:bg-white/[0.07]")}
+                                style={i === tab ? { background: `${G.colore}22`, borderColor: G.colore } : undefined}>
+                                {s.l} <span className="tabular-nums" style={{ color: i === tab ? G.colore : undefined }}>{s.u === "pt" ? `${fmtPt(s.v)} pt` : `${fmtN(s.v)} pz`}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {gruppi.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-8 text-center">Nessuna vendita in questa sorgente nel periodo.</p>
+                ) : (
+                    <div className={cn("grid gap-3", gruppi.length > 1 ? "sm:grid-cols-2" : "")}>
+                        {gruppi.map((g) => {
+                            const offerte = perOfferta(g.items);
+                            const slices = offerte.map(([off, r], i) => ({
+                                label: off, colore: i === 0 ? G.colore : TONI[(i - 1) % TONI.length],
+                                val: aPunti ? r.pt : r.pz,
+                                det: [{ l: "punti", r: fmtPt(r.pt) }, { l: "pezzi", r: fmtN(r.pz) }],
+                            })).filter((s) => s.val > 0);
+                            return (
+                                <div key={g.nome} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <p className="text-xs font-black text-slate-100">{g.nome}</p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-black tabular-nums" style={{ color: G.colore }}>{aPunti ? `${fmtPt(g.val)} pt` : `${fmtN(g.val)} pz`}</span>
+                                            <button onClick={() => apriDrill({ titolo: `${G.label} · ${ct.label} · ${g.nome}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: g.items })}
+                                                className="text-[10px] font-bold text-indigo-300 border border-indigo-400/30 bg-indigo-500/10 rounded-md px-2 py-0.5 hover:bg-indigo-500/20" title="Elenco contratti del sottogruppo">🔍 contratti</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-4 items-center">
+                                        <div className="shrink-0">
+                                            <Donut size={118} spessore={13} unit={aPunti ? "punti" : "pezzi"} slices={slices.length ? slices : [{ label: g.nome, colore: "rgba(255,255,255,.12)", val: 1, det: [] }]}
+                                                centro={<><span className="text-base font-black text-white tabular-nums leading-none">{aPunti ? fmtPt(g.val) : fmtN(g.val)}</span><span className="text-[8px] text-slate-500 uppercase mt-0.5">{aPunti ? "pt" : "pz"}</span></>} />
+                                        </div>
+                                        <div className="flex-1 min-w-0 space-y-1">
+                                            {offerte.slice(0, 6).map(([off, r], i) => (
+                                                <div key={off} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                                                    <div className="min-w-0">
+                                                        <p className="text-[11px] text-slate-300 truncate" title={off}>
+                                                            <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: i === 0 ? G.colore : TONI[(i - 1) % TONI.length] }} />{off}
+                                                        </p>
+                                                        <span className="block h-1 rounded-full bg-white/5 overflow-hidden mt-0.5">
+                                                            <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(4, ((aPunti ? r.pt : r.pz) / Math.max(0.01, g.val)) * 100)}%`, background: i === 0 ? G.colore : TONI[(i - 1) % TONI.length] }} />
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-white tabular-nums whitespace-nowrap">{aPunti ? `${fmtPt(r.pt)} pt` : `${fmtN(r.pz)} pz`}<span className="text-slate-500 font-semibold"> · {fmtN(r.pz)} pz</span></span>
+                                                </div>
+                                            ))}
+                                            {offerte.length > 6 && <p className="text-[10px] text-slate-600">… e altre {offerte.length - 6} offerte (nel drill 🔍 ci sono tutte)</p>}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>, document.body
+    );
+}
+
 /* ═══ CARTA OPERATORE ══════════════════════════════════════════════════ */
 function CartaOperatore({ brand, ctx, size }) {
     const G = GARA[brand];
     const [drill, setDrill] = useState(null);
+    // ANALISI ESPLOSA della pista (📊, Luca 24/08)
+    const [analisi, setAnalisi] = useState(null);
     const sue = useMemo(() => ctx.items.filter((it) => it.brandGara === brand), [ctx.items, brand]);
     const prev = useMemo(() => ctx.itemsPrev.filter((it) => it.brandGara === brand), [ctx.itemsPrev, brand]);
     const righe = useMemo(() => righeOperatore(brand, sue), [brand, sue]);
@@ -370,6 +519,9 @@ function CartaOperatore({ brand, ctx, size }) {
                                 <div className="text-[10px] font-bold text-slate-200 flex items-center gap-1.5">
                                     <span>{ct.emoji} {ct.label}</span>
                                     {ctx.confronto && ct.val !== ct.prevVal && <Delta v={Math.round((ct.val - ct.prevVal) * 100) / 100} />}
+                                    <button onClick={(e) => { e.stopPropagation(); setAnalisi(ct); }}
+                                        className="text-[9px] font-black text-slate-400 border border-white/10 bg-white/[0.04] rounded-md px-1.5 py-0.5 hover:text-white hover:bg-white/[0.1] transition-colors"
+                                        title="Analisi della pista: sottogruppi e spaccato punti per offerta">📊</button>
                                 </div>
                                 {ct.sorgenti.length > 0 && (
                                     <p className="text-[9px] text-slate-500 leading-tight text-center max-w-[140px] truncate">
@@ -426,6 +578,7 @@ function CartaOperatore({ brand, ctx, size }) {
                     </div>
                 </div>
             </div>
+            {analisi && <AnalisiPistaPanel G={G} ct={analisi} ctx={ctx} chiudi={() => setAnalisi(null)} apriDrill={(d) => setDrill(d)} drillAperto={!!drill} />}
             <DrillPanel drill={drill} chiudi={() => setDrill(null)} labels={ctx.labels} />
         </div>
     );

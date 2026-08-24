@@ -2172,7 +2172,7 @@ function CallerPageInner() {
                                 card-filtro, totali per collaboratore, tabella episodi.
                                 malusAttuali = vista coerente col filtro anche senza scritture;
                                 versione = ricarica a sincronizzazione finita (dati POST-sync) */}
-                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)}
+                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} puoEliminare={["admin", "dev"].includes(user?.role || "")} regole={regoleCaller} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)}
                                 onApriPratica={(id) => { const c = calls.find((x) => String(x.id) === String(id)); if (c) { setShowArchivioMalus(false); openDetail(c); } }} />}
 
                             {/* Filter bar */}

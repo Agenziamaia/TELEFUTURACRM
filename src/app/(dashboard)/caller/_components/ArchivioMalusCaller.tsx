@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectPersona } from "@/components/SelectPersona";
-import { giornoYmd, type EpisodioCaller, type MalusLive } from "@/lib/callerMalus";
+import { giornoYmd, type EpisodioCaller, type MalusLive, type RegolaCaller } from "@/lib/callerMalus";
 
 const eur = (n: number) => "€ " + (Math.round(n * 100) / 100).toLocaleString("it-IT");
 
@@ -50,6 +50,8 @@ const tdStyle = "py-2 px-3 border-b border-white/5 text-[12px]";
 
 export function ArchivioMalusCaller({
     puoCompensare,
+    puoEliminare = false,
+    regole = null,
     utente,
     soloCaller,
     malusAttuali,
@@ -58,6 +60,11 @@ export function ArchivioMalusCaller({
     onApriPratica,
 }: {
     puoCompensare: boolean;
+    /** ELIMINA malus (Luca 24/08, come il Tracking PDA): solo admin/dev —
+     *  tombstone dell'episodio, la PRATICA resta e riparte dal warning */
+    puoEliminare?: boolean;
+    /** regole caller (stato → soglie) per la retrodatazione del countdown */
+    regole?: Map<string, RegolaCaller> | null;
     utente: string;
     soloCaller?: string;
     /** call_id → fotografia LIVE delle pratiche OGGI in fase malus (dalla
@@ -136,8 +143,42 @@ export function ArchivioMalusCaller({
     const [callerSel, setCallerSel] = useState("");
     const [search, setSearch] = useState("");
     const [confermaId, setConfermaId] = useState<number | null>(null);
+    const [eliminaId, setEliminaId] = useState<number | null>(null);
     const [salvando, setSalvando] = useState(false);
     const [errAzione, setErrAzione] = useState<string | null>(null);
+
+    // ELIMINA (Luca 24/08, stessa logica del Tracking PDA): tombstone del
+    // malus — la ricostruzione non lo fa rinascere (stesso call_id+dal) — e la
+    // PRATICA NON SI TOCCA nel merito: se il suo stato genera ancora countdown,
+    // una voce di storico RETRODATATA di giorni_warning la riporta in WARNING
+    // (il caller la vede e la lavora; il malus rimatura solo se resta ferma di
+    // nuovo). Se lo stato è esente o senza soglia malus, si toglie e basta.
+    const elimina = async (ep: EpisodioCaller) => {
+        setSalvando(true);
+        setErrAzione(null);
+        const { error } = await supabase.from("caller_malus").update({
+            eliminato: true, eliminato_il: new Date().toISOString(), eliminato_da: utente,
+        }).eq("id", ep.id);
+        if (error) { setSalvando(false); setEliminaId(null); setErrAzione(error.message); return; }
+        try {
+            const { data: p } = await supabase.from("calls").select("id, stato, storico").eq("id", ep.call_id).maybeSingle();
+            const r = p ? regole?.get(String(p.stato || "")) : null;
+            if (p && r && !r.esente && r.giorni_malus != null) {
+                const soglia = r.giorni_warning ?? r.giorni_lavorare ?? 0;
+                const d = new Date(); d.setHours(12, 0, 0, 0);
+                let resta = soglia;
+                while (resta > 0) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0) resta--; }
+                const voce = {
+                    data: d.toISOString(), caller: utente, campo: "Malus", da: "",
+                    a: "🗑 azzerato dall'amministrazione — countdown riportato in warning, la pratica resta da lavorare",
+                };
+                await supabase.from("calls").update({ storico: [...(Array.isArray(p.storico) ? p.storico : []), voce] }).eq("id", ep.call_id);
+            }
+        } catch { /* pratica non trovata: il tombstone e' comunque andato */ }
+        setSalvando(false);
+        setEliminaId(null);
+        setEpisodi((prev) => prev.filter((e) => e.id !== ep.id));
+    };
 
     // Filtri trasversali (ricerca + caller); le card di riepilogo filtrano lo stato.
     const filtratiBase = useMemo(() => {
@@ -381,7 +422,7 @@ export function ArchivioMalusCaller({
                                             <th className={thStyle + " text-center"}>GG</th>
                                             <th className={thStyle + " text-right"}>Importo</th>
                                             <th className={thStyle}>Stato</th>
-                                            {puoCompensare && <th className={thStyle}></th>}
+                                            {(puoCompensare || puoEliminare) && <th className={thStyle}></th>}
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -419,11 +460,11 @@ export function ArchivioMalusCaller({
                                                             </div>
                                                         )}
                                                     </td>
-                                                    {puoCompensare && (
+                                                    {(puoCompensare || puoEliminare) && (
                                                         <td className={tdStyle + " whitespace-nowrap text-right"} onClick={(e) => e.stopPropagation()}>
                                                             {/* anche gli ARCHIVIATI si compensano: e' il caso "sono
                                                                 usciti crediti a favore del licenziato" (Luca 21/08) */}
-                                                            {(ep.stato === "attivo" || ep.stato === "archiviato") && (
+                                                            {puoCompensare && (ep.stato === "attivo" || ep.stato === "archiviato") && (
                                                                 confermaId === ep.id ? (
                                                                     <span className="inline-flex gap-1.5">
                                                                         <button
@@ -453,7 +494,7 @@ export function ArchivioMalusCaller({
                                                                     </button>
                                                                 )
                                                             )}
-                                                            {ep.stato === "compensato" && (
+                                                            {puoCompensare && ep.stato === "compensato" && (
                                                                 <button
                                                                     type="button"
                                                                     disabled={salvando}
@@ -463,6 +504,37 @@ export function ArchivioMalusCaller({
                                                                 >
                                                                     Annulla
                                                                 </button>
+                                                            )}
+                                                            {puoEliminare && (
+                                                                eliminaId === ep.id ? (
+                                                                    <span className="inline-flex gap-1.5 ml-1.5">
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={salvando}
+                                                                            onClick={() => elimina(ep)}
+                                                                            className="px-2 py-1 rounded-md bg-rose-600 text-white text-[11px] font-bold disabled:opacity-40"
+                                                                            title="Il malus sparisce (e non rinasce); la pratica NON si tocca: torna in warning e resta da lavorare"
+                                                                        >
+                                                                            Elimino?
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setEliminaId(null)}
+                                                                            className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]"
+                                                                        >
+                                                                            ✕
+                                                                        </button>
+                                                                    </span>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setEliminaId(ep.id)}
+                                                                        className="px-2 py-1 rounded-md border border-rose-700/60 text-rose-400/90 text-[11px] ml-1.5 hover:bg-rose-600/10"
+                                                                        title="Elimina il malus (solo admin): la pratica resta e riparte dal warning — stessa logica del Tracking PDA"
+                                                                    >
+                                                                        🗑
+                                                                    </button>
+                                                                )
                                                             )}
                                                         </td>
                                                     )}
