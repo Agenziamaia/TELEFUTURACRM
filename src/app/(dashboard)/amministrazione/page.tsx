@@ -119,6 +119,9 @@ interface AppUser {
     password: string | null;
     // MOD-25: utenza Aircall collegata (bigint) — aggancia chiamate e click-to-call
     aircall_user_id?: number | null;
+    // Luca 24/08 (caso Sheekel): linea Aircall "solo caller" — se valorizzata,
+    // il ponte verso le pratiche Caller scatta solo sulle chiamate di questa linea
+    aircall_solo_linea?: string | null;
     // Mondo agenzia (Luca 13/08): back office responsabile delle pratiche in
     // Tracking PDA — si imposta QUI alla creazione/modifica dell'agente;
     // vuoto = resta tutto in carico all'agente
@@ -169,6 +172,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visib
     hire_date: "",
     note: "",
     aircall_user_id: null,
+    aircall_solo_linea: null,
     back_office_id: null,
     stores: [],
     brands: [],
@@ -965,6 +969,7 @@ function UserForm({
             note: f.note?.trim() || null,
             // MOD-25: aggancio utenza Aircall (null = scollegata)
             aircall_user_id: f.aircall_user_id ? Number(f.aircall_user_id) : null,
+            aircall_solo_linea: String(f.aircall_solo_linea || "").trim() || null,
             // Mondo agenzia: il BO responsabile vale solo per i ruoli area OB;
             // cambiando ruolo fuori area l'associazione si pulisce da sola
             back_office_id: ruoloAgenzia ? f.back_office_id || null : null,
@@ -1084,6 +1089,13 @@ function UserForm({
                             </div>
                             {aircallErr && <p className="text-[11px] text-rose-400 mt-1">Aircall: {aircallErr}</p>}
                             {!aircallErr && <p className="text-[11px] text-slate-500 mt-1">Lista LIVE da Aircall a ogni apertura (🔄 per ricaricarla subito). Comunque un nuovo caller si aggancia da solo alla prima chiamata, se l&apos;email coincide.</p>}
+                        </Field>
+                        {/* LINEA "SOLO CALLER" (Luca 24/08, caso Sheekel): lui usa
+                            Aircall anche per altro — solo le chiamate su questa
+                            linea contano come attività da call center */}
+                        <Field label="Linea Aircall «solo caller» (facoltativa)">
+                            <input className="glass-input w-full font-mono" value={f.aircall_solo_linea || ""} onChange={(e) => set("aircall_solo_linea", e.target.value)} placeholder="es. 0694801577" />
+                            <p className="text-[11px] text-slate-500 mt-1">Se compilata, le chiamate valgono come attività CALL CENTER solo quando passano da questa linea (in entrata e in uscita): le altre restano nel registro telefonico senza toccare le pratiche.</p>
                         </Field>
                     </div>
 

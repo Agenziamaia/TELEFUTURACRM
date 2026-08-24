@@ -340,32 +340,46 @@ function CartaOperatore({ brand, ctx, size }) {
                 </div>
             </div>
 
+            {/* MINI-ANELLI PER PISTA (Luca 24/08: «contatori circolari, stile
+                gamification» — mai più riquadri piatti da gestionale anni 2000):
+                le fette sono le SORGENTI dei punti in sfumature del colore
+                brand, hover = dettaglio, click = elenco contratti, countUp al
+                centro e delta vs mese scorso pista per pista. */}
             {contatori.length > 0 && (
-                <div className={cn("grid gap-2 mb-3", size >= 4 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
-                    {contatori.map((ct) => (
-                        <div key={ct.chiave}
-                            onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: ct.items }); }}
-                            className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5 cursor-pointer hover:bg-white/[0.06] transition-colors"
-                            title="Clicca per l'elenco contratti della pista">
-                            <div className="text-[9px] uppercase tracking-widest font-bold text-slate-500 mb-1 truncate">{ct.emoji} {ct.label}</div>
-                            <div className="flex items-end gap-1.5">
-                                <span className="text-xl font-black text-white tabular-nums leading-none"><Num v={ct.val} punti={ct.unit === "pt"} /></span>
-                                <span className="text-[9px] text-slate-500 mb-0.5">{ct.unit}</span>
-                                {ctx.confronto && ct.val !== ct.prevVal && <span className="ml-auto text-[10px]"><Delta v={Math.round((ct.val - ct.prevVal) * 100) / 100} /></span>}
-                            </div>
-                            {ct.sorgenti.length > 0 && (
-                                <div className="mt-1.5 space-y-0.5">
-                                    {ct.sorgenti.map((s) => (
-                                        <div key={s.l} className="flex justify-between gap-1 text-[10px] leading-tight">
-                                            <span className="text-slate-500 truncate">{s.l}</span>
-                                            <span className="text-slate-300 tabular-nums font-semibold whitespace-nowrap">{s.u === "pt" ? `${fmtPt(s.v)} pt` : fmtN(s.v)}</span>
-                                        </div>
-                                    ))}
+                <div className={cn("grid gap-3 mb-4 justify-items-center", size >= 4 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
+                    {contatori.map((ct) => {
+                        const toni = [G.colore, `${G.colore}B3`, `${G.colore}66`, `${G.colore}40`];
+                        const fmtV = (v, u) => (u === "pt" ? `${fmtPt(v)} pt` : `${fmtN(v)} pz`);
+                        const slices = ct.val <= 0
+                            ? [{ label: ct.label, colore: "rgba(255,255,255,.12)", val: 1, det: [] }]
+                            : ct.sorgenti.length
+                                ? ct.sorgenti.map((s, i) => ({ label: s.l, colore: toni[i % toni.length], val: s.v, det: [{ l: s.u === "pt" ? "punti" : "pezzi", r: s.u === "pt" ? fmtPt(s.v) : fmtN(s.v) }] }))
+                                : [{ label: ct.label, colore: G.colore, val: ct.val, det: [{ l: ct.unit === "pt" ? "punti" : "pezzi", r: ct.unit === "pt" ? fmtPt(ct.val) : fmtN(ct.val) }] }];
+                        return (
+                            <div key={ct.chiave}
+                                onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.persona ? `di ${ctx.persona}` : ctx.negozio, items: ct.items }); }}
+                                className="flex flex-col items-center gap-1 cursor-pointer group select-none"
+                                title="Clicca per l'elenco contratti della pista">
+                                <div className="transition-transform duration-200 group-hover:scale-[1.05]">
+                                    <Donut size={size >= 4 ? 126 : 112} spessore={13} unit={ct.unit === "pt" ? "punti" : "pezzi"} slices={slices}
+                                        centro={<>
+                                            <span className="text-lg font-black text-white tabular-nums leading-none"><Num v={ct.val} punti={ct.unit === "pt"} /></span>
+                                            <span className="text-[8px] text-slate-500 uppercase tracking-wider mt-0.5">{ct.unit === "pt" ? "punti" : "pezzi"}</span>
+                                        </>} />
                                 </div>
-                            )}
-                            {ct.nota && <p className="text-[9px] text-slate-600 mt-1 leading-tight">{ct.nota}</p>}
-                        </div>
-                    ))}
+                                <div className="text-[10px] font-bold text-slate-200 flex items-center gap-1.5">
+                                    <span>{ct.emoji} {ct.label}</span>
+                                    {ctx.confronto && ct.val !== ct.prevVal && <Delta v={Math.round((ct.val - ct.prevVal) * 100) / 100} />}
+                                </div>
+                                {ct.sorgenti.length > 0 && (
+                                    <p className="text-[9px] text-slate-500 leading-tight text-center max-w-[140px] truncate">
+                                        {ct.sorgenti.map((s) => `${s.l} ${fmtV(s.v, s.u).replace(" pt", "").replace(" pz", "")}`).join(" · ")}
+                                    </p>
+                                )}
+                                {ct.nota && <p className="text-[9px] text-slate-600 leading-tight text-center max-w-[140px]">{ct.nota}</p>}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 

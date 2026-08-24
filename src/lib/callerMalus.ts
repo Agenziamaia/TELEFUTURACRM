@@ -97,7 +97,7 @@ export async function caricaGiorniBadge(finestraGiorni = 120): Promise<Map<strin
         const dal = new Date(); dal.setDate(dal.getDate() - finestraGiorni);
         const [{ data, error }, dir, ferie] = await Promise.all([
             supabase.from("shifts").select("employee_name, started_at").gte("started_at", dal.toISOString()).limit(20000),
-            supabase.from("app_users").select("full_name").eq("role", "direttore_cc").eq("active", true),
+            supabase.from("app_users").select("id, full_name").eq("role", "direttore_cc").eq("active", true),
             caricaFerieCaller(),
         ]);
         if (error) return null;
@@ -110,17 +110,40 @@ export async function caricaGiorniBadge(finestraGiorni = 120): Promise<Map<strin
             set.add(ymdLoc(d));
             m.set(r.employee_name, set);
         });
-        // badge PRESUNTO del direttore: lun-sab su tutta la finestra, ferie escluse
-        for (const u of ((dir.data ?? []) as { full_name: string | null }[])) {
-            if (!u.full_name) continue;
+        // FERIE PERSONALI del direttore (Luca 24/08, caso Sheekel): il set
+        // presunto lun-sab dava per assodato che fosse sempre presente — ma i
+        // caller normali si congelano da soli NON badgiando, lui no. Le sue
+        // ferie approvate nella sezione Ferie (vacation_requests) si tolgono
+        // dal set, come per il Tracking PDA.
+        const dirRows = ((dir.data ?? []) as { id: string; full_name: string | null }[]).filter((u) => u.full_name);
+        const feriePers = new Map<string, Set<string>>();
+        if (dirRows.length) {
+            const { data: vf } = await supabase.from("vacation_requests")
+                .select("user_id, date_from, date_to, status, tipo").in("user_id", dirRows.map((u) => u.id));
+            ((vf ?? []) as { user_id: string; date_from: string; date_to: string; status: string | null; tipo: string | null }[])
+                .filter((f) => /approv/i.test(String(f.status || "")) && String(f.tipo || "ferie") !== "corsi")
+                .forEach((f) => {
+                    const set = feriePers.get(f.user_id) || new Set<string>();
+                    const d = new Date(String(f.date_from).slice(0, 10) + "T12:00");
+                    const fine = new Date(String(f.date_to).slice(0, 10) + "T12:00");
+                    let guardia = 0;
+                    while (d <= fine && ++guardia < 400) { set.add(ymdLoc(d)); d.setDate(d.getDate() + 1); }
+                    feriePers.set(f.user_id, set);
+                });
+        }
+        // badge PRESUNTO del direttore: lun-sab su tutta la finestra, ferie
+        // aziendali E personali escluse
+        for (const u of dirRows) {
+            const sue = feriePers.get(u.id);
             const set = new Set<string>();
             const d = new Date(dal.getFullYear(), dal.getMonth(), dal.getDate());
             const oggi = new Date();
             while (d <= oggi) {
-                if (d.getDay() !== 0 && !ferie.has(ymdLoc(d))) set.add(ymdLoc(d));
+                const g = ymdLoc(d);
+                if (d.getDay() !== 0 && !ferie.has(g) && !sue?.has(g)) set.add(g);
                 d.setDate(d.getDate() + 1);
             }
-            m.set(u.full_name, set);
+            m.set(u.full_name as string, set);
         }
         return m;
     } catch { return null; }

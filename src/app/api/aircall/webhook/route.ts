@@ -189,6 +189,7 @@ export async function POST(request: Request) {
                     direction, clienteNum, aircallUserId, agenteNome: agente, agenteEmail,
                     answered: answeredBool, durata, clientId, startedIso: started,
                     aircallCallId: d.id,
+                    numberDigits: (d.number?.digits as string | undefined) ?? null,
                 });
                 // MOD-25: l'utenza NON mappata non brucia la chiamata — se un
                 // altro evento terminale arriva dopo l'aggancio (o l'admin mappa
@@ -221,31 +222,34 @@ async function bridgeVersoCaller(p: {
     direction: string | null; clienteNum: string; aircallUserId: number | null;
     agenteNome: string | null; agenteEmail?: string | null; answered: boolean; durata: number | null;
     clientId: string | null; startedIso: string | null; aircallCallId: number;
+    numberDigits?: string | null;
 }): Promise<string> {
     // chi ha gestito la chiamata, dal mapping identita' (fallback sul nome)
     let callerName = ""; let callerRole = ""; let callerId: string | null = null;
+    let soloLinea: string | null = null;
     if (p.aircallUserId) {
-        const { data: u } = await supabase.from("app_users").select("id,full_name,role").eq("aircall_user_id", p.aircallUserId).maybeSingle();
-        if (u) { callerName = u.full_name; callerRole = u.role; callerId = u.id; }
+        const { data: u } = await supabase.from("app_users").select("id,full_name,role,aircall_solo_linea").eq("aircall_user_id", p.aircallUserId).maybeSingle();
+        if (u) { callerName = u.full_name; callerRole = u.role; callerId = u.id; soloLinea = (u.aircall_solo_linea as string) || null; }
     }
     // AUTO-AGGANCIO (MOD-25, Luca 10/08: "la prossima volta fallo in automatico"):
     // utenza Aircall non ancora mappata → si risolve per EMAIL (poi nome esatto)
     // e il mapping si SCRIVE DA SOLO su app_users — dal prossimo evento il giro
     // e' diretto. Mai rubare un mapping gia' assegnato (guardia is null).
     if (!callerName && (p.agenteEmail || p.agenteNome)) {
-        let u: { id: string; full_name: string; role: string } | null = null;
+        let u: { id: string; full_name: string; role: string; aircall_solo_linea?: string | null } | null = null;
         if (p.agenteEmail) {
-            const { data } = await supabase.from("app_users").select("id,full_name,role")
+            const { data } = await supabase.from("app_users").select("id,full_name,role,aircall_solo_linea")
                 .ilike("email", p.agenteEmail).maybeSingle();
             u = data ?? null;
         }
         if (!u && p.agenteNome) {
-            const { data } = await supabase.from("app_users").select("id,full_name,role")
+            const { data } = await supabase.from("app_users").select("id,full_name,role,aircall_solo_linea")
                 .ilike("full_name", p.agenteNome).maybeSingle();
             u = data ?? null;
         }
         if (u) {
             callerName = u.full_name; callerRole = u.role; callerId = u.id;
+            soloLinea = (u.aircall_solo_linea as string) || null;
             if (p.aircallUserId) {
                 await supabase.from("app_users").update({ aircall_user_id: p.aircallUserId })
                     .eq("id", u.id).is("aircall_user_id", null);
@@ -256,6 +260,12 @@ async function bridgeVersoCaller(p: {
     // area call center + admin/dev (cosi' anche i test di Luca creano la pratica);
     // i negozi e gli altri ruoli restano SOLO nel registro telefonico.
     if (areaOf(callerRole) !== "cc" && !["admin", "dev"].includes(callerRole)) return "skip: non call center";
+    // LINEA DEDICATA (Luca 24/08, caso Sheekel): con la linea "solo caller"
+    // configurata sull'utente, il ponte scatta SOLO per le chiamate — in e
+    // out — su QUELLA linea (06 9480 1577): le altre sue chiamate restano nel
+    // registro telefonico senza toccare le pratiche (usa Aircall anche per
+    // questioni fuori dal call center).
+    if (soloLinea && codaNumero(p.numberDigits) !== codaNumero(soloLinea)) return "skip: linea fuori perimetro caller";
 
     // LAVORAZIONE IN SERIE (mig. 090): se il caller ha il preset ON, le 4 voci
     // (brand/obiettivo/provenienza/tipologia) si applicano da sole — alla
@@ -277,13 +287,13 @@ async function bridgeVersoCaller(p: {
     // trattini (inserimento umano / liste), secondo giro con le cifre
     // intervallate da % — "3 331 23 45 67" combacia lo stesso.
     let { data: prat } = await supabase.from("calls")
-        .select("id, stato, storico, brand, obiettivo, provenienza, tipologia, negozio_provenienza, mese_provenienza, anno_provenienza")
+        .select("id, stato, storico, caller, brand, obiettivo, provenienza, tipologia, negozio_provenienza, mese_provenienza, anno_provenienza")
         .or(`numero.ilike.%${coda}%,cellulare.ilike.%${coda}%`)
         .order("created_at", { ascending: false }).limit(1);
     if (!prat || !prat[0]) {
         const patt = coda.split("").join("%");
         ({ data: prat } = await supabase.from("calls")
-            .select("id, stato, storico, brand, obiettivo, provenienza, tipologia, negozio_provenienza, mese_provenienza, anno_provenienza")
+            .select("id, stato, storico, caller, brand, obiettivo, provenienza, tipologia, negozio_provenienza, mese_provenienza, anno_provenienza")
             .or(`numero.ilike.%${patt}%,cellulare.ilike.%${patt}%`)
             .order("created_at", { ascending: false }).limit(1));
     }
@@ -319,6 +329,21 @@ async function bridgeVersoCaller(p: {
         const upd: Record<string, unknown> = { data_chiamata: quando };
         if (!p.answered) upd.stato = prossimoNR(esistente.stato);
         else upd.da_esitare = true;
+        // PASSAGGIO DI POSSESSO (Luca 24/08, caso Sheekel sulle lead dei
+        // colleghi in ferie): la lead è di chi la sta LAVORANDO — la chiamata
+        // OUTBOUND di un altro caller la prende in carico; sull'inbound solo
+        // se la pratica è orfana. Con la proprietà traslano la responsabilità
+        // del percorso e i malus (il motore caller segue il campo caller).
+        // La voce di storico conserva il vecchio per le future quantificazioni
+        // (cooperation in Analisi).
+        let voceSwitch: typeof voce | null = null;
+        const vecchioCaller = String((esistente as { caller?: string | null }).caller || "");
+        // solo l'area CALL CENTER prende il possesso (rilievo del revisore:
+        // admin/dev passano il gate per i test ma non devono rubare le lead)
+        if (areaOf(callerRole) === "cc" && callerName && vecchioCaller !== callerName && (p.direction === "outbound" || !vecchioCaller)) {
+            upd.caller = callerName;
+            if (vecchioCaller) voceSwitch = { ...voce, campo: "caller", da: vecchioCaller, a: callerName, dettagli: null };
+        }
         if (preset) {
             // riempi SOLO i campi vuoti: mai sovrascrivere cio' che la lista o
             // il caller hanno gia' impostato
@@ -336,7 +361,7 @@ async function bridgeVersoCaller(p: {
             brand: (upd.brand as string) ?? esistente.brand, obiettivo: (upd.obiettivo as string) ?? esistente.obiettivo,
             provenienza: (upd.provenienza as string) ?? esistente.provenienza, tipologia: (upd.tipologia as string) ?? esistente.tipologia,
         });
-        upd.storico = [...(Array.isArray(esistente.storico) ? esistente.storico : []), voce];
+        upd.storico = [...(Array.isArray(esistente.storico) ? esistente.storico : []), voce, ...(voceSwitch ? [voceSwitch] : [])];
         const { error } = await supabase.from("calls").update(upd).eq("id", esistente.id);
         // registro telefonico ↔ pratica (mig. 107): se la colonna non c'e'
         // ancora, l'errore si ignora e il link arrivera' con la migrazione

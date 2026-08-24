@@ -18,7 +18,7 @@ import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useStores, useSellers, useCallers } from "@/lib/org";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { seesAllStores, seesWholeStore, areaOf } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
@@ -885,9 +885,15 @@ function CallerPageInner() {
             if (fDataAppA && d > fDataAppA) return false;
         }
         if (fDataChiamataDa || fDataChiamataA) {
-            const d = dataLocaleDi(c.data_chiamata);
-            if (fDataChiamataDa && d < fDataChiamataDa) return false;
-            if (fDataChiamataA && d > fDataChiamataA) return false;
+            // la data vale per TUTTE le lavorazioni (Luca 24/08, caso Miozzi):
+            // prima chiamata, richiami e cambi stato — si guarda lo STORICO,
+            // non solo l'ultima data_chiamata. Retroattivo gratis: le voci
+            // hanno la loro data da sempre.
+            const inRange = (s: string | null | undefined) => {
+                const d = dataLocaleDi(s);
+                return !!d && (!fDataChiamataDa || d >= fDataChiamataDa) && (!fDataChiamataA || d <= fDataChiamataA);
+            };
+            if (!inRange(c.data_chiamata) && !(c.storico || []).some((v) => inRange(v?.data))) return false;
         }
         if (fStati.length > 0 && !fStati.includes(c.stato)) return false;
         if (fCaller && c.caller !== fCaller) return false;
@@ -1466,6 +1472,16 @@ function CallerPageInner() {
                 }
             ];
             const updates: Record<string, unknown> = { stato: editCall.statoNew, storico: newStorico, da_esitare: false };
+            // PASSAGGIO DI POSSESSO (Luca 24/08, caso Miozzi: Sheekel lavorava
+            // lead dei colleghi in ferie ma il Caller restava il vecchio): chi
+            // LAVORA la lead se ne prende la proprietà — e con lei la
+            // responsabilità del percorso e degli eventuali malus (il motore
+            // caller segue il campo caller). Vale per i ruoli del CALL CENTER;
+            // le correzioni di admin/amministrazione non rubano il possesso.
+            if (currentCaller && original.caller !== currentCaller && areaOf(user?.role || "") === "cc") {
+                updates.caller = currentCaller;
+                if (original.caller) newStorico.push({ data: now, caller: currentCaller, campo: "caller", da: original.caller, a: currentCaller });
+            }
             // post-chiamata: l'anagrafica completata dal caller viaggia con l'esito
             updates.tipo_cliente = editCall.tipo_cliente;
             updates.nome = editCall.nome; updates.cognome = editCall.cognome;
