@@ -30,7 +30,7 @@ const norm = (s) => String(s || "").trim().toLowerCase();
 export const HEX_BRAND = {
     windtre: "#f97316", vodafone: "#e60000", fastweb: "#eab308", sky: "#8b5cf6",
     s4: "#22c55e", tim: "#0050ff", iliad: "#c00028", dojo: "#14b8a6",
-    verymobile: "#84cc16", homobile: "#9b26b6", kenamobile: "#e4002b", marginalita: "#22c55e",
+    verymobile: "#84cc16", homobile: "#9b26b6", kenamobile: "#e4002b", marginalita: "#06b6d4",
 };
 export const GARA = {
     w3: { label: "WindTre", chiave: "windtre", colore: HEX_BRAND.windtre, logo: TRK_BRAND_LOGOS.windtre },
@@ -224,7 +224,7 @@ export function TimelineHero({ ctx }) {
             const G = GARA[it.brandGara];
             if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto);
         }
-        for (const r of (ctx.ext || [])) add("marg", "Marginalità", HEX_BRAND.marginalita || "#22c55e", "marginalita", r.g, r.prodotto, Number(r.qty) || 1);
+        for (const r of (ctx.ext || [])) add("marg", "Marginalità", HEX_BRAND.marginalita || "#06b6d4", "marginalita", r.g, r.prodotto, Number(r.qty) || 1);
         for (const r of (ctx.altri || [])) {
             const k = trkBrandKey(r.brand);
             if (!k) continue;
@@ -953,7 +953,7 @@ function WidgetPesoNegozi({ ctx }) {
             const perCat = {};
             for (const r of mieiExt) perCat[catDi(r.prodotto)] = (perCat[catDi(r.prodotto)] || 0) + (Number(r.prezzo) || 0);
             out.push({
-                label: "Marginalità", logoChiave: "marginalita", colore: "#22c55e", perc: val(storeExt) > 0 ? (val(mieiExt) / val(storeExt)) * 100 : 0,
+                label: "Marginalità", logoChiave: "marginalita", colore: HEX_BRAND.marginalita, perc: val(storeExt) > 0 ? (val(mieiExt) / val(storeExt)) * 100 : 0,
                 tip: <div><TipTitolo>💰 Marginalità · {n}</TipTitolo>
                     <TipRiga l="tuo venduto" r={`${fmtEuro(val(mieiExt))} / ${fmtEuro(val(storeExt))}`} colore="#22c55e" />
                     {Object.entries(perCat).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c, v]) => <TipRiga key={c} l={c} r={fmtEuro(v)} />)}
@@ -1134,7 +1134,7 @@ export const REGISTRO = {
     "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 2, logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
     "op:sky": { nome: "Sky", emoji: "🟣", gruppo: "operatori", def: 2, logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="sky" ctx={ctx} size={size} /> },
     "op:fw": { nome: "Fastweb T2", emoji: "🟡", gruppo: "operatori", def: 2, logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="fw" ctx={ctx} size={size} /> },
-    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", logoColore: "#22c55e", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
+    "marg": { nome: "Marginalità · venduto", emoji: "💰", gruppo: "marginalità", def: 4, logoChiave: "marginalita", logoColore: "#06b6d4", nomeBreve: "", render: (ctx, size) => <WidgetMarg ctx={ctx} size={size} /> },
     // ── gli ALTRI operatori (Luca 21/08: «a disposizione nei widget», fuori
     //    dal layout di default — si aggiungono dalla galleria) ─────────────
     "op:s4": { nome: "S4 Energia", emoji: "🟢", gruppo: "operatori", def: 2, logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx, size) => <CartaAltro chiave="s4" nome="S4 Energia" ctx={ctx} size={size} /> },
