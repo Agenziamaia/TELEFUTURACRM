@@ -57,6 +57,10 @@ let DELEGHE: Record<string, string> = {};
 // nel FILTRO utente e nelle tendine l'agente compare col nome del suo
 // responsabile (risposta Luca 13/08: «trovo ancora Berdini e non Coviello»)
 const nomeResponsabile = (v: string) => AGENTI_BO[v] || v;
+// responsabile EFFICACE della riga (Luca 24/08, caso Verdile→Goretti): la
+// pratica DELEGATA risponde al filtro del delegato — il badge 📦 in riga
+// continua a dire che è stata attivata dal vecchio venditore
+const respRiga = (row: { id?: unknown; venditore?: unknown }) => DELEGHE[String(row.id || "")] || nomeResponsabile(String(row.venditore || ""));
 
 function formatDataInserimento(val: string | undefined): string {
   const d = parseDataRiga(val);
@@ -1811,16 +1815,16 @@ export default function TrackingPdaPage() {
     [baseVisibile, seesAll]
   );
   const venditoriAttivi = useMemo(
-    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.map((r) => nomeResponsabile(r.venditore)).filter((n) => n && n !== "—"))).sort() : []),
+    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.map((r) => respRiga(r)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, seesWhole, seesAll]
   );
   const utentiAttivi = useMemo(
-    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => nomeResponsabile(r.venditore)).filter((n) => n && n !== "—"))).sort() : []),
+    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => respRiga(r)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, seesAll, negozioSel]
   );
   const catAttive = useMemo(() => new Set(
     baseVisibile
-      .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || utentiSel.includes(r.venditore)))
+      .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || utentiSel.includes(respRiga(r))))
       .map((r) => r.categoria)
   ), [baseVisibile, negozioSel, utentiSel]);
   const categorieAttive = useMemo(() => CATEGORIE.filter((c) => catAttive.has(c.id)), [catAttive]);
@@ -1835,7 +1839,7 @@ export default function TrackingPdaPage() {
   // (altrimenti resta un filtro-fantasma che svuota la tabella).
   useEffect(() => {
     setUtentiSel((prev) => {
-      const next = prev.filter((n) => baseVisibile.some((r) => nomeResponsabile(r.venditore) === n && (!negozioSel || r.negozio === negozioSel)));
+      const next = prev.filter((n) => baseVisibile.some((r) => respRiga(r) === n && (!negozioSel || r.negozio === negozioSel)));
       return next.length === prev.length ? prev : next;
     });
   }, [negozioSel, baseVisibile]);
@@ -1885,8 +1889,8 @@ export default function TrackingPdaPage() {
       }
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
-      if (utentiSel.length > 0 && !utentiSel.includes(nomeResponsabile(row.venditore))) return false;
-      if (venditoreSel && nomeResponsabile(row.venditore) !== venditoreSel) return false;
+      if (utentiSel.length > 0 && !utentiSel.includes(respRiga(row))) return false;
+      if (venditoreSel && respRiga(row) !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
@@ -1928,8 +1932,8 @@ export default function TrackingPdaPage() {
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
       if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
-      if (utentiSel.length > 0 && !utentiSel.includes(nomeResponsabile(row.venditore))) return false;
-      if (venditoreSel && nomeResponsabile(row.venditore) !== venditoreSel) return false;
+      if (utentiSel.length > 0 && !utentiSel.includes(respRiga(row))) return false;
+      if (venditoreSel && respRiga(row) !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
@@ -1978,7 +1982,7 @@ export default function TrackingPdaPage() {
       testo: toId ? `Verifica delegata a ${memberName(toId) || "collaboratore"}` : "Delega verifica rimossa",
       utente: user?.name || "—", ruolo: "admin" });
     const { error } = await supabase.from("contracts")
-      .update({ delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia }).eq("id", rowId);
+      .update({ delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, delegated_at: toId ? new Date().toISOString() : null, storia }).eq("id", rowId);
     if (error) { setLoadError(error.message); return; }
     setRawList((prev) => prev.map((r) => (r.id as string) === rowId ? { ...r, delegated_to: toId, delegated_by: toId ? user?.id : null, storia } : r));
     setSelected((s) => s && s.id === rowId ? { ...s, delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia } : s);
@@ -2015,7 +2019,7 @@ export default function TrackingPdaPage() {
       const target = rawList.find((r) => (r.id as string) === id);
       const storia = Array.isArray((target as any)?.storia) ? [...(target as any).storia] : [];
       storia.push({ data: oggi, tipo: "delega", testo: `Verifica delegata a ${nome}`, utente: user?.name || "—", ruolo: "admin" });
-      await supabase.from("contracts").update({ delegated_to: toId, delegated_by: user?.id ?? null, storia }).eq("id", id);
+      await supabase.from("contracts").update({ delegated_to: toId, delegated_by: user?.id ?? null, delegated_at: toId ? new Date().toISOString() : null, storia }).eq("id", id);
     }
     setRawList((prev) => prev.map((r) => ids.includes(r.id as string) ? { ...r, delegated_to: toId, delegated_by: user?.id } : r));
   }, [rawList, memberName, user]);

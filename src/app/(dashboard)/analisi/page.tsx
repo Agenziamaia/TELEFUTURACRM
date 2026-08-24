@@ -271,6 +271,12 @@ export default function Analisi() {
         return [user?.name].filter(Boolean);
     }, [vedeTutto, vedeNegozio, venditoriTutti, items, user?.name, visStores]);
     const [personaSel, setPersonaSel] = useState("");
+    // FILTRI PERSISTENTI (Luca 24/08: «l'ultimo filtro che ho messo è quello
+    // che mi ritrovo»): persona e negozi vivono in localStorage per utente —
+    // il ripristino avviene UNA volta e i salvataggi partono solo dopo
+    // (guardia filtriPronti: senza, il default "" sovrascriverebbe il salvato
+    // prima che il ripristino renda).
+    const filtriPronti = useRef(false);
     const persona = useMemo(() => {
         if (personaSel && opzioniPersona.some((o) => norm(o) === norm(personaSel))) return personaSel;
         const mio = opzioniPersona.find((o) => norm(o) === norm(user?.name));
@@ -290,6 +296,33 @@ export default function Analisi() {
     // Multi e deve poterle sommare. Default: per chi NON vede tutto, i SUOI
     // negozi del profilo (i gemelli insieme); per l'admin il negozio "casa".
     const [negoziSelN, setNegoziSelN] = useState([]);
+    useEffect(() => {
+        if (!user?.id || filtriPronti.current) return;
+        try {
+            const p = localStorage.getItem("tf_analisi_persona_" + user.id);
+            if (p) setPersonaSel(p);
+            const n = JSON.parse(localStorage.getItem("tf_analisi_negozi_" + user.id) || "[]");
+            if (Array.isArray(n) && n.length) setNegoziSelN(n);
+        } catch { /* storage negato */ }
+        filtriPronti.current = true;
+    }, [user?.id]);
+    useEffect(() => {
+        if (!user?.id || !filtriPronti.current) return;
+        try { localStorage.setItem("tf_analisi_persona_" + user.id, personaSel || ""); } catch { /* ok */ }
+    }, [personaSel, user?.id]);
+    useEffect(() => {
+        if (!user?.id || !filtriPronti.current) return;
+        try { localStorage.setItem("tf_analisi_negozi_" + user.id, JSON.stringify(negoziSelN)); } catch { /* ok */ }
+    }, [negoziSelN, user?.id]);
+    // riconciliazione (rilievo revisore): un negozio salvato che non è più in
+    // visibilità sparisce anche dalle chips, non solo dal conteggio
+    useEffect(() => {
+        if (!negoziVisibili.length) return;
+        setNegoziSelN((prev) => {
+            const validi = prev.filter((n) => negoziVisibili.includes(n));
+            return validi.length === prev.length ? prev : validi;
+        });
+    }, [negoziVisibili.join("|")]);
     const negozi = useMemo(() => {
         const validi = negoziSelN.filter((n) => negoziVisibili.includes(n));
         if (validi.length) return validi;

@@ -217,14 +217,19 @@ const SEZIONI: Sezione[] = [
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
     { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
-    { id: "reparti", label: "Reparti & IVA", icon: Percent, desc: "Mappa reparto → aliquota/natura IVA del registratore telematico — la sorgente unica che decide l'IVA sullo scontrino (letta dal Catalogo)." },
-    { id: "cassascontrini", label: "Cassa & Scontrini", icon: Receipt, desc: "Scontrini/fatture emessi, incassi della cassa automatica e chiusure Z di tutti i negozi, con importi e stato + i registratori configurati. Sola lettura." },
-    { id: "coupon", label: "Coupon", icon: Ticket, desc: "Coupon sconto emessi dai ritiri usati: emessi, riscattati, scaduti, annullati — con valore e residuo. Sola lettura." },
+    // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
+    // nate col registratore telematico — stesso pattern del mini-hub Costi.
+    { id: "fiscalita", label: "Fiscalità", icon: Receipt, desc: "Il mini-hub fiscale: Reparti & IVA, Cassa & Scontrini e Coupon — in sequenza, con le stesse regole di permesso delle singole sezioni." },
+    { id: "reparti", label: "Reparti & IVA", icon: Percent, gruppo: "fiscalita", desc: "Mappa reparto → aliquota/natura IVA del registratore telematico — la sorgente unica che decide l'IVA sullo scontrino (letta dal Catalogo)." },
+    { id: "cassascontrini", label: "Cassa & Scontrini", icon: Receipt, gruppo: "fiscalita", desc: "Scontrini/fatture emessi, incassi della cassa automatica e chiusure Z di tutti i negozi, con importi e stato + i registratori configurati. Sola lettura." },
+    { id: "coupon", label: "Coupon", icon: Ticket, gruppo: "fiscalita", desc: "Coupon sconto emessi dai ritiri usati: emessi, riscattati, scaduti, annullati — con valore e residuo. Sola lettura." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
 // ordine FISSO del mini-hub Costi (Luca 31/07): Negozi → Condivisi → Altri
 const COSTI_IDS = ["negozi", "condivisi", "altri"];
+// ordine FISSO del mini-hub Fiscalità (Luca 24/08)
+const FISC_IDS = ["reparti", "cassascontrini", "coupon"];
 
 function AmministrazioneInner() {
     const { user } = useAuth();
@@ -264,13 +269,15 @@ function AmministrazioneInner() {
     // il mini-hub Costi compare se ALMENO UNA delle sue sezioni e' permessa;
     // le sezioni raggruppate non stanno nella griglia principale
     const costiVisibile = COSTI_IDS.some((id) => sezOk(id));
+    const fiscVisibile = FISC_IDS.some((id) => sezOk(id));
     const sezioniVisibili = SEZIONI.filter((s) =>
-        !s.gruppo && (s.id === "costi" ? costiVisibile : sezOk(s.id)));
+        !s.gruppo && (s.id === "costi" ? costiVisibile : s.id === "fiscalita" ? fiscVisibile : sezOk(s.id)));
     const sezioniCosti = SEZIONI.filter((s) => s.gruppo === "costi" && sezOk(s.id));
-    const current = SEZIONI.find((s) => s.id === sez && (s.id === "costi" ? costiVisibile : sezOk(s.id)));
+    const sezioniFisc = SEZIONI.filter((s) => s.gruppo === "fiscalita" && sezOk(s.id));
+    const current = SEZIONI.find((s) => s.id === sez && (s.id === "costi" ? costiVisibile : s.id === "fiscalita" ? fiscVisibile : sezOk(s.id)));
     // header: dentro il mini-hub Costi il titolo resta "Costi" (come Utenti
     // resta "Utenti" su tutte le sue funzioni)
-    const vista = current?.gruppo === "costi" ? SEZIONI.find((s) => s.id === "costi")! : current;
+    const vista = current?.gruppo === "costi" ? SEZIONI.find((s) => s.id === "costi")! : current?.gruppo === "fiscalita" ? SEZIONI.find((s) => s.id === "fiscalita")! : current;
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -613,12 +620,34 @@ function AmministrazioneInner() {
                 <CalendarioEsitiView />
             ) : sez === "trackingesiti" ? (
                 <TrackingEsitiView />
-            ) : sez === "coupon" ? (
-                <CouponView />
-            ) : sez === "cassascontrini" ? (
-                <CassaScontriniView />
-            ) : sez === "reparti" ? (
-                <RepartiIvaView />
+            ) : (sez === "fiscalita" || FISC_IDS.includes(sez || "")) ? (
+                (() => {
+                    // Il mini-hub FISCALITÀ (Luca 24/08): stessa veste del
+                    // mini-hub Costi — ?sez=fiscalita apre la prima permessa
+                    const attiva = FISC_IDS.includes(sez || "") ? (sez as string) : (sezioniFisc[0]?.id ?? "reparti");
+                    const EMOJI: Record<string, string> = { reparti: "🧮", cassascontrini: "🧾", coupon: "🎟" };
+                    return (
+                        <>
+                            <div className="flex gap-2 flex-wrap">
+                                {sezioniFisc.map((s) => (
+                                    <button key={s.id} onClick={() => go(s.id)}
+                                        className={`text-sm px-4 py-2 rounded-lg border transition-colors ${attiva === s.id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-200 font-bold" : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                        {EMOJI[s.id]} {s.label}
+                                    </button>
+                                ))}
+                            </div>
+                            {sezioniFisc.length === 0 ? (
+                                <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna sezione di Fiscalità abilitata per il tuo ruolo.</div>
+                            ) : attiva === "cassascontrini" ? (
+                                <CassaScontriniView />
+                            ) : attiva === "coupon" ? (
+                                <CouponView />
+                            ) : (
+                                <RepartiIvaView />
+                            )}
+                        </>
+                    );
+                })()
             ) : null}
 
             {showForm && (
@@ -1443,7 +1472,7 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
     //    esce da solo dopo l'azione; il bottone 📦 lo apre anche a mano
     //    (per chi è già stato licenziato in passato).
     const ESITI_FINE_TRK = ["attivato", "re_inserita", "liquidato", "completo_sky", "attivo_sky", "annullato"];
-    const [riass, setRiass] = useState<null | { aperte: { id: string }[]; opzioni: { id: string; nome: string; delNegozio: boolean }[]; scelto: string; smNome: string | null; busy: boolean; caricamento?: boolean; fatto?: number; inMalus?: number }>(null);
+    const [riass, setRiass] = useState<null | { aperte: { id: string }[]; opzioni: { id: string; nome: string; delNegozio: boolean }[]; scelto: string; smNome: string | null; busy: boolean; caricamento?: boolean; fatto?: number; inMalus?: number; giaDelegate?: { nome: string; n: number; quando: string | null }[] }>(null);
     const [riassInfo, setRiassInfo] = useState("");
     const avviaRiassegnazione = async () => {
         setRiassInfo("");
@@ -1451,14 +1480,37 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
         // rilievo 2): senza, tra la conferma e l'arrivo delle query c'era una
         // finestra in cui chiudere la scheda o cambiare tab lo faceva morire
         setRiass({ aperte: [], opzioni: [], scelto: "", smNome: null, busy: true, caricamento: true });
+        // ENTRAMBI i nomi (Luca 24/08, caso Verdile: match_name "Verdile
+        // Matteo" invertito ≠ vendite "Matteo Verdile" → il popup diceva
+        // "tutto già chiuso" con 14 pratiche aperte): si cerca su match_name
+        // E full_name — 22 utenti hanno il match divergente, mai fidarsi di
+        // uno solo dei due.
+        const nomi = [...new Set([matchName, u.full_name].filter(Boolean))];
         const { data: pr } = await supabase.from("contracts")
-            .select("id, stato, stato_negozio, nascosta_gestione")
-            .eq("venditore", matchName).like("id", "CTR-%").limit(1000);
+            .select("id, stato, stato_negozio, nascosta_gestione, delegated_to, delegated_at")
+            .in("venditore", nomi).like("id", "CTR-%").limit(1000);
         const aperte = ((pr ?? []) as { id: string; stato: string | null; stato_negozio: string | null; nascosta_gestione: boolean | null }[]).filter((c) => {
             const sn = String(c.stato_negozio || "nuovo").toLowerCase();
             return c.nascosta_gestione !== true && !/annull/i.test(String(c.stato || "")) && !ESITI_FINE_TRK.includes(sn) && !sn.startsWith("ko");
         });
         if (!aperte.length) { setRiass(null); setRiassInfo("Nessuna pratica aperta da riassegnare: tutto già chiuso. ✅"); return; }
+        // GIÀ IN CARICO? (Luca 24/08: riprovando il 📦 nessuno diceva che le
+        // pratiche erano già state consegnate a Goretti) — si raccolgono le
+        // deleghe esistenti con data/ora per avvisare nel popup
+        const perDelegato = new Map<string, { n: number; quando: string | null }>();
+        for (const c of aperte as { delegated_to?: string | null; delegated_at?: string | null }[]) {
+            if (!c.delegated_to) continue;
+            const r = perDelegato.get(c.delegated_to) || { n: 0, quando: null };
+            r.n++;
+            if (c.delegated_at && (!r.quando || c.delegated_at > r.quando)) r.quando = c.delegated_at;
+            perDelegato.set(c.delegated_to, r);
+        }
+        let giaDelegate: { nome: string; n: number; quando: string | null }[] = [];
+        if (perDelegato.size) {
+            const { data: dn } = await supabase.from("app_users").select("id, full_name").in("id", [...perDelegato.keys()]);
+            const nomeDi = Object.fromEntries(((dn ?? []) as { id: string; full_name: string | null }[]).map((x) => [x.id, x.full_name || "—"]));
+            giaDelegate = [...perDelegato.entries()].map(([id, r]) => ({ nome: nomeDi[id] || "—", n: r.n, quando: r.quando })).sort((a, b) => b.n - a.n);
+        }
         const { data: ute } = await supabase.from("app_users")
             .select("id, full_name, role, primary_store").eq("active", true).neq("id", u.id).order("full_name");
         const tutti = ((ute ?? []) as { id: string; full_name: string | null; role: string | null; primary_store: string | null }[]).filter((x) => x.full_name);
@@ -1469,7 +1521,7 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
             const py = negozioU && sameStore(y.primary_store, negozioU) ? 0 : 1;
             return px - py || String(x.full_name).localeCompare(String(y.full_name));
         }).map((x) => ({ id: x.id, nome: x.full_name as string, delNegozio: !!(negozioU && sameStore(x.primary_store, negozioU)) }));
-        setRiass({ aperte, opzioni, scelto: sm?.full_name || "", smNome: sm?.full_name || null, busy: false });
+        setRiass({ aperte, opzioni, scelto: sm?.full_name || "", smNome: sm?.full_name || null, busy: false, giaDelegate });
     };
     const confermaRiassegnazione = async () => {
         if (!riass || riass.busy) return;
@@ -1480,7 +1532,7 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
         let fatte = 0;
         for (let i = 0; i < ids.length; i += 100) {
             const blocco = ids.slice(i, i + 100);
-            const { error } = await supabase.from("contracts").update({ delegated_to: dest.id }).in("id", blocco);
+            const { error } = await supabase.from("contracts").update({ delegated_to: dest.id, delegated_at: new Date().toISOString() }).in("id", blocco);
             if (!error) fatte += blocco.length;
         }
         // Le pratiche IN MALUS non possono arrivare al delegato in malus
@@ -1502,7 +1554,7 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
             const evento = {
                 data: new Date().toLocaleDateString("it-IT"),
                 tipo: "riassegnazione",
-                testo: `Pratica riassegnata a ${dest.nome} (era di ${matchName}) — consegnata in Warning`,
+                testo: `Pratica riassegnata a ${dest.nome} (era di ${u.full_name}) — consegnata in Warning`,
                 utente: "Amministrazione",
                 ruolo: "admin",
             };
@@ -1589,7 +1641,7 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                 supabase
                     .from("contracts")
                     .select("id, brand, categoria, prodotto, stato, negozio, data_registrazione, created_at")
-                    .eq("venditore", matchName)
+                    .in("venditore", [...new Set([matchName, u.full_name].filter(Boolean))])
                     .order("created_at", { ascending: false })
                     .limit(100),
                 supabase.from("shifts").select("id, store, started_at, ended_at").eq("employee_name", matchName).order("started_at", { ascending: false }).limit(50),
@@ -1929,6 +1981,13 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                             <p className="text-[13px] text-slate-300 mb-4">✅ <b>{riass.fatto}</b> pratiche ora in carico a <b>{riass.scelto}</b>: le trova nel suo Tracking PDA e la lavorazione riparte da lì.{riass.inMalus ? <> Le <b>{riass.inMalus}</b> che erano in malus gli arrivano in <b className="text-amber-300">Warning</b> (il malus del vecchio venditore si chiude alla consegna).</> : null}</p>
                                             <button onClick={() => setRiass(null)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black">Chiudi</button>
                                         </>) : (<>
+                                            {(riass.giaDelegate?.length ?? 0) > 0 && (
+                                                <div className="mb-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[12px] leading-relaxed">
+                                                    ⚠️ Occhio: {riass.giaDelegate!.map((d, i) => (
+                                                        <span key={d.nome}>{i > 0 ? " · " : ""}<b>{d.n}</b> di queste pratiche {d.n === 1 ? "risulta già" : "risultano già"} in carico a <b>{d.nome}</b>{d.quando ? ` (assegnate il ${new Date(d.quando).toLocaleDateString("it-IT")} alle ${new Date(d.quando).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })})` : ""}</span>
+                                                    ))}. Confermando cambierai il delegato.
+                                                </div>
+                                            )}
                                             <p className="text-[13px] text-slate-400 mb-3 leading-relaxed">
                                                 Ha <b className="text-slate-200">{riass.aperte.length} pratiche APERTE</b> nel Tracking: senza qualcuno che le lavori continuano a maturare malus.
                                                 {riass.smNome
@@ -1970,7 +2029,7 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                         <div className="space-y-5">
                             {/* MALUS DELLA PERSONA (Luca 21/08): per i licenziati/sospesi
                                 spariscono dallo storico del Tracking — QUI restano visibili */}
-                            <MalusUtente nome={matchName} />
+                            <MalusUtente nomi={[matchName, u.full_name]} />
                             <PraticheView contracts={act.contracts} />
                         </div>
                     ) : subtab === "presenze" ? (
@@ -3109,7 +3168,10 @@ function UserAllegati({ userId }: { userId: string }) {
    lei. Per i licenziati/sospesi sono nello spazio ARCHIVIATI dell'Archivio
    Malus del Tracking (il box in panoramica ci linka gia' filtrato sulla
    persona). Sola lettura, compensazioni sempre dal Tracking. */
-function MalusUtente({ nome }: { nome: string }) {
+function MalusUtente({ nomi }: { nomi: (string | null | undefined)[] }) {
+    // entrambi i nomi (match_name + full_name): caso Verdile 24/08
+    const nomiOk = [...new Set(nomi.filter(Boolean))] as string[];
+    const nome = nomiOk.join("|");
     const [eps, setEps] = useState<{ id: string; contract_id: string; categoria: string; negozio: string | null; data_inizio: string; data_fine: string | null; giorni: number; importo: number; stato: string }[]>([]);
     const [caricati, setCaricati] = useState(false);
     useEffect(() => {
@@ -3117,7 +3179,7 @@ function MalusUtente({ nome }: { nome: string }) {
         (async () => {
             const { data } = await supabase.from("malus_storico")
                 .select("id, contract_id, categoria, negozio, data_inizio, data_fine, giorni, importo, stato, eliminato")
-                .eq("venditore", nome).order("data_inizio", { ascending: false }).limit(200);
+                .in("venditore", nomiOk).order("data_inizio", { ascending: false }).limit(200);
             if (!vivo) return;
             setEps(((data ?? []) as (typeof eps[number] & { eliminato?: boolean | null })[]).filter((e) => !e.eliminato));
             setCaricati(true);
