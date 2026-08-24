@@ -1310,7 +1310,7 @@ function WidgetMixPezzi({ ctx }) {
         return [...m.entries()].map(([label, arr]) => ({ emoji: "•", label, items: arr, colore: att.g.colore })).sort((a, b2) => b2.items.length - a.items.length).slice(0, 4);
     })()) : [];
     return (
-        <div className="flex flex-col items-center gap-2.5 w-full select-none">
+        <div className="flex flex-col @2xl:flex-row @2xl:justify-center @2xl:items-center items-center gap-2.5 @2xl:gap-10 w-full select-none">
             <div className="relative shrink-0" style={{ width: size, height: size }}>
                 <svg width={size} height={size} style={{ overflow: "visible" }}>
                     <g transform={`translate(${cx},${cy})`}>
@@ -1363,7 +1363,8 @@ function WidgetMixPezzi({ ctx }) {
                     )}
                 </div>
             </div>
-            <div className="w-full max-w-[320px] flex flex-col gap-1">
+            <div className="flex flex-col gap-2 w-full max-w-[340px] min-w-0">
+            <div className="w-full flex flex-col gap-1">
                 {fette.map((x) => {
                     const attiva = (hl || pin) === x.b;
                     return (
@@ -1384,7 +1385,7 @@ function WidgetMixPezzi({ ctx }) {
                     );
                 })}
             </div>
-            <div className="w-full max-w-[320px] min-h-[22px] flex flex-wrap items-start justify-center gap-1">
+            <div className="w-full min-h-[22px] flex flex-wrap items-start justify-center gap-1">
                 {att && dett.map((rg) => (
                     <span key={rg.label} className="flex items-center gap-1 text-[9px] text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: rg.colore || att.g.colore }} />
@@ -1393,11 +1394,19 @@ function WidgetMixPezzi({ ctx }) {
                 ))}
                 {!att && <span className="text-[9px] text-slate-600">passa sull'anello o sulle righe · click per bloccare</span>}
             </div>
+            </div>
         </div>
     );
 }
 
-/* ═══ REGISTRO ═════════════════════════════════════════════════════════ */
+/* ═══ REGISTRO ═════════════════════════════════════════════════════════
+   REGOLA RESPONSIVE (Luca 24/08, vale per OGNI widget presente e futuro):
+   le card sono finestre ridimensionabili (@container) — il layout interno
+   deve adattarsi allo SPAZIO DELLA CARD, mai al viewport:
+   · stretto → elementi IMPILATI in colonna;
+   · largo (@2xl/@3xl) → AFFIANCATI (grafico a sinistra, dati a destra);
+   · griglie interne con varianti @ (mai sm:/xl:), liste sempre fluide;
+   · niente larghezze fisse che sbordano sotto le 2 celle. ═══════════════ */
 export const REGISTRO = {
     "op:w3": { nome: "WindTre", emoji: "🟠", gruppo: "operatori", def: 4, solo: null, logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="w3" ctx={ctx} size={size} /> },
     "op:vf": { nome: "Vodafone", emoji: "🔴", gruppo: "operatori", def: 4, logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx, size) => <CartaOperatore brand="vf" ctx={ctx} size={size} /> },
