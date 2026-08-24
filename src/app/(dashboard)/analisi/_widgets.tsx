@@ -808,10 +808,9 @@ function CartaOperatore({ brand, ctx, size }) {
             </div>
 
             {/* MINI-ANELLI PER PISTA (Luca 24/08: «contatori circolari, stile
-                gamification» — mai più riquadri piatti da gestionale anni 2000):
-                le fette sono le SORGENTI dei punti in sfumature del colore
-                brand, hover = dettaglio, click = elenco contratti, countUp al
-                centro e delta vs mese scorso pista per pista. */}
+                gamification»): le fette sono le SORGENTI dei punti, hover =
+                dettaglio, click sull'anello = ANALISI ESPLOSA, lente 🔍 =
+                elenco contratti, countUp al centro e delta vs mese scorso. */}
             {contatori.length > 0 && (
                 <div className={cn("grid gap-3 mb-4 justify-items-center", size >= 4 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
                     {contatori.map((ct) => {
@@ -1276,7 +1275,7 @@ function WidgetMixPezzi({ ctx }) {
     let acc = 0;
     const fette = [
         ...Object.entries(GARA).map(([b, g]) => ({ b, g, sue: ctx.items.filter((it) => it.brandGara === b), gara: true })),
-        ...altriBrand.map((x) => ({ b: `alt:${x.k}`, g: { label: x.label, colore: HEX_BRAND[x.k] || "#64748b", chiave: x.k }, sue: x.sue, gara: false })),
+        ...altriBrand.map((x) => ({ b: `alt:${x.k}`, g: { label: x.label, colore: HEX_BRAND[x.k] || "#64748b", chiave: TRK_BRAND_LOGOS[x.k] ? x.k : null }, sue: x.sue, gara: false })),
     ].filter((x) => x.sue.length > 0)
         .map((x) => ({ ...x, f: tot > 0 ? x.sue.length / tot : 0, pct: tot > 0 ? Math.round((x.sue.length / tot) * 100) : 0 }))
         .map((x) => { const o = acc; acc += x.f; return { ...x, o }; });
@@ -1329,7 +1328,7 @@ function WidgetMixPezzi({ ctx }) {
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     {att ? (
                         <>
-                            <LogoBrand chiave={att.g.chiave} h={14} />
+                            {att.g.chiave ? <LogoBrand chiave={att.g.chiave} h={14} /> : <span className="w-3 h-3 rounded-full" style={{ background: att.g.colore }} />}
                             <span className="text-[26px] font-black tabular-nums leading-none mt-1" style={{ color: att.g.colore, textShadow: `0 0 18px ${att.g.colore}66` }}>{att.pct}%</span>
                             <span className="text-[9px] text-slate-400 mt-0.5 tabular-nums">{fmtN(att.sue.length)} pezzi{pin === att.b ? " · 📌" : ""}</span>
                         </>
@@ -1353,7 +1352,7 @@ function WidgetMixPezzi({ ctx }) {
                                 pin && pin !== x.b && !hl ? "opacity-45" : "")}>
                             <div className="absolute inset-y-0 left-0" style={{ width: on ? `${x.pct}%` : "0%", background: `linear-gradient(90deg, ${x.g.colore}3d, ${x.g.colore}08)`, transition: "width .7s cubic-bezier(.2,.8,.2,1)" }} />
                             <div className="relative flex items-center gap-2">
-                                <LogoBrand chiave={x.g.chiave} h={12} />
+                                {x.g.chiave ? <LogoBrand chiave={x.g.chiave} h={12} /> : <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: x.g.colore }} />}
                                 <span className="text-[11px] font-bold text-slate-200 flex-1 truncate">{x.g.label}</span>
                                 <span className="text-[10px] text-slate-500 tabular-nums">{fmtN(x.sue.length)} pz</span>
                                 <span className="text-[13px] font-black tabular-nums w-10 text-right" style={{ color: x.g.colore }}>{x.pct}%</span>

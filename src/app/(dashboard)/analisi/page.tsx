@@ -30,7 +30,8 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
 import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, fmtN } from "./_charts";
-import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero } from "./_widgets";
+import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero, HEX_BRAND } from "./_widgets";
+import { trkBrandKey } from "@/lib/brandAssets";
 import { CoronaOro } from "@/components/IconaCorona";
 import { Master } from "./_master";
 
@@ -301,6 +302,7 @@ function AnalisiInner() {
         if (vedeTutto) return venditoriTutti;
         if (vedeNegozio) {
             const squadra = venditoriTutti.filter((v) => items.some((it) => norm(it.venditore) === norm(v) && (visStores || []).some((s) => sameStore(it.negozio, s)))
+                || (dati?.altri || []).some((r) => norm(r.venditore) === norm(v) && (visStores || []).some((s) => sameStore(r.negozio, s)))
                 || (eTecnico(v) && (dati?.ext || []).some((r) => norm(r.venditore) === norm(v) && (visStores || []).some((s) => sameStore(r.negozio, s)))));
             return [...new Set([user?.name, ...squadra].filter(Boolean))];
         }
@@ -373,6 +375,7 @@ function AnalisiInner() {
     const squadraNegozio = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (!inNegozi(it.negozio) || it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
+        for (const r of (dati?.altri || [])) { if (!inNegozi(r.negozio) || r.venditore === "—") continue; per.set(r.venditore, (per.get(r.venditore) || 0) + 1); }
         const giaSq = new Set([...per.keys()].map((k) => norm(k)));
         for (const r of (dati?.ext || [])) { if (inNegozi(r.negozio) && r.venditore !== "—" && eTecnico(r.venditore) && !giaSq.has(norm(r.venditore))) { giaSq.add(norm(r.venditore)); per.set(r.venditore, 0); } }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
