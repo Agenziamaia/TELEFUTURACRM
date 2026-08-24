@@ -12,7 +12,7 @@ import { Info, AlertTriangle, CheckCircle2, Rocket, Bomb, Flame } from "lucide-r
 import { supabase } from "@/lib/supabaseClient";
 import { visibleInterval } from "@/lib/visibleInterval";
 import { useAuth } from "@/context/AuthContext";
-import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDiUtente, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
 import { sanificaHtml } from "@/components/EditorRicco";
 
 type ComPopup = {
@@ -217,7 +217,7 @@ export function ComunicazioniPopup() {
                 .order("created_at", { ascending: true }) : null;
             const coms = ((legacy ? legacy.data : esteso ? esteso.data : completa ? completa.data : v147 ? v147.data : v190.data) ?? null) as unknown as ComPopup[] | null;
             if (!coms) return;
-            const brandsNegozio = await brandDelNegozio(user.negozio);
+            const brandsNegozio = await brandDiUtente(user?.id);
             const negozi = await negoziAssegnati(user.id);
             const perMe = (coms as ComPopup[]).filter((c) =>
                 comunicazionePerMe(c, { userId: user.id, role: user.role || "", negozio: user.negozio, negozi, brandsNegozio }));

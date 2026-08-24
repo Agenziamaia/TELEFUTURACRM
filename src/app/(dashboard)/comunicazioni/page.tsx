@@ -16,7 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
-import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDiUtente, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
 import { Confetti, EsplosioneBomba, SfondoComunicazione, fondoComunicazione, stileTaglia, SprintStart, RazzoUpdate, ImpulsoOnde } from "@/components/ComunicazioniPopup";
 import { EditorRicco, sanificaHtml } from "@/components/EditorRicco";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
@@ -170,7 +170,7 @@ function ComunicazioniInner() {
     // ruolo, negozio, persona o brand — mig. 112); chi le ha create (o
     // l'amministrazione) vede anche le altre.
     const [brandsNegozio, setBrandsNegozio] = useState<string[]>([]);
-    useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNegozio); }, [user?.negozio]);
+    useEffect(() => { brandDiUtente(user?.id).then(setBrandsNegozio); }, [user?.id]);
     // negozi ASSEGNATI (user_stores): chi lavora su piu' punti vendita riceve
     // le comunicazioni mirate a ciascuno di essi, non solo alla sede di login
     const [mieiAssegnati, setMieiAssegnati] = useState<string[]>([]);
@@ -516,21 +516,26 @@ function ComunicazioniInner() {
         // serve anche col FORM aperto: l'anteprima destinatari (Luca 04/08)
         if (!isAdminRicevute && !formOpen && !list.some((c) => c.created_by === user?.id)) return;
         (async () => {
-            const [u, us, st] = await Promise.all([
+            const [u, us, ub] = await Promise.all([
                 supabase.from("app_users").select("id, full_name, role, primary_store").eq("active", true),
                 supabase.from("user_stores").select("user_id, store_name"),
-                supabase.from("stores").select("name, brands"),
+                // i brand sono PER UTENTE (user_brands, mig. 112): stores.brands
+                // è vuota da sempre — con lei il contatore per brand faceva 0
+                supabase.from("user_brands").select("user_id, brand"),
             ]);
             const negoziDi = new Map<string, string[]>();
             ((us.data ?? []) as { user_id: string; store_name: string }[]).forEach((r) => {
                 const a = negoziDi.get(r.user_id) || []; a.push(r.store_name); negoziDi.set(r.user_id, a);
             });
             const brandsDi = new Map<string, string[]>();
-            ((st.data ?? []) as { name: string; brands: string[] | null }[]).forEach((r) => brandsDi.set(String(r.name || "").trim().toLowerCase(), r.brands || []));
+            ((ub.data ?? []) as { user_id: string; brand: string | null }[]).forEach((r) => {
+                if (!r.brand) return;
+                const a = brandsDi.get(r.user_id) || []; a.push(String(r.brand)); brandsDi.set(r.user_id, a);
+            });
             setPlatea(((u.data ?? []) as { id: string; full_name?: string | null; role: string | null; primary_store: string | null }[]).map((x) => ({
                 id: x.id, nome: x.full_name || "", role: x.role || "", negozio: x.primary_store || "",
                 negozi: negoziDi.get(x.id) || [],
-                brands: brandsDi.get(String(x.primary_store || "").trim().toLowerCase()) || [],
+                brands: brandsDi.get(x.id) || [],
             })));
         })();
     }, [platea, isAdminRicevute, formOpen, list, user?.id]);
@@ -1325,6 +1330,7 @@ function ComunicazioniInner() {
                                             values={fNegozi}
                                             onChange={(v) => { if (v.length) setFTutti(false); setFNegozi(v); }}
                                             opzioni={NEGOZI}
+                                            maxVoci={200}
                                             className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
                                         />
                                     </div>
@@ -1335,12 +1341,13 @@ function ComunicazioniInner() {
                                         values={fPersone}
                                         onChange={(v) => { if (v.length) setFTutti(false); setFPersone(v); }}
                                         opzioni={personeSelezionabili.map((u) => u.full_name)}
+                                        maxVoci={300}
                                         className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
                                     />
                                 </div>
                             </div>
                             {puoTutti && <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per brand <span className="normal-case font-normal">(chi sta in un negozio che lo tratta)</span></label>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per brand <span className="normal-case font-normal">(chi ha il brand tra i suoi)</span></label>
                                 <div className="flex gap-2 mt-2 flex-wrap">
                                     {BRANDS.map((b) => {
                                         const sel = !fTutti && fBrand.includes(b);

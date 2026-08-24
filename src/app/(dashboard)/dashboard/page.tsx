@@ -16,7 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
-import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDiUtente, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { SelectMulti } from "@/components/SelectPersona";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { giorniLavorativiMese, caricaContrattiMese, caricaTabellareAzienda, caricaTabellare } from "@/lib/commissioning";
@@ -121,7 +121,7 @@ export default function Dashboard() {
     }, [user?.id, visLoaded, visKey, seesAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => { negoziAssegnati(user?.id).then(setNegoziAss); }, [user?.id]);
-    useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNeg); }, [user?.negozio]);
+    useEffect(() => { brandDiUtente(user?.id).then(setBrandsNeg); }, [user?.id]);
 
     // ── scala di visibilità (come il resto del CRM) ─────────────────────────
     const whole = seesWholeStore(user?.role);

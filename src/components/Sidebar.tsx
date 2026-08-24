@@ -8,7 +8,7 @@ import { visibleInterval } from "@/lib/visibleInterval";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
-import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDiUtente, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { designatiIncarico } from "@/lib/incarichi";
@@ -119,7 +119,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                     .select("id, created_by, target_roles, target_stores, target_users, target_brands, kind")
                     .order("created_at", { ascending: false }).limit(300);
                 if (!coms?.length) { if (vivo) setComDaLeggere(0); return; }
-                const brandsNegozio = await brandDelNegozio(user.negozio);
+                const brandsNegozio = await brandDiUtente(user?.id);
                 const negozi = await negoziAssegnati(user.id);
                 const perMe = coms.filter((c) => comunicazionePerMe(c as never, { userId: user.id, role: user.role || "", negozio: user.negozio, negozi, brandsNegozio }));
                 if (!perMe.length) { if (vivo) setComDaLeggere(0); return; }

@@ -66,13 +66,15 @@ export async function negoziAssegnati(userId: string | null | undefined): Promis
 
 /** Brand trattati dal negozio dell'utente (stores.brands, mig. 112);
  *  torna [] se il negozio manca o la migrazione non e' ancora applicata. */
-export async function brandDelNegozio(negozio: string | null | undefined): Promise<string[]> {
-    if (!negozio) return [];
+/** Brand TRATTATI dall'utente (user_brands, mig. 112) — è QUESTA la fonte
+ *  delle comunicazioni per brand. Fino al 24/08 si leggeva stores.brands,
+ *  colonna VUOTA da sempre: i pop-up per brand non arrivavano a nessuno
+ *  e il contatore destinatari segnava 0 (segnalazione Luca). */
+export async function brandDiUtente(userId: string | null | undefined): Promise<string[]> {
+    if (!userId) return [];
     try {
-        const { data, error } = await supabase.from("stores").select("name, brands");
+        const { data, error } = await supabase.from("user_brands").select("brand").eq("user_id", userId);
         if (error) return [];
-        const hit = ((data ?? []) as { name: string | null; brands?: string[] | null }[])
-            .find((s) => sameStore(s.name, negozio));
-        return Array.isArray(hit?.brands) ? hit!.brands! : [];
+        return ((data ?? []) as { brand: string | null }[]).map((r) => String(r.brand || "")).filter(Boolean);
     } catch { return []; }
 }
