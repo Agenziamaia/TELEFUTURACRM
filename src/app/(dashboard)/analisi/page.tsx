@@ -278,7 +278,8 @@ function AnalisiInner() {
         for (const it of items) { if (it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
         // i tecnici vivono quasi solo di EXT (marginalità): senza questo giro
         // non comparirebbero mai nella tendina persona
-        for (const r of (dati?.ext || [])) { if (r.venditore !== "—" && eTecnico(r.venditore) && !per.has(r.venditore)) per.set(r.venditore, 0); }
+        const gia = new Set([...per.keys()].map((k) => norm(k)));
+        for (const r of (dati?.ext || [])) { if (r.venditore !== "—" && eTecnico(r.venditore) && !gia.has(norm(r.venditore))) { gia.add(norm(r.venditore)); per.set(r.venditore, 0); } }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
     }, [items, dati, nomiTecnici]);
     const negoziAttivi = useMemo(() => {
@@ -369,7 +370,8 @@ function AnalisiInner() {
     const squadraNegozio = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (!inNegozi(it.negozio) || it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
-        for (const r of (dati?.ext || [])) { if (inNegozi(r.negozio) && r.venditore !== "—" && eTecnico(r.venditore) && !per.has(r.venditore)) per.set(r.venditore, 0); }
+        const giaSq = new Set([...per.keys()].map((k) => norm(k)));
+        for (const r of (dati?.ext || [])) { if (inNegozi(r.negozio) && r.venditore !== "—" && eTecnico(r.venditore) && !giaSq.has(norm(r.venditore))) { giaSq.add(norm(r.venditore)); per.set(r.venditore, 0); } }
         return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
     }, [items, negozi.join("|"), dati, nomiTecnici]);
     const collab = collabSel && collabSel !== TUTTI && squadraNegozio.some((s) => norm(s) === norm(collabSel)) ? collabSel : "";

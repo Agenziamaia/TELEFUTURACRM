@@ -203,24 +203,96 @@ export function DrillPanel({ drill, chiudi, labels }) {
    Negozio, con i brand piccolini cliccabili che filtrano lo schema. Stessa
    interattività del widget (tooltip con le vendite voce per voce, media,
    giorno di oggi evidenziato). ═══════════════════════════════════════════ */
+/* ── DRILL MONO-BRAND della timeline (Luca 24/08): quando resta acceso UN
+   SOLO operatore, la barra non è più monocolore col totale — si spacca
+   nelle sue PISTE, ognuna in una sfumatura del colore del brand. Business
+   FUSO dentro mobile/fisso (niente sesta sfumatura); S4 = luce vs gas;
+   Sky = fisso/mobile/TV. Il totale NON cambia: si colora soltanto. ─────── */
+const PISTE_TL = {
+    w3: [["mobile", "📶 Mobile"], ["fisso", "🌐 Fisso"], ["cb", "🔁 Customer Base"], ["lucegas", "⚡ Luce & Gas"], ["assic", "🛡 Assicurazioni"], ["altro", "📦 Altro"]],
+    vf: [["mobile", "📶 Mobile"], ["fisso", "🌐 Fisso"], ["cb", "🔁 Customer Base"], ["lucegas", "⚡ Luce & Gas"], ["assic", "🛡 Assicurazioni"], ["altro", "📦 Altro"]],
+    fw: [["mobile", "📶 Mobile"], ["fisso", "🌐 Fisso"], ["energia", "⚡ Energia"], ["altro", "📦 Altro"]],
+    sky: [["fisso", "🌐 Fisso"], ["mobile", "📶 Mobile"], ["tv", "📺 TV"], ["altro", "📦 Altro"]],
+    s4: [["luce", "💡 Luce"], ["gas", "🔥 Gas"]],
+};
+function pistaTimelineDi(bk, it) {
+    const cat = String(it.categoria || ""), prod = String(it.prodotto || "");
+    if (bk === "s4") return /gas/i.test(prod) ? "gas" : "luce";
+    if (bk === "sky") {
+        if (/tv/i.test(cat)) return "tv";
+        if (/mobile/i.test(cat)) return "mobile";
+        if (/fisso/i.test(cat)) return "fisso";
+        return "altro";
+    }
+    if (bk === "fw") {
+        if (/^mobile/i.test(cat) || /^telefono a rate/i.test(cat)) return "mobile";
+        if (/^fisso/i.test(cat)) return "fisso";
+        if (/^energia/i.test(cat)) return "energia";
+        return "altro";
+    }
+    // w3 / vf: la pista arriva dal motore gare (it.pista); business dentro
+    // mobile/fisso, telefoni GA nel mobile (pezzi in barra), telefoni CB in cb
+    if (/assicurazion/i.test(prod + " " + cat)) return "assic";
+    const p = String(it.pista || "");
+    if (p === "mobile" || p === "business_mobile") return "mobile";
+    if (p === "fisso" || p === "business_fisso") return "fisso";
+    if (p === "cb") return "cb";
+    if (p === "lucegas") return "lucegas";
+    if (p === "assicurazioni") return "assic";
+    if (/^customer base/i.test(cat)) return "cb";
+    if (/^telefono a rate/i.test(cat)) return /\bcb\b/i.test(cat) ? "cb" : "mobile";
+    if (/^mobile/i.test(cat)) return "mobile";
+    if (/^fisso/i.test(cat)) return "fisso";
+    if (/^energia/i.test(cat) || /\b(luce|gas)\b/i.test(prod)) return "lucegas";
+    return "altro";
+}
+// sfumature nella famiglia del colore brand: la prima pista tiene il tono
+// pieno, le successive schiariscono con un filo di rotazione di tinta
+function sfumaturaDi(hex, i, n) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m || n <= 1) return hex;
+    const num = parseInt(m[1], 16);
+    const r = (num >> 16) / 255, g = ((num >> 8) & 255) / 255, b = (num & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d) {
+        if (mx === r) h = ((g - b) / d) % 6;
+        else if (mx === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h *= 60; if (h < 0) h += 360;
+    }
+    const l = (mx + mn) / 2;
+    const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+    const t = i / (n - 1);
+    const l2 = Math.min(0.80, Math.max(0.28, l - 0.08 + 0.30 * t));
+    const h2 = (h + (t - 0.5) * 16 + 360) % 360;
+    const s2 = Math.min(1, Math.max(0.35, sat * (1 - 0.18 * t)));
+    return `hsl(${Math.round(h2)}, ${Math.round(s2 * 100)}%, ${Math.round(l2 * 100)}%)`;
+}
+
 export function TimelineHero({ ctx, tecnico = false }) {
     // RIPENSAMENTO Luca 24/08: la Marginalità sta nella timeline SOLO per i
     // TECNICI (è il loro mondo) e in FATTURATO €; per tutti gli altri, fuori.
     // `tecnico` = ruolo della PERSONA OSSERVATA (o del collaboratore
     // filtrato), calcolato dalla pagina — non di chi sta guardando.
-    // TUTTA la produzione della persona/negozio (Luca 24/08): i 4 brand in
-    // gara + la MARGINALITÀ (vendite EXT, a pezzi) + gli ALTRI operatori
-    // (S4, TIM, Very…). Ogni serie ha logo e colore; le pill sotto (solo
-    // loghi) accendono e spengono la serie.
+    // La produzione della persona/negozio: i 4 brand in gara + gli ALTRI
+    // operatori (S4, TIM, Very…) — la marginalità qui non c'è più (vive
+    // nella variante tecnico, in €). Le pill sotto (solo loghi) accendono
+    // e spengono la serie; UNA sola accesa → drill per pista.
     const serie = useMemo(() => {
         const out = new Map();
-        const add = (key, label, colore, chiave, g, nome, pezzi = 1) => {
+        const add = (key, label, colore, chiave, g, nome, pezzi = 1, pista = null) => {
             if (g < 1 || g > ctx.nG) return;
             const sr = out.get(key) || { key, label, colore, chiave, tot: 0, giorni: new Map() };
-            const gg = sr.giorni.get(g) || { val: 0, prod: new Map() };
+            const gg = sr.giorni.get(g) || { val: 0, prod: new Map(), pi: new Map() };
             gg.val += pezzi; sr.tot += pezzi;
             const nm = String(nome || "—").slice(0, 30);
             gg.prod.set(nm, (gg.prod.get(nm) || 0) + pezzi);
+            if (pista) {
+                const pp = gg.pi.get(pista) || { val: 0, prod: new Map() };
+                pp.val += pezzi; pp.prod.set(nm, (pp.prod.get(nm) || 0) + pezzi);
+                gg.pi.set(pista, pp);
+            }
             sr.giorni.set(g, gg);
             out.set(key, sr);
         };
@@ -230,12 +302,12 @@ export function TimelineHero({ ctx, tecnico = false }) {
         } else {
             for (const it of ctx.items) {
                 const G = GARA[it.brandGara];
-                if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto);
+                if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto, 1, pistaTimelineDi(it.brandGara, it));
             }
             for (const r of (ctx.altri || [])) {
                 const k = trkBrandKey(r.brand);
                 if (!k) continue;
-                add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto);
+                add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto, 1, k === "s4" ? pistaTimelineDi("s4", r) : null);
             }
         }
         const ordine = ["w3", "vf", "fw", "sky", "marg"];
@@ -246,28 +318,59 @@ export function TimelineHero({ ctx, tecnico = false }) {
         });
     }, [ctx.items, ctx.ext, ctx.altri, ctx.nG, tecnico]);
     const [spenti, setSpenti] = useState(() => new Set());
+    // cambio di persona osservata, area o modalità → pill tutte riaccese
+    // (rilievo revisore: la selezione su A non deve svuotare il grafico di B)
+    useEffect(() => { setSpenti(new Set()); }, [tecnico, ctx.areaKey, ctx.persona]);
     const toggle = (k) => setSpenti((prev) => {
         const n = new Set(prev);
         if (n.has(k)) n.delete(k); else n.add(k);
         return n;
     });
-    const giorni = useMemo(() => {
+    const { giorni, legenda } = useMemo(() => {
         const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, parti: [] }));
+        const topProd = (prod) => {
+            const top = [...prod.entries()].sort((a, b) => b[1] - a[1]);
+            return top.slice(0, 4).map(([nm, q]) => (tecnico ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
+        };
+        // DRILL: un solo operatore acceso e con piste note → barre per pista
+        const accese = serie.filter((sr) => !spenti.has(sr.key));
+        const solo = accese.length === 1 ? accese[0] : null;
+        const bk = solo ? (solo.key.startsWith("alt:") ? solo.key.slice(4) : solo.key) : null;
+        const pisteDef = bk && PISTE_TL[bk] ? PISTE_TL[bk] : null;
+        if (solo && pisteDef) {
+            const totPista = new Map();
+            for (const [, gg] of solo.giorni) for (const [pk, pp] of (gg.pi || new Map())) totPista.set(pk, (totPista.get(pk) || 0) + pp.val);
+            const presenti = pisteDef.filter(([pk]) => (totPista.get(pk) || 0) > 0);
+            const colori = new Map(presenti.map(([pk], i) => [pk, sfumaturaDi(solo.colore, i, presenti.length)]));
+            for (const [g, gg] of solo.giorni) {
+                // ordine piste FISSO giorno su giorno: stack leggibile, niente sort per valore
+                for (const [pk, lbl] of presenti) {
+                    const pp = gg.pi?.get(pk);
+                    if (!pp?.val) continue;
+                    v[g - 1].parti.push({ label: lbl, colore: colori.get(pk), val: Math.round(pp.val * 100) / 100, prodotti: topProd(pp.prod) });
+                    v[g - 1].tot += pp.val;
+                }
+            }
+            const legenda = presenti.map(([pk, lbl]) => ({ k: pk, label: lbl, colore: colori.get(pk), tot: totPista.get(pk) || 0 }));
+            return { giorni: v, legenda };
+        }
         for (const sr of serie) {
             if (spenti.has(sr.key)) continue;
             for (const [g, gg] of sr.giorni) {
-                const top = [...gg.prod.entries()].sort((a, b) => b[1] - a[1]);
-                const prodotti = top.slice(0, 4).map(([nm, q]) => (tecnico ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
-                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, prodotti });
+                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, prodotti: topProd(gg.prod) });
                 v[g - 1].tot += gg.val;
             }
         }
         for (const g of v) g.parti.sort((a, b) => b.val - a.val);
-        return v;
+        return { giorni: v, legenda: null };
     }, [serie, spenti, ctx.nG, ctx.labels, tecnico]);
     const totale = giorni.reduce((sm, g) => sm + g.tot, 0);
     const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
-    if (!serie.length) return null;
+    if (!serie.length) return tecnico ? (
+        <div className="mt-3 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] text-[11px] text-slate-400">
+            Nessuna marginalità registrata nel periodo.
+        </div>
+    ) : null;
     return (
         <div className="relative mt-3">
             <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={tecnico ? "€" : "pz"} h={92} />
@@ -282,7 +385,13 @@ export function TimelineHero({ ctx, tecnico = false }) {
                         </button>
                     );
                 })}
-                <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : "produzione giorno per giorno · tutta · click sui loghi per filtrare"}</span>
+                {legenda && legenda.map((pz) => (
+                    <span key={pz.k} className="flex items-center gap-1.5 text-[10px] text-slate-300 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/10">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pz.colore, boxShadow: `0 0 5px ${pz.colore}66` }} />
+                        {pz.label} · <b className="text-slate-100">{fmtPt(pz.tot)}</b>
+                    </span>
+                ))}
+                <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : legenda ? "un solo operatore acceso: barre spaccate per pista" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
             </div>
         </div>
     );
