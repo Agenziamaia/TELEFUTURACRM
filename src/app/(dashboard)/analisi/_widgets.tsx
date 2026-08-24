@@ -203,7 +203,10 @@ export function DrillPanel({ drill, chiudi, labels }) {
    Negozio, con i brand piccolini cliccabili che filtrano lo schema. Stessa
    interattività del widget (tooltip con le vendite voce per voce, media,
    giorno di oggi evidenziato). ═══════════════════════════════════════════ */
-export function TimelineHero({ ctx }) {
+export function TimelineHero({ ctx, ruolo }) {
+    // RIPENSAMENTO Luca 24/08: la Marginalità sta nella timeline SOLO per i
+    // TECNICI (è il loro mondo) e in FATTURATO €; per tutti gli altri, fuori.
+    const tecnico = ruolo === "tecnico";
     // TUTTA la produzione della persona/negozio (Luca 24/08): i 4 brand in
     // gara + la MARGINALITÀ (vendite EXT, a pezzi) + gli ALTRI operatori
     // (S4, TIM, Very…). Ogni serie ha logo e colore; le pill sotto (solo
@@ -220,15 +223,19 @@ export function TimelineHero({ ctx }) {
             sr.giorni.set(g, gg);
             out.set(key, sr);
         };
-        for (const it of ctx.items) {
-            const G = GARA[it.brandGara];
-            if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto);
-        }
-        for (const r of (ctx.ext || [])) add("marg", "Marginalità", HEX_BRAND.marginalita || "#06b6d4", "marginalita", r.g, r.prodotto, Number(r.qty) || 1);
-        for (const r of (ctx.altri || [])) {
-            const k = trkBrandKey(r.brand);
-            if (!k) continue;
-            add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto);
+        if (tecnico) {
+            // il tecnico vede la SUA produzione: la marginalità in FATTURATO
+            for (const r of (ctx.ext || [])) add("marg", "Marginalità", HEX_BRAND.marginalita || "#06b6d4", "marginalita", r.g, r.prodotto, Number(r.prezzo) || 0);
+        } else {
+            for (const it of ctx.items) {
+                const G = GARA[it.brandGara];
+                if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto);
+            }
+            for (const r of (ctx.altri || [])) {
+                const k = trkBrandKey(r.brand);
+                if (!k) continue;
+                add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto);
+            }
         }
         const ordine = ["w3", "vf", "fw", "sky", "marg"];
         return [...out.values()].sort((a, b) => {
@@ -236,7 +243,7 @@ export function TimelineHero({ ctx }) {
             if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
             return b.tot - a.tot;
         });
-    }, [ctx.items, ctx.ext, ctx.altri, ctx.nG]);
+    }, [ctx.items, ctx.ext, ctx.altri, ctx.nG, tecnico]);
     const [spenti, setSpenti] = useState(() => new Set());
     const toggle = (k) => setSpenti((prev) => {
         const n = new Set(prev);
@@ -249,32 +256,32 @@ export function TimelineHero({ ctx }) {
             if (spenti.has(sr.key)) continue;
             for (const [g, gg] of sr.giorni) {
                 const top = [...gg.prod.entries()].sort((a, b) => b[1] - a[1]);
-                const prodotti = top.slice(0, 4).map(([nm, q]) => `${q}× ${nm}`).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
-                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: gg.val, sub: `${fmtN(gg.val)} pz`, prodotti });
+                const prodotti = top.slice(0, 4).map(([nm, q]) => (tecnico ? `${fmtN(q)} € · ${nm}` : `${q}× ${nm}`)).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
+                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: Math.round(gg.val * 100) / 100, sub: tecnico ? `${fmtN(gg.val)} €` : `${fmtN(gg.val)} pz`, prodotti });
                 v[g - 1].tot += gg.val;
             }
         }
         for (const g of v) g.parti.sort((a, b) => b.val - a.val);
         return v;
-    }, [serie, spenti, ctx.nG, ctx.labels]);
+    }, [serie, spenti, ctx.nG, ctx.labels, tecnico]);
     const totale = giorni.reduce((sm, g) => sm + g.tot, 0);
     const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
     if (!serie.length) return null;
     return (
         <div className="relative mt-3">
-            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit="pz" h={92} />
+            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={tecnico ? "€" : "pz"} h={92} />
             <div className="mt-2 flex items-center gap-2 flex-wrap">
                 {serie.map((sr) => {
                     const off = spenti.has(sr.key);
                     return (
                         <button key={sr.key} onClick={() => toggle(sr.key)}
-                            title={`${off ? "Rimetti" : "Togli"} ${sr.label} ${off ? "nella" : "dalla"} timeline · ${fmtN(sr.tot)} pz nel periodo`}
+                            title={`${off ? "Rimetti" : "Togli"} ${sr.label} ${off ? "nella" : "dalla"} timeline · ${fmtN(sr.tot)} ${tecnico ? "€" : "pz"} nel periodo`}
                             className={cn("flex items-center px-2.5 py-1.5 rounded-lg border transition-all", off ? "border-white/10 bg-white/[0.02] opacity-35 grayscale" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.09]")}>
                             <LogoBrand chiave={sr.chiave} h={15} />
                         </button>
                     );
                 })}
-                <span className="text-[10px] text-slate-500 ml-1">produzione giorno per giorno · tutta · click sui loghi per filtrare</span>
+                <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : "produzione giorno per giorno · tutta · click sui loghi per filtrare"}</span>
             </div>
         </div>
     );

@@ -556,7 +556,7 @@ function AnalisiInner() {
                 {/* TIMELINE DI PRODUZIONE nell'header (Luca 24/08): tutta la
                     produzione giorno per giorno, brand cliccabili per filtrare */}
                 {!loading && !errore && (area === "io" || area === "negozio") && (
-                    <TimelineHero ctx={area === "io" ? ctxIo : ctxNegozio} />
+                    <TimelineHero ctx={area === "io" ? ctxIo : ctxNegozio} ruolo={user?.role} />
                 )}
             </div>
 
