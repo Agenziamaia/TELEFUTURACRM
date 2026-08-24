@@ -418,6 +418,16 @@ export function TimelineHero({ ctx, tecnico = false }) {
         if (n.has(pk)) n.delete(pk); else n.add(pk);
         return n;
     });
+    // DOMENICHE E GIORNI ROSSI nascosti di default (Luca 24/08): ctx.chiusi
+    // arriva dal calendario delle gare + domeniche. Un giorno chiuso CON
+    // vendite resta visibile comunque: mai nascondere dati reali.
+    const [mostraChiusi, setMostraChiusi] = useState(false);
+    const giorniVisibili = useMemo(
+        () => (mostraChiusi ? giorni : giorni.filter((g, idx) => !ctx.chiusi?.[idx] || g.tot > 0)),
+        [giorni, mostraChiusi, ctx.chiusi],
+    );
+    const nNascosti = giorni.length - giorniVisibili.length;
+    const oggiIdx = ctx.oggi > 0 ? giorniVisibili.findIndex((g) => g.n === ctx.oggi) : -1;
     const totale = giorni.reduce((sm, g) => sm + g.tot, 0);
     const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
     if (!serie.length) return tecnico ? (
@@ -427,7 +437,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
     ) : null;
     return (
         <div className="relative mt-3">
-            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={margAccesa ? "€" : "pz"} h={92} />
+            <BarStack giorni={giorniVisibili} oggi={oggiIdx} media={media} unit={margAccesa ? "€" : "pz"} h={92} />
             <div className="mt-2 flex items-center gap-2 flex-wrap">
                 {serie.map((sr) => {
                     const off = spenti.has(sr.key) || (margAccesa && sr.key !== "marg");
@@ -455,6 +465,13 @@ export function TimelineHero({ ctx, tecnico = false }) {
                         </button>
                     );
                 })}
+                {(nNascosti > 0 || mostraChiusi) && (
+                    <button type="button" onClick={() => setMostraChiusi((x) => !x)}
+                        title={mostraChiusi ? "Rinascondi domeniche e festivi senza vendite" : "Mostra anche domeniche e giorni rossi del calendario"}
+                        className={cn("flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all", mostraChiusi ? "border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20" : "border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.09] hover:text-slate-200")}>
+                        🔴 {mostraChiusi ? "nascondi festivi" : `${nNascosti} festiv${nNascosti === 1 ? "o" : "i"} · mostra`}
+                    </button>
+                )}
                 <span className="text-[10px] text-slate-500 ml-1">{margAccesa ? "fatturato marginalità giorno per giorno · click su un logo per i pezzi" : legenda ? "barre per pista · click sulle categorie per isolarle o aggiungerle" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
             </div>
         </div>
