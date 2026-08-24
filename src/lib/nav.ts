@@ -229,18 +229,7 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "debiti", name: "Debiti", roles: [...ADMINS, "amministrativo"], emoji: "💸" },
                 ],
             },
-            // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
-            // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
-            { name: "Orari & Chiusure", sez: "orari", icon: Clock3, roles: ["admin", "dev"] },
-            // "Marginalità" vive DENTRO Catalogo come pseudo-brand 💰 (Luca 05/08)
-            { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
-            { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
-            // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
-            { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
-            { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
-            // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
-            { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
-            // MINI-HUB Fiscalità (Luca 24/08): le tre sezioni fiscali del
+            // MINI-HUB Fiscalità (Luca 24/08, DOPO Utenti come richiesto): le
             // registratore telematico. REGOLA (già sbagliata troppe volte,
             // vedi Orari & Chiusure 03/08): ogni sezione nuova della pagina
             // Amministrazione VA REGISTRATA QUI — la tendina a sinistra e i
@@ -253,6 +242,17 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "coupon", name: "Coupon", roles: [...ADMINS, "amministrativo"], emoji: "🎟" },
                 ],
             },
+            // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
+            // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
+            { name: "Orari & Chiusure", sez: "orari", icon: Clock3, roles: ["admin", "dev"] },
+            // "Marginalità" vive DENTRO Catalogo come pseudo-brand 💰 (Luca 05/08)
+            { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
+            { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
+            // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
+            { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
+            { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
+            // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
+            { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

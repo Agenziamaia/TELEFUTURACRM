@@ -268,11 +268,17 @@ function sfumaturaDi(hex, i, n) {
     const l = (mx + mn) / 2;
     const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
     const t = i / (n - 1);
-    // arco di tinta: fino a ±35° attorno al hue del brand (2 piste ±26°)
-    const arco = Math.min(70, 26 * n);
-    const h2 = (h + (t - 0.5) * arco + 360) % 360;
-    // luminosità quasi costante con un filo di pendenza: rinforza senza slavare
-    const l2 = Math.min(0.66, Math.max(0.36, l + (t - 0.5) * 0.12));
+    // ARCO ORIENTATO PER FAMIGLIA (Luca 24/08: «niente colori di altri
+    // brand»): i caldi non scendono mai nel ROSSO di Vodafone — per W3 la
+    // scala va dal MARRONE (arancio scuro) all'ambra al giallo; il rosso VF
+    // resta tra bordeaux e corallo senza salire nell'arancio; gli altri
+    // orbitano attorno al proprio tono. La LUMINOSITÀ cresce con la tinta
+    // (scuro → chiaro) e fa da secondo separatore.
+    const rosso = h < 18 || h > 340;
+    const giallo = h >= 40 && h <= 70;
+    const [hDa, hA] = rosso ? [h - 22, h + 10] : giallo ? [h - 16, h + 16] : [h - 5, h + 30];
+    const h2 = ((hDa + (hA - hDa) * t) % 360 + 360) % 360;
+    const l2 = Math.min(0.68, Math.max(0.30, l - 0.16 + 0.30 * t));
     const s2 = Math.min(1, Math.max(0.55, sat));
     return `hsl(${Math.round(h2)}, ${Math.round(s2 * 100)}%, ${Math.round(l2 * 100)}%)`;
 }
