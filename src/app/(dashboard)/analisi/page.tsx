@@ -16,7 +16,8 @@
 // il consulente è bloccato su di sé. Il confronto col mese scorso vive solo
 // in modalità mese. Quantitativo oggi; lo switch a VALORE arriverà.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesWholeStore, isAdminOrAbove } from "@/lib/roles";
@@ -48,7 +49,7 @@ const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
 /* ── arricchimento (lente ragazzi): vendita → punti + campi dettaglio.
    idxDi (iso → indice 1..nG del periodo): fuori periodo si scarta; per il
    mese precedente (solo confronto, niente grafici) si passa null. ─────── */
-function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, prw3, idxDi) {
+function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, prw3, assw3, idxDi) {
     const items = [];
     const push = (c, brandGara, set, flags = {}) => {
         const iso = String(c.data || "").slice(0, 10);
@@ -87,6 +88,12 @@ function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, prw3, idxDi) {
             const r = matchRigaPartnership(prw3, c);
             if (r && Number(r.punti) > 0) extra = { punti: Number(r.punti), pista: "cb" };
         }
+        // ASSICURAZIONI A PUNTI (Luca 24/08): le righe stanno sul lato azienda
+        // (per offerta) — l'item prende i SUOI punti sulla pista assicurazioni
+        if (!extra.punti && assw3?.length && (!set.length || !puntiPerRighe(set)) && /assicurazion/i.test(prod + " " + cat)) {
+            const setA = matchRigheAttivazione(assw3, c, brandIdDaLabel(c.brand) || "windtre");
+            if (setA.length && puntiPerRighe(setA) > 0) extra = { punti: puntiPerRighe(setA), pista: "assicurazioni" };
+        }
         push(c, "w3", set, { senzaRiga: !set.length && !altreRegole, ...extra });
     }
     const inA = (c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
@@ -107,6 +114,10 @@ const validaExt = (r) => !/annull/i.test(String(r.stato || "")) && r.nascosta_ge
 
 /* ════════════════════════════════════════════════════════════════════════ */
 export default function Analisi() {
+    return <Suspense><AnalisiInner /></Suspense>;
+}
+
+function AnalisiInner() {
     const { user } = useAuth();
     // VISIBILITÀ DAI PERMESSI: sezione + aree concedibili (hub /analisi)
     const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
@@ -120,7 +131,13 @@ export default function Analisi() {
     // negozi in visibilità dal PROFILO utente (sezione Utenti — Luca 21/08)
     const { seesAll, stores: visStores } = useVisibleStores();
 
-    const [area, setArea] = useState("io");
+    // HUB (Luca 24/08): l'area arriva dall'URL (?sez=io|negozio|rete|regia —
+    // il sottomenu della sidebar); SENZA sez si mostra la PREVIEW con le card.
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const sezUrl = searchParams.get("sez") || "";
+    const area = ["io", "negozio", "rete", "regia"].includes(sezUrl) ? sezUrl : "";
+    const vaiArea = (id) => router.push(id ? `/analisi?sez=${id}` : "/analisi");
     // ── PERIODO: mese con le frecce oppure range libero dal–al ────────────
     const [ym, setYm] = useState(ymLocale());
     const [tipoP, setTipoP] = useState("mese");          // "mese" | "range"
@@ -188,7 +205,10 @@ export default function Analisi() {
                         caricaTabellareAzienda("windtre", mISO).catch(() => null),
                     ]);
                     const prW3 = (taw3?.righe || []).filter((r) => r.pista === "partnership" && r.attivo);
-                    return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3 };
+                    // assicurazioni A PUNTI (Luca 24/08): vivono anch'esse sul
+                    // lato azienda (Protezione Pro 4 pt, Sport Famiglia 2…)
+                    const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
+                    return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
                 const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
@@ -232,8 +252,8 @@ export default function Analisi() {
         return () => { alive = false; };
     }, [chiaveP, user?.id, tentativo]);
 
-    const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, p.prW3, idxDi)), [dati, idxDi]);
-    const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, dati.prev.prW3, null) : [], [dati]);
+    const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, p.prW3, p.assW3, idxDi)), [dati, idxDi]);
+    const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, dati.prev.prW3, dati.prev.assW3, null) : [], [dati]);
 
     // righe RAW del periodo per le gare di Rete/Regia (solo mese singolo:
     // le soglie sono mensili) — ritagliate sui giorni scelti
@@ -408,7 +428,8 @@ export default function Analisi() {
     ];
     const AREE = TUTTE_LE_AREE.filter((a) => areePermesse.has(a.id));
     useEffect(() => {
-        if (permsLoaded && AREE.length && !areePermesse.has(area)) setArea(AREE[0].id);
+        if (permsLoaded && area && AREE.length && !areePermesse.has(area)) router.replace("/analisi");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [permsLoaded, areePermesse, area]);
 
     if (!permsLoaded) {
@@ -430,6 +451,42 @@ export default function Analisi() {
         : nG === 1 ? giorniPeriodo[0].label
             : `${giorniPeriodo[0].label} → ${giorniPeriodo[nG - 1].label} · ${nG} gg`;
 
+    // ── PREVIEW dell'hub (Luca 24/08): click su «Analisi» in sidebar ──────
+    if (!area) {
+        const DESC = {
+            io: "I numeri della persona: anelli per pista, andamento giornaliero, posizioni e bersagli.",
+            negozio: "Uno o più punti vendita sommati: carte per operatore, squadra e duelli.",
+            rete: "Tutta la rete a colpo d'occhio: soglie, corsa dei negozi e andamento.",
+            regia: "La plancia della direzione: codici e negozi, piste e soglie con drill fino al contratto.",
+        };
+        return (
+            <div className="space-y-5 pb-10">
+                <style>{`
+                    @keyframes anFadeUp { from { opacity:0; transform: translateY(14px); } to { opacity:1; transform:none; } }
+                    @keyframes anAurora { 0% { transform: translate3d(-12%, -6%, 0) scale(1); } 50% { transform: translate3d(10%, 8%, 0) scale(1.15); } 100% { transform: translate3d(-12%, -6%, 0) scale(1); } }
+                    .an-in { animation: anFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
+                `}</style>
+                <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d1022]/80 p-6 an-in an-scuro">
+                    <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-25 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-818cf8), transparent 65%)", animation: "anAurora 16s ease-in-out infinite" }} />
+                    <h1 className="relative text-2xl sm:text-3xl font-black text-white tracking-tight">📊 Analisi</h1>
+                    <p className="relative text-xs text-slate-400 mt-1">Scegli un&apos;area — tutto scoppiato per operatore e pista, i punti non si sommano mai tra brand.</p>
+                </div>
+                <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                    {AREE.map((a, i) => (
+                        <button key={a.id} onClick={() => vaiArea(a.id)}
+                            className="an-in text-left rounded-3xl border border-white/10 bg-[#0d1022]/80 p-6 hover:border-indigo-400/50 hover:-translate-y-1 transition-all duration-300 group"
+                            style={{ animationDelay: `${i * 70}ms` }}>
+                            <div className="text-4xl mb-3 transition-transform duration-300 group-hover:scale-110">{a.emoji}</div>
+                            <p className="text-lg font-black text-white">{a.label}</p>
+                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{DESC[a.id]}</p>
+                            <p className="text-[11px] font-bold text-indigo-300 mt-3">Entra →</p>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-5 pb-10">
             <style>{`
@@ -449,9 +506,9 @@ export default function Analisi() {
                 <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-25 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-818cf8), transparent 65%)", animation: "anAurora 16s ease-in-out infinite" }} />
                 <div className="pointer-events-none absolute -bottom-32 -right-16 w-[28rem] h-[28rem] rounded-full opacity-20 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-e60000), transparent 65%)", animation: "anAurora 22s ease-in-out infinite reverse" }} />
                 <div className="relative flex flex-wrap items-center gap-3 justify-between">
-                    <div>
-                        <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">📊 Analisi</h1>
-                        <p className="text-xs text-slate-400 mt-1">Tutto scoppiato per operatore e categoria — i punti non si sommano mai tra brand.</p>
+                    <div className="flex items-center gap-2.5">
+                        <button onClick={() => vaiArea("")} title="Tutte le aree" className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+                        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">📊 Analisi <span className="text-slate-500 font-bold">·</span> {AREE.find((a) => a.id === area)?.emoji} {AREE.find((a) => a.id === area)?.label}</h1>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 justify-end">
                         <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
@@ -479,17 +536,7 @@ export default function Analisi() {
                         )}
                     </div>
                 </div>
-                <div className="relative mt-4 flex flex-wrap items-center gap-3">
-                    <div className="flex gap-1 p-1 rounded-2xl bg-white/5 border border-white/10">
-                        {AREE.map((a) => (
-                            <button key={a.id} onClick={() => setArea(a.id)} className={cn(
-                                "px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300",
-                                area === a.id
-                                    ? "text-white bg-gradient-to-r from-indigo-500/90 to-fuchsia-500/80 shadow-lg shadow-indigo-500/30 scale-[1.04]"
-                                    : "text-slate-400 hover:text-white hover:bg-white/5",
-                            )}>{a.emoji} {a.label}</button>
-                        ))}
-                    </div>
+                <div className="relative mt-3 flex flex-wrap items-center gap-3">
                     <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-slate-300">📅 {etichettaPeriodo}</span>
                     {area === "io" && opzioniPersona.length > 1 && (
                         <div className="flex items-center gap-2 text-xs text-slate-400">

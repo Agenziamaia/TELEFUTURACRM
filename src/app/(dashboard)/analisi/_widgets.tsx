@@ -251,7 +251,8 @@ function contatoriPiste(brand, sue, prev) {
             srg("gas", lg.filter(gasDi)),
         ]);
         const ass = sue.filter(assic), assP = prev.filter(assic);
-        add("assic", "Assicurazioni", "🛡", "pz", ass, assP, [], "a pezzi · verso i target di gruppo");
+        add("assic", "Assicurazioni", "🛡", "pt", ass, assP, [],
+            `${ass.length} pezzi · verso i target di gruppo`);
         const bz = sue.filter(biz), bzP = prev.filter(biz);
         add("business", "Business", "💼", "pz", bz, bzP, [
             srg("mobile", bz.filter(catMob), "pz"),
@@ -398,7 +399,7 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
         <div className={cn("an-scuro fixed inset-0 z-[9990] flex items-center justify-center p-4 transition-opacity duration-300", on ? "opacity-100" : "opacity-0")}
             style={{ background: "rgba(2,6,17,.78)", backdropFilter: "blur(6px)" }} onClick={chiudi}>
             <div onClick={(e) => e.stopPropagation()}
-                className={cn("w-full max-w-[min(94vw,1420px)] max-h-[92vh] overflow-y-auto rounded-3xl border p-6 transition-all duration-300", on ? "scale-100 translate-y-0" : "scale-[.96] translate-y-3")}
+                className={cn("w-full max-w-[min(96vw,1900px)] max-h-[92vh] overflow-y-auto rounded-3xl border p-6 transition-all duration-300", on ? "scale-100 translate-y-0" : "scale-[.96] translate-y-3")}
                 style={{ background: "linear-gradient(160deg, #0c1224, #090d1c 60%)", borderColor: `${G.colore}55`, boxShadow: `0 24px 90px rgba(0,0,0,.6), 0 0 60px ${G.colore}22` }}>
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
                     <div className="flex items-center gap-3">
@@ -454,10 +455,10 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                                                 centro={<><span className="text-base font-black text-white tabular-nums leading-none">{aPunti ? fmtPt(g.val) : fmtN(g.val)}</span><span className="text-[8px] text-slate-500 uppercase mt-0.5">{aPunti ? "pt" : "pz"}</span></>} />
                                         </div>
                                         <div className="flex-1 min-w-0 space-y-1">
-                                            {offerte.slice(0, 6).map(([off, r]) => (
+                                            {offerte.map(([off, r]) => (
                                                 <div key={off} className="grid grid-cols-[1fr_auto] items-center gap-2">
                                                     <div className="min-w-0">
-                                                        <p className="text-[11px] text-slate-300 truncate" title={off}>
+                                                        <p className="text-[11px] text-slate-300 leading-tight" title={off}>
                                                             <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: coloreDi(off) }} />{off}
                                                         </p>
                                                         <span className="flex h-1.5 rounded-full bg-white/5 overflow-hidden mt-0.5">
@@ -479,7 +480,7 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                                                     <span className="text-[11px] font-black text-white tabular-nums whitespace-nowrap">{aPunti ? `${fmtPt(r.pt)} pt` : `${fmtN(r.pz)} pz`}<span className="text-slate-500 font-semibold"> · {fmtN(r.pz)} pz{r.mnpPz > 0 && r.mnpPz < r.pz ? ` · ${fmtN(r.mnpPz)} MNP (${Math.round((r.mnpPz / r.pz) * 100)}%) · ${fmtN(r.pz - r.mnpPz)} GA` : r.mnpPz === r.pz && r.pz > 0 ? " · tutte MNP" : ""}</span></span>
                                                 </div>
                                             ))}
-                                            {offerte.length > 6 && <p className="text-[10px] text-slate-600">… e altre {offerte.length - 6} offerte (nel drill 🔍 ci sono tutte)</p>}
+
                                         </div>
                                     </div>
                                 </div>

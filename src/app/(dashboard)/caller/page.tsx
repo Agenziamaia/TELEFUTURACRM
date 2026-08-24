@@ -386,6 +386,150 @@ const defaultCallerView = {
    MAIN PAGE
    ───────────────────────────────────────────────────────────────────── */
 
+/* ── APPROVAZIONE «ATTIVATO ANOMALIA» (Luca 24/08): la proposta del caller
+   (nota obbligatoria) si approva COLLEGANDO la vendita — senza vendita lo
+   stato non genererebbe commissioning in cooperation — o si rifiuta con
+   nota (la pratica torna in lavorazione al caller). ─────────────────────── */
+function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
+    lista: { id: number; call_id: string; caller: string; nota: string; created_at: string | null }[];
+    calls: Call[];
+    utente: string;
+    chiudi: () => void;
+    onDecisa: () => void;
+}) {
+    const [apertaId, setApertaId] = useState<number | null>(null);
+    const [candidate, setCandidate] = useState<{ id: string; label: string }[] | null>(null);
+    const [venditaSel, setVenditaSel] = useState("");
+    const [ctrManuale, setCtrManuale] = useState("");
+    const [notaRifiuto, setNotaRifiuto] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [errA, setErrA] = useState<string | null>(null);
+
+    const callDi = (a: { call_id: string }) => calls.find((c) => String(c.id) === String(a.call_id)) || null;
+    const apriApprova = async (a: { id: number; call_id: string }) => {
+        setApertaId(a.id); setCandidate(null); setVenditaSel(""); setCtrManuale(""); setErrA(null);
+        const c = callDi(a);
+        const cf = String(c?.cf || c?.piva || "").trim().toUpperCase();
+        let out: { id: string; label: string }[] = [];
+        if (cf) {
+            const { data: cli } = await supabase.from("clients").select("id").ilike("cf_piva", cf).limit(5);
+            const ids = (cli ?? []).map((x: { id: string }) => x.id);
+            if (ids.length) {
+                const { data: ctr } = await supabase.from("contracts")
+                    .select("id, brand, offerta, prodotto, negozio, venditore, data, stato")
+                    .in("client_id", ids).like("id", "CTR-%")
+                    .order("data", { ascending: false }).limit(15);
+                out = ((ctr ?? []) as { id: string; brand: string | null; offerta: string | null; prodotto: string | null; negozio: string | null; venditore: string | null; data: string | null; stato: string | null }[])
+                    .filter((x) => !/annull/i.test(String(x.stato || "")))
+                    .map((x) => ({ id: x.id, label: `${x.id} · ${x.brand || "—"} · ${x.offerta || x.prodotto || "—"} · ${x.negozio || "—"} · ${String(x.data || "").slice(0, 10)} · ${x.venditore || "—"}` }));
+            }
+        }
+        setCandidate(out);
+    };
+    const conferma = async (a: { id: number; call_id: string; caller: string }) => {
+        const scelta = venditaSel || ctrManuale.trim().toUpperCase();
+        if (!scelta) { setErrA("Scegli una vendita dall'elenco o incolla l'ID CTR- della vendita da collegare."); return; }
+        setBusy(true); setErrA(null);
+        const { data: ctr } = await supabase.from("contracts").select("id").eq("id", scelta).maybeSingle();
+        if (!ctr) { setBusy(false); setErrA(`Vendita "${scelta}" non trovata: controlla l'ID (formato CTR-XXXXXXXX).`); return; }
+        const c = callDi(a);
+        const now = new Date().toISOString();
+        const storico = [...((c?.storico as StoricoEntry[]) || []),
+            { data: now, caller: utente, campo: "Anomalia", da: "", a: `✅ «Attivato Anomalia» APPROVATO da ${utente} — vendita collegata ${scelta}` },
+            { data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Anomalia" }];
+        const { error } = await supabase.from("calls").update({ stato: "Attivato Anomalia", contract_id: scelta, da_esitare: false, storico }).eq("id", a.call_id);
+        if (error) { setBusy(false); setErrA(error.message); return; }
+        await supabase.from("caller_anomalie").update({ stato: "approvata", contract_id: scelta, decisa_da: utente, decisa_il: now }).eq("id", a.id);
+        setBusy(false); setApertaId(null);
+        onDecisa();
+    };
+    const rifiuta = async (a: { id: number; call_id: string }) => {
+        setBusy(true); setErrA(null);
+        const c = callDi(a);
+        const now = new Date().toISOString();
+        const storico = [...((c?.storico as StoricoEntry[]) || []),
+            { data: now, caller: utente, campo: "Anomalia", da: "", a: `✗ Proposta «Attivato Anomalia» RIFIUTATA da ${utente}${notaRifiuto.trim() ? ` — ${notaRifiuto.trim()}` : ""}` }];
+        // da_esitare torna al caller SOLO se la pratica non è già attivata
+        // (rilievo revisore: doppia proposta — la seconda rifiutata non deve
+        // rimettere in lavorazione una pratica già «Attivato Anomalia»)
+        const upd: Record<string, unknown> = { storico };
+        if (!/^attivat/i.test(String(c?.stato || ""))) upd.da_esitare = true;
+        const { error } = await supabase.from("calls").update(upd).eq("id", a.call_id);
+        if (error) { setBusy(false); setErrA(error.message); return; }
+        await supabase.from("caller_anomalie").update({ stato: "rifiutata", decisa_da: utente, decisa_il: now, nota_decisione: notaRifiuto.trim() || null }).eq("id", a.id);
+        setBusy(false); setApertaId(null); setNotaRifiuto("");
+        onDecisa();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={chiudi} role="dialog" aria-modal="true">
+            <div className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between py-4 px-6 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">
+                    <div>
+                        <div className="text-lg font-extrabold text-slate-100">🚩 Anomalie da approvare</div>
+                        <div className="text-xs text-slate-500 mt-0.5">La proposta si approva COLLEGANDO la vendita (così genera il commissioning in cooperation) o si rifiuta con nota.</div>
+                    </div>
+                    <button type="button" onClick={chiudi} className="bg-transparent border-none text-slate-500 text-xl cursor-pointer leading-none p-0">✕</button>
+                </div>
+                <div className="p-5 space-y-3">
+                    {lista.length === 0 && <p className="text-sm text-slate-500 py-6 text-center">Nessuna anomalia in attesa. 🎉</p>}
+                    {lista.map((a) => {
+                        const c = callDi(a);
+                        const nome = c ? (c.ragione_sociale || `${c.nome} ${c.cognome}`).trim() : a.call_id;
+                        return (
+                            <div key={a.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 space-y-2">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div>
+                                        <p className="text-sm font-bold text-white">{nome || "—"} <span className="text-slate-500 font-normal">· stato attuale: {c?.stato || "—"}</span></p>
+                                        <p className="text-[11px] text-slate-500">proposta da <b className="text-violet-300">{a.caller}</b>{a.created_at ? ` · ${new Date(a.created_at).toLocaleDateString("it-IT")} ${new Date(a.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}</p>
+                                    </div>
+                                    {apertaId !== a.id && (
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => apriApprova(a)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">✓ Approva…</button>
+                                            <button type="button" onClick={() => { setApertaId(-a.id); setErrA(null); }} className="px-3 py-1.5 rounded-lg border border-rose-500/50 text-rose-300 text-xs font-bold hover:bg-rose-500/10">✗ Rifiuta…</button>
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="text-[12px] text-amber-200 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2">📝 {a.nota}</p>
+                                {apertaId === a.id && (
+                                    <div className="space-y-2 pt-1">
+                                        {candidate === null ? (
+                                            <p className="text-[12px] text-slate-500">Cerco le vendite del cliente (per codice fiscale)…</p>
+                                        ) : candidate.length > 0 ? (
+                                            <SelectOpzioni value={venditaSel} onChange={setVenditaSel} opzioni={candidate.map((x) => x.id)} placeholder="Scegli la vendita da collegare…" className="glass-input rounded-lg py-2 w-full" />
+                                        ) : (
+                                            <p className="text-[12px] text-slate-500">Nessuna vendita trovata col CF della pratica: incolla l&apos;ID della vendita (lo trovi in Ricerca Vendite).</p>
+                                        )}
+                                        {candidate !== null && candidate.length > 0 && venditaSel && (
+                                            <p className="text-[11px] text-slate-400">{candidate.find((x) => x.id === venditaSel)?.label}</p>
+                                        )}
+                                        <input value={ctrManuale} onChange={(e) => setCtrManuale(e.target.value)} placeholder="…oppure incolla l'ID vendita (CTR-XXXXXXXX)" className="glass-input w-full text-sm rounded-lg py-2 font-mono" />
+                                        {errA && <p className="text-[12px] text-rose-400">{errA}</p>}
+                                        <div className="flex gap-2">
+                                            <button type="button" disabled={busy} onClick={() => conferma(a)} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black disabled:opacity-50">{busy ? "…" : "✅ Approva e collega la vendita"}</button>
+                                            <button type="button" disabled={busy} onClick={() => setApertaId(null)} className="px-4 py-2 rounded-lg bg-white/[0.06] text-slate-300 text-sm font-bold">Annulla</button>
+                                        </div>
+                                    </div>
+                                )}
+                                {apertaId === -a.id && (
+                                    <div className="space-y-2 pt-1">
+                                        <input value={notaRifiuto} onChange={(e) => setNotaRifiuto(e.target.value)} placeholder="Nota del rifiuto (facoltativa) — il caller la vede nello storico" className="glass-input w-full text-sm rounded-lg py-2" />
+                                        {errA && <p className="text-[12px] text-rose-400">{errA}</p>}
+                                        <div className="flex gap-2">
+                                            <button type="button" disabled={busy} onClick={() => rifiuta(a)} className="flex-1 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-black disabled:opacity-50">{busy ? "…" : "✗ Rifiuta la proposta"}</button>
+                                            <button type="button" disabled={busy} onClick={() => setApertaId(null)} className="px-4 py-2 rounded-lg bg-white/[0.06] text-slate-300 text-sm font-bold">Annulla</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function CallerPageInner() {
     const NEGOZI = useStores();
     const VENDITORI = useSellers();
@@ -821,6 +965,17 @@ function CallerPageInner() {
         return m;
     }, [calls, regoleCaller, badgePronto, faseInfo]);
     const apriArchivioMalus = useCallback(() => { setShowArchivioMalus(true); eseguiSyncMalus(); }, [eseguiSyncMalus]);
+    // ── ANOMALIE IN APPROVAZIONE (Luca 24/08): coda per l'amministrazione ──
+    const puoApprovareAnomalie = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    interface AnomaliaRow { id: number; call_id: string; caller: string; nota: string; stato: string; created_at: string | null }
+    const [anomalieAttesa, setAnomalieAttesa] = useState<AnomaliaRow[]>([]);
+    const [showAnomalie, setShowAnomalie] = useState(false);
+    const caricaAnomalie = useCallback(async () => {
+        if (!puoApprovareAnomalie) return;
+        const { data } = await supabase.from("caller_anomalie").select("id, call_id, caller, nota, stato, created_at").eq("stato", "in_attesa").order("created_at");
+        setAnomalieAttesa((data ?? []) as AnomaliaRow[]);
+    }, [puoApprovareAnomalie]);
+    useEffect(() => { caricaAnomalie(); }, [caricaAnomalie]);
     // TOTALE storico malus sotto "⏱ Storico →" (Luca 10/08, come Tracking PDA):
     // somma degli episodi non eliminati (del caller per i non-direttori)
     const [malusTotStorico, setMalusTotStorico] = useState<number | null>(null);
@@ -1474,6 +1629,24 @@ function CallerPageInner() {
                 alert("«" + editCall.statoNew + "» lo scrive SOLO il match vendita↔appuntamento (Regole in Amministrazione → Call Center). Per i casi anomali usa «Attivato Anomalia».");
                 return;
             }
+            // ATTIVATO ANOMALIA = PROPOSTA IN APPROVAZIONE (Luca 24/08): nota
+            // OBBLIGATORIA; la pratica NON cambia stato — l'amministrazione
+            // approva collegando la VENDITA (o rifiuta con nota) dalla coda 🚩.
+            if (editCall.statoNew === "Attivato Anomalia" && original.stato !== "Attivato Anomalia") {
+                const notaAnomalia = (editCall.noteUpdate || "").trim();
+                if (!notaAnomalia) {
+                    alert("Per proporre «Attivato Anomalia» la NOTA è OBBLIGATORIA: spiega cosa è successo. La proposta arriva in approvazione all'amministrazione, che collegherà la vendita.");
+                    return;
+                }
+                const { error: eAn } = await supabase.from("caller_anomalie").insert({ call_id: editCall.id, caller: currentCaller, nota: notaAnomalia });
+                if (eAn) { alert("Proposta NON inviata: " + eAn.message); return; }
+                const voceProposta: StoricoEntry = { data: now, caller: currentCaller, campo: "Anomalia", da: "", a: `🚩 «Attivato Anomalia» PROPOSTO — in approvazione all'amministrazione · nota: ${notaAnomalia}` };
+                await supabase.from("calls").update({ storico: [...(original.storico || []), voceProposta], da_esitare: false }).eq("id", editCall.id);
+                alert("🚩 Proposta inviata all'amministrazione: verrà approvata collegando la vendita, o rifiutata con una nota.");
+                closeModal();
+                await fetchCalls();
+                return;
+            }
             const newStorico: StoricoEntry[] = [
                 ...(original.storico || []),
                 {
@@ -2014,6 +2187,14 @@ function CallerPageInner() {
                             </button>
                         ) : null;
                     })()}
+                    {/* ANOMALIE IN APPROVAZIONE (Luca 24/08): coda amministrazione */}
+                    {puoApprovareAnomalie && anomalieAttesa.length > 0 && (
+                        <button type="button" onClick={() => setShowAnomalie(true)}
+                            title="Proposte «Attivato Anomalia» da approvare collegando la vendita"
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors border-rose-400 bg-rose-500/20 text-rose-200 hover:bg-rose-500/30 shadow-lg shadow-rose-500/10">
+                            🚩 Anomalie: {anomalieAttesa.length}
+                        </button>
+                    )}
                     {/* ARCHIVIATE (Luca 11/08): stati col comportamento 🏁 Definitivo —
                         fuori dal lavoro e dal malus; il toggle le rimostra (solo loro) */}
                     {(() => {
@@ -2187,6 +2368,11 @@ function CallerPageInner() {
                                 card-filtro, totali per collaboratore, tabella episodi.
                                 malusAttuali = vista coerente col filtro anche senza scritture;
                                 versione = ricarica a sincronizzazione finita (dati POST-sync) */}
+                            {showAnomalie && puoApprovareAnomalie && (
+                                <AnomalieApprovazione lista={anomalieAttesa} calls={calls} utente={user?.name || "Amministrazione"}
+                                    chiudi={() => setShowAnomalie(false)}
+                                    onDecisa={() => { caricaAnomalie(); fetchCalls(); }} />
+                            )}
                             {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} puoEliminare={["admin", "dev"].includes(user?.role || "")} regole={regoleCaller} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)}
                                 onApriPratica={(id) => { const c = calls.find((x) => String(x.id) === String(id)); if (c) { setShowArchivioMalus(false); openDetail(c); } }} />}
 

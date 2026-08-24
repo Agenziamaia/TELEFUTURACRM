@@ -58,7 +58,9 @@ export const NAVIGATION: NavEntry[] = [
     // SENZA sottomenu in sidebar: le aree si cambiano coi pulsanti in pagina.
     // Default: tutto solo admin/dev finché Luca non apre; la Regia resta sua.
     {
-        type: "hub", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"], senzaSottomenu: true,
+        // HUB PIENO dal 24/08 (Luca: «è arrivato il momento»): voce → preview,
+        // freccetta → sottomenu con le aree; prima era senzaSottomenu.
+        type: "hub", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"],
         children: [
             { name: "Io", sez: "io", roles: ["admin", "dev"] },
             { name: "Negozio", sez: "negozio", roles: ["admin", "dev"] },
