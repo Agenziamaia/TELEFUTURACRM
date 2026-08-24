@@ -525,7 +525,7 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                         )}
                     >
                         {c.emoji ? (
-                            <span className="w-4 text-center text-sm leading-none">{c.emoji}</span>
+                            <span className="w-4 text-center text-[13px] leading-none opacity-90" style={{ filter: "saturate(.85)" }}>{c.emoji}</span>
                         ) : ChildIcon ? (
                             <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
                         ) : (
