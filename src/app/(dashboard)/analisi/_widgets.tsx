@@ -231,16 +231,17 @@ function pistaTimelineDi(bk, it) {
         return "altro";
     }
     // w3 / vf: la pista arriva dal motore gare (it.pista); business dentro
-    // mobile/fisso, telefoni GA nel mobile (pezzi in barra), telefoni CB in cb
+    // mobile/fisso, telefoni GA nel mobile (pezzi in barra); i telefoni CB
+    // W3 arrivano con pista "cb" (Partnership), quelli VF maturano in mobile
     if (/assicurazion/i.test(prod + " " + cat)) return "assic";
     const p = String(it.pista || "");
     if (p === "mobile" || p === "business_mobile") return "mobile";
     if (p === "fisso" || p === "business_fisso") return "fisso";
     if (p === "cb") return "cb";
-    if (p === "lucegas") return "lucegas";
+    if (p === "lucegas" || p === "luce" || p === "gas") return "lucegas";
     if (p === "assicurazioni") return "assic";
     if (/^customer base/i.test(cat)) return "cb";
-    if (/^telefono a rate/i.test(cat)) return /\bcb\b/i.test(cat) ? "cb" : "mobile";
+    if (/^telefono a rate/i.test(cat)) return /cb\s*$/i.test(prod) ? "cb" : "mobile";
     if (/^mobile/i.test(cat)) return "mobile";
     if (/^fisso/i.test(cat)) return "fisso";
     if (/^energia/i.test(cat) || /\b(luce|gas)\b/i.test(prod)) return "lucegas";
@@ -320,8 +321,15 @@ export function TimelineHero({ ctx, tecnico = false }) {
     const [spenti, setSpenti] = useState(() => new Set());
     // cambio di persona osservata, area o modalità → pill tutte riaccese
     // (rilievo revisore: la selezione su A non deve svuotare il grafico di B)
-    useEffect(() => { setSpenti(new Set()); }, [tecnico, ctx.areaKey, ctx.persona]);
+    useEffect(() => { setSpenti(new Set()); }, [tecnico, ctx.areaKey, ctx.persona, ctx.negozio]);
     const toggle = (k) => setSpenti((prev) => {
+        const tutte = serie.map((sr) => sr.key);
+        const accese = tutte.filter((key) => !prev.has(key));
+        // dalla situazione generale il click ISOLA il brand (Luca 24/08)…
+        if (accese.length === tutte.length && tutte.length > 1) return new Set(tutte.filter((key) => key !== k));
+        // …il click sull'unico acceso riporta al totale (mai grafico vuoto)
+        if (accese.length === 1 && accese[0] === k) return new Set();
+        // …e in selezione parziale gli altri si aggiungono / tolgono
         const n = new Set(prev);
         if (n.has(k)) n.delete(k); else n.add(k);
         return n;
@@ -377,9 +385,11 @@ export function TimelineHero({ ctx, tecnico = false }) {
             <div className="mt-2 flex items-center gap-2 flex-wrap">
                 {serie.map((sr) => {
                     const off = spenti.has(sr.key);
+                    const nAccese = serie.filter((x) => !spenti.has(x.key)).length;
+                    const azione = spenti.size === 0 && serie.length > 1 ? `Isola ${sr.label}` : off ? `Aggiungi ${sr.label}` : nAccese === 1 ? "Rimetti tutti i brand" : `Togli ${sr.label}`;
                     return (
                         <button key={sr.key} onClick={() => toggle(sr.key)}
-                            title={`${off ? "Rimetti" : "Togli"} ${sr.label} ${off ? "nella" : "dalla"} timeline · ${fmtN(sr.tot)} ${tecnico ? "€" : "pz"} nel periodo`}
+                            title={`${azione} · ${fmtN(sr.tot)} ${tecnico ? "€" : "pz"} nel periodo`}
                             className={cn("flex items-center px-2.5 py-1.5 rounded-lg border transition-all", off ? "border-white/10 bg-white/[0.02] opacity-35 grayscale" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.09]")}>
                             <LogoBrand chiave={sr.chiave} h={15} />
                         </button>
@@ -388,7 +398,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
                 {legenda && legenda.map((pz) => (
                     <span key={pz.k} className="flex items-center gap-1.5 text-[10px] text-slate-300 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/10">
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pz.colore, boxShadow: `0 0 5px ${pz.colore}66` }} />
-                        {pz.label} · <b className="text-slate-100">{fmtPt(pz.tot)}</b>
+                        {pz.label} · <b className="text-slate-100">{fmtPt(pz.tot)}</b> pz
                     </span>
                 ))}
                 <span className="text-[10px] text-slate-500 ml-1">{tecnico ? "fatturato marginalità giorno per giorno" : legenda ? "un solo operatore acceso: barre spaccate per pista" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
@@ -471,7 +481,10 @@ function contatoriPiste(brand, sue, prev) {
             srg("Vodafone", fis.filter((it) => !it.fwInA)),
             srg("FW lettera A", fis.filter((it) => it.fwInA)),
         ]);
-        const lg = pista(sue, "lucegas"), lgP = pista(prev, "lucegas");
+        // il tabellare VF ha piste "luce" e "gas" SEPARATE (rilievo revisore
+        // 24/08: il contatore restava sempre vuoto) — qui si sommano
+        const lg = [...pista(sue, "lucegas"), ...pista(sue, "luce"), ...pista(sue, "gas")];
+        const lgP = [...pista(prev, "lucegas"), ...pista(prev, "luce"), ...pista(prev, "gas")];
         add("lucegas", "Luce & Gas", "⚡", "pt", lg, lgP, [
             srg("luce", lg.filter((it) => !gasDi(it))),
             srg("gas", lg.filter(gasDi)),
