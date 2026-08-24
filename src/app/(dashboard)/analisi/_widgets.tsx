@@ -204,58 +204,77 @@ export function DrillPanel({ drill, chiudi, labels }) {
    interattività del widget (tooltip con le vendite voce per voce, media,
    giorno di oggi evidenziato). ═══════════════════════════════════════════ */
 export function TimelineHero({ ctx }) {
-    const presenti = useMemo(() => {
-        const set = new Set();
-        for (const it of ctx.items) if (GARA[it.brandGara]) set.add(it.brandGara);
-        return ["w3", "vf", "fw", "sky"].filter((b) => set.has(b));
-    }, [ctx.items]);
+    // TUTTA la produzione della persona/negozio (Luca 24/08): i 4 brand in
+    // gara + la MARGINALITÀ (vendite EXT, a pezzi) + gli ALTRI operatori
+    // (S4, TIM, Very…). Ogni serie ha logo e colore; le pill sotto (solo
+    // loghi) accendono e spengono la serie.
+    const serie = useMemo(() => {
+        const out = new Map();
+        const add = (key, label, colore, chiave, g, nome, pezzi = 1) => {
+            if (g < 1 || g > ctx.nG) return;
+            const sr = out.get(key) || { key, label, colore, chiave, tot: 0, giorni: new Map() };
+            const gg = sr.giorni.get(g) || { val: 0, prod: new Map() };
+            gg.val += pezzi; sr.tot += pezzi;
+            const nm = String(nome || "—").slice(0, 30);
+            gg.prod.set(nm, (gg.prod.get(nm) || 0) + pezzi);
+            sr.giorni.set(g, gg);
+            out.set(key, sr);
+        };
+        for (const it of ctx.items) {
+            const G = GARA[it.brandGara];
+            if (G) add(it.brandGara, G.label, G.colore, G.chiave, it.g, it.offerta || it.prodotto);
+        }
+        for (const r of (ctx.ext || [])) add("marg", "Marginalità", HEX_BRAND.marginalita || "#22c55e", "marginalita", r.g, r.prodotto, Number(r.qty) || 1);
+        for (const r of (ctx.altri || [])) {
+            const k = trkBrandKey(r.brand);
+            if (!k) continue;
+            add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto);
+        }
+        const ordine = ["w3", "vf", "fw", "sky", "marg"];
+        return [...out.values()].sort((a, b) => {
+            const ia = ordine.indexOf(a.key), ib = ordine.indexOf(b.key);
+            if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+            return b.tot - a.tot;
+        });
+    }, [ctx.items, ctx.ext, ctx.altri, ctx.nG]);
     const [spenti, setSpenti] = useState(() => new Set());
-    const toggle = (b) => setSpenti((prev) => {
+    const toggle = (k) => setSpenti((prev) => {
         const n = new Set(prev);
-        if (n.has(b)) n.delete(b); else n.add(b);
+        if (n.has(k)) n.delete(k); else n.add(k);
         return n;
     });
     const giorni = useMemo(() => {
-        const filtrati = ctx.items.filter((it) => GARA[it.brandGara] && !spenti.has(it.brandGara));
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
-        for (const it of filtrati) {
-            if (it.g < 1 || it.g > ctx.nG) continue;
-            const r = { label: GARA[it.brandGara].label, colore: GARA[it.brandGara].colore };
-            const g = v[it.g - 1];
-            const e = g._p.get(r.label) || { label: r.label, colore: r.colore, val: 0, prod: new Map() };
-            e.val++;
-            const nome = String(it.offerta || it.prodotto || "—").slice(0, 30);
-            e.prod.set(nome, (e.prod.get(nome) || 0) + 1);
-            g._p.set(r.label, e); g.tot++;
-        }
-        return v.map((g) => ({
-            n: g.n, label: g.label, tot: g.tot,
-            parti: [...g._p.values()].sort((a, b) => b.val - a.val).map((pt) => {
-                const top = [...pt.prod.entries()].sort((a, b) => b[1] - a[1]);
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, parti: [] }));
+        for (const sr of serie) {
+            if (spenti.has(sr.key)) continue;
+            for (const [g, gg] of sr.giorni) {
+                const top = [...gg.prod.entries()].sort((a, b) => b[1] - a[1]);
                 const prodotti = top.slice(0, 4).map(([nm, q]) => `${q}× ${nm}`).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
-                return { label: pt.label, colore: pt.colore, val: pt.val, sub: `${fmtN(pt.val)} pz`, prodotti };
-            }),
-        }));
-    }, [ctx.items, ctx.nG, ctx.labels, spenti]);
+                v[g - 1].parti.push({ label: sr.label, colore: sr.colore, val: gg.val, sub: `${fmtN(gg.val)} pz`, prodotti });
+                v[g - 1].tot += gg.val;
+            }
+        }
+        for (const g of v) g.parti.sort((a, b) => b.val - a.val);
+        return v;
+    }, [serie, spenti, ctx.nG, ctx.labels]);
     const totale = giorni.reduce((sm, g) => sm + g.tot, 0);
     const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
-    if (!presenti.length) return null;
+    if (!serie.length) return null;
     return (
         <div className="relative mt-3">
             <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit="pz" h={92} />
-            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                {presenti.map((b) => {
-                    const off = spenti.has(b);
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                {serie.map((sr) => {
+                    const off = spenti.has(sr.key);
                     return (
-                        <button key={b} onClick={() => toggle(b)}
-                            title={off ? `Rimetti ${GARA[b].label} nella timeline` : `Togli ${GARA[b].label} dalla timeline`}
-                            className={cn("flex items-center gap-1.5 px-2 py-1 rounded-lg border transition-all", off ? "border-white/10 bg-white/[0.02] opacity-40 grayscale" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.09]")}>
-                            <span className="w-2 h-2 rounded-full" style={{ background: GARA[b].colore }} />
-                            <LogoBrand chiave={GARA[b].chiave} h={11} />
+                        <button key={sr.key} onClick={() => toggle(sr.key)}
+                            title={`${off ? "Rimetti" : "Togli"} ${sr.label} ${off ? "nella" : "dalla"} timeline · ${fmtN(sr.tot)} pz nel periodo`}
+                            className={cn("flex items-center px-2.5 py-1.5 rounded-lg border transition-all", off ? "border-white/10 bg-white/[0.02] opacity-35 grayscale" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.09]")}>
+                            <LogoBrand chiave={sr.chiave} h={15} />
                         </button>
                     );
                 })}
-                <span className="text-[10px] text-slate-500 ml-1">produzione giorno per giorno · tutti gli operatori · click sui brand per filtrare</span>
+                <span className="text-[10px] text-slate-500 ml-1">produzione giorno per giorno · tutta · click sui loghi per filtrare</span>
             </div>
         </div>
     );
@@ -1142,6 +1161,6 @@ export const REGISTRO = {
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
 export const DEFAULT_LAYOUT = {
-    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mese:pezzi@2", "mix:pezzi@1", "ritmo@1"],
-    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "mese:pezzi@2", "ritmo@1", "squadra:w3@2"],
+    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mix:pezzi@1", "ritmo@1"],
+    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "ritmo@1", "squadra:w3@2"],
 };
