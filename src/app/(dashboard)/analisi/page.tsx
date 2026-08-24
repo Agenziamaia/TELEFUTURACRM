@@ -636,13 +636,51 @@ function AnalisiInner() {
 /* ═══ GRIGLIA MODULARE (come la Home: drag, taglie, galleria) ══════════ */
 function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     const [galleria, setGalleria] = useState(false);
-    const dragDa = useRef(null);
     const listaRef = useRef(lista);
     useEffect(() => { listaRef.current = lista; }, [lista]);
     // DRAG A MANO (Luca 24/08 sera): tutta la TESTATA è trascinabile; la
     // card in volo va in trasparenza e il bersaglio si illumina
     const [dragIdx, setDragIdx] = useState(null);
     const [overIdx, setOverIdx] = useState(null);
+    const [ghost, setGhost] = useState(null);
+    // DRAG POINTER-BASED (Luca 24/08 sera, secondo giro): il drag nativo del
+    // browser moriva appena il re-render toccava il nodo trascinato — qui è
+    // tutto pointer events: soglia 6px anti-click, etichetta fantasma che
+    // segue il mouse, bersaglio via elementFromPoint, rilascio = spostamento.
+    const trascinaCard = (e, i) => {
+        if (e.button !== 0) return;
+        if (e.target.closest("button")) return;
+        const startX = e.clientX, startY = e.clientY;
+        let attivo = false;
+        const bersaglio = (ev) => {
+            const el = document.elementFromPoint(ev.clientX, ev.clientY);
+            const card = el && el.closest ? el.closest("[data-wgi]") : null;
+            return card ? Number(card.getAttribute("data-wgi")) : null;
+        };
+        const onMove = (ev) => {
+            if (!attivo) {
+                if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
+                attivo = true;
+                setDragIdx(i);
+                document.body.style.userSelect = "none";
+            }
+            setGhost({ x: ev.clientX, y: ev.clientY });
+            const a = bersaglio(ev);
+            setOverIdx(a != null && a !== i ? a : null);
+        };
+        const onUp = (ev) => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            document.body.style.userSelect = "";
+            if (attivo) {
+                const a = bersaglio(ev);
+                if (a != null && a !== i) muovi(i, a);
+            }
+            setDragIdx(null); setOverIdx(null); setGhost(null);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    };
     const muovi = (da, a) => { if (a < 0 || a >= lista.length) return; const next = [...lista]; const [w] = next.splice(da, 1); next.splice(a, 0, w); setLista(next); };
     const taglia = (i) => { const STEP = { 1: 2, 2: 4, 3: 4, 4: 6, 5: 6, 6: 8, 7: 8, 8: 2 }; const next = [...lista]; next[i] = { ...next[i], s: STEP[next[i].s] || 4 }; setLista(next); };
     // RESIZE A SCATTO (Luca 24/08: «come le finestre, ma che non si rompa»):
@@ -696,15 +734,11 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                     return (
                         <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative @container transition-opacity", w.h && "flex flex-col", SPAN[w.s], dragIdx === i && "opacity-40", overIdx === i && dragIdx !== i && "ring-2 ring-indigo-400/70")}
                             style={{ animationDelay: `${Math.min(i * 40, 320)}ms`, ...(w.h ? { height: w.h * 112 - 16 } : {}) }}
-                            onDragOver={(e) => { e.preventDefault(); if (dragDa.current != null && overIdx !== i) setOverIdx(i); }}
-                            onDragLeave={() => { if (overIdx === i) setOverIdx(null); }}
-                            onDrop={() => { if (dragDa.current != null) muovi(dragDa.current, i); dragDa.current = null; setDragIdx(null); setOverIdx(null); }}>
+                            data-wgi={i}>
                             <div className="flex items-center justify-between gap-2 mb-3">
-                                <p draggable
-                                    onDragStart={(e) => { dragDa.current = i; setDragIdx(i); try { e.dataTransfer.effectAllowed = "move"; } catch { /* ok */ } }}
-                                    onDragEnd={() => { dragDa.current = null; setDragIdx(null); setOverIdx(null); }}
+                                <p onPointerDown={(e) => trascinaCard(e, i)}
                                     title="Trascina la testata per spostare la card"
-                                    className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 cursor-grab active:cursor-grabbing select-none">
+                                    className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 cursor-grab active:cursor-grabbing select-none touch-none">
                                     <span className="text-slate-600 group-hover/wg:text-slate-300 shrink-0"><GripVertical className="w-3.5 h-3.5" /></span>
                                     {/* il LOGO è il titolo dello schema: grande, subito a destra
                                         del grip (Luca 21/08) — niente nomi brand scritti */}
@@ -734,6 +768,12 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 })}
             </div>
             {!lista.length && <p className="text-center text-xs text-slate-500 py-10">Griglia vuota — «＋ Aggiungi» per popolare l'area.</p>}
+            {ghost && dragIdx != null && lista[dragIdx] && (
+                <div className="fixed z-[10001] pointer-events-none px-3 py-1.5 rounded-lg bg-indigo-600/90 text-white text-xs font-bold shadow-2xl flex items-center gap-1.5"
+                    style={{ left: ghost.x + 14, top: ghost.y + 12 }}>
+                    <GripVertical className="w-3 h-3 opacity-70" /> {REGISTRO[lista[dragIdx].k]?.nome || "widget"}
+                </div>
+            )}
 
             {galleria && (
                 <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setGalleria(false)}>
