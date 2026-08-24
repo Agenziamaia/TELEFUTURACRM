@@ -1117,7 +1117,7 @@ function AnelloPeso({ perc, colore, label, logoChiave, tip }) {
     return (
         <Tip className="w-full block" tip={tip}>
             <div className="text-center w-full">
-                <div className="relative w-full max-w-[200px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
+                <div className="relative w-full max-w-[170px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
                     <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
                         <span className="font-black text-white tabular-nums" style={{ fontSize: "clamp(0.85rem, 22cqw, 1.6rem)" }}>{Math.round(perc)}%</span>
                     </div>
@@ -1314,7 +1314,7 @@ function WidgetMixPezzi({ ctx }) {
     return (
         <div className="tf-mix w-full h-full min-h-0 select-none">
             <div className="tf-mix-anello">
-            <div className="relative aspect-square h-full w-full max-h-[340px] max-w-[340px] min-h-[176px] min-w-[176px] mx-auto">
+            <div className="relative aspect-square h-full w-full max-h-[290px] max-w-[290px] min-h-[176px] min-w-[176px] mx-auto">
                 <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full" style={{ overflow: "visible" }}>
                     <g transform={`translate(${cx},${cy})`}>
                         <circle r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={sw} />
