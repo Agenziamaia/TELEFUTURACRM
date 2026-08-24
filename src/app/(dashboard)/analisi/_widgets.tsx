@@ -835,7 +835,7 @@ function CartaOperatore({ brand, ctx, size }) {
                 dettaglio, click sull'anello = ANALISI ESPLOSA, lente 🔍 =
                 elenco contratti, countUp al centro e delta vs mese scorso. */}
             {contatori.length > 0 && (
-                <div className={cn("grid gap-3 mb-4 justify-items-center", size >= 6 ? "grid-cols-3 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3")}>
+                <div className="grid gap-3 mb-4 justify-items-center grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-6">
                     {contatori.map((ct) => {
                         const toni = [G.colore, `${G.colore}B3`, `${G.colore}66`, `${G.colore}40`];
                         const fmtV = (v, u) => (u === "pt" ? `${fmtPt(v)} pt` : `${fmtN(v)} pz`);
@@ -875,7 +875,7 @@ function CartaOperatore({ brand, ctx, size }) {
                 </div>
             )}
 
-            <div className={cn(brand === "sky" ? cn("flex gap-4", size >= 6 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start") : "")}>
+            <div className={cn(brand === "sky" ? "flex gap-4 flex-col @2xl:flex-row @2xl:items-start" : "")}>
                 {brand === "sky" && (
                     <div className="shrink-0 mx-auto sm:mx-0">
                         <Donut size={size >= 6 ? 168 : 138} unit="punti"
@@ -953,7 +953,7 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
     return (
         <div>
             <p className="text-[10px] text-slate-500 mb-3 tabular-nums">{fmtN(sue.length)} pezzi <span className="text-slate-600">· fuori dalle gare a punti: si conta a pezzi</span></p>
-            <div className={cn("flex gap-4", size >= 6 ? "flex-row items-start" : "flex-col sm:flex-row sm:items-start")}>
+            <div className="flex gap-4 flex-col @2xl:flex-row @2xl:items-start">
                 <div className="shrink-0 mx-auto sm:mx-0">
                     <Donut size={size >= 6 ? 160 : 132} unit="pezzi"
                         slices={righe.map((r, i) => ({
@@ -1023,7 +1023,7 @@ function WidgetMarg({ ctx, size }) {
 
     if (!righe.length) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna vendita di marginalità nel periodo.</p>;
     return (
-        <div className={cn("flex gap-5", size >= 6 ? "flex-col lg:flex-row" : "flex-col")}>
+        <div className="flex gap-5 flex-col @3xl:flex-row">
             <div className="flex items-start gap-4 shrink-0">
                 <Donut size={156} unit="€ venduti"
                     slices={perCat.map(([c, v], i) => ({ label: c, emoji: icona(c), colore: COLORI[i % COLORI.length], val: Math.round(v.val), det: [{ l: "pezzi", r: fmtN(v.qty) }, ...Object.entries(v.prodotti).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, q]) => ({ l: p.slice(0, 26), r: fmtEuro(q) }))] }))}
