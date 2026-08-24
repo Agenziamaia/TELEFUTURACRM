@@ -276,6 +276,8 @@ function AnalisiInner() {
     const venditoriTutti = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.venditore === "—") continue; per.set(it.venditore, (per.get(it.venditore) || 0) + 1); }
+        // anche chi vende SOLO altri operatori (S4…) è un venditore (Luca 24/08)
+        for (const r of (dati?.altri || [])) { if (r.venditore === "—") continue; per.set(r.venditore, (per.get(r.venditore) || 0) + 1); }
         // i tecnici vivono quasi solo di EXT (marginalità): senza questo giro
         // non comparirebbero mai nella tendina persona
         const gia = new Set([...per.keys()].map((k) => norm(k)));
@@ -409,6 +411,7 @@ function AnalisiInner() {
             items: scoped,
             itemsPrev: itemsPrev.filter((it) => inNegozi(it.negozio) && (!collab || norm(it.venditore) === norm(collab))),
             itemsStore: store,
+            altriStore: (dati?.altri || []).filter((r) => inNegozi(r.negozio)),
             ext: collab ? extStore.filter((r) => norm(r.venditore) === norm(collab)) : extStore,
             extPrev: (dati?.extPrev || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             altri: (dati?.altri || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
@@ -593,7 +596,7 @@ function AnalisiInner() {
                         <GrigliaWidget key={`ng-${negozi.join("|")}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
-                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente }} />}
+                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [] }} />}
                     {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente }} />}
                 </>
             )}
@@ -685,7 +688,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
 }
 
 /* ═══ AREA RETE (v1 — in attesa delle direttive di Luca) ═══════════════ */
-function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente }) {
+function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, altri }) {
     const giorniRete = useMemo(() => {
         const v = Array.from({ length: nG }, (_, i) => ({ n: i + 1, label: labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
         for (const it of items) {
@@ -694,8 +697,16 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente }
             const e = g._p.get(G.label) || { label: G.label, colore: G.colore, val: 0 };
             e.val++; g._p.set(G.label, e); g.tot++;
         }
+        // anche gli altri operatori: la rete produce pure S4, TIM… (24/08)
+        for (const it of (altri || [])) {
+            if (it.g < 1 || it.g > nG) continue;
+            const kk = trkBrandKey(it.brand); if (!kk) continue;
+            const g = v[it.g - 1];
+            const e = g._p.get(it.brand) || { label: it.brand, colore: HEX_BRAND[kk] || "#64748b", val: 0 };
+            e.val++; g._p.set(it.brand, e); g.tot++;
+        }
         return v.map((g) => ({ n: g.n, label: g.label, tot: g.tot, parti: [...g._p.values()].sort((a, b) => b.val - a.val) }));
-    }, [items, nG, labels]);
+    }, [items, altri, nG, labels]);
     const mediaRete = useMemo(() => {
         const tot = giorniRete.reduce((s, g) => s + g.tot, 0);
         return tot > 0 ? Math.round((tot / Math.max(1, gLav || 1)) * 10) / 10 : null;
@@ -704,8 +715,9 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente }
     const negoziPezzi = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.negozio === "—") continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
+        for (const it of (altri || [])) { if (it.negozio === "—" || !trkBrandKey(it.brand)) continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
         return [...per.entries()].map(([k, its]) => ({ k, its })).sort((a, b) => b.its.length - a.its.length);
-    }, [items]);
+    }, [items, altri]);
 
     const soglieBrand = useMemo(() => {
         if (!righeGara) return [];
@@ -775,7 +787,10 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente }
                     <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🏁 La corsa dei negozi (per pezzi; i punti brand per brand nel dettaglio)</p>
                     <RaceBars unit="pz" righe={negoziPezzi.map(({ k, its }) => ({
                         k, label: k, val: its.length, colore: "#818cf8",
-                        det: Object.entries(GARA).map(([b, g]) => { const sue = its.filter((it) => it.brandGara === b); return sue.length ? { l: g.label, r: `${sue.length} pz · ${fmtPt(sue.reduce((s, x) => s + x.punti, 0))} pt`, colore: g.colore } : null; }).filter(Boolean),
+                        det: [
+                            ...Object.entries(GARA).map(([b, g]) => { const sue = its.filter((it) => it.brandGara === b); return sue.length ? { l: g.label, r: `${sue.length} pz · ${fmtPt(sue.reduce((s, x) => s + x.punti, 0))} pt`, colore: g.colore } : null; }).filter(Boolean),
+                            ...(() => { const m = new Map(); for (const it of its) { if (it.brandGara) continue; const kk = trkBrandKey(it.brand); if (!kk) continue; const e = m.get(kk) || { l: it.brand, n: 0, c: HEX_BRAND[kk] || "#64748b" }; e.n++; m.set(kk, e); } return [...m.values()].map((e) => ({ l: e.l, r: `${fmtN(e.n)} pz`, colore: e.c })); })(),
+                        ],
                     }))} />
                 </div>
                 <div className="glass-card an-card rounded-2xl p-4 an-in">

@@ -824,9 +824,9 @@ function CartaOperatore({ brand, ctx, size }) {
                                 : [{ label: ct.label, colore: G.colore, val: ct.val, det: [{ l: ct.unit === "pt" ? "punti" : "pezzi", r: ct.unit === "pt" ? fmtPt(ct.val) : fmtN(ct.val) }] }];
                         return (
                             <div key={ct.chiave}
-                                onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: ct.items }); }}
+                                onClick={(e) => { e.stopPropagation(); setAnalisi(ct); }}
                                 className="flex flex-col items-center gap-1 cursor-pointer group select-none"
-                                title="Clicca per l'elenco contratti della pista">
+                                title="Clicca per l'analisi della pista: sottogruppi e spaccato per offerta">
                                 <div className="transition-transform duration-200 group-hover:scale-[1.05]">
                                     <Donut size={size >= 4 ? 126 : 112} spessore={13} unit={ct.unit === "pt" ? "punti" : "pezzi"} slices={slices}
                                         centro={<>
@@ -837,9 +837,9 @@ function CartaOperatore({ brand, ctx, size }) {
                                 <div className="text-[10px] font-bold text-slate-200 flex items-center gap-1.5">
                                     <span>{ct.emoji} {ct.label}</span>
                                     {ctx.confronto && ct.val !== ct.prevVal && <Delta v={Math.round((ct.val - ct.prevVal) * 100) / 100} />}
-                                    <button onClick={(e) => { e.stopPropagation(); setAnalisi(ct); }}
+                                    <button onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: ct.items }); }}
                                         className="text-[9px] font-black text-slate-400 border border-white/10 bg-white/[0.04] rounded-md px-1.5 py-0.5 hover:text-white hover:bg-white/[0.1] transition-colors"
-                                        title="Analisi della pista: sottogruppi e spaccato punti per offerta">📊</button>
+                                        title="Elenco contratti della pista">🔍</button>
                                 </div>
                                 {ct.sorgenti.length > 0 && (
                                     <p className="text-[9px] text-slate-500 leading-tight text-center max-w-[140px] truncate">
@@ -1132,6 +1132,20 @@ function WidgetPesoNegozi({ ctx }) {
                 </div>,
             });
         }
+        // altri operatori (S4…): quota sui pezzi del negozio (Luca 24/08)
+        const altriNeg = (ctx.altriRete || []).filter((it) => it.negozio === n);
+        const perAltroN = new Map();
+        for (const it of altriNeg) { const kk = trkBrandKey(it.brand); if (!kk) continue; (perAltroN.get(kk) || perAltroN.set(kk, []).get(kk)).push(it); }
+        for (const [kk, arr] of perAltroN) {
+            const miei2 = mio(arr);
+            if (!miei2.length) continue;
+            out.push({
+                label: arr[0].brand, logoChiave: kk, colore: HEX_BRAND[kk] || "#64748b", perc: (miei2.length / arr.length) * 100,
+                tip: <div><TipTitolo>{arr[0].brand} · {n}</TipTitolo>
+                    <TipRiga l="tuoi pezzi" r={`${fmtN(miei2.length)}/${fmtN(arr.length)}`} colore={HEX_BRAND[kk] || "#64748b"} />
+                </div>,
+            });
+        }
         // Marginalità: quota sul VENDUTO (€), categorie in €
         const storeExt = (ctx.extRete || []).filter((r) => r.negozio === n);
         if (storeExt.length) {
@@ -1186,10 +1200,18 @@ function WidgetPesoNegozi({ ctx }) {
 function WidgetSquadra({ ctx, metrica }) {
     const per = new Map();
     for (const it of ctx.itemsStore) { const k = it.venditore; if (!k || k === "—") continue; (per.get(k) || per.set(k, []).get(k)).push(it); }
+    // a PEZZI la classifica conta TUTTA la produzione: anche S4 e gli
+    // altri operatori (Luca 24/08)
+    if (metrica === "pezzi") for (const it of (ctx.altriStore || [])) { const k = it.venditore; if (!k || k === "—") continue; (per.get(k) || per.set(k, []).get(k)).push(it); }
     const righe = [...per.entries()].map(([k, its]) => {
         const val = metrica === "pezzi" ? its.length : somma(its.filter((it) => it.brandGara === metrica));
+        const altriDet = new Map();
+        if (metrica === "pezzi") for (const it of its) { if (it.brandGara) continue; const kk = trkBrandKey(it.brand); if (!kk) continue; const e = altriDet.get(kk) || { l: it.brand, n: 0, c: HEX_BRAND[kk] || "#64748b" }; e.n++; altriDet.set(kk, e); }
         const det = metrica === "pezzi"
-            ? Object.entries(GARA).map(([b, g]) => { const n = its.filter((it) => it.brandGara === b).length; return n ? { l: g.label, r: `${fmtN(n)} pz`, colore: g.colore } : null; }).filter(Boolean)
+            ? [
+                ...Object.entries(GARA).map(([b, g]) => { const n = its.filter((it) => it.brandGara === b).length; return n ? { l: g.label, r: `${fmtN(n)} pz`, colore: g.colore } : null; }).filter(Boolean),
+                ...[...altriDet.values()].map((e) => ({ l: e.l, r: `${fmtN(e.n)} pz`, colore: e.c })),
+            ]
             : righeOperatore(metrica, its.filter((it) => it.brandGara === metrica)).map((r) => ({ l: `${r.emoji} ${r.label}`, r: `${fmtPt(somma(r.items))} pt · ${r.items.length} pz`, colore: r.colore }));
         return { k, label: k, val, det, me: norm(k) === norm(ctx.persona), colore: metrica === "pezzi" ? "#818cf8" : GARA[metrica].colore };
     }).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
@@ -1252,15 +1274,32 @@ function WidgetMixPezzi({ ctx }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
     useEffect(() => { setPin(null); setHl(null); }, [ctx.persona, ctx.negozio, ctx.areaKey]);
-    const tot = ctx.items.length;
+    // MIX COMPLETO (Luca 24/08: «S4 non viene considerato nemmeno nel
+    // mix»): le fette sono i 4 brand in gara PIÙ gli altri operatori
+    // (S4, TIM, Very…) — il mix è di TUTTE le vendite, non solo di gara
+    const perAltro = new Map();
+    for (const rr of (ctx.altri || [])) {
+        const kk = trkBrandKey(rr.brand);
+        if (!kk) continue;
+        const e = perAltro.get(kk) || { k: kk, label: rr.brand, sue: [] };
+        e.sue.push(rr); perAltro.set(kk, e);
+    }
+    const altriBrand = [...perAltro.values()];
+    const tot = ctx.items.length + altriBrand.reduce((sm, x) => sm + x.sue.length, 0);
     let acc = 0;
-    const fette = Object.entries(GARA).map(([b, g]) => {
-        const sue = ctx.items.filter((it) => it.brandGara === b);
-        return { b, g, sue, f: tot > 0 ? sue.length / tot : 0, pct: tot > 0 ? Math.round((sue.length / tot) * 100) : 0 };
-    }).filter((x) => x.sue.length > 0).map((x) => { const o = acc; acc += x.f; return { ...x, o }; });
+    const fette = [
+        ...Object.entries(GARA).map(([b, g]) => ({ b, g, sue: ctx.items.filter((it) => it.brandGara === b), gara: true })),
+        ...altriBrand.map((x) => ({ b: `alt:${x.k}`, g: { label: x.label, colore: HEX_BRAND[x.k] || "#64748b", chiave: x.k }, sue: x.sue, gara: false })),
+    ].filter((x) => x.sue.length > 0)
+        .map((x) => ({ ...x, f: tot > 0 ? x.sue.length / tot : 0, pct: tot > 0 ? Math.round((x.sue.length / tot) * 100) : 0 }))
+        .map((x) => { const o = acc; acc += x.f; return { ...x, o }; });
     const att = fette.find((x) => x.b === (hl || pin)) || null;
     const size = 186, r = 70, sw = 18, C = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
-    const dett = att ? righeOperatore(att.b, att.sue).slice(0, 4) : [];
+    const dett = att ? (att.gara ? righeOperatore(att.b, att.sue).slice(0, 4) : (() => {
+        const m = new Map();
+        for (const it of att.sue) { const kk = String(it.prodotto || it.categoria || "—").slice(0, 22); (m.get(kk) || m.set(kk, []).get(kk)).push(it); }
+        return [...m.entries()].map(([label, arr]) => ({ emoji: "•", label, items: arr, colore: att.g.colore })).sort((a, b2) => b2.items.length - a.items.length).slice(0, 4);
+    })()) : [];
     return (
         <div className="flex flex-col items-center gap-2.5 w-full select-none">
             <div className="relative shrink-0" style={{ width: size, height: size }}>
