@@ -345,6 +345,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
         const accese = tutte.filter((key) => !prev.has(key));
         const margAcc = haMarg && accese.includes("marg");
         // € e pezzi non convivono: il click che attraversa i mondi ISOLA
+        if (haMarg && margAcc && k === "marg") return prev;
         if (haMarg && k === "marg" && !margAcc) return new Set(tutte.filter((key) => key !== "marg"));
         if (haMarg && margAcc && k !== "marg") return new Set(tutte.filter((key) => key !== k));
         // dalla situazione generale il click ISOLA il brand (Luca 24/08)…
@@ -422,7 +423,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
                     const azione = sr.key === "marg" && !margAccesa ? "Passa alla marginalità (€)"
                         : margAccesa && sr.key !== "marg" ? `Isola ${sr.label} (pezzi)`
                         : spenti.size === 0 && serie.length > 1 && !margAccesa ? `Isola ${sr.label}`
-                        : off ? `Aggiungi ${sr.label}` : nAccese === 1 ? (tecnico ? "Torna alla marginalità" : "Rimetti tutti i brand") : `Togli ${sr.label}`;
+                        : off ? `Aggiungi ${sr.label}` : nAccese === 1 ? (serie.some((x) => x.key === "marg") ? "Torna alla marginalità" : "Rimetti tutti i brand") : `Togli ${sr.label}`;
                     return (
                         <button key={sr.key} onClick={() => toggle(sr.key)}
                             title={`${azione} · ${fmtN(sr.tot)} ${sr.euro ? "€" : "pz"} nel periodo`}
@@ -1289,27 +1290,109 @@ function WidgetRitmo({ ctx }) {
     return <HeatCal giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} colore="var(--tf-818cf8)" unit="pezzi" />;
 }
 
+/* ═══ MIX OPERATORI v2 (Luca 24/08: «una cosa più bella, esteticamente,
+   interattiva») — anello vivo: % sulle fette, hover sincronizzato
+   fetta ⇄ riga (le altre si attenuano, il centro diventa il brand),
+   righe con barra di riempimento % nel colore del brand, click = 📌
+   blocca il brand e sotto compaiono le sue sorgenti. ═══════════════════ */
 function WidgetMixPezzi({ ctx }) {
-    // % DI MIX in chiaro (Luca 24/08: «quale % stanno attivando di quel
-    // brand e quale di un altro»): legenda sotto l'anello + quota nel tip
+    const [hl, setHl] = useState(null);
+    const [pin, setPin] = useState(null);
+    const [on, setOn] = useState(false);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
+    useEffect(() => { setPin(null); setHl(null); }, [ctx.persona, ctx.negozio, ctx.areaKey]);
     const tot = ctx.items.length;
-    const righe = Object.entries(GARA).map(([b, g]) => {
+    let acc = 0;
+    const fette = Object.entries(GARA).map(([b, g]) => {
         const sue = ctx.items.filter((it) => it.brandGara === b);
-        return { b, g, sue, pct: tot > 0 ? Math.round((sue.length / tot) * 100) : 0 };
-    });
+        return { b, g, sue, f: tot > 0 ? sue.length / tot : 0, pct: tot > 0 ? Math.round((sue.length / tot) * 100) : 0 };
+    }).filter((x) => x.sue.length > 0).map((x) => { const o = acc; acc += x.f; return { ...x, o }; });
+    const att = fette.find((x) => x.b === (hl || pin)) || null;
+    const size = 186, r = 70, sw = 18, C = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
+    const dett = att ? righeOperatore(att.b, att.sue).slice(0, 4) : [];
     return (
-        <div className="flex flex-col items-center gap-3">
-            <Donut size={160} unit="pezzi"
-                slices={righe.map(({ b, g, sue, pct }) => ({ label: g.label, colore: g.colore, val: sue.length, det: [{ l: "quota mix", r: `${pct}%` }, ...righeOperatore(b, sue).slice(0, 5).map((r) => ({ l: `${r.emoji} ${r.label}`, r: fmtN(r.items.length), colore: r.colore }))] }))}
-                centro={<><span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={tot} punti={false} /></span><span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">pezzi totali</span></>} />
-            <div className="flex flex-wrap justify-center gap-1.5">
-                {righe.filter((r) => r.sue.length > 0).map(({ b, g, sue, pct }) => (
-                    <span key={b} className="flex items-center gap-1.5 text-[10px] text-slate-300 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/10">
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.colore, boxShadow: `0 0 5px ${g.colore}66` }} />
-                        {g.label} · <b className="text-slate-100 tabular-nums">{pct}%</b>
-                        <span className="text-slate-500 tabular-nums">({fmtN(sue.length)} pz)</span>
+        <div className="flex flex-col items-center gap-2.5 w-full select-none">
+            <div className="relative shrink-0" style={{ width: size, height: size }}>
+                <svg width={size} height={size} style={{ overflow: "visible" }}>
+                    <g transform={`translate(${cx},${cy})`}>
+                        <circle r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={sw} />
+                        <g transform="rotate(-90)">
+                            {fette.map((x) => {
+                                const attiva = (hl || pin) === x.b;
+                                const spenta = (hl || pin) && !attiva;
+                                return (
+                                    <circle key={x.b} r={r} fill="none" stroke={x.g.colore} strokeLinecap="butt"
+                                        strokeWidth={attiva ? sw + 6 : sw}
+                                        strokeDasharray={`${on ? Math.max(0.001, x.f * C - (fette.length > 1 ? 2.5 : 0)) : 0.001} ${C}`}
+                                        strokeDashoffset={-(x.o * C)}
+                                        pointerEvents="stroke" className="cursor-pointer"
+                                        onMouseEnter={() => setHl(x.b)} onMouseLeave={() => setHl(null)}
+                                        onClick={() => setPin((pv) => (pv === x.b ? null : x.b))}
+                                        style={{
+                                            transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1), stroke-width .2s, opacity .25s",
+                                            opacity: spenta ? 0.28 : 1,
+                                            filter: attiva ? `drop-shadow(0 0 7px ${x.g.colore}AA)` : `drop-shadow(0 0 3px ${x.g.colore}33)`,
+                                        }} />
+                                );
+                            })}
+                        </g>
+                        {/* % sulle fette larghe: le piccole parlano via hover e righe */}
+                        {on && fette.filter((x) => x.f >= 0.08).map((x) => {
+                            const th = (x.o + x.f / 2) * 2 * Math.PI - Math.PI / 2;
+                            return (
+                                <text key={x.b} x={Math.cos(th) * r} y={Math.sin(th) * r} textAnchor="middle" dominantBaseline="central"
+                                    className="pointer-events-none" fill="#fff" fontSize="10" fontWeight="900"
+                                    style={{ paintOrder: "stroke", stroke: "rgba(10,12,28,.75)", strokeWidth: 3, opacity: (hl || pin) && (hl || pin) !== x.b ? 0.3 : 1, transition: "opacity .25s" }}>
+                                    {x.pct}%
+                                </text>
+                            );
+                        })}
+                    </g>
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    {att ? (
+                        <>
+                            <LogoBrand chiave={att.g.chiave} h={14} />
+                            <span className="text-[26px] font-black tabular-nums leading-none mt-1" style={{ color: att.g.colore, textShadow: `0 0 18px ${att.g.colore}66` }}>{att.pct}%</span>
+                            <span className="text-[9px] text-slate-400 mt-0.5 tabular-nums">{fmtN(att.sue.length)} pezzi{pin === att.b ? " · 📌" : ""}</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={tot} punti={false} /></span>
+                            <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">pezzi totali</span>
+                        </>
+                    )}
+                </div>
+            </div>
+            <div className="w-full max-w-[320px] flex flex-col gap-1">
+                {fette.map((x) => {
+                    const attiva = (hl || pin) === x.b;
+                    return (
+                        <div key={x.b} onMouseEnter={() => setHl(x.b)} onMouseLeave={() => setHl(null)}
+                            onClick={() => setPin((pv) => (pv === x.b ? null : x.b))}
+                            title={pin === x.b ? "Sblocca" : "Clicca per bloccare il dettaglio"}
+                            className={cn("relative rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all overflow-hidden",
+                                attiva ? "border-white/25 bg-white/[0.07]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]",
+                                pin && pin !== x.b && !hl ? "opacity-45" : "")}>
+                            <div className="absolute inset-y-0 left-0" style={{ width: on ? `${x.pct}%` : "0%", background: `linear-gradient(90deg, ${x.g.colore}3d, ${x.g.colore}08)`, transition: "width .7s cubic-bezier(.2,.8,.2,1)" }} />
+                            <div className="relative flex items-center gap-2">
+                                <LogoBrand chiave={x.g.chiave} h={12} />
+                                <span className="text-[11px] font-bold text-slate-200 flex-1 truncate">{x.g.label}</span>
+                                <span className="text-[10px] text-slate-500 tabular-nums">{fmtN(x.sue.length)} pz</span>
+                                <span className="text-[13px] font-black tabular-nums w-10 text-right" style={{ color: x.g.colore }}>{x.pct}%</span>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="w-full max-w-[320px] min-h-[22px] flex flex-wrap items-start justify-center gap-1">
+                {att && dett.map((rg) => (
+                    <span key={rg.label} className="flex items-center gap-1 text-[9px] text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: rg.colore || att.g.colore }} />
+                        {rg.emoji} {rg.label} · <b className="text-slate-100 tabular-nums">{fmtN(rg.items.length)}</b>
                     </span>
                 ))}
+                {!att && <span className="text-[9px] text-slate-600">passa sull'anello o sulle righe · click per bloccare</span>}
             </div>
         </div>
     );
