@@ -36,7 +36,7 @@ export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: str
 // ?sez=<sub.id> (mini-hub Costi); senza, le subs sono FUNZIONI della voce e
 // i link vanno a ?sez=<voce>&tab=<sub.id> (gruppo Utenti). Le subs restano
 // amministrabili una a una dalla pagina Permessi (chiavi hubSubKey).
-export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean; subsSez?: boolean };
+export type NavHubChild = { name: string; sez: string; icon?: NavIcon; emoji?: string; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean; subsSez?: boolean };
 // senzaSottomenu: hub SOLO per i permessi (sezione + aree amministrabili una
 // a una) — in sidebar resta una voce semplice: le aree si cambiano coi
 // pulsanti dentro la pagina, non con un menù a sinistra (Analisi, Luca 21/08)
@@ -62,12 +62,12 @@ export const NAVIGATION: NavEntry[] = [
         // freccetta → sottomenu con le aree; prima era senzaSottomenu.
         type: "hub", name: "Analisi", href: "/analisi", icon: BarChart3, roles: ["admin", "dev"],
         children: [
-            { name: "Io", sez: "io", roles: ["admin", "dev"] },
-            { name: "Negozio", sez: "negozio", roles: ["admin", "dev"] },
-            { name: "Rete", sez: "rete", roles: ["admin", "dev"] },
+            { name: "Io", sez: "io", emoji: "👤", roles: ["admin", "dev"] },
+            { name: "Negozio", sez: "negozio", emoji: "🏪", roles: ["admin", "dev"] },
+            { name: "Rete", sez: "rete", emoji: "🌍", roles: ["admin", "dev"] },
             // "Master" per Luca (21/08): la sez resta "regia" — è la chiave di
             // permesso già concessa, cambiarla scollegherebbe le righe esistenti
-            { name: "Master", sez: "regia", roles: ["admin", "dev"] },
+            { name: "Master", sez: "regia", emoji: "🎛", roles: ["admin", "dev"] },
         ],
     },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },

@@ -524,7 +524,9 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                                 : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
                         )}
                     >
-                        {ChildIcon ? (
+                        {c.emoji ? (
+                            <span className="w-4 text-center text-sm leading-none">{c.emoji}</span>
+                        ) : ChildIcon ? (
                             <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
                         ) : (
                             <span
