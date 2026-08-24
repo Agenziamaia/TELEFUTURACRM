@@ -247,8 +247,11 @@ function pistaTimelineDi(bk, it) {
     if (/^energia/i.test(cat) || /\b(luce|gas)\b/i.test(prod)) return "lucegas";
     return "altro";
 }
-// sfumature nella famiglia del colore brand: la prima pista tiene il tono
-// pieno, le successive schiariscono con un filo di rotazione di tinta
+// tonalità nella famiglia del colore brand (Luca 24/08: «le sfumature di
+// arancione non bastano»): le piste si distribuiscono su un ARCO DI TINTE
+// centrato sul colore del brand — per W3 dal rosso-corallo all'ambra,
+// per VF dal magenta all'arancio, Sky dal blu al magenta… colori davvero
+// distinguibili ma sempre della stessa famiglia, mai fuori palette.
 function sfumaturaDi(hex, i, n) {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
     if (!m || n <= 1) return hex;
@@ -265,9 +268,12 @@ function sfumaturaDi(hex, i, n) {
     const l = (mx + mn) / 2;
     const sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
     const t = i / (n - 1);
-    const l2 = Math.min(0.80, Math.max(0.28, l - 0.08 + 0.30 * t));
-    const h2 = (h + (t - 0.5) * 16 + 360) % 360;
-    const s2 = Math.min(1, Math.max(0.35, sat * (1 - 0.18 * t)));
+    // arco di tinta: fino a ±35° attorno al hue del brand (2 piste ±26°)
+    const arco = Math.min(70, 26 * n);
+    const h2 = (h + (t - 0.5) * arco + 360) % 360;
+    // luminosità quasi costante con un filo di pendenza: rinforza senza slavare
+    const l2 = Math.min(0.66, Math.max(0.36, l + (t - 0.5) * 0.12));
+    const s2 = Math.min(1, Math.max(0.55, sat));
     return `hsl(${Math.round(h2)}, ${Math.round(s2 * 100)}%, ${Math.round(l2 * 100)}%)`;
 }
 
