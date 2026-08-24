@@ -541,15 +541,18 @@ function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
 }) {
     const [apertaId, setApertaId] = useState<number | null>(null);
     const [candidate, setCandidate] = useState<{ id: string; label: string }[] | null>(null);
-    const [venditaSel, setVenditaSel] = useState("");
+    // MULTI-SELEZIONE (Luca 24/08 sera): una proposta può collegare più
+    // vendite — marginalità e più operatori nello stesso passaggio
+    const [scelteAn, setScelteAn] = useState<Set<string>>(new Set());
     const [ctrManuale, setCtrManuale] = useState("");
     const [notaRifiuto, setNotaRifiuto] = useState("");
     const [busy, setBusy] = useState(false);
     const [errA, setErrA] = useState<string | null>(null);
 
     const callDi = (a: { call_id: string }) => calls.find((c) => String(c.id) === String(a.call_id)) || null;
+    const toggleAn = (id: string) => setScelteAn((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
     const apriApprova = async (a: { id: number; call_id: string }) => {
-        setApertaId(a.id); setCandidate(null); setVenditaSel(""); setCtrManuale(""); setErrA(null);
+        setApertaId(a.id); setCandidate(null); setScelteAn(new Set()); setCtrManuale(""); setErrA(null);
         const c = callDi(a);
         const cf = String(c?.cf || c?.piva || "").trim().toUpperCase();
         let out: { id: string; label: string }[] = [];
@@ -569,19 +572,23 @@ function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
         setCandidate(out);
     };
     const conferma = async (a: { id: number; call_id: string; caller: string }) => {
-        const scelta = venditaSel || ctrManuale.trim().toUpperCase();
-        if (!scelta) { setErrA("Scegli una vendita dall'elenco o incolla l'ID CTR- della vendita da collegare."); return; }
+        const setIds = new Set(scelteAn);
+        for (const raw of ctrManuale.split(/[\s,;]+/)) { const t = raw.trim().toUpperCase(); if (t.startsWith("CTR-")) setIds.add(t); }
+        const ids = [...setIds];
+        if (!ids.length) { setErrA("Seleziona almeno una vendita dall'elenco o incolla gli ID CTR- da collegare."); return; }
         setBusy(true); setErrA(null);
-        const { data: ctr } = await supabase.from("contracts").select("id").eq("id", scelta).maybeSingle();
-        if (!ctr) { setBusy(false); setErrA(`Vendita "${scelta}" non trovata: controlla l'ID (formato CTR-XXXXXXXX).`); return; }
+        const { data: ver } = await supabase.from("contracts").select("id").in("id", ids);
+        const trovate = new Set((ver ?? []).map((x: { id: string }) => x.id));
+        const mancanti = ids.filter((x) => !trovate.has(x));
+        if (mancanti.length) { setBusy(false); setErrA(`Vendite non trovate: ${mancanti.join(", ")} — controlla gli ID (formato CTR-XXXXXXXX).`); return; }
         const c = callDi(a);
         const now = new Date().toISOString();
         const storico = [...((c?.storico as StoricoEntry[]) || []),
-            { data: now, caller: utente, campo: "Anomalia", da: "", a: `✅ «Attivato Anomalia» APPROVATO da ${utente} — vendita collegata ${scelta}` },
+            { data: now, caller: utente, campo: "Anomalia", da: "", a: `✅ «Attivato Anomalia» APPROVATO da ${utente} — vendite collegate: ${ids.join(", ")}` },
             { data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Anomalia" }];
-        const { error } = await supabase.from("calls").update({ stato: "Attivato Anomalia", contract_id: scelta, da_esitare: false, storico }).eq("id", a.call_id);
+        const { error } = await supabase.from("calls").update({ stato: "Attivato Anomalia", contract_id: ids[0], da_esitare: false, storico }).eq("id", a.call_id);
         if (error) { setBusy(false); setErrA(error.message); return; }
-        await supabase.from("caller_anomalie").update({ stato: "approvata", contract_id: scelta, decisa_da: utente, decisa_il: now }).eq("id", a.id);
+        await supabase.from("caller_anomalie").update({ stato: "approvata", contract_id: ids[0], contract_ids: ids, decisa_da: utente, decisa_il: now }).eq("id", a.id);
         setBusy(false); setApertaId(null);
         onDecisa();
     };
@@ -638,17 +645,22 @@ function AnomalieApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
                                         {candidate === null ? (
                                             <p className="text-[12px] text-slate-500">Cerco le vendite del cliente (per codice fiscale)…</p>
                                         ) : candidate.length > 0 ? (
-                                            <SelectOpzioni value={venditaSel} onChange={setVenditaSel} opzioni={candidate.map((x) => x.id)} placeholder="Scegli la vendita da collegare…" className="glass-input rounded-lg py-2 w-full" />
+                                            <div className="space-y-1">
+                                                <p className="text-[11px] text-slate-400">Vendite del cliente — seleziona <b>una o più</b> (marginalità e altri operatori compresi):</p>
+                                                {candidate.map((x) => (
+                                                    <label key={x.id} className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer text-[11px] ${scelteAn.has(x.id) ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100" : "border-white/10 bg-white/[0.02] text-slate-300 hover:bg-white/[0.05]"}`}>
+                                                        <input type="checkbox" className="mt-0.5 accent-emerald-500" checked={scelteAn.has(x.id)} onChange={() => toggleAn(x.id)} />
+                                                        <span className="min-w-0">{x.label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
                                         ) : (
                                             <p className="text-[12px] text-slate-500">Nessuna vendita trovata col CF della pratica: incolla l&apos;ID della vendita (lo trovi in Ricerca Vendite).</p>
                                         )}
-                                        {candidate !== null && candidate.length > 0 && venditaSel && (
-                                            <p className="text-[11px] text-slate-400">{candidate.find((x) => x.id === venditaSel)?.label}</p>
-                                        )}
-                                        <input value={ctrManuale} onChange={(e) => setCtrManuale(e.target.value)} placeholder="…oppure incolla l'ID vendita (CTR-XXXXXXXX)" className="glass-input w-full text-sm rounded-lg py-2 font-mono" />
+                                        <input value={ctrManuale} onChange={(e) => setCtrManuale(e.target.value)} placeholder="…oppure incolla gli ID vendita: CTR-XXXX, CTR-YYYY" className="glass-input w-full text-sm rounded-lg py-2 font-mono" />
                                         {errA && <p className="text-[12px] text-rose-400">{errA}</p>}
                                         <div className="flex gap-2">
-                                            <button type="button" disabled={busy} onClick={() => conferma(a)} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black disabled:opacity-50">{busy ? "…" : "🔗 Collega questa vendita e approva"}</button>
+                                            <button type="button" disabled={busy} onClick={() => conferma(a)} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black disabled:opacity-50">{busy ? "…" : `🔗 Collega ${scelteAn.size > 1 ? `${scelteAn.size} vendite` : "e approva"}`}</button>
                                             <button type="button" disabled={busy} onClick={() => setApertaId(null)} className="px-4 py-2 rounded-lg bg-white/[0.06] text-slate-300 text-sm font-bold">Annulla</button>
                                         </div>
                                     </div>
