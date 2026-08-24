@@ -30,7 +30,7 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
 import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, fmtN } from "./_charts";
-import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand } from "./_widgets";
+import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero } from "./_widgets";
 import { Master } from "./_master";
 
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
@@ -553,6 +553,11 @@ function AnalisiInner() {
                         </div>
                     )}
                 </div>
+                {/* TIMELINE DI PRODUZIONE nell'header (Luca 24/08): tutta la
+                    produzione giorno per giorno, brand cliccabili per filtrare */}
+                {!loading && !errore && (area === "io" || area === "negozio") && (
+                    <TimelineHero ctx={area === "io" ? ctxIo : ctxNegozio} />
+                )}
             </div>
 
             {errore && !loading ? (

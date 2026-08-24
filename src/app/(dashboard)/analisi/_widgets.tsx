@@ -198,6 +198,69 @@ export function DrillPanel({ drill, chiudi, labels }) {
     );
 }
 
+/* ═══ TIMELINE DI PRODUZIONE NELL'HEADER (Luca 24/08): la produzione giorno
+   per giorno — TUTTA, impilata per operatore — integrata nell'hero di Io e
+   Negozio, con i brand piccolini cliccabili che filtrano lo schema. Stessa
+   interattività del widget (tooltip con le vendite voce per voce, media,
+   giorno di oggi evidenziato). ═══════════════════════════════════════════ */
+export function TimelineHero({ ctx }) {
+    const presenti = useMemo(() => {
+        const set = new Set();
+        for (const it of ctx.items) if (GARA[it.brandGara]) set.add(it.brandGara);
+        return ["w3", "vf", "fw", "sky"].filter((b) => set.has(b));
+    }, [ctx.items]);
+    const [spenti, setSpenti] = useState(() => new Set());
+    const toggle = (b) => setSpenti((prev) => {
+        const n = new Set(prev);
+        if (n.has(b)) n.delete(b); else n.add(b);
+        return n;
+    });
+    const giorni = useMemo(() => {
+        const filtrati = ctx.items.filter((it) => GARA[it.brandGara] && !spenti.has(it.brandGara));
+        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
+        for (const it of filtrati) {
+            if (it.g < 1 || it.g > ctx.nG) continue;
+            const r = { label: GARA[it.brandGara].label, colore: GARA[it.brandGara].colore };
+            const g = v[it.g - 1];
+            const e = g._p.get(r.label) || { label: r.label, colore: r.colore, val: 0, prod: new Map() };
+            e.val++;
+            const nome = String(it.offerta || it.prodotto || "—").slice(0, 30);
+            e.prod.set(nome, (e.prod.get(nome) || 0) + 1);
+            g._p.set(r.label, e); g.tot++;
+        }
+        return v.map((g) => ({
+            n: g.n, label: g.label, tot: g.tot,
+            parti: [...g._p.values()].sort((a, b) => b.val - a.val).map((pt) => {
+                const top = [...pt.prod.entries()].sort((a, b) => b[1] - a[1]);
+                const prodotti = top.slice(0, 4).map(([nm, q]) => `${q}× ${nm}`).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
+                return { label: pt.label, colore: pt.colore, val: pt.val, sub: `${fmtN(pt.val)} pz`, prodotti };
+            }),
+        }));
+    }, [ctx.items, ctx.nG, ctx.labels, spenti]);
+    const totale = giorni.reduce((sm, g) => sm + g.tot, 0);
+    const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
+    if (!presenti.length) return null;
+    return (
+        <div className="relative mt-3">
+            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit="pz" h={92} />
+            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                {presenti.map((b) => {
+                    const off = spenti.has(b);
+                    return (
+                        <button key={b} onClick={() => toggle(b)}
+                            title={off ? `Rimetti ${GARA[b].label} nella timeline` : `Togli ${GARA[b].label} dalla timeline`}
+                            className={cn("flex items-center gap-1.5 px-2 py-1 rounded-lg border transition-all", off ? "border-white/10 bg-white/[0.02] opacity-40 grayscale" : "border-white/10 bg-white/[0.05] hover:bg-white/[0.09]")}>
+                            <span className="w-2 h-2 rounded-full" style={{ background: GARA[b].colore }} />
+                            <LogoBrand chiave={GARA[b].chiave} h={11} />
+                        </button>
+                    );
+                })}
+                <span className="text-[10px] text-slate-500 ml-1">produzione giorno per giorno · tutti gli operatori · click sui brand per filtrare</span>
+            </div>
+        </div>
+    );
+}
+
 /* ═══ CONTATORI PER PISTA (Luca 24/08): su Wind3/Vodafone/Fastweb le piste
    sono GARE DIVERSE — niente totalone: un piccolo contatore per ognuna, con
    la SORGENTE dei punti scomposta dentro (SIM, finanziamenti, business…).
