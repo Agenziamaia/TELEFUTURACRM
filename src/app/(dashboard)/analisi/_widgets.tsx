@@ -1228,57 +1228,6 @@ function WidgetDuello({ ctx }) {
 // operatore), linea della media, oggi col tratto che manca alla media come
 // proiezione del giorno. Nel tooltip il dettaglio PRECISO di cosa è stato
 // venduto (offerte/prodotti); pulsante che switcha PUNTI ↔ PEZZI.
-function WidgetMese({ ctx, brand }) {
-    const puoPunti = brand !== "pezzi" && brand !== "fw";
-    const [metrica, setMetrica] = useState(puoPunti ? "punti" : "pezzi");
-    const aPezzi = metrica === "pezzi";
-    const unit = aPezzi ? "pz" : "pt";
-    const giorni = useMemo(() => {
-        const filtrati = brand === "pezzi" ? ctx.items : ctx.items.filter((it) => it.brandGara === brand);
-        const rigaDi = new Map();
-        if (brand !== "pezzi") for (const r of righeOperatore(brand, filtrati)) for (const it of r.items) rigaDi.set(it, r);
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
-        for (const it of filtrati) {
-            if (it.g < 1 || it.g > ctx.nG) continue;
-            const val = aPezzi ? 1 : it.punti;
-            const r = brand === "pezzi"
-                ? { label: GARA[it.brandGara].label, colore: GARA[it.brandGara].colore }
-                : (rigaDi.get(it) ? { label: `${rigaDi.get(it).emoji} ${rigaDi.get(it).label}`, colore: rigaDi.get(it).colore } : { label: "➕ Altro", colore: "#64748b" });
-            const g = v[it.g - 1];
-            const e = g._p.get(r.label) || { label: r.label, colore: r.colore, val: 0, pz: 0, prod: new Map() };
-            e.val += val; e.pz++;
-            const nomeVend = String(it.offerta || it.prodotto || "—").slice(0, 30);
-            e.prod.set(nomeVend, (e.prod.get(nomeVend) || 0) + 1);
-            g._p.set(r.label, e); g.tot += val;
-        }
-        return v.map((g) => ({
-            n: g.n, label: g.label, tot: Math.round(g.tot * 100) / 100,
-            parti: [...g._p.values()].sort((a, b) => b.val - a.val).map((p) => {
-                const top = [...p.prod.entries()].sort((a, b) => b[1] - a[1]);
-                const prodotti = top.slice(0, 4).map(([nm, q]) => `${q}× ${nm}`).join(" · ") + (top.length > 4 ? ` · +${top.length - 4} altri` : "");
-                return { label: p.label, colore: p.colore, val: Math.round(p.val * 100) / 100, sub: `${fmtN(p.pz)} pz`, prodotti };
-            }),
-        }));
-    }, [ctx.items, ctx.nG, ctx.labels, brand, aPezzi]);
-    const totale = giorni.reduce((s, g) => s + g.tot, 0);
-    const media = totale > 0 ? Math.round((totale / Math.max(1, ctx.gLav || 1)) * 100) / 100 : null;
-    return (
-        <div>
-            {puoPunti && (
-                <div className="flex justify-end -mt-1 mb-1">
-                    <div className="flex gap-0.5 p-0.5 rounded-lg bg-white/5 border border-white/10">
-                        {[["punti", "pt"], ["pezzi", "pz"]].map(([m, l]) => (
-                            <button key={m} onClick={() => setMetrica(m)} className={cn("px-2 py-0.5 rounded-md text-[10px] font-black transition-all", metrica === m ? "bg-indigo-500/80 text-white" : "text-slate-500 hover:text-white")}>{l}</button>
-                        ))}
-                    </div>
-                </div>
-            )}
-            <BarStack giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} media={media} unit={unit} h={180} />
-            <p className="mt-1.5 text-[10px] text-slate-500">{brand === "pezzi" ? "pezzi del giorno, impilati per operatore" : `${aPezzi ? "pezzi" : "punti"} ${GARA[brand].label} del giorno, per categoria`} · tratteggio = media/giorno · passa il mouse: dentro c'è cosa hai venduto, voce per voce</p>
-        </div>
-    );
-}
-
 /* ═══ MIX OPERATORI v2 (Luca 24/08: «una cosa più bella, esteticamente,
    interattiva») — anello vivo: % sulle fette, hover sincronizzato
    fetta ⇄ riga (le altre si attenuano, il centro diventa il brand),
@@ -1411,10 +1360,6 @@ export const REGISTRO = {
     "squadra:vf": { nome: "Squadra — punti Vodafone", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "vodafone", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="vf" /> },
     "squadra:sky": { nome: "Squadra — punti Sky", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "sky", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="sky" /> },
     "duello": { nome: "Duello tra negozi", emoji: "⚔️", gruppo: "squadra", def: 1, solo: "negozio", render: (ctx) => <WidgetDuello ctx={ctx} /> },
-    "mese:pezzi": { nome: "Giorno per giorno — pezzi", emoji: "📊", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="pezzi" /> },
-    "mese:w3": { nome: "Giorno per giorno — WindTre", emoji: "📊", nomeBreve: "Giorno per giorno", logoChiave: "windtre", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="w3" /> },
-    "mese:vf": { nome: "Giorno per giorno — Vodafone", emoji: "📊", nomeBreve: "Giorno per giorno", logoChiave: "vodafone", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="vf" /> },
-    "mese:sky": { nome: "Giorno per giorno — Sky", emoji: "📊", nomeBreve: "Giorno per giorno", logoChiave: "sky", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="sky" /> },
     "mix:pezzi": { nome: "Mix operatori (pezzi)", emoji: "🧬", gruppo: "andamento", def: 1, render: (ctx) => <WidgetMixPezzi ctx={ctx} /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
