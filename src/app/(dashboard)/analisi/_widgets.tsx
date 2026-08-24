@@ -1115,9 +1115,9 @@ function AnelloPeso({ perc, colore, label, logoChiave, tip }) {
     // FLUIDO (regola responsive 24/08): l'anello scala con la sua cella —
     // card piccola ~72px, card grande fino a 190px
     return (
-        <Tip tip={tip}>
+        <Tip className="w-full block" tip={tip}>
             <div className="text-center w-full">
-                <div className="relative w-full max-w-[190px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
+                <div className="relative w-full max-w-[200px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
                     <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
                         <span className="font-black text-white tabular-nums" style={{ fontSize: "clamp(0.85rem, 22cqw, 1.6rem)" }}>{Math.round(perc)}%</span>
                     </div>
@@ -1198,7 +1198,7 @@ function WidgetPesoNegozi({ ctx }) {
             {negozi.slice(0, 3).map((n) => (
                 <div key={n}>
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">🏪 {n}</p>
-                    <div className="grid gap-3 justify-items-center [grid-template-columns:repeat(auto-fit,minmax(104px,1fr))]">
+                    <div className="grid gap-4 justify-items-center [grid-template-columns:repeat(auto-fit,minmax(130px,1fr))]">
                         {contatoriDi(n).map((c) => <AnelloPeso key={c.label} {...c} />)}
                     </div>
                 </div>
@@ -1314,7 +1314,7 @@ function WidgetMixPezzi({ ctx }) {
     return (
         <div className="tf-mix w-full h-full min-h-0 select-none">
             <div className="tf-mix-anello">
-            <div className="relative aspect-square h-full w-full max-h-[460px] max-w-[460px] min-h-[176px] min-w-[176px] mx-auto">
+            <div className="relative aspect-square h-full w-full max-h-[340px] max-w-[340px] min-h-[176px] min-w-[176px] mx-auto">
                 <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full" style={{ overflow: "visible" }}>
                     <g transform={`translate(${cx},${cy})`}>
                         <circle r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={sw} />
