@@ -348,6 +348,28 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
             .sort((a, b) => b.val - a.val);
     }, [att, ct, aPunti]);
     const TONI = ["#818cf8", "#22c55e", "#f59e0b", "#e879f9", "#14b8a6", "#f97316", "#38bdf8", "#a3e635", "#f43f5e", "#64748b"];
+    // COLORE STABILE PER FAMIGLIA DI OFFERTA (Luca 24/08: «Pro ric auto e Pro
+    // wallet con due colori diversi rischiano di confondere»): la chiave
+    // colore è il nome offerta SENZA i marcatori di variante (Wallet, Ric.
+    // Automatica) e senza prezzi — così "Pro" è dello stesso colore in TUTTE
+    // le torte e in tutti i tab del pannello.
+    const famigliaOfferta = (off) => String(off || "—")
+        .replace(/\b(wallet|ric\.?\s*aut\w*|ricarica\s*automatica)\b/gi, "")
+        .replace(/\b\d+[.,]?\d*\b/g, "")
+        .replace(/\s+/g, " ").trim().toLowerCase() || "—";
+    const coloreFamiglia = useMemo(() => {
+        const tot = new Map();
+        for (const it of (ct.items || [])) {
+            const f = famigliaOfferta(it.offerta || it.prodotto);
+            tot.set(f, (tot.get(f) || 0) + (ct.unit === "pt" ? (it.punti || 0) : 1));
+        }
+        const ordinate = [...tot.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => f);
+        const m = new Map();
+        ordinate.forEach((f, i) => m.set(f, i === 0 ? G.colore : TONI[(i - 1) % TONI.length]));
+        return m;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ct]);
+    const coloreDi = (off) => coloreFamiglia.get(famigliaOfferta(off)) || TONI[TONI.length - 1];
     const perOfferta = (items) => {
         const m = new Map();
         for (const it of items) {
@@ -397,8 +419,8 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                     <div className={cn("grid gap-3", gruppi.length > 1 ? "sm:grid-cols-2" : "")}>
                         {gruppi.map((g) => {
                             const offerte = perOfferta(g.items);
-                            const slices = offerte.map(([off, r], i) => ({
-                                label: off, colore: i === 0 ? G.colore : TONI[(i - 1) % TONI.length],
+                            const slices = offerte.map(([off, r]) => ({
+                                label: off, colore: coloreDi(off),
                                 val: aPunti ? r.pt : r.pz,
                                 det: [{ l: "punti", r: fmtPt(r.pt) }, { l: "pezzi", r: fmtN(r.pz) }],
                             })).filter((s) => s.val > 0);
@@ -418,14 +440,14 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                                                 centro={<><span className="text-base font-black text-white tabular-nums leading-none">{aPunti ? fmtPt(g.val) : fmtN(g.val)}</span><span className="text-[8px] text-slate-500 uppercase mt-0.5">{aPunti ? "pt" : "pz"}</span></>} />
                                         </div>
                                         <div className="flex-1 min-w-0 space-y-1">
-                                            {offerte.slice(0, 6).map(([off, r], i) => (
+                                            {offerte.slice(0, 6).map(([off, r]) => (
                                                 <div key={off} className="grid grid-cols-[1fr_auto] items-center gap-2">
                                                     <div className="min-w-0">
                                                         <p className="text-[11px] text-slate-300 truncate" title={off}>
-                                                            <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: i === 0 ? G.colore : TONI[(i - 1) % TONI.length] }} />{off}
+                                                            <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: coloreDi(off) }} />{off}
                                                         </p>
                                                         <span className="block h-1 rounded-full bg-white/5 overflow-hidden mt-0.5">
-                                                            <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(4, ((aPunti ? r.pt : r.pz) / Math.max(0.01, g.val)) * 100)}%`, background: i === 0 ? G.colore : TONI[(i - 1) % TONI.length] }} />
+                                                            <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(4, ((aPunti ? r.pt : r.pz) / Math.max(0.01, g.val)) * 100)}%`, background: coloreDi(off) }} />
                                                         </span>
                                                     </div>
                                                     <span className="text-[11px] font-black text-white tabular-nums whitespace-nowrap">{aPunti ? `${fmtPt(r.pt)} pt` : `${fmtN(r.pz)} pz`}<span className="text-slate-500 font-semibold"> · {fmtN(r.pz)} pz</span></span>
