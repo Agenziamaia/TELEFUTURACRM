@@ -1279,17 +1279,6 @@ function WidgetMese({ ctx, brand }) {
     );
 }
 
-function WidgetRitmo({ ctx }) {
-    const giorni = useMemo(() => {
-        const v = Array.from({ length: ctx.nG }, (_, i) => ({ n: i + 1, label: ctx.labels?.[i] || `giorno ${i + 1}`, val: 0, det: [], chiuso: !!ctx.chiusi?.[i] }));
-        const perB = {};
-        for (const it of ctx.items) { if (it.g < 1 || it.g > ctx.nG) continue; v[it.g - 1].val++; (perB[it.g] ??= {}); perB[it.g][it.brandGara] = (perB[it.g][it.brandGara] || 0) + 1; }
-        v.forEach((d) => { d.det = Object.entries(perB[d.n] || {}).map(([k, n]) => ({ l: GARA[k].label, r: `${fmtN(n)} pz`, colore: GARA[k].colore })); });
-        return v;
-    }, [ctx.items, ctx.nG, ctx.labels]);
-    return <HeatCal giorni={giorni} oggi={ctx.oggi > 0 ? ctx.oggi - 1 : -1} colore="var(--tf-818cf8)" unit="pezzi" />;
-}
-
 /* ═══ MIX OPERATORI v2 (Luca 24/08: «una cosa più bella, esteticamente,
    interattiva») — anello vivo: % sulle fette, hover sincronizzato
    fetta ⇄ riga (le altre si attenuano, il centro diventa il brand),
@@ -1426,11 +1415,10 @@ export const REGISTRO = {
     "mese:w3": { nome: "Giorno per giorno — WindTre", emoji: "📊", nomeBreve: "Giorno per giorno", logoChiave: "windtre", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="w3" /> },
     "mese:vf": { nome: "Giorno per giorno — Vodafone", emoji: "📊", nomeBreve: "Giorno per giorno", logoChiave: "vodafone", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="vf" /> },
     "mese:sky": { nome: "Giorno per giorno — Sky", emoji: "📊", nomeBreve: "Giorno per giorno", logoChiave: "sky", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMese ctx={ctx} brand="sky" /> },
-    "ritmo": { nome: "Ritmo del mese", emoji: "🗓", gruppo: "andamento", def: 1, render: (ctx) => <WidgetRitmo ctx={ctx} /> },
     "mix:pezzi": { nome: "Mix operatori (pezzi)", emoji: "🧬", gruppo: "andamento", def: 1, render: (ctx) => <WidgetMixPezzi ctx={ctx} /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
 export const DEFAULT_LAYOUT = {
-    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mix:pezzi@1", "ritmo@1"],
-    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "ritmo@1", "squadra:w3@2"],
+    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mix:pezzi@1"],
+    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "squadra:w3@2"],
 };
