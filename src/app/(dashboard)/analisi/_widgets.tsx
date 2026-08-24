@@ -51,7 +51,7 @@ export function LogoBrand({ chiave, colore, alt = "", h = 26, className, origine
     return (
         <span className={cn("inline-grid overflow-visible shrink-0", sinistra ? "justify-items-start items-center" : "place-items-center", className)}
             style={{ height: h, width: h * 1.9 * (sinistra ? scala : 1) }}>
-            <img src={TRK_BRAND_LOGOS[chiave]} alt={alt || chiave} className="object-contain"
+            <img src={TRK_BRAND_LOGOS[chiave]} alt={alt || chiave} draggable={false} className="object-contain select-none"
                 style={{ height: h, maxWidth: h * 1.9, transform: `scale(${scala})`, transformOrigin: sinistra ? "left center" : "center", filter: colore ? `drop-shadow(0 0 7px ${colore}66)` : undefined }} />
         </span>
     );

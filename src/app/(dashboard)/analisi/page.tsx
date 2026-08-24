@@ -650,6 +650,8 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     const trascinaCard = (e, i) => {
         if (e.button !== 0) return;
         if (e.target.closest("button")) return;
+        e.preventDefault();
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* vecchi browser */ }
         const startX = e.clientX, startY = e.clientY;
         let attivo = false;
         const bersaglio = (ev) => {
@@ -737,6 +739,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                             data-wgi={i}>
                             <div className="flex items-center justify-between gap-2 mb-3">
                                 <p onPointerDown={(e) => trascinaCard(e, i)}
+                                    onDragStart={(e) => e.preventDefault()}
                                     title="Trascina la testata per spostare la card"
                                     className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 cursor-grab active:cursor-grabbing select-none touch-none">
                                     <span className="text-slate-600 group-hover/wg:text-slate-300 shrink-0"><GripVertical className="w-3.5 h-3.5" /></span>
