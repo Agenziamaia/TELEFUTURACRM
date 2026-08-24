@@ -498,7 +498,7 @@ function AnalisiInner() {
                         <button key={a.id} onClick={() => vaiArea(a.id)}
                             className="an-in text-left rounded-3xl border border-white/10 bg-[#0d1022]/80 p-6 hover:border-indigo-400/50 hover:-translate-y-1 transition-all duration-300 group"
                             style={{ animationDelay: `${i * 70}ms` }}>
-                            <div className="text-4xl mb-3 transition-transform duration-300 group-hover:scale-110">{a.id === "regia" ? <CoronaOro h={40} /> : a.emoji}</div>
+                            <div className="text-4xl mb-3 transition-transform duration-300 group-hover:scale-110 origin-left">{a.id === "regia" ? <CoronaOro h={40} /> : a.emoji}</div>
                             <p className="text-lg font-black text-white">{a.label}</p>
                             <p className="text-xs text-slate-400 mt-1 leading-relaxed">{DESC[a.id]}</p>
                             <p className="text-[11px] font-bold text-indigo-300 mt-3">Entra →</p>

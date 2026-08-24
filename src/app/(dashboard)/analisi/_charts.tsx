@@ -337,7 +337,7 @@ export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1, unit =
                         {g.chiuso && <p className="text-[10px] text-slate-500 mt-0.5">giorno non lavorativo</p>}
                     </div>
                 }>
-                    <span className={cn("relative block w-[17px] h-[17px] rounded-[5px] transition-transform hover:scale-125", i === oggi && "ring-2 ring-white/70")}
+                    <span className={cn("relative block w-[17px] h-[17px] rounded-[5px] transition-transform hover:scale-125 origin-left", i === oggi && "ring-2 ring-white/70")}
                         style={{ background: g.chiuso && !g.val ? "rgba(255,255,255,.04)" : colore, opacity: g.chiuso && !g.val ? 1 : 0.12 + 0.88 * (g.val / max) }}>
                         <span className="absolute inset-0 grid place-items-center text-[7px] font-bold text-white/70">{g.n}</span>
                     </span>
