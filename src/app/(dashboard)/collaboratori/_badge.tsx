@@ -14,7 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, CAP_BADGE_CORREGGE, capAllowed } from "@/lib/capabilities";
+import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, CAP_BADGE_CORREGGE, CAP_BADGE_FORZA_CHIUSURA, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { caricaTutte } from "@/lib/fetchTutte";
@@ -447,7 +447,10 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     // Chiusura FORZATA di un turno rimasto aperto: dalla ROTELLINA (Luca
     // 05/08, cap corregge_turni — default: pack amministrazione, accendibile
     // ad es. al direttore del telefonico dal pannello Permessi).
-    const canForce = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_CORREGGE, capPerms);
+    // chi corregge può ovviamente anche forzare; la capability dedicata
+    // (Luca 24/08: direttore cc) dà SOLO la chiusura forzata
+    const canForce = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_CORREGGE, capPerms)
+        || capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_FORZA_CHIUSURA, capPerms);
     const [forceId, setForceId] = useState<number | null>(null);
     // TIMELINE anche sul turno LIVE (Luca 31/07): click sulla card "In
     // Servizio" → pause fatte finora e quella eventualmente in corso

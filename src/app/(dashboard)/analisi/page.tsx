@@ -653,11 +653,27 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
         e.preventDefault();
         try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* vecchi browser */ }
         const startX = e.clientX, startY = e.clientY;
+        const grid = e.currentTarget.closest(".tf-griglia");
         let attivo = false;
+        // il bersaglio vale ANCHE sul vuoto della griglia (video Luca ×3:
+        // rilasciava tra le card, dove il drop cadeva nel nulla): se il punto
+        // non è sopra una card, vince la card geometricamente più vicina
         const bersaglio = (ev) => {
             const el = document.elementFromPoint(ev.clientX, ev.clientY);
             const card = el && el.closest ? el.closest("[data-wgi]") : null;
-            return card ? Number(card.getAttribute("data-wgi")) : null;
+            if (card) return Number(card.getAttribute("data-wgi"));
+            if (!grid) return null;
+            const g = grid.getBoundingClientRect();
+            if (ev.clientX < g.left - 60 || ev.clientX > g.right + 60 || ev.clientY < g.top - 60 || ev.clientY > g.bottom + 160) return null;
+            let best = null, bestD = Infinity;
+            grid.querySelectorAll("[data-wgi]").forEach((n2) => {
+                const r = n2.getBoundingClientRect();
+                const cx = Math.max(r.left, Math.min(ev.clientX, r.right));
+                const cy = Math.max(r.top, Math.min(ev.clientY, r.bottom));
+                const d = Math.hypot(ev.clientX - cx, ev.clientY - cy);
+                if (d < bestD) { bestD = d; best = n2; }
+            });
+            return best ? Number(best.getAttribute("data-wgi")) : null;
         };
         const onMove = (ev) => {
             if (!attivo) {

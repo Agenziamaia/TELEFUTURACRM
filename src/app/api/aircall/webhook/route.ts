@@ -328,7 +328,15 @@ async function bridgeVersoCaller(p: {
     if (esistente) {
         const upd: Record<string, unknown> = { data_chiamata: quando };
         if (!p.answered) upd.stato = prossimoNR(esistente.stato);
-        else upd.da_esitare = true;
+        else {
+            // RACE (Luca 24/08, «da esitare fantasma»): l'evento di fine
+            // chiamata può arrivare DOPO che il caller ha già esitato la
+            // telefonata — se lo storico ha un esito POSTERIORE all'inizio
+            // della chiamata, il flag non si rialza
+            const vociEs = Array.isArray((esistente as { storico?: unknown }).storico) ? ((esistente as { storico: { campo?: string; data?: string }[] }).storico) : [];
+            const ultimoEsito = vociEs.filter((v) => v?.campo === "Stato" && v?.data).map((v) => String(v.data)).sort().pop() || null;
+            if (!(ultimoEsito && new Date(ultimoEsito) > new Date(quando))) upd.da_esitare = true;
+        }
         // PASSAGGIO DI POSSESSO (Luca 24/08, caso Sheekel sulle lead dei
         // colleghi in ferie): la lead è di chi la sta LAVORANDO — la chiamata
         // OUTBOUND di un altro caller la prende in carico; sull'inbound solo

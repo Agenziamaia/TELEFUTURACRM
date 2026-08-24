@@ -140,11 +140,21 @@ export const CAP_BADGE_CORREGGE: CapDef = {
     default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
     requires: "vede_team",
 };
+// CHIUSURA FORZATA scorporata dalla correzione (Luca 24/08 sera): il
+// direttore del call center chiude i turni dimenticati aperti dei suoi,
+// SENZA poter correggere entrate/uscite o eliminare turni.
+export const CAP_BADGE_FORZA_CHIUSURA: CapDef = {
+    id: "forza_chiusura",
+    label: "Forza la chiusura dei turni",
+    desc: "Può chiudere forzatamente un turno dimenticato aperto (niente correzioni né eliminazioni). Default: amministrazione, direzione generale e direzione call center.",
+    default: (r) => ["amministrativo", "admin", "dev", "direttore_generale", "direttore_cc"].includes(r),
+    requires: "vede_team",
+};
 export const CAP_BADGE: CapGroupFlags = {
     mode: "flags",
     section: BADGE_SECTION,
     sectionLabel: "Badge (Call Center)",
-    caps: [CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, CAP_BADGE_CORREGGE],
+    caps: [CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, CAP_BADGE_CORREGGE, CAP_BADGE_FORZA_CHIUSURA],
 };
 
 // ─── CLIENTI: funzioni aggiuntive della scheda ───────────────────────────────

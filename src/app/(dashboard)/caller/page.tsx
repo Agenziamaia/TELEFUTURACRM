@@ -1140,7 +1140,7 @@ function CallerPageInner() {
     const inviaSegnalazione = async () => {
         if (!editCall) return;
         const f = segnalaForm;
-        if (!f.nome.trim() || !f.cognome.trim() || !f.negozio.trim() || !f.giorno) { alert("Nome, cognome, negozio e giorno sono obbligatori."); return; }
+        if (!f.nome.trim() || !f.cognome.trim() || !f.negozio.trim() || !f.giorno || !f.nota.trim()) { alert("Nome, cognome, negozio, giorno E NOTA sono obbligatori: spiega il collegamento (es. «moglie del sig. Rossi»)."); return; }
         setSegnalaBusy(true);
         const { error } = await supabase.from("caller_vendite_segnalate").insert({
             call_id: editCall.id, caller: currentCaller,
@@ -2601,7 +2601,7 @@ function CallerPageInner() {
                                             <SelectOpzioni value={segnalaForm.negozio} onChange={(v) => setSegnalaForm((f) => ({ ...f, negozio: v }))} opzioni={NEGOZI} placeholder="negozio…" className="w-full" /></div>
                                         <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Giorno della vendita *</label>
                                             <input type="date" className="glass-input w-full" value={segnalaForm.giorno} onChange={(e) => setSegnalaForm((f) => ({ ...f, giorno: e.target.value }))} /></div>
-                                        <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Nota (facoltativa)</label>
+                                        <div><label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Nota — obbligatoria: spiega il collegamento *</label>
                                             <input className="glass-input w-full" value={segnalaForm.nota} onChange={(e) => setSegnalaForm((f) => ({ ...f, nota: e.target.value }))} placeholder="es. moglie del sig. Rossi" /></div>
                                         <button disabled={segnalaBusy} onClick={inviaSegnalazione}
                                             className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
