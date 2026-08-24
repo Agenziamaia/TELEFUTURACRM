@@ -327,7 +327,14 @@ async function bridgeVersoCaller(p: {
 
     if (esistente) {
         const upd: Record<string, unknown> = { data_chiamata: quando };
-        if (!p.answered) upd.stato = prossimoNR(esistente.stato);
+        let voceStatoAuto: typeof voce | null = null;
+        if (!p.answered) {
+            const nuovoStato = prossimoNR(esistente.stato);
+            upd.stato = nuovoStato;
+            // la progressione automatica LASCIA TRACCIA nello storico (Luca
+            // 24/08: «lo stato in dashboard non esiste nello storico»)
+            if (nuovoStato !== esistente.stato) voceStatoAuto = { ...voce, caller: "automatico (non risposto)", campo: "Stato", da: String(esistente.stato || ""), a: nuovoStato, dettagli: null };
+        }
         else {
             // RACE (Luca 24/08, «da esitare fantasma»): l'evento di fine
             // chiamata può arrivare DOPO che il caller ha già esitato la
@@ -369,7 +376,7 @@ async function bridgeVersoCaller(p: {
             brand: (upd.brand as string) ?? esistente.brand, obiettivo: (upd.obiettivo as string) ?? esistente.obiettivo,
             provenienza: (upd.provenienza as string) ?? esistente.provenienza, tipologia: (upd.tipologia as string) ?? esistente.tipologia,
         });
-        upd.storico = [...(Array.isArray(esistente.storico) ? esistente.storico : []), voce, ...(voceSwitch ? [voceSwitch] : [])];
+        upd.storico = [...(Array.isArray(esistente.storico) ? esistente.storico : []), voce, ...(voceStatoAuto ? [voceStatoAuto] : []), ...(voceSwitch ? [voceSwitch] : [])];
         const { error } = await supabase.from("calls").update(upd).eq("id", esistente.id);
         // registro telefonico ↔ pratica (mig. 107): se la colonna non c'e'
         // ancora, l'errore si ignora e il link arrivera' con la migrazione
