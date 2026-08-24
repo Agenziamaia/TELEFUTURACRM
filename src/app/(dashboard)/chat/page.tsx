@@ -152,6 +152,15 @@ function ChatPageInner() {
   });
   const [forwardCerca, setForwardCerca] = useState("");
   const [forwardBusy, setForwardBusy] = useState(false);
+  // la rubrica si caricava SOLO aprendo «aggiungi membri»: senza, il modale
+  // di inoltro mostrava solo le chat esistenti e sembrava impossibile
+  // inoltrare a chi non hai mai scritto (segnalazione team 24/08)
+  useEffect(() => {
+    if (!(forwardMsg || forwardList) || !meId || dir.length) return;
+    let vivo = true;
+    listDirectory(meId).then((d) => { if (vivo) setDir(d); }).catch(() => { /* rubrica non caricata: restano le chat */ });
+    return () => { vivo = false; };
+  }, [forwardMsg, forwardList, meId]); // eslint-disable-line react-hooks/exhaustive-deps
   const inoltraA = async (targetConvId: string) => {
     const daInoltrare = forwardList ?? (forwardMsg ? [forwardMsg] : []);
     if (!daInoltrare.length || forwardBusy) return;

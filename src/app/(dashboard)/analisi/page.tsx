@@ -445,9 +445,13 @@ function AnalisiInner() {
     const decode = (arr, vecchio = false) => (Array.isArray(arr) ? arr : []).map((s) => {
         const [k, t] = String(s).split("@");
         if (!REGISTRO[k]) return null;
-        let n = Number(t);
+        // formato k@s oppure k@s:h — h = ALTEZZA in scatti (Luca 24/08 sera:
+        // «finestre»); assente = altezza automatica dal contenuto
+        const [ts, th] = String(t || "").split(":");
+        let n = Number(ts);
         if (vecchio) n = n === 1 ? 2 : n === 2 ? 4 : n === 4 ? 8 : n;
-        return { k, s: n >= 1 && n <= 8 ? Math.round(n) : (REGISTRO[k].def || 2) };
+        const h = Number(th);
+        return { k, s: n >= 1 && n <= 8 ? Math.round(n) : (REGISTRO[k].def || 2), ...(h >= 2 && h <= 10 ? { h: Math.round(h) } : {}) };
     }).filter(Boolean);
     const [layoutIo, setLayoutIo] = useState(null);
     const [layoutNeg, setLayoutNeg] = useState(null);
@@ -458,7 +462,7 @@ function AnalisiInner() {
         setLayoutNeg((cur) => cur ?? (decode(layoutSalvato?.negozio, vecchio).length ? decode(layoutSalvato.negozio, vecchio) : decode(DEFAULT_LAYOUT.negozio)));
     }, [loading, layoutSalvato]);
     const salva = async (areaKey, lista) => {
-        const next = { ...(layoutSalvato || {}), __v: 8, [areaKey]: lista.map((w) => `${w.k}@${w.s}`) };
+        const next = { ...(layoutSalvato || {}), __v: 8, [areaKey]: lista.map((w) => `${w.k}@${w.s}${w.h ? `:${w.h}` : ""}`) };
         setLayoutSalvato(next);
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
@@ -646,14 +650,20 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
         const card = e.currentTarget.closest(".an-card");
         if (!grid || !card) return;
         const colW = grid.getBoundingClientRect().width / 8;
-        let ultimo = lista[i]?.s;
+        const STEP_H = 112;      // uno scatto d'altezza ≈ 96px utili + gap
+        let ultimoS = lista[i]?.s;
+        let ultimoH = lista[i]?.h || 0;
         const onMove = (ev) => {
-            // il bordo sinistro si rilegge VIVO: se la griglia riflow-a, lo
-            // scatto resta ancorato alla card vera, non a una foto vecchia
-            const span = Math.min(8, Math.max(1, Math.round((ev.clientX - card.getBoundingClientRect().left) / colW)));
-            if (span === ultimo) return;
-            ultimo = span;
-            setLista(listaRef.current.map((w, j) => (j === i ? { ...w, s: span } : w)));
+            // bordi riletti VIVI: lo scatto resta ancorato alla card vera
+            const r = card.getBoundingClientRect();
+            const span = Math.min(8, Math.max(1, Math.round((ev.clientX - r.left) / colW)));
+            const hRaw = Math.round((ev.clientY - r.top) / STEP_H);
+            // l'altezza entra in gioco solo trascinando VERSO IL BASSO oltre
+            // 2 scatti: i drag orizzontali puri non impongono un'altezza
+            const h = hRaw >= 2 ? Math.min(10, hRaw) : ultimoH;
+            if (span === ultimoS && h === ultimoH) return;
+            ultimoS = span; ultimoH = h;
+            setLista(listaRef.current.map((w, j) => (j === i ? { ...w, s: span, ...(h ? { h } : {}) } : w)));
         };
         const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
         window.addEventListener("pointermove", onMove);
@@ -680,7 +690,8 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 {lista.map((w, i) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
-                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative", SPAN[w.s])} style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
+                        <div key={w.k} className={cn("glass-card an-card rounded-2xl p-4 an-in group/wg relative", w.h && "flex flex-col", SPAN[w.s])}
+                            style={{ animationDelay: `${Math.min(i * 40, 320)}ms`, ...(w.h ? { height: w.h * 112 - 16 } : {}) }}
                             onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragDa.current != null) muovi(dragDa.current, i); dragDa.current = null; }}>
                             <div className="flex items-center justify-between gap-2 mb-3">
                                 <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0">
@@ -701,9 +712,10 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                     <button onClick={() => rimuovi(i)} title="Rimuovi" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="w-3 h-3" /></button>
                                 </div>
                             </div>
-                            {def.render(ctx, w.s)}
+                            {w.h ? <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">{def.render(ctx, w.s)}</div> : def.render(ctx, w.s)}
                             <span onPointerDown={(e) => iniziaResize(e, i)}
-                                title="Trascina: la card scatta sulle colonne della griglia"
+                                onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setLista(listaRef.current.map((w2, j) => { if (j !== i) return w2; const { h: _h, ...resto } = w2; return resto; })); }}
+                                title="Trascina: larghezza a colonne, verso il basso anche l'ALTEZZA (la card diventa una finestra con scroll). Doppio click = altezza automatica."
                                 className="absolute bottom-1 right-1 w-6 h-6 grid place-items-center cursor-ew-resize opacity-40 group-hover/wg:opacity-90 hover:!opacity-100 text-slate-400 hover:text-white z-10 touch-none select-none">
                                 <svg viewBox="0 0 16 16" className="w-4 h-4"><path d="M14 6 L6 14 M14 10 L10 14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none" /></svg>
                             </span>

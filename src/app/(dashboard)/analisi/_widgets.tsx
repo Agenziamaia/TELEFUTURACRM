@@ -465,14 +465,14 @@ export function TimelineHero({ ctx, tecnico = false }) {
                         </button>
                     );
                 })}
+                <span className="text-[10px] text-slate-500 ml-1">{margAccesa ? "fatturato marginalità giorno per giorno · click su un logo per i pezzi" : legenda ? "barre per pista · click sulle categorie per isolarle o aggiungerle" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
                 {(nNascosti > 0 || mostraChiusi) && (
                     <button type="button" onClick={() => setMostraChiusi((x) => !x)}
                         title={mostraChiusi ? "Rinascondi domeniche e festivi senza vendite" : "Mostra anche domeniche e giorni rossi del calendario"}
-                        className={cn("flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all", mostraChiusi ? "border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20" : "border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.09] hover:text-slate-200")}>
+                        className={cn("ml-auto flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all", mostraChiusi ? "border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20" : "border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.09] hover:text-slate-200")}>
                         🔴 {mostraChiusi ? "nascondi festivi" : `${nNascosti} festiv${nNascosti === 1 ? "o" : "i"} · mostra`}
                     </button>
                 )}
-                <span className="text-[10px] text-slate-500 ml-1">{margAccesa ? "fatturato marginalità giorno per giorno · click su un logo per i pezzi" : legenda ? "barre per pista · click sulle categorie per isolarle o aggiungerle" : "produzione giorno per giorno · click sui loghi per filtrare"}</span>
             </div>
         </div>
     );
