@@ -1419,6 +1419,6 @@ export const REGISTRO = {
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
 export const DEFAULT_LAYOUT = {
-    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mix:pezzi@1"],
-    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "squadra:w3@2"],
+    io: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "op:s4@1", "posizioni@1", "bersaglio@1", "pesonegozi@2", "marg@4", "mix:pezzi@1"],
+    negozio: ["op:w3@2", "op:vf@2", "op:sky@2", "op:fw@2", "op:s4@1", "squadra:pezzi@2", "duello@1", "mix:pezzi@1", "marg@4", "squadra:w3@2"],
 };
