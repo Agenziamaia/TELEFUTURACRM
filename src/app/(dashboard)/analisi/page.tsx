@@ -24,7 +24,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { giorniLavorativiMese, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
+import { giorniLavorativiMese, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
@@ -48,7 +48,7 @@ const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
 /* ── arricchimento (lente ragazzi): vendita → punti + campi dettaglio.
    idxDi (iso → indice 1..nG del periodo): fuori periodo si scarta; per il
    mese precedente (solo confronto, niente grafici) si passa null. ─────── */
-function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, idxDi) {
+function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, prw3, idxDi) {
     const items = [];
     const push = (c, brandGara, set, flags = {}) => {
         const iso = String(c.data || "").slice(0, 10);
@@ -77,7 +77,17 @@ function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, idxDi) {
             telRate                                              // GA (pay-only) e CB (Partnership)
             || /assicurazion/i.test(prod + " " + cat)            // target di gruppo
         );
-        push(c, "w3", set, { senzaRiga: !set.length && !altreRegole });
+        // GARA CB A PUNTI (Luca 24/08: «lì ci dovrebbero essere i punti»):
+        // gli eventi Customer Base — operazioni SIM e telefoni CB — maturano
+        // nelle righe PARTNERSHIP del lato azienda. Nella carta i loro punti
+        // sono QUELLI, mostrati sulla pista "cb" (categorie e chip in testa);
+        // le righe cb dei ragazzi restano per i gettoni pay, ma qui a 0 punti.
+        let extra = {};
+        if (prw3?.length && (!set.length || !puntiPerRighe(set))) {
+            const r = matchRigaPartnership(prw3, c);
+            if (r && Number(r.punti) > 0) extra = { punti: Number(r.punti), pista: "cb" };
+        }
+        push(c, "w3", set, { senzaRiga: !set.length && !altreRegole, ...extra });
     }
     const inA = (c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
     for (const c of [...rvf, ...rfw.filter(inA)]) {
@@ -168,12 +178,17 @@ export default function Analisi() {
                 // un pacchetto per OGNI mese del periodo: le gare sono mensili,
                 // ogni mese matcha col suo tabellare
                 const caricaPacchetto = async (mISO) => {
-                    const [rw3, rvf, rfw, rsky, tw3, tvf, tsky] = await Promise.all([
+                    const [rw3, rvf, rfw, rsky, tw3, tvf, tsky, taw3] = await Promise.all([
                         caricaContrattiMese("WindTre", mISO), caricaContrattiMese("Vodafone", mISO),
                         caricaContrattiMese("Fastweb", mISO), caricaContrattiMese("Sky", mISO),
                         caricaTabellare("windtre", mISO), caricaTabellare("vodafone", mISO), caricaTabellare("sky", mISO),
+                        // righe PARTNERSHIP (gara CB a punti) — vivono sul lato
+                        // AZIENDA: servono alla carta per i punti degli eventi CB
+                        // (Luca 24/08), un set per OGNI mese del periodo
+                        caricaTabellareAzienda("windtre", mISO).catch(() => null),
                     ]);
-                    return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky };
+                    const prW3 = (taw3?.righe || []).filter((r) => r.pista === "partnership" && r.attivo);
+                    return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3 };
                 };
                 const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
@@ -217,8 +232,8 @@ export default function Analisi() {
         return () => { alive = false; };
     }, [chiaveP, user?.id, tentativo]);
 
-    const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, idxDi)), [dati, idxDi]);
-    const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, null) : [], [dati]);
+    const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, p.prW3, idxDi)), [dati, idxDi]);
+    const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, dati.prev.prW3, null) : [], [dati]);
 
     // righe RAW del periodo per le gare di Rete/Regia (solo mese singolo:
     // le soglie sono mensili) — ritagliate sui giorni scelti
