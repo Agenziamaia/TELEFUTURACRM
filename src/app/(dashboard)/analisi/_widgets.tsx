@@ -1112,17 +1112,19 @@ function WidgetBersaglio({ ctx }) {
 // negozio attiva — gare (W3/VF/FW/Sky) + Marginalità (in € venduti) + gli
 // altri operatori (S4, TIM…) a pezzi. Hover = dettaglio categorie nel brand.
 function AnelloPeso({ perc, colore, label, logoChiave, tip }) {
+    // FLUIDO (regola responsive 24/08): l'anello scala con la sua cella —
+    // card piccola ~72px, card grande fino a 190px
     return (
         <Tip tip={tip}>
-            <div className="text-center">
-                <div className="relative w-[76px] h-[76px] mx-auto grid place-items-center rounded-full transition-transform hover:scale-110" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
-                    <div className="w-[58px] h-[58px] rounded-full bg-[#10132a] grid place-items-center an-scuro">
-                        <span className="text-sm font-black text-white tabular-nums">{Math.round(perc)}%</span>
+            <div className="text-center w-full">
+                <div className="relative w-full max-w-[190px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
+                    <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
+                        <span className="font-black text-white tabular-nums" style={{ fontSize: "clamp(0.85rem, 22cqw, 1.6rem)" }}>{Math.round(perc)}%</span>
                     </div>
                 </div>
                 <div className="mt-1 flex justify-center">
                     {logoChiave ? <LogoBrand chiave={logoChiave} alt={label} h={17} />
-                        : <p className="text-[10px] text-slate-400 font-semibold max-w-[86px] truncate">{label}</p>}
+                        : <p className="text-[10px] text-slate-400 font-semibold max-w-[110px] truncate">{label}</p>}
                 </div>
             </div>
         </Tip>
@@ -1196,7 +1198,7 @@ function WidgetPesoNegozi({ ctx }) {
             {negozi.slice(0, 3).map((n) => (
                 <div key={n}>
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">🏪 {n}</p>
-                    <div className="flex flex-wrap gap-3 justify-around">
+                    <div className="grid gap-3 justify-items-center [grid-template-columns:repeat(auto-fit,minmax(104px,1fr))]">
                         {contatoriDi(n).map((c) => <AnelloPeso key={c.label} {...c} />)}
                     </div>
                 </div>
@@ -1310,9 +1312,10 @@ function WidgetMixPezzi({ ctx }) {
         return [...m.entries()].map(([label, arr]) => ({ emoji: "•", label, items: arr, colore: att.g.colore })).sort((a, b2) => b2.items.length - a.items.length).slice(0, 4);
     })()) : [];
     return (
-        <div className="flex flex-col @2xl:flex-row @2xl:justify-center @2xl:items-center items-center gap-2.5 @2xl:gap-10 w-full select-none">
-            <div className="relative shrink-0" style={{ width: size, height: size }}>
-                <svg width={size} height={size} style={{ overflow: "visible" }}>
+        <div className="tf-mix w-full h-full min-h-0 select-none">
+            <div className="tf-mix-anello">
+            <div className="relative aspect-square h-full w-full max-h-[460px] max-w-[460px] min-h-[176px] min-w-[176px] mx-auto">
+                <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full" style={{ overflow: "visible" }}>
                     <g transform={`translate(${cx},${cy})`}>
                         <circle r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={sw} />
                         <g transform="rotate(-90)">
@@ -1363,7 +1366,8 @@ function WidgetMixPezzi({ ctx }) {
                     )}
                 </div>
             </div>
-            <div className="flex flex-col gap-2 w-full max-w-[340px] min-w-0">
+            </div>
+            <div className="tf-mix-righe flex flex-col gap-2 w-full max-w-[340px] min-w-0">
             <div className="w-full flex flex-col gap-1">
                 {fette.map((x) => {
                     const attiva = (hl || pin) === x.b;

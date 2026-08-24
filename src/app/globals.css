@@ -952,3 +952,13 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    fastidioso): il -translate-y della glass-card confligge col
    posizionamento a transform di react-grid-layout */
 .tf-griglia .glass-card, .tf-griglia .glass-card:hover { translate: none; }
+
+/* ── MIX OPERATORI: layout guidato dalla FORMA della card (Luca 24/08).
+   Card panoramica (larga e bassa) → anello a sinistra e righe a destra;
+   card alta → anello GRANDE che scala con lo spazio e righe sotto. ────── */
+.tf-mix { display: flex; flex-direction: column; align-items: center; gap: .75rem; }
+.tf-mix-anello { flex: 1 1 auto; min-height: 0; width: 100%; display: grid; place-items: center; }
+@container (min-aspect-ratio: 2/1) {
+  .tf-mix { flex-direction: row; justify-content: center; align-items: center; gap: 2.5rem; }
+  .tf-mix-anello { width: auto; height: 100%; flex: 0 1 auto; }
+}

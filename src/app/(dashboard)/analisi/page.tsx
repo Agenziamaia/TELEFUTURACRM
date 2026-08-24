@@ -673,7 +673,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                 {lista.map((w) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
-                        <div key={w.k} className="glass-card an-card rounded-2xl p-4 group/wg relative @container flex flex-col overflow-hidden">
+                        <div key={w.k} className="glass-card an-card rounded-2xl p-4 group/wg relative @container [container-type:size] flex flex-col overflow-hidden">
                             <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
                                 <p title="Trascina la testata per spostare la card"
                                     className="tf-drag text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 flex-1 cursor-grab active:cursor-grabbing select-none touch-none">
