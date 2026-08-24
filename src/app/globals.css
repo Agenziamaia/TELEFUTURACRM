@@ -947,3 +947,8 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 .tf-griglia .react-grid-item:hover > .react-resizable-handle { opacity: .9; }
 .tf-griglia .react-grid-item > .react-resizable-handle::after { border-color: rgba(148, 163, 184, .85) !important; }
 .tf-griglia .react-grid-item.react-draggable-dragging { z-index: 40; box-shadow: 0 26px 70px rgba(0, 0, 0, .6); }
+
+/* niente "lift" hover dentro la griglia Analisi (Luca 24/08: saltello
+   fastidioso): il -translate-y della glass-card confligge col
+   posizionamento a transform di react-grid-layout */
+.tf-griglia .glass-card, .tf-griglia .glass-card:hover { translate: none; }
