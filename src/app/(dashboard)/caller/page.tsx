@@ -394,7 +394,7 @@ const defaultCallerView = {
 /* ═══ VENDITE SEGNALATE (Luca 24/08): dall'appuntamento è nata una vendita
    con un ALTRO nominativo — l'amministrazione approva selezionando UNA O
    PIÙ vendite coerenti (nome+cognome, ±3 giorni dal giorno indicato) →
-   cooperation al caller; la lead diventa «Attivato Cooperation» (completa,
+   cooperation al caller; la lead diventa «Attivato Altro CF» (completa,
    senza countdown) ma l'appuntamento resta agganciabile dal match se anche
    l'intestatario originale attiva nei tempi. ═══════════════════════════ */
 function VenditeSegnalateApprovazione({ lista, calls, utente, chiudi, onDecisa }: {
@@ -453,9 +453,9 @@ function VenditeSegnalateApprovazione({ lista, calls, utente, chiudi, onDecisa }
         const giaAttivata = /^attivat/i.test(String(c?.stato || ""));
         const storico = [...((c?.storico as StoricoEntry[]) || []),
             { data: now, caller: utente, campo: "Vendita collegata", da: "", a: `✅ Cooperation APPROVATA da ${utente} — vendite di ${a.cliente_nome} ${a.cliente_cognome}: ${ids.join(", ")}` },
-            ...(giaAttivata ? [] : [{ data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Cooperation" }])];
+            ...(giaAttivata ? [] : [{ data: now, caller: utente, campo: "Stato", da: String(c?.stato || ""), a: "Attivato Altro CF" }])];
         const upd: Record<string, unknown> = { da_esitare: false, storico };
-        if (!giaAttivata) upd.stato = "Attivato Cooperation";
+        if (!giaAttivata) upd.stato = "Attivato Altro CF";
         const { error } = await supabase.from("calls").update(upd).eq("id", a.call_id);
         if (error) { setBusy(false); setErrA(error.message); return; }
         await supabase.from("caller_vendite_segnalate").update({ stato: "approvata", contract_ids: ids, decisa_da: utente, decisa_il: now }).eq("id", a.id);
