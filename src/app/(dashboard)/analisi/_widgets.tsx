@@ -920,8 +920,9 @@ function CartaAltro({ chiave, nome, colore, ctx, size }) {
         return [...per.entries()].map(([label, items2]) => ({ label, items: items2 })).sort((a, b) => b.items.length - a.items.length);
     }, [sue, chiave]);
     const COLORI = ["#818cf8", "#22c55e", "#f59e0b", "#8b5cf6", "#14b8a6", "#f97316", "#e879f9", "#64748b"];
-    // colori semantici per l'energia: luce gialla, gas fiamma
-    const coloreRiga = (label, i) => label === "💡 Luce" ? "#facc15" : label === "🔥 Gas" ? "#fb923c" : COLORI[i % COLORI.length];
+    // S4 è VERDE (Luca 24/08: «dovevi farlo su una scala di verdi»):
+    // luce = lime brillante, gas = teal scuro — famiglia del brand
+    const coloreRiga = (label, i) => label === "💡 Luce" ? "#a3e635" : label === "🔥 Gas" ? "#14b8a6" : COLORI[i % COLORI.length];
     if (!sue.length) return (
         <div className="flex items-center gap-3 py-6 justify-center text-slate-500 text-xs">
             <LogoBrand chiave={chiave} h={20} /> nessuna vendita {nome} nel periodo
@@ -1129,20 +1130,6 @@ function WidgetPesoNegozi({ ctx }) {
                     <TipRiga l="tuoi pezzi" r={`${fmtN(miei.length)}/${fmtN(store.length)}`} colore={GARA[b].colore} />
                     {b !== "fw" && <TipRiga l="tuoi punti" r={`${fmtPt(somma(miei))}/${fmtPt(somma(store))}`} />}
                     {righe.map((r) => <TipRiga key={r.label} l={`${r.emoji} ${r.label}`} r={b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtN(r.items.length)} pz · ${fmtPt(somma(r.items))} pt`} colore={r.colore} />)}
-                </div>,
-            });
-        }
-        // altri operatori (S4…): quota sui pezzi del negozio (Luca 24/08)
-        const altriNeg = (ctx.altriRete || []).filter((it) => it.negozio === n);
-        const perAltroN = new Map();
-        for (const it of altriNeg) { const kk = trkBrandKey(it.brand); if (!kk) continue; (perAltroN.get(kk) || perAltroN.set(kk, []).get(kk)).push(it); }
-        for (const [kk, arr] of perAltroN) {
-            const miei2 = mio(arr);
-            if (!miei2.length) continue;
-            out.push({
-                label: arr[0].brand, logoChiave: kk, colore: HEX_BRAND[kk] || "#64748b", perc: (miei2.length / arr.length) * 100,
-                tip: <div><TipTitolo>{arr[0].brand} · {n}</TipTitolo>
-                    <TipRiga l="tuoi pezzi" r={`${fmtN(miei2.length)}/${fmtN(arr.length)}`} colore={HEX_BRAND[kk] || "#64748b"} />
                 </div>,
             });
         }
