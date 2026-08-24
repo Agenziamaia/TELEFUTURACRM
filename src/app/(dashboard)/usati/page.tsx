@@ -1886,7 +1886,11 @@ function GestioneUsatiInner() {
     if (dateFrom) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) < dateFrom) return false; }
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
     if (searchText) { const q = searchText.toLowerCase(); if (!d.model.toLowerCase().includes(q) && !d.imei.includes(q)) return false; }
-    if (brandFilter.length > 0 && !brandFilter.some(b => d.model.startsWith(b))) return false;
+    // match SENZA case (Luca 24/08, caso «Google» che non trovava il
+    // «GOOGLE PIXEL» degli import): il dato è stato bonificato ai nomi
+    // canonici, ma il filtro non deve più dipendere dalle maiuscole di chi
+    // registra il dispositivo
+    if (brandFilter.length > 0 && !brandFilter.some(b => d.model.toLowerCase().startsWith(b.toLowerCase()))) return false;
     if (prezzoDa && (d.sale_price || 0) < (parseFloat(prezzoDa) || 0)) return false;
     if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
