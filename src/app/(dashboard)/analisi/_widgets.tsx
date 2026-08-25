@@ -1196,7 +1196,12 @@ function WidgetPesoNegozi({ ctx }) {
     // criterio Luca 24/08: un negozio si mostra SOLO con almeno
     // un'attivazione vera (quota > 0 su almeno un anello) — la riga
     // fantasma di una marginalità a 0€ non basta (caso Latina/Promontori)
-    const sezioni = negozi.map((n) => ({ n, cont: contatoriDi(n) })).filter((x) => x.cont.some((c) => c.perc > 0)).slice(0, 4);
+    // criterio Luca 25/08 (definitivo): il negozio compare SOLO con almeno
+    // un CONTRATTO suo lì (gare o altri operatori) — la marginalità da sola
+    // non basta (caso Latina@Promontori: un'assistenza da 0,10 € apriva la
+    // sezione con tutti gli anelli a zero)
+    const haAttivazione = (n) => mio(ctx.itemsRete).some((it) => it.negozio === n) || mio(ctx.altriRete || []).some((it) => it.negozio === n);
+    const sezioni = negozi.filter(haAttivazione).map((n) => ({ n, cont: contatoriDi(n) })).slice(0, 4);
     if (!sezioni.length) return <p className="text-xs text-slate-500 py-4 text-center">Nessuna vendita nel periodo.</p>;
     // TAGLIA ADATTIVA AL NUMERO (Luca 25/08): 5 anelli grandi, 10 medi,
     // 30 piccoli — sempre in proporzione alla larghezza della card (cqw)
