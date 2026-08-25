@@ -3434,12 +3434,14 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
             if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);
               // extra gara telefoni FW: il modello preseleziona la fascia
-              // (opzione del gruppo «fascia» — resta correggibile a mano)
+              // (opzione del gruppo «fascia» — resta correggibile a mano).
+              // Su «Altro»/deselezione o modello non derivabile il gruppo si
+              // SVUOTA: mai lasciare la fascia del modello precedente
+              // (rilievo revisore 25/08 — restava appesa in silenzio)
               if(sub.catBrand==="fastweb"&&offSel&&offSel.opzioni.some(x=>x.gruppo==="fascia")){
-                _fasciaGaraFW(v).then(fx=>{if(!fx)return;
-                  const next={...(f.__opzioni||{})};
-                  offSel.opzioni.forEach(x=>{if(x.gruppo==="fascia")delete next[x.nome];});
-                  next[fx]=true;setF("__opzioni",next);});
+                const senzaFascia=()=>{const next={...(f.__opzioni||{})};offSel.opzioni.forEach(x=>{if(x.gruppo==="fascia")delete next[x.nome];});return next;};
+                if(!v||/^altro/i.test(String(v))){setF("__opzioni",senzaFascia());}
+                else _fasciaGaraFW(v).then(fx=>{const next=senzaFascia();if(fx)next[fx]=true;setF("__opzioni",next);});
               }
             }} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
             if(/mobile di convergenza/i.test(cmp.nome))return (
