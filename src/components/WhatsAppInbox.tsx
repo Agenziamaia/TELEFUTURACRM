@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { waScopeDi } from "@/lib/waVisibilita";
-import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
+import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
 import { cn } from "@/utils";
 
 type Instance = { id: string; instance_name: string; display_name: string | null; wa_number: string | null; status: string; owner_user_id: string | null; negozio: string | null };
@@ -40,7 +40,6 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const [nuovaChat, setNuovaChat] = useState(false);   // modale «Nuova chat a un numero»
     const [relinkName, setRelinkName] = useState<string | null>(null);   // ri-scansione di un numero disconnesso
     const [syncing, setSyncing] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const fileRef = useRef<HTMLInputElement | null>(null);
     const historyLoaded = useRef<Set<string>>(new Set());   // conversazioni gia' backfillate
@@ -143,37 +142,8 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         }
     };
 
-    // disconnessione volontaria (logout): chiude la sessione ma tiene le
-    // conversazioni; si riattiva riscansionando il QR con "Ricollega".
-    const disconnetti = async () => {
-        const inst = instances.find(i => i.id === selInst);
-        if (!inst || disconnecting) return;
-        if (!window.confirm(`Disconnettere "${inst.display_name || inst.instance_name}"?\nLe conversazioni verranno NASCOSTE (non cancellate): torneranno visibili quando ricolleghi il numero col QR.`)) return;
-        setDisconnecting(true);
-        const res = await api({ action: "logout", instanceName: inst.instance_name });
-        setDisconnecting(false);
-        if (res?.error) alert("Disconnessione non riuscita: " + res.error);
-        else { setSelConv(null); loadInstances(); }
-    };
+    // disconnetti/elimina: SOLO dal pannello Amministrazione → WhatsApp (25/08)
 
-    // ELIMINAZIONE DEFINITIVA (Luca 29/07): oltre a disconnettere, il numero si
-    // può proprio TOGLIERE dal CRM — account collegato per sbaglio o numero che
-    // non deve più esistere. Cancella istanza + TUTTE le chat e i messaggi
-    // (cascade a DB) e l'istanza su Evolution. Solo il proprietario del numero
-    // (o la vista completa) — è irreversibile, doppia conferma.
-    const [deleting, setDeleting] = useState(false);
-    const elimina = async () => {
-        const inst = instances.find(i => i.id === selInst);
-        if (!inst || deleting) return;
-        const nome = inst.display_name || inst.instance_name;
-        if (!window.confirm(`ELIMINARE DEFINITIVAMENTE "${nome}"?\n\nVerranno cancellati il numero dal CRM e TUTTO lo storico delle chat (conversazioni e messaggi). Non è una disconnessione: non si può annullare.`)) return;
-        if (!window.confirm(`Ultima conferma: eliminare "${nome}" con tutto lo storico?`)) return;
-        setDeleting(true);
-        const res = await api({ action: "delete", instanceName: inst.instance_name });
-        setDeleting(false);
-        if (res?.error) alert("Eliminazione non riuscita: " + res.error);
-        else { setSelConv(null); setSelInst(null); loadInstances(); }
-    };
 
     const loadInstances = async () => {
         const { data } = await supabase.from("wa_instances").select("*").order("created_at");
@@ -373,22 +343,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                             {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         </button>
                     )}
-                    {instConnessa?.status === "connessa" && (
-                        <button onClick={disconnetti} disabled={disconnecting} title="Disconnetti questo numero: le conversazioni si nascondono (non vengono cancellate) e tornano quando ricolleghi il QR"
-                            className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm font-bold flex items-center gap-2 hover:bg-rose-500/25 disabled:opacity-40">
-                            {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />} Disconnetti
-                        </button>
-                    )}
-                    {/* ELIMINA (Luca 29/07): in QUALSIASI stato — anche un numero
-                        disconnesso o collegato per sbaglio si deve poter togliere
-                        del tutto, storico compreso. Solo proprietario o vista completa. */}
-                    {instConnessa && (waScope === "all" || instConnessa.owner_user_id === user?.id) && (
-                        <button onClick={elimina} disabled={deleting}
-                            title="Elimina DEFINITIVAMENTE questo numero dal CRM: via l'istanza e tutto lo storico delle chat. Non è la disconnessione: non si torna indietro"
-                            className="px-3 py-2 rounded-xl bg-red-600/20 border border-red-500/40 text-red-300 text-sm font-bold flex items-center gap-2 hover:bg-red-600/35 disabled:opacity-40">
-                            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Elimina
-                        </button>
-                    )}
+                    {/* DISCONNETTI ed ELIMINA sono usciti dall'Inbox (Luca 25/08
+                        notte: «gli utenti non devono avere la possibilità di
+                        sconnettere il numero, non ha senso») — vivono SOLO nel
+                        pannello Amministrazione → WhatsApp. */}
                     {/* Numero selezionato NON connesso (mai scansionato o sessione scaduta):
                         serve ri-scansionare LO STESSO numero, non crearne un altro. */}
                     {instConnessa && instConnessa.status !== "connessa" && (
@@ -429,7 +387,15 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                 title={i.wa_number ? `+${i.wa_number}` : i.instance_name}
                                 className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2",
                                     selInst === i.id ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                                <Phone className="w-3.5 h-3.5" />{etichettaIstanza(i)}
+                                <Phone className="w-3.5 h-3.5" />
+                                {/* NUMERO SEMPRE IN VISTA (Luca 25/08 notte): sotto
+                                    l'etichetta il numero VERO rilevato da WhatsApp
+                                    dopo la scansione — «così hanno sempre il loro
+                                    numero a disposizione» */}
+                                <span className="flex flex-col items-start leading-tight text-left">
+                                    <span>{etichettaIstanza(i)}</span>
+                                    <span className="text-[10px] font-normal text-slate-500">{i.wa_number ? `+${i.wa_number}` : "numero in arrivo…"}</span>
+                                </span>
                                 <span className={cn("w-2 h-2 rounded-full", i.status === "connessa" ? "bg-emerald-400" : "bg-amber-400")} title={i.status} />
                                 {(unreadPerInst[i.id] || 0) > 0 && (
                                     <span title={`${unreadPerInst[i.id]} chat da leggere su questo numero`}

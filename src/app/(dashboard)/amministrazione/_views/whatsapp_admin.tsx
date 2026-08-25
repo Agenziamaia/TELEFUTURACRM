@@ -14,14 +14,15 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { LinkModal } from "@/components/WhatsAppInbox";
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
-import { QrCode, Loader2, Trash2, RefreshCw, User as UserIcon, Store } from "lucide-react";
+import { sameStore } from "@/lib/visibleStores";
+import { QrCode, Loader2, Trash2, RefreshCw, User as UserIcon, Store, LogOut } from "lucide-react";
 import { cn } from "@/utils";
 
 type Istanza = {
     id: string; instance_name: string; display_name: string | null; wa_number: string | null;
     status: string; owner_user_id: string | null; negozio: string | null; created_at?: string;
 };
-type Utente = { id: string; full_name: string };
+type Utente = { id: string; full_name: string; negozio: string | null };
 
 const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 
@@ -45,17 +46,50 @@ export function WhatsAppAdminView() {
         const { data } = await supabase.from("wa_instances").select("*").order("created_at");
         setIstanze((data ?? []) as Istanza[]);
     };
+    // «LO VEDONO» (Luca 25/08 notte, esempio Garbatella → Daniele e Michele):
+    // per i numeri di NEGOZIO l'elenco vero delle persone che li vedono —
+    // stessa unione della visibilità del CRM (negozi assegnati + negozi in
+    // visibilità + negozio del login) e stessa sameStore dell'Inbox.
+    const [visStores, setVisStores] = useState<Record<string, string[]>>({});
     useEffect(() => {
         carica();
         const t = setInterval(carica, 5000);
-        supabase.from("app_users").select("id, full_name").eq("attivo", true).order("full_name")
+        supabase.from("app_users").select("id, full_name, negozio").eq("attivo", true).order("full_name")
             .then(({ data }) => setUtenti((data ?? []) as Utente[]));
         supabase.from("stores").select("name").order("name")
             .then(({ data }) => setNegozi(((data ?? []) as { name: string }[]).map(s => s.name)));
+        (async () => {
+            const [ass, vis] = await Promise.all([
+                supabase.from("user_stores").select("user_id, store_name").limit(3000),
+                supabase.from("user_store_visibility").select("user_id, store_name").limit(3000),
+            ]);
+            const m: Record<string, string[]> = {};
+            [...(ass.data ?? []), ...(vis.data ?? [])].forEach((r: { user_id: string; store_name: string }) => {
+                (m[r.user_id] = m[r.user_id] || []).push(r.store_name);
+            });
+            setVisStores(m);
+        })();
         return () => clearInterval(t);
     }, []);
 
     const nomeTitolare = (id: string | null) => utenti.find(u => u.id === id)?.full_name || null;
+    /** negozio effettivo del numero (colonna o nome che coincide con un PV) */
+    const storeDi = (i: Istanza): string | null =>
+        i.negozio || negozi.find(n => sameStore(n, i.display_name || "")) || null;
+    /** chi VEDE un numero di negozio: unione assegnati + visibilità + login */
+    const utentiCheVedono = (store: string): string[] =>
+        utenti.filter(u => {
+            const suoi = [...(visStores[u.id] || []), ...(u.negozio ? [u.negozio] : [])];
+            return suoi.some(s => sameStore(s, store));
+        }).map(u => u.full_name);
+
+    const disconnetti = async (i: Istanza) => {
+        const nome = i.display_name || i.instance_name;
+        if (!window.confirm(`Disconnettere «${nome}»?\nLe conversazioni vengono NASCOSTE (non cancellate): tornano quando ricolleghi il numero col QR.`)) return;
+        const res = await api({ action: "logout", instanceName: i.instance_name });
+        if (res?.error) alert("Disconnessione non riuscita: " + res.error);
+        carica();
+    };
 
     const collega = () => {
         if (!selNome.trim()) { alert("Scegli prima l'utente o il negozio dalla tendina."); return; }
@@ -182,6 +216,19 @@ export function WhatsAppAdminView() {
                                                 ) : (
                                                     <span className="text-slate-500 text-[12px]">— da intestare</span>
                                                 )}
+                                                {/* chi lo VEDE davvero (Luca 25/08: «Garbatella è
+                                                    collegato a Daniele e Michele ma non lo vediamo») */}
+                                                {(() => {
+                                                    const st = storeDi(i);
+                                                    if (!st) return null;
+                                                    const nomi = utentiCheVedono(st);
+                                                    if (!nomi.length) return <div className="text-[11px] text-slate-500 mt-1">👥 nessun utente ha {st} in visibilità</div>;
+                                                    return (
+                                                        <div className="text-[11px] text-slate-400 mt-1" title={nomi.join(", ")}>
+                                                            👥 lo vedono: <span className="text-slate-300">{nomi.slice(0, 4).join(", ")}{nomi.length > 4 ? ` +${nomi.length - 4}` : ""}</span>
+                                                        </div>
+                                                    );
+                                                })()}
                                                 {/* riassegnazione: SEMPRE dalle tendine */}
                                                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                                     <div className="min-w-[170px]"><SelectPersona value="" onChange={(v) => assegnaUtente(i, v)} opzioni={utenti.map(u => u.full_name)} placeholder="→ a un utente…" /></div>
@@ -205,6 +252,13 @@ export function WhatsAppAdminView() {
                                                     <button onClick={() => setRelink(i.instance_name)}
                                                         className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[12px] font-bold mr-1.5 inline-flex items-center gap-1">
                                                         <QrCode className="w-3.5 h-3.5" /> Ricollega
+                                                    </button>
+                                                )}
+                                                {i.status === "connessa" && (
+                                                    <button onClick={() => disconnetti(i)}
+                                                        title="Disconnetti la sessione: le chat si nascondono (non si cancellano) finché non ricolleghi col QR — dall'Inbox questo non si può più fare"
+                                                        className="px-2.5 py-1.5 rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1">
+                                                        <LogOut className="w-3.5 h-3.5" /> Disconnetti
                                                     </button>
                                                 )}
                                                 <button onClick={() => elimina(i)} disabled={deleting === i.id}
