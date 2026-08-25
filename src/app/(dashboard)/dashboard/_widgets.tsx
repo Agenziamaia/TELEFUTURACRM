@@ -94,7 +94,9 @@ export function WidgetShell({ icon: Icon, title, accent = "var(--tf-818cf8)", ac
                 </div>
                 <div className="shrink-0">{action}</div>
             </div>
-            <div className="flex-1 min-h-0">{children}</div>
+            {/* flex-col: i widget possono dare flex-1 alle loro liste per
+                riempire la card a qualsiasi altezza (Home a Tetris, 25/08) */}
+            <div className="flex-1 min-h-0 flex flex-col">{children}</div>
         </div>
     );
 }
@@ -110,7 +112,7 @@ function BarChart({ icon, title, rows, total, colorFor, accent, size }) {
     const Icon = icon;
     return (
         <WidgetShell icon={Icon} title={title} accent={accent}>
-            <div className="p-4 space-y-3 flex-1">
+            <div className="p-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
                 {rows.length === 0 ? <p className="text-sm text-slate-500 py-2">Nessun dato nel periodo.</p> :
                     shown.map(([label, n]) => (
                         <div key={label}>
@@ -410,7 +412,7 @@ function WidgetW3({ ctx, size }) {
             {caricamento ? (
                 <div className="p-6 flex items-center justify-center gap-2 text-slate-500 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Calcolo punti…</div>
             ) : (
-                <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+                <div className={cn("p-4 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                     <div className="flex flex-col gap-3">
                         <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
                             <TileKpi label="Punti Mobile" value={fmtPunti(per.puntiMobile)} sub={`${per.simReg} SIM`} proj={proj(per.puntiMobile, true)} color={color} />
@@ -599,7 +601,7 @@ function WidgetVodafone({ ctx, size }) {
             {!per ? (
                 <div className="p-6 flex items-center justify-center gap-2 text-slate-500 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Calcolo punti…</div>
             ) : (
-                <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+                <div className={cn("p-4 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                     <div className="flex flex-col gap-3">
                         <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
                             <TileKpi label="Punti Mobile" value={fmtPunti(per.puntiMobile)} sub={`${per.simReg} SIM${per.bizMobN ? ` · 💼 ${per.bizMobN} biz (${fmtPunti(per.bizMobP)} pt)` : ""}`} proj={proj(per.puntiMobile, true)} color={color} />
@@ -724,7 +726,7 @@ function WidgetSky({ ctx, size }) {
             {!per ? (
                 <div className="p-6 flex items-center justify-center gap-2 text-slate-500 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Calcolo punti…</div>
             ) : (
-                <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+                <div className={cn("p-4 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                     <div className="flex flex-col gap-3">
                         <div className={cn("grid gap-2", size >= 2 ? "grid-cols-2" : "grid-cols-1")}>
                             <TileKpi label="Punti Sky" value={fmtPunti(per.punti)} sub={per.pezziPunti + " pezzi in gara"} proj={proj(per.punti, true)} color={color} />
@@ -825,7 +827,7 @@ function WidgetConfronto({ ctx, size, widgetKey, param }) {
     const colorA = "var(--tf-818cf8)", colorB = "var(--tf-f59e0b)";
     return (
         <WidgetShell icon={Swords} title="Confronto" accent="var(--tf-f59e0b)" action={<span className="text-[10px] text-slate-500">{ctx.periodoLabel}</span>}>
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
                 <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                     <div className="text-right min-w-0">
                         {duello ? (
@@ -898,7 +900,7 @@ function WidgetBrand({ ctx, size, brand }) {
     return (
         <WidgetShell logo={logo} icon={Signal} title={brand} accent={color}
             action={<div className="flex items-center gap-2">{rank && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 rounded px-1.5 py-0.5">🏅 {rank.pos}° su {rank.su}</span>}<ChipScope ctx={ctx} /></div>}>
-            <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+            <div className={cn("p-4 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                 <div className="flex flex-col gap-3">
                     <BloccoNumero pezzi={pezzi} proiezione={proiezione} unita={isFw ? `pezzi ${ctx.periodoLabel} · gara Fastweb (T2)` : `pezzi ${ctx.periodoLabel}`} color={color} />
                     {proiezione != null && proiezione > 0 && <ProgressBar value={pezzi} max={proiezione} color={color} />}
@@ -999,7 +1001,7 @@ function WidgetMarginalita({ ctx, size }) {
     righe.forEach((c) => { const g = giornoDi(c); if (g) perGiorno[g] = (perGiorno[g] || 0) + valoreDi(c); });
     return (
         <WidgetShell icon={ShoppingBag} title="Marginalità" accent={MARG_COLOR} action={<ChipScope ctx={ctx} />}>
-            <div className={cn("p-4 flex flex-col gap-3", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
+            <div className={cn("p-4 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto", size >= 4 && "md:grid md:grid-cols-2 md:gap-5")}>
                 <div className="flex flex-col gap-3">
                     <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1057,7 +1059,9 @@ function WidgetMarginalita({ ctx, size }) {
 // ── WIDGET: KPI singoli ─────────────────────────────────────────────────────
 function KpiTile({ icon: Icon, label, value, sub, color }) {
     return (
-        <div className="glass-card p-4 border-t-2 h-full" style={{ borderTopColor: color }}>
+        // contenuto CENTRATO in verticale: a qualsiasi altezza della card la
+        // tile resta composta, niente numero in alto col vuoto sotto (25/08)
+        <div className="glass-card p-4 border-t-2 h-full flex flex-col justify-center" style={{ borderTopColor: color }}>
             <div className="flex items-center gap-2 text-slate-400 text-[10px] uppercase tracking-widest font-bold mb-2">
                 <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
             </div>
@@ -1077,11 +1081,14 @@ const COM_BADGE = {
 };
 
 function WidgetBacheca({ ctx, size }) {
-    const lista = ctx.commsVisibili.slice(0, size >= 4 ? 8 : 4);
+    // niente più tetto per taglia: la lista riempie la card e scorre (tetto
+    // di sicurezza alto, il resto vive in /comunicazioni)
+    const lista = ctx.commsVisibili.slice(0, 30);
+    void size;
     return (
         <WidgetShell icon={Megaphone} title="Bacheca aziendale" accent="var(--tf-38bdf8)"
             action={ctx.level !== "own" ? <Link href="/comunicazioni" className="text-[10px] font-bold text-sky-300 bg-sky-500/10 px-2 py-1 rounded-md hover:bg-sky-500/20 flex items-center gap-1"><Plus className="w-3 h-3" /> Nuovo</Link> : null}>
-            <div className="p-4 space-y-3 overflow-y-auto max-h-[240px]">
+            <div className="p-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
                 {lista.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun annuncio.</p> :
                     lista.map((c) => {
                         const badge = COM_BADGE[c.type] || COM_BADGE.info;
@@ -1113,7 +1120,7 @@ function WidgetAzioni({ ctx }) {
                 <Link href="/registra-vendita" className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500/12 border border-indigo-500/25 text-indigo-300 text-[11px] font-bold py-2 hover:bg-indigo-500/20"><Plus className="w-3.5 h-3.5" /> Nuova Vendita</Link>
                 <Link href="/clienti" className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-[11px] font-bold py-2 hover:bg-white/10"><Search className="w-3.5 h-3.5" /> Trova Cliente</Link>
             </div>
-            <div className="p-4 space-y-2">
+            <div className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto">
                 {ferme > 0 && (
                     <Link href="/pda/tracking" className="flex items-center gap-3 group">
                         <div className="w-8 h-8 rounded-lg bg-rose-500/15 flex items-center justify-center text-rose-400 shrink-0"><AlertTriangle className="w-4 h-4" /></div>
@@ -1146,7 +1153,7 @@ function WidgetObiettivo({ ctx }) {
     const perc = targetVal > 0 ? Math.round((mine.length / targetVal) * 100) : 0;
     return (
         <WidgetShell icon={TargetIcon} title={targetTitle} accent="var(--tf-818cf8)" action={<span className="text-[10px] text-slate-500">{ctx.periodoLabel}</span>}>
-            <div className="p-5">
+            <div className="p-5 flex-1 flex flex-col justify-center">
                 <div className="flex items-end justify-between mb-2">
                     <div>
                         <div className="text-[11px] text-slate-500 mb-1">{targetSub}</div>
@@ -1209,7 +1216,7 @@ function WidgetAccessi({ ctx }) {
     return (
         <WidgetShell icon={LogIn} title="Accessi collaboratori" accent="var(--tf-34d399)"
             action={hidden.size > 0 ? <button onClick={() => setMostraNascosti((v) => !v)} className="text-[10px] font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1">{mostraNascosti ? <><Eye className="w-3 h-3" /> nascondi ({hidden.size})</> : <><EyeOff className="w-3 h-3" /> mostra nascosti ({hidden.size})</>}</button> : <span className="text-[10px] text-slate-500">dal più vecchio</span>}>
-            <div className="p-3 space-y-1.5 overflow-y-auto max-h-[240px]">
+            <div className="p-3 space-y-1.5 flex-1 min-h-0 overflow-y-auto">
                 {users === null ? <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-slate-500" /></div>
                     : visibili.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun accesso registrato.</p>
                         : visibili.map((u) => {
@@ -1235,11 +1242,12 @@ function WidgetAccessi({ ctx }) {
 
 function WidgetClassifica({ ctx, size }) {
     const isVenditore = ctx.level === "own";
-    const lista = size >= 4 ? ctx.classifica : ctx.classifica.slice(0, 5);
+    // lista SEMPRE completa: riempie la card a qualsiasi altezza e scorre
+    const lista = ctx.classifica;
     if (size < 4) {
         return (
             <WidgetShell icon={Trophy} title="Classifica venditori" accent="var(--tf-f59e0b)" action={<span className="text-[10px] text-slate-500">per contratti</span>}>
-                <div className="p-3 space-y-1.5">
+                <div className="p-3 space-y-1.5 flex-1 min-h-0 overflow-y-auto">
                     {lista.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun contratto nel periodo.</p> :
                         lista.map((v) => (
                             <MedalRow key={v.nome} rank={v.rank} nome={v.nome} n={v.n} max={lista[0]?.n || 1} color="var(--tf-f59e0b)" isMe={isVenditore && norm(v.nome) === norm(ctx.user?.name)} />
@@ -1249,12 +1257,12 @@ function WidgetClassifica({ ctx, size }) {
         );
     }
     return (
-        <div className="glass-card overflow-hidden h-full">
+        <div className="glass-card overflow-hidden h-full flex flex-col">
             <div className="px-5 py-3.5 border-b border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /><h3 className="text-[13px] font-bold text-slate-200 tracking-wide">Classifica generale venditori</h3></div>
                 <span className="text-[10px] text-slate-500">Per numero contratti · € con le provvigioni (in arrivo)</span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto flex-1 min-h-0 overflow-y-auto">
                 <table className="w-full text-sm">
                     <thead>
                         <tr className="text-[10px] uppercase tracking-widest text-slate-500 bg-white/[0.01]">
@@ -1433,7 +1441,7 @@ function WidgetWhatsApp({ ctx, size }) {
     const nAlert = size >= 4 ? 8 : 3;
     const adesso = Date.now();
     return shell(
-        <div className="space-y-3 p-3">
+        <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
             {/* KPI del mese */}
             <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
@@ -1556,7 +1564,9 @@ export function renderWidget(id, ctx, size) {
         case "bussola": return (
             <WidgetShell icon={Compass} title="Direzione inserimento" accent="var(--tf-38bdf8)"
                 action={!ctx.seesAll && ctx.myStores[0] ? <span className="text-[10px] text-slate-500">{ctx.myStores[0]}</span> : null}>
-                <BussolaWidget negozio={ctx.seesAll ? (ctx.myStores[0] || ctx.user.negozio) : (ctx.user.negozio || ctx.myStores[0])} />
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                    <BussolaWidget negozio={ctx.seesAll ? (ctx.myStores[0] || ctx.user.negozio) : (ctx.user.negozio || ctx.myStores[0])} />
+                </div>
             </WidgetShell>
         );
         case "obiettivo": return <WidgetObiettivo ctx={ctx} />;

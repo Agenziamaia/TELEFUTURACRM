@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import {
     renderWidget, infoWidget, widgetsDisponibili, risolviLayout, layoutDefault,
-    isCtr, isExt, validaProduzione, giornoDi,
+    isCtr, validaProduzione, giornoDi,
 } from "./_widgets";
 import { GridLayout, useContainerWidth } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -43,22 +43,30 @@ const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Lug
 // { __v: 9, lista: ["k@x,y,w,h", ...] }; i layout vecchi ["id@taglia"]
 // vengono convertiti al volo (1→2, 2→4, 4→8 colonne, packing per righe).
 const COLS_DA_TAGLIA = { 1: 2, 2: 4, 4: 8 };
-const H_DA_TAGLIA = { 1: 3, 2: 4, 4: 5 };
+const H_DA_TAGLIA = { 1: 2, 2: 4, 4: 5 };
 // i widget dentro ragionano ancora a taglie 1·2·4 (size >= 2, size >= 4…):
 // la taglia di compatibilità deriva dalle colonne correnti della card
 const tagliaDaCols = (cols) => (cols >= 6 ? 4 : cols >= 3 ? 2 : 1);
-const decodeCoord = (arr) => (Array.isArray(arr) ? arr : []).map((str) => {
-    const [k, resto] = String(str).split("@");
-    const [x, y, w, h] = String(resto || "").split(",").map(Number);
-    if (!k || !Number.isFinite(w)) return null;
-    return {
-        k,
-        x: Number.isFinite(x) ? Math.max(0, Math.round(x)) : 0,
-        y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
-        s: Math.min(8, Math.max(1, Math.round(w))),
-        h: Math.min(12, Math.max(2, Math.round(Number.isFinite(h) ? h : 4))),
-    };
-}).filter(Boolean);
+const decodeCoord = (arr) => {
+    const visti = new Set();
+    return (Array.isArray(arr) ? arr : []).map((str) => {
+        // lastIndexOf: gli id possono contenere "@" (pattern del decoder legacy)
+        const s0 = String(str);
+        const at = s0.lastIndexOf("@");
+        if (at < 1) return null;
+        const k = s0.slice(0, at);
+        const [x, y, w, h] = s0.slice(at + 1).split(",").map(Number);
+        if (!k || !Number.isFinite(w) || visti.has(k)) return null;
+        visti.add(k);
+        return {
+            k,
+            x: Number.isFinite(x) ? Math.max(0, Math.round(x)) : 0,
+            y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
+            s: Math.min(8, Math.max(1, Math.round(w))),
+            h: Math.min(12, Math.max(2, Math.round(Number.isFinite(h) ? h : 4))),
+        };
+    }).filter(Boolean);
+};
 const daLegacy = (lista) => {
     const out = [];
     let x = 0, y = 0, rigaH = 0;
@@ -406,15 +414,18 @@ export default function Dashboard() {
         const raw = savedLayout;
         // formato a coordinate (v9) diretto; i legacy passano da risolviLayout
         // (blocchi vecchi compresi) e poi dal packing per righe
+        // oggetto v9 → coordinate dirette; ARRAY legacy → conversione; un
+        // oggetto malformato (né v9 né array) NON deve arrivare a
+        // risolviLayout (farebbe .forEach su un oggetto → Home bianca)
         const lista = (raw && !Array.isArray(raw) && Number(raw.__v) >= 9)
             ? decodeCoord(raw.lista).filter((w) => infoWidget(w.k, ctx))
-            : daLegacy(risolviLayout(raw, ctx));
+            : daLegacy(risolviLayout(Array.isArray(raw) ? raw : [], ctx));
         setLayout(lista.length ? lista : daLegacy(layoutDefault(ctx)));
     }, [loading, savedLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const salvaLayout = async (next) => {
         setLayout(next);
-        const payload = { __v: 9, lista: next.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || 4}`) };
+        const payload = { __v: 9, lista: next.map((w) => `${w.k}@${Number.isFinite(w.x) ? w.x : 0},${Number.isFinite(w.y) ? w.y : 0},${w.s},${w.h || 4}`) };
         try { await supabase.from("app_users").update({ dashboard_layout: payload }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
     // il drag/resize arriva da react-grid-layout: si riallineano x/y/w/h
@@ -526,10 +537,28 @@ export default function Dashboard() {
                         la card si trascina dalla pillola in testa e va dove la
                         molli, resize dall'angolo in basso a destra, le altre si
                         compattano in verticale. Tutto salvato solo per te. */}
-                    {gridMounted && (
-                        <GridLayout className="tf-griglia" width={gridW} cols={8} rowHeight={96} margin={[16, 16]} containerPadding={[0, 0]}
+                    {/* ⚠️ API v2 di react-grid-layout: le prop PIATTE (cols,
+                        rowHeight, draggableHandle…) NON esistono e verrebbero
+                        ignorate in silenzio — la config passa SOLO da
+                        gridConfig/dragConfig (bocciatura del revisore: coi
+                        default giravano 12 colonne e drag dall'intera card,
+                        cioè il «buco a destra» e lo scroll touch morto). */}
+                    {gridMounted && gridW < 640 ? (
+                        /* telefono: pila semplice nell'ordine del layout — il
+                           tetris a 8 colonne su 390px farebbe francobolli */
+                        <div className="space-y-4">
+                            {[...layout].sort((a, b) => (a.y - b.y) || (a.x - b.x)).map((w) => {
+                                const info = infoWidget(w.k, ctx);
+                                if (!info) return null;
+                                return <div key={w.k}>{renderWidget(w.k, ctx, 1)}</div>;
+                            })}
+                        </div>
+                    ) : gridMounted && (
+                        <GridLayout className="tf-griglia" width={gridW}
+                            gridConfig={{ cols: 8, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
+                            dragConfig={{ handle: ".tf-drag", cancel: "button" }}
                             layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 2 }))}
-                            draggableHandle=".tf-drag" draggableCancel="button" compactType="vertical" onLayoutChange={onLayoutChange}>
+                            onLayoutChange={onLayoutChange}>
                             {layout.map((w) => {
                                 const info = infoWidget(w.k, ctx);
                                 if (!info) return null;
