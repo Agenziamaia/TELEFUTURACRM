@@ -26,8 +26,17 @@ Per OGNI vendita valida (`produzioneValidaGare`, sostituzioni escluse):
 4. In più, se la vendita è un EVENTO BUSINESS valido: premio a evento della
    gara Business (righe pista `business_piva`: 25/35/45 € alla soglia di
    Ragione Sociale, punti business propri per evento) — SI SOMMA al pay.
-5. La % ai ragazzi è `pay_piste.perc_ragazzi` per pista (card in Regole di
-   gara); il lato ragazzi vede le prime `soglie_max` soglie (W3: 3, S1=S1).
+5. La % ai ragazzi si governa nel COMMISSIONING azienda, card 👥 (Luca
+   25/08): per soglia su mobile/fisso/lucegas (`pay_mappa_soglie`,
+   tier_nostro=tier_loro — agosto: mobile 70/80/80, fisso 70/80/80, gas
+   90/90/90), unica su cb/protetti (`pay_piste.perc_ragazzi` — 85/100);
+   perc_ragazzi=0 = pista solo-azienda (business_piva, assicurazioni).
+6. Le SOGLIE dei ragazzi vanno da S1 a S3 e si editano nella card 📐 della
+   scheda ragazzi → `pay_soglie` lato `ragazzi` (le manuali VINCONO sulle
+   derivate; casella vuota = derivate azienda, tagliate da
+   `pay_piste.soglie_max=3` su mobile/fisso/lucegas azienda). Il tabellare
+   pay ragazzi tronca i tiers a 3 (le S4/S5 della lettera non esistono per
+   loro).
 
 ## Componenti e flag (da dove si accende ogni cosa)
 

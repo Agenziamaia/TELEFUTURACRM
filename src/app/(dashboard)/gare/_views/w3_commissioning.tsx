@@ -86,28 +86,43 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                 // soglia (pay_mappa_soglie), base × % unica (perc_ragazzi).
                 // Le tabelle mostrano ESATTAMENTE ciò che il motore deriva.
                 const [mp, pi] = await Promise.all([
-                    supabase.from("pay_mappa_soglie").select("pista, tier_nostro, perc").eq("brand", "windtre").eq("month", monthISO),
+                    supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc").eq("brand", "windtre").eq("month", monthISO),
                     supabase.from("pay_piste").select("chiave, perc_ragazzi").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda"),
                 ]);
-                const mappa: Record<string, Record<number, number>> = {};
-                ((mp.data ?? []) as { pista: string; tier_nostro: number; perc: number }[]).forEach(x => { (mappa[x.pista] ??= {})[x.tier_nostro] = Number(x.perc); });
+                const mappa: Record<string, Record<number, { loro: number; perc: number }>> = {};
+                ((mp.data ?? []) as { pista: string; tier_nostro: number; tier_loro: number; perc: number }[])
+                    .forEach(x => { (mappa[x.pista] ??= {})[x.tier_nostro] = { loro: Number(x.tier_loro), perc: Number(x.perc) }; });
                 const unica: Record<string, number> = {};
                 ((pi.data ?? []) as { chiave: string; perc_ragazzi: number | null }[]).forEach(x => { unica[x.chiave] = x.perc_ragazzi == null ? 100 : Number(x.perc_ragazzi); });
-                const fT = (pista: string | null, i: number) => {
-                    if (!pista) return 1;
-                    const perSoglia = mappa[pista]?.[i + 1];
-                    return (perSoglia ?? unica[pista] ?? 100) / 100;
-                };
                 const fU = (pista: string | null) => (pista ? (unica[pista] ?? 100) / 100 : 1);
+                // tiers dei ragazzi come deriva() nel motore: dove c'è la mappa
+                // ogni soglia NOSTRA pesca il valore azienda della soglia LORO
+                // mappata e applica la % di quella soglia (revisore 25/08: la
+                // prima versione ignorava tier_loro — coi dati attuali S=S ma
+                // una mappa sfalsata avrebbe fatto divergere vista e pagato);
+                // le soglie dei ragazzi sono da S1 a S3 (Luca 25/08): i tiers
+                // oltre la terza (mobile 4, fisso/gas 5 della lettera) via
+                const derivaTiers = (x: PayRiga): number[] => {
+                    const m = x.pista ? mappa[x.pista] : undefined;
+                    if (m && Object.keys(m).length && !x.gettone) {
+                        const nMax = Math.min(3, Math.max(...Object.keys(m).map(Number)));
+                        const out: number[] = [];
+                        for (let tn = 1; tn <= nMax; tn++) {
+                            const voce = m[tn];
+                            const az = voce ? x.pay_tiers[voce.loro - 1] : undefined;
+                            out.push(voce == null || az == null ? (null as unknown as number)
+                                : Math.round(az * (voce.perc / 100) * 100) / 100);
+                        }
+                        return out;
+                    }
+                    return x.pay_tiers.slice(0, 3).map(v2 => (v2 == null ? v2 : Math.round(Number(v2) * fU(x.pista) * 100) / 100));
+                };
                 rows = rows
                     .filter(x => (unica[String(x.pista || "")] ?? 100) !== 0)   // piste di rete fuori
                     .map(x => ({
                         ...x,
                         pay_base: x.pay_base == null ? null : Math.round(x.pay_base * fU(x.pista) * 100) / 100,
-                        // le soglie dei ragazzi sono da S1 a S3 (Luca 25/08):
-                        // i tiers oltre la terza (mobile 4, fisso/gas 5 della
-                        // lettera azienda) non esistono per loro — via
-                        pay_tiers: x.pay_tiers.slice(0, 3).map((v2, i) => (v2 == null ? v2 : Math.round(Number(v2) * fT(x.pista, i) * 100) / 100)),
+                        pay_tiers: derivaTiers(x),
                     }));
                 for (const k of Object.keys(tm)) tm[k] = Math.min(tm[k], 3);   // i ragazzi vedono le prime 3 soglie
             }
@@ -824,6 +839,15 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
     }, [monthISO]);
     const salva = async () => {
         setBusy(true); setMsg(null);
+        // mappa COMPLETA o niente (revisore 25/08): con una mappa parziale il
+        // motore clampa all'ultimo tier noto (S1=70% varrebbe anche in S2/S3)
+        // mentre le viste mostrerebbero i pieni — meglio impedirla alla fonte
+        for (const p of PISTE_SOGLIA) {
+            const piene = [1, 2, 3].filter(t => String(mappa[p.chiave]?.[t] ?? "").trim() !== "").length;
+            if (piene > 0 && piene < 3) {
+                setBusy(false); setMsg(`Errore — ${p.label}: compila la % per tutte e tre le soglie (o lasciale tutte vuote = 100%).`); return;
+            }
+        }
         // per soglia: riscrivo la mappa delle 3 piste (tier_loro = tier_nostro)
         for (const p of PISTE_SOGLIA) {
             const del = await supabase.from("pay_mappa_soglie").delete().eq("brand", "windtre").eq("month", monthISO).eq("pista", p.chiave);
@@ -890,7 +914,7 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
                     </div>
                 ))}
             </div>
-            {msg && <p className="text-xs mt-3 text-emerald-300">{msg}</p>}
+            {msg && <p className={cn("text-xs mt-3", msg.startsWith("Errore") ? "text-rose-300" : "text-emerald-300")}>{msg}</p>}
         </div>
     );
 }
@@ -938,6 +962,9 @@ export function W3RagazziSoglie({ mese }: { mese: string }) {
     }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
     const salva = async () => {
         setBusy(true); setMsg(null);
+        // PRIMA si valida TUTTO, poi si scrive (revisore 25/08: un errore sul
+        // fisso non deve lasciare il mobile già scritto a metà giro)
+        const perPista: Record<string, number[]> = {};
         for (const k of Object.keys(NOME_PISTA_SOGLIE)) {
             // compilate in ordine di casella, rinumerate S1..Sn
             const vals = [1, 2, 3].map(t => String(manuali[k]?.[t] ?? "").trim().replace(",", ".")).filter(v => v !== "");
@@ -948,18 +975,25 @@ export function W3RagazziSoglie({ mese }: { mese: string }) {
             if (nums.some((n, i) => i > 0 && n <= nums[i - 1])) {
                 setBusy(false); setMsg({ testo: `${NOME_PISTA_SOGLIE[k]}: le soglie devono crescere (S1 < S2 < S3).`, errore: true }); return;
             }
-            const del = await supabase.from("pay_soglie").delete()
-                .eq("brand", "windtre").eq("month", monthISO).eq("lato", "ragazzi").eq("pista", k);
-            if (del.error) { setBusy(false); setMsg({ testo: "Errore: " + del.error.message, errore: true }); return; }
+            perPista[k] = nums;
+        }
+        for (const k of Object.keys(NOME_PISTA_SOGLIE)) {
+            const nums = perPista[k];
+            // UPSERT sull'unicità (brand,month,pista,tier,lato) e POI delete dei
+            // tier in più: mai un momento con la pista svuotata a DB (revisore
+            // 25/08 — col delete+insert un errore di rete lasciava il vuoto)
             if (nums.length) {
                 // fino-a in catena come nel motore (l'ultima resta aperta)
                 const righe = nums.map((n, i) => ({
                     brand: "windtre", month: monthISO, lato: "ragazzi", pista: k,
                     tier: i + 1, soglia_da: n, soglia_a: i < nums.length - 1 ? nums[i + 1] - 1 : null,
                 }));
-                const ins = await supabase.from("pay_soglie").insert(righe);
-                if (ins.error) { setBusy(false); setMsg({ testo: "Errore: " + ins.error.message, errore: true }); return; }
+                const up = await supabase.from("pay_soglie").upsert(righe, { onConflict: "brand,month,pista,tier,lato" });
+                if (up.error) { setBusy(false); setMsg({ testo: "Errore: " + up.error.message, errore: true }); return; }
             }
+            const del = await supabase.from("pay_soglie").delete()
+                .eq("brand", "windtre").eq("month", monthISO).eq("lato", "ragazzi").eq("pista", k).gt("tier", nums.length);
+            if (del.error) { setBusy(false); setMsg({ testo: "Errore: " + del.error.message, errore: true }); return; }
         }
         await carica();
         setBusy(false); setMsg({ testo: "Soglie salvate ✓ — la gara dei ragazzi le usa da subito." });
@@ -971,9 +1005,15 @@ export function W3RagazziSoglie({ mese }: { mese: string }) {
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">📐 Soglie della gara ragazzi — da S1 a S3: la soglia raggiunta sceglie la colonna dei pay</div>
                 <button onClick={salva} disabled={busy} className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold disabled:opacity-50">{busy ? "…" : "💾 Salva soglie"}</button>
             </div>
-            <p className="text-[11px] text-slate-500 mb-3">Soglie proprie dei ragazzi, in punti. Casella vuota = vale la soglia dell&apos;azienda (in grigio, dove esiste).</p>
+            <p className="text-[11px] text-slate-500 mb-3">Soglie proprie dei ragazzi, in punti. Pista con tutte le caselle vuote = valgono le soglie dell&apos;azienda (in grigio, dove esistono); compilata anche una sola casella, la scala della pista diventa solo quella.</p>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {Object.keys(NOME_PISTA_SOGLIE).map(k => (
+                {Object.keys(NOME_PISTA_SOGLIE).map(k => {
+                    // le derivate azienda fanno da placeholder SOLO finché la
+                    // pista è tutta vuota: appena c'è una manuale, la scala è
+                    // quella e basta (revisore 25/08: il grigio accanto a una
+                    // casella piena prometteva un fallback che non esiste)
+                    const haManuali = [1, 2, 3].some(t => String(manuali[k]?.[t] ?? "").trim() !== "");
+                    return (
                     <div key={k} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                         <p className="text-xs font-bold text-slate-200 mb-2">{NOME_PISTA_SOGLIE[k]} <span className="text-[10px] text-slate-500 font-normal">({um[k] || "punti"})</span></p>
                         <div className="flex items-center gap-2">
@@ -982,13 +1022,14 @@ export function W3RagazziSoglie({ mese }: { mese: string }) {
                                     <span className="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">S{t}</span>
                                     <input inputMode="decimal" value={manuali[k]?.[t] ?? ""}
                                         onChange={e => setManuali(prev => ({ ...prev, [k]: { ...(prev[k] || {}), [t]: e.target.value } }))}
-                                        placeholder={effettive[k]?.[t - 1] != null ? String(effettive[k][t - 1]) : "—"}
+                                        placeholder={!haManuali && effettive[k]?.[t - 1] != null ? String(effettive[k][t - 1]) : "—"}
                                         className="glass-input w-full text-sm text-center rounded-lg py-1.5" />
                                 </label>
                             ))}
                         </div>
                     </div>
-                ))}
+                    );
+                })}
             </div>
             {msg && <p className={cn("text-xs mt-3", msg.errore ? "text-rose-300" : "text-emerald-300")}>{msg.testo}</p>}
         </div>

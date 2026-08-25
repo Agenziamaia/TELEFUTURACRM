@@ -281,7 +281,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         if (!fonteCopia) { notify("Non c'è ancora nessun tabellare da copiare per questo operatore"); return; }
         const prev = `${fonteCopia}-01`;
         const [p, s, r] = await Promise.all([
-            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", prev).eq("lato", lato),
+            // ⚠️ soglie_max DEVE viaggiare con la copia (revisore 25/08): senza,
+            // il mese nuovo derivava ai ragazzi TUTTE le soglie azienda (gas a 5)
+            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
@@ -290,6 +292,33 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id") : { data: [], error: null });
         const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id") : { data: [], error: null });
         if (dbError("Copia mese", e1.error || e2.error || e3.error)) return;
+        // % PER SOGLIA ai ragazzi (pay_mappa_soglie, senza lato): viaggia con la
+        // copia del lato AZIENDA — senza, il mese nuovo pagherebbe i ragazzi al
+        // 100% (revisore 25/08). Riscrittura secca del mese destinazione; resta
+        // fuori dal log annulla (senza piste è inerte).
+        if (lato === "azienda") {
+            const m = await supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc").eq("brand", ctx).eq("month", prev);
+            if (m.data?.length) {
+                await supabase.from("pay_mappa_soglie").delete().eq("brand", ctx).eq("month", monthISO);
+                const em = await supabase.from("pay_mappa_soglie").insert(m.data.map(x => ({ ...x, brand: ctx, month: monthISO })));
+                if (dbError("Copia % ragazzi", em.error)) return;
+            }
+            // SOGLIE MANUALI dei ragazzi DERIVATI (W3: nessuna pista lato
+            // ragazzi, ma soglie proprie in pay_soglie dalla card 📐): il lato
+            // ragazzi non ha un suo bottone copia, quindi viaggiano con la
+            // copia azienda — SOLO se la fonte non ha piste ragazzi (i brand
+            // col tabellare ragazzi vero le copiano già dal loro lato)
+            const [pr, sr] = await Promise.all([
+                supabase.from("pay_piste").select("id").eq("brand", ctx).eq("month", prev).eq("lato", "ragazzi").limit(1),
+                supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", prev).eq("lato", "ragazzi"),
+            ]);
+            if (!pr.data?.length && sr.data?.length) {
+                const es = await supabase.from("pay_soglie").upsert(
+                    sr.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato: "ragazzi" })),
+                    { onConflict: "brand,month,pista,tier,lato" });
+                if (dbError("Copia soglie ragazzi", es.error)) return;
+            }
+        }
         // log dell'import: l'annulla cancella ESATTAMENTE questi id (esito Luca
         // 12/08: «deve riportarmi allo stato precedente, non cancellare tutto»)
         await supabase.from("pay_import_log").insert({
