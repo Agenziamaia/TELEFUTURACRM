@@ -831,6 +831,11 @@ function CallerPageInner() {
     const [listaFile, setListaFile] = useState("");
     const [listaFileObj, setListaFileObj] = useState<File | null>(null);
     const [listaRows, setListaRows] = useState(0);
+    // righe VERE del file (25/08): matrice celle per colonna A..G, letta con
+    // SheetJS al caricamento — prima il conteggio era una stima (f.size/200)
+    // e la conferma creava lead segnaposto senza numeri
+    const [listaDati, setListaDati] = useState<string[][]>([]);
+    const [listaHeaderSaltata, setListaHeaderSaltata] = useState(false);
     const [listaProvenienza, setListaProvenienza] = useState("");
     const [listaSegnalatore, setListaSegnalatore] = useState("");
     const [listaCampagna, setListaCampagna] = useState("");
@@ -2078,6 +2083,8 @@ function CallerPageInner() {
         setListaFile("");
         setListaFileObj(null);
         setListaRows(0);
+        setListaDati([]);
+        setListaHeaderSaltata(false);
         setListaProvenienza("");
         setListaSegnalatore("");
         setListaCampagna("");
@@ -2092,14 +2099,31 @@ function CallerPageInner() {
 
     function closeLista() { setListaOpen(false); }
 
-    function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    // Lettura VERA del file (25/08): righe e celle in memoria per la mappa e
+    // la creazione delle pratiche. Xlsx/csv via SheetJS (pattern import
+    // listini); raw:false = testo formattato, preserva gli zeri iniziali dei
+    // numeri. La riga 1 senza nemmeno un telefono è un'intestazione: si salta.
+    async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const f = e.target.files && e.target.files[0];
-        if (f) {
+        if (!f) return;
+        try {
+            const XLSX = await import("xlsx");
+            const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const grezze = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false }) as unknown[][];
+            let righe = grezze.map((r) => (r ?? []).map((c) => String(c ?? "").trim()))
+                .filter((r) => r.some((c) => c !== ""));
+            const haTelefono = (r: string[]) => r.some((c) => c.replace(/\D/g, "").length >= 6);
+            const header = righe.length > 1 && !haTelefono(righe[0]) && haTelefono(righe[1]);
+            if (header) righe = righe.slice(1);
+            if (!righe.length) { alert("File vuoto o non leggibile: serve almeno una riga con i dati."); return; }
             setListaFile(f.name);
             setListaFileObj(f);
-            // TODO: parse the Excel server-side via API to get exact row count.
-            // For now we set a placeholder count; backend will recalculate at insert time.
-            setListaRows(Math.max(1, Math.floor(f.size / 200)));
+            setListaDati(righe);
+            setListaHeaderSaltata(header);
+            setListaRows(righe.length);
+        } catch (err) {
+            alert("File non leggibile: " + (err instanceof Error ? err.message : "formato non riconosciuto") + ". Usa un Excel (.xlsx) o un CSV.");
         }
     }
 
@@ -2139,6 +2163,10 @@ function CallerPageInner() {
 
     async function confermaLista() {
         if (!listaFileObj) return;
+        if (!listaDati.length || listaDati.length !== listaRows) {
+            alert("Le righe del file non sono più in memoria: torna allo step 2 e ricarica il file.");
+            return;
+        }
 
         // Step 1: upload file to Supabase storage
         // nome SANIFICATO nella chiave: lo storage rifiuta accenti/simboli e i
@@ -2188,35 +2216,49 @@ function CallerPageInner() {
             return;
         }
 
-        // Step 4: bulk-create calls assigned to callers
-        // NOTE: in production, the Excel parsing should happen server-side via an API route
-        // that reads the file from storage, applies `mappa`, and bulk-inserts the calls.
-        // The placeholder calls below assume that flow; replace with `fetch('/api/liste/process', ...)`.
+        // Step 4: pratiche VERE dalle righe del file, mappate con le colonne
+        // dello step 4 — prima qui c'era un segnaposto ("Lead N" senza numeri)
+        // rimasto dallo scaffolding. Le date vuote vanno a null, mai "" (i
+        // timestamptz rifiutano la stringa vuota); numero come il flusso
+        // manuale: nazionale normalizzato con ripiego sul grezzo.
+        const idxCampo = (campo: string) => {
+            const col = colsAttive.find((c) => listaMappa[c] === campo);
+            return col ? COL_LETTERS.indexOf(col) : -1;
+        };
+        const cella = (riga: string[], idx: number) => (idx >= 0 ? String(riga[idx] ?? "").trim() : "");
+        const iNumero = idxCampo("Numero");
+        const iNome = idxCampo("Nome"), iCognome = idxCampo("Cognome"), iCF = idxCampo("Codice Fiscale");
+        const iRagione = idxCampo("Ragione Sociale"), iPiva = idxCampo("Partita IVA"), iNote = idxCampo("Note");
         const callsPayloads: Record<string, unknown>[] = [];
         let rowIdx = 0;
-        listaSplits.forEach((split) => {
-            for (let i = 0; i < split.quantita; i++) {
+        listaSplits.filter((s) => s.caller && s.quantita > 0).forEach((split) => {
+            for (let i = 0; i < split.quantita && rowIdx < listaDati.length; i++) {
+                const riga = listaDati[rowIdx];
                 rowIdx++;
+                const grezzo = cella(riga, iNumero);
+                const naz = numeroNazionale(grezzo);
                 callsPayloads.push({
                     tipo_cliente: listaTipo,
-                    nome: listaTipo === "consumer" ? `Lead ${rowIdx}` : "",
-                    cognome: listaTipo === "consumer" ? listaNome : "",
-                    ragione_sociale: listaTipo === "business" ? `Lead ${rowIdx} - ${listaNome}` : "",
-                    cf: "", piva: "", numero: "", cellulare: "",
+                    nome: listaTipo === "consumer" ? (cella(riga, iNome) || `Lead ${rowIdx}`) : "",
+                    cognome: listaTipo === "consumer" ? cella(riga, iCognome) : "",
+                    ragione_sociale: listaTipo === "business" ? (cella(riga, iRagione) || `Lead ${rowIdx} - ${listaNome}`) : "",
+                    cf: listaTipo === "consumer" ? cella(riga, iCF) : "",
+                    piva: listaTipo === "business" ? cella(riga, iPiva) : "",
+                    numero: naz || grezzo, cellulare: naz,
                     brand: brandAuto, provenienza: listaProvenienza, tipologia: "", obiettivo: obiettivoAuto,
                     stato: "Nuovo",
                     data_chiamata: dataAssegnazione,
                     caller: split.caller,
-                    negozio_appuntamento: "", data_appuntamento: "",
+                    negozio_appuntamento: "", data_appuntamento: null,
                     indirizzo: "", agente: "",
                     segnalatore: listaSegnalatore,
                     campagna: listaCampagna,
                     negozio_provenienza: listaInternoRows.map(r => r.negozio).filter(Boolean).join(", "),
                     mese_provenienza: listaInternoRows.map(r => r.mese).filter(Boolean).join(", "),
                     anno_provenienza: listaInternoRows.map(r => r.anno).filter(Boolean).join(", "),
-                    whatsapp: "", note: `Da lista: ${listaNome}`, data_richiamo: "",
+                    whatsapp: "", note: [cella(riga, iNote), `Da lista: ${listaNome}`].filter(Boolean).join(" · "), data_richiamo: null,
                     lista_origine: listaNome,
-                    storico: [{ data: dataAssegnazione, caller: "Direttore CC", campo: "Assegnazione lista", da: "", a: `Nuovo (lista: ${listaNome})` }]
+                    storico: [{ data: dataAssegnazione, caller: currentCaller, campo: "Assegnazione lista", da: "", a: `Nuovo (lista: ${listaNome})` }]
                 });
             }
         });
@@ -3738,7 +3780,7 @@ function CallerPageInner() {
                                     {listaFile && listaRows > 0 && (
                                         <div className="flex justify-between items-center p-3 bg-violet-500/10 border border-violet-500/30 rounded-xl">
                                             <span className="text-sm text-white font-semibold">{listaFile}</span>
-                                            <span className="text-xs text-violet-300 font-bold">{listaRows} righe rilevate</span>
+                                            <span className="text-xs text-violet-300 font-bold">{listaRows} righe rilevate{listaHeaderSaltata ? " (intestazione esclusa)" : ""}</span>
                                         </div>
                                     )}
                                 </div>
@@ -3830,6 +3872,12 @@ function CallerPageInner() {
                                                 <select className="glass-input rounded-lg py-2 flex-1" value={listaMappa[col]} onChange={(e) => updateMappa(col, e.target.value)}>
                                                     {campiDisponibili.map(c => <option key={c} value={c}>{c}</option>)}
                                                 </select>
+                                                {/* anteprima delle prime righe VERE: mappare a colpo sicuro */}
+                                                <div className="max-w-[150px] text-right">
+                                                    {listaDati.slice(0, 2).map((r, i) => (
+                                                        <div key={i} className="text-[10px] text-slate-500 truncate">{r[COL_LETTERS.indexOf(col)] || "—"}</div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
