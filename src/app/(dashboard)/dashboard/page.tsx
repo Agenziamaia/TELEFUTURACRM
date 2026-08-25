@@ -22,20 +22,55 @@ import { caricaTutte } from "@/lib/fetchTutte";
 import { giorniLavorativiMese, caricaContrattiMese, caricaTabellareAzienda, caricaTabellare } from "@/lib/commissioning";
 import { cn } from "@/utils";
 import {
-    Loader2, LayoutGrid, Check, GripVertical, Plus, X, ChevronLeft,
-    ChevronRight, RotateCcw, Store as StoreIcon, Users,
+    Loader2, GripVertical, Plus, X, RotateCcw, Store as StoreIcon, Users,
 } from "lucide-react";
 import {
     renderWidget, infoWidget, widgetsDisponibili, risolviLayout, layoutDefault,
-    encodeLayout, SIZE_LABEL, isCtr, isExt, validaProduzione, giornoDi,
+    isCtr, isExt, validaProduzione, giornoDi,
 } from "./_widgets";
+import { GridLayout, useContainerWidth } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
 
 const norm = (s) => (s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 const daysAgoISO = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 const CLOSED_TASK = ["fatta", "abbandonata"];
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
-const SPAN = { 1: "sm:col-span-1", 2: "sm:col-span-2", 4: "sm:col-span-2 xl:col-span-4" };
+
+// ── GRIGLIA A COORDINATE, come l'Analisi (Luca 25/08 notte): 8 colonne,
+// riga 96px, react-grid-layout — drag dalla pillola in testa, resize
+// dall'angolo, compattazione verticale. Persistenza in dashboard_layout come
+// { __v: 9, lista: ["k@x,y,w,h", ...] }; i layout vecchi ["id@taglia"]
+// vengono convertiti al volo (1→2, 2→4, 4→8 colonne, packing per righe).
+const COLS_DA_TAGLIA = { 1: 2, 2: 4, 4: 8 };
+const H_DA_TAGLIA = { 1: 3, 2: 4, 4: 5 };
+// i widget dentro ragionano ancora a taglie 1·2·4 (size >= 2, size >= 4…):
+// la taglia di compatibilità deriva dalle colonne correnti della card
+const tagliaDaCols = (cols) => (cols >= 6 ? 4 : cols >= 3 ? 2 : 1);
+const decodeCoord = (arr) => (Array.isArray(arr) ? arr : []).map((str) => {
+    const [k, resto] = String(str).split("@");
+    const [x, y, w, h] = String(resto || "").split(",").map(Number);
+    if (!k || !Number.isFinite(w)) return null;
+    return {
+        k,
+        x: Number.isFinite(x) ? Math.max(0, Math.round(x)) : 0,
+        y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
+        s: Math.min(8, Math.max(1, Math.round(w))),
+        h: Math.min(12, Math.max(2, Math.round(Number.isFinite(h) ? h : 4))),
+    };
+}).filter(Boolean);
+const daLegacy = (lista) => {
+    const out = [];
+    let x = 0, y = 0, rigaH = 0;
+    for (const w of lista) {
+        const cols = COLS_DA_TAGLIA[w.s] || 4;
+        const h = H_DA_TAGLIA[w.s] || 4;
+        if (x + cols > 8) { x = 0; y += rigaH; rigaH = 0; }
+        out.push({ k: w.k, x, y, s: cols, h });
+        x += cols; rigaH = Math.max(rigaH, h);
+    }
+    return out;
+};
 
 export default function Dashboard() {
     const { user } = useAuth();
@@ -72,9 +107,10 @@ export default function Dashboard() {
 
     const [layout, setLayout] = useState([]);
     const layoutPronto = useRef(false);
-    const [editMode, setEditMode] = useState(false);
+    // niente più editMode: come nell'Analisi la griglia è SEMPRE viva — drag
+    // dalla pillola in testa alla card, resize dall'angolo, X su hover
+    const { width: gridW, containerRef: gridRef, mounted: gridMounted } = useContainerWidth();
     const [addOpen, setAddOpen] = useState(false);
-    const [dragKey, setDragKey] = useState(null);
 
     const [negoziAss, setNegoziAss] = useState([]);
     const [brandsNeg, setBrandsNeg] = useState([]);
@@ -114,7 +150,8 @@ export default function Dashboard() {
             setGl(glv);
             setElencoNegozi((negs || []).map((x) => x.name).filter(Boolean));
             try { const sel = JSON.parse(localStorage.getItem("tf_home_negozi_" + user.id) || "[]"); if (Array.isArray(sel)) setNegoziSel(sel); } catch { /* storage negato */ }
-            setSavedLayout(Array.isArray(me?.dashboard_layout) ? me.dashboard_layout : []);
+            // nuovo formato = oggetto { __v, lista }; legacy = array ["id@taglia"]
+            setSavedLayout(me?.dashboard_layout ?? []);
             setLoading(false);
         })();
         return () => { alive = false; };
@@ -366,35 +403,33 @@ export default function Dashboard() {
     useEffect(() => {
         if (loading || savedLayout === undefined || layoutPronto.current) return;
         layoutPronto.current = true;
-        setLayout(risolviLayout(savedLayout, ctx));
+        const raw = savedLayout;
+        // formato a coordinate (v9) diretto; i legacy passano da risolviLayout
+        // (blocchi vecchi compresi) e poi dal packing per righe
+        const lista = (raw && !Array.isArray(raw) && Number(raw.__v) >= 9)
+            ? decodeCoord(raw.lista).filter((w) => infoWidget(w.k, ctx))
+            : daLegacy(risolviLayout(raw, ctx));
+        setLayout(lista.length ? lista : daLegacy(layoutDefault(ctx)));
     }, [loading, savedLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const salvaLayout = async (next) => {
         setLayout(next);
-        try { await supabase.from("app_users").update({ dashboard_layout: encodeLayout(next) }).eq("id", user.id); } catch { /* offline: resta locale */ }
+        const payload = { __v: 9, lista: next.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || 4}`) };
+        try { await supabase.from("app_users").update({ dashboard_layout: payload }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
-    const muovi = (k, dir) => {
-        const i = layout.findIndex((w) => w.k === k);
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= layout.length) return;
-        const next = [...layout];[next[i], next[j]] = [next[j], next[i]];
-        salvaLayout(next);
+    // il drag/resize arriva da react-grid-layout: si riallineano x/y/w/h
+    const onLayoutChange = (l) => {
+        const mappa = new Map(l.map((it) => [it.i, it]));
+        const next = layout.map((w) => { const it = mappa.get(w.k); return it ? { ...w, x: it.x, y: it.y, s: it.w, h: it.h } : w; });
+        const uguale = next.length === layout.length && next.every((w, i2) => { const pr = layout[i2]; return pr.k === w.k && pr.x === w.x && pr.y === w.y && pr.s === w.s && pr.h === w.h; });
+        if (!uguale) salvaLayout(next);
     };
-    const ridimensiona = (k, s) => salvaLayout(layout.map((w) => w.k === k ? { ...w, s } : w));
     const rimuovi = (k) => salvaLayout(layout.filter((w) => w.k !== k));
     const aggiungi = (id) => {
         const info = infoWidget(id, ctx);
         if (!info || layout.some((w) => w.k === id)) return;
-        salvaLayout([{ k: id, s: info.def }, ...layout]);
-    };
-    const onDrop = (targetKey) => {
-        if (!dragKey || dragKey === targetKey) { setDragKey(null); return; }
-        const next = [...layout];
-        const from = next.findIndex((w) => w.k === dragKey);
-        const to = next.findIndex((w) => w.k === targetKey);
-        if (from < 0 || to < 0) { setDragKey(null); return; }
-        next.splice(to, 0, next.splice(from, 1)[0]);
-        salvaLayout(next); setDragKey(null);
+        // y: Infinity = in coda; la compattazione la porta al primo buco utile
+        salvaLayout([...layout, { k: id, s: COLS_DA_TAGLIA[info.def] || 4, h: H_DA_TAGLIA[info.def] || 4, x: 0, y: Infinity }]);
     };
 
     if (!user) return null;
@@ -415,9 +450,14 @@ export default function Dashboard() {
                     <p className="text-sm text-slate-500">{roleLabel(user.role)}{seesAll ? " · tutti i negozi" : myStores.length ? ` · ${myStores.join(", ")}` : ""}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={() => { setEditMode((v) => !v); setAddOpen(false); }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${editMode ? "bg-emerald-500 text-white border-emerald-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10"}`}>
-                        {editMode ? <><Check className="w-3.5 h-3.5" /> Fatto</> : <><LayoutGrid className="w-3.5 h-3.5" /> Modifica</>}
+                    {/* come l'Analisi: griglia sempre viva, niente modalità Modifica */}
+                    <button onClick={() => setAddOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:text-white hover:bg-white/10 transition-colors">
+                        <Plus className="w-3.5 h-3.5" /> Aggiungi
+                    </button>
+                    <button onClick={() => salvaLayout(daLegacy(layoutDefault(ctx)))} title="Torna al layout consigliato"
+                        className="px-2.5 py-1.5 rounded-lg border bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10 transition-colors">
+                        <RotateCcw className="w-3.5 h-3.5" />
                     </button>
                     <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 relative">
                         <button onClick={() => { setPeriod("month"); setFiltroOpen(false); }}
@@ -478,56 +518,43 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {editMode && (
-                <div className="glass-card px-4 py-2.5 flex flex-wrap items-center gap-3 text-xs text-indigo-200 bg-indigo-500/10 border-indigo-500/25">
-                    <span className="flex items-center gap-2"><GripVertical className="w-4 h-4" /> Trascina i widget, cambia taglia (1 · 2 · ½ pagina) o toglili. Tutto salvato solo per te.</span>
-                    <span className="flex items-center gap-2 ml-auto">
-                        <button onClick={() => setAddOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500 text-white font-bold hover:bg-indigo-600"><Plus className="w-3.5 h-3.5" /> Aggiungi widget</button>
-                        <button onClick={() => salvaLayout(layoutDefault(ctx))} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 text-slate-300 font-semibold hover:bg-white/20" title="Torna al layout consigliato"><RotateCcw className="w-3.5 h-3.5" /> Ripristina</button>
-                    </span>
-                </div>
-            )}
-
             {loading ? (
                 <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento dati…</div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" style={{ gridAutoFlow: "row dense" }}>
-                    {layout.map(({ k, s }) => {
-                        const info = infoWidget(k, ctx);
-                        if (!info) return null;
-                        const contenuto = renderWidget(k, ctx, s);
-                        if (!contenuto) return null;
-                        return (
-                            <div key={k} className={cn(SPAN[s] || SPAN[1], editMode && "relative")}
-                                draggable={editMode}
-                                onDragStart={() => setDragKey(k)}
-                                onDragOver={(e) => { if (editMode) e.preventDefault(); }}
-                                onDrop={() => onDrop(k)}>
-                                {editMode && (
-                                    <div className={cn("absolute -inset-1 z-10 rounded-2xl border-2 border-dashed transition-colors", dragKey === k ? "border-indigo-400 bg-indigo-500/10" : "border-white/15 hover:border-indigo-500/40")}>
-                                        <div className="absolute -top-3 left-3 right-3 flex items-center gap-1 text-[10px] font-bold">
-                                            <span className="flex items-center gap-1 bg-indigo-500 text-white px-2 py-0.5 rounded-full shadow-lg cursor-grab active:cursor-grabbing"><GripVertical className="w-3 h-3" /> {info.label}</span>
-                                            <span className="flex items-center gap-0.5 ml-auto bg-slate-900/90 border border-white/10 rounded-full px-1 py-0.5 shadow-lg">
-                                                <button onClick={() => muovi(k, -1)} title="Sposta prima" className="p-0.5 rounded hover:bg-white/10 text-slate-300"><ChevronLeft className="w-3 h-3" /></button>
-                                                <button onClick={() => muovi(k, 1)} title="Sposta dopo" className="p-0.5 rounded hover:bg-white/10 text-slate-300"><ChevronRight className="w-3 h-3" /></button>
-                                                {(info.sizes || [1, 2, 4]).map((sz) => (
-                                                    <button key={sz} onClick={() => ridimensiona(k, sz)} title={SIZE_LABEL[sz]}
-                                                        className={cn("px-1.5 py-0.5 rounded text-[9px] font-black", s === sz ? "bg-indigo-500 text-white" : "text-slate-400 hover:bg-white/10")}>
-                                                        {sz === 4 ? "½" : sz}
-                                                    </button>
-                                                ))}
-                                                <button onClick={() => rimuovi(k)} title="Togli dalla Home" className="p-0.5 rounded hover:bg-rose-500/30 text-rose-300"><X className="w-3 h-3" /></button>
+                <div ref={gridRef}>
+                    {/* TETRIS COME L'ANALISI (Luca 25/08 notte): react-grid-layout —
+                        la card si trascina dalla pillola in testa e va dove la
+                        molli, resize dall'angolo in basso a destra, le altre si
+                        compattano in verticale. Tutto salvato solo per te. */}
+                    {gridMounted && (
+                        <GridLayout className="tf-griglia" width={gridW} cols={8} rowHeight={96} margin={[16, 16]} containerPadding={[0, 0]}
+                            layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 2 }))}
+                            draggableHandle=".tf-drag" draggableCancel="button" compactType="vertical" onLayoutChange={onLayoutChange}>
+                            {layout.map((w) => {
+                                const info = infoWidget(w.k, ctx);
+                                if (!info) return null;
+                                const contenuto = renderWidget(w.k, ctx, tagliaDaCols(w.s));
+                                return (
+                                    <div key={w.k} className="group/wg relative @container [container-type:size]">
+                                        <div className="absolute -top-2.5 left-3 right-3 z-20 flex items-center gap-1 opacity-0 group-hover/wg:opacity-100 transition-opacity">
+                                            <span title="Trascina per spostare la card"
+                                                className="tf-drag flex items-center gap-1 bg-indigo-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg cursor-grab active:cursor-grabbing select-none touch-none max-w-[70%]">
+                                                <GripVertical className="w-3 h-3 shrink-0" /> <span className="truncate">{info.label}</span>
                                             </span>
+                                            <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
+                                                className="ml-auto p-1 rounded-full bg-slate-900/90 border border-white/10 text-rose-300 hover:bg-rose-500/30 shadow-lg"><X className="w-3 h-3" /></button>
                                         </div>
+                                        {/* il contenuto riempie la card e scorre se più alto: la
+                                            taglia 1·2·4 dei widget deriva dalla larghezza corrente */}
+                                        <div className="h-full min-h-0 overflow-y-auto rounded-2xl [&>*]:min-h-full">{contenuto}</div>
                                     </div>
-                                )}
-                                <div className={cn("h-full", editMode && "pointer-events-none opacity-90")}>{contenuto}</div>
-                            </div>
-                        );
-                    })}
+                                );
+                            })}
+                        </GridLayout>
+                    )}
                     {layout.length === 0 && (
-                        <div className="col-span-full glass-card p-8 text-center text-sm text-slate-400">
-                            Home vuota — premi <b>Modifica → Aggiungi widget</b> per comporla.
+                        <div className="glass-card p-8 text-center text-sm text-slate-400">
+                            Home vuota — premi <b>＋ Aggiungi</b> per comporla.
                         </div>
                     )}
                 </div>
