@@ -44,40 +44,59 @@ const RIGA = {
 (async () => {
   await client.connect();
 
-  // dump di sicurezza dello stato pay S4 PRIMA del seed (prassi runner)
-  const dump = {};
-  for (const t of ["pay_piste", "pay_soglie", "pay_righe"]) {
-    const { rows } = await client.query(`select * from ${t} where brand=$1`, [BRAND]);
-    dump[t] = rows;
+  // dump di sicurezza dello stato pay S4 PRIMA del seed (prassi runner);
+  // un rilancio NON deve sovrascrivere la fotografia originale (revisore 25/08)
+  const dumpPath = path.join(__dirname, "dump_s4_pay_pre_seed.json");
+  if (fs.existsSync(dumpPath)) {
+    console.log("Dump pre-seed già presente: non lo sovrascrivo");
+  } else {
+    const dump = {};
+    for (const t of ["pay_piste", "pay_soglie", "pay_righe"]) {
+      const { rows } = await client.query(`select * from ${t} where brand=$1`, [BRAND]);
+      dump[t] = rows;
+    }
+    fs.writeFileSync(dumpPath, JSON.stringify(dump, null, 2));
+    console.log("Dump pre-seed:", Object.entries(dump).map(([t, r]) => `${t}=${r.length}`).join(" · "));
   }
-  fs.writeFileSync(path.join(__dirname, "dump_s4_pay_pre_seed.json"), JSON.stringify(dump, null, 2));
-  console.log("Dump pre-seed:", Object.entries(dump).map(([t, r]) => `${t}=${r.length}`).join(" · "));
 
   for (const month of MESI) {
     const { rows: [{ n }] } = await client.query(
       "select count(*)::int n from pay_piste where brand=$1 and month=$2 and lato='azienda'", [BRAND, month]);
     if (n > 0) { console.log(`— ${month}: tabellare azienda già presente (${n} piste), salto`); continue; }
 
-    await client.query(
-      `insert into pay_piste (brand, month, lato, chiave, nome, um, ordine) values ($1,$2,'azienda',$3,$4,$5,$6)`,
-      [BRAND, month, PISTA.chiave, PISTA.nome, PISTA.um, PISTA.ordine]);
-    for (const s of SOGLIE)
+    // TRANSAZIONE per mese (revisore 25/08): un insert fallito a metà non deve
+    // lasciare il mese semi-seminato — lo skip sull'esistenza della pista lo
+    // maschererebbe al rilancio
+    await client.query("begin");
+    try {
       await client.query(
-        `insert into pay_soglie (brand, month, lato, pista, tier, soglia_da, soglia_a) values ($1,$2,'azienda',$3,$4,$5,$6)`,
-        [BRAND, month, PISTA.chiave, s.tier, s.soglia_da, s.soglia_a]);
-    await client.query(
-      `insert into pay_righe (brand, month, lato, pista, nome, tipo_cliente, categoria, prodotto, offerta,
-         punti, pay_base, pay_tiers, gettone, attivo, note, ordine)
-       values ($1,$2,'azienda',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-      [BRAND, month, RIGA.pista, RIGA.nome, RIGA.tipo_cliente, RIGA.categoria, RIGA.prodotto, RIGA.offerta,
-        RIGA.punti, RIGA.pay_base, RIGA.pay_tiers, RIGA.gettone, RIGA.attivo, RIGA.note, RIGA.ordine]);
+        `insert into pay_piste (brand, month, lato, chiave, nome, um, ordine) values ($1,$2,'azienda',$3,$4,$5,$6)`,
+        [BRAND, month, PISTA.chiave, PISTA.nome, PISTA.um, PISTA.ordine]);
+      for (const s of SOGLIE)
+        await client.query(
+          `insert into pay_soglie (brand, month, lato, pista, tier, soglia_da, soglia_a) values ($1,$2,'azienda',$3,$4,$5,$6)`,
+          [BRAND, month, PISTA.chiave, s.tier, s.soglia_da, s.soglia_a]);
+      await client.query(
+        `insert into pay_righe (brand, month, lato, pista, nome, tipo_cliente, categoria, prodotto, offerta,
+           punti, pay_base, pay_tiers, gettone, attivo, note, ordine)
+         values ($1,$2,'azienda',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [BRAND, month, RIGA.pista, RIGA.nome, RIGA.tipo_cliente, RIGA.categoria, RIGA.prodotto, RIGA.offerta,
+          RIGA.punti, RIGA.pay_base, RIGA.pay_tiers, RIGA.gettone, RIGA.attivo, RIGA.note, RIGA.ordine]);
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback");
+      throw e;
+    }
     console.log(`✓ ${month}: seminati pista Energia, 3 soglie (0-74 / 75-149 / 150+), riga CTE Smart 100/130/140`);
   }
 
   // COLLAUDO contro la produzione vera (perimetro del motore: CTR-, no demo,
   // no nascosta, stati annullati esclusi): copertura riga + tier del mese
   for (const month of MESI) {
-    const fine = month.slice(0, 8) + "31";
+    // ultimo giorno VERO del mese (revisore 25/08: il "-31" fisso esplodeva
+    // sui mesi corti; stesso calcolo di estremiMese in lib/commissioning)
+    const [y, m] = month.split("-").map(Number);
+    const fine = `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
     const { rows } = await client.query(
       `select prodotto, offerta, tipo_cliente, count(*)::int n from contracts
        where brand ilike 'S4%' and id like 'CTR-%'
