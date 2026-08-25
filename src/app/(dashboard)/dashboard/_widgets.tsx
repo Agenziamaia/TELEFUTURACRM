@@ -1060,13 +1060,16 @@ function WidgetMarginalita({ ctx, size }) {
 function KpiTile({ icon: Icon, label, value, sub, color }) {
     return (
         // contenuto CENTRATO in verticale: a qualsiasi altezza della card la
-        // tile resta composta, niente numero in alto col vuoto sotto (25/08)
-        <div className="glass-card p-4 border-t-2 h-full flex flex-col justify-center" style={{ borderTopColor: color }}>
-            <div className="flex items-center gap-2 text-slate-400 text-[10px] uppercase tracking-widest font-bold mb-2">
-                <Icon className="w-3.5 h-3.5" style={{ color }} /> {label}
+        // tile resta composta, niente numero in alto col vuoto sotto (25/08).
+        // Sotto ~150px di cella (riquadro «schiacciato» a 1 riga) la tile si
+        // COMPATTA: etichetta e numero sulla stessa riga, niente sottotitolo
+        // — la cella è un container (container-type: size), la query è sua.
+        <div className="glass-card p-4 [@container(max-height:150px)]:p-3 border-t-2 h-full flex flex-col justify-center [@container(max-height:150px)]:flex-row [@container(max-height:150px)]:items-center [@container(max-height:150px)]:gap-3" style={{ borderTopColor: color }}>
+            <div className="flex items-center gap-2 text-slate-400 text-[10px] uppercase tracking-widest font-bold mb-2 [@container(max-height:150px)]:mb-0 min-w-0">
+                <Icon className="w-3.5 h-3.5 shrink-0" style={{ color }} /> <span className="truncate">{label}</span>
             </div>
-            <p className="text-3xl font-black text-white leading-none">{Number(value).toLocaleString("it-IT")}</p>
-            {sub && <p className="text-xs text-slate-500 mt-1.5">{sub}</p>}
+            <p className="text-3xl [@container(max-height:150px)]:text-2xl [@container(max-height:150px)]:ml-auto font-black text-white leading-none">{Number(value).toLocaleString("it-IT")}</p>
+            {sub && <p className="text-xs text-slate-500 mt-1.5 [@container(max-height:150px)]:hidden">{sub}</p>}
         </div>
     );
 }
@@ -1337,6 +1340,15 @@ export function confermaSecca(testo) {
     return WA_CONFERME.has(t);
 }
 
+// domanda di PURA cortesia («come stai?», «tutto bene?», «serve altro?»):
+// TUTTO il messaggio è il convenevole (ancorata ^…$) — non apre un'attesa
+// se il cliente non risponde, e la sua risposta di chiacchiera non apre un
+// rosso (caso Luca 25/08 notte: «te come stai?» → «Molto caldo ma bene»).
+const DOMANDA_CORTESIA = /^(ciao |salve |buongiorno |buonasera )?(e )?(tu |te |lei |voi )?(come (stai|sta|state|va|andiamo|procede|butta)|tutto (bene|ok|a posto)|(le |ti |vi )?serve altro|hai bisogno di altro|come sta andando)[\s?!.😊🙂👍]*$/u;
+export function domandaDiCortesia(testo) {
+    return DOMANDA_CORTESIA.test(String(testo || "").toLowerCase().replace(/[’‘`]/g, "'").trim());
+}
+
 // il NOSTRO messaggio chiede qualcosa al cliente? Serve per la categoria
 // «in attesa del cliente» (richiesta nostra senza risposta) e per giudicare
 // un suo «ok»: dopo una richiesta è un impegno (aspettiamo), dopo una
@@ -1345,6 +1357,7 @@ export function confermaSecca(testo) {
 export function richiedeRisposta(testo) {
     const t = String(testo || "").toLowerCase();
     if (!t.trim() || t.startsWith("[") || t.startsWith("📍")) return false;
+    if (domandaDiCortesia(t)) return false;   // convenevole, non richiesta
     // i link portano «?» nella query string (posizione → maps.google.com/?q=,
     // promo con utm…): il punto di domanda si giudica sul testo SENZA url
     const senzaUrl = t.replace(/https?:\/\/\S+/g, " ");
@@ -1482,6 +1495,9 @@ function WidgetWhatsApp({ ctx, size }) {
     const uid = ctx.user?.id;
     const [dati, setDati] = useState(null);
     const [giro, setGiro] = useState(0);
+    // filtro per negozio/persona (Luca 25/08 notte: chi gestisce più punti
+    // vendita deve poter guardare il widget un numero alla volta)
+    const [filtro, setFiltro] = useState("");
     useEffect(() => { const t = setInterval(() => setGiro((g) => g + 1), 120000); return () => clearInterval(t); }, []);
     useEffect(() => {
         let vivo = true;
@@ -1501,6 +1517,16 @@ function WidgetWhatsApp({ ctx, size }) {
                 vis = [...vis, ...(insts || []).filter((i) => !gia.has(i.id) && i.status === "connessa" && i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc")];
             }
             if (!vis.length) { setDati({ vuoto: "Nessun numero WhatsApp collegato per il tuo negozio." }); return; }
+            // numeri del CALL CENTER (titolare con ruolo area cc): i caller
+            // scrivono a freddo a chi non risponde al telefono — nessuna
+            // attesa azzurra su quei numeri (Luca 25/08 notte); il rosso
+            // resta: se il cliente risponde, il caller deve gestirlo
+            const ccIds = new Set(vis.filter((i) => i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc").map((i) => i.id));
+            // filtro per negozio/persona: le etichette sono quelle dell'Inbox
+            const etichettaDi = (i) => i.display_name || (i.owner_user_id && utenti.get(i.owner_user_id)?.full_name) || i.negozio || (i.wa_number ? `+${i.wa_number}` : "numero");
+            const etichette = [...new Set(vis.map(etichettaDi))].sort((a, b) => a.localeCompare(b, "it"));
+            if (filtro) vis = vis.filter((i) => etichettaDi(i) === filtro);
+            if (!vis.length) { setDati({ vuoto: "Nessun numero per questo filtro.", etichette }); return; }
             const { data: convs } = await supabase.from("wa_conversations")
                 .select("id, instance_id, customer_name, customer_number, last_message_at, chiusa_il")
                 .in("instance_id", vis.map((i) => i.id))
@@ -1584,20 +1610,29 @@ function WidgetWhatsApp({ ctx, size }) {
                     while (i >= 0 && arr[i].direction === "in") { blocco.unshift(arr[i]); i--; }
                     const prevOut = i >= 0 && arr[i].direction === "out" ? arr[i] : null;
                     if (blocco.every((m) => chiusuraDiCortesia(m.body))) { concluse++; return; }
+                    const testoBlocco = blocco.map((m) => String(m.body || "")).join(" ").trim();
                     // conferma secca («ok», «sì», anche in due bolle): dopo un
                     // NOSTRO messaggio senza richieste è un congedo → conclusa;
                     // dopo una nostra RICHIESTA è un impegno → aspettiamo il
                     // FATTO dal cliente (lista azzurra, non rosso: nessuno
                     // deve «rispondere» a quell'ok — semmai sollecitare)
-                    if (confermaSecca(blocco.map((m) => String(m.body || "")).join(" "))) {
+                    if (confermaSecca(testoBlocco)) {
                         if (prevOut && richiedeRisposta(prevOut.body)) { attesa.push({ id: cid, nome: nomeChat, da: prevOut.t }); return; }
                         if (prevOut) { concluse++; return; }
                     }
+                    // risposta alle NOSTRE quattro chiacchiere («te come
+                    // stai?» → «Molto caldo ma bene», caso Luca 25/08):
+                    // chiacchiera breve senza domande né richieste = conclusa
+                    if (prevOut && domandaDiCortesia(prevOut.body) && !testoBlocco.includes("?") && testoBlocco.length <= 80
+                        && !/quando|posso|potete|vorrei|serve|prezzo|costo|richiam|mandi|invii|aiut/.test(testoBlocco.toLowerCase())) { concluse++; return; }
                     daRisp.push({ id: cid, nome: nomeChat, da: blocco[0].t });
                 } else {
                     // chiusa a mano dopo la nostra richiesta: non aspettiamo
                     // più — conta tra le concluse solo se sarebbe stata in lista
                     if (chiusaOk) { if (richiedeRisposta(ultimo.body)) concluse++; return; }
+                    // caller a freddo (numeri del call center): il cliente
+                    // quasi mai risponde — niente attese azzurre su quei numeri
+                    if (ccIds.has(c?.instance_id)) return;
                     // ultima parola NOSTRA che chiede qualcosa → aspettiamo
                     // il cliente: da non dimenticare (sollecito)
                     if (richiedeRisposta(ultimo.body)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t });
@@ -1612,11 +1647,11 @@ function WidgetWhatsApp({ ctx, size }) {
             setDati({
                 media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
                 chatAttive: attive.size, daRisp, attesa, fette, nNumeri: vis.length,
-                concluse, tetto: (convs || []).length >= 400,
+                concluse, tetto: (convs || []).length >= 400, etichette,
             });
         })();
         return () => { vivo = false; };
-    }, [uid, ctx.user?.role, ctx.negoziKey, giro]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [uid, ctx.user?.role, ctx.negoziKey, giro, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
     const azione = <Link href="/chat?mode=wa" className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
     // ✓ su una riga (da rispondere O in attesa): la chat è a posto così —
     // sparisce subito; se il cliente riscrive, riappare da sola. Il widget
@@ -1638,8 +1673,15 @@ function WidgetWhatsApp({ ctx, size }) {
     const shell = (figli) => (
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
     );
+    const filtroRow = ((dati?.etichette?.length || 0) > 1 || filtro) ? (
+        <div className="flex items-center gap-1.5">
+            <SelectOpzioni value={filtro} onChange={setFiltro} opzioni={dati?.etichette || []}
+                placeholder="Tutti i numeri — filtra per negozio o persona" className="flex-1 min-w-0" />
+            {filtro && <button onClick={() => setFiltro("")} className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">✕ tutti</button>}
+        </div>
+    ) : null;
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
-    if (dati.vuoto) return shell(<p className="text-xs text-slate-500 px-3 py-4">{dati.vuoto}</p>);
+    if (dati.vuoto) return shell(<div className="p-3 space-y-3">{filtroRow}<p className="text-xs text-slate-500 py-2">{dati.vuoto}</p></div>);
     const totFette = dati.fette.reduce((s, f) => s + f.v, 0);
     const nAlert = size >= 4 ? 8 : 3;
     const nAttesa = size >= 4 ? 5 : 2;

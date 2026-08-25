@@ -63,7 +63,10 @@ const decodeCoord = (arr) => {
             x: Number.isFinite(x) ? Math.max(0, Math.round(x)) : 0,
             y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
             s: Math.min(8, Math.max(1, Math.round(w))),
-            h: Math.min(12, Math.max(2, Math.round(Number.isFinite(h) ? h : 4))),
+            // minimo 1 riga (96px): i KPI di solo riferimento si schiacciano
+            // a barretta (Luca 25/08 notte: «dammi la possibilità di
+            // stringerli in verticalità»)
+            h: Math.min(12, Math.max(1, Math.round(Number.isFinite(h) ? h : 4))),
         };
     }).filter(Boolean);
 };
@@ -134,7 +137,7 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                         <GridLayout className="tf-griglia" width={gridW}
                             gridConfig={{ cols: 8, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
                             dragConfig={{ handle: ".tf-drag", cancel: "button" }}
-                            layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 2 }))}
+                            layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 1 }))}
                             onLayoutChange={onLayoutChange}>
                             {layout.map((w) => {
                                 const info = infoWidget(w.k, ctx);
