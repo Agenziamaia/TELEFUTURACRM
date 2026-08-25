@@ -47,22 +47,30 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const fileRef = useRef<HTMLInputElement | null>(null);
     const historyLoaded = useRef<Set<string>>(new Set());   // conversazioni gia' backfillate
-    const { stores: myStores } = useVisibleStores();
+    const { stores: myStores, loaded: storesLoaded } = useVisibleStores();
 
     // ETICHETTA per NOME (Luca 31/07): il numero collegato si mostra col nome
     // del titolare (dipendente) o del negozio, non col cellulare — utile a
     // colpo d'occhio e per le analisi (tasso di risposta per caller/negozio).
     const [nomiTitolari, setNomiTitolari] = useState<Record<string, string>>({});
     const [ruoliTitolari, setRuoliTitolari] = useState<Record<string, string>>({});
+    const [ruoliPronti, setRuoliPronti] = useState(false);
     useEffect(() => {
         const ids = [...new Set(instances.map(i => i.owner_user_id).filter(Boolean))] as string[];
-        if (!ids.length) return;
+        if (!ids.length) { if (instances.length) setRuoliPronti(true); return; }
         supabase.from("app_users").select("id, full_name, role").in("id", ids)
             .then(({ data }) => {
                 setNomiTitolari(Object.fromEntries((data ?? []).map((u: { id: string; full_name: string }) => [u.id, u.full_name])));
                 setRuoliTitolari(Object.fromEntries((data ?? []).map((u: { id: string; role: string }) => [u.id, u.role])));
+                setRuoliPronti(true);
             });
     }, [instances]);
+    // VISIBILITÀ ASSESTATA (rilievo alto del revisore 25/08): le istanze
+    // visibili crescono in TRE ondate (istanze → negozi → ruoli titolari).
+    // Un deep-link che agisce sull'ondata parziale apre — o peggio CREA —
+    // la chat sul numero sbagliato (il direttore cc al primo giro «vede»
+    // solo il suo personale). Finché non è tutto arrivato, non si agisce.
+    const visPronta = instances.length > 0 && storesLoaded && (user?.role !== "direttore_cc" || ruoliPronti);
     const etichettaIstanza = (i: Instance) =>
         i.display_name || (i.owner_user_id && nomiTitolari[i.owner_user_id]) || i.negozio || (i.wa_number ? `+${i.wa_number}` : i.instance_name);
 
@@ -269,11 +277,14 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         // coda CONTIGUA e NIENTE GRUPPI (revisore 25/08): la vecchia
         // sottosequenza %3%3%1%… poteva agganciare l'id di un gruppo (~18
         // cifre) o un numero sbagliato — i numeri a DB sono cifre canoniche
-        const { data: trovate } = await supabase.from("wa_conversations")
+        const { data: trovate, error: errCerca } = await supabase.from("wa_conversations")
             .select("*").eq("instance_id", inst.id)
             .or("is_group.is.null,is_group.eq.false")
             .ilike("customer_number", "%" + coda)
             .order("last_message_at", { ascending: false }).limit(1);
+        // su errore transitorio NON si crea al buio: la chat magari esiste
+        // già e nascerebbe un doppione (rilievo del revisore 25/08)
+        if (errCerca) return false;
         let conv = (trovate && trovate[0]) as Conv | undefined;
         if (!conv) {
             const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
@@ -317,11 +328,23 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const [sceltaNumero, setSceltaNumero] = useState<{ dig: string; nome?: string | null } | null>(null);
     const avviaChatNumero = async (digIn: string, nome?: string | null): Promise<boolean> => {
         if (digIn.replace(/\D/g, "").length < 6) return false;
+        if (!visPronta) return false;   // ondata parziale: mai decidere «un solo numero» in anticipo
         const conn = visibleInstances.filter(i => i.status === "connessa");
         if (!conn.length) return false;
         if (conn.length === 1) return apriPerNumero(digIn, conn[0].id);
         setSceltaNumero({ dig: digIn, nome });
         return true;
+    };
+
+    // riprova con un piccolo ritardo (max 5 volte): copre l'errore di rete
+    // transitorio e l'attesa della visibilità — senza, un deep-link fallito
+    // con set di istanze stabile non aveva mai un «prossimo giro»
+    const [waTick, setWaTick] = useState(0);
+    const _riprovaN = useRef(0);
+    const riprovaDeepLink = () => {
+        if (_riprovaN.current >= 5) return;
+        _riprovaN.current += 1;
+        setTimeout(() => setWaTick(t => t + 1), 1500);
     };
 
     // DEEP-LINK ALLA CONVERSAZIONE (Luca 25/08 notte: dalla scheda cliente si
@@ -332,7 +355,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const _convCache = useRef<{ id: string; conv: Conv | null } | null>(null);
     useEffect(() => {
         if (!apriConvId || _convFatto.current === apriConvId) return;
-        if (!visibleInstances.length) return;    // istanze non ancora arrivate
+        if (!visPronta) return;                  // visibilità non ancora assestata
         (async () => {
             // la visibilità arriva a scaglioni (negozi, ruoli cc): il ref si
             // brucia SOLO ad apertura riuscita o su id inesistente — mai su
@@ -341,18 +364,18 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
             // Una sola query per id: le ripetizioni leggono la cache.
             if (_convCache.current?.id !== apriConvId) {
                 const { data: c, error } = await supabase.from("wa_conversations").select("*").eq("id", apriConvId).maybeSingle();
-                if (error) return;   // transitorio: si riprova al prossimo giro
+                if (error) { riprovaDeepLink(); return; }   // blip di rete: si riprova da soli
                 _convCache.current = { id: apriConvId, conv: (c as Conv) || null };
             }
             const c = _convCache.current.conv;
             if (!c) { _convFatto.current = apriConvId; return; }   // id inesistente
-            if (!visibleInstances.some(i => i.id === c.instance_id)) return;
+            if (!visibleInstances.some(i => i.id === c.instance_id)) { riprovaDeepLink(); return; }
             _convFatto.current = apriConvId;
             setSelInst(c.instance_id);
             setSelConv(c);
         })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [apriConvId, visibleInstances.map(i => i.id).join("|")]);
+    }, [apriConvId, visPronta, waTick, visibleInstances.map(i => i.id).join("|")]);
 
     // DEEP-LINK (Luca 29/07): /chat?wa=<numero> apre la chat col cliente precaricata.
     const _apriFatto = useRef<string | null>(null);
@@ -361,22 +384,23 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     useEffect(() => {
         const dig = String(apriNumero || "").replace(/\D/g, "");
         if (!dig || dig.length < 6 || _apriFatto.current === dig) return;
-        if (!visibleInstances.length) return;    // istanze non ancora arrivate
+        if (!visPronta) return;                  // visibilità non ancora assestata
         if (_apriBusy.current) return;           // un tentativo alla volta
         _apriBusy.current = true;
         (async () => {
             // come per ?conv=: il ref si brucia solo ad apertura riuscita,
             // così se le istanze visibili crescono dopo il mount si riprova
-            const ok = await avviaChatNumero(dig);
-            _apriBusy.current = false;
-            if (!ok) return;
+            let ok = false;
+            try { ok = await avviaChatNumero(dig); }
+            finally { _apriBusy.current = false; }
+            if (!ok) { riprovaDeepLink(); return; }
             _apriFatto.current = dig;
             // CAL-01: ?testo= del deep-link precompila il composer (UNA volta
             // sola: l'operatore rilegge, ritocca e conferma con l'invio)
             if (testoIniziale && !_testoFatto.current) { _testoFatto.current = true; setText(testoIniziale); }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [apriNumero, visibleInstances.map(i => i.id).join("|")]);
+    }, [apriNumero, visPronta, waTick, visibleInstances.map(i => i.id).join("|")]);
 
     const invia = async () => {
         setEmojiOpen(false);
@@ -848,14 +872,17 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string, nome?: string |
     const [numero, setNumero] = useState("");
     const [errore, setErrore] = useState("");
     const [busy, setBusy] = useState(false);
+    const busyRef = useRef(false);   // il doppio click nello stesso tick vede ancora busy=false
     const conferma = async () => {
         const dig = numero.replace(/\D/g, "");
         if (dig.length < 6) { setErrore("Numero troppo corto: ricontrolla."); return; }
-        if (busy) return;
+        if (busyRef.current) return;
+        busyRef.current = true;
         setBusy(true);
-        const ok = await apri(dig);
-        setBusy(false);
-        if (ok) onClose();
+        try {
+            const ok = await apri(dig);
+            if (ok) onClose();
+        } finally { busyRef.current = false; setBusy(false); }
     };
     // Luca 25/08 notte: oltre al numero a mano, il solito campo multi-ricerca
     // dell'anagrafica (nome+cognome, CF/P.IVA, ragione sociale, cellulare) —
@@ -863,12 +890,14 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string, nome?: string |
     const scegliCliente = async (c: ClienteTrovato) => {
         const dig = String(c.cellulare || "").replace(/\D/g, "");
         if (dig.length < 6) { setErrore(`${etichettaCliente(c)} non ha un cellulare in anagrafica: completa la scheda cliente o scrivi il numero qui sopra.`); return; }
-        if (busy) return;
+        if (busyRef.current) return;
+        busyRef.current = true;
         setErrore("");
         setBusy(true);
-        const ok = await apri(dig, etichettaCliente(c));
-        setBusy(false);
-        if (ok) onClose();
+        try {
+            const ok = await apri(dig, etichettaCliente(c));
+            if (ok) onClose();
+        } finally { busyRef.current = false; setBusy(false); }
     };
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -927,12 +956,15 @@ function ScegliNumeroModal({ dig, nome, istanze, etichetta, apri, onClose }: {
         return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [coda, istanze.map(i => i.id).join("|")]);
+    const busyRef = useRef(false);
     const scegli = async (id: string) => {
-        if (busy) return;
+        if (busyRef.current) return;
+        busyRef.current = true;
         setBusy(id);
-        const ok = await apri(dig, id);
-        setBusy(null);
-        if (ok) onClose();
+        try {
+            const ok = await apri(dig, id);
+            if (ok) onClose();
+        } finally { busyRef.current = false; setBusy(null); }
     };
     const ordinate = [...istanze].sort((a, b) =>
         (conChat.has(b.id) ? 1 : 0) - (conChat.has(a.id) ? 1 : 0) || etichetta(a).localeCompare(etichetta(b)));

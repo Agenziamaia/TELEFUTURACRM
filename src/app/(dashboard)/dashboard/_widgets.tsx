@@ -1337,11 +1337,13 @@ function WidgetWhatsApp({ ctx, size }) {
             ]);
             if (!vivo) return;
             const utenti = new Map((users || []).map((u) => [u.id, u]));
-            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores);
+            // solo le CONNESSE: le stesse chat che l'Inbox mostra (un alert su
+            // un numero disconnesso sarebbe un click a vuoto)
+            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores, { soloConnesse: true });
             // stessa estensione dell'Inbox: il direttore cc vede i numeri dei suoi operatori
             if (ctx.user?.role === "direttore_cc") {
                 const gia = new Set(vis.map((i) => i.id));
-                vis = [...vis, ...(insts || []).filter((i) => !gia.has(i.id) && i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc")];
+                vis = [...vis, ...(insts || []).filter((i) => !gia.has(i.id) && i.status === "connessa" && i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc")];
             }
             if (!vis.length) { setDati({ vuoto: "Nessun numero WhatsApp collegato per il tuo negozio." }); return; }
             const { data: convs } = await supabase.from("wa_conversations")
@@ -1349,14 +1351,19 @@ function WidgetWhatsApp({ ctx, size }) {
                 .in("instance_id", vis.map((i) => i.id))
                 .or("is_group.is.null,is_group.eq.false")
                 .not("last_message_at", "is", null)
-                .order("last_message_at", { ascending: false }).limit(200);
+                .order("last_message_at", { ascending: false }).limit(400);
             if (!vivo) return;
             const mappaConv = new Map((convs || []).map((c) => [c.id, c]));
             if (!mappaConv.size) { setDati({ vuoto: "Ancora nessuna chat coi clienti su questi numeri." }); return; }
             const oggi = new Date();
             const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1).getTime();
-            const da = new Date(Math.min(inizioMese, oggi.getTime() - 30 * 86400000)).toISOString();
-            // messaggi a blocchi di 100 conversazioni (URL corti), max 3 pagine l'uno
+            const daMs = Math.min(inizioMese, oggi.getTime() - 30 * 86400000);
+            const da = new Date(daMs).toISOString();
+            // messaggi a blocchi di 100 conversazioni (URL corti), max 3
+            // pagine l'uno IN DISCESA: se una chat sfora il tetto si perde
+            // il passato, MAI l'ultimo messaggio (un taglio in salita
+            // mostrava «senza risposta» chat che una risposta ce l'avevano);
+            // tie-break su id per i created_at identici dei backfill
             const ids = [...mappaConv.keys()];
             const msgs = [];
             for (let b = 0; b < ids.length; b += 100) {
@@ -1366,16 +1373,20 @@ function WidgetWhatsApp({ ctx, size }) {
                         .select("conversation_id, direction, wa_timestamp, created_at, sent_by_user_id")
                         .in("conversation_id", blocco).is("deleted_at", null)
                         .gte("created_at", da)
-                        .order("created_at", { ascending: true })
+                        .order("created_at", { ascending: false }).order("id", { ascending: false })
                         .range(p * 1000, p * 1000 + 999);
                     msgs.push(...(pag || []));
                     if (!pag || pag.length < 1000) break;
                 }
             }
             if (!vivo) return;
+            // la finestra vale sul TEMPO VERO del messaggio (wa_timestamp):
+            // un import dello storico ha created_at = adesso ma messaggi
+            // vecchi — senza questo filtro una chat chiusa mesi fa compariva
+            // «senza risposta da 90g» per 30 giorni dall'import
             const righe = msgs
                 .map((m) => ({ ...m, t: new Date(m.wa_timestamp || m.created_at).getTime() }))
-                .filter((m) => !isNaN(m.t) && (m.direction === "in" || m.direction === "out"))
+                .filter((m) => !isNaN(m.t) && m.t >= daMs && (m.direction === "in" || m.direction === "out"))
                 .sort((a, b) => a.t - b.t);
             const perConv = new Map();
             righe.forEach((m) => { const a = perConv.get(m.conversation_id) || []; a.push(m); perConv.set(m.conversation_id, a); });
@@ -1406,6 +1417,7 @@ function WidgetWhatsApp({ ctx, size }) {
             setDati({
                 media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
                 chatAttive: attive.size, alerts, fette, nNumeri: vis.length,
+                tetto: (convs || []).length >= 400,
             });
         })();
         return () => { vivo = false; };
@@ -1415,13 +1427,13 @@ function WidgetWhatsApp({ ctx, size }) {
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
     );
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
-    if (dati.vuoto) return shell(<p className="text-xs text-slate-500 py-4">{dati.vuoto}</p>);
+    if (dati.vuoto) return shell(<p className="text-xs text-slate-500 px-3 py-4">{dati.vuoto}</p>);
     const totFette = dati.fette.reduce((s, f) => s + f.v, 0);
     const mostraFette = size >= 4 ? dati.fette : dati.fette.slice(0, 4);
     const nAlert = size >= 4 ? 8 : 3;
     const adesso = Date.now();
     return shell(
-        <div className="space-y-3">
+        <div className="space-y-3 p-3">
             {/* KPI del mese */}
             <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
@@ -1481,7 +1493,7 @@ function WidgetWhatsApp({ ctx, size }) {
                     </div>
                 </div>
             )}
-            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero" : `${dati.nNumeri} numeri`} · finestra ultimi 30 giorni</div>
+            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
         </div>
     );
 }

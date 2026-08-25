@@ -313,14 +313,20 @@ function ChatPageInner() {
   // (il testo arriva dal modello scelto nella sezione caller)
   const testoParam = searchParams.get("testo");
   const mailParam = searchParams.get("mail");
+  const _modeDaUrl = useRef(false);
   const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
     const qs = new URLSearchParams(window.location.search);
-    if (qs.get("wa") || qs.get("conv") || qs.get("mode") === "wa") return "whatsapp";
-    if (qs.get("mail")) return "email";
+    if (qs.get("wa") || qs.get("conv") || qs.get("mode") === "wa") { _modeDaUrl.current = true; return "whatsapp"; }
+    if (qs.get("mail")) { _modeDaUrl.current = true; return "email"; }
     return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
   });
-  useEffect(() => { try { localStorage.setItem("crm_chat_mode", mode); } catch { } }, [mode]);
+  // un arrivo da deep-link non deve diventare la preferenza salvata: la
+  // scheda scelta a mano sì (rilievo del revisore 25/08)
+  useEffect(() => {
+    if (_modeDaUrl.current) { _modeDaUrl.current = false; return; }
+    try { localStorage.setItem("crm_chat_mode", mode); } catch { }
+  }, [mode]);
 
   const onDeleteConversation = async () => {
     if (!selId || !isAdmin) return;
