@@ -110,13 +110,17 @@ export default function CalcolatorePage() {
     // PROVENIENZA (Luca 12/08): alcune righe pay valgono solo per certe
     // provenienze (TIM +10 da Iliad/Coop/Poste, Kena STAR) — null = standard
     const [provSel, setProvSel] = useState<string | null>(null);
+    // OPZIONI della vendita (S4 25/08): le righe ancorate a `opzione` (fasce
+    // di consumo business S4, kit Protecta W3…) non matchano senza — qui si
+    // scelgono con le pillole e viaggiano nel match come in Registra Vendita
+    const [opzSel, setOpzSel] = useState<string[]>([]);
     const [mostraScoperte, setMostraScoperte] = useState(false);
 
     useEffect(() => {
         if (!brand) return;
         let vivo = true;
         setCaricaCat(true); setCtx(null);
-        setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null); setProvSel(null);
+        setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null); setProvSel(null); setOpzSel([]);
         (async () => {
             const [cRes, pRes] = await Promise.all([
                 supabase.from("catalog_categorie").select("id, nome, ordine").order("ordine").limit(500),
@@ -232,15 +236,43 @@ export default function CalcolatorePage() {
         return Array.from(set).map(t => ({ token: t, label: LABEL[t] || t }));
     }, [tab]);
 
+    // OPZIONI che il tabellare distingue per QUESTA selezione (S4: fasce di
+    // consumo business; W3: kit Protecta…): righe con `opzione` compatibili
+    // con tipo/categoria/prodotto/offerta scelti — i loro nomi diventano
+    // pillole qui sotto, senza le quali quelle righe non pagano
+    const opzRilevanti = useMemo(() => {
+        if (!tab || !offSel || !prodSel || !catSel) return [];
+        const eqci = (a: unknown, b: unknown) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+        const set = new Set<string>();
+        for (const r of tab.righe) {
+            if (!r.attivo || !r.opzione || !String(r.opzione).trim()) continue;
+            if (r.componente || r.pista === "partnership") continue;
+            if (r.tipo_cliente != null && !eqci(r.tipo_cliente, prodSel.tipo_cliente)) continue;
+            if (r.categoria != null && !eqci(r.categoria, catSel.nome)) continue;
+            if (r.prodotto != null && !eqci(r.prodotto, prodSel.nome)) continue;
+            if (r.offerta != null && !eqci(r.offerta, offSel.nome)) continue;
+            String(r.opzione).split("|").forEach(t => { const x = t.trim(); if (x) set.add(x); });
+        }
+        return Array.from(set);
+    }, [tab, offSel, prodSel, catSel]);
+    // per il SOLO controllo di copertura (bordo ambra e lista scoperture): con
+    // tutte le opzioni concesse, una riga ancorata all'opzione È copertura
+    const tutteOpzioni = useMemo(() => {
+        if (!tab) return null;
+        const set = new Set<string>();
+        tab.righe.forEach(r => String(r.opzione || "").split("|").forEach(t => { const x = t.trim(); if (x) set.add(x); }));
+        return set.size ? Array.from(set).join(", ") : null;
+    }, [tab]);
+
     // risoluzione righe pay: set ADDITIVO (componenti W3: base + MNP + Tied +
     // P.IVA…) o singola riga classica — la prima riga porta i metadati
     const righeSet: PayRiga[] = useMemo(() => {
         if (!tab || !offSel || !prodSel || !catSel) return [];
         return matchRigheAttivazione(tab.righe, {
             tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: offSel.nome,
-            provenienza: provSel,
+            provenienza: provSel, opzioni: opzSel.length ? opzSel.join(", ") : null,
         }, brand);
-    }, [tab, offSel, prodSel, catSel, brand, provSel]);
+    }, [tab, offSel, prodSel, catSel, brand, provSel, opzSel]);
     const riga: PayRiga | null = righeSet[0] ?? null;
     // nome e punti raccontano l'intero set (es. "GA base + MNP + Tied ×canone")
     const nomeRiga = righeSet.length > 1
@@ -275,11 +307,11 @@ export default function CalcolatorePage() {
             const p = prods.find(x => x.id === o.prodotto_id); if (!p) continue;
             const c = cats.find(x => x.id === p.categoria_id); if (!c) continue;
             if (esclusaDalleGare({ categoria: c.nome, prodotto: p.nome, offerta: o.nome })) continue;   // escluse per regola, non scoperture
-            const r = matchRigheAttivazione(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome }, brand);
+            const r = matchRigheAttivazione(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome, opzioni: tutteOpzioni }, brand);
             if (!r.length) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
         }
         return out;
-    }, [tab, offs, prods, cats, brand]);
+    }, [tab, offs, prods, cats, brand, tutteOpzioni]);
 
     const Pill = ({ on, children, onClick, colore }: { on: boolean; children: React.ReactNode; onClick: () => void; colore?: string }) => (
         <button onClick={onClick}
@@ -375,7 +407,7 @@ export default function CalcolatorePage() {
             {brand && tab?.derivato && (
                 <div className="glass-panel rounded-2xl px-4 py-2.5 mb-5 text-[12px] text-slate-400">
                     🧮 Tabellare ragazzi <b className="text-slate-200">derivato dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista
-                    ({tab.piste.map(p => `${p.nome} ${p.perc_ragazzi ?? 100}%`).join(" · ")}) — si regola da Amministrazione → Tabellari Gare.
+                    ({tab.piste.map(p => `${p.nome} ${p.perc_ragazzi ?? 100}%`).join(" · ")}) — si regola dalla pagina Gare dell&apos;operatore, lato azienda.
                 </div>
             )}
 
@@ -404,7 +436,7 @@ export default function CalcolatorePage() {
                                 <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Prodotto</div>
                                 <div className="flex gap-2 flex-wrap mb-4">
                                     {prodsCat.map(p => (
-                                        <Pill key={p.id} on={prodId === p.id} onClick={() => { setProdId(p.id); setOffId(null); setTierSel(null); setProvSel(null); }}>{p.nome}</Pill>
+                                        <Pill key={p.id} on={prodId === p.id} onClick={() => { setProdId(p.id); setOffId(null); setTierSel(null); setProvSel(null); setOpzSel([]); }}>{p.nome}</Pill>
                                     ))}
                                 </div>
                             </>}
@@ -413,9 +445,9 @@ export default function CalcolatorePage() {
                                 <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                                     {offsProd.map(o => {
                                         const on = offId === o.id;
-                                        const r = tab && catSel && prodSel ? (matchRigheAttivazione(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome }, brand)[0] ?? null) : null;
+                                        const r = tab && catSel && prodSel ? (matchRigheAttivazione(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome, opzioni: tutteOpzioni }, brand)[0] ?? null) : null;
                                         return (
-                                            <button key={o.id} onClick={() => { setOffId(o.id); setTierSel(null); }}
+                                            <button key={o.id} onClick={() => { setOffId(o.id); setTierSel(null); setOpzSel([]); }}
                                                 className="rounded-xl px-3 py-3 text-sm font-semibold text-left border transition"
                                                 style={{
                                                     background: on ? (meta?.color || "#6366f1") : "rgba(255,255,255,0.04)",
@@ -440,6 +472,19 @@ export default function CalcolatorePage() {
                                             <Pill on={provSel == null} onClick={() => { setProvSel(null); setTierSel(null); }}>Standard</Pill>
                                             {provOpzioni.map(p => (
                                                 <Pill key={p.token} on={provSel === p.token} onClick={() => { setProvSel(p.token); setTierSel(null); }}>{p.label}</Pill>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* OPZIONI della vendita (S4 25/08: fasce di consumo
+                                    business) — il pay dipende da queste, come le
+                                    pillole di Registra Vendita */}
+                                {offSel && opzRilevanti.length > 0 && (
+                                    <div className="mt-4">
+                                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Opzioni della vendita <span className="normal-case text-slate-500">— il pay dipende da queste</span></div>
+                                        <div className="flex gap-2 flex-wrap">
+                                            {opzRilevanti.map(o => (
+                                                <Pill key={o} on={opzSel.includes(o)} onClick={() => { setOpzSel(p => p.includes(o) ? p.filter(x => x !== o) : [...p, o]); setTierSel(null); }}>{o}</Pill>
                                             ))}
                                         </div>
                                     </div>
@@ -484,6 +529,10 @@ export default function CalcolatorePage() {
                                             {puntiRiga > 0 && <div className="text-slate-400 text-sm mt-1">vale <b className="text-white">{puntiRiga}</b> in soglia</div>}
                                         </div>
                                     </div>
+                                    {/* RICORRENTE (S4 25/08): informativo, fuori dal one-shot */}
+                                    {(() => { const ric = righeSet.reduce((s, r) => s + (r.ricorrente ?? 0), 0); return ric > 0 ? (
+                                        <div className="text-sky-300/90 text-sm mt-3">🔁 In più <b>{euro(ric)}</b> al mese di ricorrente dall&apos;8° mese dal contratto (≈ 6° di fornitura)</div>
+                                    ) : null; })()}
                                     {!riga.gettone && scalaRiga.length > 0 && (
                                         <div className="mt-5">
                                             <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
@@ -491,7 +540,9 @@ export default function CalcolatorePage() {
                                                 {avz && riga.pista ? (proiezioneOn ? ` (S${tierProj || "0"} · ${puntiProj} punti proiettati) — oggi S${tierLive || "0"} · ${puntiPista} punti` : ` (S${tierLive || "0"} · ${puntiPista} punti)`) : ""}
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
-                                                <Pill on={tier === 0} onClick={() => setTierSel(0)}>Base</Pill>
+                                                {/* la pillola Base esiste solo se un pay "di cui
+                                                    base" esiste (S4 non ce l'ha — Luca 25/08) */}
+                                                {righeSet.some(r => r.pay_base != null) && <Pill on={tier === 0} onClick={() => setTierSel(0)}>Base</Pill>}
                                                 {scalaRiga.map(s => (
                                                     <Pill key={s.tier} on={tier === s.tier} onClick={() => setTierSel(s.tier)}>
                                                         S{s.tier} <span className="opacity-70 font-normal">({s.soglia_da}{s.soglia_a ? `–${s.soglia_a}` : "+"})</span>

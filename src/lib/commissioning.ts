@@ -41,6 +41,12 @@ export type PayRiga = {
     componente?: string | null;
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
+    // ricorrente €/pezzo/mese INFORMATIVO (S4: dall'8° mese dal contratto,
+    // ≈ 6° di fornitura) — il motore non lo paga, la UI lo racconta
+    ricorrente?: number | null;
+    // € FISSI ai ragazzi per soglia (Luca 25/08): se valorizzato, il derivato
+    // usa QUESTI importi e ignora % di pista e mappa soglie per questa riga
+    pay_ragazzi_tiers?: number[] | null;
 };
 // derivato: il lato ragazzi non esiste a DB — è il lato AZIENDA scalato con
 // pay_piste.perc_ragazzi (Luca 11/08: es. Fastweb mobile 60%, fisso 70%).
@@ -87,7 +93,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
         supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
-        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
@@ -97,6 +103,8 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
         punti: Number(r.punti || 0),
         pay_base: r.pay_base == null ? null : Number(r.pay_base),
         pay_tiers: Array.isArray(r.pay_tiers) ? (r.pay_tiers as unknown[]).map(Number) : [],
+        ricorrente: r.ricorrente == null ? null : Number(r.ricorrente),
+        pay_ragazzi_tiers: Array.isArray(r.pay_ragazzi_tiers) ? (r.pay_ragazzi_tiers as unknown[]).map(Number) : null,
     });
     return {
         brand, month: monthISO, lato, piste,
@@ -178,6 +186,12 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
         return max ? tiers.slice(0, max) : tiers;
     };
     const deriva = (r: PayRiga): PayRiga => {
+        // € FISSI ai ragazzi (Luca 25/08, nato per S4): pay_ragazzi_tiers
+        // sulla riga azienda VINCE su mappa e % di pista — la scala ragazzi
+        // di QUESTA riga è esattamente quella scritta a mano.
+        if (!r.gettone && Array.isArray(r.pay_ragazzi_tiers) && r.pay_ragazzi_tiers.length) {
+            return { ...r, pay_base: scala(r.pay_base, r.pista), pay_tiers: tagliaTiers(r.pay_ragazzi_tiers.map(Number), r.pista) };
+        }
         // MAPPA SOGLIE (Luca 12/08, modello W3): dove esiste, ogni soglia
         // NOSTRA pesca il valore azienda della soglia LORO mappata e applica
         // la % di quella soglia (settata per pista, mai per prodotto) —
@@ -281,13 +295,14 @@ async function caricaSoglieLato(brand: string, monthISO: string, lato: string): 
 /** Righe ragazzi senza pista madre (gettoni orfani, normalizzate). */
 async function caricaRigheOrfane(brand: string, monthISO: string): Promise<PayRiga[]> {
     const { data } = await supabase.from("pay_righe")
-        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente")
         .eq("brand", brand).eq("month", monthISO).eq("lato", "ragazzi").eq("attivo", true).order("ordine").limit(1000);
     return ((data || []) as Record<string, unknown>[]).map(r => ({
         ...(r as unknown as PayRiga),
         punti: Number(r.punti || 0),
         pay_base: r.pay_base == null ? null : Number(r.pay_base),
         pay_tiers: Array.isArray(r.pay_tiers) ? (r.pay_tiers as unknown[]).map(Number) : [],
+        ricorrente: r.ricorrente == null ? null : Number(r.ricorrente),
     }));
 }
 
@@ -483,7 +498,7 @@ export function matchComponenti(
  *  porta pista, gettone e moltiplicatore per chi deve mostrare i metadati. */
 export function matchRigheAttivazione(
     righe: PayRiga[],
-    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null },
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
     brandVendita?: string | null,
 ): PayRiga[] {
     const comp = matchComponenti(righe, c);

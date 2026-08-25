@@ -20,6 +20,9 @@ type Riga = {
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null; offerta: string | null;
     brand_vendita: string | null; moltiplicatore?: boolean; componente?: string | null; punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
+    // S4 (Luca 25/08): ricorrente €/pezzo/mese informativo (dall'8° mese dal
+    // contratto) + € fissi ai ragazzi per soglia (vincono su % e mappa)
+    ricorrente?: number | null; pay_ragazzi_tiers?: number[] | null;
 };
 
 const BRAND_VENDITA = ["windtre", "vodafone", "fastweb", "sky", "tim", "iliad", "very", "ho", "kena", "s4", "dojo", "kipoint"];
@@ -71,7 +74,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const [p, s, r, az] = await Promise.all([
             supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
-            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
+            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
         setAziendaEsiste((az.count || 0) > 0);
@@ -81,7 +84,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             const [ap, as, ar] = await Promise.all([
                 supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
-                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
+                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
             ]);
             // PISTE SOLO AZIENDA (Luca 13/08: gara business/assicurazioni W3
             // «di rete, resta solo all'azienda»): perc_ragazzi = 0 le esclude
@@ -120,10 +123,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 righe: ((ar.data || []) as Riga[]).filter(x => !x.pista || chiaviAz.has(x.pista)).map(x => {
                     // pay_tiers tagliati come le soglie (soglie_max della pista)
                     const mx = x.pista ? pisteAz.find(p => p.chiave === x.pista)?.soglie_max : null;
+                    // € FISSI ai ragazzi (Luca 25/08): dove impostati vincono
+                    // sulla derivazione a % — stessa precedenza del motore
+                    const manuali = Array.isArray(x.pay_ragazzi_tiers) && x.pay_ragazzi_tiers.length ? x.pay_ragazzi_tiers.map(Number) : null;
                     return {
                         ...x, punti: Number(x.punti || 0),
                         pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
-                        pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number).slice(0, mx ? Number(mx) : undefined),
+                        pay_tiers: (manuali ?? (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number)).slice(0, mx ? Number(mx) : undefined),
                     };
                 }),
             });
@@ -254,6 +260,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const { error } = await supabase.from("pay_righe").update({
             nome: r.nome, punti: r.punti, pay_base: r.pay_base, pay_tiers: r.pay_tiers,
             gettone: r.gettone, attivo: r.attivo, note: r.note || null,
+            ricorrente: r.ricorrente ?? null,
         }).eq("id", r.id);
         if (dbError("Salvataggio riga", error)) return;
         setOrig(prev => new Map(prev).set(r.id, JSON.stringify(r)));
@@ -285,7 +292,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             // il mese nuovo derivava ai ragazzi TUTTE le soglie azienda (gas a 5)
             supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", prev).eq("lato", lato),
-            supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
+            // opzione/provenienza/ricorrente/€ fissi ragazzi viaggiano con la
+            // copia (S4 25/08: le fasce business sono ancorate all'opzione)
+            supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, provenienza, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
         if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${fonteCopia}`); return; }
         const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id");
@@ -562,11 +571,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         const scala = soglieDer(px.chiave);
                         const rr = derivato.righe.filter(r => r.pista === px.chiave && !r.gettone);
                         if (!rr.length) return null;
+                        const nT = scala.length || Math.max(0, ...rr.map(r => r.pay_tiers.length));
                         return (
                             <div key={px.id} className="glass-panel rounded-2xl overflow-hidden">
                                 <div className="px-4 pt-3 pb-1.5 flex items-center gap-3 flex-wrap">
                                     <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{px.nome} <span className="text-amber-300/80">× {px.perc_ragazzi ?? 100}%</span></span>
                                     <span className="text-[11px] text-slate-500">{scala.map((x, i) => `S${i + 1}: ${x.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}</span>
+                                    {/* € FISSI (Luca 25/08): gli importi si possono correggere
+                                        a mano — vincono su % e mappa, in vista e nel motore */}
+                                    <span className="text-[10px] text-slate-600" title="Gli importi derivano dall'azienda × %. Correggi le caselle e salva col 💾 per fissarli in € (vincono su % e mappa soglie); ↺ torna alla derivazione.">✎ importi correggibili — in ambra quelli fissati a mano</span>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm border-collapse">
@@ -574,19 +587,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                             <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                                 <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
                                                 <th className="px-1.5 py-1.5 font-semibold text-center w-12 text-indigo-300">Punti</th>
-                                                <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>
-                                                {scala.map((_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-16">S{i + 1}</th>)}
+                                                {ctx !== "s4" && <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>}
+                                                {Array.from({ length: nT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                                <th className="px-2 py-1.5 w-16"></th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {rr.map(r => (
-                                                <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.03]">
-                                                    <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
-                                                    <td className="px-1 py-1 text-center text-indigo-300 font-semibold">{r.punti || "—"}</td>
-                                                    <td className="px-1 py-1 text-center text-slate-300">{r.pay_base ?? "—"}</td>
-                                                    {scala.map((_, i) => <td key={i} className="px-1 py-1 text-center text-white font-medium">{r.pay_tiers[i] ?? "—"}</td>)}
-                                                </tr>
-                                            ))}
+                                            {rr.map(r => <RigaPayRagazzi key={r.id} r={r} nT={nT} senzaBase={ctx === "s4"} dopo={load} />)}
                                         </tbody>
                                     </table>
                                 </div>
@@ -772,6 +779,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 // moltiplicatori restavano INVISIBILI (baco visto da Luca 14/08:
                 // «GA base: leggo punti 1 e niente soglie»)
                 const nTiers = soglieDi(p.chiave).length || Math.max(0, ...rr.map(r => r.pay_tiers.length));
+                // RICORRENTE (Luca 25/08, S4): colonna €/pezzo/mese prima dei
+                // Punti — su S4 sempre, altrove appare se qualche riga ce l'ha
+                const mostraRic = ctx === "s4" || rr.some(r => r.ricorrente != null);
                 return (
                     <div key={p.id} className="glass-panel rounded-2xl overflow-hidden">
                         <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-3 flex-wrap">
@@ -798,14 +808,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     <thead>
                                         <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                             <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
+                                            {mostraRic && <th className="px-1.5 py-1.5 font-semibold text-center w-20" title="€ al mese per pezzo dall'8° mese dal contratto (≈ 6° di fornitura: il PDP entra in fornitura dopo ~2 mesi). Informativo: fuori dal gettone one-shot.">🔁 Ricorr. €/m</th>}
                                             <th className="px-1.5 py-1.5 font-semibold text-center w-12">Punti</th>
-                                            <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>
+                                            {ctx !== "s4" && <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>}
                                             {Array.from({ length: nTiers }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-16">S{i + 1}</th>)}
                                             <th className="px-2 py-1.5 w-20"></th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
+                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} />)}
                                     </tbody>
                                 </table>
                             </div>
@@ -815,7 +826,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 );
             })}
 
-            {/* GETTONI — tabella compatta */}
+            {/* GETTONI — tabella compatta. Su S4 NON esiste (Luca 25/08: «non
+                ha senso che sia lì»): tutto il pay S4 vive nelle piste */}
+            {ctx !== "s4" && (
             <div className="glass-panel rounded-2xl overflow-hidden">
                 <div className="flex items-center justify-between px-4 pt-3 pb-2">
                     <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">💰 Gettoni — pagano sempre, senza soglia <span className="text-slate-600">({gettoni.length})</span></div>
@@ -838,16 +851,67 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 )}
                 {!gettoni.length && <div className="text-slate-500 text-sm px-4 pb-3">Nessun gettone.</div>}
             </div>
+            )}
         </div>
+    );
+}
+
+// PAY RAGAZZI CORREGGIBILE (Luca 25/08, nato per S4: «non solo in percentuale
+// — se voglio definire anche un fisso»): la riga derivata mostra gli importi
+// (azienda × %, o quelli già fissati) e li lascia correggere in €. Il 💾
+// scrive pay_ragazzi_tiers sulla riga AZIENDA — da lì vince su % di pista e
+// mappa soglie, qui in vista e nel motore (commissioning.deriva). ↺ li toglie
+// e torna alla derivazione. Top-level (lezione CardVoce: mai annidata).
+function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senzaBase: boolean; dopo: () => void }) {
+    const manuale = Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0;
+    const mostrati = Array.from({ length: nT }, (_, i) => r.pay_tiers[i] == null ? "" : String(r.pay_tiers[i]));
+    const [draft, setDraft] = useState<string[] | null>(null);
+    const vals = draft ?? mostrati;
+    const dirty = draft != null && draft.join("|") !== mostrati.join("|");
+    const salva = async () => {
+        const nums = vals.map(v => Number(String(v).trim().replace(",", ".")));
+        if (nums.some(n => !Number.isFinite(n))) { notify("Compila tutti gli importi con numeri validi"); return; }
+        const { error } = await supabase.from("pay_righe").update({ pay_ragazzi_tiers: nums }).eq("id", r.id);
+        if (dbError("€ fissi ai ragazzi", error)) return;
+        notify("€ fissi ai ragazzi salvati ✓ — vincono su % e mappa", "ok"); setDraft(null); dopo();
+    };
+    const ripristina = async () => {
+        if (!window.confirm(`«${r.nome}»: tolgo gli € fissi e torno alla derivazione a %?`)) return;
+        const { error } = await supabase.from("pay_righe").update({ pay_ragazzi_tiers: null }).eq("id", r.id);
+        if (dbError("€ fissi ai ragazzi", error)) return;
+        notify("Tornata alla derivazione a % ✓", "ok"); setDraft(null); dopo();
+    };
+    return (
+        <tr className="border-t border-white/5 hover:bg-white/[0.03]">
+            <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
+                {r.nome}
+                {manuale && <span className="text-amber-300/90 text-[10px] font-bold ml-1.5" title="€ fissati a mano: vincono su % di pista e mappa soglie">€ fissi</span>}
+                {r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}
+            </td>
+            <td className="px-1 py-1 text-center text-indigo-300 font-semibold">{r.punti || "—"}</td>
+            {!senzaBase && <td className="px-1 py-1 text-center text-slate-300">{r.pay_base ?? "—"}</td>}
+            {Array.from({ length: nT }, (_, i) => (
+                <td key={i} className="px-1 py-1 text-center">
+                    <input value={vals[i] ?? ""} onChange={e => { const c = [...vals]; c[i] = e.target.value; setDraft(c); }}
+                        className={`w-16 bg-transparent text-center text-sm border-b outline-none py-0.5 focus:border-indigo-400 ${manuale ? "text-amber-200 border-amber-500/30" : "text-white border-transparent"}`} />
+                </td>
+            ))}
+            <td className="px-2 py-1 text-right whitespace-nowrap">
+                {dirty && <button onClick={salva} title="Fissa questi € ai ragazzi (vincono su % e mappa)" className="text-emerald-300 align-middle mr-1.5"><Save size={14} /></button>}
+                {manuale && <button onClick={ripristina} title="Togli gli € fissi: torna alla derivazione a %" className="text-[11px] text-slate-500 hover:text-slate-300 align-middle">↺</button>}
+            </td>
+        </tr>
     );
 }
 
 // Riga di TABELLA — top-level (lezione CardVoce: mai annidata). Aggancio e
 // note vivono nel tooltip della cella Offerta: la riga resta alta una riga.
-function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina }: {
+function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, senzaBase }: {
     r: Riga; nTiers: number; isDirty: boolean;
     onUp: (id: string, patch: Partial<Riga>) => void;
     onSalva: (r: Riga) => void; onElimina: (r: Riga) => void;
+    // S4 (Luca 25/08): colonna ricorrente €/mese prima dei Punti; niente Base
+    conRicorrente?: boolean; senzaBase?: boolean;
 }) {
     const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") || "qualsiasi vendita";
     const tip = anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.moltiplicatore ? " · i valori sono MOLTIPLICATORI del canone mensile" : "") + (r.note ? ` — ${r.note}` : "");
@@ -862,8 +926,9 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina }: {
                     {r.note && <span title={tip} className="text-slate-600 text-[11px] cursor-help shrink-0">ⓘ</span>}
                 </div>
             </td>
+            {conRicorrente && !r.gettone && <td className="px-1 py-0.5"><input value={r.ricorrente ?? ""} title="€ al mese per pezzo dall'8° mese dal contratto" onChange={e => onUp(r.id, { ricorrente: e.target.value === "" ? null : num(e.target.value) })} className={cell + " text-sky-200"} /></td>}
             {!r.gettone && <td className="px-1 py-0.5"><input value={r.punti} onChange={e => onUp(r.id, { punti: num(e.target.value) })} className={cell} /></td>}
-            <td className="px-1 py-0.5"><input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={cell} /></td>
+            {!senzaBase && <td className="px-1 py-0.5"><input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={cell} /></td>}
             {!r.gettone && Array.from({ length: nTiers }, (_, i) => (
                 <td key={i} className="px-1 py-0.5">
                     <input value={r.pay_tiers[i] ?? ""} onChange={e => {
@@ -890,6 +955,9 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
     const [cat, setCat] = useState(""); const [prod, setProd] = useState(""); const [off, setOff] = useState("");
     const [bv, setBv] = useState(BRAND_VENDITA.includes(ctx) ? ctx : "vodafone");
     const [punti, setPunti] = useState("1"); const [base, setBase] = useState("");
+    // S4 (Luca 25/08): niente base — al suo posto il ricorrente €/mese
+    const isS4 = ctx === "s4";
+    const [ric, setRic] = useState("");
     const [tiers, setTiers] = useState<string[]>(Array.from({ length: nTiers }, () => ""));
     const salva = async () => {
         if (!nome.trim()) { notify("Dai un nome alla riga"); return; }
@@ -899,6 +967,7 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
             brand_vendita: bv, punti: pista ? Number(punti.replace(",", ".")) || 0 : 0,
             pay_base: base === "" ? null : Number(base.replace(",", ".")) || 0,
             pay_tiers: pista ? tiers.map(t => Number(t.replace(",", ".")) || 0) : [],
+            ricorrente: pista && ric !== "" ? Number(ric.replace(",", ".")) || null : null,
             gettone: !pista, attivo: true, ordine: 999,
         });
         if (dbError("Nuova riga", error)) return;
@@ -925,7 +994,8 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
                     <button key={b} onClick={() => setBv(b)} className={`text-xs px-2 py-1 rounded-lg border ${bv === b ? "border-indigo-400 text-white bg-indigo-500/30" : "border-white/10 text-slate-400"}`}>{b}</button>
                 ))}
                 {pista && <label className="text-[11px] text-slate-400">punti <input value={punti} onChange={e => setPunti(e.target.value)} className={inputCls + " w-14"} /></label>}
-                <label className="text-[11px] text-slate-400">{pista ? "base €" : "gettone €"} <input value={base} onChange={e => setBase(e.target.value)} className={inputCls} /></label>
+                {isS4 && pista && <label className="text-[11px] text-sky-300/90" title="€ al mese per pezzo dall'8° mese dal contratto">ricorrente €/m <input value={ric} onChange={e => setRic(e.target.value)} className={inputCls} /></label>}
+                {!(isS4 && pista) && <label className="text-[11px] text-slate-400">{pista ? "base €" : "gettone €"} <input value={base} onChange={e => setBase(e.target.value)} className={inputCls} /></label>}
                 {pista && tiers.map((t, i) => (
                     <label key={i} className="text-[11px] text-slate-400">S{i + 1} € <input value={t} onChange={e => setTiers(p => p.map((x, j) => j === i ? e.target.value : x))} className={inputCls} /></label>
                 ))}
