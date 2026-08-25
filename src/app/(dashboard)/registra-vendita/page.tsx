@@ -3344,27 +3344,45 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             </div>
           </div>
     )}
-    {offSel&&offSel.opzioni.length>0&&(
+    {offSel&&offSel.opzioni.length>0&&(()=>{
+      // pillola di UNA opzione (bottone + eventuale contatore quantità) —
+      // condivisa tra le righe dei gruppi obbligatori e le facoltative
+      const pillOpz=(o)=>{const on=!!opz[o.nome];
+        const bloccata=!on&&(_opzBundle(o.nome)||_opzAccessorio(o.nome))&&_vinc>=MAX_BUNDLE_ACC;
+        return(
+        <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
+          <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:bloccata?"not-allowed":"pointer",opacity:bloccata?0.35:1,border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo&&!o.obb?" ¹":""}</button>
+          {on&&(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
+            if(_opzBundle(o.nome)||_opzAccessorio(o.nome)){const altre=_vinc-_qtaOpz(opz[o.nome]);q=Math.max(1,Math.min(q,MAX_BUNDLE_ACC-altre));}
+            setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
+        </span>);};
+      // RIGHE DEDICATE per i gruppi a scelta obbligatoria (Luca 25/08 sera,
+      // fisso W3: «prima scelta GA o GNP, seconda FTTC/FTTH/FTTH Extra, poi
+      // tutte le altre») — vale per OGNI gruppo obbligatorio a catalogo
+      // (anche Protecta kit+pagamento); l'ordine dei gruppi segue l'ordine
+      // delle opzioni. Le facoltative restano nella loro riga sotto.
+      const grpObb=[...new Set(offSel.opzioni.filter(o=>o.obb&&o.gruppo).map(o=>o.gruppo))];
+      const libere=offSel.opzioni.filter(o=>!(o.obb&&o.gruppo));
+      return(
       <div style={{marginTop:10}}>
-        <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>
-          {/* gruppi a scelta OBBLIGATORIA (Luca 14/08, es. Protecta kit+pagamento) */}
-          {(()=>{const _go=[...new Set(offSel.opzioni.filter(o=>o.obb&&o.gruppo).map(o=>o.gruppo))];
-            const _manca=_go.filter(g=>!offSel.opzioni.some(k=>k.gruppo===g&&opz[k.nome]));
-            return _go.length?<span style={{fontWeight:700,color:_manca.length?"var(--tf-f59e0b)":"var(--tf-28a745)",marginLeft:8}}>✱ scelta obbligatoria: {_go.join(", ")}{_manca.length?" — manca: "+_manca.join(", "):" ✓"}</span>:null;})()}
-          {_haVincolabili&&<span style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {offSel.opzioni.map(o=>{const on=!!opz[o.nome];
-            const bloccata=!on&&(_opzBundle(o.nome)||_opzAccessorio(o.nome))&&_vinc>=MAX_BUNDLE_ACC;
-            return(
-            <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
-              <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:bloccata?"not-allowed":"pointer",opacity:bloccata?0.35:1,border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
-              {on&&(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
-                if(_opzBundle(o.nome)||_opzAccessorio(o.nome)){const altre=_vinc-_qtaOpz(opz[o.nome]);q=Math.max(1,Math.min(q,MAX_BUNDLE_ACC-altre));}
-                setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
-            </span>);})}
-        </div>
-      </div>
-    )}
+        {grpObb.map(g=>{
+          const scelte=offSel.opzioni.filter(o=>o.gruppo===g&&o.obb);
+          const fatta=scelte.some(o=>opz[o.nome]);
+          return(
+          <div key={g} style={{marginBottom:8}}>
+            <div style={{fontSize:11,fontWeight:700,color:fatta?"var(--tf-28a745)":"var(--tf-f59e0b)",marginBottom:4}}>
+              ✱ <span style={{textTransform:"capitalize"}}>{g}</span> <span style={{fontWeight:400}}>{fatta?"✓":"— scegli una"}</span>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{scelte.map(pillOpz)}</div>
+          </div>);})}
+        {libere.length>0&&(
+          <>
+            <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{libere.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>
+              {_haVincolabili&&<span style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{libere.map(pillOpz)}</div>
+          </>
+        )}
+      </div>);})()}
     {sub.catCategoria==="Telefono a Rate"&&!/\bCB\b/i.test(sub.catProdotto)&&(mobili||[]).length>0&&(!_NE(f["Codice Contratto"])||!_NE(f["Numero di Cellulare"]))&&(
       <div style={{marginTop:10,padding:"10px 12px",background:"rgba(111,66,193,0.08)",borderRadius:8,border:"1px dashed rgba(111,66,193,0.55)"}}>
         <div style={{fontSize:12,fontWeight:700,color:"var(--tf-a78bfa)",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
