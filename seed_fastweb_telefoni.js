@@ -114,10 +114,17 @@ const RIGHE = [
       ord++;
     }
 
-    // 2. piste senza soglie per la % ai ragazzi dei gettoni
-    await client.query(
-      "insert into pay_piste (brand, month, chiave, nome, um, ordine, lato) values ($1,$2,'gas','Gas',$3,6,$4), ($1,$2,'telefoni','Telefoni',$3,7,$4)",
-      [BRAND, MONTH, "pezzi", LATO]);
+    // 2. piste senza soglie per la % ai ragazzi dei gettoni (guardia PER
+    //    pista — revisore 25/08: un rilancio dopo una rimozione parziale
+    //    della sola «telefoni» non deve duplicare la «gas»)
+    for (const [chiave, nome, ordine] of [["gas", "Gas", 6], ["telefoni", "Telefoni", 7]]) {
+      const { rows: [{ c }] } = await client.query(
+        "select count(*)::int c from pay_piste where brand=$1 and month=$2 and lato=$3 and chiave=$4",
+        [BRAND, MONTH, LATO, chiave]);
+      if (!c) await client.query(
+        "insert into pay_piste (brand, month, chiave, nome, um, ordine, lato) values ($1,$2,$3,$4,'pezzi',$5,$6)",
+        [BRAND, MONTH, chiave, nome, ordine, LATO]);
+    }
 
     // 3. Gas nella sua pista; TNP 0 € spenta
     const gas = await client.query(

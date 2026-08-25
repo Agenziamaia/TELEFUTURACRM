@@ -680,7 +680,12 @@ export default function CalcolatorePage() {
                                 (soglie_di) non hanno una barra propria — i loro pezzi
                                 sono già nel conteggio della madre. La barra è UNA:
                                 quella del canvass, con lo spaccato per sezione. */}
-                            {!avz ? <div className="text-slate-500 text-sm">Calcolo…</div> : tab.piste.filter(p => !p.soglie_di).map(p => {
+                            {!avz ? <div className="text-slate-500 text-sm">Calcolo…</div> : tab.piste.filter(p => !p.soglie_di
+                                // piste SOLO-GETTONI senza soglie (gas/telefoni FW):
+                                // niente barra — senza target usciva piena al 100% con
+                                // «0 pezzi» (rilievo revisore 25/08); i gettoni pagano
+                                // comunque. Le piste con righe vere (W3) restano.
+                                && ((tabEff || tab).soglie.some(sg => sg.pista === p.chiave) || tab.righe.some(r => r.pista === p.chiave && !r.gettone))).map(p => {
                                 const a = avz.piste[p.chiave]; if (!a) return null;
                                 const appoggiate = tab.piste.filter(x => x.soglie_di === p.chiave);
                                 const unita = p.um === "pezzi" ? "pezzi" : "punti";
