@@ -759,6 +759,7 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     let pivaMobile = 0;
     let puntiTelMobile = 0;
     let simSky = 0;
+    let fisseResShp = 0;
     for (const c of contratti) {
         // set additivo (componenti W3) o singola riga classica: la prima
         // riga porta la pista, i punti si sommano su tutto il set
@@ -780,6 +781,10 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
             if (pista === "mobile" && /^telefono a rate/i.test(String(c.categoria || ""))) puntiTelMobile += p;
         }
         if (pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) pivaMobile++;
+        // pda fisse res o shp (cancelletto Fastweb qui sotto): le small
+        // Web Business/Unlimited non aprono la gara mobile
+        if ((pista === "fisso" || pista === "business_fisso")
+            && !/unlimited|web business/i.test(String(c.offerta || ""))) fisseResShp++;
         // cancelletto Sky (lettera GOLD): contano MNP (qualsiasi ricarica) e
         // GA con Ricarica automatica — la ricarica pura no
         if (tab.brand === "sky" && (/^mobile mnp$/i.test(String(c.prodotto || ""))
@@ -834,6 +839,21 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
                 soglia: scala.find(s => s.tier === 1) || null,
                 prossima: scala.find(s => s.tier === 2) || null, mancano: null,
                 gate: `soglie oltre la 1ª bloccate: servono 6 SIM (MNP + Ric. automatica), fatte ${simSky}`,
+            };
+        }
+    }
+    // CANCELLETTO FASTWEB (piano agosto, §Gara mobile): si accede alla gara
+    // mobile (res e business) solo con ALMENO 2 pda fisse (res o shp) nel
+    // mese — sotto, ogni sim resta al compenso base («di cui base», tier 0).
+    // Vale su entrambi i lati (il ragazzi fastweb è derivato dall'azienda).
+    if (tab.brand === "fastweb") {
+        const mob = piste["mobile"];
+        if (mob && mob.tier >= 1 && fisseResShp < 2) {
+            const scalaM = tab.soglie.filter(s => s.pista === "mobile").sort((a, b) => a.tier - b.tier);
+            piste["mobile"] = {
+                ...mob, tier: 0, soglia: null,
+                prossima: scalaM.find(s => s.tier === 1) || null, mancano: null,
+                gate: `gara mobile chiusa: servono 2 pda fisse (res o shp), fatte ${fisseResShp}`,
             };
         }
     }
