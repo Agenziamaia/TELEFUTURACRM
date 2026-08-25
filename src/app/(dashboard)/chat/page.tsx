@@ -316,7 +316,7 @@ function ChatPageInner() {
   const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
     const qs = new URLSearchParams(window.location.search);
-    if (qs.get("wa") || qs.get("conv")) return "whatsapp";
+    if (qs.get("wa") || qs.get("conv") || qs.get("mode") === "wa") return "whatsapp";
     if (qs.get("mail")) return "email";
     return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
   });

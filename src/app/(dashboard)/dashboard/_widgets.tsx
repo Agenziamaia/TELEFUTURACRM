@@ -33,12 +33,13 @@ import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel } fr
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
+import { waIstanzeVisibili } from "@/lib/waVisibilita";
 import { cn } from "@/utils";
 import {
     FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
     AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
     Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, CalendarClock,
-    LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords,
+    LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords, MessageCircle,
 } from "lucide-react";
 
 // ── Regole di conteggio (UNICHE: le usa anche lo script di riscontro) ───────
@@ -1287,6 +1288,204 @@ function WidgetClassifica({ ctx, size }) {
 // ── REGISTRO ────────────────────────────────────────────────────────────────
 // id fissi + id dinamici "brand:<Brand>". Ogni voce: label, icona, taglie
 // ammesse, taglia di default, disponibilità per contesto.
+// ── WIDGET WHATSAPP DEL TEAM (Luca 25/08 notte): solo manager. Tempo medio
+// di risposta ai clienti, alert sulle chat rimaste senza risposta e anello
+// con la ripartizione dei messaggi scritti da ogni collaboratore nel mese.
+// I numeri considerati sono ESATTAMENTE quelli che l'utente vede nell'Inbox
+// (waIstanzeVisibili + supervisione call center per il direttore cc); solo
+// chat 1-a-1, finestra dati = inizio mese o ultimi 30 giorni (la più ampia).
+const WA_TORTA_COLORI = ["#22c55e", "#38bdf8", "#a78bfa", "#f59e0b", "#f43f5e", "#14b8a6", "#eab308", "#94a3b8"];
+
+function fmtDurataWa(ms) {
+    if (ms == null || isNaN(ms) || ms < 0) return "—";
+    const min = Math.round(ms / 60000);
+    if (min < 1) return "meno di 1 min";
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h}h ${min % 60}m`;
+    return `${Math.floor(h / 24)}g ${h % 24}h`;
+}
+
+function AnelloWa({ fette, lato = 104, spessore = 16 }) {
+    const tot = fette.reduce((s, f) => s + f.v, 0) || 1;
+    const r = (lato - spessore) / 2;
+    const C = 2 * Math.PI * r;
+    let acc = 0;
+    return (
+        <svg width={lato} height={lato} viewBox={`0 0 ${lato} ${lato}`} className="-rotate-90 shrink-0">
+            <circle cx={lato / 2} cy={lato / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={spessore} />
+            {fette.map((f, i) => {
+                const frac = f.v / tot; const off = acc; acc += frac;
+                return <circle key={i} cx={lato / 2} cy={lato / 2} r={r} fill="none" stroke={f.col}
+                    strokeWidth={spessore} strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-off * C} />;
+            })}
+        </svg>
+    );
+}
+
+function WidgetWhatsApp({ ctx, size }) {
+    const uid = ctx.user?.id;
+    const [dati, setDati] = useState(null);
+    const [giro, setGiro] = useState(0);
+    useEffect(() => { const t = setInterval(() => setGiro((g) => g + 1), 120000); return () => clearInterval(t); }, []);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const [{ data: insts }, { data: users }] = await Promise.all([
+                supabase.from("wa_instances").select("id, owner_user_id, negozio, display_name, wa_number, status"),
+                supabase.from("app_users").select("id, full_name, role"),
+            ]);
+            if (!vivo) return;
+            const utenti = new Map((users || []).map((u) => [u.id, u]));
+            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores);
+            // stessa estensione dell'Inbox: il direttore cc vede i numeri dei suoi operatori
+            if (ctx.user?.role === "direttore_cc") {
+                const gia = new Set(vis.map((i) => i.id));
+                vis = [...vis, ...(insts || []).filter((i) => !gia.has(i.id) && i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc")];
+            }
+            if (!vis.length) { setDati({ vuoto: "Nessun numero WhatsApp collegato per il tuo negozio." }); return; }
+            const { data: convs } = await supabase.from("wa_conversations")
+                .select("id, instance_id, customer_name, customer_number, last_message_at")
+                .in("instance_id", vis.map((i) => i.id))
+                .or("is_group.is.null,is_group.eq.false")
+                .not("last_message_at", "is", null)
+                .order("last_message_at", { ascending: false }).limit(200);
+            if (!vivo) return;
+            const mappaConv = new Map((convs || []).map((c) => [c.id, c]));
+            if (!mappaConv.size) { setDati({ vuoto: "Ancora nessuna chat coi clienti su questi numeri." }); return; }
+            const oggi = new Date();
+            const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1).getTime();
+            const da = new Date(Math.min(inizioMese, oggi.getTime() - 30 * 86400000)).toISOString();
+            // messaggi a blocchi di 100 conversazioni (URL corti), max 3 pagine l'uno
+            const ids = [...mappaConv.keys()];
+            const msgs = [];
+            for (let b = 0; b < ids.length; b += 100) {
+                const blocco = ids.slice(b, b + 100);
+                for (let p = 0; p < 3; p++) {
+                    const { data: pag } = await supabase.from("wa_messages")
+                        .select("conversation_id, direction, wa_timestamp, created_at, sent_by_user_id")
+                        .in("conversation_id", blocco).is("deleted_at", null)
+                        .gte("created_at", da)
+                        .order("created_at", { ascending: true })
+                        .range(p * 1000, p * 1000 + 999);
+                    msgs.push(...(pag || []));
+                    if (!pag || pag.length < 1000) break;
+                }
+            }
+            if (!vivo) return;
+            const righe = msgs
+                .map((m) => ({ ...m, t: new Date(m.wa_timestamp || m.created_at).getTime() }))
+                .filter((m) => !isNaN(m.t) && (m.direction === "in" || m.direction === "out"))
+                .sort((a, b) => a.t - b.t);
+            const perConv = new Map();
+            righe.forEach((m) => { const a = perConv.get(m.conversation_id) || []; a.push(m); perConv.set(m.conversation_id, a); });
+            let sommaRisp = 0, nRisp = 0, inMese = 0, outMese = 0;
+            const perUtente = new Map(); const attive = new Set(); const alerts = [];
+            perConv.forEach((arr, cid) => {
+                let inAperto = null; // primo messaggio del cliente ancora senza risposta
+                arr.forEach((m) => {
+                    if (m.t >= inizioMese) {
+                        if (m.direction === "in") inMese++; else outMese++;
+                        if (m.direction === "out") { const k = m.sent_by_user_id || "tel"; perUtente.set(k, (perUtente.get(k) || 0) + 1); }
+                        attive.add(cid);
+                    }
+                    if (m.direction === "in") { if (inAperto == null) inAperto = m.t; }
+                    else { if (inAperto != null && m.t >= inizioMese) { sommaRisp += m.t - inAperto; nRisp++; } inAperto = null; }
+                });
+                const ultimo = arr[arr.length - 1];
+                if (ultimo && ultimo.direction === "in") {
+                    const c = mappaConv.get(cid);
+                    alerts.push({ id: cid, nome: c?.customer_name || (c?.customer_number ? `+${c.customer_number}` : "chat"), da: ultimo.t });
+                }
+            });
+            alerts.sort((a, b) => a.da - b.da);
+            const fette = [...perUtente.entries()]
+                .map(([k, v]) => ({ k, v, nome: k === "tel" ? "Da telefono" : (utenti.get(k)?.full_name || "Utente rimosso") }))
+                .sort((a, b) => b.v - a.v)
+                .map((f, i) => ({ ...f, col: WA_TORTA_COLORI[i % WA_TORTA_COLORI.length] }));
+            setDati({
+                media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
+                chatAttive: attive.size, alerts, fette, nNumeri: vis.length,
+            });
+        })();
+        return () => { vivo = false; };
+    }, [uid, ctx.user?.role, ctx.negoziKey, giro]); // eslint-disable-line react-hooks/exhaustive-deps
+    const azione = <Link href="/chat?mode=wa" className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
+    const shell = (figli) => (
+        <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
+    );
+    if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
+    if (dati.vuoto) return shell(<p className="text-xs text-slate-500 py-4">{dati.vuoto}</p>);
+    const totFette = dati.fette.reduce((s, f) => s + f.v, 0);
+    const mostraFette = size >= 4 ? dati.fette : dati.fette.slice(0, 4);
+    const nAlert = size >= 4 ? 8 : 3;
+    const adesso = Date.now();
+    return shell(
+        <div className="space-y-3">
+            {/* KPI del mese */}
+            <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Risposta media</div>
+                    <div className="text-lg font-black text-emerald-300 leading-tight">{fmtDurataWa(dati.media)}</div>
+                    <div className="text-[10px] text-slate-600">{dati.nRisp} risposte questo mese</div>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Chat attive</div>
+                    <div className="text-lg font-black text-white leading-tight">{dati.chatAttive}</div>
+                    <div className="text-[10px] text-slate-600">clienti nel mese</div>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Ricevuti</div>
+                    <div className="text-lg font-black text-sky-300 leading-tight">{dati.inMese}</div>
+                    <div className="text-[10px] text-slate-600">messaggi dei clienti</div>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Inviati</div>
+                    <div className="text-lg font-black text-white leading-tight">{dati.outMese}</div>
+                    <div className="text-[10px] text-slate-600">risposte del team</div>
+                </div>
+            </div>
+            {/* alert: chat senza risposta */}
+            {dati.alerts.length > 0 ? (
+                <div className="rounded-xl bg-rose-500/[0.07] border border-rose-500/20 px-3 py-2 space-y-1">
+                    <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" /> {dati.alerts.length === 1 ? "1 chat senza risposta" : `${dati.alerts.length} chat senza risposta`}
+                    </div>
+                    {dati.alerts.slice(0, nAlert).map((a) => (
+                        <Link key={a.id} href={`/chat?conv=${a.id}`} className="flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
+                            <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
+                            <span className={cn("shrink-0 font-bold", adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")}>da {fmtDurataWa(adesso - a.da)}</span>
+                        </Link>
+                    ))}
+                    {dati.alerts.length > nAlert && <div className="text-[10px] text-slate-500">…e altre {dati.alerts.length - nAlert}</div>}
+                </div>
+            ) : (
+                <div className="rounded-xl bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Tutte le chat hanno avuto risposta
+                </div>
+            )}
+            {/* anello: chi scrive quanto */}
+            {totFette > 0 && (
+                <div className="flex items-center gap-4">
+                    <AnelloWa fette={dati.fette} lato={size >= 4 ? 116 : 96} />
+                    <div className="min-w-0 flex-1 space-y-1">
+                        <div className="text-[10px] uppercase tracking-wider text-slate-500">Messaggi scritti nel mese</div>
+                        {mostraFette.map((f) => (
+                            <div key={f.k} className="flex items-center gap-2 text-[11px]">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: f.col }} />
+                                <span className="font-semibold text-slate-200 truncate">{f.nome}{f.k === uid ? " (tu)" : ""}</span>
+                                <span className="ml-auto shrink-0 text-slate-400 font-bold">{f.v} · {Math.round((f.v / totFette) * 100)}%</span>
+                            </div>
+                        ))}
+                        {dati.fette.length > mostraFette.length && <div className="text-[10px] text-slate-500">…e altri {dati.fette.length - mostraFette.length}</div>}
+                    </div>
+                </div>
+            )}
+            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero" : `${dati.nNumeri} numeri`} · finestra ultimi 30 giorni</div>
+        </div>
+    );
+}
+
 const FISSI = {
     marginalita: { label: "Marginalità", icon: ShoppingBag, sizes: [1, 2, 4], def: 2, gruppo: "performance" },
     kpi_contratti: { label: "Contratti", icon: FileText, sizes: [1, 2], def: 1, gruppo: "statistiche" },
@@ -1302,7 +1501,11 @@ const FISSI = {
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
     accessi: { label: "Accessi collaboratori", icon: LogIn, sizes: [1, 2], def: 2, gruppo: "squadra", nonPer: ["own"] },
+    whatsapp: { label: "WhatsApp del team", icon: MessageCircle, sizes: [2, 4], def: 2, gruppo: "squadra", soloManager: true },
 };
+
+// manager = vede la squadra: rete intera, store manager, direttore call center
+const isManagerWa = (ctx) => ctx.seesAll || ctx.level === "store" || ["direttore_cc"].includes(ctx.user?.role);
 
 export function infoWidget(id, ctx) {
     if (id.startsWith("brand:")) {
@@ -1317,6 +1520,7 @@ export function infoWidget(id, ctx) {
     if (!f) return null;
     if (f.soloAdmin && !ctx.seesAll) return null;
     if (f.nonPer && f.nonPer.includes(ctx.level)) return null;
+    if (f.soloManager && !isManagerWa(ctx)) return null;
     return { id, ...f };
 }
 
@@ -1347,6 +1551,7 @@ export function renderWidget(id, ctx, size) {
         case "azioni": return <WidgetAzioni ctx={ctx} />;
         case "bacheca": return <WidgetBacheca ctx={ctx} size={size} />;
         case "accessi": return (ctx.seesAll || ctx.level === "store" || ["direttore_cc", "direttore_ob"].includes(ctx.user?.role)) ? <WidgetAccessi ctx={ctx} /> : null;
+        case "whatsapp": return isManagerWa(ctx) ? <WidgetWhatsApp ctx={ctx} size={size} /> : null;
         default: return null;
     }
 }

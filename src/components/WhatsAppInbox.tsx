@@ -12,6 +12,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { waScopeDi } from "@/lib/waVisibilita";
 import { areaOf } from "@/lib/roles";
 import { SelectOpzioni } from "@/components/SelectPersona";
+import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
 import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -252,6 +253,9 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     //    selezionata (o la prima visibile).
     const apriPerNumero = async (digIn: string): Promise<boolean> => {
         if (!visibleInstances.length) return false;
+        // un numero troppo corto (deep-link malformato) cercherebbe %coda
+        // su una coda di 1-2 cifre e aggancerebbe la chat sbagliata
+        if (digIn.replace(/\D/g, "").length < 6) return false;
         // normalizzazione: "0039…" → "39…" (revisore 25/08: il non-canonico
         // spezzava il thread alla risposta del cliente)
         const dig = digIn.startsWith("00") ? digIn.slice(2) : digIn;
@@ -545,7 +549,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                         {instConnessa?.status === "connessa" && (
                             <button onClick={() => setNuovaChat(true)}
                                 className="w-full px-4 py-2.5 border-b border-emerald-500/20 bg-emerald-500/5 text-emerald-300 hover:bg-emerald-500/10 text-sm font-bold flex items-center gap-2">
-                                <Plus className="w-4 h-4" /> Nuova chat a un numero
+                                <Plus className="w-4 h-4" /> Nuova chat — numero o cliente
                             </button>
                         )}
                         {instConnessa && instConnessa.status !== "connessa" && (
@@ -806,11 +810,24 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<bool
         setBusy(false);
         if (ok) onClose();
     };
+    // Luca 25/08 notte: oltre al numero a mano, il solito campo multi-ricerca
+    // dell'anagrafica (nome+cognome, CF/P.IVA, ragione sociale, cellulare) —
+    // un click sul cliente e la chat si apre sul suo cellulare
+    const scegliCliente = async (c: ClienteTrovato) => {
+        const dig = String(c.cellulare || "").replace(/\D/g, "");
+        if (dig.length < 6) { setErrore(`${etichettaCliente(c)} non ha un cellulare in anagrafica: completa la scheda cliente o scrivi il numero qui sopra.`); return; }
+        if (busy) return;
+        setErrore("");
+        setBusy(true);
+        const ok = await apri(dig);
+        setBusy(false);
+        if (ok) onClose();
+    };
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
             <div className="glass-card w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">Nuova chat a un numero</h3>
+                    <h3 className="text-lg font-bold text-white">Nuova chat</h3>
                     <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="space-y-3">
@@ -820,11 +837,18 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<bool
                         className="glass-input w-full text-sm" placeholder="es. 333 1234567 oppure +39 333 1234567"
                         inputMode="tel" autoFocus />
                     <p className="text-[11px] text-slate-500">Vale anche per chi non è ancora cliente (es. documenti da farsi mandare prima della vendita). Il prefisso +39 sui cellulari italiani si aggiunge da solo; se una chat con questo numero esiste già, si riapre quella.</p>
-                    {errore && <p className="text-xs text-rose-300 font-semibold">{errore}</p>}
-                    <button onClick={conferma} disabled={busy || !numero.trim()}
+                    {numero.trim() && <button onClick={conferma} disabled={busy}
                         className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold flex items-center justify-center gap-2">
                         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Apri la chat
-                    </button>
+                    </button>}
+                    <div className="flex items-center gap-3 pt-1">
+                        <div className="flex-1 h-px bg-white/10" />
+                        <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">oppure un cliente</span>
+                        <div className="flex-1 h-px bg-white/10" />
+                    </div>
+                    <RicercaCliente onScelto={scegliCliente} placeholder="Cerca: nome e cognome, CF, P.IVA o ragione sociale…" />
+                    <p className="text-[11px] text-slate-500">Un click sull&apos;anagrafica apre la chat sul cellulare del cliente.</p>
+                    {errore && <p className="text-xs text-rose-300 font-semibold">{errore}</p>}
                 </div>
             </div>
         </div>
