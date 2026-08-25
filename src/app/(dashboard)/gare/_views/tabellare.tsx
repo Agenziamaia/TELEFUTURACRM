@@ -8,7 +8,8 @@
 // motore commissioning. Le soglie si scrivono come le pensa Luca: solo il
 // "da S1..Sn", il fino-a si ricava da solo. Un brand con SOLO il lato azienda
 // deriva il ragazzi con la "% ai ragazzi" di ogni pista.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbError, notify } from "../../amministrazione/_views/toast";
@@ -36,6 +37,37 @@ const num = (v: string): number => {
 };
 // formato importi dei tooltip di derivazione (it-IT, max 2 decimali)
 const eurIt = (v: number | null | undefined) => v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
+
+// BOLLA DI DERIVAZIONE (Luca 25/08: «il title nativo è orrendo — fatela come
+// su Wind3»): stessa bolla del Commissioning W3 — pannello scuro immediato
+// sopra la cella, righe tipizzate (formula bianca, voci grigie, note ambra,
+// totale verde). In PORTAL sul body: il backdrop-filter dei glass-panel
+// rompe il position:fixed dei discendenti (baco già visto sul W3 il 14/08).
+type TipRiga = { testo: string; stile: "formula" | "voce" | "flat" | "tot" };
+function useBolla() {
+    const [tip, setTip] = useState<{ x: number; y: number; righe: TipRiga[] } | null>(null);
+    const mostra = (e: ReactMouseEvent, righe: TipRiga[] | null) => {
+        if (!righe || !righe.length) return;
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setTip({ x: r.left + r.width / 2, y: r.top, righe });
+    };
+    const nascondi = () => setTip(null);
+    const bolla = tip && typeof document !== "undefined" ? createPortal(
+        <div className="fixed z-50 -translate-x-1/2 -translate-y-full pointer-events-none" style={{ left: tip.x, top: tip.y - 8 }}>
+            <div className="rounded-xl border border-white/15 bg-slate-900/95 shadow-2xl px-3 py-2 text-[11px] leading-relaxed whitespace-nowrap">
+                {tip.righe.map((x, i) => (
+                    <div key={i} className={
+                        x.stile === "formula" ? "font-bold text-white text-[12px]" :
+                            x.stile === "tot" ? "font-bold text-emerald-300 border-t border-white/10 mt-1 pt-1" :
+                                x.stile === "flat" ? "text-amber-300" : "text-slate-400"
+                    }>{x.testo}</div>
+                ))}
+            </div>
+        </div>,
+        document.body,
+    ) : null;
+    return { mostra, nascondi, bolla };
+}
 
 export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto, nascondiSoglie, soloRegole }: {
     ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
@@ -101,6 +133,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // le soglie si derivano dall'azienda × pct (arrotondate) e qui si vedono
     // in sola lettura; il riferimento azienda serve per l'anteprima
     const [aziendaRef, setAziendaRef] = useState<{ piste: { chiave: string; ordine: number; soglie_pct: number | null }[]; soglie: Soglia[] } | null>(null);
+    // bolla stile W3 per i gettoni del derivato (le righe hanno la loro
+    // dentro RigaPayRagazzi)
+    const bollaGettoni = useBolla();
 
     const load = useCallback(async () => {
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
@@ -695,9 +730,18 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                             {/* wording condizionale (revisore): un gettone CON pista
                                                 a % < 100 viene scalato — la bolla non deve giurare
                                                 il contrario */}
-                                            <td className="px-1 py-1 text-center text-white font-medium cursor-help" title={r._origBase != null && r.pista && (r._perc ?? 100) !== 100
-                                                ? `Gettone: paga sempre, senza soglia\nall'azienda: ${eurIt(r._origBase)} €\n× ${r._perc}% ai ragazzi\n= ${eurIt(r.pay_base)} €`
-                                                : "Gettone: paga sempre, senza soglia — importo pieno, non scalato dalla %"}>{r.pay_base ?? "—"}</td>
+                                            <td className="px-1 py-1 text-center text-white font-medium cursor-help"
+                                                onMouseEnter={e => bollaGettoni.mostra(e, r._origBase != null && r.pista && (r._perc ?? 100) !== 100 ? [
+                                                    { testo: `Gettone · ${eurIt(r._perc)}% ai ragazzi`, stile: "formula" },
+                                                    { testo: `· all'azienda: ${eurIt(r._origBase)} €`, stile: "voce" },
+                                                    { testo: "· paga sempre, senza soglia", stile: "voce" },
+                                                    { testo: `= ${eurIt(r.pay_base)} €`, stile: "tot" },
+                                                ] : [
+                                                    { testo: "Gettone", stile: "formula" },
+                                                    { testo: "· paga sempre, senza soglia", stile: "voce" },
+                                                    { testo: "· importo pieno, non scalato dalla %", stile: "voce" },
+                                                ])}
+                                                onMouseLeave={bollaGettoni.nascondi}>{r.pay_base ?? "—"}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -706,6 +750,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         </div>
                         );
                     })()}
+                    {bollaGettoni.bolla}
                 </div>
             );
         }
@@ -985,24 +1030,46 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
         if (dbError("€ fissi ai ragazzi", error)) return;
         notify("Tornata alla derivazione a % ✓", "ok"); setDraft(null); dopo();
     };
-    // TOOLTIP di derivazione (Luca 25/08, «come su Vodafone»): sul pay si
-    // leggono l'importo azienda e l'operazione che porta al numero mostrato.
-    // Il «=» cita SEMPRE il valore in cella (rilievo revisore: mai ricalcolare
-    // ciò che si può leggere — a % il conto serve solo per il «sarebbero»)
+    // BOLLA di derivazione stile W3 (Luca 25/08: «il title nativo è orrendo»):
+    // sul pay si leggono l'importo azienda, la % e l'operazione che dà il
+    // numero in cella; con gli € fissati a mano non c'è un conto da fare e la
+    // bolla lo dice e basta. Il «=» cita sempre il valore mostrato.
+    const { mostra, nascondi, bolla } = useBolla();
     const perc = r._perc ?? 100;
     const unita = r.moltiplicatore ? "" : " €";
-    const codaMolt = r.moltiplicatore ? "\n(i valori sono moltiplicatori del canone mensile)" : "";
-    const tipTier = (i: number): string | undefined => {
+    const codaMolt: TipRiga[] = r.moltiplicatore ? [{ testo: "(i valori sono moltiplicatori del canone)", stile: "flat" }] : [];
+    const tipTier = (i: number): TipRiga[] | null => {
         const orig = r._origTiers?.[i];
-        if (orig == null) return undefined;
-        const aPerc = Math.round(orig * perc / 100 * 100) / 100;
-        if (!manuale) return `S${i + 1} — all'azienda: ${eurIt(orig)}${unita}\n× ${perc}% ai ragazzi\n= ${eurIt(r.pay_tiers[i])}${unita}${codaMolt}`;
-        return r.pay_tiers[i] == null
-            ? `S${i + 1} — non fissato (cella vuota, il motore qui non paga)\nall'azienda: ${eurIt(orig)}${unita}\ncon la derivazione al ${perc}% sarebbero ${eurIt(aPerc)}${unita}${codaMolt}`
-            : `S${i + 1} — € fissati a mano\nall'azienda: ${eurIt(orig)}${unita}\ncon la derivazione al ${perc}% sarebbero ${eurIt(aPerc)}${unita}${codaMolt}`;
+        if (orig == null) return null;
+        if (manuale) {
+            return r.pay_tiers[i] == null
+                ? [
+                    { testo: `S${i + 1} · non fissato`, stile: "formula" },
+                    { testo: `· all'azienda: ${eurIt(orig)}${unita}`, stile: "voce" },
+                    { testo: "cella vuota: il motore qui non paga", stile: "flat" },
+                ]
+                : [
+                    { testo: `S${i + 1} · € fissati a mano`, stile: "formula" },
+                    { testo: `· all'azienda: ${eurIt(orig)}${unita}`, stile: "voce" },
+                    ...codaMolt,
+                    { testo: `= ${eurIt(r.pay_tiers[i])}${unita}`, stile: "tot" },
+                ];
+        }
+        return [
+            { testo: `S${i + 1} · ${eurIt(perc)}% ai ragazzi`, stile: "formula" },
+            { testo: `· all'azienda: ${eurIt(orig)}${unita}`, stile: "voce" },
+            ...(perc !== 100 ? [{ testo: `· ${eurIt(orig)}${unita} × ${eurIt(perc)}%`, stile: "voce" as const }] : []),
+            ...codaMolt,
+            { testo: `= ${eurIt(r.pay_tiers[i])}${unita}`, stile: "tot" },
+        ];
     };
-    const tipBase = r._origBase == null ? undefined
-        : `Base sotto la 1ª soglia — all'azienda: ${eurIt(r._origBase)}${unita}\n× ${perc}% ai ragazzi\n= ${eurIt(r.pay_base)}${unita}${codaMolt}`;
+    const tipBase = (): TipRiga[] | null => r._origBase == null ? null : [
+        { testo: "Base · sotto la 1ª soglia", stile: "formula" },
+        { testo: `· all'azienda: ${eurIt(r._origBase)}${unita}`, stile: "voce" },
+        ...(perc !== 100 ? [{ testo: `· ${eurIt(r._origBase)}${unita} × ${eurIt(perc)}%`, stile: "voce" as const }] : []),
+        ...codaMolt,
+        { testo: `= ${eurIt(r.pay_base)}${unita}`, stile: "tot" },
+    ];
     return (
         <tr className="border-t border-white/5 hover:bg-white/[0.03]">
             <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
@@ -1011,10 +1078,10 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
                 {r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}
             </td>
             <td className="px-1 py-1 text-center text-indigo-300 font-semibold">{r.punti || "—"}</td>
-            {!senzaBase && <td className="px-1 py-1 text-center text-slate-300 cursor-help" title={tipBase}>{r.pay_base ?? "—"}</td>}
+            {!senzaBase && <td className="px-1 py-1 text-center text-slate-300 cursor-help" onMouseEnter={e => mostra(e, tipBase())} onMouseLeave={nascondi}>{r.pay_base ?? "—"}</td>}
             {Array.from({ length: nT }, (_, i) => (
-                <td key={i} className="px-1 py-1 text-center" title={tipTier(i)}>
-                    <input value={vals[i] ?? ""} title={tipTier(i)} onChange={e => { const c = [...vals]; c[i] = e.target.value; setDraft(c); }}
+                <td key={i} className="px-1 py-1 text-center" onMouseEnter={e => mostra(e, tipTier(i))} onMouseLeave={nascondi}>
+                    <input value={vals[i] ?? ""} onChange={e => { const c = [...vals]; c[i] = e.target.value; setDraft(c); }}
                         className={`w-16 bg-transparent text-center text-sm border-b outline-none py-0.5 focus:border-indigo-400 ${manuale ? "text-amber-200 border-amber-500/30" : "text-white border-transparent"}`} />
                 </td>
             ))}
@@ -1022,6 +1089,7 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
                 {dirty && <button onClick={salva} title="Fissa questi € ai ragazzi (vincono su % e mappa)" className="text-emerald-300 align-middle mr-1.5"><Save size={14} /></button>}
                 {manuale && <button onClick={ripristina} title="Togli gli € fissi: torna alla derivazione a %" className="text-[11px] text-slate-500 hover:text-slate-300 align-middle">↺</button>}
             </td>
+            {bolla}
         </tr>
     );
 }
