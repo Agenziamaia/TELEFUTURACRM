@@ -101,6 +101,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // direzione (Luca 25/08: i ragazzi non devono vedere le %)
     const { user } = useAuth();
     const vedeQuote = user?.role === "admin" || user?.role === "dev";
+    // chiavi delle piste che il lato ragazzi possiede in proprio (statico):
+    // su quelle la % di derivazione non agisce — caselle nascoste
+    const [pisteRagazziKeys, setPisteRagazziKeys] = useState<Set<string>>(new Set());
     // sezioni-pista RACCOLTE all'ingresso (Luca 25/08, screenshot del
     // Commissioning W3: «si devono chiudere e si possono esplodere,
     // dall'esterno vedo quante voci ne fanno parte») — vale per tutti i
@@ -155,6 +158,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
         setAziendaEsiste((az.count || 0) > 0);
+        // lato AZIENDA: le chiavi delle piste che il RAGAZZI ha in proprio —
+        // per quelle la «% pay ai ragazzi» è INERTE (il derivato parziale non
+        // le tocca, caso VF) e la casella va nascosta (revisore 25/08 notte)
+        if (lato === "azienda") {
+            const pr = await supabase.from("pay_piste").select("chiave").eq("brand", ctx).eq("month", monthISO).eq("lato", "ragazzi");
+            setPisteRagazziKeys(new Set(((pr.data || []) as { chiave: string }[]).map(x => x.chiave)));
+        } else setPisteRagazziKeys(new Set());
         onVuoto?.(!(p.data || []).length && !(lato === "ragazzi" && (az.count || 0) > 0));
         // ragazzi senza tabellare proprio + azienda presente → carica e SCALA
         if (lato === "ragazzi" && !(p.data || []).length && (az.count || 0) > 0) {
@@ -650,7 +660,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 </div>
                                 {/* MAPPA loro↔nostre + % per soglia (pay girato), per le
                                     piste con soglie manuali — sotto la tabella */}
-                                {righeS.filter(x => x.mie.length).map(({ px, mie }) => (
+                                {righeS.filter(x => x.mie.length).map(({ px, mie, scalaAz }) => (
                                     <div key={px.id} className="flex items-center gap-2 flex-wrap mt-2">
                                         {/* niente doppioni con la % azienda (Luca 25/08 sera):
                                             vuoto = si applica quella; compilato = ritocco fine
@@ -676,8 +686,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                     S{tn} ← loro
                                                     <select value={v?.tier_loro ?? tn} onChange={e => setVoceMappa(px.chiave, tn, { tier_loro: Number(e.target.value) })}
                                                         className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white">
-                                                        {/* fino a S8: la scala azienda Sky ha 8 soglie (conversione 25/08) */}
-                                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(t => <option key={t} value={t} className="bg-slate-800">S{t}</option>)}
+                                                        {/* le soglie LORO della pista (revisore 25/08: il
+                                                            cap fisso a 8 offriva colonne che il motore
+                                                            non paga sui brand con scale corte) */}
+                                                        {Array.from({ length: Math.max(scalaAz.length || 8, mie.length) }, (_, t) => <option key={t + 1} value={t + 1} className="bg-slate-800">S{t + 1}</option>)}
                                                     </select>
                                                     ×
                                                     <input value={v?.perc ?? ""} placeholder="%" onChange={e => setVoceMappa(px.chiave, tn, { perc: e.target.value })}
@@ -694,7 +706,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         })()}
                     </div>
                     {derivato.piste.map(px => {
-                        const scala = soglieDer(px.chiave);
+                        // SOGLIE EFFETTIVE della sezione (revisore 25/08 notte,
+                        // caso Sky): le MANUALI ragazzi vincono sulle derivate
+                        // azienda — come nel motore. Senza, l'header mostrava la
+                        // scala azienda (8 colonne) e il 💾 dei manuali a 4
+                        // valori moriva su «compila tutti gli importi».
+                        const mieP = soglieDi(px.chiave);
+                        const scala = mieP.length ? mieP : soglieDer(px.chiave);
                         const rr = derivato.righe.filter(r => r.pista === px.chiave && !r.gettone);
                         if (!rr.length) return null;
                         const nT = scala.length || Math.max(0, ...rr.map(r => r.pay_tiers.length));
@@ -975,18 +993,21 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             dice quante voci contiene, il click esplode */}
                         <button onClick={() => toggleTab(p.chiave)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
                             <span className="text-sm font-bold text-white">{emojiPista(p.nome)} {p.nome}</span>
-                            {/* TABELLARE RAGAZZI STORICO (Sky): pay a mano, non
-                                collegati in % all'azienda — va detto accanto al
-                                nome come sugli altri operatori (Luca 25/08) */}
-                            {lato === "ragazzi" && <span className="text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5">✍️ manuale — non in % dall&apos;azienda</span>}
+                            {/* TABELLARE RAGAZZI STORICO: pay a mano, non collegati
+                                in % all'azienda — va detto accanto al nome (Luca
+                                25/08). Solo se un lato azienda ESISTE: su TIM/Kena
+                                la lettera è unica e il badge confonderebbe. */}
+                            {lato === "ragazzi" && aziendaEsiste && <span className="text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5">✍️ manuale — non in % dall&apos;azienda</span>}
                             <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                         </button>
                         {/* nascosto ma MONTATO (revisore 25/08: chiudere il
                             pannello non deve bruciare NuovaRiga o i dirty) */}
                         <div className={apertaP ? "" : "hidden"}>
                         <div className="flex items-center justify-end px-4 pb-2 gap-3 flex-wrap">
-                            {/* % PAY ai ragazzi QUI, dove i pay si vedono (Luca 13/08) */}
-                            {lato === "azienda" && (
+                            {/* % PAY ai ragazzi QUI, dove i pay si vedono (Luca 13/08) —
+                                ma NON per le piste che il ragazzi ha in proprio
+                                (VF): lì la % è inerte e mentiva */}
+                            {lato === "azienda" && !pisteRagazziKeys.has(p.chiave) && (
                                 <label className="text-[11px] text-amber-300/90" title="Quota dei pay girata ai ragazzi: il loro tabellare deriva da questi importi × la %. Vuota = 100%.">
                                     % pay ai ragazzi
                                     <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
@@ -1048,7 +1069,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 la casella c'era solo sul pannello «Punti Sky» in
                                 alto e qui i business sembravano senza %) — è la
                                 STESSA % della pista, stesso salvataggio */}
-                            {piste.filter(px => righe.some(r => r.pista === px.chiave && r.gettone)).map(px => (
+                            {piste.filter(px => righe.some(r => r.pista === px.chiave && r.gettone) && !pisteRagazziKeys.has(px.chiave)).map(px => (
                                 <label key={px.id} className="text-[11px] text-amber-300/90" title={`Quota dei gettoni «${px.nome}» girata ai ragazzi (vuota = 100%). È la stessa % della pista: governa anche le righe a soglia. Occhio: 0 = niente ai ragazzi, le voci spariscono dal loro tabellare.`}>
                                     {emojiPista(px.nome)} {px.nome} ×
                                     <input value={percDraft[px.id] ?? (px.perc_ragazzi == null ? "" : String(px.perc_ragazzi))}
