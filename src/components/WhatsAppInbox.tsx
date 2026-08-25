@@ -27,7 +27,7 @@ const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST",
 const FIN_MODIFICA_WA_MS = 14 * 60 * 1000;
 const FIN_CANCELLA_WA_MS = 48 * 60 * 60 * 1000;
 
-export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null }) {
+export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null, apriConvId = null }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null; apriConvId?: string | null }) {
     const { user } = useAuth();
     const [instances, setInstances] = useState<Instance[]>([]);
     const [selInst, setSelInst] = useState<string | null>(null);
@@ -293,6 +293,25 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         setSelConv(conv);
         return true;
     };
+
+    // DEEP-LINK ALLA CONVERSAZIONE (Luca 25/08 notte: dalla scheda cliente si
+    // apre LA chat esatta col numero — Donna Olimpia, il caller… — non una
+    // generica): /chat?conv=<id>. Se l'istanza non è nella visibilità di chi
+    // clicca, non si apre nulla (le regole restano quelle).
+    const _convFatto = useRef<string | null>(null);
+    useEffect(() => {
+        if (!apriConvId || _convFatto.current === apriConvId) return;
+        if (!visibleInstances.length) return;    // istanze non ancora arrivate
+        _convFatto.current = apriConvId;
+        (async () => {
+            const { data: c } = await supabase.from("wa_conversations").select("*").eq("id", apriConvId).maybeSingle();
+            if (!c) return;
+            if (!visibleInstances.some(i => i.id === (c as Conv).instance_id)) return;
+            setSelInst((c as Conv).instance_id);
+            setSelConv(c as Conv);
+        })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apriConvId, visibleInstances.map(i => i.id).join("|")]);
 
     // DEEP-LINK (Luca 29/07): /chat?wa=<numero> apre la chat col cliente precaricata.
     const _apriFatto = useRef<string | null>(null);

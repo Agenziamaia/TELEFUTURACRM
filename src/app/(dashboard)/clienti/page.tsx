@@ -534,6 +534,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     : <div className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-slate-600 text-[11px] font-bold opacity-40"><span className="text-lg">✉️</span> Email</div>}
                             </div>
 
+                            {/* STORICO WHATSAPP del cliente (Luca 25/08 notte): con quali
+                                numeri nostri ha parlato — un click apre LA chat esatta */}
+                            <WhatsAppStoricoCliente clientId={cliente.id} />
+
                             {/* dettagli contatto */}
                             <div className="pt-5 space-y-3">
                                 {/* REFERENTE (Luca 01/08): per le business va mostrato — legge nome_ref
@@ -2503,6 +2507,61 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
                         </>
                     )}
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ── STORICO WHATSAPP del cliente (Luca 25/08 notte): le conversazioni del
+// cliente coi NOSTRI numeri (wa_conversations.client_id, agganciato dal
+// webhook in entrata e dalle chat aperte da noi) — etichetta del numero
+// (negozio/utente), anteprima e data, click = LA chat esatta (/chat?conv=).
+// Top-level (lezione: mai annidata). Niente righe = il blocco non esiste.
+function WhatsAppStoricoCliente({ clientId }: { clientId: string }) {
+    const [righe, setRighe] = useState<{ id: string; last_message_at: string | null; last_preview: string | null; etichetta: string }[] | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const { data: convs } = await supabase.from("wa_conversations")
+                .select("id, instance_id, customer_number, last_message_at, last_preview")
+                .eq("client_id", clientId)
+                .order("last_message_at", { ascending: false, nullsFirst: false });
+            if (!vivo) return;
+            if (!convs || !convs.length) { setRighe([]); return; }
+            const ids = [...new Set(convs.map((c: { instance_id: string }) => c.instance_id))];
+            const { data: insts } = await supabase.from("wa_instances").select("id, display_name, negozio, wa_number, owner_user_id").in("id", ids);
+            const ownerIds = [...new Set((insts ?? []).map((i: { owner_user_id: string | null }) => i.owner_user_id).filter(Boolean))] as string[];
+            const nomi: Record<string, string> = {};
+            if (ownerIds.length) {
+                const { data: us } = await supabase.from("app_users").select("id, full_name").in("id", ownerIds);
+                (us ?? []).forEach((u: { id: string; full_name: string }) => { nomi[u.id] = u.full_name; });
+            }
+            const etich = (iid: string) => {
+                const i = (insts ?? []).find((x: { id: string }) => x.id === iid) as { display_name: string | null; negozio: string | null; wa_number: string | null; owner_user_id: string | null } | undefined;
+                if (!i) return "numero rimosso";
+                return i.display_name || (i.owner_user_id && nomi[i.owner_user_id]) || i.negozio || (i.wa_number ? `+${i.wa_number}` : "numero");
+            };
+            if (vivo) setRighe(convs.map((c: { id: string; instance_id: string; last_message_at: string | null; last_preview: string | null }) => ({
+                id: c.id, last_message_at: c.last_message_at, last_preview: c.last_preview, etichetta: etich(c.instance_id),
+            })));
+        })();
+        return () => { vivo = false; };
+    }, [clientId]);
+    if (!righe || righe.length === 0) return null;
+    return (
+        <div className="pt-4">
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">💬 Conversazioni WhatsApp</div>
+            <div className="space-y-1.5">
+                {righe.map(r => (
+                    <Link key={r.id} href={`/chat?conv=${r.id}`} title="Apri questa conversazione nella sezione WhatsApp"
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/5 border border-emerald-500/15 hover:bg-emerald-500/15 transition-colors">
+                        <span className="min-w-0">
+                            <span className="text-[12px] font-bold text-emerald-300">con {r.etichetta}</span>
+                            {r.last_preview && <span className="block text-[11px] text-slate-500 truncate max-w-[260px]">{r.last_preview}</span>}
+                        </span>
+                        <span className="text-[10px] text-slate-500 shrink-0">{r.last_message_at ? new Date(r.last_message_at).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" }) : ""} →</span>
+                    </Link>
+                ))}
             </div>
         </div>
     );

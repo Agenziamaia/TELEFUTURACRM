@@ -307,6 +307,8 @@ function ChatPageInner() {
   // /chat?mail=<indirizzo> apre la webmail già in composizione (Luca 28/07).
   const searchParams = useSearchParams();
   const waParam = searchParams.get("wa");
+  // /chat?conv=<id> (25/08): apre LA conversazione esatta (dalla scheda cliente)
+  const convParam = searchParams.get("conv");
   // CAL-01: /chat?wa=<numero>&testo=<messaggio> precompila il composer WhatsApp
   // (il testo arriva dal modello scelto nella sezione caller)
   const testoParam = searchParams.get("testo");
@@ -314,7 +316,7 @@ function ChatPageInner() {
   const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
     const qs = new URLSearchParams(window.location.search);
-    if (qs.get("wa")) return "whatsapp";
+    if (qs.get("wa") || qs.get("conv")) return "whatsapp";
     if (qs.get("mail")) return "email";
     return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
   });
@@ -731,7 +733,7 @@ function ChatPageInner() {
       </div>
 
       {mode === "whatsapp" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={waParam} testoIniziale={testoParam} /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} /></div>
       ) : (
