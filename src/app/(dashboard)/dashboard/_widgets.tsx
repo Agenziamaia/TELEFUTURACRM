@@ -1318,7 +1318,33 @@ const WA_VOCAB_CHIUSURA = new Set([
     "dopo", "domani", "ci", "sentiamo", "vediamo", "ciao", "salve", "arrivederci", "top", "ottimo",
     "tutto", "chiaro", "capito", "nessun", "problema", "figurati", "prego", "cordiali", "saluti",
     "anche", "te", "lei", "voi", "altrettanto", "idem", "bacioni", "1000",
+    // parole-collante: senza queste «ok grazie E buona giornata» falliva il
+    // vocabolario per la sola congiunzione (caso Sabrina 25/08). Il cancello
+    // vero resta il CONGEDO qui sotto: il collante da solo non chiude nulla.
+    "e", "ed", "di", "del", "della", "per", "con", "un", "una", "il", "lo", "le", "che",
+    "davvero", "veramente", "comunque", "poi", "allora", "intanto", "sempre",
+    "cara", "caro", "cari", "signora", "signor", "signore", "dott", "dottore", "dottoressa",
 ]);
+
+// il cliente ha dato una CONFERMA SECCA («ok», «va bene», «perfetto»)? Da
+// sola non dice se la chat è finita: dipende da cosa avevamo scritto NOI.
+const WA_CONFERME = new Set(["ok", "okay", "okk", "oki", "va bene", "vabbe", "vabbè", "perfetto", "d accordo", "daccordo", "ricevuto", "ricevuta", "certo", "certamente", "ottimo", "top", "benissimo", "va benissimo", "si si", "sisi"]);
+export function confermaSecca(testo) {
+    const t = String(testo || "").toLowerCase().replace(/[’‘`]/g, " ").replace(/[^\p{L}\p{N} ]+/gu, " ").replace(/\s+/g, " ").trim();
+    return WA_CONFERME.has(t);
+}
+
+// il NOSTRO messaggio chiede qualcosa al cliente? Serve per la categoria
+// «in attesa del cliente» (richiesta nostra senza risposta) e per giudicare
+// un suo «ok»: dopo una richiesta è un impegno (aspettiamo), dopo una
+// comunicazione è un congedo (conclusa). Conservativa: «?» o formule di
+// richiesta esplicite.
+export function richiedeRisposta(testo) {
+    const t = String(testo || "").toLowerCase();
+    if (!t.trim() || t.startsWith("[")) return false;
+    if (t.includes("?")) return true;
+    return /mi mandi|mi invii|mi giri|mandami|inviami|girami|mi pu[oò] (mandare|inviare|girare|dire|far)|mi serve|mi servirebbe|ci serve|fammi sapere|mi faccia sapere|ci faccia sapere|facci sapere|fatemi sapere|attendo|aspetto|resto in attesa|restiamo in attesa|mi confermi|ci confermi|mi dica|mi dici|appena (pu[oò]|puoi|riesce|riesci)|quando (pu[oò]|puoi|riesce|riesci)|le chiedo di|ti chiedo di|serve che|servirebbe che/.test(t);
+}
 export function chiusuraDiCortesia(testo) {
     // apostrofo tipografico di iPhone (’) normalizzato, sennò «d’accordo»
     // e «d'accordo» si comportano diversamente
@@ -1350,20 +1376,94 @@ function fmtDurataWa(ms) {
     return `${Math.floor(h / 24)}g ${h % 24}h`;
 }
 
-function AnelloWa({ fette, lato = 104, spessore = 16 }) {
-    const tot = fette.reduce((s, f) => s + f.v, 0) || 1;
-    const r = (lato - spessore) / 2;
-    const C = 2 * Math.PI * r;
+// anello del team: STESSA lingua degli anelli di Analisi (Luca 25/08 sera:
+// «non è in linea, quelli sono più belli e questo non è nemmeno cliccabile»)
+// — fette animate, hover che accende, click che blocca il dettaglio (📌),
+// centro vivo con totale o con la persona scelta.
+function AnelloTeamWa({ fette, uid, grande }) {
+    const [hl, setHl] = useState(null);
+    const [pin, setPin] = useState(null);
+    const [on, setOn] = useState(false);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
+    const tot = fette.reduce((s, f) => s + f.v, 0);
     let acc = 0;
+    const conQuote = fette.map((f) => { const fr = tot > 0 ? f.v / tot : 0; const o = acc; acc += fr; return { ...f, f: fr, o, pct: tot > 0 ? Math.round((f.v / tot) * 100) : 0 }; });
+    const att = conQuote.find((x) => x.k === (hl || pin)) || null;
+    const size = 150, r = 56, sw = 14, C = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
+    const righe = grande ? conQuote : conQuote.slice(0, 4);
     return (
-        <svg width={lato} height={lato} viewBox={`0 0 ${lato} ${lato}`} className="-rotate-90 shrink-0">
-            <circle cx={lato / 2} cy={lato / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={spessore} />
-            {fette.map((f, i) => {
-                const frac = f.v / tot; const off = acc; acc += frac;
-                return <circle key={i} cx={lato / 2} cy={lato / 2} r={r} fill="none" stroke={f.col}
-                    strokeWidth={spessore} strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-off * C} />;
-            })}
-        </svg>
+        <div className="flex items-center gap-4 select-none">
+            <div className={cn("relative shrink-0", grande ? "w-[128px] h-[128px]" : "w-[104px] h-[104px]")}>
+                <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full" style={{ overflow: "visible" }}>
+                    <g transform={`translate(${cx},${cy})`}>
+                        <circle r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={sw} />
+                        <g transform="rotate(-90)">
+                            {conQuote.map((x) => {
+                                const attiva = (hl || pin) === x.k;
+                                const spenta = (hl || pin) && !attiva;
+                                return (
+                                    <circle key={x.k} r={r} fill="none" stroke={x.col} strokeLinecap="butt"
+                                        strokeWidth={attiva ? sw + 5 : sw}
+                                        strokeDasharray={`${on ? Math.max(0.001, x.f * C - (conQuote.length > 1 ? 2.5 : 0)) : 0.001} ${C}`}
+                                        strokeDashoffset={-(x.o * C)}
+                                        pointerEvents="stroke" className="cursor-pointer"
+                                        onMouseEnter={() => setHl(x.k)} onMouseLeave={() => setHl(null)}
+                                        onClick={() => setPin((pv) => (pv === x.k ? null : x.k))}
+                                        style={{
+                                            transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1), stroke-width .2s, opacity .25s",
+                                            opacity: spenta ? 0.28 : 1,
+                                            filter: attiva ? `drop-shadow(0 0 7px ${x.col}AA)` : `drop-shadow(0 0 3px ${x.col}33)`,
+                                        }} />
+                                );
+                            })}
+                        </g>
+                        {on && conQuote.filter((x) => x.f >= 0.1).map((x) => {
+                            const th = (x.o + x.f / 2) * 2 * Math.PI - Math.PI / 2;
+                            return (
+                                <text key={x.k} x={Math.cos(th) * r} y={Math.sin(th) * r} textAnchor="middle" dominantBaseline="central"
+                                    className="pointer-events-none" fill="#fff" fontSize="10" fontWeight="900"
+                                    style={{ paintOrder: "stroke", stroke: "rgba(10,12,28,.75)", strokeWidth: 3, opacity: (hl || pin) && (hl || pin) !== x.k ? 0.3 : 1, transition: "opacity .25s" }}>
+                                    {x.pct}%
+                                </text>
+                            );
+                        })}
+                    </g>
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-2">
+                    {att ? (
+                        <>
+                            <span className="text-[10px] font-bold truncate max-w-full" style={{ color: att.col }}>{att.nome}</span>
+                            <span className="text-xl font-black tabular-nums leading-none mt-0.5" style={{ color: att.col, textShadow: `0 0 14px ${att.col}66` }}>{att.pct}%</span>
+                            <span className="text-[9px] text-slate-400 mt-0.5 tabular-nums">{att.v} msg{pin === att.k ? " · 📌" : ""}</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="text-xl font-black text-white tabular-nums leading-none">{tot.toLocaleString("it-IT")}</span>
+                            <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">messaggi</span>
+                        </>
+                    )}
+                </div>
+            </div>
+            <div className="min-w-0 flex-1 flex flex-col gap-1">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Messaggi scritti nel mese</div>
+                {righe.map((x) => {
+                    const attiva = (hl || pin) === x.k;
+                    return (
+                        <div key={x.k} onMouseEnter={() => setHl(x.k)} onMouseLeave={() => setHl(null)}
+                            onClick={() => setPin((pv) => (pv === x.k ? null : x.k))}
+                            title={pin === x.k ? "Sblocca" : "Clicca per bloccare il dettaglio"}
+                            className={cn("flex items-center gap-2 text-[11px] rounded-lg border px-2 py-1 cursor-pointer transition-all",
+                                attiva ? "border-white/25 bg-white/[0.07]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]",
+                                pin && pin !== x.k && !hl ? "opacity-45" : "")}>
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: x.col }} />
+                            <span className="font-semibold text-slate-200 truncate">{x.nome}{x.k === uid ? " (tu)" : ""}</span>
+                            <span className="ml-auto shrink-0 text-slate-400 font-bold tabular-nums">{x.v} · {x.pct}%</span>
+                        </div>
+                    );
+                })}
+                {conQuote.length > righe.length && <div className="text-[10px] text-slate-500">…e altri {conQuote.length - righe.length}</div>}
+            </div>
+        </div>
     );
 }
 
@@ -1439,7 +1539,9 @@ function WidgetWhatsApp({ ctx, size }) {
             const perConv = new Map();
             righe.forEach((m) => { const a = perConv.get(m.conversation_id) || []; a.push(m); perConv.set(m.conversation_id, a); });
             let sommaRisp = 0, nRisp = 0, inMese = 0, outMese = 0, concluse = 0;
-            const perUtente = new Map(); const attive = new Set(); const alerts = [];
+            const perUtente = new Map(); const attive = new Set();
+            const daRisp = [];   // il cliente ha scritto e tocca a NOI
+            const attesa = [];   // richiesta NOSTRA senza risposta del cliente
             perConv.forEach((arr, cid) => {
                 let inAperto = null; // primo messaggio del cliente ancora senza risposta
                 arr.forEach((m) => {
@@ -1451,30 +1553,46 @@ function WidgetWhatsApp({ ctx, size }) {
                     if (m.direction === "in") { if (inAperto == null) inAperto = m.t; }
                     else { if (inAperto != null && m.t >= inizioMese) { sommaRisp += m.t - inAperto; nRisp++; } inAperto = null; }
                 });
+                // ── CATEGORIA della chat (ragionamento Luca 25/08 sera) ──
                 const ultimo = arr[arr.length - 1];
-                if (ultimo && ultimo.direction === "in") {
-                    const c = mappaConv.get(cid);
-                    // chat CONCLUSE fuori dagli alert: chiuse a mano (✓ o
-                    // bottone in chat) o chiusura di cortesia («ok grazie»)
-                    if (c?.chiusa_il || chiusuraDiCortesia(ultimo.body)) { concluse++; return; }
-                    alerts.push({ id: cid, nome: c?.customer_name || (c?.customer_number ? `+${c.customer_number}` : "chat"), da: ultimo.t });
+                if (!ultimo) return;
+                const c = mappaConv.get(cid);
+                const nomeChat = c?.customer_name || (c?.customer_number ? `+${c.customer_number}` : "chat");
+                // la chiusura manuale vale solo finché non arriva un
+                // messaggio PIÙ NUOVO (di chiunque): dopo, si rivaluta
+                const chiusaOk = c?.chiusa_il && new Date(c.chiusa_il).getTime() >= ultimo.t - 1500;
+                if (ultimo.direction === "in") {
+                    if (chiusaOk || chiusuraDiCortesia(ultimo.body)) { concluse++; return; }
+                    // «ok» secco del cliente: se il NOSTRO messaggio prima
+                    // non chiedeva nulla («ci risentiamo a settembre…»), è
+                    // un congedo → conclusa; se chiedeva qualcosa, resta
+                    // da gestire (c'è un'azione in ballo)
+                    const prevOut = [...arr].reverse().find((m) => m.direction === "out");
+                    if (confermaSecca(ultimo.body) && prevOut && !richiedeRisposta(prevOut.body)) { concluse++; return; }
+                    daRisp.push({ id: cid, nome: nomeChat, da: ultimo.t });
+                } else {
+                    if (chiusaOk) return;   // chiusa dopo la nostra richiesta: non aspettiamo più
+                    // ultima parola NOSTRA che chiede qualcosa → aspettiamo
+                    // il cliente: da non dimenticare (sollecito)
+                    if (richiedeRisposta(ultimo.body)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t });
                 }
             });
-            alerts.sort((a, b) => a.da - b.da);
+            daRisp.sort((a, b) => a.da - b.da);
+            attesa.sort((a, b) => a.da - b.da);
             const fette = [...perUtente.entries()]
                 .map(([k, v]) => ({ k, v, nome: k === "tel" ? "Da telefono" : (utenti.get(k)?.full_name || "Utente rimosso") }))
                 .sort((a, b) => b.v - a.v)
                 .map((f, i) => ({ ...f, col: WA_TORTA_COLORI[i % WA_TORTA_COLORI.length] }));
             setDati({
                 media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
-                chatAttive: attive.size, alerts, fette, nNumeri: vis.length,
+                chatAttive: attive.size, daRisp, attesa, fette, nNumeri: vis.length,
                 concluse, tetto: (convs || []).length >= 400,
             });
         })();
         return () => { vivo = false; };
     }, [uid, ctx.user?.role, ctx.negoziKey, giro]); // eslint-disable-line react-hooks/exhaustive-deps
     const azione = <Link href="/chat?mode=wa" className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
-    // ✓ sull'alert: la chat è a posto così, niente risposta necessaria —
+    // ✓ su una riga (da rispondere O in attesa): la chat è a posto così —
     // sparisce subito; se il cliente riscrive, riappare da sola. Il widget
     // può essere vecchio fino a 2 minuti: se nel frattempo è arrivato un
     // messaggio nuovo NON si chiude sopra roba mai vista — si ricarica.
@@ -1484,7 +1602,12 @@ function WidgetWhatsApp({ ctx, size }) {
         if (ultimoTs > a.da + 1500) { setGiro((g) => g + 1); return; }
         const { error } = await supabase.from("wa_conversations").update({ chiusa_il: new Date().toISOString() }).eq("id", a.id);
         if (error) return;
-        setDati((p) => p && p.alerts ? { ...p, alerts: p.alerts.filter((x) => x.id !== a.id), concluse: (p.concluse || 0) + 1 } : p);
+        setDati((p) => p ? {
+            ...p,
+            daRisp: (p.daRisp || []).filter((x) => x.id !== a.id),
+            attesa: (p.attesa || []).filter((x) => x.id !== a.id),
+            concluse: (p.concluse || 0) + 1,
+        } : p);
     };
     const shell = (figli) => (
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
@@ -1492,9 +1615,21 @@ function WidgetWhatsApp({ ctx, size }) {
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
     if (dati.vuoto) return shell(<p className="text-xs text-slate-500 px-3 py-4">{dati.vuoto}</p>);
     const totFette = dati.fette.reduce((s, f) => s + f.v, 0);
-    const mostraFette = size >= 4 ? dati.fette : dati.fette.slice(0, 4);
     const nAlert = size >= 4 ? 8 : 3;
+    const nAttesa = size >= 4 ? 5 : 2;
     const adesso = Date.now();
+    const rigaChat = (a, tinta) => (
+        <div key={a.id} className="flex items-center gap-1">
+            <Link href={`/chat?conv=${a.id}`} className="flex-1 min-w-0 flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
+                <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
+                <span className={cn("shrink-0 font-bold", tinta === "rossa"
+                    ? (adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")
+                    : (adesso - a.da > 2 * 86400000 ? "text-sky-300" : "text-slate-400"))}>da {fmtDurataWa(adesso - a.da)}</span>
+            </Link>
+            <button onClick={() => chiudiAlert(a)} title="Segna conclusa: non aspettiamo più nulla qui (se il cliente riscrive, torna in elenco)"
+                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
+        </div>
+    );
     return shell(
         <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
             {/* KPI del mese */}
@@ -1520,46 +1655,34 @@ function WidgetWhatsApp({ ctx, size }) {
                     <div className="text-[10px] text-slate-600">risposte del team</div>
                 </div>
             </div>
-            {/* alert: chat senza risposta */}
-            {dati.alerts.length > 0 ? (
+            {/* 🔴 il cliente aspetta NOI */}
+            {dati.daRisp.length > 0 ? (
                 <div className="rounded-xl bg-rose-500/[0.07] border border-rose-500/20 px-3 py-2 space-y-1">
                     <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5" /> {dati.alerts.length === 1 ? "1 chat senza risposta" : `${dati.alerts.length} chat senza risposta`}
+                        <AlertTriangle className="w-3.5 h-3.5" /> {dati.daRisp.length === 1 ? "1 chat da rispondere" : `${dati.daRisp.length} chat da rispondere`}
+                        <span className="font-normal text-rose-300/60">— il cliente aspetta noi</span>
                     </div>
-                    {dati.alerts.slice(0, nAlert).map((a) => (
-                        <div key={a.id} className="flex items-center gap-1">
-                            <Link href={`/chat?conv=${a.id}`} className="flex-1 min-w-0 flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
-                                <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
-                                <span className={cn("shrink-0 font-bold", adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")}>da {fmtDurataWa(adesso - a.da)}</span>
-                            </Link>
-                            <button onClick={() => chiudiAlert(a)} title="Segna conclusa: non serve una risposta (se il cliente riscrive, torna qui)"
-                                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
-                        </div>
-                    ))}
-                    {dati.alerts.length > nAlert && <div className="text-[10px] text-slate-500">…e altre {dati.alerts.length - nAlert}</div>}
+                    {dati.daRisp.slice(0, nAlert).map((a) => rigaChat(a, "rossa"))}
+                    {dati.daRisp.length > nAlert && <div className="text-[10px] text-slate-500">…e altre {dati.daRisp.length - nAlert}</div>}
                 </div>
             ) : (
                 <div className="rounded-xl bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Tutte le chat hanno avuto risposta
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Nessuna chat in attesa di una nostra risposta
                 </div>
             )}
-            {/* anello: chi scrive quanto */}
-            {totFette > 0 && (
-                <div className="flex items-center gap-4">
-                    <AnelloWa fette={dati.fette} lato={size >= 4 ? 116 : 96} />
-                    <div className="min-w-0 flex-1 space-y-1">
-                        <div className="text-[10px] uppercase tracking-wider text-slate-500">Messaggi scritti nel mese</div>
-                        {mostraFette.map((f) => (
-                            <div key={f.k} className="flex items-center gap-2 text-[11px]">
-                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: f.col }} />
-                                <span className="font-semibold text-slate-200 truncate">{f.nome}{f.k === uid ? " (tu)" : ""}</span>
-                                <span className="ml-auto shrink-0 text-slate-400 font-bold">{f.v} · {Math.round((f.v / totFette) * 100)}%</span>
-                            </div>
-                        ))}
-                        {dati.fette.length > mostraFette.length && <div className="text-[10px] text-slate-500">…e altri {dati.fette.length - mostraFette.length}</div>}
+            {/* 🕓 NOI aspettiamo il cliente (richiesta nostra senza risposta) */}
+            {dati.attesa.length > 0 && (
+                <div className="rounded-xl bg-sky-500/[0.06] border border-sky-500/20 px-3 py-2 space-y-1">
+                    <div className="text-[11px] font-bold text-sky-300 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" /> {dati.attesa.length === 1 ? "1 richiesta in attesa del cliente" : `${dati.attesa.length} richieste in attesa del cliente`}
+                        <span className="font-normal text-sky-300/60">— da sollecitare</span>
                     </div>
+                    {dati.attesa.slice(0, nAttesa).map((a) => rigaChat(a, "blu"))}
+                    {dati.attesa.length > nAttesa && <div className="text-[10px] text-slate-500">…e altre {dati.attesa.length - nAttesa}</div>}
                 </div>
             )}
+            {/* anello: chi scrive quanto (stile Analisi, cliccabile) */}
+            {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4} />}
             <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
         </div>
     );
