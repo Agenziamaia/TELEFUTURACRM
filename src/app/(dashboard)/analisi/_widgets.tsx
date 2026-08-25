@@ -1196,17 +1196,20 @@ function WidgetPesoNegozi({ ctx }) {
     // criterio Luca 24/08: un negozio si mostra SOLO con almeno
     // un'attivazione vera (quota > 0 su almeno un anello) — la riga
     // fantasma di una marginalità a 0€ non basta (caso Latina/Promontori)
-    const sezioni = negozi.map((n) => ({ n, cont: contatoriDi(n) })).filter((x) => x.cont.some((c) => c.perc > 0)).slice(0, 3);
+    const sezioni = negozi.map((n) => ({ n, cont: contatoriDi(n) })).filter((x) => x.cont.some((c) => c.perc > 0)).slice(0, 4);
     if (!sezioni.length) return <p className="text-xs text-slate-500 py-4 text-center">Nessuna vendita nel periodo.</p>;
+    // TAGLIA ADATTIVA AL NUMERO (Luca 25/08): 5 anelli grandi, 10 medi,
+    // 30 piccoli — sempre in proporzione alla larghezza della card (cqw)
+    const totAnelli = sezioni.reduce((sm, x) => sm + x.cont.length, 0);
+    const qw = Math.max(8, Math.min(19, Math.round(90 / Math.max(1, totAnelli))));
+    const cella = `clamp(86px, ${qw}cqw, 178px)`;
     return (
         <div className="space-y-4">
             {sezioni.map(({ n, cont }) => (
                 <div key={n}>
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">🏪 {n}</p>
-                    {/* celle a larghezza UNIFORME tra i negozi (15% della card,
-                        min 110 max 170): niente più anelli grandi e piccoli */}
                     <div className="flex flex-wrap justify-center gap-4">
-                        {cont.map((c) => <span key={c.label} className="block w-[clamp(110px,15cqw,170px)]"><AnelloPeso {...c} /></span>)}
+                        {cont.map((c) => <span key={c.label} className="block" style={{ width: cella }}><AnelloPeso {...c} /></span>)}
                     </div>
                 </div>
             ))}
