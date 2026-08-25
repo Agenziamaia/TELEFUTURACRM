@@ -643,7 +643,8 @@ export function contestoVfFw(brandId: string | null, codice: string | null, nego
     // sempre lettera A, Fastweb sempre tabellare Fastweb — CON UNA ECCEZIONE
     // (task Luca 11/08): l'ENERGIA Fastweb venduta coi codici dei Vodafone
     // Store (T1) paga il tabellare a soglie della lettera A (pista luce/gas
-    // del contesto vodafone); l'energia T2 resta a gettone flat sul fastweb.
+    // del contesto vodafone); l'energia T2 paga il tabellare fastweb (dal
+    // 25/08 la luce è a scaglioni propri, il gas resta gettone).
     // Lo split T1/T2 completo coi codici servirà al lato AZIENDA (cantiere PDF).
     // FW T1 = calderone unico con Vodafone (task Luca 11/08): TUTTO il
     // Fastweb venduto coi codici dei Vodafone Store paga la lettera A.
@@ -782,9 +783,11 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
         }
         if (pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) pivaMobile++;
         // pda fisse res o shp (cancelletto Fastweb qui sotto): le small
-        // Web Business/Unlimited non aprono la gara mobile
+        // Web Business/Unlimited non aprono la gara mobile. Il \b evita che
+        // «web business» peschi per sottostringa le «Fastweb Business…»
+        // (shp, che contano) — rilievo del revisore 25/08.
         if ((pista === "fisso" || pista === "business_fisso")
-            && !/unlimited|web business/i.test(String(c.offerta || ""))) fisseResShp++;
+            && !/unlimited|\bweb business/i.test(String(c.offerta || ""))) fisseResShp++;
         // cancelletto Sky (lettera GOLD): contano MNP (qualsiasi ricarica) e
         // GA con Ricarica automatica — la ricarica pura no
         if (tab.brand === "sky" && (/^mobile mnp$/i.test(String(c.prodotto || ""))

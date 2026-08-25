@@ -76,6 +76,13 @@ const NOTA_GAS = "Lettera Energy agosto, Tabella 3: gas residenziale ≥1 pda �
 (async () => {
   await client.connect();
 
+  // idempotenza PRIMA del dump (rilievo revisore 25/08: un rilancio a vuoto
+  // scriveva un dump "pre" con dentro i dati post)
+  const { rows: [{ n }] } = await client.query(
+    "select count(*)::int n from pay_piste where brand=$1 and month=$2 and lato=$3 and chiave='luce'",
+    [BRAND, MONTH, LATO]);
+  if (n > 0) { console.log("Pista luce già presente: niente da fare."); await client.end(); return; }
+
   // dump di sicurezza PRIMA di toccare (mai sovrascritto)
   const dump = {};
   for (const t of ["pay_piste", "pay_soglie", "pay_righe"]) {
@@ -87,11 +94,6 @@ const NOTA_GAS = "Lettera Energy agosto, Tabella 3: gas residenziale ≥1 pda �
   fs.writeFileSync(dumpFile, JSON.stringify(dump, null, 2));
   console.log("Dump pre-modifica:", path.basename(dumpFile),
     Object.entries(dump).map(([t, r]) => `${t}=${r.length}`).join(" · "));
-
-  const { rows: [{ n }] } = await client.query(
-    "select count(*)::int n from pay_piste where brand=$1 and month=$2 and lato=$3 and chiave='luce'",
-    [BRAND, MONTH, LATO]);
-  if (n > 0) { console.log("Pista luce già presente: niente da fare."); await client.end(); return; }
 
   try {
     await client.query("begin");
