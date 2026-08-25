@@ -41,14 +41,17 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
     // si condividono per nome/negozio (rilievo alto del revisore: i personali
     // hanno negozio = primary_store dal create → i colleghi si vedevano le
     // chat a vicenda). Personale = del titolare e basta.
+    // la colonna negozio può portare PIÙ punti vendita separati da virgola
+    // (gemelli 25/08: «Magliana W3, Magliana Multi») — ne basta uno visibile
+    const negoziDi = (i: T) => String(i.negozio || "").split(",").map((s) => s.trim()).filter(Boolean);
     const condiviso = (i: T) =>
         !i.owner_user_id && (
-            (!!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s)))
+            negoziDi(i).some((n) => myStores.some((s) => sameStore(n, s)))
             || (!!i.display_name && myStores.some((s) => sameStore(i.display_name as string, s))));
     return instances.filter((i) => {
         if (opts.soloConnesse && i.status !== "connessa") return false;
         if (scope === "all") return true;
-        if (scope === "store") return (!!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s)))
+        if (scope === "store") return negoziDi(i).some((n) => myStores.some((s) => sameStore(n, s)))
             || condiviso(i) || (!!userId && i.owner_user_id === userId);
         return (!!userId && i.owner_user_id === userId) || condiviso(i);
     });

@@ -38,6 +38,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const [editMsg, setEditMsg] = useState<Msg | null>(null);
     const [linkModal, setLinkModal] = useState(false);
     const [nuovaChat, setNuovaChat] = useState(false);   // modale «Nuova chat a un numero»
+    const [emojiOpen, setEmojiOpen] = useState(false);   // picker emoji del composer (25/08)
     const [relinkName, setRelinkName] = useState<string | null>(null);   // ri-scansione di un numero disconnesso
     const [syncing, setSyncing] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -79,9 +80,13 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // negozio si vedevano le chat personali a vicenda. Personale = ha un
     // titolare, e lo vede solo lui; condiviso = senza titolare, nominato
     // come (o assegnato a) un punto vendita.
+    // NEGOZI GEMELLI (25/08 notte): la colonna negozio può portare PIÙ punti
+    // vendita separati da virgola («Magliana W3, Magliana Multi») — basta
+    // averne UNO in visibilità
+    const negoziIstanza = (i: Instance) => String(i.negozio || "").split(",").map(s => s.trim()).filter(Boolean);
     const condivisoNegozio = (i: Instance) =>
         !i.owner_user_id && (
-            (!!i.negozio && myStores.some(s => sameStore(i.negozio, s)))
+            negoziIstanza(i).some(n => myStores.some(s => sameStore(n, s)))
             || (!!i.display_name && myStores.some(s => sameStore(i.display_name, s))));
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
@@ -89,7 +94,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         // store manager: come da sempre TUTTI i numeri del suo negozio (anche
         // personali dei suoi), più i condivisi per nome e il suo personale
         return instances.filter(i =>
-            (!!i.negozio && myStores.some(s => sameStore(i.negozio, s)))
+            negoziIstanza(i).some(n => myStores.some(s => sameStore(n, s)))
             || condivisoNegozio(i) || i.owner_user_id === user?.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [instances, waScope, user?.id, myStores]);
@@ -181,6 +186,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // messaggi della conversazione (polling)
     useEffect(() => {
         setEditMsg(null);   // cambiando chat una modifica a meta' si annulla
+        setEmojiOpen(false);
         if (!selConv) { setMsgs([]); return; }
         let alive = true;
         // backfill dello storico recente la prima volta che si apre la conversazione
@@ -255,6 +261,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     }, [apriNumero, visibleInstances.map(i => i.id).join("|")]);
 
     const invia = async () => {
+        setEmojiOpen(false);
         if (!selConv || !text.trim() || sending) return;
         setSending(true);
         // CHT-02: composer in modalita' MODIFICA -> aggiorna il messaggio, non ne invia uno nuovo
@@ -594,12 +601,16 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                             className="p-1 rounded-md hover:bg-white/10"><X className="w-3.5 h-3.5" /></button>
                                     </div>
                                 )}
-                                <div className={cn("p-3 flex items-center gap-2", !editMsg && "border-t border-white/10")}>
+                                <div className={cn("p-3 flex items-center gap-2 relative", !editMsg && "border-t border-white/10")}>
                                     <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) inviaFile(f); e.target.value = ""; }} />
                                     <button onClick={() => fileRef.current?.click()} disabled={sending || !!editMsg} title="Allega un file"
                                         className="p-2.5 rounded-xl text-slate-400 hover:text-emerald-300 hover:bg-white/5 disabled:opacity-40">
                                         <Paperclip className="w-5 h-5" />
                                     </button>
+                                    {/* EMOJI (Luca 25/08 notte: «non abbiamo le emoticons») */}
+                                    <button onClick={() => setEmojiOpen(v => !v)} title="Emoji"
+                                        className={cn("p-2 rounded-xl text-lg leading-none hover:bg-white/5", emojiOpen ? "bg-white/10" : "")}>😊</button>
+                                    {emojiOpen && <EmojiPickerWA onPick={(e) => setText(t => t + e)} onClose={() => setEmojiOpen(false)} />}
                                     <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") invia(); }}
                                         placeholder="Scrivi un messaggio…  (o allega un file con la graffetta)" className="glass-input flex-1 text-sm" />
                                     <button onClick={invia} disabled={sending || !text.trim()} className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white">
@@ -622,6 +633,64 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
 // Modal: crea (o RICOLLEGA) un'istanza, mostra il QR, poll dello stato finche'
 // connesso. Con reconnectName si salta la creazione e si ri-scansiona lo stesso
 // numero (es. dopo una sessione scaduta), senza crearne uno nuovo.
+// ── EMOJI PICKER del composer WhatsApp (Luca 25/08 notte: «non abbiamo le
+// emoticons») — stesso dataset della chat interna (src/lib/emojiData.json,
+// ~1.900 emoji con nomi e ricerca it/en), caricato pigramente alla prima
+// apertura. Compatto: ricerca + categorie + griglia; il click INSERISCE e
+// il pannello resta aperto (come WhatsApp), la ✕ o l'invio lo chiudono.
+type EmojiDatoWA = { e: string; n: string; k: string[]; g: number };
+const GRUPPI_EMOJI_WA: string[] = ["😀", "👋", "🐻", "🍕", "🚗", "⚽", "💡", "🔣", "🏁"];
+const EMOJI_RAPIDE_WA = ["👍", "❤️", "😂", "🙏", "😊", "🎉", "💪", "👏", "🔥", "✅", "📞", "📄"];
+const _normEmoji = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+function EmojiPickerWA({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
+    const [dati, setDati] = useState<(EmojiDatoWA & { s: string })[] | null>(null);
+    const [q, setQ] = useState("");
+    const [gr, setGr] = useState(0);
+    useEffect(() => {
+        import("@/lib/emojiData.json")
+            .then((m) => setDati((m.default as EmojiDatoWA[]).map(d => ({ ...d, s: _normEmoji(d.n + " " + d.k.join(" ")) }))))
+            .catch(() => { /* restano le rapide */ });
+    }, []);
+    const lista = !dati ? [] : (q.trim()
+        ? dati.filter(d => d.s.includes(_normEmoji(q))).slice(0, 300)
+        : dati.filter(d => d.g === gr).slice(0, 400));
+    return (
+        <div className="absolute bottom-16 left-2 z-50 w-[340px] glass-card p-3 shadow-2xl border border-white/10"
+            onMouseDown={e => e.preventDefault()}>
+            <div className="flex items-center gap-2 mb-2">
+                <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === "Escape") onClose(); }}
+                    placeholder="Cerca un'emoji… (es. cuore, risata)" autoFocus
+                    className="glass-input flex-1 text-xs py-1.5" />
+                <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+            {!q.trim() && (
+                <div className="flex gap-1 mb-2">
+                    {GRUPPI_EMOJI_WA.map((icona, i) => (
+                        <button key={i} onClick={() => setGr(i)}
+                            className={cn("flex-1 py-1 rounded-lg text-base leading-none", gr === i ? "bg-white/15" : "hover:bg-white/5 opacity-60")}>{icona}</button>
+                    ))}
+                </div>
+            )}
+            {!dati ? (
+                <div className="flex flex-wrap gap-1 py-1">
+                    {EMOJI_RAPIDE_WA.map(e => (
+                        <button key={e} onClick={() => onPick(e)} className="w-9 h-9 rounded-lg text-xl hover:bg-white/10">{e}</button>
+                    ))}
+                    <div className="w-full text-[10px] text-slate-500 pt-1">carico tutte le emoji…</div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-8 gap-0.5 max-h-56 overflow-y-auto pr-1">
+                    {lista.map(d => (
+                        <button key={d.e} title={d.n} onClick={() => onPick(d.e)}
+                            className="w-9 h-9 rounded-lg text-xl leading-none hover:bg-white/10">{d.e}</button>
+                    ))}
+                    {!lista.length && <div className="col-span-8 text-center text-[11px] text-slate-500 py-3">Nessuna emoji per «{q}»</div>}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // NUOVA CHAT A NUMERO (Luca 25/08 sera-2): modale del CRM al posto del
 // prompt del browser («sembra che arrivi da Chrome») — centrato, stile glass
 // come gli altri, Invio per aprire. Top-level (lezione: mai annidata).

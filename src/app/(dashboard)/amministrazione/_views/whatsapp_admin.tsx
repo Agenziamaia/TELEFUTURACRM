@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { LinkModal } from "@/components/WhatsAppInbox";
-import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { sameStore } from "@/lib/visibleStores";
 import { QrCode, Loader2, Trash2, RefreshCw, User as UserIcon, Store, LogOut } from "lucide-react";
 import { cn } from "@/utils";
@@ -34,11 +34,29 @@ export function WhatsAppAdminView() {
     const [utenti, setUtenti] = useState<Utente[]>([]);
     const [negozi, setNegozi] = useState<string[]>([]);
 
-    // ── collegamento nuovo: SELEZIONE utente o negozio, mai testo libero
+    // ── collegamento nuovo: SELEZIONE utente o negozio/i, mai testo libero.
+    // NEGOZI GEMELLI (Luca 25/08 notte, Magliana/Acilia/Collatina): la
+    // selezione punti vendita è MULTI — un solo numero per entrambi; con più
+    // negozi scelti si chiede il NOME da mettere sul numero (è quello che i
+    // ragazzi vedono in chat).
     const [tipoNuovo, setTipoNuovo] = useState<"utente" | "negozio">("utente");
     const [selNome, setSelNome] = useState("");
+    const [selNegozi, setSelNegozi] = useState<string[]>([]);
+    const [nomeMulti, setNomeMulti] = useState("");
     const [modal, setModal] = useState<{ presetName: string; ownerUserId?: string; negozio?: string } | null>(null);
     const [relink, setRelink] = useState<string | null>(null);
+    /** radice comune di più nomi negozio ("Magliana W3"+"Magliana Multi" → "Magliana") */
+    const radiceComune = (nomi: string[]): string => {
+        if (!nomi.length) return "";
+        const parole = nomi.map(n => n.trim().split(/\s+/));
+        const out: string[] = [];
+        for (let k = 0; k < parole[0].length; k++) {
+            const w = parole[0][k];
+            if (parole.every(p => (p[k] || "").toLowerCase() === w.toLowerCase())) out.push(w);
+            else break;
+        }
+        return out.join(" ");
+    };
 
     // ── verifica live per riga: instance_name → esito ("open"/"close"/errore)
     const [verifiche, setVerifiche] = useState<Record<string, string>>({});
@@ -79,16 +97,22 @@ export function WhatsAppAdminView() {
     }, []);
 
     const nomeTitolare = (id: string | null) => utenti.find(u => u.id === id)?.full_name || null;
-    /** negozio CONDIVISO del numero: solo per i numeri SENZA titolare — i
-     *  personali hanno negozio=primary_store dal create ma restano personali
-     *  (rilievo alto del revisore 25/08) */
-    const storeDi = (i: Istanza): string | null =>
-        i.owner_user_id ? null : (i.negozio || negozi.find(n => sameStore(n, i.display_name || "")) || null);
-    /** chi VEDE un numero di negozio: unione assegnati + visibilità + login */
-    const utentiCheVedono = (store: string): string[] =>
+    /** negozi CONDIVISI del numero (anche più d'uno, virgola-separati): solo
+     *  per i numeri SENZA titolare — i personali hanno negozio=primary_store
+     *  dal create ma restano personali (rilievo alto del revisore 25/08) */
+    const storesDi = (i: Istanza): string[] => {
+        if (i.owner_user_id) return [];
+        const lista = String(i.negozio || "").split(",").map(s => s.trim()).filter(Boolean);
+        if (lista.length) return lista;
+        const match = negozi.find(n => sameStore(n, i.display_name || ""));
+        return match ? [match] : [];
+    };
+    /** chi VEDE un numero condiviso: unione assegnati + visibilità + login,
+     *  su QUALSIASI dei negozi del numero */
+    const utentiCheVedono = (stores: string[]): string[] =>
         utenti.filter(u => {
             const suoi = [...(visStores[u.id] || []), ...(u.primary_store ? [u.primary_store] : [])];
-            return suoi.some(s => sameStore(s, store));
+            return stores.some(st => suoi.some(s => sameStore(s, st)));
         }).map(u => u.full_name);
 
     const disconnetti = async (i: Istanza) => {
@@ -100,17 +124,20 @@ export function WhatsAppAdminView() {
     };
 
     const collega = () => {
-        if (!selNome.trim()) { alert("Scegli prima l'utente o il negozio dalla tendina."); return; }
         if (tipoNuovo === "utente") {
+            if (!selNome.trim()) { alert("Scegli prima l'utente dalla tendina."); return; }
             const u = utenti.find(x => x.full_name === selNome);
             if (!u) { alert("Scegli un utente DALLA TENDINA: il nome scritto a mano non vale (niente errori di battitura)."); return; }
             setModal({ presetName: u.full_name, ownerUserId: u.id });
         } else {
-            const n = negozi.find(x => x === selNome);
-            if (!n) { alert("Scegli un negozio DALLA TENDINA: il nome scritto a mano non vale."); return; }
-            // numero DI NEGOZIO: niente titolare — lo vedono in automatico
-            // tutti quelli col negozio in visibilità (nome = assegnazione)
-            setModal({ presetName: n, negozio: n });
+            const scelti = selNegozi.filter(n => negozi.includes(n));
+            if (!scelti.length) { alert("Scegli almeno un punto vendita dalla tendina."); return; }
+            // numero DI NEGOZIO/I: niente titolare — lo vedono in automatico
+            // tutti quelli con UNO dei negozi in visibilità. Con più negozi il
+            // nome lo decide Luca (campo qui sotto); con uno solo = il negozio.
+            const nome = scelti.length === 1 ? scelti[0] : nomeMulti.trim();
+            if (!nome) { alert("Con più punti vendita serve il nome del numero (es. «" + (radiceComune(scelti) || "Magliana") + "»)."); return; }
+            setModal({ presetName: nome, negozio: scelti.join(", ") });
         }
     };
 
@@ -181,8 +208,16 @@ export function WhatsAppAdminView() {
                     <div className="min-w-[260px]">
                         {tipoNuovo === "utente"
                             ? <SelectPersona value={selNome} onChange={setSelNome} opzioni={utenti.map(u => u.full_name)} placeholder="Scegli il collaboratore…" />
-                            : <SelectOpzioni value={selNome} onChange={setSelNome} opzioni={negozi} placeholder="Scegli il punto vendita…" />}
+                            : <SelectMulti values={selNegozi} onChange={(v) => { setSelNegozi(v); if (v.length > 1 && !nomeMulti) setNomeMulti(radiceComune(v)); }} opzioni={negozi} placeholder="Scegli uno o più punti vendita…" maxVoci={100} />}
                     </div>
+                    {/* con più negozi (gemelli) il NOME lo scegli tu: è quello che
+                        i ragazzi vedono in chat — proposto = la radice comune */}
+                    {tipoNuovo === "negozio" && selNegozi.length > 1 && (
+                        <label className="text-[11px] text-sky-300/90 inline-flex items-center gap-1.5">nome del numero
+                            <input value={nomeMulti} onChange={e => setNomeMulti(e.target.value)}
+                                className="bg-white/[0.05] border border-sky-500/30 rounded-lg px-2.5 py-2 text-sm text-white w-44" placeholder="es. Magliana" />
+                        </label>
+                    )}
                     <button onClick={collega} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2">
                         <QrCode className="w-4 h-4" /> Genera QR e collega
                     </button>
@@ -235,10 +270,10 @@ export function WhatsAppAdminView() {
                                                 {/* chi lo VEDE davvero (Luca 25/08: «Garbatella è
                                                     collegato a Daniele e Michele ma non lo vediamo») */}
                                                 {(() => {
-                                                    const st = storeDi(i);
-                                                    if (!st) return null;
+                                                    const st = storesDi(i);
+                                                    if (!st.length) return null;
                                                     const nomi = utentiCheVedono(st);
-                                                    if (!nomi.length) return <div className="text-[11px] text-slate-500 mt-1">👥 nessun utente ha {st} in visibilità</div>;
+                                                    if (!nomi.length) return <div className="text-[11px] text-slate-500 mt-1">👥 nessun utente ha {st.join(" / ")} in visibilità</div>;
                                                     return (
                                                         <div className="text-[11px] text-slate-400 mt-1" title={nomi.join(", ")}>
                                                             👥 lo vedono: <span className="text-slate-300">{nomi.slice(0, 4).join(", ")}{nomi.length > 4 ? ` +${nomi.length - 4}` : ""}</span>
