@@ -43,8 +43,8 @@ const GARE_BRANDS = [
 const GARE_LOGO_SCALE: Record<string, number> = { w3: 1.7, vs: 1.95, vnd: 1.95, fastweb: 1.75, kena: 2.0 };
 
 // gara brand → contesto delle tabelle pay (il TABELLARE del Calcolatore $$$).
-// vnd non ha tabellare (lato azienda futuro sui PDF); s4/dojo non ancora.
-const PAY_CTX: Record<string, string> = { w3: "windtre", vs: "vodafone", fastweb: "fastweb", sky: "sky", tim: "tim", kena: "kena" };
+// vnd non ha tabellare (lato azienda futuro sui PDF); dojo non ancora.
+const PAY_CTX: Record<string, string> = { w3: "windtre", vs: "vodafone", fastweb: "fastweb", sky: "sky", tim: "tim", kena: "kena", s4: "s4" };
 
 // le sezioni di GESTIONE traslocate dall'Amministrazione (Luca 03/08)
 const GARE_GESTIONE = [
