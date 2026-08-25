@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } 
 import { createPortal } from "react-dom";
 import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 import { dbError, notify } from "../../amministrazione/_views/toast";
 
 type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null; soglie_pct?: number | null; soglie_max?: number | null };
@@ -92,6 +93,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     const [piste, setPiste] = useState<Pista[]>([]);
     const [soglie, setSoglie] = useState<Soglia[]>([]);          // copia editabile
     const [soglieDirty, setSoglieDirty] = useState<Set<string>>(new Set());   // per pista
+    // le QUOTE di derivazione nel banner del derivato sono solo per la
+    // direzione (Luca 25/08: i ragazzi non devono vedere le %)
+    const { user } = useAuth();
+    const vedeQuote = user?.role === "admin" || user?.role === "dev";
     // sezioni-pista RACCOLTE all'ingresso (Luca 25/08, screenshot del
     // Commissioning W3: «si devono chiudere e si possono esplodere,
     // dall'esterno vedo quante voci ne fanno parte») — vale per tutti i
@@ -525,13 +530,17 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 <div className="space-y-5">
                     <div className="glass-panel rounded-2xl px-4 py-2.5 flex items-center justify-between flex-wrap gap-2">
                         <div className="text-[12px] text-slate-300">
+                            {vedeQuote ? (<>
                             🧮 Tabellare ragazzi <b>compilato dal lato azienda</b> — {derivato.piste.map(x => {
                                 const rrP = derivato.righe.filter(r => r.pista === x.chiave && !r.gettone);
                                 const man = rrP.filter(r => Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0).length;
                                 return `${x.nome} ${man > 0 && man === rrP.length ? "✍️ manuale" : `${x.perc_ragazzi ?? 100}%${man ? ` (✍️ ${man} a mano)` : ""}`}`;
                             }).join(" · ")}. Gli importi si correggono riga per riga (💾 = € fissi).
+                            </>) : (
+                                <>🧮 Il tabellare della gara: ogni attivazione col suo pay per soglia.</>
+                            )}
                         </div>
-                        {vaiAzienda && <button onClick={vaiAzienda} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
+                        {vaiAzienda && vedeQuote && <button onClick={vaiAzienda} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
                     </div>
                     {/* SOGLIE in testa anche sul derivato — e MANUALI dove serve
                         (esito Luca 12/08: la % dei ragazzi scala solo i pay, le

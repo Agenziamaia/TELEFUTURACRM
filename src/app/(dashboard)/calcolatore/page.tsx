@@ -18,7 +18,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaMappaSoglie, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -70,6 +70,7 @@ export default function CalcolatorePage() {
 
     // tabellare + avanzamento live
     const [tab, setTab] = useState<Tabellare | null>(null);
+    const [mappaPerc, setMappaPerc] = useState<Awaited<ReturnType<typeof caricaMappaSoglie>> | null>(null);
     const [contrattiCtx, setContrattiCtx] = useState<ContrattoPay[] | null>(null);
     const [caricaTab, setCaricaTab] = useState(false);
     const [nonAlloc, setNonAlloc] = useState(0);
@@ -191,6 +192,10 @@ export default function CalcolatorePage() {
                 : await caricaTabellare(ctxKey, monthISO);
             if (!vivo) return;
             setTab(t);
+            // % per soglia (banner admin): senza, il banner leggeva solo la %
+            // unica e su W3 diceva «100%» con la mappa a 70/80/80 (Luca 25/08)
+            if (t?.derivato) caricaMappaSoglie(ctxKey, monthISO).then(m => { if (vivo) setMappaPerc(m); });
+            else setMappaPerc(null);
             if (t) {
                 const bm = BRANDS.find(b => b.id === brand);
                 const { contratti, nonAllocate, escluseVodafone } = await caricaContrattiContesto(ctxKey, monthISO, bm?.prefix);
@@ -449,16 +454,27 @@ export default function CalcolatorePage() {
                     <TriangleAlert size={18} /> Nessun tabellare caricato per {(ctxKey && CONTESTI_LABEL[ctxKey]) || meta?.label} · {mese}: il pay non è calcolabile finché non si caricano piste, soglie e righe.
                 </div>
             )}
-            {brand && tab?.derivato && (
+            {/* le QUOTE di derivazione sono roba da direzione: il banner con le
+                % è SOLO ADMIN (Luca 25/08: «non deve far vedere la percentuale
+                che gli abbiamo riconosciuto») — e legge anche la MAPPA PER
+                SOGLIA, non solo la % unica (su W3 diceva 100% con la mappa a
+                70/80/80) */}
+            {brand && tab?.derivato && isAdmin && (
                 <div className="glass-panel rounded-2xl px-4 py-2.5 mb-5 text-[12px] text-slate-400">
-                    🧮 Tabellare ragazzi <b className="text-slate-200">derivato dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista
-                    ({tab.piste.map(p => {
+                    🧮 Tabellare ragazzi <b className="text-slate-200">derivato dal lato azienda</b> — % ai ragazzi:{" "}
+                    {tab.piste.map(p => {
                         // «✍️ manuale» = tutti gli importi della pista inseriti a mano
                         // (pay_ragazzi_tiers): la % di derivazione non si applica
                         const rrP = tab.righe.filter(r => r.pista === p.chiave && !r.gettone);
                         const man = rrP.length > 0 && rrP.every(r => Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0);
-                        return `${p.nome} ${man ? "✍️ manuale" : `${p.perc_ragazzi ?? 100}%`}`;
-                    }).join(" · ")}) — si regola dalla pagina Gare dell&apos;operatore, lato azienda.
+                        if (man) return `${p.nome} ✍️ manuale`;
+                        const m = mappaPerc?.get(p.chiave);
+                        if (m && m.size) {
+                            const tiers = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => Number(v.perc));
+                            return `${p.nome} ${tiers.join("/")}%`;
+                        }
+                        return `${p.nome} ${p.perc_ragazzi ?? 100}%`;
+                    }).join(" · ")} — si regola dalla pagina Gare dell&apos;operatore, lato azienda.
                 </div>
             )}
 
