@@ -37,6 +37,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // CHT-02: messaggio in MODIFICA nel composer (pattern della chat interna)
     const [editMsg, setEditMsg] = useState<Msg | null>(null);
     const [linkModal, setLinkModal] = useState(false);
+    const [nuovaChat, setNuovaChat] = useState(false);   // modale «Nuova chat a un numero»
     const [relinkName, setRelinkName] = useState<string | null>(null);   // ri-scansione di un numero disconnesso
     const [syncing, setSyncing] = useState(false);
     const [disconnecting, setDisconnecting] = useState(false);
@@ -444,13 +445,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                             chi non è ancora cliente — documenti da farsi mandare
                             prima di avergli venduto qualcosa */}
                         {instConnessa?.status === "connessa" && (
-                            <button onClick={async () => {
-                                const ins = window.prompt("Numero WhatsApp del destinatario (anche non registrato come cliente):\nes. 3331234567 oppure +39 333 1234567");
-                                if (ins === null) return;
-                                const dig = ins.replace(/\D/g, "");
-                                if (dig.length < 6) { alert("Numero troppo corto: ricontrolla."); return; }
-                                await apriPerNumero(dig);
-                            }}
+                            <button onClick={() => setNuovaChat(true)}
                                 className="w-full px-4 py-2.5 border-b border-emerald-500/20 bg-emerald-500/5 text-emerald-300 hover:bg-emerald-500/10 text-sm font-bold flex items-center gap-2">
                                 <Plus className="w-4 h-4" /> Nuova chat a un numero
                             </button>
@@ -617,6 +612,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 </div>
             )}
 
+            {nuovaChat && <NuovaChatModal apri={apriPerNumero} onClose={() => setNuovaChat(false)} />}
             {linkModal && <LinkModal onClose={() => { setLinkModal(false); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
             {relinkName && <LinkModal reconnectName={relinkName} onClose={() => { setRelinkName(null); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
         </div>
@@ -626,6 +622,47 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
 // Modal: crea (o RICOLLEGA) un'istanza, mostra il QR, poll dello stato finche'
 // connesso. Con reconnectName si salta la creazione e si ri-scansiona lo stesso
 // numero (es. dopo una sessione scaduta), senza crearne uno nuovo.
+// NUOVA CHAT A NUMERO (Luca 25/08 sera-2): modale del CRM al posto del
+// prompt del browser («sembra che arrivi da Chrome») — centrato, stile glass
+// come gli altri, Invio per aprire. Top-level (lezione: mai annidata).
+function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<boolean>; onClose: () => void }) {
+    const [numero, setNumero] = useState("");
+    const [errore, setErrore] = useState("");
+    const [busy, setBusy] = useState(false);
+    const conferma = async () => {
+        const dig = numero.replace(/\D/g, "");
+        if (dig.length < 6) { setErrore("Numero troppo corto: ricontrolla."); return; }
+        if (busy) return;
+        setBusy(true);
+        const ok = await apri(dig);
+        setBusy(false);
+        if (ok) onClose();
+    };
+    return (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-card w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-white">Nuova chat a un numero</h3>
+                    <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="space-y-3">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Numero WhatsApp del destinatario</label>
+                    <input value={numero} onChange={e => { setNumero(e.target.value); setErrore(""); }}
+                        onKeyDown={e => { if (e.key === "Enter") conferma(); }}
+                        className="glass-input w-full text-sm" placeholder="es. 333 1234567 oppure +39 333 1234567"
+                        inputMode="tel" autoFocus />
+                    <p className="text-[11px] text-slate-500">Vale anche per chi non è ancora cliente (es. documenti da farsi mandare prima della vendita). Il prefisso +39 sui cellulari italiani si aggiunge da solo; se una chat con questo numero esiste già, si riapre quella.</p>
+                    {errore && <p className="text-xs text-rose-300 font-semibold">{errore}</p>}
+                    <button onClick={conferma} disabled={busy || !numero.trim()}
+                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold flex items-center justify-center gap-2">
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Apri la chat
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function LinkModal({ onClose, onLinked, ownerUserId, reconnectName }: { onClose: () => void; onLinked?: (instanceName: string) => void; ownerUserId?: string; reconnectName?: string }) {
     const [name, setName] = useState("");
     const [instanceName, setInstanceName] = useState<string | null>(reconnectName || null);
