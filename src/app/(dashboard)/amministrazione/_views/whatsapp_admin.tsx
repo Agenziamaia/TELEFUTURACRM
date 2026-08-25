@@ -12,6 +12,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_WHATSAPP_ADMIN, CAP_WA_UTENTI, CAP_WA_NEGOZI } from "@/lib/capabilities";
 import { LinkModal } from "@/components/WhatsAppInbox";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { sameStore } from "@/lib/visibleStores";
@@ -34,6 +37,16 @@ export function WhatsAppAdminView() {
     const [utenti, setUtenti] = useState<Utente[]>([]);
     const [negozi, setNegozi] = useState<string[]>([]);
 
+    // CAPACITÀ (Luca 25/08 notte): dentro il pannello, cosa può GESTIRE chi
+    // lo vede — numeri personali, numeri dei punti vendita, o entrambi.
+    // Si concedono dalla rotellina Permessi («Pannello WhatsApp»).
+    const { user } = useAuth();
+    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const puoUtenti = capAllowed(user?.role, CAP_WHATSAPP_ADMIN.section, CAP_WA_UTENTI, perms);
+    const puoNegozi = capAllowed(user?.role, CAP_WHATSAPP_ADMIN.section, CAP_WA_NEGOZI, perms);
+    /** può gestire QUESTO numero? personale → capacità utenti; senza titolare → negozi */
+    const puoGestire = (i: Istanza) => i.owner_user_id ? puoUtenti : puoNegozi;
+
     // ── collegamento nuovo: SELEZIONE utente o negozio/i, mai testo libero.
     // NEGOZI GEMELLI (Luca 25/08 notte, Magliana/Acilia/Collatina): la
     // selezione punti vendita è MULTI — un solo numero per entrambi; con più
@@ -42,6 +55,12 @@ export function WhatsAppAdminView() {
     const [tipoNuovo, setTipoNuovo] = useState<"utente" | "negozio">("utente");
     const [selNome, setSelNome] = useState("");
     const [selNegozi, setSelNegozi] = useState<string[]>([]);
+    // il toggle parte da un tipo CONCESSO dalla rotellina
+    useEffect(() => {
+        if (tipoNuovo === "utente" && !puoUtenti && puoNegozi) setTipoNuovo("negozio");
+        if (tipoNuovo === "negozio" && !puoNegozi && puoUtenti) setTipoNuovo("utente");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [puoUtenti, puoNegozi]);
     const [nomeMulti, setNomeMulti] = useState("");
     const [modal, setModal] = useState<{ presetName: string; ownerUserId?: string; negozio?: string } | null>(null);
     const [relink, setRelink] = useState<string | null>(null);
@@ -191,20 +210,26 @@ export function WhatsAppAdminView() {
 
     return (
         <div className="space-y-5">
-            {/* COLLEGA UN NUMERO NUOVO — solo da selezione */}
+            {/* COLLEGA UN NUMERO NUOVO — solo da selezione, e solo per i tipi
+                che la rotellina Permessi concede (utenti / negozi / entrambi) */}
+            {(puoUtenti || puoNegozi) && (
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: "4px solid var(--tf-22c55e)" }}>
                 <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">➕ Collega un numero nuovo — scegli a chi intestarlo (niente nomi a mano: così l&apos;associazione automatica non sbaglia)</div>
                 <div className="flex items-center gap-2 flex-wrap">
+                    {puoUtenti && (
                     <button onClick={() => { setTipoNuovo("utente"); setSelNome(""); }}
                         className={cn("px-3 py-2 rounded-xl text-sm font-bold border flex items-center gap-1.5",
                             tipoNuovo === "utente" ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10")}>
                         <UserIcon className="w-4 h-4" /> Utente
                     </button>
+                    )}
+                    {puoNegozi && (
                     <button onClick={() => { setTipoNuovo("negozio"); setSelNome(""); }}
                         className={cn("px-3 py-2 rounded-xl text-sm font-bold border flex items-center gap-1.5",
                             tipoNuovo === "negozio" ? "bg-sky-500/15 border-sky-500/40 text-sky-200" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10")}>
                         <Store className="w-4 h-4" /> Negozio
                     </button>
+                    )}
                     <div className="min-w-[260px]">
                         {tipoNuovo === "utente"
                             ? <SelectPersona value={selNome} onChange={setSelNome} opzioni={utenti.map(u => u.full_name)} placeholder="Scegli il collaboratore…" />
@@ -227,6 +252,10 @@ export function WhatsAppAdminView() {
                     🏪 <b>Negozio</b>: il numero è del punto vendita — lo vedono in automatico tutte le persone che hanno quel negozio in visibilità, senza altre assegnazioni.
                 </p>
             </div>
+            )}
+            {!puoUtenti && !puoNegozi && (
+                <p className="text-[12px] text-slate-500">Sei in sola consultazione: la gestione dei numeri (personali o dei negozi) si concede dalla rotellina Permessi → «Pannello WhatsApp».</p>
+            )}
 
             {/* TUTTI I NUMERI: stato, verifica, ricollega, riassegna, elimina */}
             <div className="glass-panel rounded-2xl overflow-hidden">
@@ -280,11 +309,14 @@ export function WhatsAppAdminView() {
                                                         </div>
                                                     );
                                                 })()}
-                                                {/* riassegnazione: SEMPRE dalle tendine */}
+                                                {/* riassegnazione: SEMPRE dalle tendine — e solo con le
+                                                    capacità giuste (dominio di partenza + di arrivo) */}
+                                                {puoGestire(i) && (
                                                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                                    <div className="min-w-[170px]"><SelectPersona value="" onChange={(v) => assegnaUtente(i, v)} opzioni={utenti.map(u => u.full_name)} placeholder="→ a un utente…" /></div>
-                                                    <div className="min-w-[150px]"><SelectOpzioni value="" onChange={(v) => assegnaNegozio(i, v)} opzioni={negozi} placeholder="→ a un negozio…" /></div>
+                                                    {puoUtenti && <div className="min-w-[170px]"><SelectPersona value="" onChange={(v) => assegnaUtente(i, v)} opzioni={utenti.map(u => u.full_name)} placeholder="→ a un utente…" /></div>}
+                                                    {puoNegozi && <div className="min-w-[150px]"><SelectOpzioni value="" onChange={(v) => assegnaNegozio(i, v)} opzioni={negozi} placeholder="→ a un negozio…" /></div>}
                                                 </div>
+                                                )}
                                             </td>
                                             <td className="px-3 py-2 whitespace-nowrap">
                                                 <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-300"><span className={cn("w-2 h-2 rounded-full", pallino(i.status))} /> {i.status}</span>
@@ -299,24 +331,26 @@ export function WhatsAppAdminView() {
                                                     className="px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/10 text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1">
                                                     {verificando === i.instance_name ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Verifica
                                                 </button>
-                                                {i.status !== "connessa" && (
+                                                {puoGestire(i) && i.status !== "connessa" && (
                                                     <button onClick={() => setRelink(i.instance_name)}
                                                         className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[12px] font-bold mr-1.5 inline-flex items-center gap-1">
                                                         <QrCode className="w-3.5 h-3.5" /> Ricollega
                                                     </button>
                                                 )}
-                                                {i.status === "connessa" && (
+                                                {puoGestire(i) && i.status === "connessa" && (
                                                     <button onClick={() => disconnetti(i)}
                                                         title="Disconnetti la sessione: le chat si nascondono (non si cancellano) finché non ricolleghi col QR — dall'Inbox questo non si può più fare"
                                                         className="px-2.5 py-1.5 rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1">
                                                         <LogOut className="w-3.5 h-3.5" /> Disconnetti
                                                     </button>
                                                 )}
+                                                {puoGestire(i) && (
                                                 <button onClick={() => elimina(i)} disabled={deleting === i.id}
                                                     title="Elimina il numero e tutto lo storico chat (irreversibile)"
                                                     className="p-1.5 rounded-lg text-slate-600 hover:text-rose-300 hover:bg-rose-500/10">
                                                     {deleting === i.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                                 </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );

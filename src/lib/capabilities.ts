@@ -509,4 +509,29 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
 //  in là". Tolte pagina, API e capacità; la tabella riunione_deck e il motore
 //  contoEconomico restano dormienti per la ripresa futura.)
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+// ─── PANNELLO WHATSAPP (Amministrazione → WhatsApp, Luca 25/08 notte): cosa
+// può GESTIRE chi ha la sezione — i numeri personali (utenti/caller), quelli
+// dei punti vendita, o entrambi. La VISIBILITÀ della sezione resta nella
+// matrice Permessi; queste capacità decidono le azioni dentro il pannello
+// (collega, riassegna, ricollega, disconnetti, elimina). Verifica live
+// sempre concessa a chi vede la sezione (è sola diagnostica).
+export const CAP_WA_UTENTI: CapDef = {
+    id: "numeri_utenti",
+    label: "Gestisce i numeri personali (utenti e caller)",
+    desc: "Collega, riassegna, ricollega, disconnette ed elimina i numeri WhatsApp intestati alle PERSONE (caller compresi: ognuno il suo). Spenta = quei numeri restano in sola consultazione. Default: admin e dev.",
+    default: (r) => ["admin", "dev"].includes(r),
+};
+export const CAP_WA_NEGOZI: CapDef = {
+    id: "numeri_negozi",
+    label: "Gestisce i numeri dei punti vendita",
+    desc: "Collega (anche multi-negozio per i gemelli tipo Magliana), riassegna, ricollega, disconnette ed elimina i numeri WhatsApp dei NEGOZI, condivisi per visibilità. Spenta = quei numeri restano in sola consultazione. Default: admin e dev.",
+    default: (r) => ["admin", "dev"].includes(r),
+};
+export const CAP_WHATSAPP_ADMIN: CapGroupFlags = {
+    mode: "flags",
+    section: "/amministrazione?sez=whatsapp",
+    sectionLabel: "Pannello WhatsApp",
+    caps: [CAP_WA_UTENTI, CAP_WA_NEGOZI],
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN];
