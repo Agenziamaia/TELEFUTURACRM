@@ -7,6 +7,11 @@
 // Le offerte SENZA riga di commissioning sono evidenziate (scoperture):
 // per regola non generano pay — quando si tocca il catalogo va aggiunta
 // anche la riga di commissioning.
+// ⚠️ REGOLA DEL PONTE (Luca 25/08, docs/PONTE_GARE_CALCOLATORE_ANALISI.md):
+// questo calcolatore resta allineato alle Gare DA SOLO perché usa il
+// catalogo vero (pillole opzioni = catalog_opzioni dell'offerta) e il
+// motore vero (matchRigheAttivazione con le opzioni scelte) — MAI calcoli
+// o liste di opzioni hardcodate qui dentro.
 import { useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -114,6 +119,36 @@ export default function CalcolatorePage() {
     // di consumo business S4, kit Protecta W3…) non matchano senza — qui si
     // scelgono con le pillole e viaggiano nel match come in Registra Vendita
     const [opzSel, setOpzSel] = useState<string[]>([]);
+    // OPZIONI A CATALOGO dell'offerta selezionata (ponte 25/08: sul fisso W3
+    // GA/GNP · FTTC/FTTH · Illimitate decidono il pay ma non erano offerte —
+    // le pillole nascevano solo dalle righe `opzione`). Fonte = catalogo,
+    // come Registra Vendita: un'opzione nuova compare qui da sola.
+    type OpzCat = { nome: string; gruppo: string | null; obb: boolean; ordine: number };
+    const [opzCatalogo, setOpzCatalogo] = useState<OpzCat[]>([]);
+    useEffect(() => {
+        if (!offId) { setOpzCatalogo([]); return; }
+        let vivo = true;
+        supabase.from("catalog_opzioni").select("nome, gruppo_singolo, obbligatoria, ordine").eq("offerta_id", offId).eq("attivo", true).order("ordine")
+            .then(({ data }) => {
+                if (!vivo) return;
+                setOpzCatalogo(((data || []) as { nome: string; gruppo_singolo: string | null; obbligatoria: boolean | null; ordine: number }[])
+                    .map(o => ({ nome: o.nome, gruppo: o.gruppo_singolo, obb: !!o.obbligatoria, ordine: Number(o.ordine || 0) })));
+            });
+        return () => { vivo = false; };
+    }, [offId]);
+    // toggle con esclusività di gruppo (una sola per gruppo_singolo)
+    const togOpzCalc = (nome: string) => {
+        const o = opzCatalogo.find(x => x.nome === nome);
+        setOpzSel(prev => {
+            if (prev.includes(nome)) return prev.filter(x => x !== nome);
+            if (o?.gruppo) {
+                const stesso = new Set(opzCatalogo.filter(x => x.gruppo === o.gruppo).map(x => x.nome));
+                return [...prev.filter(x => !stesso.has(x)), nome];
+            }
+            return [...prev, nome];
+        });
+        setTierSel(null);
+    };
     const [mostraScoperte, setMostraScoperte] = useState(false);
 
     useEffect(() => {
@@ -482,19 +517,49 @@ export default function CalcolatorePage() {
                                         </div>
                                     </div>
                                 )}
-                                {/* OPZIONI della vendita (S4 25/08: fasce di consumo
-                                    business) — il pay dipende da queste, come le
-                                    pillole di Registra Vendita */}
-                                {offSel && opzRilevanti.length > 0 && (
-                                    <div className="mt-4">
-                                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Opzioni della vendita <span className="normal-case text-slate-500">— il pay dipende da queste</span></div>
-                                        <div className="flex gap-2 flex-wrap">
-                                            {opzRilevanti.map(o => (
-                                                <Pill key={o} on={opzSel.includes(o)} onClick={() => { setOpzSel(p => p.includes(o) ? p.filter(x => x !== o) : [...p, o]); setTierSel(null); }}>{o}</Pill>
-                                            ))}
+                                {/* OPZIONI (ponte 25/08): PRIMA i gruppi a scelta
+                                    obbligatoria del catalogo (Attivazione GA/GNP,
+                                    Tecnologia FTTC/FTTH…, come Registra Vendita),
+                                    poi le altre opzioni — catalogo ∪ righe pay
+                                    ancorate a `opzione` (fasce S4, kit Protecta) */}
+                                {offSel && (() => {
+                                    const grpObb = [...new Set(opzCatalogo.filter(o => o.obb && o.gruppo).map(o => o.gruppo as string))];
+                                    const libere = [
+                                        ...opzCatalogo.filter(o => !(o.obb && o.gruppo)).map(o => o.nome),
+                                        ...opzRilevanti.filter(o => !opzCatalogo.some(x => x.nome === o)),
+                                    ];
+                                    if (!grpObb.length && !libere.length) return null;
+                                    return (
+                                        <div className="mt-4 space-y-3">
+                                            {grpObb.map(g => {
+                                                const scelte = opzCatalogo.filter(o => o.gruppo === g);
+                                                const fatta = scelte.some(o => opzSel.includes(o.nome));
+                                                return (
+                                                    <div key={g}>
+                                                        <div className={`text-[11px] uppercase tracking-wider mb-2 font-bold ${fatta ? "text-emerald-400" : "text-amber-400"}`}>
+                                                            ✱ <span className="capitalize">{g}</span> <span className="font-normal normal-case">{fatta ? "✓" : "— scegli una (il pay cambia)"}</span>
+                                                        </div>
+                                                        <div className="flex gap-2 flex-wrap">
+                                                            {scelte.map(o => (
+                                                                <Pill key={o.nome} on={opzSel.includes(o.nome)} onClick={() => togOpzCalc(o.nome)}>{o.nome}</Pill>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {libere.length > 0 && (
+                                                <div>
+                                                    <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Opzioni della vendita <span className="normal-case text-slate-500">— come in Registra Vendita: alcune cambiano il pay</span></div>
+                                                    <div className="flex gap-2 flex-wrap">
+                                                        {libere.map(o => (
+                                                            <Pill key={o} on={opzSel.includes(o)} onClick={() => togOpzCalc(o)}>{o}</Pill>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </>}
                         </div>
                     )}

@@ -5,6 +5,11 @@
 > Wind3 Agosto.xlsx» (Desktop/Telco/Operatori/W3/Agosto 2026) + decisioni di
 > Luca registrate nelle note delle singole righe pay.
 
+> ⚠️ **PRIMA di toccare le gare** (qualsiasi brand, qualsiasi terminal):
+> leggere e rispettare `docs/PONTE_GARE_CALCOLATORE_ANALISI.md` — regola di
+> Luca 25/08: Gare, Calcolatore e Analisi devono restare allineati DA SOLI
+> (stessa fonte dati, stesso motore, scelte di vendita solo a catalogo).
+
 ## Il flusso unico (già vivo nel Calcolatore)
 
 Per OGNI vendita valida (`produzioneValidaGare`, sostituzioni escluse):
