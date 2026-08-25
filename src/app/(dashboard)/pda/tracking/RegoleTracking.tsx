@@ -70,12 +70,16 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
             const oggiISO = new Date().toISOString().slice(0, 10);
             const CAMPI: (keyof RegolaTracking)[] = ["senza_lavorare", "senza_warning", "senza_malus", "succ_lavorare", "succ_warning", "succ_malus", "compl_lavorare", "compl_warning", "compl_malus", "malus_euro"];
             const nrm = (v: unknown) => v == null || v === "" ? null : Number(v);
-            const payload = CATEGORIE_UI.map((c) => {
+            // si scrivono SOLO le righe cambiate (revisore 25/08): riscrivere
+            // tutte e 6 a ogni salvataggio pareggiava gli updated_at e ha
+            // distrutto le prove dell'incidente — le righe intatte non si toccano
+            const payload = CATEGORIE_UI.flatMap((c) => {
                 const orig = righe.find((r) => r.categoria === c.id);
                 const b = { ...bozza[c.id], categoria: c.id, malus_euro: Number(bozza[c.id]?.malus_euro) || 0 };
                 const cambiata = !orig || CAMPI.some((k) => nrm(orig[k]) !== nrm(b[k]));
-                return { ...b, decorrenza: cambiata ? oggiISO : (orig?.decorrenza ? String(orig.decorrenza).slice(0, 10) : null), updated_at: new Date().toISOString() };
+                return cambiata ? [{ ...b, decorrenza: oggiISO, updated_at: new Date().toISOString() }] : [];
             });
+            if (!payload.length) { setMsg("Nessuna soglia cambiata: niente da salvare."); return; }
             const { error } = await supabase.from("tracking_regole").upsert(payload, { onConflict: "categoria" });
             if (error) { setMsg("⚠️ Salvataggio non riuscito: " + error.message); return; }
             await carica();          // rilettura dal DB: quello che vedi è ciò che vale
