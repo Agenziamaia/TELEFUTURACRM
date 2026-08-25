@@ -45,7 +45,7 @@ const SEZIONI = [
 // etichette corte delle componenti per la scomposizione nel tooltip
 const COMP_LABEL: Record<string, string> = {
     base: "base", base_underground: "base Underground", mnp: "MNP", tied: "Tied",
-    piva: "P.IVA", conv: "Convergenza", la: "Linea agg.", ftth: "FTTH", fwa: "FWA", opzioni: "Opzioni",
+    piva: "P.IVA", conv: "Convergenza", la: "L.A (GNP)", ftth: "FTTH", fwa: "FWA", opzioni: "Opzioni",
     contrattuale: "contrattuale", contrattuale_conv: "contrattuale conv.", contrattuale_voce: "contrattuale Voce Casa",
     contrattuale_untied: "contrattuale Untied", contrattuale_tied: "contrattuale Tied",
 };
@@ -133,7 +133,10 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     }
                     return x.pay_tiers.slice(0, 3).map(v2 => (v2 == null ? v2 : Math.round(Number(v2) * fU(x.pista) * 100) / 100));
                 };
-                const vive = rows.filter(x => (unica[String(x.pista || "")] ?? 100) !== 0);   // piste di rete fuori
+                // piste di rete fuori; e fuori anche le righe SPENTE (revisore
+                // 25/08: le documentali — Bollettino, Migrazione 40€ — ai
+                // ragazzi apparivano come compensi pieni mai maturabili)
+                const vive = rows.filter(x => x.attivo && (unica[String(x.pista || "")] ?? 100) !== 0);
                 // originali e % da parte PRIMA dello scaling: il tooltip delle
                 // celle ragazzi racconta «all'azienda X € → % soglia → importo»
                 origMap = new Map(vive.map(x => [x.id, { base: x.pay_base, tiers: [...x.pay_tiers] }]));
@@ -465,7 +468,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                     <td className="px-3 py-1 text-slate-200">
                                                         {r.nome.replace(/^Gettone device · /, "")}
                                                         {Number(r.punti) > 0 && <span className="text-[10px] text-sky-300/80 ml-1.5" title="Vale anche punti in soglia">+{it(Number(r.punti))} punti</span>}
-                                                        {!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa di aggancio</span>}
+                                                        {!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>{/^documentale/i.test(r.note || "") ? "documentale — fuori gara" : "in attesa di aggancio"}</span>}
                                                     </td>
                                                     <td className="px-2 py-1 text-center">
                                                         {ragazzi ? spanPayRagazzi(r) : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
