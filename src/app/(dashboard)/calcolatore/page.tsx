@@ -126,7 +126,10 @@ export default function CalcolatorePage() {
     type OpzCat = { nome: string; gruppo: string | null; obb: boolean; ordine: number };
     const [opzCatalogo, setOpzCatalogo] = useState<OpzCat[]>([]);
     useEffect(() => {
-        if (!offId) { setOpzCatalogo([]); return; }
+        // svuoto SUBITO: al cambio offerta A→B le pillole della vecchia non
+        // devono restare cliccabili nella finestra della query (revisore 25/08)
+        setOpzCatalogo([]);
+        if (!offId) return;
         let vivo = true;
         supabase.from("catalog_opzioni").select("nome, gruppo_singolo, obbligatoria, ordine").eq("offerta_id", offId).eq("attivo", true).order("ordine")
             .then(({ data }) => {
@@ -532,8 +535,11 @@ export default function CalcolatorePage() {
                                     ancorate a `opzione` (fasce S4, kit Protecta) */}
                                 {offSel && (() => {
                                     const grpObb = [...new Set(opzCatalogo.filter(o => o.obb && o.gruppo).map(o => o.gruppo as string))];
+                                    // fuori dalle libere TUTTO ciò che sta in un gruppo
+                                    // mostrato sopra (revisore 25/08: un gruppo a
+                                    // obbligatorietà mista renderizzava doppio)
                                     const libere = [
-                                        ...opzCatalogo.filter(o => !(o.obb && o.gruppo)).map(o => o.nome),
+                                        ...opzCatalogo.filter(o => !(o.gruppo && grpObb.includes(o.gruppo))).map(o => o.nome),
                                         ...opzRilevanti.filter(o => !opzCatalogo.some(x => x.nome === o)),
                                     ];
                                     if (!grpObb.length && !libere.length) return null;
@@ -583,10 +589,14 @@ export default function CalcolatorePage() {
                                 <div className="text-amber-300 text-sm">Tabellare non caricato per questo mese: nessun pay calcolabile.</div>
                             ) : !riga ? (
                                 // fasce S4 & co.: il pay c'è ma dipende dalle opzioni —
-                                // senza scelta la guida, non il falso «senza commissioning»
-                                opzRilevanti.length > 0 && !opzSel.length ? (
+                                // senza scelta la guida, non il falso «senza commissioning».
+                                // Il criterio è «manca una scelta che il PAY richiede»
+                                // (nessun token delle righe pay selezionato) — revisore
+                                // 25/08: con le pillole neutre del catalogo bastava
+                                // spuntare «Subentro» per cadere nel messaggio falso
+                                opzRilevanti.length > 0 && !opzSel.some(o => opzRilevanti.includes(o)) ? (
                                     <div className="text-amber-300 font-semibold flex items-center gap-2">
-                                        <TriangleAlert size={20} /> Scegli le «Opzioni della vendita» qui sopra (es. la fascia di consumo): il pay di questa offerta dipende da quelle.
+                                        <TriangleAlert size={20} /> Scegli qui sopra l&apos;opzione che decide il pay (es. la fascia di consumo, nella riga ✱): senza, questa offerta non si aggancia.
                                     </div>
                                 ) : (
                                 <div className="text-amber-300 font-semibold flex items-center gap-2">

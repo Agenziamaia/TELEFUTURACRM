@@ -51,7 +51,21 @@ Chi rispetta queste tre regole non deve "allineare" niente — l'allineamento
   fisso) ma SOLO chiamando il motore con opzioni simulate (`setPerOpz` →
   `matchComponenti`), mai rifacendo la matematica.
 - Il Calcolatore è «un Registra Vendita riassunto»: catalogo vero + motore
-  vero. Qualsiasi eccezione va motivata qui dentro.
+  vero (le pillole opzioni = `catalog_opzioni` dell'offerta ∪ i token delle
+  righe pay ancorate a `opzione` — il secondo è il backstop per scelte che
+  pagano ma non sono ancora a catalogo). Qualsiasi eccezione va motivata
+  qui dentro.
+
+## Eccezioni motivate (uniche ammesse, da rivedere se il motore cambia)
+
+- `w3_commissioning.tsx` (pannello Commissioning): la CELLA fa
+  `canone × Σmolt + flat` in loco e la modalità ragazzi ha `derivaTiers`,
+  copia dichiarata della formula di `deriva()` del motore. Motivo: il
+  pannello mostra l'intera matrice offerte×soglie×declinazioni e il motore
+  non espone un'API per-cella; l'equivalenza numerica (arrotondamenti
+  per-riga inclusi) è stata verificata dal revisore il 25/08 su azienda E
+  ragazzi. ⚠️ Se si tocca `deriva()`/`payEuroAttivazione`, aggiornare
+  ANCHE `derivaTiers` e ri-collaudare pannello↔Calcolatore.
 
 ## Glossario universale (Luca 25/08)
 
