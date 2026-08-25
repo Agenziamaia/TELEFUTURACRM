@@ -58,9 +58,16 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
     const [righe, setRighe] = useState<PayRiga[]>([]);
     const [offerte, setOfferte] = useState<OffCanone[]>([]);
     const [tierMax, setTierMax] = useState<Record<string, number>>({});   // pista → n. soglie vere
+    // MODALITÀ RAGAZZI: originali azienda e % applicate — servono al tooltip
+    // (Luca 25/08 sera: al passaggio del mouse va raccontato quanto incassa
+    // l'azienda, la % della soglia e il conteggio, non il calcolo originale)
+    const [origRagazzi, setOrigRagazzi] = useState<Map<string, { base: number | null; tiers: number[] }> | null>(null);
+    const [percRagazzi, setPercRagazzi] = useState<{ mappa: Record<string, Record<number, { loro: number; perc: number }>>; unica: Record<string, number> } | null>(null);
     const [loading, setLoading] = useState(true);
     const [cerca, setCerca] = useState("");
-    const [aperte, setAperte] = useState<Set<string>>(new Set(["mobile"]));
+    // tutte RACCOLTE all'ingresso (Luca 25/08 sera: «dammi tutte le categorie
+    // raccolte e poi mi vado a esplodere io quella che mi interessa»)
+    const [aperte, setAperte] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         let vivo = true;
@@ -80,6 +87,8 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                 .map(x => ({ ...x, punti: Number(x.punti || 0), pay_base: x.pay_base == null ? null : Number(x.pay_base), pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []) }));
             const tm: Record<string, number> = {};
             ((sg.data ?? []) as { pista: string; tier: number }[]).forEach(s => { tm[s.pista] = Math.max(tm[s.pista] || 0, Number(s.tier)); });
+            let origMap: Map<string, { base: number | null; tiers: number[] }> | null = null;
+            let percInfo: { mappa: Record<string, Record<number, { loro: number; perc: number }>>; unica: Record<string, number> } | null = null;
             if (ragazzi) {
                 // MODALITÀ RAGAZZI (Luca 25/08): stessi dati dell'azienda,
                 // SCALATI con la stessa formula del motore — tier × % della
@@ -117,13 +126,16 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     }
                     return x.pay_tiers.slice(0, 3).map(v2 => (v2 == null ? v2 : Math.round(Number(v2) * fU(x.pista) * 100) / 100));
                 };
-                rows = rows
-                    .filter(x => (unica[String(x.pista || "")] ?? 100) !== 0)   // piste di rete fuori
-                    .map(x => ({
-                        ...x,
-                        pay_base: x.pay_base == null ? null : Math.round(x.pay_base * fU(x.pista) * 100) / 100,
-                        pay_tiers: derivaTiers(x),
-                    }));
+                const vive = rows.filter(x => (unica[String(x.pista || "")] ?? 100) !== 0);   // piste di rete fuori
+                // originali e % da parte PRIMA dello scaling: il tooltip delle
+                // celle ragazzi racconta «all'azienda X € → % soglia → importo»
+                origMap = new Map(vive.map(x => [x.id, { base: x.pay_base, tiers: [...x.pay_tiers] }]));
+                percInfo = { mappa, unica };
+                rows = vive.map(x => ({
+                    ...x,
+                    pay_base: x.pay_base == null ? null : Math.round(x.pay_base * fU(x.pista) * 100) / 100,
+                    pay_tiers: derivaTiers(x),
+                }));
                 for (const k of Object.keys(tm)) tm[k] = Math.min(tm[k], 3);   // i ragazzi vedono le prime 3 soglie
             }
             // catalogo: prodotti → offerte con canone (per le sezioni a canone)
@@ -147,6 +159,8 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
             setRighe(rows);
             setTierMax(tm);
             setOfferte(offs);
+            setOrigRagazzi(origMap);
+            setPercRagazzi(percInfo);
             setLoading(false);
         })();
         return () => { vivo = false; };
@@ -283,6 +297,70 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
             { testo: `= ${eur(canone * molt + flat)} €`, stile: "tot" },
         ];
     };
+    // TOOLTIP RAGAZZI (Luca 25/08 sera): la scomposizione canone×componenti ce
+    // l'ha già il lato azienda — qui la bolla racconta quanto incassa
+    // l'azienda per l'attivazione, la % girata a quella soglia e il conteggio
+    // che produce l'importo letto. Gli originali stanno in origRagazzi.
+    const percSoglia = (pista: string | null, i: number): { perc: number; loro: number } => {
+        const m = pista ? percRagazzi?.mappa[pista]?.[i + 1] : undefined;
+        if (m) return { perc: m.perc, loro: m.loro };
+        return { perc: pista ? (percRagazzi?.unica[pista] ?? 100) : 100, loro: i + 1 };
+    };
+    const percUnicaDi = (pista: string | null): number => (pista ? (percRagazzi?.unica[pista] ?? 100) : 100);
+    const origDi = (r: PayRiga) => origRagazzi?.get(r.id);
+    const tipRagazziCanone = (setR: PayRiga[], i: number, canone: number, cella: number): TipRiga[] => {
+        const pista = setR[0]?.pista || null;
+        const { perc, loro } = percSoglia(pista, i);
+        const moltParti = setR.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
+        const moltOrig = Math.round(moltParti.reduce((s, r) => s + Number(origDi(r)?.tiers[loro - 1] ?? 0), 0) * 100) / 100;
+        const flatOrig = setR.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(origDi(r)?.base || 0), 0);
+        const aCanone = Math.round(canone * moltOrig * 100) / 100;
+        const pu = percUnicaDi(pista);
+        const righe: TipRiga[] = [
+            { testo: `S${i + 1} · ${it(perc)}% ai ragazzi`, stile: "formula" },
+            { testo: `· all'azienda: ${eur(aCanone + flatOrig)} €${loro !== i + 1 ? ` (S${loro} della lettera)` : ""}`, stile: "voce" },
+        ];
+        if (flatOrig) {
+            righe.push({ testo: `· ${eur(aCanone)} € a canone × ${it(perc)}%`, stile: "voce" });
+            righe.push({ testo: `+ contrattuale ${eur(flatOrig)} € × ${it(pu)}%`, stile: "flat" });
+        }
+        righe.push({ testo: `= ${eur(cella)} €`, stile: "tot" });
+        return righe;
+    };
+    // eventi a € per soglia (Luce&Gas, 2ª linea col suo contrattuale)
+    const tipRagazziEvento = (r: PayRiga, i: number, flatR?: PayRiga | null, cella?: number): TipRiga[] => {
+        const { perc, loro } = percSoglia(r.pista, i);
+        const orig = Number(origDi(r)?.tiers[loro - 1] ?? 0);
+        const flatOrig = flatR ? Number(origDi(flatR)?.base || 0) : 0;
+        const pu = percUnicaDi(r.pista);
+        const righe: TipRiga[] = [
+            { testo: `S${i + 1} · ${it(perc)}% ai ragazzi`, stile: "formula" },
+            { testo: `· all'azienda: ${eur(orig + flatOrig)} €${loro !== i + 1 ? ` (S${loro} della lettera)` : ""}`, stile: "voce" },
+        ];
+        if (flatOrig) {
+            righe.push({ testo: `· ${eur(orig)} € × ${it(perc)}%`, stile: "voce" });
+            righe.push({ testo: `+ contrattuale ${eur(flatOrig)} € × ${it(pu)}%`, stile: "flat" });
+        }
+        righe.push({ testo: `= ${eur(cella ?? Number(r.pay_tiers[i]))} €`, stile: "tot" });
+        return righe;
+    };
+    const tipRagazziGettone = (r: PayRiga): TipRiga[] => {
+        const pu = percUnicaDi(r.pista);
+        const orig = origDi(r)?.base;
+        return [
+            { testo: `Gettone · ${it(pu)}% ai ragazzi`, stile: "formula" },
+            { testo: `· all'azienda: ${orig == null ? "—" : eur(Number(orig)) + " €"}`, stile: "voce" },
+            { testo: `= ${r.pay_base == null ? "—" : eur(Number(r.pay_base)) + " €"}`, stile: "tot" },
+        ];
+    };
+    // lo span dei gettoni in modalità ragazzi, con la bolla al passaggio
+    const spanPayRagazzi = (r: PayRiga) => (
+        r.pay_base == null ? <span className="font-semibold text-emerald-200 tabular-nums">—</span> : (
+            <span className="font-semibold text-emerald-200 tabular-nums cursor-help"
+                onMouseEnter={e => mostraTip(e, tipRagazziGettone(r))}
+                onMouseLeave={() => setTip(null)}>{r.pay_base} €</span>
+        )
+    );
 
     if (loading) return null;
 
@@ -303,7 +381,11 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     </div>
                 </div>
             </div>
-            {SEZIONI.filter(sez => !(ragazzi && sez.id === "assicurazioni")).map(sez => {
+            {/* niente più esclusioni fisse lato ragazzi (Luca 25/08 sera: le
+                assicurazioni «non ci sono proprio»): decide il DATO — le piste
+                con perc_ragazzi=0 escono già filtrate dal load, le altre
+                compaiono coi valori scalati */}
+            {SEZIONI.map(sez => {
                 const aperta = aperte.has(sez.id) || !!cerca.trim();
                 /* ---- TELEFONI & DEVICE: gettoni one-shot della lettera,
                    celle EDITABILI (Luca 14/08 sera-3) — righe spente per il
@@ -343,7 +425,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                         {!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa di aggancio</span>}
                                                     </td>
                                                     <td className="px-2 py-1 text-center">
-                                                        {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                        {ragazzi ? spanPayRagazzi(r) : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                             onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                                             className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                     </td>
@@ -441,7 +523,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                     const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
                                                                     return (
                                                                         <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                            onMouseEnter={e => mostraTip(e, righeTip(v.o.canone, moltParti, i, flat))}
+                                                                            onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(v.set, i, v.o.canone, v.o.canone * molt + flat) : righeTip(v.o.canone, moltParti, i, flat))}
                                                                             onMouseLeave={() => setTip(null)}>
                                                                             {eur(v.o.canone * molt + flat)} €
                                                                         </td>
@@ -530,7 +612,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                 const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
                                                                 return (
                                                                     <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                        onMouseEnter={e => mostraTip(e, righeTip(o.canone, moltParti, i, flat))}
+                                                                        onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(set, i, o.canone, o.canone * molt + flat) : righeTip(o.canone, moltParti, i, flat))}
                                                                         onMouseLeave={() => setTip(null)}>
                                                                         {eur(o.canone * molt + flat)} €
                                                                     </td>
@@ -569,7 +651,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                 if (v == null) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
                                                                 return (
                                                                     <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                        onMouseEnter={e => mostraTip(e, [
+                                                                        onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziEvento(sl, i, righe.find(r2 => r2.componente === "contrattuale_2linea") || null, v + flat) : [
                                                                             { testo: `2ª linea · soglia S${i + 1}`, stile: "formula" },
                                                                             { testo: `· canone linea 10 € × moltiplicatore base = ${eur(v)} €`, stile: "voce" },
                                                                             ...(flat ? [{ testo: `+ ${eur(flat)} € contrattuale 2ª linea`, stile: "flat" as const }] : []),
@@ -607,7 +689,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                             <tr key={r.id} className="border-t border-white/[0.04]">
                                                                 <td className="px-3 py-1 text-slate-200">{r.nome}{!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa dell&apos;importo premio</span>}</td>
                                                                 <td className="px-2 py-1 text-center w-24">
-                                                                    {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                    {ragazzi ? spanPayRagazzi(r) : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                                         onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                                                         className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                                 </td>
@@ -657,7 +739,9 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                     {Array.from({ length: maxT }, (_, i) => (
                                                         <td key={i} className="px-1.5 py-1 text-center">
                                                             {r.pay_tiers[i] == null ? <span className="text-slate-700">—</span> : ragazzi ? (
-                                                                <span className="font-semibold text-emerald-200 tabular-nums">{String(r.pay_tiers[i])} €</span>
+                                                                <span className="font-semibold text-emerald-200 tabular-nums cursor-help"
+                                                                    onMouseEnter={e => mostraTip(e, tipRagazziEvento(r, i))}
+                                                                    onMouseLeave={() => setTip(null)}>{String(r.pay_tiers[i])} €</span>
                                                             ) : (
                                                                 <input value={payDraft[`${r.id}|${i}`] ?? String(r.pay_tiers[i])}
                                                                     onChange={e => setPayDraft(prev => ({ ...prev, [`${r.id}|${i}`]: e.target.value }))}
@@ -689,7 +773,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                     <tr key={r.id} className="border-t border-white/[0.04]">
                                                                         <td className="px-3 py-1 text-slate-200">{r.nome}</td>
                                                                         <td className="px-2 py-1 text-center w-24">
-                                                                            {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                            {ragazzi ? spanPayRagazzi(r) : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                                                 onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                                                                 className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                                         </td>
@@ -745,7 +829,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                     <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
                                                         <td className="px-3 py-1 text-slate-200">{r.nome}{Number(r.pay_base) === 0 && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>esclusa per lettera</span>}</td>
                                                         <td className="px-2 py-1 text-center">
-                                                            {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                            {ragazzi ? spanPayRagazzi(r) : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                                 onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                                                 className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                         </td>
@@ -799,10 +883,15 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
    PER SOGLIA (S1/S2/S3 → pay_mappa_soglie, che il motore applica soglia
    per soglia). Piste a gettone (CB, Protetti): % unica (perc_ragazzi).
    Vuoto = 100%. Il tabellare ragazzi si rideriva da solo. ═══════════════ */
-const PISTE_SOGLIA = [
+const PISTE_SOGLIA: { chiave: string; label: string; attivabile?: boolean }[] = [
     { chiave: "mobile", label: "📱 Mobile" },
     { chiave: "fisso", label: "🏠 Fisso" },
     { chiave: "lucegas", label: "⚡ Luce & Gas" },
+    // ATTIVABILE (Luca 25/08 sera: «non posso impostare una % sulle
+    // assicurazioni»): caselle vuote = pista di rete (perc_ragazzi 0, come
+    // oggi — niente ai ragazzi); compilate = la pista ENTRA nella gara
+    // ragazzi con la % per soglia e la sezione ricompare nella loro scheda
+    { chiave: "assicurazioni", label: "🛡 Assicurazioni", attivabile: true },
 ];
 const PISTE_UNICHE = [
     { chiave: "cb", label: "🔁 Customer Base" },
@@ -860,6 +949,15 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
                 const ins = await supabase.from("pay_mappa_soglie").insert(righe);
                 if (ins.error) { setBusy(false); setMsg("Errore: " + ins.error.message); return; }
             }
+            // pista ATTIVABILE: con la mappa compilata entra ai ragazzi
+            // (perc_ragazzi null), svuotata torna di rete (0 = esclusa)
+            if (p.attivabile) {
+                const id = idPista[p.chiave];
+                if (id) {
+                    const up = await supabase.from("pay_piste").update({ perc_ragazzi: righe.length ? null : 0 }).eq("id", id);
+                    if (up.error) { setBusy(false); setMsg("Errore: " + up.error.message); return; }
+                }
+            }
         }
         // uniche: perc_ragazzi sulla pista azienda
         for (const p of PISTE_UNICHE) {
@@ -879,7 +977,7 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">👥 % ai ragazzi — quota del commissioning azienda riconosciuta per soglia</div>
                 <button onClick={salva} disabled={busy} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold disabled:opacity-50">{busy ? "…" : "💾 Salva percentuali"}</button>
             </div>
-            <p className="text-[11px] text-slate-500 mb-3">Vuoto = 100%. Le piste Business e Assicurazioni sono di rete: restano all'azienda.</p>
+            <p className="text-[11px] text-slate-500 mb-3">Vuoto = 100%. La gara Business è di rete: resta all&apos;azienda. Assicurazioni: vuote = restano all&apos;azienda, compilate = girano ai ragazzi con la % per soglia.</p>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {PISTE_SOGLIA.map((p) => (
                     <div key={p.chiave} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
@@ -891,12 +989,13 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
                                     <span className="flex items-center gap-1">
                                         <input inputMode="decimal" value={mappa[p.chiave]?.[t] ?? ""}
                                             onChange={(e) => setMappa((prev) => ({ ...prev, [p.chiave]: { ...(prev[p.chiave] || {}), [t]: e.target.value } }))}
-                                            placeholder="100" className="glass-input w-full text-sm text-center rounded-lg py-1.5" />
+                                            placeholder={p.attivabile ? "—" : "100"} className="glass-input w-full text-sm text-center rounded-lg py-1.5" />
                                         <span className="text-[10px] text-slate-500">%</span>
                                     </span>
                                 </label>
                             ))}
                         </div>
+                        {p.attivabile && <p className="text-[9px] text-slate-500 mt-1.5">vuote = restano all&apos;azienda · compilate = la sezione compare ai ragazzi</p>}
                     </div>
                 ))}
                 {PISTE_UNICHE.map((p) => (
@@ -928,7 +1027,13 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
    quella pista valgono le derivate azienda (prime 3), mostrate come
    placeholder; tutte vuote e niente derivate = gara senza soglie (si paga
    la colonna base). ═══════════════════════════════════════════════════ */
-const NOME_PISTA_SOGLIE: Record<string, string> = { mobile: "📱 Mobile", fisso: "🏠 Fisso", lucegas: "⚡ Luce & Gas" };
+const NOME_PISTA_SOGLIE: Record<string, string> = {
+    mobile: "📱 Mobile", fisso: "🏠 Fisso", lucegas: "⚡ Luce & Gas",
+    // le assicurazioni compaiono ai ragazzi solo con la % impostata nella
+    // card 👥; le soglie però si possono già definire qui (derivate azienda
+    // 30/45/60 come riferimento quando la pista è attiva)
+    assicurazioni: "🛡 Assicurazioni",
+};
 export function W3RagazziSoglie({ mese }: { mese: string }) {
     const monthISO = `${mese}-01`;
     // effettive = ciò che il motore usa OGGI (manuali che vincono, o derivate
