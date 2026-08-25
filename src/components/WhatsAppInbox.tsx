@@ -269,8 +269,22 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         if (!conv) {
             const inst = visibleInstances.find(i => i.id === selInst) || visibleInstances[0];
             const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
+            // NOME VERO dall'anagrafica (Luca 25/08 notte: «Donna Olimpia ha
+            // scritto a un cliente salvato e non è comparso come cliente»):
+            // stesso aggancio del webhook — vale anche per le chat che
+            // creiamo NOI, non solo per i messaggi in arrivo
+            let clientId: string | null = null;
+            let nomeCliente: string | null = null;
+            const codaCli = numero.slice(-9);
+            if (codaCli.length >= 6) {
+                const { data: cli } = await supabase.from("clients").select("id, nome, cognome, ragione_sociale").ilike("cellulare", `%${codaCli}%`).limit(1);
+                if (cli && cli[0]) {
+                    clientId = cli[0].id as string;
+                    nomeCliente = (cli[0].ragione_sociale as string) || `${cli[0].nome || ""} ${cli[0].cognome || ""}`.trim() || null;
+                }
+            }
             const { data: creata, error } = await supabase.from("wa_conversations")
-                .insert({ instance_id: inst.id, customer_number: numero, unread: 0 })
+                .insert({ instance_id: inst.id, customer_number: numero, customer_name: nomeCliente, client_id: clientId, unread: 0 })
                 .select("*").maybeSingle();
             if (error || !creata) { alert("Chat non aperta: " + (error?.message || "conversazione non creata")); return false; }
             conv = creata as Conv;
