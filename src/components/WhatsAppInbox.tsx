@@ -205,10 +205,36 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
 
     useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
 
-    // ── DEEP-LINK (Luca 29/07): /chat?wa=<numero> apre la chat col cliente
-    //    precaricata. Cerca la conversazione tra i numeri visibili (aggancio
-    //    per coda di cifre, come il ponte Aircall); se non esiste la CREA
-    //    sull'istanza selezionata (o la prima visibile).
+    // ── APERTURA PER NUMERO: usata dal deep-link E dal bottone «Nuova chat»
+    //    (Luca 25/08: si deve poter scrivere anche a un numero digitato a
+    //    mano — cliente non ancora registrato che deve mandare documenti).
+    //    Cerca la conversazione tra i numeri visibili (aggancio per coda di
+    //    cifre, come il ponte Aircall); se non esiste la CREA sull'istanza
+    //    selezionata (o la prima visibile).
+    const apriPerNumero = async (dig: string): Promise<boolean> => {
+        if (!visibleInstances.length) return false;
+        const coda = dig.slice(-9);
+        const ids = visibleInstances.map(i => i.id);
+        const patt = "%" + coda.split("").join("%") + "%";
+        const { data: trovate } = await supabase.from("wa_conversations")
+            .select("*").in("instance_id", ids).ilike("customer_number", patt)
+            .order("last_message_at", { ascending: false }).limit(1);
+        let conv = (trovate && trovate[0]) as Conv | undefined;
+        if (!conv) {
+            const inst = visibleInstances.find(i => i.id === selInst) || visibleInstances[0];
+            const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
+            const { data: creata, error } = await supabase.from("wa_conversations")
+                .insert({ instance_id: inst.id, customer_number: numero, unread: 0 })
+                .select("*").maybeSingle();
+            if (error || !creata) { alert("Chat non aperta: " + (error?.message || "conversazione non creata")); return false; }
+            conv = creata as Conv;
+        }
+        setSelInst(conv.instance_id);
+        setSelConv(conv);
+        return true;
+    };
+
+    // DEEP-LINK (Luca 29/07): /chat?wa=<numero> apre la chat col cliente precaricata.
     const _apriFatto = useRef<string | null>(null);
     const _testoFatto = useRef(false);   // CAL-01: prefill applicato una volta sola
     useEffect(() => {
@@ -217,27 +243,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         if (!visibleInstances.length) return;    // istanze non ancora arrivate
         _apriFatto.current = dig;
         (async () => {
-            const coda = dig.slice(-9);
-            const ids = visibleInstances.map(i => i.id);
-            const patt = "%" + coda.split("").join("%") + "%";
-            const { data: trovate } = await supabase.from("wa_conversations")
-                .select("*").in("instance_id", ids).ilike("customer_number", patt)
-                .order("last_message_at", { ascending: false }).limit(1);
-            let conv = (trovate && trovate[0]) as Conv | undefined;
-            if (!conv) {
-                const inst = visibleInstances.find(i => i.id === selInst) || visibleInstances[0];
-                const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
-                const { data: creata, error } = await supabase.from("wa_conversations")
-                    .insert({ instance_id: inst.id, customer_number: numero, unread: 0 })
-                    .select("*").maybeSingle();
-                if (error || !creata) { alert("Chat non aperta: " + (error?.message || "conversazione non creata")); return; }
-                conv = creata as Conv;
-            }
-            setSelInst(conv.instance_id);
-            setSelConv(conv);
+            const ok = await apriPerNumero(dig);
             // CAL-01: ?testo= del deep-link precompila il composer (UNA volta
             // sola: l'operatore rilegge, ritocca e conferma con l'invio)
-            if (testoIniziale && !_testoFatto.current) { _testoFatto.current = true; setText(testoIniziale); }
+            if (ok && testoIniziale && !_testoFatto.current) { _testoFatto.current = true; setText(testoIniziale); }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apriNumero, visibleInstances.map(i => i.id).join("|")]);
@@ -431,6 +440,21 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                     {/* elenco conversazioni — CHT-01: sotto lg lista e thread si
                         alternano (prima si impilavano entrambi, pannelli minuscoli) */}
                     <div className={cn("glass-card overflow-y-auto", selConv && "hidden lg:block")}>
+                        {/* NUOVA CHAT A NUMERO LIBERO (Luca 25/08): si scrive anche a
+                            chi non è ancora cliente — documenti da farsi mandare
+                            prima di avergli venduto qualcosa */}
+                        {instConnessa?.status === "connessa" && (
+                            <button onClick={async () => {
+                                const ins = window.prompt("Numero WhatsApp del destinatario (anche non registrato come cliente):\nes. 3331234567 oppure +39 333 1234567");
+                                if (ins === null) return;
+                                const dig = ins.replace(/\D/g, "");
+                                if (dig.length < 6) { alert("Numero troppo corto: ricontrolla."); return; }
+                                await apriPerNumero(dig);
+                            }}
+                                className="w-full px-4 py-2.5 border-b border-emerald-500/20 bg-emerald-500/5 text-emerald-300 hover:bg-emerald-500/10 text-sm font-bold flex items-center gap-2">
+                                <Plus className="w-4 h-4" /> Nuova chat a un numero
+                            </button>
+                        )}
                         {instConnessa && instConnessa.status !== "connessa" && (
                             <div className="p-3 text-xs text-amber-300 border-b border-amber-500/20 bg-amber-500/5">
                                 {instConnessa.status === "disconnessa" ? "Sessione scaduta — le conversazioni sono nascoste" : "Numero non ancora collegato"} — premi{" "}

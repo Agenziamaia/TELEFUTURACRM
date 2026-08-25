@@ -22,6 +22,8 @@ import {
   calcolaMalus,
   apertiTra,
   addAperti,
+  malusAdminGiorno,
+  malusAdminFisso,
 } from "./trackingHelpers";
 
 // I 4 SPAZI del malus (Luca 21/08 sera): in_corso = la pratica lo sta ancora
@@ -246,16 +248,36 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   if (isMalusRow(row)) {
     const importo = calcolaMalus(row);
     if (importo > 0) {
-      const giorni = Math.max(1, Math.round(importo / euro));
-      out.push({
-        ...base,
-        venditore: nomeDelegato || nomeOriginale,
-        data_inizio: toISODate(subLavorativi(oggi, giorni - 1)),
-        data_fine: null,
-        giorni,
-        importo,
-        stato: "in_corso",
-      });
+      // MALUS AMMINISTRATIVO (25/08): l'episodio si ANCORA alla data
+      // dell'ultimo evento (l'esito che lo genera) — derivare l'inizio da
+      // «oggi meno importo/€» qui driftava la chiave giorno dopo giorno
+      // (fisso + €/gg dell'esito ≠ € della categoria) e avrebbe partorito
+      // un doppione a ogni sync.
+      const admin = malusAdminGiorno(row.statoAdmin || "", row.categoria, row.brand) > 0
+        || malusAdminFisso(row.statoAdmin || "", row.categoria, row.brand) > 0;
+      if (admin) {
+        const ancora = eventi.length ? eventi[eventi.length - 1].d : (t0 || oggi);
+        out.push({
+          ...base,
+          venditore: nomeDelegato || nomeOriginale,
+          data_inizio: toISODate(ancora),
+          data_fine: null,
+          giorni: Math.max(1, lavorativiTra(ancora, oggi)),
+          importo,
+          stato: "in_corso",
+        });
+      } else {
+        const giorni = Math.max(1, Math.round(importo / euro));
+        out.push({
+          ...base,
+          venditore: nomeDelegato || nomeOriginale,
+          data_inizio: toISODate(subLavorativi(oggi, giorni - 1)),
+          data_fine: null,
+          giorni,
+          importo,
+          stato: "in_corso",
+        });
+      }
     }
   }
   // Eventi a cavallo del sabato/domenica possono produrre lo stesso giorno di

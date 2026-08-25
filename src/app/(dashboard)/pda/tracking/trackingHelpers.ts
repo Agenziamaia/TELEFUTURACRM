@@ -226,6 +226,12 @@ export interface EsitoTracking {
   // €/GIORNO lavorativo quando la pratica sta in QUESTO esito admin (10/08):
   // usato per il malus da "Non Conforme", configurabile per categoria
   malus_giorno?: number | null;
+  // MALUS UNA TANTUM dell'esito admin (Luca 25/08: «Non Conforme genera un
+  // malus definitivo e poi un giornaliero finché non viene gestita»)
+  malus_fisso?: number | null;
+  // decorrenza dei € dell'esito (lezione incidente sky, stesso giorno): i
+  // valori impostati oggi valgono solo in avanti — mai conteggi sul passato
+  malus_decorrenza?: string | null;
   // 'negozio' (default) | 'admin' — esiti della verifica amministrativa
   // (segnalazione Luca 10/08: anche l'amministrativo ha esiti per categoria,
   // col flag "definitiva" che chiude il cerchio della pratica)
@@ -383,11 +389,28 @@ export function getStatiAdminPerCategoria(categoria: string, brand?: string | nu
 /** MALUS €/gg dell'esito ADMIN corrente (es. Non Conforme): dal pannello,
  *  per categoria. NULL/0 = nessun malus amministrativo. */
 export function malusAdminGiorno(statoAdmin: string, categoria: string, brand?: string | null): number {
-  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
-  const hit = db?.find((e) => e.chiave === statoAdmin)
-    || (brandEsitiKey(brand) ? ESITI_ADMIN_DB?.get(categoria)?.find((e) => e.chiave === statoAdmin) : undefined);
-  const v = Number(hit?.malus_giorno);
+  const v = Number(_esitoAdmin(statoAdmin, categoria, brand)?.malus_giorno);
   return isFinite(v) && v > 0 ? v : 0;
+}
+
+/** L'esito admin corrente dalle liste amministrabili (brand-specifica → generale). */
+function _esitoAdmin(statoAdmin: string, categoria: string, brand?: string | null): EsitoTracking | undefined {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
+  return db?.find((e) => e.chiave === statoAdmin)
+    || (brandEsitiKey(brand) ? ESITI_ADMIN_DB?.get(categoria)?.find((e) => e.chiave === statoAdmin) : undefined);
+}
+
+/** MALUS UNA TANTUM dell'esito ADMIN (Luca 25/08: «Non Conforme genera un
+ *  malus definitivo e poi un giornaliero finché non viene gestita»). */
+export function malusAdminFisso(statoAdmin: string, categoria: string, brand?: string | null): number {
+  const v = Number(_esitoAdmin(statoAdmin, categoria, brand)?.malus_fisso);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+
+/** Decorrenza dei € dell'esito admin (yyyy-mm-dd) o null. */
+export function malusAdminDecorrenza(statoAdmin: string, categoria: string, brand?: string | null): string | null {
+  const d = _esitoAdmin(statoAdmin, categoria, brand)?.malus_decorrenza;
+  return d ? String(d).slice(0, 10) : null;
 }
 
 /** Esito admin DEFINITIVO (flag amministrabile): chiude il cerchio della
@@ -536,9 +559,11 @@ const _hit = (soglia: number | null | undefined, valore: number | null) =>
   soglia != null && valore != null && valore >= soglia;
 /** 0 = in regola · 1 = da lavorare · 2 = warning · 3 = malus */
 function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
-  // MALUS AMMINISTRATIVO (10/08): se l'esito admin corrente ha un €/gg (es.
-  // Non Conforme) la pratica e' in MALUS anche se il negozio l'aveva completata
-  if (malusAdminGiorno(row.statoAdmin, row.categoria, row.brand) > 0) return 3;
+  // MALUS AMMINISTRATIVO (10/08, + una tantum 25/08): se l'esito admin
+  // corrente ha un €/gg o un € fisso (es. Non Conforme) la pratica e' in
+  // MALUS anche se il negozio l'aveva completata
+  if (malusAdminGiorno(row.statoAdmin, row.categoria, row.brand) > 0
+    || malusAdminFisso(row.statoAdmin, row.categoria, row.brand) > 0) return 3;
   // Pratica con esito definitivo (completata OPPURE annullata/KO/recesso): non
   // c'e' altro esito da dare, la maturazione si ferma e la pratica esce da malus.
   if (fermaMalus(row.statoNegozio, row.categoria, row.brand)) return 0;
@@ -586,10 +611,21 @@ export function isMalusRow(row: TrackingRow): boolean {
 export function calcolaMalus(row: TrackingRow): number {
   if (livelloRegole(row) !== 3) return 0;
   const m = misure(row);
-  // malus AMMINISTRATIVO: €/gg dell'esito admin × giorni col negozio APERTO
-  // dall'ultimo aggiornamento (l'evento admin riparte il conteggio)
+  // malus AMMINISTRATIVO (Luca 25/08): € UNA TANTUM dell'esito + €/gg per
+  // ogni giorno col negozio APERTO dall'ultimo aggiornamento, finché la
+  // pratica non viene gestita. DECORRENZA dell'esito (lezione incidente sky,
+  // stesso giorno): i € impostati oggi valgono solo in avanti — un esito dato
+  // PRIMA della configurazione non paga la una tantum e il giornaliero conta
+  // solo i giorni dalla configurazione in poi.
   const mAdm = malusAdminGiorno(row.statoAdmin, row.categoria, row.brand);
-  if (mAdm > 0) return Math.round(Math.max(1, m.aAgg) * mAdm * 100) / 100;
+  const mFis = malusAdminFisso(row.statoAdmin, row.categoria, row.brand);
+  if (mAdm > 0 || mFis > 0) {
+    const dec2 = malusAdminDecorrenza(row.statoAdmin, row.categoria, row.brand);
+    const ggDec = dec2 ? giorniApertiDa(dec2, row.negozio, row.venditore) : Number.POSITIVE_INFINITY;
+    const giorni = mAdm > 0 ? Math.min(Math.max(1, m.aAgg), Math.max(0, ggDec)) : 0;
+    const fisso = m.aAgg <= ggDec ? mFis : 0;
+    return Math.round((fisso + giorni * mAdm) * 100) / 100;
+  }
   const r = regolaDi(row.categoria);
   if (!r) return 0;
   // CHIUSURE (Luca 11/08): l'eccedenza matura solo nei giorni aperti

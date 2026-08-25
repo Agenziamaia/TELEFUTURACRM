@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { impostaRegoleTracking, REGOLE_TRACKING_DEFAULT, type RegolaTracking } from "./trackingHelpers";
+import { impostaRegoleTracking, impostaEsitiTracking, REGOLE_TRACKING_DEFAULT, type RegolaTracking } from "./trackingHelpers";
 
 const CATEGORIE_UI: { id: string; label: string; color: string }[] = [
     { id: "mnp", label: "MNP", color: "var(--tf-38bdf8)" },
@@ -57,6 +57,48 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
     };
 
     const modificata = righe.some((r) => JSON.stringify(r) !== JSON.stringify(bozza[r.categoria]));
+
+    // ── MALUS DEGLI ESITI AMMINISTRATIVI (Luca 25/08: «Non Conforme genera un
+    // malus definitivo e poi un giornaliero finché non viene gestita») — i €
+    // si settano QUI, per esito e categoria. Al salvataggio si timbra la
+    // decorrenza (lezione incidente sky dello stesso giorno): i valori nuovi
+    // valgono solo in avanti — un esito già assegnato non paga la una tantum
+    // e il giornaliero conta solo i giorni dalla configurazione in poi.
+    type EsitoAdm = { id: string; categoria: string; etichetta: string; brand: string | null; malus_fisso: number | null; malus_giorno: number | null; malus_decorrenza: string | null };
+    const [esitiAdm, setEsitiAdm] = useState<EsitoAdm[]>([]);
+    const [admBozza, setAdmBozza] = useState<Record<string, { fisso: string; giorno: string }>>({});
+    const caricaEsiti = async () => {
+        const { data } = await supabase.from("tracking_esiti")
+            .select("id, categoria, etichetta, brand, malus_fisso, malus_giorno, malus_decorrenza")
+            .eq("lato", "admin").eq("attiva", true).eq("completata", false)
+            .order("categoria").order("ordine");
+        const rows = (data || []) as EsitoAdm[];
+        setEsitiAdm(rows);
+        setAdmBozza(Object.fromEntries(rows.map((r) => [r.id, {
+            fisso: r.malus_fisso == null ? "" : String(r.malus_fisso),
+            giorno: r.malus_giorno == null ? "" : String(r.malus_giorno),
+        }])));
+    };
+    useEffect(() => { caricaEsiti(); }, []);
+    const admNum = (v: string) => { if (v.trim() === "") return null; const x = Number(v.replace(",", ".")); return Number.isFinite(x) && x > 0 ? x : null; };
+    const admDirty = (r: EsitoAdm) => {
+        const b = admBozza[r.id]; if (!b) return false;
+        return admNum(b.fisso) !== (r.malus_fisso == null ? null : Number(r.malus_fisso))
+            || admNum(b.giorno) !== (r.malus_giorno == null ? null : Number(r.malus_giorno));
+    };
+    const salvaEsito = async (r: EsitoAdm) => {
+        const b = admBozza[r.id]; if (!b) return;
+        const { error } = await supabase.from("tracking_esiti").update({
+            malus_fisso: admNum(b.fisso), malus_giorno: admNum(b.giorno),
+            malus_decorrenza: new Date().toISOString().slice(0, 10),
+        }).eq("id", r.id);
+        if (error) { alert("Salvataggio non riuscito: " + error.message); return; }
+        // cache esiti rinfrescata subito: il tracking ricalcola senza reload
+        const { data: tutti } = await supabase.from("tracking_esiti").select("*").order("ordine");
+        if (tutti && tutti.length) impostaEsitiTracking(tutti as never);
+        await caricaEsiti();
+        onSalvate();
+    };
 
     const salva = async () => {
         if (busy) return;
@@ -175,6 +217,64 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                 </div>
             )}
             {!admin && <p className="mt-3 text-[11px] text-slate-600">Le soglie si modificano solo dall&apos;amministratore.</p>}
+
+            {/* MALUS DEGLI ESITI AMMINISTRATIVI (Luca 25/08): «Non Conforme»
+                & co. — € una tantum all'assegnazione + €/giorno finché la
+                pratica non viene gestita dall'utente. Decorrenza automatica. */}
+            {esitiAdm.length > 0 && (
+                <div className="mt-5 overflow-x-auto rounded-xl border border-slate-700">
+                    <table className="w-full text-sm" style={{ minWidth: 680 }}>
+                        <thead>
+                            <tr className="bg-slate-900 text-left">
+                                <th className="py-2.5 px-3 text-[11px] uppercase tracking-wider text-slate-400">🔴 Malus degli esiti amministrativi<div className="normal-case font-normal text-[10px] text-slate-500 mt-0.5">una tantum all&apos;assegnazione + €/giorno (giorni aperti) finché la pratica non viene gestita</div></th>
+                                <th className="py-2.5 px-3 text-[11px] uppercase tracking-wider text-slate-300" title="€ addebitati una volta sola appena l'esito viene assegnato">€ una tantum</th>
+                                <th className="py-2.5 px-3 text-[11px] uppercase tracking-wider text-slate-300" title="€ per ogni giorno col negozio aperto finché la pratica non viene gestita">€ / giorno</th>
+                                <th className="py-2.5 px-3 w-24"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {esitiAdm.map((r) => {
+                                const cat = CATEGORIE_UI.find((c) => c.id === r.categoria);
+                                const b = admBozza[r.id] || { fisso: "", giorno: "" };
+                                const inVigore = (r.malus_fisso != null || r.malus_giorno != null) && r.malus_decorrenza;
+                                return (
+                                    <tr key={r.id} className="border-t border-white/10/60">
+                                        <td className="py-2 px-3">
+                                            <span className="font-bold" style={{ color: cat?.color || "var(--tf-94a3b8)" }}>{cat?.label || r.categoria}</span>
+                                            <span className="text-slate-300 font-semibold ml-2">{r.etichetta}</span>
+                                            {r.brand && <span className="text-[10px] text-slate-500 ml-1.5">({r.brand})</span>}
+                                            {inVigore && <div className="text-[10px] text-slate-500 mt-0.5" title="I € valgono da questa data: un esito assegnato prima non paga la una tantum e il giornaliero conta solo i giorni successivi.">in vigore dal {String(r.malus_decorrenza).slice(0, 10).split("-").reverse().join("/")}</div>}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                            {admin ? (
+                                                <span className="inline-flex items-center gap-1"><span className="text-slate-400">€</span>
+                                                    <input value={b.fisso} onChange={(e) => setAdmBozza((p) => ({ ...p, [r.id]: { ...b, fisso: e.target.value } }))}
+                                                        inputMode="numeric" placeholder="—"
+                                                        className="w-16 text-center rounded-md bg-white/[0.05] border border-white/10 py-1 text-[13px] font-bold text-rose-300 focus:border-indigo-500 outline-none" />
+                                                </span>
+                                            ) : <span className="font-bold text-rose-300">{r.malus_fisso != null ? `€ ${r.malus_fisso}` : "—"}</span>}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                            {admin ? (
+                                                <span className="inline-flex items-center gap-1"><span className="text-slate-400">€</span>
+                                                    <input value={b.giorno} onChange={(e) => setAdmBozza((p) => ({ ...p, [r.id]: { ...b, giorno: e.target.value } }))}
+                                                        inputMode="numeric" placeholder="—"
+                                                        className="w-16 text-center rounded-md bg-white/[0.05] border border-white/10 py-1 text-[13px] font-bold text-rose-300 focus:border-indigo-500 outline-none" />
+                                                </span>
+                                            ) : <span className="font-bold text-rose-300">{r.malus_giorno != null ? `€ ${r.malus_giorno}` : "—"}</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-right">
+                                            {admin && admDirty(r) && (
+                                                <button onClick={() => salvaEsito(r)} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] font-bold">💾 Salva</button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 }
