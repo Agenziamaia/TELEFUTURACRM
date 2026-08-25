@@ -6828,7 +6828,11 @@ select.rvIn{cursor:pointer}
 
       {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+bC}}>
         <div style={{fontSize:12.5,fontWeight:700,color:bC,marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
-        <div style={{background:"rgba(0,114,198,0.10)",borderRadius:10,padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10,border:"1px solid var(--tf-w120)"}}>
+        {/* S4/energia NON ha codici di inserimento (Luca 25/08, screenshot):
+            calderone unico — conta solo il negozio. Il banner di sessione
+            resta per gli altri brand; il campo per-vendita è già spento
+            dalla regola campi brand=s4. */}
+        {brand!=="energy"&&<div style={{background:"rgba(0,114,198,0.10)",borderRadius:10,padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10,border:"1px solid var(--tf-w120)"}}>
           <span style={{fontSize:12,fontWeight:800,color:"var(--tf-8892b0)",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
           {/* RIQUADRI negozio a selezione SINGOLA (Luca 03/08): via la tendina
               nativa — un click sceglie, ricliccando lo stesso si toglie */}
@@ -6846,7 +6850,7 @@ select.rvIn{cursor:pointer}
                 {on?"✓ ":""}{c}
               </button>;})}
           </div>
-        </div>
+        </div>}
         {(
           /* GRIGLIA A CARD (per TUTTI i brand e tipi cliente, Luca 03/08):
              3 colonne responsive, prodotti a quadratoni dentro la card,

@@ -2228,6 +2228,10 @@ export default function RicercaContratto() {
                     if (d["Cod.Ins."] !== undefined) return "Cod.Ins.";
                     return Object.keys(d).find(k => /^cod\.?\s?ins/i.test(k)) ?? "Cod.Ins.";
                 })();
+                // S4 NON ha codici di inserimento (Luca 25/08, calderone unico):
+                // il campo non si offre nemmeno in modifica — reintrodurrebbe la
+                // chiave bonificata nei dettagli
+                const senzaCodIns = /^s4/i.test(String(editBrand || row.brand || ""));
                 // riga a marginalità: fuori dal catalogo, tendine dedicate
                 const isMarg = _isExtraBrand(editBrand || row.brand);
                 // esclusi dai "Dettagli" per non averli due volte: il codice
@@ -2746,7 +2750,7 @@ export default function RicercaContratto() {
                                             {attribFields.map(f => renderField("contract::" + f.key, f.label, f.kind))}
                                             {/* Segnalazione 67/71: codice inserimento modificabile a
                                                 tendina (chiave nei dettagli, varia per brand). */}
-                                            {renderField("dettagli::" + codInsKey, "Codice inserimento")}
+                                            {!senzaCodIns && renderField("dettagli::" + codInsKey, "Codice inserimento")}
                                             {/* i CAMPI VENDITA sono nella sezione 🧾 dedicata (Luca 07/08) */}
                                             {/* Mai più JSON grezzo (Luca/Francesco 10-11/08): followup,
                                                 units e ogni altro valore annidato diventano righe
