@@ -1304,6 +1304,31 @@ function WidgetClassifica({ ctx, size }) {
 // chat 1-a-1, finestra dati = inizio mese o ultimi 30 giorni (la più ampia).
 const WA_TORTA_COLORI = ["#22c55e", "#38bdf8", "#a78bfa", "#f59e0b", "#f43f5e", "#14b8a6", "#eab308", "#94a3b8"];
 
+// CHIUSURE DI CORTESIA (Luca 25/08 sera: «ok grazie buona giornata» non è
+// una chat da gestire, è una chat conclusa). Euristica CONSERVATIVA: testo
+// corto, nessuna domanda o richiesta, e OGNI parola nel vocabolario dei
+// saluti — nel dubbio la chat resta tra quelle da rispondere. Il resto lo
+// copre la chiusura manuale (✓ sull'alert o «Conclusa» nella chat).
+const WA_VOCAB_CHIUSURA = new Set([
+    "ok", "okay", "okk", "oki", "va", "bene", "benissimo", "vabbe", "vabbè", "perfetto", "perfetta",
+    "daccordo", "ricevuto", "ricevuta", "grazie", "grz", "mille", "tante", "infinite", "ancora",
+    "ringrazio", "ti", "la", "vi", "molto", "gentile", "gentilissimo", "gentilissima", "gentilissimi",
+    "buona", "buon", "giornata", "serata", "sera", "domenica", "weekend", "lavoro", "fine",
+    "settimana", "pomeriggio", "notte", "buonanotte", "buongiorno", "buonasera", "a", "presto",
+    "dopo", "domani", "ci", "sentiamo", "vediamo", "ciao", "salve", "arrivederci", "top", "ottimo",
+    "tutto", "chiaro", "capito", "nessun", "problema", "figurati", "prego", "cordiali", "saluti",
+    "anche", "te", "lei", "voi", "altrettanto", "idem", "bacioni", "1000",
+]);
+export function chiusuraDiCortesia(testo) {
+    const t = String(testo || "").toLowerCase().trim();
+    if (!t || t.length > 60) return false;
+    if (t.includes("?")) return false;
+    if (/quando|come|dove|perch|posso|potete|puoi|vorrei|serve|aspetto|attendo|fatemi|fammi|mandami|inviami|richiam|prezzo|costo|quanto/.test(t)) return false;
+    const parole = t.replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ").trim();
+    if (!parole) return true;   // solo emoji o punteggiatura (👍 🙏 ❤️)
+    return parole.split(" ").every((p) => WA_VOCAB_CHIUSURA.has(p.replace(/'/g, "")));
+}
+
 function fmtDurataWa(ms) {
     if (ms == null || isNaN(ms) || ms < 0) return "—";
     const min = Math.round(ms / 60000);
@@ -1355,7 +1380,7 @@ function WidgetWhatsApp({ ctx, size }) {
             }
             if (!vis.length) { setDati({ vuoto: "Nessun numero WhatsApp collegato per il tuo negozio." }); return; }
             const { data: convs } = await supabase.from("wa_conversations")
-                .select("id, instance_id, customer_name, customer_number, last_message_at")
+                .select("id, instance_id, customer_name, customer_number, last_message_at, chiusa_il")
                 .in("instance_id", vis.map((i) => i.id))
                 .or("is_group.is.null,is_group.eq.false")
                 .not("last_message_at", "is", null)
@@ -1378,7 +1403,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 const blocco = ids.slice(b, b + 100);
                 for (let p = 0; p < 3; p++) {
                     const { data: pag } = await supabase.from("wa_messages")
-                        .select("conversation_id, direction, wa_timestamp, created_at, sent_by_user_id")
+                        .select("conversation_id, direction, wa_timestamp, created_at, sent_by_user_id, body, media_mime")
                         .in("conversation_id", blocco).is("deleted_at", null)
                         .gte("created_at", da)
                         .order("created_at", { ascending: false }).order("id", { ascending: false })
@@ -1392,13 +1417,17 @@ function WidgetWhatsApp({ ctx, size }) {
             // un import dello storico ha created_at = adesso ma messaggi
             // vecchi — senza questo filtro una chat chiusa mesi fa compariva
             // «senza risposta da 90g» per 30 giorni dall'import
+            // fuori le righe SENZA testo né media: sono reazioni (👍) o eventi
+            // di servizio, non messaggi — il caso «Elvira senza risposta da
+            // 22 giorni» era esattamente una di queste (bolla vuota)
             const righe = msgs
                 .map((m) => ({ ...m, t: new Date(m.wa_timestamp || m.created_at).getTime() }))
-                .filter((m) => !isNaN(m.t) && m.t >= daMs && (m.direction === "in" || m.direction === "out"))
+                .filter((m) => !isNaN(m.t) && m.t >= daMs && (m.direction === "in" || m.direction === "out")
+                    && (String(m.body || "").trim() !== "" || m.media_mime))
                 .sort((a, b) => a.t - b.t);
             const perConv = new Map();
             righe.forEach((m) => { const a = perConv.get(m.conversation_id) || []; a.push(m); perConv.set(m.conversation_id, a); });
-            let sommaRisp = 0, nRisp = 0, inMese = 0, outMese = 0;
+            let sommaRisp = 0, nRisp = 0, inMese = 0, outMese = 0, concluse = 0;
             const perUtente = new Map(); const attive = new Set(); const alerts = [];
             perConv.forEach((arr, cid) => {
                 let inAperto = null; // primo messaggio del cliente ancora senza risposta
@@ -1414,6 +1443,9 @@ function WidgetWhatsApp({ ctx, size }) {
                 const ultimo = arr[arr.length - 1];
                 if (ultimo && ultimo.direction === "in") {
                     const c = mappaConv.get(cid);
+                    // chat CONCLUSE fuori dagli alert: chiuse a mano (✓ o
+                    // bottone in chat) o chiusura di cortesia («ok grazie»)
+                    if (c?.chiusa_il || chiusuraDiCortesia(ultimo.body)) { concluse++; return; }
                     alerts.push({ id: cid, nome: c?.customer_name || (c?.customer_number ? `+${c.customer_number}` : "chat"), da: ultimo.t });
                 }
             });
@@ -1425,12 +1457,19 @@ function WidgetWhatsApp({ ctx, size }) {
             setDati({
                 media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
                 chatAttive: attive.size, alerts, fette, nNumeri: vis.length,
-                tetto: (convs || []).length >= 400,
+                concluse, tetto: (convs || []).length >= 400,
             });
         })();
         return () => { vivo = false; };
     }, [uid, ctx.user?.role, ctx.negoziKey, giro]); // eslint-disable-line react-hooks/exhaustive-deps
     const azione = <Link href="/chat?mode=wa" className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
+    // ✓ sull'alert: la chat è a posto così, niente risposta necessaria —
+    // sparisce subito; se il cliente riscrive, riappare da sola
+    const chiudiAlert = async (id) => {
+        const { error } = await supabase.from("wa_conversations").update({ chiusa_il: new Date().toISOString() }).eq("id", id);
+        if (error) return;
+        setDati((p) => p && p.alerts ? { ...p, alerts: p.alerts.filter((x) => x.id !== id), concluse: (p.concluse || 0) + 1 } : p);
+    };
     const shell = (figli) => (
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
     );
@@ -1472,10 +1511,14 @@ function WidgetWhatsApp({ ctx, size }) {
                         <AlertTriangle className="w-3.5 h-3.5" /> {dati.alerts.length === 1 ? "1 chat senza risposta" : `${dati.alerts.length} chat senza risposta`}
                     </div>
                     {dati.alerts.slice(0, nAlert).map((a) => (
-                        <Link key={a.id} href={`/chat?conv=${a.id}`} className="flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
-                            <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
-                            <span className={cn("shrink-0 font-bold", adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")}>da {fmtDurataWa(adesso - a.da)}</span>
-                        </Link>
+                        <div key={a.id} className="flex items-center gap-1">
+                            <Link href={`/chat?conv=${a.id}`} className="flex-1 min-w-0 flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
+                                <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
+                                <span className={cn("shrink-0 font-bold", adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")}>da {fmtDurataWa(adesso - a.da)}</span>
+                            </Link>
+                            <button onClick={() => chiudiAlert(a.id)} title="Segna conclusa: non serve una risposta (se il cliente riscrive, torna qui)"
+                                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
+                        </div>
                     ))}
                     {dati.alerts.length > nAlert && <div className="text-[10px] text-slate-500">…e altre {dati.alerts.length - nAlert}</div>}
                 </div>
@@ -1501,7 +1544,7 @@ function WidgetWhatsApp({ ctx, size }) {
                     </div>
                 </div>
             )}
-            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
+            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
         </div>
     );
 }

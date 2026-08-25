@@ -149,7 +149,11 @@ export async function POST(request: Request) {
                 // CHT-02: un protocolMessage senza contenuto (revoca/modifica fatta
                 // dal telefono) non e' un messaggio da mostrare — lo gestiscono gli
                 // eventi messages.edited / messages.delete, niente righe fantasma.
-                if (msg.protocolMessage && !body && !mime) continue;
+                // niente testo e niente media = reazione (👍/❤️) o evento di
+                // servizio: NON è un messaggio — salvarlo creava bolle vuote,
+                // falsi «senza risposta» e non-letti fantasma (caso Elvira,
+                // 14 righe in 9 chat trovate il 25/08)
+                if (!body && !mime) continue;
                 const ts = toIsoMs(m?.messageTimestamp);
                 // media in ARRIVO (o inviato da un altro dispositivo): scaricalo e
                 // salvalo subito, ora che il file cifrato e' ancora sul CDN.
@@ -174,6 +178,8 @@ export async function POST(request: Request) {
                 if (!fromMe) {
                     const { data: conv } = await supabase.from("wa_conversations").select("unread").eq("id", convId).maybeSingle();
                     patch.unread = (conv?.unread || 0) + 1;
+                    // un messaggio vero del cliente riapre una chat conclusa
+                    patch.chiusa_il = null;
                 }
                 await supabase.from("wa_conversations").update(patch).eq("id", convId);
             }

@@ -17,7 +17,7 @@ import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Load
 import { cn } from "@/utils";
 
 type Instance = { id: string; instance_name: string; display_name: string | null; wa_number: string | null; status: string; owner_user_id: string | null; negozio: string | null };
-type Conv = { id: string; instance_id: string; customer_number: string; customer_name: string | null; client_id: string | null; last_preview: string | null; last_message_at: string | null; unread: number; is_group?: boolean; chat_jid?: string | null };
+type Conv = { id: string; instance_id: string; customer_number: string; customer_name: string | null; client_id: string | null; last_preview: string | null; last_message_at: string | null; unread: number; is_group?: boolean; chat_jid?: string | null; chiusa_il?: string | null };
 type Msg = { id: string; direction: string; body: string | null; status: string | null; sender_name: string | null; wa_timestamp: string | null; created_at: string; media_url?: string | null; media_mime?: string | null; wa_message_id?: string | null; sent_by_user_id?: string | null; edited_at?: string | null; deleted_at?: string | null };
 
 const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
@@ -686,10 +686,33 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                                 className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-white/10 transition-colors text-xs">✏️</button>
                                         )}
                                     </div>
-                                        <div className="text-[11px] text-slate-500">{selConv.is_group ? "gruppo WhatsApp" : `+${selConv.customer_number}`}{selConv.client_id ? " · cliente collegato" : ""}</div></div>
+                                        <div className="text-[11px] text-slate-500">{selConv.is_group ? "gruppo WhatsApp" : `+${selConv.customer_number}`}{selConv.client_id ? " · cliente collegato" : ""}{selConv.chiusa_il ? " · conclusa" : ""}</div></div>
+                                    {/* CONCLUSA (Luca 25/08 sera): «ok grazie» non è una chat da
+                                        gestire — la chiusura la toglie dagli alert del widget;
+                                        un nuovo messaggio del cliente la riapre da sola */}
+                                    {!selConv.is_group && (
+                                        <button
+                                            title={selConv.chiusa_il ? "Riapri: tornerà tra le chat da gestire" : "Segna conclusa: non serve una risposta — sparisce dagli alert del widget"}
+                                            onClick={async () => {
+                                                const nuovo = selConv.chiusa_il ? null : new Date().toISOString();
+                                                const { error } = await supabase.from("wa_conversations").update({ chiusa_il: nuovo }).eq("id", selConv.id);
+                                                if (error) { alert("Non salvato: " + error.message); return; }
+                                                setConvs(p => p.map(c => c.id === selConv.id ? { ...c, chiusa_il: nuovo } : c));
+                                                setSelConv(p => p ? { ...p, chiusa_il: nuovo } : p);
+                                            }}
+                                            className={cn("ml-auto shrink-0 text-[11px] font-bold rounded-lg px-2.5 py-1.5 border transition-colors",
+                                                selConv.chiusa_il
+                                                    ? "text-slate-400 border-white/10 hover:text-white hover:bg-white/10"
+                                                    : "text-emerald-300 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/15")}>
+                                            {selConv.chiusa_il ? "↺ Riapri" : "✓ Conclusa"}
+                                        </button>
+                                    )}
                                 </div>
                                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2">
                                     {msgs.map(m => {
+                                        // righe storiche senza testo né media (reazioni/eventi di
+                                        // servizio pre-fix 25/08): niente bolla vuota
+                                        if (!m.deleted_at && !(m.body || "").trim() && !m.media_url) return null;
                                         const mine = m.direction === "out";
                                         // CHT-02: matita/cestino sulla bolla in uscita — solo entro le
                                         // finestre WhatsApp e se il messaggio e' indirizzabile
