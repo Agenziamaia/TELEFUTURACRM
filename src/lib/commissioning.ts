@@ -446,7 +446,9 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
  *  tabellare non ha componenti per quella pista (si resta al pick-one). */
 export function matchComponenti(
     righe: PayRiga[],
-    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null },
+    // opzioni/provenienza servono a flagsComponenti — il pannello le passa
+    // anche SIMULATE (declinazioni del fisso, Luca 25/08 notte)
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; opzioni?: string | null; provenienza?: string | null },
 ): PayRiga[] | null {
     const pista = pistaComponenti(c);
     if (!pista) return null;

@@ -185,6 +185,16 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
         const r = matchRigaTabellare(righe, c);
         return r ? [r] : [];
     };
+    // set per l'offerta CON OPZIONI SIMULATE (declinazioni del fisso, Luca
+    // 25/08 notte): le opzioni passano dal motore VERO (flagsComponenti via
+    // matchComponenti) — ciò che la tabella mostra è ciò che paga l'analisi
+    const setPerOpz = (o: OffCanone, opzSim: string): PayRiga[] => {
+        const c = { tipo_cliente: o.tipo_cliente, categoria: o.categoria, prodotto: o.prodotto, offerta: o.nome, opzioni: opzSim || null };
+        const comp = matchComponenti(righe, c);
+        if (comp) return comp;
+        const r = matchRigaTabellare(righe, c);
+        return r ? [r] : [];
+    };
 
     const filtro = (testo: string) => !cerca.trim() || testo.toLowerCase().includes(cerca.toLowerCase());
 
@@ -588,6 +598,161 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                         </div>
                     );
                 }
+                /* ---- FISSO a DECLINAZIONI (Luca 25/08 notte, «come il
+                   mobile»): sulle offerte internet ogni combinazione
+                   attivazione GA/GNP × tecnologia FTTC/FTTH × con/senza
+                   Chiamate Illimitate ha la sua riga col conto per soglia;
+                   Voce Casa solo GA/GNP; FWA riga unica (la componente FWA
+                   si accende dal prodotto). Ogni variante è calcolata dal
+                   motore vero con le opzioni simulate (setPerOpz). ---- */
+                if (sez.tipo === "canone" && sez.id === "fisso") {
+                    const rr = perPista[sez.id];
+                    if (!rr?.length) return null;
+                    type VarF = { o: OffCanone; set: PayRiga[]; label: string; gnp: boolean; ord: number };
+                    const gruppiF: { tipo: string; nome: string; vars: VarF[] }[] = [];
+                    const idxF = new Map<string, number>();
+                    rr.forEach(({ o }) => {
+                        const fwa = /fwa/i.test(o.prodotto);
+                        const voce = /voce\s*casa/i.test(o.nome);
+                        const varianti = fwa ? [{ label: "FWA", opz: "", ord: 0 }]
+                            : voce ? [{ label: "GA", opz: "GA", ord: 0 }, { label: "GNP", opz: "GNP", ord: 1 }]
+                                : (() => {
+                                    const out: { label: string; opz: string; ord: number }[] = [];
+                                    let k = 0;
+                                    for (const att of ["GA", "GNP"]) for (const tec of ["FTTC", "FTTH"]) for (const ill of [false, true])
+                                        out.push({ label: `${att} · ${tec}${ill ? " + Illimitate" : ""}`, opz: `${att}, ${tec}${ill ? ", Chiamate Illimitate" : ""}`, ord: k++ });
+                                    return out;
+                                })();
+                        varianti.forEach(v => {
+                            const set = setPerOpz(o, v.opz);
+                            if (!set.length || !set.some(r2 => r2.pay_tiers.length)) return;
+                            const kG = `${o.tipo_cliente}|${o.nome}`;
+                            if (!idxF.has(kG)) { idxF.set(kG, gruppiF.length); gruppiF.push({ tipo: o.tipo_cliente, nome: o.nome, vars: [] }); }
+                            gruppiF[idxF.get(kG)!].vars.push({ o, set, label: v.label, gnp: /gnp/i.test(v.label), ord: v.ord });
+                        });
+                    });
+                    if (!gruppiF.length) return null;
+                    gruppiF.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.nome.localeCompare(b.nome));
+                    gruppiF.forEach(g => g.vars.sort((a, b) => a.ord - b.ord));
+                    const maxT = Math.max(...gruppiF.flatMap(g => g.vars.flatMap(v => v.set.map(r2 => r2.pay_tiers.length))));
+                    const conBiz = bizN > 0;
+                    const runtime = righe.filter(r => r.pista === "fisso" && r.componente && COMP_RUNTIME.has(r.componente));
+                    return (
+                        <div key={sez.id} className="mb-3 last:mb-0">
+                            <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
+                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${gruppiF.length} offerte`}</span>
+                            </button>
+                            <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub} — ogni offerta con le sue declinazioni: GA/GNP · FTTC/FTTH · con/senza Chiamate Illimitate</p>
+                            {aperta && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">Offerta / declinazione</th>
+                                                {conBiz && Array.from({ length: bizN }, (_, i) => <th key={`b${i}`} className="px-1.5 py-1.5 font-semibold text-center w-16 text-sky-300/80">💼 S{i + 1}</th>)}
+                                                <th className="px-1.5 py-1.5 font-semibold text-center w-20">Canone</th>
+                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {gruppiF.map((g, gi) => {
+                                                const nuovoTipo = gi === 0 || g.tipo !== gruppiF[gi - 1].tipo;
+                                                const kTipo = `fisso|${g.tipo}`;
+                                                const chiuso = gruppoChiuso(kTipo);
+                                                return (
+                                                    <Fragment key={`${g.tipo}|${g.nome}`}>
+                                                        {nuovoTipo && (
+                                                            <tr className="bg-white/[0.04] cursor-pointer hover:bg-white/[0.07]" onClick={() => toggleGruppo(kTipo)}>
+                                                                <td colSpan={2 + (conBiz ? bizN : 0) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                    {chiuso ? "▸" : "▾"} {g.tipo === "Business" ? "💼" : "👤"} {g.tipo}
+                                                                    {chiuso && <span className="normal-case tracking-normal font-normal text-slate-500"> · {gruppiF.filter(x => x.tipo === g.tipo).length} offerte</span>}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        {!chiuso && (
+                                                            <tr className="border-t border-white/[0.06]">
+                                                                <td colSpan={2 + (conBiz ? bizN : 0) + maxT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.nome}</td>
+                                                            </tr>
+                                                        )}
+                                                        {!chiuso && g.vars.map(v => (
+                                                            <tr key={`${v.o.id}|${v.label}`} className="hover:bg-white/[0.03]">
+                                                                <td className="pl-7 pr-2 py-0.5 whitespace-nowrap">
+                                                                    <span className={cn("text-[11px] px-2 py-0.5 rounded-full border",
+                                                                        v.gnp ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                                                                            : "border-white/10 bg-white/[0.04] text-slate-300")}>
+                                                                        {v.label}
+                                                                    </span>
+                                                                </td>
+                                                                {conBiz && Array.from({ length: bizN }, (_, i) => (
+                                                                    <CellaBiz key={`b${i}`} info={bizInfo({ tipo_cliente: v.o.tipo_cliente, categoria: v.o.categoria, prodotto: v.o.prodotto, offerta: v.o.nome })} i={i} />
+                                                                ))}
+                                                                <td className="px-1.5 py-0.5 text-center text-[12px] text-slate-400 tabular-nums">{eur(v.o.canone)} €</td>
+                                                                {Array.from({ length: maxT }, (_, i) => {
+                                                                    const moltParti = v.set.filter(r2 => r2.moltiplicatore && r2.pay_tiers[i] != null);
+                                                                    if (!moltParti.length) return <td key={i} className="px-1.5 py-0.5 text-center text-slate-700">—</td>;
+                                                                    const flat = v.set.filter(r2 => !r2.moltiplicatore).reduce((s, r2) => s + Number(r2.pay_base || 0), 0);
+                                                                    const molt = Math.round(moltParti.reduce((s, r2) => s + r2.pay_tiers[i], 0) * 100) / 100;
+                                                                    return (
+                                                                        <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
+                                                                            onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(v.set, i, v.o.canone, v.o.canone * molt + flat) : righeTip(v.o.canone, moltParti, i, flat))}
+                                                                            onMouseLeave={() => setTip(null)}>
+                                                                            {eur(v.o.canone * molt + flat)} €
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </Fragment>
+                                                );
+                                            })}
+                                            {/* SECONDA LINEA (opzione dei fissi business): riga
+                                                dedicata, contrattuale 10 € incluso */}
+                                            {(() => {
+                                                const sl = righe.find(r => r.componente === "seconda_linea");
+                                                if (!sl || !sl.pay_tiers.length) return null;
+                                                const flat = Number(righe.find(r => r.componente === "contrattuale_2linea")?.pay_base || 0);
+                                                const infoBiz = bizInfo({ tipo_cliente: "Business", categoria: "Fisso", prodotto: null, offerta: null });
+                                                return (
+                                                    <Fragment>
+                                                        <tr className="bg-white/[0.04]">
+                                                            <td colSpan={2 + (conBiz ? bizN : 0) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                                                                ➕ Dalla vendita · opzione 2°Linea (un altro fisso da 10 €)
+                                                            </td>
+                                                        </tr>
+                                                        <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                                            <td className="px-3 py-1 text-slate-200 whitespace-nowrap">Seconda linea Professional <span className="text-[11px] text-slate-500">— opzione sui fissi business</span></td>
+                                                            {conBiz && Array.from({ length: bizN }, (_, i) => (
+                                                                <CellaBiz key={`b${i}`} info={infoBiz} i={i} />
+                                                            ))}
+                                                            <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">10 €</td>
+                                                            {Array.from({ length: maxT }, (_, i) => {
+                                                                const v = sl.pay_tiers[i];
+                                                                if (v == null) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
+                                                                return (
+                                                                    <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
+                                                                        onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziEvento(sl, i, righe.find(r2 => r2.componente === "contrattuale_2linea") || null, v + flat) : [
+                                                                            { testo: `2ª linea · soglia S${i + 1}`, stile: "formula" },
+                                                                            { testo: `· canone linea 10 € × moltiplicatore base = ${eur(v)} €`, stile: "voce" },
+                                                                            ...(flat ? [{ testo: `+ ${eur(flat)} € contrattuale 2ª linea`, stile: "flat" as const }] : []),
+                                                                            { testo: `= ${eur(v + flat)} €`, stile: "tot" },
+                                                                        ])}
+                                                                        onMouseLeave={() => setTip(null)}>
+                                                                        {eur(v + flat)} €
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    </Fragment>
+                                                );
+                                            })()}
+                                        </tbody>
+                                    </table>
+                                    <TabRuntime rr={runtime} />
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
                 /* ---- sezioni a CANONE: esploso per offerta ---- */
                 if (sez.tipo === "canone") {
                     const rr = perPista[sez.id];
@@ -595,10 +760,11 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     const maxT = Math.max(...rr.map(x => Math.max(...x.set.map(r => r.pay_tiers.length))));
                     const runtime = righe.filter(r => r.pista === sez.id && r.componente && COMP_RUNTIME.has(r.componente));
                     // sulle assicurazioni ogni polizza porta i suoi punti in
-                    // soglia (Luca 14/08): colonna prima del canone
+                    // soglia (Luca 14/08): colonna prima del canone. (Il ramo
+                    // generico ormai serve solo a loro: mobile e fisso hanno
+                    // i rami a diramazioni qui sopra — niente colonne 💼.)
                     const conPunti = sez.id === "assicurazioni";
-                    // sul fisso i Business hanno anche le colonne 💼 della gara Business
-                    const conBiz = sez.id === "fisso" && bizN > 0;
+                    const conBiz = false;
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
@@ -661,49 +827,9 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                     </Fragment>
                                                 );
                                             })}
-                                            {/* SECONDA LINEA (Luca 14/08: «deve stare con le offerte
-                                                del fisso»): è un'opzione, non un'offerta — riga
-                                                dedicata; per lettera conta anche nella gara Business
-                                                (punti fisso «1 per linea», premio a evento) */}
-                                            {sez.id === "fisso" && (() => {
-                                                const sl = righe.find(r => r.componente === "seconda_linea");
-                                                if (!sl || !sl.pay_tiers.length) return null;
-                                                const flat = Number(righe.find(r => r.componente === "contrattuale_2linea")?.pay_base || 0);
-                                                const infoBiz = bizInfo({ tipo_cliente: "Business", categoria: "Fisso", prodotto: null, offerta: null });
-                                                return (
-                                                    <Fragment>
-                                                        <tr className="bg-white/[0.04]">
-                                                            <td colSpan={(conPunti ? 4 : 3) + (conBiz ? bizN : 0) + maxT} className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                                                                ➕ Dalla vendita · opzione 2°Linea (un altro fisso da 10 €)
-                                                            </td>
-                                                        </tr>
-                                                        <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
-                                                            <td className="px-3 py-1 text-slate-200 whitespace-nowrap">Seconda linea Professional</td>
-                                                            <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">opzione sui fissi business</td>
-                                                            {conBiz && Array.from({ length: bizN }, (_, i) => (
-                                                                <CellaBiz key={`b${i}`} info={infoBiz} i={i} />
-                                                            ))}
-                                                            <td className="px-1.5 py-1 text-center text-[12px] text-slate-400 tabular-nums">10 €</td>
-                                                            {Array.from({ length: maxT }, (_, i) => {
-                                                                const v = sl.pay_tiers[i];
-                                                                if (v == null) return <td key={i} className="px-1.5 py-1 text-center text-slate-700">—</td>;
-                                                                return (
-                                                                    <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                        onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziEvento(sl, i, righe.find(r2 => r2.componente === "contrattuale_2linea") || null, v + flat) : [
-                                                                            { testo: `2ª linea · soglia S${i + 1}`, stile: "formula" },
-                                                                            { testo: `· canone linea 10 € × moltiplicatore base = ${eur(v)} €`, stile: "voce" },
-                                                                            ...(flat ? [{ testo: `+ ${eur(flat)} € contrattuale 2ª linea`, stile: "flat" as const }] : []),
-                                                                            { testo: `= ${eur(v + flat)} €`, stile: "tot" },
-                                                                        ])}
-                                                                        onMouseLeave={() => setTip(null)}>
-                                                                        {eur(v + flat)} €
-                                                                    </td>
-                                                                );
-                                                            })}
-                                                        </tr>
-                                                    </Fragment>
-                                                );
-                                            })()}
+                                            {/* (la 2ª linea Professional vive nel ramo FISSO a
+                                                declinazioni qui sopra — questo ramo generico ora
+                                                serve alle assicurazioni) */}
                                         </tbody>
                                     </table>
                                     <TabRuntime rr={runtime} />
