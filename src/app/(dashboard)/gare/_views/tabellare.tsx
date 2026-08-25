@@ -1064,7 +1064,7 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
         ];
     };
     const tipBase = (): TipRiga[] | null => r._origBase == null ? null : [
-        { testo: "Base · sotto la 1ª soglia", stile: "formula" },
+        { testo: `Base · ${eurIt(perc)}% ai ragazzi · sotto la 1ª soglia`, stile: "formula" },
         { testo: `· all'azienda: ${eurIt(r._origBase)}${unita}`, stile: "voce" },
         ...(perc !== 100 ? [{ testo: `· ${eurIt(r._origBase)}${unita} × ${eurIt(perc)}%`, stile: "voce" as const }] : []),
         ...codaMolt,
