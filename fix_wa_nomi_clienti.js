@@ -42,11 +42,12 @@ const client = new Client({
     from (
       select distinct on (coda) coda, id, nomev from (
         select right(regexp_replace(coalesce(k.cellulare,''), '\\D', '', 'g'), 9) coda,
-               k.id,
+               k.id, k.tipo,
                coalesce(nullif(k.ragione_sociale, ''), nullif(btrim(coalesce(k.nome,'') || ' ' || coalesce(k.cognome,'')), '')) nomev
         from clients k
         where length(regexp_replace(coalesce(k.cellulare,''), '\\D', '', 'g')) >= 9
       ) x where nomev is not null
+      order by coda, tipo desc  -- coppia consumer+business: vince la scheda persona (deterministico)
     ) m
     where coalesce(c.is_group, false) = false
       and c.client_id is null

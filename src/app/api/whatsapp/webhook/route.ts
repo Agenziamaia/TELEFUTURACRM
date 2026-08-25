@@ -61,7 +61,9 @@ async function upsertConversazione(instanceId: string, numero: string, nome: str
     if (!isGroup) {
         const coda = codaNumero(numero);
         if (coda.length >= 6) {
-            const { data: cli } = await supabase.from("clients").select("id, nome, cognome, ragione_sociale").ilike("cellulare", `%${coda}%`).limit(1);
+            // coppia consumer+business stesso cellulare: si preferisce la
+            // scheda persona (deterministico — rilievo del revisore 25/08)
+            const { data: cli } = await supabase.from("clients").select("id, nome, cognome, ragione_sociale").ilike("cellulare", `%${coda}%`).order("tipo", { ascending: false }).limit(1);
             if (cli && cli[0]) {
                 clientId = cli[0].id;
                 nomeAnagrafica = (cli[0].ragione_sociale as string) || `${cli[0].nome || ""} ${cli[0].cognome || ""}`.trim() || null;

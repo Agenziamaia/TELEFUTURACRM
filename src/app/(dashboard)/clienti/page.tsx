@@ -4,7 +4,8 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, ChevronDown, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
-import { seesWholeStore, seesAllStores } from "@/lib/roles";
+import { seesWholeStore, seesAllStores, areaOf } from "@/lib/roles";
+import { waIstanzeVisibili } from "@/lib/waVisibilita";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -2518,6 +2519,8 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
 // (negozio/utente), anteprima e data, click = LA chat esatta (/chat?conv=).
 // Top-level (lezione: mai annidata). Niente righe = il blocco non esiste.
 function WhatsAppStoricoCliente({ clientId }: { clientId: string }) {
+    const { user } = useAuth();
+    const { stores: negoziMiei } = useVisibleStores();
     const [righe, setRighe] = useState<{ id: string; last_message_at: string | null; last_preview: string | null; etichetta: string }[] | null>(null);
     useEffect(() => {
         let vivo = true;
@@ -2528,25 +2531,38 @@ function WhatsAppStoricoCliente({ clientId }: { clientId: string }) {
                 .order("last_message_at", { ascending: false, nullsFirst: false });
             if (!vivo) return;
             if (!convs || !convs.length) { setRighe([]); return; }
-            const ids = [...new Set(convs.map((c: { instance_id: string }) => c.instance_id))];
-            const { data: insts } = await supabase.from("wa_instances").select("id, display_name, negozio, wa_number, owner_user_id").in("id", ids);
-            const ownerIds = [...new Set((insts ?? []).map((i: { owner_user_id: string | null }) => i.owner_user_id).filter(Boolean))] as string[];
-            const nomi: Record<string, string> = {};
-            if (ownerIds.length) {
-                const { data: us } = await supabase.from("app_users").select("id, full_name").in("id", ownerIds);
-                (us ?? []).forEach((u: { id: string; full_name: string }) => { nomi[u.id] = u.full_name; });
+            // SOLO i numeri nella visibilità di chi guarda (rilievo alto del
+            // revisore 25/08: la scheda mostrava titolare e anteprima delle
+            // chat sui numeri personali altrui). Stessa regola dell'Inbox:
+            // waIstanzeVisibili + supervisione call center del direttore cc.
+            type Ist = { id: string; display_name: string | null; negozio: string | null; wa_number: string | null; owner_user_id: string | null };
+            type Ute = { id: string; full_name: string | null; role: string | null };
+            const [{ data: insts }, { data: us }] = await Promise.all([
+                supabase.from("wa_instances").select("id, display_name, negozio, wa_number, owner_user_id"),
+                supabase.from("app_users").select("id, full_name, role"),
+            ]);
+            if (!vivo) return;
+            const utenti = new Map<string, Ute>(((us ?? []) as Ute[]).map((u) => [u.id, u]));
+            let vis = waIstanzeVisibili((insts ?? []) as Ist[], user?.id, user?.role, negoziMiei);
+            if (user?.role === "direttore_cc") {
+                const gia = new Set(vis.map((i) => i.id));
+                vis = [...vis, ...((insts ?? []) as Ist[]).filter((i) => !gia.has(i.id) && i.owner_user_id && areaOf(String(utenti.get(i.owner_user_id)?.role || "")) === "cc")];
             }
+            const visibili = new Map<string, Ist>(vis.map((i) => [i.id, i]));
             const etich = (iid: string) => {
-                const i = (insts ?? []).find((x: { id: string }) => x.id === iid) as { display_name: string | null; negozio: string | null; wa_number: string | null; owner_user_id: string | null } | undefined;
-                if (!i) return "numero rimosso";
-                return i.display_name || (i.owner_user_id && nomi[i.owner_user_id]) || i.negozio || (i.wa_number ? `+${i.wa_number}` : "numero");
+                const i = visibili.get(iid);
+                if (!i) return "";
+                return i.display_name || (i.owner_user_id && utenti.get(i.owner_user_id)?.full_name) || i.negozio || (i.wa_number ? `+${i.wa_number}` : "numero");
             };
-            if (vivo) setRighe(convs.map((c: { id: string; instance_id: string; last_message_at: string | null; last_preview: string | null }) => ({
-                id: c.id, last_message_at: c.last_message_at, last_preview: c.last_preview, etichetta: etich(c.instance_id),
-            })));
+            if (vivo) setRighe(convs
+                .filter((c: { instance_id: string }) => visibili.has(c.instance_id))
+                .map((c: { id: string; instance_id: string; last_message_at: string | null; last_preview: string | null }) => ({
+                    id: c.id, last_message_at: c.last_message_at, last_preview: c.last_preview, etichetta: etich(c.instance_id),
+                })));
         })();
         return () => { vivo = false; };
-    }, [clientId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [clientId, user?.id, user?.role, negoziMiei.join("|")]);
     if (!righe || righe.length === 0) return null;
     return (
         <div className="pt-4">

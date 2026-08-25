@@ -281,7 +281,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
             let nomeCliente: string | null = null;
             const codaCli = numero.slice(-9);
             if (codaCli.length >= 6) {
-                const { data: cli } = await supabase.from("clients").select("id, nome, cognome, ragione_sociale").ilike("cellulare", `%${codaCli}%`).limit(1);
+                // coppia consumer+business sullo stesso cellulare (ammessa in
+                // anagrafica): si preferisce SEMPRE la scheda persona, così
+                // l'aggancio è deterministico (rilievo del revisore 25/08)
+                const { data: cli } = await supabase.from("clients").select("id, nome, cognome, ragione_sociale").ilike("cellulare", `%${codaCli}%`).order("tipo", { ascending: false }).limit(1);
                 if (cli && cli[0]) {
                     clientId = cli[0].id as string;
                     nomeCliente = (cli[0].ragione_sociale as string) || `${cli[0].nome || ""} ${cli[0].cognome || ""}`.trim() || null;
@@ -303,33 +306,51 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // generica): /chat?conv=<id>. Se l'istanza non è nella visibilità di chi
     // clicca, non si apre nulla (le regole restano quelle).
     const _convFatto = useRef<string | null>(null);
+    const _convCache = useRef<{ id: string; conv: Conv | null } | null>(null);
     useEffect(() => {
         if (!apriConvId || _convFatto.current === apriConvId) return;
         if (!visibleInstances.length) return;    // istanze non ancora arrivate
-        _convFatto.current = apriConvId;
         (async () => {
-            const { data: c } = await supabase.from("wa_conversations").select("*").eq("id", apriConvId).maybeSingle();
-            if (!c) return;
-            if (!visibleInstances.some(i => i.id === (c as Conv).instance_id)) return;
-            setSelInst((c as Conv).instance_id);
-            setSelConv(c as Conv);
+            // la visibilità arriva a scaglioni (negozi, ruoli cc): il ref si
+            // brucia SOLO ad apertura riuscita o su id inesistente — mai su
+            // visibilità ancora parziale o errore di rete (rilievo alto del
+            // revisore: il direttore cc perdeva il deep-link del reparto).
+            // Una sola query per id: le ripetizioni leggono la cache.
+            if (_convCache.current?.id !== apriConvId) {
+                const { data: c, error } = await supabase.from("wa_conversations").select("*").eq("id", apriConvId).maybeSingle();
+                if (error) return;   // transitorio: si riprova al prossimo giro
+                _convCache.current = { id: apriConvId, conv: (c as Conv) || null };
+            }
+            const c = _convCache.current.conv;
+            if (!c) { _convFatto.current = apriConvId; return; }   // id inesistente
+            if (!visibleInstances.some(i => i.id === c.instance_id)) return;
+            _convFatto.current = apriConvId;
+            setSelInst(c.instance_id);
+            setSelConv(c);
         })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apriConvId, visibleInstances.map(i => i.id).join("|")]);
 
     // DEEP-LINK (Luca 29/07): /chat?wa=<numero> apre la chat col cliente precaricata.
     const _apriFatto = useRef<string | null>(null);
+    const _apriBusy = useRef(false);
     const _testoFatto = useRef(false);   // CAL-01: prefill applicato una volta sola
     useEffect(() => {
         const dig = String(apriNumero || "").replace(/\D/g, "");
         if (!dig || dig.length < 6 || _apriFatto.current === dig) return;
         if (!visibleInstances.length) return;    // istanze non ancora arrivate
-        _apriFatto.current = dig;
+        if (_apriBusy.current) return;           // un tentativo alla volta
+        _apriBusy.current = true;
         (async () => {
+            // come per ?conv=: il ref si brucia solo ad apertura riuscita,
+            // così se le istanze visibili crescono dopo il mount si riprova
             const ok = await apriPerNumero(dig);
+            _apriBusy.current = false;
+            if (!ok) return;
+            _apriFatto.current = dig;
             // CAL-01: ?testo= del deep-link precompila il composer (UNA volta
             // sola: l'operatore rilegge, ritocca e conferma con l'invio)
-            if (ok && testoIniziale && !_testoFatto.current) { _testoFatto.current = true; setText(testoIniziale); }
+            if (testoIniziale && !_testoFatto.current) { _testoFatto.current = true; setText(testoIniziale); }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apriNumero, visibleInstances.map(i => i.id).join("|")]);
