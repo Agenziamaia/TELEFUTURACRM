@@ -628,7 +628,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                             <thead>
                                                 <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                                     <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
-                                                    <th className="px-1.5 py-1.5 font-semibold text-center w-12 text-indigo-300">Punti</th>
+                                                    <th className="px-1.5 py-1.5 font-semibold text-center w-12 text-indigo-300">{ctx === "s4" ? "Pezzi" : "Punti"}</th>
                                                     {ctx !== "s4" && <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>}
                                                     {Array.from({ length: nT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
                                                     <th className="px-2 py-1.5 w-16"></th>
@@ -870,7 +870,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                             <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
                                             {mostraRic && <th className="px-1.5 py-1.5 font-semibold text-center w-20" title="€ al mese per pezzo dall'8° mese dal contratto (≈ 6° di fornitura: il PDP entra in fornitura dopo ~2 mesi). Informativo: fuori dal gettone one-shot.">🔁 Ricorr. €/m</th>}
-                                            <th className="px-1.5 py-1.5 font-semibold text-center w-12">Punti</th>
+                                            {/* S4 parla di PEZZI, non di punti (Luca 25/08: «si
+                                                rapporta sempre 1:1») — ogni riga conta 1 */}
+                                            <th className="px-1.5 py-1.5 font-semibold text-center w-12">{ctx === "s4" ? "Pezzi" : "Punti"}</th>
                                             {ctx !== "s4" && <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>}
                                             {Array.from({ length: nTiers }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-16">S{i + 1}</th>)}
                                             <th className="px-2 py-1.5 w-20"></th>
@@ -1065,7 +1067,7 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
                 {BRAND_VENDITA.slice(0, 6).map(b => (
                     <button key={b} onClick={() => setBv(b)} className={`text-xs px-2 py-1 rounded-lg border ${bv === b ? "border-indigo-400 text-white bg-indigo-500/30" : "border-white/10 text-slate-400"}`}>{b}</button>
                 ))}
-                {pista && <label className="text-[11px] text-slate-400">punti <input value={punti} onChange={e => setPunti(e.target.value)} className={inputCls + " w-14"} /></label>}
+                {pista && <label className="text-[11px] text-slate-400">{isS4 ? "pezzi" : "punti"} <input value={punti} onChange={e => setPunti(e.target.value)} className={inputCls + " w-14"} /></label>}
                 {isS4 && pista && <label className="text-[11px] text-sky-300/90" title="€ al mese per pezzo dall'8° mese dal contratto">ricorrente €/m <input value={ric} onChange={e => setRic(e.target.value)} className={inputCls} /></label>}
                 {!(isS4 && pista) && <label className="text-[11px] text-slate-400">{pista ? "base €" : "gettone €"} <input value={base} onChange={e => setBase(e.target.value)} className={inputCls} /></label>}
                 {pista && tiers.map((t, i) => (
