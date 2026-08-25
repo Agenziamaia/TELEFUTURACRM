@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia, aggiornaWebhook } from "@/lib/evolution";
+import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
 
 export const dynamic = "force-dynamic";
@@ -99,8 +99,33 @@ export async function POST(request: Request) {
             const state = res?.instance?.state || res?.state || null;
             if (state === "open") {
                 await supabase.from("wa_instances").update({ status: "connessa" }).eq("instance_name", b.instanceName);
+                // NUMERO VERO (25/08 notte): appena la sessione è viva si salva
+                // anche wa_number — nessuno lo aveva mai scritto («in arrivo…»)
+                try {
+                    const tutte = await elencoIstanze();
+                    const mia = tutte.find((r) => nomeDaIstanza(r) === b.instanceName);
+                    const num = mia ? numeroDaIstanza(mia) : null;
+                    if (num) await supabase.from("wa_instances").update({ wa_number: num }).eq("instance_name", b.instanceName);
+                } catch { /* il numero arriverà al prossimo giro */ }
             }
             return NextResponse.json({ ok: true, state });
+        }
+
+        if (action === "refresh-numbers") {
+            // BACKFILL dei numeri (Luca 25/08 notte): il pannello lo chiama
+            // all'apertura — da Evolution l'ownerJid di ogni istanza → wa_number.
+            const tutte = await elencoIstanze();
+            const { data: righe } = await supabase.from("wa_instances").select("id, instance_name, wa_number");
+            let aggiornati = 0;
+            for (const r of righe || []) {
+                const rec = tutte.find((x) => nomeDaIstanza(x) === r.instance_name);
+                const num = rec ? numeroDaIstanza(rec) : null;
+                if (num && num !== r.wa_number) {
+                    const { error } = await supabase.from("wa_instances").update({ wa_number: num }).eq("id", r.id);
+                    if (!error) aggiornati++;
+                }
+            }
+            return NextResponse.json({ ok: true, aggiornati, istanze_evolution: tutte.length });
         }
 
         if (action === "sync") {

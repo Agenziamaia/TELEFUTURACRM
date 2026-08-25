@@ -78,6 +78,31 @@ export async function statoIstanza(instanceName: string): Promise<any> {
     return call("GET", `/instance/connectionState/${encodeURIComponent(instanceName)}`);
 }
 
+/** Tutte le istanze note a Evolution — serve per rilevare il NUMERO vero
+ *  (ownerJid) dei collegamenti: nessuno lo aveva mai scritto in wa_number
+ *  (Luca 25/08 notte: «i numeri non sono visibili, c'è scritto in arrivo»). */
+export async function elencoIstanze(): Promise<any[]> {
+    const res = await call("GET", "/instance/fetchInstances");
+    if (Array.isArray(res)) return res;
+    return res?.instances || res?.records || [];
+}
+
+/** Numero (sole cifre) da un record istanza di Evolution, tollerante alle
+ *  versioni: ownerJid "39333…@s.whatsapp.net" o campi equivalenti. */
+export function numeroDaIstanza(rec: any): string | null {
+    const i = rec?.instance || rec;
+    const raw = i?.ownerJid || i?.owner || i?.wid || i?.number || null;
+    if (!raw) return null;
+    const dig = String(raw).split("@")[0].replace(/\D/g, "");
+    return dig.length >= 6 ? dig : null;
+}
+
+/** Nome col quale l'istanza è registrata su Evolution (varia per versione). */
+export function nomeDaIstanza(rec: any): string | null {
+    const i = rec?.instance || rec;
+    return i?.instanceName || i?.name || null;
+}
+
 export async function eliminaIstanza(instanceName: string): Promise<any> {
     return call("DELETE", `/instance/delete/${encodeURIComponent(instanceName)}`);
 }

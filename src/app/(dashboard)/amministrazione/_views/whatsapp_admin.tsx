@@ -56,6 +56,9 @@ export function WhatsAppAdminView() {
     const [visStores, setVisStores] = useState<Record<string, string[]>>({});
     useEffect(() => {
         carica();
+        // BACKFILL numeri all'apertura (Luca 25/08 notte: «in arrivo…» ovunque):
+        // il server chiede a Evolution l'ownerJid di ogni istanza → wa_number
+        api({ action: "refresh-numbers" }).then(() => carica()).catch(() => {});
         const t = setInterval(carica, 5000);
         supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name")
             .then(({ data }) => setUtenti((data ?? []) as Utente[]));

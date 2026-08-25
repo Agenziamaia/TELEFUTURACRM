@@ -420,19 +420,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                     </span>
                                 )}
                             </button>
-                            {["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "") && (
-                                <button
-                                    title="Rinomina questo numero (es. nome del dipendente o del negozio)"
-                                    onClick={async () => {
-                                        const nuovo = window.prompt("Etichetta per questo numero WhatsApp:", etichettaIstanza(i));
-                                        if (nuovo === null) return;
-                                        const pulito = nuovo.trim();
-                                        const { error } = await supabase.from("wa_instances").update({ display_name: pulito || null }).eq("id", i.id);
-                                        if (error) { alert("Rinomina non riuscita: " + error.message); return; }
-                                        loadInstances();
-                                    }}
-                                    className="p-1 -ml-1 rounded-md text-slate-600 hover:text-white transition-colors text-[10px]">✏️</button>
-                            )}
+                            {/* la RINOMINA libera non esiste più (Luca 25/08 notte):
+                                il nome è SEMPRE la copia dell'intestazione — si cambia
+                                riassegnando il numero dal pannello Amministrazione →
+                                WhatsApp (a un utente o a un negozio, dalle tendine) */}
                         </span>
                     ))}
                 </div>
