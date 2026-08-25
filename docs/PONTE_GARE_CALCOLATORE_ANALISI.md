@@ -53,6 +53,15 @@ Chi rispetta queste tre regole non deve "allineare" niente — l'allineamento
 - Il Calcolatore è «un Registra Vendita riassunto»: catalogo vero + motore
   vero. Qualsiasi eccezione va motivata qui dentro.
 
+## Glossario universale (Luca 25/08)
+
+- **«Wireline» NON esiste nel gestionale: si dice FISSO.** Nomi piste, righe
+  e note sono già stati bonificati (mig `20260825140000`). Quando si
+  importano le **lettere di gara Vodafone e Fastweb** — probabilmente
+  l'unico posto dove la parola ricompare — «Wireline» va SEMPRE mappata
+  sulla pista **fisso** (chiavi già giuste: `fisso` / `business_fisso`),
+  mai riportata nei testi a schermo.
+
 Storia: nata il 25/08 quando il fisso W3 ha preso GA/GNP · FTTC/FTTH ·
 Illimitate come determinanti del pay e il Calcolatore non le chiedeva (le
 pillole nascevano dalle sole righe `opzione`). Fix: pillole dal catalogo.
