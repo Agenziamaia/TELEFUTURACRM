@@ -974,6 +974,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             dice quante voci contiene, il click esplode */}
                         <button onClick={() => toggleTab(p.chiave)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
                             <span className="text-sm font-bold text-white">{emojiPista(p.nome)} {p.nome}</span>
+                            {/* TABELLARE RAGAZZI STORICO (Sky): pay a mano, non
+                                collegati in % all'azienda — va detto accanto al
+                                nome come sugli altri operatori (Luca 25/08) */}
+                            {lato === "ragazzi" && <span className="text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5">✍️ manuale — non in % dall&apos;azienda</span>}
                             <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                         </button>
                         {/* nascosto ma MONTATO (revisore 25/08: chiudere il
