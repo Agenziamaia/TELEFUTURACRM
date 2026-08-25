@@ -1401,7 +1401,7 @@ function fmtDurataWa(ms) {
 // «non è in linea, quelli sono più belli e questo non è nemmeno cliccabile»)
 // — fette animate, hover che accende, click che blocca il dettaglio (📌),
 // centro vivo con totale o con la persona scelta.
-function AnelloTeamWa({ fette, uid, grande }) {
+function AnelloTeamWa({ fette, uid, grande, titolo }) {
     const [hl, setHl] = useState(null);
     const [pin, setPin] = useState(null);
     const [on, setOn] = useState(false);
@@ -1469,7 +1469,7 @@ function AnelloTeamWa({ fette, uid, grande }) {
                 </div>
             </div>
             <div className="min-w-0 flex-1 flex flex-col gap-1">
-                <div className="text-[10px] uppercase tracking-wider text-slate-500">Messaggi scritti nel mese</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">{titolo || "Messaggi scritti"}</div>
                 {righe.map((x) => {
                     const attiva = (hl || pin) === x.k;
                     return (
@@ -1498,6 +1498,9 @@ function WidgetWhatsApp({ ctx, size }) {
     // filtro per negozio/persona (Luca 25/08 notte: chi gestisce più punti
     // vendita deve poter guardare il widget un numero alla volta)
     const [filtro, setFiltro] = useState("");
+    // filtro PERIODO interno al widget (Luca 25/08 notte-2): priorità al
+    // suo, poi al periodo generale della Home (in alto a destra)
+    const [periodoW, setPeriodoW] = useState("");
     useEffect(() => { const t = setInterval(() => setGiro((g) => g + 1), 120000); return () => clearInterval(t); }, []);
     useEffect(() => {
         let vivo = true;
@@ -1536,9 +1539,24 @@ function WidgetWhatsApp({ ctx, size }) {
             if (!vivo) return;
             const mappaConv = new Map((convs || []).map((c) => [c.id, c]));
             if (!mappaConv.size) { setDati({ vuoto: "Ancora nessuna chat coi clienti su questi numeri." }); return; }
+            // ── PERIODO dei conteggi: prima il filtro INTERNO del widget,
+            // poi il periodo generale della Home, poi il mese corrente.
+            // Le liste rosse/azzurre restano lo STATO ATTUALE delle chat.
             const oggi = new Date();
+            const adessoMs = oggi.getTime();
             const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1).getTime();
-            const daMs = Math.min(inizioMese, oggi.getTime() - 30 * 86400000);
+            let rDa = inizioMese, rA = adessoMs + 60000, etichettaPeriodo = "questo mese";
+            if (periodoW === "Oggi") { rDa = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate()).getTime(); etichettaPeriodo = "oggi"; }
+            else if (periodoW === "Ultimi 7 giorni") { rDa = adessoMs - 7 * 86400000; etichettaPeriodo = "ultimi 7 giorni"; }
+            else if (periodoW === "Ultimi 30 giorni") { rDa = adessoMs - 30 * 86400000; etichettaPeriodo = "ultimi 30 giorni"; }
+            else if (periodoW === "Questo mese") { rDa = inizioMese; etichettaPeriodo = "questo mese"; }
+            else if (periodoW === "Mese scorso") { rDa = new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1).getTime(); rA = inizioMese; etichettaPeriodo = "mese scorso"; }
+            else if (ctx.rangeShown) { rDa = new Date(ctx.rangeShown.da + "T00:00:00").getTime(); rA = new Date(ctx.rangeShown.a + "T00:00:00").getTime() + 86400000; etichettaPeriodo = ctx.periodoLabel || "periodo della Home"; }
+            else if (ctx.ymShown) { const [ya, ma] = ctx.ymShown.split("-").map(Number); rDa = new Date(ya, ma - 1, 1).getTime(); rA = new Date(ya, ma, 1).getTime(); etichettaPeriodo = ctx.periodoLabel || "il mese"; }
+            else { rDa = adessoMs - 90 * 86400000; etichettaPeriodo = "ultimi 90 giorni"; }   // Home su «tutto»: tetto 90gg
+            const inRange = (t) => t >= rDa && t < rA;
+            // il fetch copre comunque gli ultimi 30 giorni: servono alle liste
+            const daMs = Math.min(rDa, adessoMs - 30 * 86400000);
             const da = new Date(daMs).toISOString();
             // messaggi a blocchi di 100 conversazioni (URL corti), max 3
             // pagine l'uno IN DISCESA: se una chat sfora il tetto si perde
@@ -1585,13 +1603,13 @@ function WidgetWhatsApp({ ctx, size }) {
             perConv.forEach((arr, cid) => {
                 let inAperto = null; // primo messaggio del cliente ancora senza risposta
                 arr.forEach((m) => {
-                    if (m.t >= inizioMese) {
+                    if (inRange(m.t)) {
                         if (m.direction === "in") inMese++; else outMese++;
                         if (m.direction === "out") { const k = m.sent_by_user_id || "tel"; perUtente.set(k, (perUtente.get(k) || 0) + 1); }
                         attive.add(cid);
                     }
                     if (m.direction === "in") { if (inAperto == null) inAperto = m.t; }
-                    else { if (inAperto != null && m.t >= inizioMese) { sommaRisp += m.t - inAperto; nRisp++; } inAperto = null; }
+                    else { if (inAperto != null && inRange(m.t)) { sommaRisp += m.t - inAperto; nRisp++; } inAperto = null; }
                 });
                 // ── CATEGORIA della chat (ragionamento Luca 25/08 sera) ──
                 const ultimo = arr[arr.length - 1];
@@ -1647,11 +1665,11 @@ function WidgetWhatsApp({ ctx, size }) {
             setDati({
                 media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
                 chatAttive: attive.size, daRisp, attesa, fette, nNumeri: vis.length,
-                concluse, tetto: (convs || []).length >= 400, etichette,
+                concluse, tetto: (convs || []).length >= 400, etichette, etichettaPeriodo,
             });
         })();
         return () => { vivo = false; };
-    }, [uid, ctx.user?.role, ctx.negoziKey, giro, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [uid, ctx.user?.role, ctx.negoziKey, giro, filtro, periodoW, ctx.ymShown, ctx.rangeShown ? ctx.rangeShown.da + ctx.rangeShown.a : ""]); // eslint-disable-line react-hooks/exhaustive-deps
     const azione = <Link href="/chat?mode=wa" className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
     // ✓ su una riga (da rispondere O in attesa): la chat è a posto così —
     // sparisce subito; se il cliente riscrive, riappare da sola. Il widget
@@ -1673,13 +1691,17 @@ function WidgetWhatsApp({ ctx, size }) {
     const shell = (figli) => (
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
     );
-    const filtroRow = ((dati?.etichette?.length || 0) > 1 || filtro) ? (
-        <div className="flex items-center gap-1.5">
-            <SelectOpzioni value={filtro} onChange={setFiltro} opzioni={dati?.etichette || []}
-                placeholder="Tutti i numeri — filtra per negozio o persona" className="flex-1 min-w-0" />
-            {filtro && <button onClick={() => setFiltro("")} className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">✕ tutti</button>}
+    const filtroRow = (
+        <div className="flex items-center gap-1.5 flex-wrap">
+            {((dati?.etichette?.length || 0) > 1 || filtro) && (
+                <SelectOpzioni value={filtro} onChange={setFiltro} opzioni={dati?.etichette || []}
+                    placeholder="Tutti i numeri" className="flex-1 min-w-[150px]" />
+            )}
+            <SelectOpzioni value={periodoW} onChange={setPeriodoW} opzioni={["Oggi", "Ultimi 7 giorni", "Ultimi 30 giorni", "Questo mese", "Mese scorso"]}
+                placeholder="Periodo della Home" className="flex-1 min-w-[140px]" />
+            {(filtro || periodoW) && <button onClick={() => { setFiltro(""); setPeriodoW(""); }} className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">✕ tutto</button>}
         </div>
-    ) : null;
+    );
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
     if (dati.vuoto) return shell(<div className="p-3 space-y-3">{filtroRow}<p className="text-xs text-slate-500 py-2">{dati.vuoto}</p></div>);
     const totFette = dati.fette.reduce((s, f) => s + f.v, 0);
@@ -1700,17 +1722,18 @@ function WidgetWhatsApp({ ctx, size }) {
     );
     return shell(
         <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
-            {/* KPI del mese */}
+            {filtroRow}
+            {/* KPI del periodo */}
             <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500">Risposta media</div>
                     <div className="text-lg font-black text-emerald-300 leading-tight">{fmtDurataWa(dati.media)}</div>
-                    <div className="text-[10px] text-slate-600">{dati.nRisp} risposte questo mese</div>
+                    <div className="text-[10px] text-slate-600">{dati.nRisp} risposte · {dati.etichettaPeriodo}</div>
                 </div>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500">Chat attive</div>
                     <div className="text-lg font-black text-white leading-tight">{dati.chatAttive}</div>
-                    <div className="text-[10px] text-slate-600">clienti nel mese</div>
+                    <div className="text-[10px] text-slate-600">clienti · {dati.etichettaPeriodo}</div>
                 </div>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500">Ricevuti</div>
@@ -1750,7 +1773,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 </div>
             )}
             {/* anello: chi scrive quanto (stile Analisi, cliccabile) */}
-            {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4} />}
+            {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4} titolo={`Messaggi scritti · ${dati.etichettaPeriodo}`} />}
             <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
         </div>
     );
