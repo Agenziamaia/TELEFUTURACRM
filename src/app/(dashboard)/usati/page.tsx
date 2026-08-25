@@ -529,7 +529,7 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, 
 }
 
 //  DevicePanel 
-function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; onClose: () => void; onSave: (d: Device) => void; onDeleted: (id: number) => void }) {
+function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; onClose: () => void; onSave: (d: Device) => void | Promise<string | null>; onDeleted: (id: number) => void }) {
   const NEGOZI = useStores();
   const { user } = useAuth();
   const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
@@ -592,10 +592,13 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
     setEliminando(true);
     try {
       try { await supabase.from("usati_malus").delete().eq("usato_id", dev.id); } catch { /* tabella/colonna assente */ }
-      // gli allegati (documento, dichiarazione, contabile bonifico) vivono nel
-      // bucket usati_attachments come path o URL pubblico: si estrae la coda.
+      const { error } = await supabase.from("usati").delete().eq("id", dev.id);
+      if (error) { alert("Eliminazione NON riuscita: " + error.message); setEliminando(false); return; }
+      // allegati DOPO la riga (rilievo revisore): se il delete fallisce il
+      // telefono resta vivo coi suoi file. Documento, dichiarazione e contabile
+      // vivono in usati_attachments come path o URL pubblico: si estrae la coda.
       // Prima si cercava "/contracts/" nel bucket contracts: non combaciava mai
-      // e la pulizia promessa dalla conferma era un no-op (rilievo revisore).
+      // e la pulizia promessa dalla conferma era un no-op.
       const pathDa = (v: string | null | undefined) => {
         const s = String(v || ""); if (!s) return null;
         const coda = s.split("/usati_attachments/")[1];
@@ -603,8 +606,6 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
       };
       const daTogliere = [pathDa(dev.allegato_documento), pathDa(dev.allegato_dichiarazione), dev.pagamento?.bonifico_contabile?.path || null].filter(Boolean) as string[];
       if (daTogliere.length) { try { await supabase.storage.from("usati_attachments").remove(daTogliere); } catch { /* best-effort */ } }
-      const { error } = await supabase.from("usati").delete().eq("id", dev.id);
-      if (error) { alert("Eliminazione NON riuscita: " + error.message); setEliminando(false); return; }
       onDeleted(dev.id);
     } catch (e) { alert("Eliminazione NON riuscita: " + String((e as Error)?.message || e)); setEliminando(false); }
   };
@@ -735,8 +736,18 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
       const cur = devRef.current;
       const vecchio = cur.pagamento.bonifico_contabile?.path || null;
       const upd: Device = { ...cur, pagamento: { ...cur.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "Amministrazione", il: new Date().toISOString() } }, note_tecnico: noteRef.current };
-      setDev(upd); onSave(upd);
-      if (vecchio && vecchio !== path) { try { await supabase.storage.from("usati_attachments").remove([vecchio]); } catch { /* best-effort */ } }
+      setDev(upd);
+      // il vecchio file si rimuove SOLO a salvataggio riuscito (rilievo
+      // revisore): su errore rollback della UI e via il file appena caricato —
+      // mai lasciare il DB a puntare a una contabile cancellata
+      const esito = await Promise.resolve(onSave(upd));
+      if (esito) {
+        setDev(prev => ({ ...prev, pagamento: { ...prev.pagamento, bonifico_contabile: cur.pagamento.bonifico_contabile || null } }));
+        try { await supabase.storage.from("usati_attachments").remove([path]); } catch { /* best-effort */ }
+        alert("Salvataggio non riuscito: " + esito + " — il file non è stato archiviato, riprova.");
+      } else if (vecchio && vecchio !== path) {
+        try { await supabase.storage.from("usati_attachments").remove([vecchio]); } catch { /* best-effort */ }
+      }
     } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
     setContabileBusy(false);
   };
@@ -1900,7 +1911,7 @@ function GestioneUsatiInner() {
       const vecchio = base.pagamento.bonifico_contabile?.path || null;
       const pag: Pagamento = { ...base.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "—", il: new Date().toISOString() } };
       const err = await salvaPagamento(d.id, pag);
-      if (err) { await rimuoviFileBon(path); alert("Contabile caricata ma non salvata: " + err); }
+      if (err) { await rimuoviFileBon(path); alert("Salvataggio non riuscito: " + err + " — il file non è stato archiviato, riprova."); }
       else if (vecchio && vecchio !== path) await rimuoviFileBon(vecchio);
     } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
     setBonAllegaBusy(null);
@@ -2570,7 +2581,7 @@ function GestioneUsatiInner() {
 
 
       {/* Modals */}
-      {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} onDeleted={(id) => { setDevices(p => p.filter(d => d.id !== id)); setSelectedDevice(null); }} />}
+      {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { const esito = handleSaveDevice(u); setSelectedDevice(u); return esito; }} onDeleted={(id) => { setDevices(p => p.filter(d => d.id !== id)); setSelectedDevice(null); }} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
       {couponGenerato && createPortal(
         <div onClick={() => setCouponGenerato(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 3200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 16 }}>

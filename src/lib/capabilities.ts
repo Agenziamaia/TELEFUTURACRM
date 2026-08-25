@@ -371,14 +371,16 @@ export const CAP_PASSWORD: CapGroupFlags = {
 // ─── TRACKING PDA: chi lavora l'esito admin (rotellina, Luca 25/08) ──────────
 // Prima era codice fisso «amministrativo in su», nato quando il pannello
 // Permessi non esisteva ancora (stesso percorso di CAP_BADGE_CORREGGE). La
-// capacità governa il pulsante «⚡ Da lavorare», la scheda Admin della pratica
-// (l'esito amministrativo che chiude definitivamente il ciclo) e la
-// compensazione dei malus. Il default fotografa il codice storico: a tabella
+// capacità governa SOLO il pulsante «⚡ Da lavorare» e la scheda Admin della
+// pratica (l'esito amministrativo con nota che chiude il ciclo). Per direttiva
+// esplicita di Luca (25/08 sera) NON concede nulla di distruttivo: la
+// compensazione dei malus resta all'amministrazione, eliminare pratiche e
+// malus resta admin/dev. Il default fotografa il codice storico: a tabella
 // vuota NON cambia nulla.
 export const CAP_TRACKING_ESITO_ADMIN: CapDef = {
     id: "esito_admin",
     label: "Lavora l'esito admin (⚡ Da lavorare)",
-    desc: "Vede il pulsante «⚡ Da lavorare», apre la scheda Admin della pratica e mette l'esito amministrativo che chiude il ciclo (può anche compensare i malus). Default: amministrazione e direzione generale.",
+    desc: "Vede il pulsante «⚡ Da lavorare» con le pratiche in attesa di verifica e mette l'esito amministrativo con nota dalla scheda Admin. Non concede altro: compensazione malus ed eliminazioni restano all'amministrazione. Default: amministrazione e direzione generale.",
     default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
 };
 export const CAP_TRACKING: CapGroupFlags = {

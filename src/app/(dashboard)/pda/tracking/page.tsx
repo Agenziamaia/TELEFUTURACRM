@@ -834,8 +834,17 @@ function Drawer({
   const [editStatoN, setEditStatoN] = useState(row.statoNegozio);
   const [editStatoA, setEditStatoA] = useState(row.statoAdmin);
   const [activeTab, setActiveTab] = useState<"negozio" | "admin" | "storico">("negozio");
-  // Se non sei amministrazione non puoi restare sul tab Esito Admin.
-  useEffect(() => { if (activeTab === "admin" && !canEditAdmin) setActiveTab("negozio"); }, [activeTab, canEditAdmin]);
+  // Se non hai la capacità esito admin non puoi restare sul tab Esito Admin —
+  // e la bozza si SCARTA (rilievo revisore 25/08): il commit di chiusura non
+  // deve salvare l'esito di un utente appena revocato.
+  useEffect(() => {
+    if (activeTab === "admin" && !canEditAdmin) {
+      setEditStatoA(row.statoAdmin);
+      setNotaAdmin("");
+      setActiveTab("negozio");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, canEditAdmin]);
   const [followup, setFollowup] = useState<FollowUpItem[]>(
     row.followup && row.followup.length > 0
       ? row.followup
@@ -1351,6 +1360,10 @@ export default function TrackingPdaPage() {
   const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
   const canDelegate = ["store_manager", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
   const canEditAdmin = capAllowed(user?.role, CAP_TRACKING.section, CAP_TRACKING_ESITO_ADMIN, perms);
+  // La capacità concede SOLO la coda «⚡ Da lavorare» e l'esito admin con nota
+  // (Luca 25/08 sera): la compensazione dei malus NON viaggia con lei e resta
+  // all'amministrazione; eliminare pratiche e malus resta admin/dev come prima.
+  const puoCompensare = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
   const [allMembers, setAllMembers] = useState<{ id: string; full_name: string; primary_store: string | null }[]>([]);
   const [onlyMine, setOnlyMine] = useState(false); // "delegate a me"
   useEffect(() => {
@@ -1413,6 +1426,9 @@ export default function TrackingPdaPage() {
   // 📤 solo le pratiche che HO delegato; ⚡ coda di verifica amministrazione.
   const [onlyDelegate, setOnlyDelegate] = useState(false);
   const [soloDaLavorare, setSoloDaLavorare] = useState(false);
+  // se la capacità arriva/cambia DOPO il load dei permessi, il filtro ⚡ non
+  // resta incastrato invisibile (rilievo revisore 25/08)
+  useEffect(() => { if (!canEditAdmin) setSoloDaLavorare(false); }, [canEditAdmin]);
   // Cestino (Luca 03/08, ridisegnato 06/08: solo NASCONDI): pratica in attesa
   // di conferma rimozione dalla vista.
   const [daEliminare, setDaEliminare] = useState<TrackingRow | null>(null);
@@ -2118,15 +2134,16 @@ export default function TrackingPdaPage() {
             >
               👁 Mostra completate{mostraCompletate ? " ✓" : ""}
             </button>
-            {!canEditAdmin && (
-              <button
-                type="button"
-                onClick={() => setOnlyMine((v) => !v)}
-                className={"flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (onlyMine ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}
-              >
-                📥 Delegate a me{onlyMine ? " ✓" : ""}
-              </button>
-            )}
+            {/* visibile a TUTTI (rilievo revisore 25/08): era legato a
+                !canEditAdmin quando la capacità coincideva con l'amministrazione
+                — a uno store manager con la capacità spariva il filtro deleghe */}
+            <button
+              type="button"
+              onClick={() => setOnlyMine((v) => !v)}
+              className={"flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (onlyMine ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}
+            >
+              📥 Delegate a me{onlyMine ? " ✓" : ""}
+            </button>
             {canDelegate && (
               <button
                 type="button"
@@ -2295,7 +2312,7 @@ export default function TrackingPdaPage() {
             errore={malusErr}
             onClose={() => setShowArchivio(false)}
             onApriPratica={apriPraticaDaArchivio}
-            canCompensare={canEditAdmin}
+            canCompensare={puoCompensare}
             puoEliminare={user?.role === "admin" || user?.role === "dev"}
             utente={user?.name || "—"}
             venditoreIniziale={malusDeepLink || undefined}
