@@ -968,7 +968,9 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    rettangolare come i vecchi drop-shadow ─────────────────────────────── */
 .tf-aura { position: relative; }
 .tf-aura::before {
-  content: ""; position: absolute; inset: -24%; border-radius: 9999px;
-  background: radial-gradient(circle, var(--aura, transparent) 28%, transparent 66%);
-  opacity: .30; pointer-events: none;
+  content: ""; position: absolute; inset: -14%; border-radius: 9999px;
+  /* CIAMBELLA di luce centrata sul tratto (Luca 25/08: niente disco pieno
+     che invade il centro, niente alone che dilaga) */
+  background: radial-gradient(circle, transparent 58%, var(--aura, transparent) 72%, transparent 85%);
+  opacity: .32; pointer-events: none;
 }
