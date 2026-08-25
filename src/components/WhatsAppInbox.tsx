@@ -464,16 +464,20 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                 title={i.wa_number ? `+${i.wa_number}` : i.instance_name}
                                 className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2",
                                     selInst === i.id ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                                <Phone className="w-3.5 h-3.5" />
+                                {/* SEMAFORO SULL'ICONA (Luca 25/08 notte, screenshot): il
+                                    telefono a sinistra dice lo stato — verde attivo, giallo
+                                    da ricollegare; la destra resta SOLO per il badge dei
+                                    messaggi in sospeso (il pallino accanto confondeva) */}
+                                <Phone className={cn("w-3.5 h-3.5", i.status === "connessa" ? "text-emerald-400" : "text-amber-400")}
+                                    aria-label={i.status} />
                                 {/* NUMERO SEMPRE IN VISTA (Luca 25/08 notte): sotto
                                     l'etichetta il numero VERO rilevato da WhatsApp
                                     dopo la scansione — «così hanno sempre il loro
                                     numero a disposizione» */}
-                                <span className="flex flex-col items-start leading-tight text-left">
+                                <span className="flex flex-col items-start leading-tight text-left" title={i.status === "connessa" ? "Numero attivo" : "Da ricollegare (QR dal pannello amministrativo)"}>
                                     <span>{etichettaIstanza(i)}</span>
                                     <span className="text-[10px] font-normal text-slate-500">{i.wa_number ? `+${i.wa_number}` : "numero in arrivo…"}</span>
                                 </span>
-                                <span className={cn("w-2 h-2 rounded-full", i.status === "connessa" ? "bg-emerald-400" : "bg-amber-400")} title={i.status} />
                                 {(unreadPerInst[i.id] || 0) > 0 && (
                                     <span title={`${unreadPerInst[i.id]} chat da leggere su questo numero`}
                                         className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center">
