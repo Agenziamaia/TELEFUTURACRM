@@ -70,7 +70,12 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
         <div className="space-y-4">
             {/* barra descrittiva ELIMINATA (Luca 24/08: «non ha senso di
                 esistere») — resta solo lo switch, a destra sotto il periodo */}
-            <div className="an-in flex justify-end -mt-1">
+            <div className="an-in flex justify-end items-center gap-2 -mt-1">
+                {/* con la lente NEGOZI torna la multiselezione dei PV (Luca
+                    25/08: era sparita insieme alla barra descrittiva) */}
+                {lente === "negozi" && (
+                    <SelectMulti values={negSel} onChange={setNegSel} opzioni={negoziTutti} placeholder="tutti i negozi…" maxVoci={100} className="min-w-[240px]" />
+                )}
                 <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
                     {[{ id: "codici", l: "🎯 Codici" }, { id: "negozi", l: "🏪 Negozi" }].map((x) => (
                         <button key={x.id} onClick={() => setLente(x.id)} className={cn("px-3.5 py-2 rounded-lg text-xs font-black transition-all", lente === x.id ? "bg-fuchsia-500/80 text-white shadow-lg shadow-fuchsia-500/30" : "text-slate-400 hover:text-white")}>{x.l}</button>
