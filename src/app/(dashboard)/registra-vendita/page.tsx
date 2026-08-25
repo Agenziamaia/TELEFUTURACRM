@@ -1033,7 +1033,7 @@ const chiaveListino = (s) => String(s || "").toUpperCase()
 const caricaListini = () => {
   if (_listiniTutti) return Promise.resolve(_listiniTutti);
   if (!_listiniAttesa) _listiniAttesa = supabase.from("listini_terminali")
-    .select("brand,modello,prezzo,rate,margine_pct,lista").limit(3000)
+    .select("brand,modello,prezzo,rate,margine_pct,lista,fascia").limit(3000)
     .then(({ data }) => { _listiniTutti = data || []; return _listiniTutti; })
     .catch(() => { _listiniTutti = []; return _listiniTutti; });
   return _listiniAttesa;
@@ -1094,9 +1094,10 @@ let _brandVendita = null;
 let _tipoVendita = null;
 let _numeriMobiliVendita = [];
 const _compBrand = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-// FASTWEB usa il listino VODAFONE in vigore (Luca 03/08): stesso street
-// price, ma SENZA marginalita' sul prodotto — il margine non si mostra.
-const _brandListino = (b) => { const x = _compBrand(b); return x === "FASTWEB" ? "VODAFONE" : x; };
+// FASTWEB ha il SUO listino dal 25/08 (import «Listino Retail» del canale
+// retail, con la fascia di prezzo per l'extra gara telefoni): niente piu'
+// riflesso del Vodafone. Resta senza marginalita' (il margine non si mostra).
+const _brandListino = (b) => _compBrand(b);
 // RV-03: il telefono a rate BUSINESS ha marginalita' solo su WindTre — per
 // Vodafone business street price visibile ma margine nascosto (come Fastweb).
 const _senzaMargine = () => _compBrand(_brandVendita) === "FASTWEB" || (_compBrand(_brandVendita) === "VODAFONE" && String(_tipoVendita || "").toLowerCase() === "business");
@@ -1134,6 +1135,27 @@ const cercaTerminali = async (term) => {
   if (ordinabili.length) out.push({ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale") + suff, voci: ordinabili });
   if (magazzino.length) out.push({ gruppo: "🏬 Magazzino — non ordinabili, a rate" + suff, voci: magazzino });
   return out;
+};
+
+// AUTO-FASCIA extra gara Fastweb (Luca 25/08 sera): scelto il telefono dal
+// listino, la fascia della gara si preseleziona da sola — il MODELLO comanda
+// (Apple sempre «Apple», rigenerati esclusi a priori; S26 e Fold8 hanno il
+// loro pay), per gli altri vale la fascia del listino: L=Low, H=High, M
+// spaccata sul taglio dei 400 € della lettera. Il venditore puo' correggere.
+const _fasciaGaraFW = async (modello) => {
+  const m = String(modello || "");
+  if (!m || m.toUpperCase().startsWith("ALTRO")) return null;
+  if (/apple|iphone/i.test(m)) return "Apple";
+  if (/\bs26\b|galaxy\s*s26/i.test(m)) return "Samsung S26";
+  if (/z?fold\s*8/i.test(m)) return "Samsung Fold8";
+  const tutti = await caricaListini();
+  const k = chiaveListino(m);
+  const r = k ? tutti.find(x => _compBrand(x.brand) === "FASTWEB" && chiaveListino(x.modello) === k) : null;
+  const f = String(r?.fascia || "").toUpperCase();
+  if (f === "L") return "Low";
+  if (f === "H") return "High";
+  if (f === "M") return Number(r?.prezzo) > 400 ? "Medium + oltre 400 €" : "Medium - fino a 400 €";
+  return null;
 };
 
 const cercaModelliCatalogo = async (term) => {
@@ -3410,7 +3432,16 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             // CAT-02: se la regola porta i suoi valori (jsonb valori:[…]) vincono quelli, altrimenti il lookup storico
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={Array.isArray(cmp.valori)&&cmp.valori.length?cmp.valori:_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
             if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
-            if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
+            if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);
+              // extra gara telefoni FW: il modello preseleziona la fascia
+              // (opzione del gruppo «fascia» — resta correggibile a mano)
+              if(sub.catBrand==="fastweb"&&offSel&&offSel.opzioni.some(x=>x.gruppo==="fascia")){
+                _fasciaGaraFW(v).then(fx=>{if(!fx)return;
+                  const next={...(f.__opzioni||{})};
+                  offSel.opzioni.forEach(x=>{if(x.gruppo==="fascia")delete next[x.nome];});
+                  next[fx]=true;setF("__opzioni",next);});
+              }
+            }} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
             if(/mobile di convergenza/i.test(cmp.nome))return (
               <div key={cmp.nome}>
                 <TF l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p="3XXXXXXXXX" nt={cmp.nota||undefined}/>
