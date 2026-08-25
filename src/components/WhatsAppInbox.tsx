@@ -251,27 +251,31 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     //    Cerca la conversazione tra i numeri visibili (aggancio per coda di
     //    cifre, come il ponte Aircall); se non esiste la CREA sull'istanza
     //    selezionata (o la prima visibile).
-    const apriPerNumero = async (digIn: string): Promise<boolean> => {
+    const apriPerNumero = async (digIn: string, instId: string): Promise<boolean> => {
         if (!visibleInstances.length) return false;
         // un numero troppo corto (deep-link malformato) cercherebbe %coda
         // su una coda di 1-2 cifre e aggancerebbe la chat sbagliata
         if (digIn.replace(/\D/g, "").length < 6) return false;
+        // LA CHAT VIVE SUL NUMERO SCELTO (bug Luca 25/08 sera, video): con
+        // più numeri in visibilità la ricerca su TUTTI apriva la chat più
+        // recente di un ALTRO punto vendita, cambiando istanza ed elenco
+        // sotto i piedi. Ora si cerca/crea solo sull'istanza indicata.
+        const inst = visibleInstances.find(i => i.id === instId);
+        if (!inst) return false;
         // normalizzazione: "0039…" → "39…" (revisore 25/08: il non-canonico
         // spezzava il thread alla risposta del cliente)
         const dig = digIn.startsWith("00") ? digIn.slice(2) : digIn;
         const coda = dig.slice(-9);
-        const ids = visibleInstances.map(i => i.id);
         // coda CONTIGUA e NIENTE GRUPPI (revisore 25/08): la vecchia
         // sottosequenza %3%3%1%… poteva agganciare l'id di un gruppo (~18
         // cifre) o un numero sbagliato — i numeri a DB sono cifre canoniche
         const { data: trovate } = await supabase.from("wa_conversations")
-            .select("*").in("instance_id", ids)
+            .select("*").eq("instance_id", inst.id)
             .or("is_group.is.null,is_group.eq.false")
             .ilike("customer_number", "%" + coda)
             .order("last_message_at", { ascending: false }).limit(1);
         let conv = (trovate && trovate[0]) as Conv | undefined;
         if (!conv) {
-            const inst = visibleInstances.find(i => i.id === selInst) || visibleInstances[0];
             const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
             // NOME VERO dall'anagrafica (Luca 25/08 notte: «Donna Olimpia ha
             // scritto a un cliente salvato e non è comparso come cliente»):
@@ -296,8 +300,27 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
             if (error || !creata) { alert("Chat non aperta: " + (error?.message || "conversazione non creata")); return false; }
             conv = creata as Conv;
         }
+        // il filtro per persona segue il numero su cui si apre la chat (senza
+        // questo l'elenco restava filtrato sul numero vecchio e la chat
+        // aperta non si vedeva)
+        if (filtroNum && filtroNum !== etichettaIstanza(inst)) setFiltroNum(etichettaIstanza(inst));
         setSelInst(conv.instance_id);
         setSelConv(conv);
+        return true;
+    };
+
+    // CON PIÙ NUMERI SI SCEGLIE SEMPRE (Luca 25/08 sera): se l'utente ha più
+    // numeri WhatsApp in visibilità, prima di aprire/creare la chat compare
+    // la lista «con quale numero vuoi scrivere?» — vale per la Nuova chat,
+    // per la ricerca cliente e per il bottone WhatsApp della scheda cliente.
+    // Con UN solo numero connesso si apre diretto come sempre.
+    const [sceltaNumero, setSceltaNumero] = useState<{ dig: string; nome?: string | null } | null>(null);
+    const avviaChatNumero = async (digIn: string, nome?: string | null): Promise<boolean> => {
+        if (digIn.replace(/\D/g, "").length < 6) return false;
+        const conn = visibleInstances.filter(i => i.status === "connessa");
+        if (!conn.length) return false;
+        if (conn.length === 1) return apriPerNumero(digIn, conn[0].id);
+        setSceltaNumero({ dig: digIn, nome });
         return true;
     };
 
@@ -344,7 +367,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         (async () => {
             // come per ?conv=: il ref si brucia solo ad apertura riuscita,
             // così se le istanze visibili crescono dopo il mount si riprova
-            const ok = await apriPerNumero(dig);
+            const ok = await avviaChatNumero(dig);
             _apriBusy.current = false;
             if (!ok) return;
             _apriFatto.current = dig;
@@ -747,7 +770,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 </div>
             )}
 
-            {nuovaChat && <NuovaChatModal apri={apriPerNumero} onClose={() => setNuovaChat(false)} />}
+            {nuovaChat && <NuovaChatModal apri={avviaChatNumero} onClose={() => setNuovaChat(false)} />}
+            {sceltaNumero && <ScegliNumeroModal dig={sceltaNumero.dig} nome={sceltaNumero.nome}
+                istanze={visibleInstances.filter(i => i.status === "connessa")} etichetta={etichettaIstanza}
+                apri={apriPerNumero} onClose={() => setSceltaNumero(null)} />}
             {linkModal && <LinkModal presetName={user?.name || undefined} onClose={() => { setLinkModal(false); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
             {relinkName && <LinkModal reconnectName={relinkName} onClose={() => { setRelinkName(null); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
         </div>
@@ -818,7 +844,7 @@ function EmojiPickerWA({ onPick, onClose }: { onPick: (e: string) => void; onClo
 // NUOVA CHAT A NUMERO (Luca 25/08 sera-2): modale del CRM al posto del
 // prompt del browser («sembra che arrivi da Chrome») — centrato, stile glass
 // come gli altri, Invio per aprire. Top-level (lezione: mai annidata).
-function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<boolean>; onClose: () => void }) {
+function NuovaChatModal({ apri, onClose }: { apri: (dig: string, nome?: string | null) => Promise<boolean>; onClose: () => void }) {
     const [numero, setNumero] = useState("");
     const [errore, setErrore] = useState("");
     const [busy, setBusy] = useState(false);
@@ -840,7 +866,7 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<bool
         if (busy) return;
         setErrore("");
         setBusy(true);
-        const ok = await apri(dig);
+        const ok = await apri(dig, etichettaCliente(c));
         setBusy(false);
         if (ok) onClose();
     };
@@ -870,6 +896,69 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<bool
                     <RicercaCliente onScelto={scegliCliente} placeholder="Cerca: nome e cognome, CF, P.IVA o ragione sociale…" />
                     <p className="text-[11px] text-slate-500">Un click sull&apos;anagrafica apre la chat sul cellulare del cliente.</p>
                     {errore && <p className="text-xs text-rose-300 font-semibold">{errore}</p>}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// «CON QUALE NUMERO SCRIVI?» (Luca 25/08 sera): chi ha più numeri WhatsApp
+// in visibilità sceglie da quale scrivere PRIMA che la chat si apra o si
+// crei. I numeri che hanno già una chat col destinatario sono marcati.
+function ScegliNumeroModal({ dig, nome, istanze, etichetta, apri, onClose }: {
+    dig: string; nome?: string | null;
+    istanze: Instance[]; etichetta: (i: Instance) => string;
+    apri: (dig: string, instId: string) => Promise<boolean>;
+    onClose: () => void;
+}) {
+    const [conChat, setConChat] = useState<Set<string>>(new Set());
+    const [busy, setBusy] = useState<string | null>(null);
+    const digPul = (dig.startsWith("00") ? dig.slice(2) : dig).replace(/\D/g, "");
+    const coda = digPul.slice(-9);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const { data } = await supabase.from("wa_conversations").select("instance_id")
+                .in("instance_id", istanze.map(i => i.id))
+                .or("is_group.is.null,is_group.eq.false")
+                .ilike("customer_number", "%" + coda);
+            if (vivo) setConChat(new Set((data ?? []).map((r: { instance_id: string }) => r.instance_id)));
+        })();
+        return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [coda, istanze.map(i => i.id).join("|")]);
+    const scegli = async (id: string) => {
+        if (busy) return;
+        setBusy(id);
+        const ok = await apri(dig, id);
+        setBusy(null);
+        if (ok) onClose();
+    };
+    const ordinate = [...istanze].sort((a, b) =>
+        (conChat.has(b.id) ? 1 : 0) - (conChat.has(a.id) ? 1 : 0) || etichetta(a).localeCompare(etichetta(b)));
+    return (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-card w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-bold text-white">Con quale numero scrivi?</h3>
+                    <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                </div>
+                <p className="text-[11px] text-slate-500 mb-3">Chat con <span className="font-bold text-slate-300">{nome || `+${digPul}`}</span> — hai più numeri WhatsApp in visibilità: la conversazione si apre sul numero che scegli.</p>
+                <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                    {ordinate.map(i => (
+                        <button key={i.id} onClick={() => scegli(i.id)} disabled={!!busy}
+                            className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors text-left disabled:opacity-50">
+                            <span className="min-w-0">
+                                <span className="block text-sm font-bold text-slate-100 truncate">{etichetta(i)}</span>
+                                {i.wa_number && <span className="block text-[11px] text-slate-500">+{i.wa_number}</span>}
+                            </span>
+                            {busy === i.id
+                                ? <Loader2 className="w-4 h-4 animate-spin text-emerald-300 shrink-0" />
+                                : conChat.has(i.id)
+                                    ? <span className="shrink-0 text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">già una chat</span>
+                                    : <span className="shrink-0 text-[10px] text-slate-500">nuova chat</span>}
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>
