@@ -878,7 +878,11 @@ function Drawer({
   // la bozza decide se c'e' davvero qualcosa da salvare
   const baseN = useRef(row.statoNegozio);
   const baseA = useRef(row.statoAdmin);
-  const baseFu = useRef(JSON.stringify(row.followup ?? []));
+  // baseline dallo stato EFFETTIVO iniziale, non dal dato a DB (rilievo quinto
+  // revisore): sulle P.IVA senza follow-up salvati lo state parte coi 3
+  // template e il vecchio confronto con "[]" produceva una bozza mai fatta —
+  // ogni chiusura scriveva followup/stato/storia a vuoto, per chiunque
+  const baseFu = useRef(JSON.stringify(followup));
   // storia accumulata, inclusi i commit non ancora tornati dal giro DB→prop; se
   // il prop si allunga per altre vie (es. evento delega) vince il piu' ricco
   const storiaRef = useRef<StoriaEvent[]>(row.storia);
@@ -890,7 +894,9 @@ function Drawer({
     const eventi: StoriaEvent[] = [];
     let dirty = false;
     let salvaFollowup = false;
-    if (origine !== "admin") {
+    // lato negozio si scrive SOLO col permesso corrente (rilievo quinto
+    // revisore): il lock UI non basta, il commit di chiusura è l'ultimo varco
+    if (origine !== "admin" && canEditNegozio) {
       const nota = s.notaN.trim();
       const fuJson = JSON.stringify(s.fu);
       const cambioFu = row.categoria === "piva" && fuJson !== baseFu.current;
@@ -1646,7 +1652,6 @@ export default function TrackingPdaPage() {
         DELEGHE = mappa;
         impostaDelegheMalus(mappa);
       }
-      mieiAgentiRef.current = mieiAgenti;
       const scoped = vedeTutteTracking ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
         // Le pratiche FATTE DA ME si vedono SEMPRE, anche se registrate su un
@@ -1658,6 +1663,7 @@ export default function TrackingPdaPage() {
         return mie;
       });
       if (gen !== fetchGen.current) return;
+      mieiAgentiRef.current = mieiAgenti;
       setRawList(scoped as RawRow[]);
     } catch (err: unknown) {
       if (gen === fetchGen.current) {
@@ -1905,9 +1911,11 @@ export default function TrackingPdaPage() {
     () => (vedeTutteTracking ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, vedeTutteTracking, negozioSel]
   );
-  // tendina Venditore sparita (flip a platea completa) = filtro azzerato:
-  // niente filtri fantasma invisibili (rilievo quarto revisore)
-  useEffect(() => { if (venditoreSel && !venditoriAttivi.length) setVenditoreSel(""); }, [venditoriAttivi, venditoreSel]);
+  // flip a platea completa = filtro Venditore azzerato (la sua tendina non
+  // esiste più): niente filtri fantasma invisibili. Condizione STRETTA al
+  // flip (rilievo quinto revisore): gli svuotamenti momentanei della tendina
+  // (toggle Delegate a me, fetch) non devono buttare la selezione dello SM.
+  useEffect(() => { if (venditoreSel && vedeTutteTracking) setVenditoreSel(""); }, [vedeTutteTracking, venditoreSel]);
   const catAttive = useMemo(() => new Set(
     baseVisibile
       .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || respRigaTutti(r).some((n) => utentiSel.includes(n))))
@@ -2051,7 +2059,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, utentiSel, regoleV]);
+  }, [data, catSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, utentiSel, venditoreSel, regoleV]);
 
   // I numeri delle card KPI rispettano ANCHE il brand selezionato.
   const filteredPerKpi = useMemo(
@@ -2062,9 +2070,12 @@ export default function TrackingPdaPage() {
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
     const target = rawList.find((r) => (r.id as string) === rowId);
+    // target sparito da rawList = selezione stantia: fermarsi (il vecchio ramo
+    // proseguiva e RISCRIVEVA la storia con il solo evento delega)
+    if (!target) { alert("Pratica non più in elenco (aggiornata nel frattempo): ricarica e riprova."); return; }
     // pratica vista solo con la capacità esito admin = niente delega (la UI
     // già non la offre: guardia al varco unico delle scritture di delega)
-    if (target && !inPerimetroReale(target)) { alert("Pratica fuori dai tuoi punti vendita: con la capacità esito admin si lavora solo l'esito, niente delega."); return; }
+    if (!inPerimetroReale(target)) { alert("Pratica fuori dai tuoi punti vendita: con la capacità esito admin si lavora solo l'esito, niente delega."); return; }
     const oggi = new Date().toLocaleDateString("it-IT");
     const storia = Array.isArray((target as any)?.storia) ? [...(target as any).storia] : [];
     storia.push({ data: oggi, tipo: "delega",
@@ -2104,7 +2115,7 @@ export default function TrackingPdaPage() {
     if (!ids.length || !toId) return;
     // fuori dal perimetro reale niente delega: si delegano solo le pratiche
     // che si vedrebbero anche senza la capacità esito admin
-    const fuori = ids.filter((id) => { const t = rawList.find((r) => (r.id as string) === id); return t && !inPerimetroReale(t); });
+    const fuori = ids.filter((id) => { const t = rawList.find((r) => (r.id as string) === id); return !t || !inPerimetroReale(t); });
     if (fuori.length) {
       alert(`${fuori.length} pratiche fuori dai tuoi punti vendita: escluse dalla delega (con la capacità esito admin si lavora solo l'esito).`);
       ids = ids.filter((id) => !fuori.includes(id));
