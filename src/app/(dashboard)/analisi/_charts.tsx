@@ -457,10 +457,8 @@ export function Donut({ slices, size = 150, spessore = 17, centro, unit = "pt" }
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
     if (!tot) return <p className="text-xs text-slate-500 py-4 text-center">Nessun dato.</p>;
     let acc = 0;
-    // AURA standard (Luca 24/08): alone radiale del colore della fetta dominante
-    const dominante = vive.reduce((mx, s) => (s.val > mx.val ? s : mx), vive[0]);
     return (
-        <div className="relative inline-flex items-center justify-center tf-aura" style={{ width: size, height: size, "--aura": dominante?.colore }}>
+        <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
             <svg width={size} height={size} className="-rotate-90">
                 <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={spessore} />
                 {vive.map((s, i) => {
@@ -469,7 +467,7 @@ export function Donut({ slices, size = 150, spessore = 17, centro, unit = "pt" }
                         <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none"
                             stroke={s.colore} strokeWidth={hov?.i === i ? spessore + 4 : spessore}
                             strokeDasharray={`${on ? Math.max(0, len - 2) : 0} ${C}`} strokeDashoffset={-start}
-                            style={{ transition: "stroke-dasharray 1s cubic-bezier(.22,1,.36,1), stroke-width .15s", filter: hov?.i === i ? `drop-shadow(0 0 6px ${s.colore})` : undefined, cursor: "default" }}
+                            style={{ transition: "stroke-dasharray 1s cubic-bezier(.22,1,.36,1), stroke-width .15s", filter: hov?.i === i ? `drop-shadow(0 0 7px ${s.colore})` : `drop-shadow(0 0 4px ${s.colore}55)`, cursor: "default" }}
                             onMouseEnter={(e) => setHov({ i, x: e.clientX, y: e.clientY })}
                             onMouseMove={(e) => setHov({ i, x: e.clientX, y: e.clientY })}
                             onMouseLeave={() => setHov(null)}
