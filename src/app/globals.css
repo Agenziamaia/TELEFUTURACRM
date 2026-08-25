@@ -962,3 +962,13 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
   .tf-mix { flex-direction: row; justify-content: center; align-items: center; gap: 2.5rem; }
   .tf-mix-anello { width: auto; height: 100%; flex: 0 1 auto; }
 }
+
+/* ── AURA CIRCOLARE standard degli anelli di Analisi (Luca 24/08 sera):
+   sfumatura radiale perfetta del colore dominante — mai tagliata
+   rettangolare come i vecchi drop-shadow ─────────────────────────────── */
+.tf-aura { position: relative; }
+.tf-aura::before {
+  content: ""; position: absolute; inset: -24%; border-radius: 9999px;
+  background: radial-gradient(circle, var(--aura, transparent) 28%, transparent 66%);
+  opacity: .30; pointer-events: none;
+}

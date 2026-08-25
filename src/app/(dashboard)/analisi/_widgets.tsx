@@ -1117,7 +1117,7 @@ function AnelloPeso({ perc, colore, label, logoChiave, tip }) {
     return (
         <Tip className="w-full block" tip={tip}>
             <div className="text-center w-full">
-                <div className="relative w-full max-w-[170px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, boxShadow: `0 0 12px ${colore}33` }}>
+                <div className="relative w-full max-w-[170px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size] tf-aura" style={{ background: `conic-gradient(${colore} ${Math.min(360, perc * 3.6)}deg, rgba(255,255,255,.07) 0deg)`, "--aura": colore }}>
                     <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
                         <span className="font-black text-white tabular-nums" style={{ fontSize: "clamp(0.85rem, 22cqw, 1.6rem)" }}>{Math.round(perc)}%</span>
                     </div>
@@ -1193,13 +1193,20 @@ function WidgetPesoNegozi({ ctx }) {
         return out;
     };
 
+    // criterio Luca 24/08: un negozio si mostra SOLO con almeno
+    // un'attivazione vera (quota > 0 su almeno un anello) — la riga
+    // fantasma di una marginalità a 0€ non basta (caso Latina/Promontori)
+    const sezioni = negozi.map((n) => ({ n, cont: contatoriDi(n) })).filter((x) => x.cont.some((c) => c.perc > 0)).slice(0, 3);
+    if (!sezioni.length) return <p className="text-xs text-slate-500 py-4 text-center">Nessuna vendita nel periodo.</p>;
     return (
         <div className="space-y-4">
-            {negozi.slice(0, 3).map((n) => (
+            {sezioni.map(({ n, cont }) => (
                 <div key={n}>
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">🏪 {n}</p>
-                    <div className="grid gap-4 justify-items-center [grid-template-columns:repeat(auto-fit,minmax(130px,1fr))]">
-                        {contatoriDi(n).map((c) => <AnelloPeso key={c.label} {...c} />)}
+                    {/* celle a larghezza UNIFORME tra i negozi (15% della card,
+                        min 110 max 170): niente più anelli grandi e piccoli */}
+                    <div className="flex flex-wrap justify-center gap-4">
+                        {cont.map((c) => <span key={c.label} className="block w-[clamp(110px,15cqw,170px)]"><AnelloPeso {...c} /></span>)}
                     </div>
                 </div>
             ))}
@@ -1314,7 +1321,7 @@ function WidgetMixPezzi({ ctx }) {
     return (
         <div className="tf-mix w-full h-full min-h-0 select-none">
             <div className="tf-mix-anello">
-            <div className="relative aspect-square h-full w-full max-h-[290px] max-w-[290px] min-h-[176px] min-w-[176px] mx-auto">
+            <div className="relative aspect-square h-full w-full max-h-[290px] max-w-[290px] min-h-[176px] min-w-[176px] mx-auto tf-aura" style={{ "--aura": (fette.reduce((mx, x) => (x.sue.length > (mx?.sue.length || 0) ? x : mx), null)?.g.colore) || "transparent" }}>
                 <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full" style={{ overflow: "visible" }}>
                     <g transform={`translate(${cx},${cy})`}>
                         <circle r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={sw} />
