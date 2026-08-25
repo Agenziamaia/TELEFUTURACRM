@@ -1043,8 +1043,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         Le voci senza pista restano piene (100%). */}
                     {lato === "azienda" && (
                         <div className="flex items-center gap-3 flex-wrap mr-auto">
-                            {piste.filter(px => !righeDiPista(px.chiave).length && righe.some(r => r.pista === px.chiave && r.gettone)).map(px => (
-                                <label key={px.id} className="text-[11px] text-amber-300/90" title={`Quota dei gettoni «${px.nome}» girata ai ragazzi (vuota = 100%). Occhio: 0 = niente ai ragazzi, le voci spariscono dal loro tabellare.`}>
+                            {/* TUTTE le piste coi gettoni, anche quelle che hanno
+                                pure righe a soglia (Luca 25/08 notte, caso Sky:
+                                la casella c'era solo sul pannello «Punti Sky» in
+                                alto e qui i business sembravano senza %) — è la
+                                STESSA % della pista, stesso salvataggio */}
+                            {piste.filter(px => righe.some(r => r.pista === px.chiave && r.gettone)).map(px => (
+                                <label key={px.id} className="text-[11px] text-amber-300/90" title={`Quota dei gettoni «${px.nome}» girata ai ragazzi (vuota = 100%). È la stessa % della pista: governa anche le righe a soglia. Occhio: 0 = niente ai ragazzi, le voci spariscono dal loro tabellare.`}>
                                     {emojiPista(px.nome)} {px.nome} ×
                                     <input value={percDraft[px.id] ?? (px.perc_ragazzi == null ? "" : String(px.perc_ragazzi))}
                                         onChange={e => setPercDraft(prev => ({ ...prev, [px.id]: e.target.value }))}
