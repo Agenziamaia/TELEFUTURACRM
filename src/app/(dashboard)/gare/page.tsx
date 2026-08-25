@@ -15,7 +15,7 @@ import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { TabellareEditor } from "./_views/tabellare";
 import { W3PdvPanel } from "./_views/w3_pdv";
-import { W3CommissioningPanel } from "./_views/w3_commissioning";
+import { W3CommissioningPanel, W3PercRagazzi } from "./_views/w3_commissioning";
 import { W3PartnershipPanel } from "./_views/w3_partnership";
 import { LettereGara } from "./_views/lettere";
 import { CalendarioGareView } from "./_views/calendario_gare";
@@ -259,7 +259,10 @@ function GareInner() {
                                         <W3PartnershipPanel key={`w3pr|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
                                     )}
                                     {tabW3 === "comm" && (
+                                        <>
+                                        <W3PercRagazzi key={`w3perc|${month}`} mese={month.slice(0, 7)} />
                                         <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                        </>
                                     )}
                                     {tabW3 === "lettera" && (
                                         <>

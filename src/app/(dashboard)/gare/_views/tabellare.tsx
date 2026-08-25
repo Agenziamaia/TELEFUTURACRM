@@ -726,26 +726,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             {/* RIGHE per pista — TABELLE compatte (segnalazione Luca 11/08: numeri
                 centrati, colonne strette, niente scroll infinito — stile delle
                 griglie S1-S4 che manda lui) */}
-            {/* soloRegole (W3): le % ai ragazzi di TUTTE le categorie in una
-                card unica — le piste a gettone non hanno tabella qui ma la
-                loro % serve comunque (Luca: una % per categoria) */}
-            {soloRegole && lato === "azienda" && piste.length > 0 && (
-                <div className="glass-panel rounded-2xl p-4">
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-2">👥 % pay ai ragazzi per categoria</p>
-                    <div className="flex flex-wrap gap-x-5 gap-y-2">
-                        {piste.map(p => (
-                            <label key={p.id} className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                                {p.nome}
-                                <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
-                                    onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                    className={inputCls + " w-14"} placeholder="100" />
-                                {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
-                                    <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold">💾</button>}
-                            </label>
-                        ))}
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1.5">Vuota = 100%. Vale anche per le categorie senza tabella qui (Luce &amp; Gas, Customer Base, Business, Protetti): i loro pay stanno nel Commissioning, la % li scala per il lato ragazzi.</p>
-                </div>
+            {/* % AI RAGAZZI TRASLOCATE (Luca 25/08): non sono una regola di
+                gara — si governano nel 💶 Commissioning (card 👥, per SOGLIA
+                su mobile/fisso/luce&gas, unica su CB/Protetti) */}
+            {soloRegole && lato === "azienda" && (
+                <p className="text-[11px] text-slate-500">👥 Le <b>% ai ragazzi</b> si impostano nella scheda <b>💶 Commissioning</b> (per soglia su Mobile, Fisso e Luce &amp; Gas).</p>
             )}
             {piste.map(p => {
                 // modalità soloRegole (W3): le piste a gettone e i gettoni

@@ -738,3 +738,120 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
         </div>
     );
 }
+
+
+/* ═══ 👥 % AI RAGAZZI (Luca 25/08): si governa QUI, nel Commissioning —
+   non nelle Regole di gara. Piste a soglie (mobile/fisso/luce&gas): una %
+   PER SOGLIA (S1/S2/S3 → pay_mappa_soglie, che il motore applica soglia
+   per soglia). Piste a gettone (CB, Protetti): % unica (perc_ragazzi).
+   Vuoto = 100%. Il tabellare ragazzi si rideriva da solo. ═══════════════ */
+const PISTE_SOGLIA = [
+    { chiave: "mobile", label: "📱 Mobile" },
+    { chiave: "fisso", label: "🏠 Fisso" },
+    { chiave: "lucegas", label: "⚡ Luce & Gas" },
+];
+const PISTE_UNICHE = [
+    { chiave: "cb", label: "🔁 Customer Base" },
+    { chiave: "protetti", label: "🏠🛡 W3 Protetti" },
+];
+export function W3PercRagazzi({ mese }: { mese: string }) {
+    const monthISO = `${mese}-01`;
+    const [mappa, setMappa] = useState<Record<string, Record<number, string>>>({});
+    const [uniche, setUniche] = useState<Record<string, string>>({});
+    const [idPista, setIdPista] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState<string | null>(null);
+    const [pronto, setPronto] = useState(false);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const [m, pi] = await Promise.all([
+                supabase.from("pay_mappa_soglie").select("pista, tier_nostro, perc").eq("brand", "windtre").eq("month", monthISO),
+                supabase.from("pay_piste").select("id, chiave, perc_ragazzi").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda"),
+            ]);
+            if (!vivo) return;
+            const mm: Record<string, Record<number, string>> = {};
+            ((m.data ?? []) as { pista: string; tier_nostro: number; perc: number }[]).forEach(r => {
+                (mm[r.pista] ??= {})[r.tier_nostro] = String(r.perc);
+            });
+            const un: Record<string, string> = {}; const ids: Record<string, string> = {};
+            ((pi.data ?? []) as { id: string; chiave: string; perc_ragazzi: number | null }[]).forEach(r => {
+                ids[r.chiave] = r.id;
+                if (PISTE_UNICHE.some(x => x.chiave === r.chiave)) un[r.chiave] = r.perc_ragazzi == null ? "" : String(r.perc_ragazzi);
+            });
+            setMappa(mm); setUniche(un); setIdPista(ids); setPronto(true);
+        })();
+        return () => { vivo = false; };
+    }, [monthISO]);
+    const salva = async () => {
+        setBusy(true); setMsg(null);
+        // per soglia: riscrivo la mappa delle 3 piste (tier_loro = tier_nostro)
+        for (const p of PISTE_SOGLIA) {
+            const del = await supabase.from("pay_mappa_soglie").delete().eq("brand", "windtre").eq("month", monthISO).eq("pista", p.chiave);
+            if (del.error) { setBusy(false); setMsg("Errore: " + del.error.message); return; }
+            const righe = [1, 2, 3]
+                .map(t => ({ t, v: String(mappa[p.chiave]?.[t] ?? "").trim().replace(",", ".") }))
+                .filter(x => x.v !== "" && Number.isFinite(Number(x.v)))
+                .map(x => ({ brand: "windtre", month: monthISO, pista: p.chiave, tier_nostro: x.t, tier_loro: x.t, perc: Number(x.v) }));
+            if (righe.length) {
+                const ins = await supabase.from("pay_mappa_soglie").insert(righe);
+                if (ins.error) { setBusy(false); setMsg("Errore: " + ins.error.message); return; }
+            }
+        }
+        // uniche: perc_ragazzi sulla pista azienda
+        for (const p of PISTE_UNICHE) {
+            const id = idPista[p.chiave];
+            if (!id) continue;
+            const v = String(uniche[p.chiave] ?? "").trim().replace(",", ".");
+            const n = v === "" ? null : Number(v);
+            const up = await supabase.from("pay_piste").update({ perc_ragazzi: n }).eq("id", id);
+            if (up.error) { setBusy(false); setMsg("Errore: " + up.error.message); return; }
+        }
+        setBusy(false); setMsg("Percentuali salvate ✓ — il tabellare dei ragazzi si aggiorna da solo.");
+    };
+    if (!pronto) return null;
+    return (
+        <div className="glass-panel rounded-2xl p-5 border-l-4 border-indigo-400/60">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+                <div className="text-[11px] uppercase tracking-wider text-slate-400">👥 % ai ragazzi — quota del commissioning azienda riconosciuta per soglia</div>
+                <button onClick={salva} disabled={busy} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold disabled:opacity-50">{busy ? "…" : "💾 Salva percentuali"}</button>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-3">Vuoto = 100%. Le piste Business e Assicurazioni sono di rete: restano all'azienda.</p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {PISTE_SOGLIA.map((p) => (
+                    <div key={p.chiave} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs font-bold text-slate-200 mb-2">{p.label}</p>
+                        <div className="flex items-center gap-2">
+                            {[1, 2, 3].map((t) => (
+                                <label key={t} className="flex-1 text-center">
+                                    <span className="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">S{t}</span>
+                                    <span className="flex items-center gap-1">
+                                        <input inputMode="decimal" value={mappa[p.chiave]?.[t] ?? ""}
+                                            onChange={(e) => setMappa((prev) => ({ ...prev, [p.chiave]: { ...(prev[p.chiave] || {}), [t]: e.target.value } }))}
+                                            placeholder="100" className="glass-input w-full text-sm text-center rounded-lg py-1.5" />
+                                        <span className="text-[10px] text-slate-500">%</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+                {PISTE_UNICHE.map((p) => (
+                    <div key={p.chiave} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs font-bold text-slate-200 mb-2">{p.label}</p>
+                        <label className="block max-w-[140px]">
+                            <span className="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">tutte le soglie</span>
+                            <span className="flex items-center gap-1">
+                                <input inputMode="decimal" value={uniche[p.chiave] ?? ""}
+                                    onChange={(e) => setUniche((prev) => ({ ...prev, [p.chiave]: e.target.value }))}
+                                    placeholder="100" className="glass-input w-full text-sm text-center rounded-lg py-1.5" />
+                                <span className="text-[10px] text-slate-500">%</span>
+                            </span>
+                        </label>
+                    </div>
+                ))}
+            </div>
+            {msg && <p className="text-xs mt-3 text-emerald-300">{msg}</p>}
+        </div>
+    );
+}
