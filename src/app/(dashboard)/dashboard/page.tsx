@@ -80,6 +80,95 @@ const daLegacy = (lista) => {
     return out;
 };
 
+/* ─── GRIGLIA HOME — componente A PARTE (terza bocciatura del revisore):
+   useContainerWidth osserva il nodo SOLO al proprio mount, quindi hook e
+   wrapper devono nascere INSIEME. Dentro Dashboard c'è `if (!user) return
+   null` e su un F5 il primo commit è nullo (la sessione si ripristina in un
+   effect): il ref restava vuoto per sempre → larghezza inchiodata a 1280,
+   niente observer, niente reflow. Qui il wrapper c'è dal primo render del
+   componente, spinner compreso. ─────────────────────────────────────────── */
+function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
+    const { width: gridW, containerRef: gridRef } = useContainerWidth();
+    // pila mobile con ISTERESI (entra <600, esce >680): ballando sul confine
+    // il cambio pila↔griglia rimonterebbe tutti i widget (e le loro fetch)
+    const [pilaMobile, setPilaMobile] = useState(false);
+    useEffect(() => {
+        if (!gridW) return;
+        setPilaMobile((cur) => (cur ? gridW < 680 : gridW < 600));
+    }, [gridW]);
+    return (
+        <div ref={gridRef}>
+            {loading ? (
+                <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento dati…</div>
+            ) : (
+                <div>
+                    {/* TETRIS COME L'ANALISI: la card si trascina dalla pillola
+                        in testa e va dove la molli, resize dall'angolo in basso
+                        a destra, le altre si compattano. Tutto salvato per te.
+                        ⚠️ API v2 di react-grid-layout: le prop PIATTE (cols,
+                        rowHeight, draggableHandle…) NON esistono e verrebbero
+                        ignorate in silenzio — la config passa SOLO da
+                        gridConfig/dragConfig (prima bocciatura: coi default
+                        giravano 12 colonne e drag dall'intera card). */}
+                    {pilaMobile ? (
+                        /* telefono: pila semplice nell'ordine del layout — il
+                           tetris a 8 colonne su 390px farebbe francobolli.
+                           Taglia 2 (non 1): in 390px le griglie a due tile ci
+                           stanno e non si perdono assicurazioni/L&G/sparkline */
+                        <div className="space-y-4">
+                            {[...layout].sort((a, b) => (a.y - b.y) || (a.x - b.x)).map((w) => {
+                                const info = infoWidget(w.k, ctx);
+                                if (!info) return null;
+                                return (
+                                    <div key={w.k} className="relative group/pw">
+                                        <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
+                                            className="absolute top-2 right-2 z-10 p-1 rounded-full bg-slate-900/80 border border-white/10 text-rose-300 opacity-60 active:opacity-100"><X className="w-3 h-3" /></button>
+                                        {/* tetto: senza altezza di cella gli scroll interni sono
+                                            inerti e le liste lunghe (Accessi) sarebbero infinite */}
+                                        <div className="max-h-[70vh] overflow-y-auto rounded-2xl">{renderWidget(w.k, ctx, 2)}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <GridLayout className="tf-griglia" width={gridW}
+                            gridConfig={{ cols: 8, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
+                            dragConfig={{ handle: ".tf-drag", cancel: "button" }}
+                            layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 2 }))}
+                            onLayoutChange={onLayoutChange}>
+                            {layout.map((w) => {
+                                const info = infoWidget(w.k, ctx);
+                                if (!info) return null;
+                                const contenuto = renderWidget(w.k, ctx, tagliaDaCols(w.s));
+                                return (
+                                    <div key={w.k} className="group/wg relative @container [container-type:size]">
+                                        <div className="absolute -top-2.5 left-3 right-3 z-20 flex items-center gap-1 opacity-0 group-hover/wg:opacity-100 transition-opacity">
+                                            <span title="Trascina per spostare la card"
+                                                className="tf-drag flex items-center gap-1 bg-indigo-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg cursor-grab active:cursor-grabbing select-none touch-none max-w-[70%]">
+                                                <GripVertical className="w-3 h-3 shrink-0" /> <span className="truncate">{info.label}</span>
+                                            </span>
+                                            <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
+                                                className="ml-auto p-1 rounded-full bg-slate-900/90 border border-white/10 text-rose-300 hover:bg-rose-500/30 shadow-lg"><X className="w-3 h-3" /></button>
+                                        </div>
+                                        {/* il contenuto riempie la card e scorre se più alto: la
+                                            taglia 1·2·4 dei widget deriva dalla larghezza corrente */}
+                                        <div className="h-full min-h-0 overflow-y-auto rounded-2xl [&>*]:min-h-full">{contenuto}</div>
+                                    </div>
+                                );
+                            })}
+                        </GridLayout>
+                    )}
+                    {layout.length === 0 && (
+                        <div className="glass-card p-8 text-center text-sm text-slate-400">
+                            Home vuota — premi <b>＋ Aggiungi</b> per comporla.
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function Dashboard() {
     const { user } = useAuth();
     const { seesAll, stores: myStores, loaded: visLoaded } = useVisibleStores();
@@ -116,15 +205,12 @@ export default function Dashboard() {
     const [layout, setLayout] = useState([]);
     const layoutPronto = useRef(false);
     // niente più editMode: come nell'Analisi la griglia è SEMPRE viva — drag
-    // dalla pillola in testa alla card, resize dall'angolo, X su hover
-    const { width: gridW, containerRef: gridRef, mounted: gridMounted } = useContainerWidth();
-    // pila mobile con ISTERESI (entra <600, esce >680): ballando sul confine
-    // il cambio pila↔griglia rimonterebbe tutti i widget (e le loro fetch)
-    const [pilaMobile, setPilaMobile] = useState(false);
-    useEffect(() => {
-        if (!gridW) return;
-        setPilaMobile((cur) => (cur ? gridW < 680 : gridW < 600));
-    }, [gridW]);
+    // dalla pillola in testa alla card, resize dall'angolo, X su hover.
+    // La MISURA della larghezza vive dentro GrigliaHome (componente a parte):
+    // useContainerWidth osserva il nodo solo al proprio mount, quindi l'hook
+    // deve nascere INSIEME al wrapper — qui sopra ci sono `if (!user) return
+    // null` e il loading che al primo commit lo terrebbero fuori dal DOM
+    // (terza bocciatura: width inchiodata a 1280 su ogni F5).
     const [addOpen, setAddOpen] = useState(false);
 
     const [negoziAss, setNegoziAss] = useState([]);
@@ -538,82 +624,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* il ref di misura vive su un wrapper SEMPRE montato (seconda
-                bocciatura): useContainerWidth misura una volta sola al mount —
-                se il contenitore nascesse a dati pronti la larghezza resterebbe
-                il default 1280 per sempre (pila mobile irraggiungibile,
-                buco/overflow su ogni schermo diverso, zero reflow al resize) */}
-            <div ref={gridRef}>
-            {loading ? (
-                <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento dati…</div>
-            ) : (
-                <div>
-                    {/* TETRIS COME L'ANALISI (Luca 25/08 notte): react-grid-layout —
-                        la card si trascina dalla pillola in testa e va dove la
-                        molli, resize dall'angolo in basso a destra, le altre si
-                        compattano in verticale. Tutto salvato solo per te. */}
-                    {/* ⚠️ API v2 di react-grid-layout: le prop PIATTE (cols,
-                        rowHeight, draggableHandle…) NON esistono e verrebbero
-                        ignorate in silenzio — la config passa SOLO da
-                        gridConfig/dragConfig (bocciatura del revisore: coi
-                        default giravano 12 colonne e drag dall'intera card,
-                        cioè il «buco a destra» e lo scroll touch morto). */}
-                    {gridMounted && pilaMobile ? (
-                        /* telefono: pila semplice nell'ordine del layout — il
-                           tetris a 8 colonne su 390px farebbe francobolli.
-                           Taglia 2 (non 1): in 390px le griglie a due tile ci
-                           stanno e non si perdono assicurazioni/L&G/sparkline */
-                        <div className="space-y-4">
-                            {[...layout].sort((a, b) => (a.y - b.y) || (a.x - b.x)).map((w) => {
-                                const info = infoWidget(w.k, ctx);
-                                if (!info) return null;
-                                return (
-                                    <div key={w.k} className="relative group/pw">
-                                        <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
-                                            className="absolute top-2 right-2 z-10 p-1 rounded-full bg-slate-900/80 border border-white/10 text-rose-300 opacity-60 active:opacity-100"><X className="w-3 h-3" /></button>
-                                        {/* tetto: senza altezza di cella gli scroll interni sono
-                                            inerti e le liste lunghe (Accessi) sarebbero infinite */}
-                                        <div className="max-h-[70vh] overflow-y-auto rounded-2xl">{renderWidget(w.k, ctx, 2)}</div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : gridMounted && (
-                        <GridLayout className="tf-griglia" width={gridW}
-                            gridConfig={{ cols: 8, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
-                            dragConfig={{ handle: ".tf-drag", cancel: "button" }}
-                            layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 2 }))}
-                            onLayoutChange={onLayoutChange}>
-                            {layout.map((w) => {
-                                const info = infoWidget(w.k, ctx);
-                                if (!info) return null;
-                                const contenuto = renderWidget(w.k, ctx, tagliaDaCols(w.s));
-                                return (
-                                    <div key={w.k} className="group/wg relative @container [container-type:size]">
-                                        <div className="absolute -top-2.5 left-3 right-3 z-20 flex items-center gap-1 opacity-0 group-hover/wg:opacity-100 transition-opacity">
-                                            <span title="Trascina per spostare la card"
-                                                className="tf-drag flex items-center gap-1 bg-indigo-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg cursor-grab active:cursor-grabbing select-none touch-none max-w-[70%]">
-                                                <GripVertical className="w-3 h-3 shrink-0" /> <span className="truncate">{info.label}</span>
-                                            </span>
-                                            <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
-                                                className="ml-auto p-1 rounded-full bg-slate-900/90 border border-white/10 text-rose-300 hover:bg-rose-500/30 shadow-lg"><X className="w-3 h-3" /></button>
-                                        </div>
-                                        {/* il contenuto riempie la card e scorre se più alto: la
-                                            taglia 1·2·4 dei widget deriva dalla larghezza corrente */}
-                                        <div className="h-full min-h-0 overflow-y-auto rounded-2xl [&>*]:min-h-full">{contenuto}</div>
-                                    </div>
-                                );
-                            })}
-                        </GridLayout>
-                    )}
-                    {layout.length === 0 && (
-                        <div className="glass-card p-8 text-center text-sm text-slate-400">
-                            Home vuota — premi <b>＋ Aggiungi</b> per comporla.
-                        </div>
-                    )}
-                </div>
-            )}
-            </div>
+            <GrigliaHome loading={loading} layout={layout} ctx={ctx} onLayoutChange={onLayoutChange} rimuovi={rimuovi} />
 
             {/* pannello Aggiungi widget */}
             {addOpen && (
