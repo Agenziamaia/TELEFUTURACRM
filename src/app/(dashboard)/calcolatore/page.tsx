@@ -324,7 +324,9 @@ export default function CalcolatorePage() {
     let tierProj = 0;
     for (const sg of scalaRiga) if (puntiProj >= sg.soglia_da) tierProj = sg.tier;
     // preselezione sulla PROIEZIONE (a inizio mese, senza dati, vale la live)
-    const tier = tierSel == null ? (proiezioneOn && avz ? tierProj : tierLive) : tierSel;
+    // pista appoggiata (S4 business): niente scala propria → la proiezione
+    // non sa calcolare il tier, vale quello live (dalla soglia della madre)
+    const tier = tierSel == null ? (proiezioneOn && avz && scalaRiga.length ? tierProj : tierLive) : tierSel;
     // modello W3: € complessivi del set — componenti a moltiplicatore ×canone
     // + gettoni flat (compenso contrattuale); brand classici = valore secco
     const canone = offSel?.canone_mensile == null ? null : Number(offSel.canone_mensile);
@@ -447,7 +449,13 @@ export default function CalcolatorePage() {
             {brand && tab?.derivato && (
                 <div className="glass-panel rounded-2xl px-4 py-2.5 mb-5 text-[12px] text-slate-400">
                     🧮 Tabellare ragazzi <b className="text-slate-200">derivato dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista
-                    ({tab.piste.map(p => `${p.nome} ${p.perc_ragazzi ?? 100}%`).join(" · ")}) — si regola dalla pagina Gare dell&apos;operatore, lato azienda.
+                    ({tab.piste.map(p => {
+                        // «✍️ manuale» = tutti gli importi della pista inseriti a mano
+                        // (pay_ragazzi_tiers): la % di derivazione non si applica
+                        const rrP = tab.righe.filter(r => r.pista === p.chiave && !r.gettone);
+                        const man = rrP.length > 0 && rrP.every(r => Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0);
+                        return `${p.nome} ${man ? "✍️ manuale" : `${p.perc_ragazzi ?? 100}%`}`;
+                    }).join(" · ")}) — si regola dalla pagina Gare dell&apos;operatore, lato azienda.
                 </div>
             )}
 
@@ -680,7 +688,7 @@ export default function CalcolatorePage() {
                                         {proiezioneOn && (
                                             <div className="text-[11px] text-slate-500 mb-1">oggi: {a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</div>
                                         )}
-                                        <div className="text-[11px] text-slate-500 mb-1">soglie: {scalaP.map(sg => sg.soglia_da).join(" · ")}</div>
+                                        {scalaP.length > 0 && <div className="text-[11px] text-slate-500 mb-1">soglie: {scalaP.map(sg => sg.soglia_da).join(" · ")}</div>}
                                         <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
                                             <div className="h-full rounded-full" style={{ width: `${perc}%`, background: meta?.color || "#6366f1" }} />
                                         </div>

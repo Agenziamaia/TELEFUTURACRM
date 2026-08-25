@@ -23,7 +23,11 @@
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 
-export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null; soglie_pct?: number | null; soglie_max?: number | null };
+// soglie_di (S4 25/08, «la soglia è unica»): chiave della pista MADRE — la
+// pista appoggiata non ha soglie proprie: i suoi pezzi contano NELLA scala
+// della madre (canvass unico su commissioning diviso) e la sua soglia È
+// quella della madre. La % ai ragazzi resta la sua.
+export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null; soglie_pct?: number | null; soglie_max?: number | null; soglie_di?: string | null };
 export type PaySoglia = { pista: string; tier: number; soglia_da: number; soglia_a: number | null };
 export type PayRiga = {
     id: string; pista: string | null; nome: string;
@@ -91,7 +95,7 @@ export function estremiMese(monthISO: string): { primo: string; ultimo: string }
 
 async function caricaTabellareLato(brand: string, monthISO: string, lato: string): Promise<Tabellare | null> {
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
-        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
+        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max, soglie_di").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
         supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
@@ -802,16 +806,26 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
         if (puntiTelMobile > ammessi) punti["mobile"] = sim + ammessi;
     }
     const piste: Record<string, AvanzamentoPista> = {};
+    // PISTA APPOGGIATA (S4 25/08, «la soglia è unica»): i pezzi delle piste
+    // con soglie_di si sommano nel conteggio della MADRE prima di leggere le
+    // soglie — il canvass 75/150 conta TUTTI i PDP, il commissioning resta
+    // diviso per sezione. A video ogni sezione conserva i suoi punti/pezzi.
     for (const p of tab.piste) {
-        const scala = tab.soglie.filter(s => s.pista === p.chiave).sort((a, b) => a.tier - b.tier);
+        if (!p.soglie_di || p.soglie_di === p.chiave) continue;
+        punti[p.soglie_di] = Math.round(((punti[p.soglie_di] || 0) + (punti[p.chiave] || 0)) * 100) / 100;
+    }
+    for (const p of tab.piste) {
+        const rifer = p.soglie_di || p.chiave;
+        const scala = tab.soglie.filter(s => s.pista === rifer).sort((a, b) => a.tier - b.tier);
         const val = Math.round((punti[p.chiave] || 0) * 100) / 100;
+        const valScala = Math.round((punti[rifer] || 0) * 100) / 100;
         let presa: PaySoglia | null = null;
-        for (const s of scala) if (val >= s.soglia_da) presa = s;
-        const prossima = scala.find(s => s.soglia_da > val) || null;
+        for (const s of scala) if (valScala >= s.soglia_da) presa = s;
+        const prossima = scala.find(s => s.soglia_da > valScala) || null;
         piste[p.chiave] = {
             chiave: p.chiave, nome: p.nome, punti: val, pezzi: pezzi[p.chiave] || 0,
             tier: presa ? presa.tier : 0, soglia: presa, prossima,
-            mancano: prossima ? Math.round((prossima.soglia_da - val) * 100) / 100 : null,
+            mancano: prossima ? Math.round((prossima.soglia_da - valScala) * 100) / 100 : null,
         };
     }
     // VINCOLO W3 (lettera agosto): l'accesso alla 4ª soglia mobile è

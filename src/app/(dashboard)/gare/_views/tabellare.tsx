@@ -485,7 +485,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 <div className="space-y-5">
                     <div className="glass-panel rounded-2xl px-4 py-2.5 flex items-center justify-between flex-wrap gap-2">
                         <div className="text-[12px] text-slate-300">
-                            🧮 Tabellare ragazzi <b>compilato dal lato azienda</b> — {derivato.piste.map(x => `${x.nome} ${x.perc_ragazzi ?? 100}%`).join(" · ")}. Sola lettura: per modificare si lavora sull&apos;azienda.
+                            🧮 Tabellare ragazzi <b>compilato dal lato azienda</b> — {derivato.piste.map(x => {
+                                const rrP = derivato.righe.filter(r => r.pista === x.chiave && !r.gettone);
+                                const man = rrP.filter(r => Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0).length;
+                                return `${x.nome} ${man > 0 && man === rrP.length ? "✍️ manuale" : `${x.perc_ragazzi ?? 100}%${man ? ` (✍️ ${man} a mano)` : ""}`}`;
+                            }).join(" · ")}. Gli importi si correggono riga per riga (💾 = € fissi).
                         </div>
                         {vaiAzienda && <button onClick={vaiAzienda} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
                     </div>
@@ -617,7 +621,16 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             <div key={px.id} className="glass-panel rounded-2xl overflow-hidden">
                                 <button onClick={() => toggleTab(`der|${px.chiave}`)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
                                     <span className="text-sm font-bold text-white">{emojiPista(px.nome)} {px.nome}</span>
-                                    <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>
+                                    {/* COMMISSIONING MANUALE (Luca 25/08): con gli € fissi il
+                                        «× 100%» mentiva — se gli importi sono inseriti a mano
+                                        la % di derivazione non c'entra più. Vale per TUTTI
+                                        gli operatori che passano dal derivato. */}
+                                    {(() => {
+                                        const man = rr.filter(r => Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0).length;
+                                        if (man === rr.length) return <span className="text-[11px] text-amber-300 font-semibold" title="Tutti gli importi di questa sezione sono inseriti a mano: la % di derivazione dall'azienda non si applica">✍️ commissioning manuale</span>;
+                                        if (man > 0) return <><span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span><span className="text-[11px] text-amber-300 font-semibold" title="Alcune righe hanno importi inseriti a mano: per quelle la % non si applica">✍️ {man} a mano</span></>;
+                                        return <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>;
+                                    })()}
                                     <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                                 </button>
                                 {/* CONTENUTO nascosto ma MONTATO (revisore 25/08: lo
