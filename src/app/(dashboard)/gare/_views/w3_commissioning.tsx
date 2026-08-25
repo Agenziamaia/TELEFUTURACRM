@@ -104,7 +104,10 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     .map(x => ({
                         ...x,
                         pay_base: x.pay_base == null ? null : Math.round(x.pay_base * fU(x.pista) * 100) / 100,
-                        pay_tiers: x.pay_tiers.map((v2, i) => (v2 == null ? v2 : Math.round(Number(v2) * fT(x.pista, i) * 100) / 100)),
+                        // le soglie dei ragazzi sono da S1 a S3 (Luca 25/08):
+                        // i tiers oltre la terza (mobile 4, fisso/gas 5 della
+                        // lettera azienda) non esistono per loro — via
+                        pay_tiers: x.pay_tiers.slice(0, 3).map((v2, i) => (v2 == null ? v2 : Math.round(Number(v2) * fT(x.pista, i) * 100) / 100)),
                     }));
                 for (const k of Object.keys(tm)) tm[k] = Math.min(tm[k], 3);   // i ragazzi vedono le prime 3 soglie
             }
@@ -743,10 +746,16 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     </div>
                 );
             })}
+            {ragazzi ? (
+                <p className="text-[11px] text-slate-500 mt-2">
+                    I pay sono il commissioning azienda × la % della soglia (si governano nella card 👥 del Commissioning azienda). Le soglie S1-S3 sono nella card 📐 in testa alla scheda: la soglia raggiunta sceglie la colonna, retroattiva dal 1° pezzo.
+                </p>
+            ) : (
             <p className="text-[11px] text-slate-500 mt-2">
                 🟢 Verde = calcolato dalle Regole di gara (canone × componenti) · ⬜ celle bianche = gettoni one-shot della lettera, editabili qui (li riempirà l&apos;upload della gara mensile).
                 💼 Colonne Business: premio a evento della gara Business alla soglia di rete (target e importi nella tabella sopra) — si somma al pay; retroattivo, 4ª soglia solo col BP Plus+; contano anche le Protezione Pro Negozi (5 punti).
             </p>
+            )}
             {/* bolla di scomposizione: in PORTAL sul body — il backdrop-filter
                 del glass-panel rompe il position:fixed dei discendenti (le
                 coordinate diventavano relative al pannello: bolla lontanissima,
@@ -887,55 +896,101 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
 }
 
 
-/* ═══ 📐 SOGLIE RAGAZZI W3 (Luca 25/08): in testa alla scheda ragazzi —
-   TUTTE le piste a soglie (mobile, fisso, luce&gas), derivate dal lato
-   azienda (prime 3, S1=S1). Sola lettura: le soglie si governano
-   dall'azienda. ═══════════════════════════════════════════════════════ */
+/* ═══ 📐 SOGLIE RAGAZZI W3 (Luca 25/08, seconda passata): in testa alla
+   scheda ragazzi — mobile, fisso e luce&gas, da S1 a S3, EDITABILI. Si
+   scrivono in pay_soglie lato "ragazzi": per il motore le soglie manuali
+   dei ragazzi VINCONO su quelle derivate dall'azienda (esito 12/08), quindi
+   vista e calcolo restano allineati per costruzione. Casella vuota = per
+   quella pista valgono le derivate azienda (prime 3), mostrate come
+   placeholder; tutte vuote e niente derivate = gara senza soglie (si paga
+   la colonna base). ═══════════════════════════════════════════════════ */
 const NOME_PISTA_SOGLIE: Record<string, string> = { mobile: "📱 Mobile", fisso: "🏠 Fisso", lucegas: "⚡ Luce & Gas" };
 export function W3RagazziSoglie({ mese }: { mese: string }) {
     const monthISO = `${mese}-01`;
-    const [soglie, setSoglie] = useState<{ pista: string; tier: number; soglia_da: number }[] | null>(null);
+    // effettive = ciò che il motore usa OGGI (manuali che vincono, o derivate
+    // azienda tagliate a soglie_max): riempiono i placeholder delle caselle
+    const [effettive, setEffettive] = useState<Record<string, number[]> | null>(null);
     const [um, setUm] = useState<Record<string, string>>({});
+    const [manuali, setManuali] = useState<Record<string, Record<number, string>>>({});
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState<{ testo: string; errore?: boolean } | null>(null);
+    const carica = async (vivo?: () => boolean) => {
+        const [tab, man] = await Promise.all([
+            caricaTabellare("windtre", monthISO),
+            supabase.from("pay_soglie").select("pista, tier, soglia_da").eq("brand", "windtre").eq("month", monthISO).eq("lato", "ragazzi"),
+        ]);
+        if (vivo && !vivo()) return;
+        const eff: Record<string, number[]> = {};
+        (tab?.soglie || []).filter(sg => NOME_PISTA_SOGLIE[sg.pista] && sg.tier <= 3)
+            .forEach(sg => { (eff[sg.pista] ??= [])[sg.tier - 1] = sg.soglia_da; });
+        const mm: Record<string, Record<number, string>> = {};
+        ((man.data ?? []) as { pista: string; tier: number; soglia_da: number }[]).forEach(r => {
+            if (NOME_PISTA_SOGLIE[r.pista] && Number(r.tier) <= 3) (mm[r.pista] ??= {})[Number(r.tier)] = String(Number(r.soglia_da));
+        });
+        setEffettive(eff);
+        setUm(Object.fromEntries((tab?.piste || []).map(pp => [pp.chiave, pp.um])));
+        setManuali(mm);
+    };
     useEffect(() => {
         let vivo = true;
-        (async () => {
-            const tab = await caricaTabellare("windtre", monthISO);
-            if (!vivo) return;
-            setSoglie((tab?.soglie || []).filter(sg => NOME_PISTA_SOGLIE[sg.pista]));
-            setUm(Object.fromEntries((tab?.piste || []).map(pp => [pp.chiave, pp.um])));
-        })();
+        carica(() => vivo);
         return () => { vivo = false; };
-    }, [monthISO]);
-    if (soglie === null) return null;
-    const piste = Object.keys(NOME_PISTA_SOGLIE).filter(k => soglie.some(sg => sg.pista === k));
-    if (!piste.length) return null;
-    const maxT = Math.max(...piste.map(k => soglie.filter(sg => sg.pista === k).length));
+    }, [monthISO]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const salva = async () => {
+        setBusy(true); setMsg(null);
+        for (const k of Object.keys(NOME_PISTA_SOGLIE)) {
+            // compilate in ordine di casella, rinumerate S1..Sn
+            const vals = [1, 2, 3].map(t => String(manuali[k]?.[t] ?? "").trim().replace(",", ".")).filter(v => v !== "");
+            const nums = vals.map(Number);
+            if (nums.some(n => !Number.isFinite(n) || n < 0)) {
+                setBusy(false); setMsg({ testo: `${NOME_PISTA_SOGLIE[k]}: c'è un valore che non è un numero.`, errore: true }); return;
+            }
+            if (nums.some((n, i) => i > 0 && n <= nums[i - 1])) {
+                setBusy(false); setMsg({ testo: `${NOME_PISTA_SOGLIE[k]}: le soglie devono crescere (S1 < S2 < S3).`, errore: true }); return;
+            }
+            const del = await supabase.from("pay_soglie").delete()
+                .eq("brand", "windtre").eq("month", monthISO).eq("lato", "ragazzi").eq("pista", k);
+            if (del.error) { setBusy(false); setMsg({ testo: "Errore: " + del.error.message, errore: true }); return; }
+            if (nums.length) {
+                // fino-a in catena come nel motore (l'ultima resta aperta)
+                const righe = nums.map((n, i) => ({
+                    brand: "windtre", month: monthISO, lato: "ragazzi", pista: k,
+                    tier: i + 1, soglia_da: n, soglia_a: i < nums.length - 1 ? nums[i + 1] - 1 : null,
+                }));
+                const ins = await supabase.from("pay_soglie").insert(righe);
+                if (ins.error) { setBusy(false); setMsg({ testo: "Errore: " + ins.error.message, errore: true }); return; }
+            }
+        }
+        await carica();
+        setBusy(false); setMsg({ testo: "Soglie salvate ✓ — la gara dei ragazzi le usa da subito." });
+    };
+    if (effettive === null) return null;
     return (
         <div className="glass-panel rounded-2xl p-5 border-l-4 border-amber-400/60">
-            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">📐 Soglie — le prime {maxT} della gara azienda (la tua S1 è la S1 del negozio)</div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse max-w-2xl">
-                    <thead>
-                        <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                            <th className="text-left font-semibold px-3 py-1.5">Pista</th>
-                            {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-2 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {piste.map(k => {
-                            const sg = soglie.filter(x => x.pista === k).sort((a, b) => a.tier - b.tier);
-                            return (
-                                <tr key={k} className="border-t border-white/[0.04]">
-                                    <td className="px-3 py-1.5 text-slate-200 font-semibold whitespace-nowrap">{NOME_PISTA_SOGLIE[k]} <span className="text-[10px] text-slate-500 font-normal">({um[k] || "punti"})</span></td>
-                                    {Array.from({ length: maxT }, (_, i) => (
-                                        <td key={i} className="px-2 py-1.5 text-center font-bold text-white tabular-nums">{sg[i] ? sg[i].soglia_da : <span className="text-slate-700">—</span>}</td>
-                                    ))}
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+                <div className="text-[11px] uppercase tracking-wider text-slate-400">📐 Soglie della gara ragazzi — da S1 a S3: la soglia raggiunta sceglie la colonna dei pay</div>
+                <button onClick={salva} disabled={busy} className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold disabled:opacity-50">{busy ? "…" : "💾 Salva soglie"}</button>
             </div>
+            <p className="text-[11px] text-slate-500 mb-3">Soglie proprie dei ragazzi, in punti. Casella vuota = vale la soglia dell&apos;azienda (in grigio, dove esiste).</p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {Object.keys(NOME_PISTA_SOGLIE).map(k => (
+                    <div key={k} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs font-bold text-slate-200 mb-2">{NOME_PISTA_SOGLIE[k]} <span className="text-[10px] text-slate-500 font-normal">({um[k] || "punti"})</span></p>
+                        <div className="flex items-center gap-2">
+                            {[1, 2, 3].map(t => (
+                                <label key={t} className="flex-1 text-center">
+                                    <span className="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">S{t}</span>
+                                    <input inputMode="decimal" value={manuali[k]?.[t] ?? ""}
+                                        onChange={e => setManuali(prev => ({ ...prev, [k]: { ...(prev[k] || {}), [t]: e.target.value } }))}
+                                        placeholder={effettive[k]?.[t - 1] != null ? String(effettive[k][t - 1]) : "—"}
+                                        className="glass-input w-full text-sm text-center rounded-lg py-1.5" />
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            {msg && <p className={cn("text-xs mt-3", msg.errore ? "text-rose-300" : "text-emerald-300")}>{msg.testo}</p>}
         </div>
     );
 }
