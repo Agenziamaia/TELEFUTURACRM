@@ -592,10 +592,17 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
     setEliminando(true);
     try {
       try { await supabase.from("usati_malus").delete().eq("usato_id", dev.id); } catch { /* tabella/colonna assente */ }
-      for (const url of [dev.allegato_documento, dev.allegato_dichiarazione]) {
-        const m = String(url || "").split("/contracts/")[1];
-        if (m) { try { await supabase.storage.from("contracts").remove(["contracts/" + m]); } catch { /* best-effort */ } }
-      }
+      // gli allegati (documento, dichiarazione, contabile bonifico) vivono nel
+      // bucket usati_attachments come path o URL pubblico: si estrae la coda.
+      // Prima si cercava "/contracts/" nel bucket contracts: non combaciava mai
+      // e la pulizia promessa dalla conferma era un no-op (rilievo revisore).
+      const pathDa = (v: string | null | undefined) => {
+        const s = String(v || ""); if (!s) return null;
+        const coda = s.split("/usati_attachments/")[1];
+        return coda || (s.startsWith("http") ? null : s);
+      };
+      const daTogliere = [pathDa(dev.allegato_documento), pathDa(dev.allegato_dichiarazione), dev.pagamento?.bonifico_contabile?.path || null].filter(Boolean) as string[];
+      if (daTogliere.length) { try { await supabase.storage.from("usati_attachments").remove(daTogliere); } catch { /* best-effort */ } }
       const { error } = await supabase.from("usati").delete().eq("id", dev.id);
       if (error) { alert("Eliminazione NON riuscita: " + error.message); setEliminando(false); return; }
       onDeleted(dev.id);
@@ -711,6 +718,13 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
     setDev(upd); onSave(upd);
   };
   const [contabileBusy, setContabileBusy] = useState(false);
+  // specchi vivi anti-closure-stantia (rilievo revisore): l'upload può durare
+  // e nel frattempo il pannello cambia — al termine si salva lo stato VIVO,
+  // non lo snapshot catturato al click
+  const devRef = useRef(dev);
+  useEffect(() => { devRef.current = dev; }, [dev]);
+  const noteRef = useRef(noteTecnico);
+  useEffect(() => { noteRef.current = noteTecnico; }, [noteTecnico]);
   const allegaContabile = async (file: File) => {
     setContabileBusy(true);
     try {
@@ -718,8 +732,11 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
       const path = `contabili/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
       const { error } = await supabase.storage.from("usati_attachments").upload(path, file);
       if (error) throw error;
-      const upd: Device = { ...dev, pagamento: { ...dev.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "Amministrazione", il: new Date().toISOString() } }, note_tecnico: noteTecnico };
+      const cur = devRef.current;
+      const vecchio = cur.pagamento.bonifico_contabile?.path || null;
+      const upd: Device = { ...cur, pagamento: { ...cur.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "Amministrazione", il: new Date().toISOString() } }, note_tecnico: noteRef.current };
       setDev(upd); onSave(upd);
+      if (vecchio && vecchio !== path) { try { await supabase.storage.from("usati_attachments").remove([vecchio]); } catch { /* best-effort */ } }
     } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
     setContabileBusy(false);
   };
@@ -1846,6 +1863,12 @@ function GestioneUsatiInner() {
   const [bonFattoDev, setBonFattoDev] = useState<Device | null>(null);
   const [bonFattoFile, setBonFattoFile] = useState<File | null>(null);
   const [bonBusy, setBonBusy] = useState(false);
+  // id della riga con upload contabile in corso (blocca doppi click e ri-upload)
+  const [bonAllegaBusy, setBonAllegaBusy] = useState<Device["id"] | null>(null);
+  // specchio vivo di devices: gli handler async leggono la riga FRESCA al
+  // termine dell'upload, non lo snapshot catturato al click (rilievo revisore)
+  const devicesRef = useRef(devices);
+  useEffect(() => { devicesRef.current = devices; }, [devices]);
   const uploadContabileBon = async (file: File) => {
     const ext = file.name.split(".").pop();
     const path = `contabili/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
@@ -1853,27 +1876,55 @@ function GestioneUsatiInner() {
     if (error) throw error;
     return path;
   };
+  const rimuoviFileBon = async (path: string | null) => {
+    if (!path) return;
+    try { await supabase.storage.from("usati_attachments").remove([path]); } catch { /* best-effort */ }
+  };
+  // salvataggio MIRATO del solo jsonb pagamento (rilievo revisore 25/08):
+  // niente riscrittura a riga intera da snapshot — le modifiche concorrenti su
+  // altre colonne restano intatte; l'errore torna al chiamante, mai muto
+  const salvaPagamento = async (id: Device["id"], pag: Pagamento): Promise<string | null> => {
+    const pagRow = { ...pag, bonifico_date: pag.bonifico_date instanceof Date ? pag.bonifico_date.toISOString() : pag.bonifico_date };
+    const { error } = await supabase.from("usati").update({ pagamento: pagRow }).eq("id", id);
+    if (error) return error.message || "salvataggio non riuscito";
+    setDevices(p => p.map(x => x.id === id ? { ...x, pagamento: pag } : x));
+    return null;
+  };
   // allega (o sostituisce) la contabile su una riga già fatta, dal pannello
   const allegaContabileBon = async (d: Device, file: File) => {
+    if (bonAllegaBusy !== null) return;
+    setBonAllegaBusy(d.id);
     try {
       const path = await uploadContabileBon(file);
-      const pag: Pagamento = { ...d.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "—", il: new Date().toISOString() } };
-      await handleSaveDevice({ ...d, pagamento: pag });
+      const base = devicesRef.current.find(x => x.id === d.id) || d;
+      const vecchio = base.pagamento.bonifico_contabile?.path || null;
+      const pag: Pagamento = { ...base.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "—", il: new Date().toISOString() } };
+      const err = await salvaPagamento(d.id, pag);
+      if (err) { await rimuoviFileBon(path); alert("Contabile caricata ma non salvata: " + err); }
+      else if (vecchio && vecchio !== path) await rimuoviFileBon(vecchio);
     } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
+    setBonAllegaBusy(null);
   };
-  // conferma della modale: segna fatto e archivia l'eventuale contabile
+  // conferma della modale: segna fatto e archivia l'eventuale contabile.
+  // Su errore la modale RESTA aperta (niente illusione di successo).
   const confermaBonFatto = async () => {
-    if (!bonFattoDev) return;
+    if (!bonFattoDev || bonBusy) return;
     setBonBusy(true);
     try {
-      let contabile = bonFattoDev.pagamento.bonifico_contabile || null;
-      if (bonFattoFile) {
-        const path = await uploadContabileBon(bonFattoFile);
-        contabile = { path, nome: bonFattoFile.name, da: user?.name || "—", il: new Date().toISOString() };
+      const fileNuovo = bonFattoFile;
+      const nuovoPath = fileNuovo ? await uploadContabileBon(fileNuovo) : null;
+      const base = devicesRef.current.find(x => x.id === bonFattoDev.id) || bonFattoDev;
+      const vecchio = base.pagamento.bonifico_contabile?.path || null;
+      const contabile = fileNuovo && nuovoPath
+        ? { path: nuovoPath, nome: fileNuovo.name, da: user?.name || "—", il: new Date().toISOString() }
+        : (base.pagamento.bonifico_contabile || null);
+      const pag: Pagamento = { ...base.pagamento, bonifico_stato: "fatto", bonifico_effettuato: true, bonifico_operatore: user?.name || "—", bonifico_date: new Date(), bonifico_contabile: contabile };
+      const err = await salvaPagamento(bonFattoDev.id, pag);
+      if (err) { await rimuoviFileBon(nuovoPath); alert("Salvataggio non riuscito: " + err); }
+      else {
+        if (vecchio && nuovoPath && vecchio !== nuovoPath) await rimuoviFileBon(vecchio);
+        setBonFattoDev(null); setBonFattoFile(null);
       }
-      const pag: Pagamento = { ...bonFattoDev.pagamento, bonifico_stato: "fatto", bonifico_effettuato: true, bonifico_operatore: user?.name || "—", bonifico_date: new Date(), bonifico_contabile: contabile };
-      await handleSaveDevice({ ...bonFattoDev, pagamento: pag });
-      setBonFattoDev(null); setBonFattoFile(null);
     } catch (e) { alert("Salvataggio non riuscito: " + (e instanceof Error ? e.message : "errore")); }
     setBonBusy(false);
   };
@@ -2055,6 +2106,9 @@ function GestioneUsatiInner() {
       ({ error: e } = await supabase.from("usati").update(legacy).eq("id", u.id));
     }
     if (!e) setDevices(p => p.map(d => d.id === u.id ? u : d));
+    // l'errore ora TORNA al chiamante (rilievo revisore 25/08): prima veniva
+    // inghiottito e i flussi a valle chiudevano come riusciti su salvataggi falliti
+    const esito = e ? (e.message || "salvataggio non riuscito") : null;
     // ── RICAMBI DA ORDINARE (Luca 29/07): task ⚡ ai designati dell'incarico
     //    per ogni ricambio NUOVO in stato "da ordinare" (non già segnalato) ──
     if (!e) {
@@ -2082,6 +2136,7 @@ function GestioneUsatiInner() {
         }
       } catch { /* best-effort */ }
     }
+    return esito;
   }, [devices, user?.name]);
 
   const handleRegistra = useCallback(async (data: {
@@ -2668,10 +2723,11 @@ function GestioneUsatiInner() {
           });
           void scaricaXlsx(`bonifici_${nome}_${new Date().toISOString().slice(0, 10)}`, intestazioni, righe, "Bonifici");
         };
-        const setStatoBon = async (d: Device, stato: "stampato" | "fatto") => {
-          const pag = { ...d.pagamento, bonifico_stato: stato, bonifico_effettuato: stato === "fatto", bonifico_operatore: stato === "fatto" ? (user?.name || "—") : d.pagamento.bonifico_operatore, bonifico_date: stato === "fatto" ? new Date() : d.pagamento.bonifico_date };
-          const upd = { ...d, pagamento: pag };
-          await handleSaveDevice(upd);
+        // solo "stampato": il passaggio a "fatto" vive nella modale confermaBonFatto
+        const setStatoBon = async (d: Device, stato: "stampato") => {
+          const base = devicesRef.current.find(x => x.id === d.id) || d;
+          const err = await salvaPagamento(d.id, { ...base.pagamento, bonifico_stato: stato });
+          if (err) alert("Salvataggio non riuscito: " + err);
         };
         const Riga = ({ d, storico }: { d: Device; storico?: boolean }) => {
           const st = conStato(d);
@@ -2700,9 +2756,9 @@ function GestioneUsatiInner() {
                     className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 hover:bg-purple-500/35">📎 contabile</a>
                 ) : (
                   <label title="Allega la contabile del bonifico: resta archiviata con la riga"
-                    className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border border-purple-500/40 text-purple-300 hover:bg-purple-500/20 cursor-pointer">
-                    📎 allega
-                    <input type="file" accept="application/pdf,image/*" className="hidden"
+                    className={"text-[10px] font-bold uppercase px-2 py-0.5 rounded border border-purple-500/40 text-purple-300 hover:bg-purple-500/20 cursor-pointer" + (bonAllegaBusy === d.id ? " opacity-60 pointer-events-none" : "")}>
+                    {bonAllegaBusy === d.id ? "⏳ carico…" : "📎 allega"}
+                    <input type="file" accept="application/pdf,image/*" className="hidden" disabled={bonAllegaBusy !== null}
                       onChange={e => { const f = e.target.files?.[0]; if (f) void allegaContabileBon(d, f); e.target.value = ""; }} />
                   </label>
                 ))}
