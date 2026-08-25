@@ -714,6 +714,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 <span className="text-sm font-bold text-white">💰 Gettoni</span>
                                 <span className="text-xs font-normal text-slate-500">{apertaG ? "▾" : `▸ ${gettoni.length} voci`}</span>
                                 <span className="text-[11px] text-slate-500 font-normal">pagano sempre, senza soglia</span>
+                                {/* % delle piste-gettone (gas/telefoni): qui in sola
+                                    lettura, si imposta dal lato azienda */}
+                                {derivato.piste.filter(px => gettoni.some(g => g.pista === px.chiave)).map(px => (
+                                    <span key={px.id} className="text-[11px] text-amber-300/80 font-semibold">{emojiPista(px.nome)} × {px.perc_ragazzi ?? 100}%</span>
+                                ))}
                             </button>
                             <div className={apertaG ? "" : "hidden"}>
                             <table className="w-full text-sm border-collapse">
@@ -903,6 +908,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 // sciolti si editano nel Commissioning, non qui
                 if (soloRegole && ["lucegas", "cb", "business_piva", "protetti"].includes(p.chiave)) return null;
                 const rr = righeDiPista(p.chiave).filter(r => !soloRegole || !(r.gettone && !r.componente));
+                // piste SOLO-GETTONI (gas/telefoni FW): niente sezione vuota —
+                // le righe vivono nella card Gettoni e la % si governa lì
+                if (!rr.length && righe.some(r => r.pista === p.chiave && r.gettone)) return null;
                 // colonne S1..Sn: dalle soglie della pista, MA con ripiego sui
                 // pay_tiers delle righe — Mobile/Fisso W3 non hanno soglie di
                 // rete (le loro sono per negozio) e senza ripiego i
@@ -976,7 +984,25 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     <span className="text-[11px] text-slate-500 font-normal">pagano sempre, senza soglia</span>
                 </button>
                 <div className={aperteTab.has("__gettoni") ? "" : "hidden"}>
-                <div className="flex items-center justify-end px-4 pb-2">
+                <div className="flex items-center justify-end px-4 pb-2 gap-3 flex-wrap">
+                    {/* % AI RAGAZZI dei gettoni (Luca 25/08 sera: «non posso
+                        impostarla»): i gettoni con PISTA (gas/telefoni FW) si
+                        scalano con la % della loro pista — si governa qui.
+                        Le voci senza pista restano piene (100%). */}
+                    {lato === "azienda" && (
+                        <div className="flex items-center gap-3 flex-wrap mr-auto">
+                            {piste.filter(px => !righeDiPista(px.chiave).length && righe.some(r => r.pista === px.chiave && r.gettone)).map(px => (
+                                <label key={px.id} className="text-[11px] text-amber-300/90" title={`Quota dei gettoni «${px.nome}» girata ai ragazzi (vuota = 100%)`}>
+                                    {emojiPista(px.nome)} {px.nome} ×
+                                    <input value={percDraft[px.id] ?? (px.perc_ragazzi == null ? "" : String(px.perc_ragazzi))}
+                                        onChange={e => setPercDraft(prev => ({ ...prev, [px.id]: e.target.value }))}
+                                        className={inputCls + " ml-1 w-14"} placeholder="100" />%
+                                    {percDraft[px.id] != null && percDraft[px.id] !== (px.perc_ragazzi == null ? "" : String(px.perc_ragazzi)) &&
+                                        <button onClick={() => salvaPerc(px)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                </label>
+                            ))}
+                        </div>
+                    )}
                     <button onClick={() => setNuovaRigaPer(nuovaRigaPer === "__gettoni" ? null : "__gettoni")} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Gettone</button>
                 </div>
                 {nuovaRigaPer === "__gettoni" && <div className="px-4"><NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} /></div>}
