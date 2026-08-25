@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
+import { capAllowed, CAP_TRACKING, CAP_TRACKING_ESITO_ADMIN } from "@/lib/capabilities";
+import { useRolePermissions } from "@/lib/usePermissions";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { categoriaDi, controlliDi, righeTracking, vaInTracking } from "@/lib/tassonomia";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_LOGO_SCALE, TRK_BRAND_LOGOS, TRK_BADGE_OFFSET, TRK_BADGE_OFFSET_DEFAULT } from "@/lib/brandAssets";
@@ -1343,9 +1345,12 @@ function Drawer({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TrackingPdaPage() {
   const { user } = useAuth();
-  // Delega: dallo store manager in su. Esito admin: solo utenti amministrazione.
+  // Delega: dallo store manager in su. Esito admin: capacità della rotellina
+  // Permessi (Luca 25/08) — prima era il ruolo cablato "amministrativo in su",
+  // nato quando il pannello non esisteva; il default della capacità lo replica.
+  const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
   const canDelegate = ["store_manager", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
-  const canEditAdmin = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+  const canEditAdmin = capAllowed(user?.role, CAP_TRACKING.section, CAP_TRACKING_ESITO_ADMIN, perms);
   const [allMembers, setAllMembers] = useState<{ id: string; full_name: string; primary_store: string | null }[]>([]);
   const [onlyMine, setOnlyMine] = useState(false); // "delegate a me"
   useEffect(() => {

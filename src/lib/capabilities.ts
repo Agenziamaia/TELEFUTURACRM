@@ -368,6 +368,26 @@ export const CAP_PASSWORD: CapGroupFlags = {
     caps: [CAP_PASSWORD_MODIFICA, CAP_PASSWORD_STORICO],
 };
 
+// ─── TRACKING PDA: chi lavora l'esito admin (rotellina, Luca 25/08) ──────────
+// Prima era codice fisso «amministrativo in su», nato quando il pannello
+// Permessi non esisteva ancora (stesso percorso di CAP_BADGE_CORREGGE). La
+// capacità governa il pulsante «⚡ Da lavorare», la scheda Admin della pratica
+// (l'esito amministrativo che chiude definitivamente il ciclo) e la
+// compensazione dei malus. Il default fotografa il codice storico: a tabella
+// vuota NON cambia nulla.
+export const CAP_TRACKING_ESITO_ADMIN: CapDef = {
+    id: "esito_admin",
+    label: "Lavora l'esito admin (⚡ Da lavorare)",
+    desc: "Vede il pulsante «⚡ Da lavorare», apre la scheda Admin della pratica e mette l'esito amministrativo che chiude il ciclo (può anche compensare i malus). Default: amministrazione e direzione generale.",
+    default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+};
+export const CAP_TRACKING: CapGroupFlags = {
+    mode: "flags",
+    section: "/pda/tracking",
+    sectionLabel: "Tracking PDA",
+    caps: [CAP_TRACKING_ESITO_ADMIN],
+};
+
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
@@ -487,4 +507,4 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
 //  in là". Tolte pagina, API e capacità; la tabella riunione_deck e il motore
 //  contoEconomico restano dormienti per la ripresa futura.)
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
