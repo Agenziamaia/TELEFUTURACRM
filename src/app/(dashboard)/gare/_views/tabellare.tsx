@@ -23,6 +23,9 @@ type Riga = {
     // S4 (Luca 25/08): ricorrente €/pezzo/mese informativo (dall'8° mese dal
     // contratto) + € fissi ai ragazzi per soglia (vincono su % e mappa)
     ricorrente?: number | null; pay_ragazzi_tiers?: number[] | null;
+    // metadati del DERIVATO ragazzi (solo vista, mai a DB): originali azienda
+    // e % di pista — alimentano il tooltip «azienda × % = pay» (Luca 25/08)
+    _origBase?: number | null; _origTiers?: number[]; _perc?: number;
 };
 
 const BRAND_VENDITA = ["windtre", "vodafone", "fastweb", "sky", "tim", "iliad", "very", "ho", "kena", "s4", "dojo", "kipoint"];
@@ -162,6 +165,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         ...x, punti: Number(x.punti || 0),
                         pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
                         pay_tiers: (manuali ?? (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number)).slice(0, mx ? Number(mx) : undefined),
+                        // originali azienda + % di pista per il tooltip
+                        // «azienda × % = pay» sulle celle (Luca 25/08)
+                        _origBase: x.pay_base == null ? null : Number(x.pay_base),
+                        _origTiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).slice(0, mx ? Number(mx) : undefined),
+                        _perc: x.pista ? (percDi.get(x.pista) ?? 100) : 100,
                     };
                 }),
             });
@@ -666,7 +674,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     {gettoni.map(r => (
                                         <tr key={r.id} className="border-t border-white/5">
                                             <td className="px-3 py-1" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
-                                            <td className="px-1 py-1 text-center text-white font-medium">{r.pay_base ?? "—"}</td>
+                                            <td className="px-1 py-1 text-center text-white font-medium cursor-help" title={"Gettone: paga sempre, senza soglia — non si scala:\nai ragazzi va l'importo pieno dell'azienda"}>{r.pay_base ?? "—"}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -954,6 +962,22 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
         if (dbError("€ fissi ai ragazzi", error)) return;
         notify("Tornata alla derivazione a % ✓", "ok"); setDraft(null); dopo();
     };
+    // TOOLTIP di derivazione (Luca 25/08, «come su Vodafone»): sul pay si
+    // leggono l'importo azienda e l'operazione che porta al numero mostrato
+    const eur = (v: number | null | undefined) => v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
+    const perc = r._perc ?? 100;
+    const unita = r.moltiplicatore ? "" : " €";
+    const codaMolt = r.moltiplicatore ? "\n(i valori sono moltiplicatori del canone mensile)" : "";
+    const tipTier = (i: number): string | undefined => {
+        const orig = r._origTiers?.[i];
+        if (orig == null) return undefined;
+        const aPerc = Math.round(orig * perc / 100 * 100) / 100;
+        return manuale
+            ? `S${i + 1} — € fissati a mano\nall'azienda: ${eur(orig)}${unita}\ncon la derivazione al ${perc}% sarebbero ${eur(aPerc)}${unita}${codaMolt}`
+            : `S${i + 1} — all'azienda: ${eur(orig)}${unita}\n× ${perc}% ai ragazzi\n= ${eur(aPerc)}${unita}${codaMolt}`;
+    };
+    const tipBase = r._origBase == null ? undefined
+        : `Base sotto la 1ª soglia — all'azienda: ${eur(r._origBase)}${unita}\n× ${perc}% ai ragazzi\n= ${eur(r.pay_base)}${unita}${codaMolt}`;
     return (
         <tr className="border-t border-white/5 hover:bg-white/[0.03]">
             <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
@@ -962,10 +986,10 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
                 {r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}
             </td>
             <td className="px-1 py-1 text-center text-indigo-300 font-semibold">{r.punti || "—"}</td>
-            {!senzaBase && <td className="px-1 py-1 text-center text-slate-300">{r.pay_base ?? "—"}</td>}
+            {!senzaBase && <td className="px-1 py-1 text-center text-slate-300 cursor-help" title={tipBase}>{r.pay_base ?? "—"}</td>}
             {Array.from({ length: nT }, (_, i) => (
-                <td key={i} className="px-1 py-1 text-center">
-                    <input value={vals[i] ?? ""} onChange={e => { const c = [...vals]; c[i] = e.target.value; setDraft(c); }}
+                <td key={i} className="px-1 py-1 text-center" title={tipTier(i)}>
+                    <input value={vals[i] ?? ""} title={tipTier(i)} onChange={e => { const c = [...vals]; c[i] = e.target.value; setDraft(c); }}
                         className={`w-16 bg-transparent text-center text-sm border-b outline-none py-0.5 focus:border-indigo-400 ${manuale ? "text-amber-200 border-amber-500/30" : "text-white border-transparent"}`} />
                 </td>
             ))}
