@@ -928,38 +928,63 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
     }, [monthISO]);
     const salva = async () => {
         setBusy(true); setMsg(null);
-        // mappa COMPLETA o niente (revisore 25/08): con una mappa parziale il
-        // motore clampa all'ultimo tier noto (S1=70% varrebbe anche in S2/S3)
-        // mentre le viste mostrerebbero i pieni — meglio impedirla alla fonte
+        // TUTTA la validazione PRIMA di qualsiasi scrittura (revisore 25/08,
+        // seconda passata): «8o» passava il conteggio delle caselle piene ma
+        // cadeva al Number.isFinite dell'insert → mappa monca a DB; e sulle
+        // uniche Number("8s")=NaN si serializzava null = 100% in silenzio.
+        // Qui: mappa completa-o-vuota E numeri veri 0-100, stesso criterio
+        // che poi usa la scrittura.
+        const numeroPct = (v: string) => v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100;
         for (const p of PISTE_SOGLIA) {
-            const piene = [1, 2, 3].filter(t => String(mappa[p.chiave]?.[t] ?? "").trim() !== "").length;
-            if (piene > 0 && piene < 3) {
-                setBusy(false); setMsg(`Errore — ${p.label}: compila la % per tutte e tre le soglie (o lasciale tutte vuote = 100%).`); return;
+            const vals = [1, 2, 3].map(t => String(mappa[p.chiave]?.[t] ?? "").trim().replace(",", "."));
+            const piene = vals.filter(v => v !== "");
+            if (piene.length > 0 && piene.length < 3) {
+                setBusy(false); setMsg(`Errore — ${p.label}: compila la % per tutte e tre le soglie (o lasciale tutte vuote${p.attivabile ? "" : " = 100%"}).`); return;
+            }
+            if (piene.some(v => !numeroPct(v))) {
+                setBusy(false); setMsg(`Errore — ${p.label}: le % devono essere numeri tra 0 e 100.`); return;
             }
         }
-        // per soglia: riscrivo la mappa delle 3 piste (tier_loro = tier_nostro)
+        for (const p of PISTE_UNICHE) {
+            const v = String(uniche[p.chiave] ?? "").trim().replace(",", ".");
+            if (v !== "" && !numeroPct(v)) {
+                setBusy(false); setMsg(`Errore — ${p.label}: la % deve essere un numero tra 0 e 100.`); return;
+            }
+        }
+        // per soglia: riscrivo la mappa delle piste (tier_loro = tier_nostro)
         for (const p of PISTE_SOGLIA) {
-            const del = await supabase.from("pay_mappa_soglie").delete().eq("brand", "windtre").eq("month", monthISO).eq("pista", p.chiave);
-            if (del.error) { setBusy(false); setMsg("Errore: " + del.error.message); return; }
             const righe = [1, 2, 3]
                 .map(t => ({ t, v: String(mappa[p.chiave]?.[t] ?? "").trim().replace(",", ".") }))
-                .filter(x => x.v !== "" && Number.isFinite(Number(x.v)))
+                .filter(x => x.v !== "")
                 .map(x => ({ brand: "windtre", month: monthISO, pista: p.chiave, tier_nostro: x.t, tier_loro: x.t, perc: Number(x.v) }));
+            // pista ATTIVABILE in SVUOTAMENTO: prima si esclude (perc 0), POI
+            // si pulisce la mappa — l'ordine inverso, con un errore a metà,
+            // lasciava perc null + mappa vuota = 100% ai ragazzi (revisore)
+            if (p.attivabile && !righe.length) {
+                const id = idPista[p.chiave];
+                if (id) {
+                    const up = await supabase.from("pay_piste").update({ perc_ragazzi: 0 }).eq("id", id);
+                    if (up.error) { setBusy(false); setMsg("Errore: " + up.error.message); return; }
+                }
+            }
+            const del = await supabase.from("pay_mappa_soglie").delete().eq("brand", "windtre").eq("month", monthISO).eq("pista", p.chiave);
+            if (del.error) { setBusy(false); setMsg("Errore: " + del.error.message); return; }
             if (righe.length) {
                 const ins = await supabase.from("pay_mappa_soglie").insert(righe);
                 if (ins.error) { setBusy(false); setMsg("Errore: " + ins.error.message); return; }
             }
-            // pista ATTIVABILE: con la mappa compilata entra ai ragazzi
-            // (perc_ragazzi null), svuotata torna di rete (0 = esclusa)
-            if (p.attivabile) {
+            // pista ATTIVABILE in ATTIVAZIONE: la mappa è scritta, ora la
+            // pista entra ai ragazzi (fail-safe: se l'update salta, resta
+            // esclusa e si risalva)
+            if (p.attivabile && righe.length) {
                 const id = idPista[p.chiave];
                 if (id) {
-                    const up = await supabase.from("pay_piste").update({ perc_ragazzi: righe.length ? null : 0 }).eq("id", id);
+                    const up = await supabase.from("pay_piste").update({ perc_ragazzi: null }).eq("id", id);
                     if (up.error) { setBusy(false); setMsg("Errore: " + up.error.message); return; }
                 }
             }
         }
-        // uniche: perc_ragazzi sulla pista azienda
+        // uniche: perc_ragazzi sulla pista azienda (validate sopra: mai NaN)
         for (const p of PISTE_UNICHE) {
             const id = idPista[p.chiave];
             if (!id) continue;
