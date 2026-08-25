@@ -591,7 +591,9 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
     if (!window.confirm("Ultima conferma: eliminare COMPLETAMENTE questo usato e ogni sua traccia?")) return;
     setEliminando(true);
     try {
-      try { await supabase.from("usati_malus").delete().eq("usato_id", dev.id); } catch { /* tabella/colonna assente */ }
+      // niente delete esplicito di usati_malus: la FK usato_id è ON DELETE
+      // CASCADE (mig. usato_fondamenta, verificata sul DB) — cancellarla prima
+      // della riga distruggeva lo storico malus anche quando il delete falliva
       const { error } = await supabase.from("usati").delete().eq("id", dev.id);
       if (error) { alert("Eliminazione NON riuscita: " + error.message); setEliminando(false); return; }
       // allegati DOPO la riga (rilievo revisore): se il delete fallisce il
@@ -755,8 +757,11 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
   const copyIban = () => { try { navigator.clipboard.writeText(dev.pagamento.iban); setIbanCopied(true); setTimeout(() => setIbanCopied(false), 2000); } catch (e) { } };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start justify-center pt-8 px-4" onClick={onClose}>
-      <div className="bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-5xl max-h-[88vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start justify-center pt-8 px-4" onClick={() => { if (!contabileBusy) onClose(); }}>
+      {/* upload contabile in corso = scheda congelata (rilievo terzo revisore):
+          un salvataggio sovrapposto poteva referenziare il file che il rollback
+          avrebbe poi cancellato dal bucket */}
+      <div className={"bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-5xl max-h-[88vh] overflow-auto shadow-2xl" + (contabileBusy ? " pointer-events-none opacity-90" : "")} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="sticky top-0 bg-[#12141f] border-b border-white/10 px-6 py-4 flex items-center justify-between z-10 rounded-t-2xl">
           <div>

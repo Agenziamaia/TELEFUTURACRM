@@ -839,7 +839,9 @@ function Drawer({
   // deve salvare l'esito di un utente appena revocato.
   useEffect(() => {
     if (activeTab === "admin" && !canEditAdmin) {
-      setEditStatoA(row.statoAdmin);
+      // baseline VIVA (baseA), non row.statoAdmin: nella finestra tra commit e
+      // ritorno di handleUpdate i due divergono (rilievo terzo revisore)
+      setEditStatoA(baseA.current);
       setNotaAdmin("");
       setActiveTab("negozio");
     }
