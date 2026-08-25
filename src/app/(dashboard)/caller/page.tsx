@@ -2141,7 +2141,11 @@ function CallerPageInner() {
         if (!listaFileObj) return;
 
         // Step 1: upload file to Supabase storage
-        const filePath = `liste/${Date.now()}_${listaFileObj.name}`;
+        // nome SANIFICATO nella chiave: lo storage rifiuta accenti/simboli e i
+        // file Excel degli uffici ne sono pieni — il nome originale resta in
+        // liste.file_name per la visualizzazione
+        const safeName = listaFileObj.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+        const filePath = `liste/${Date.now()}_${safeName}`;
         const { error: uploadError } = await supabase.storage
             .from("liste-files")
             .upload(filePath, listaFileObj);
