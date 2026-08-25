@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { scaricaMedia } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
+import { contenutoMessaggio } from "@/lib/waContenuto";
 
 export const dynamic = "force-dynamic";
 
@@ -139,20 +140,13 @@ export async function POST(request: Request) {
                 // non usarlo come titolo della conversazione (lo mette la sync).
                 const convNome = isGroup ? null : (m?.pushName || null);
                 const convId = await upsertConversazione(inst.id, numero, convNome, isGroup, chatJid);
-                const msg = m?.message || {};
-                const body = msg.conversation || msg.extendedTextMessage?.text
-                    || msg.imageMessage?.caption || msg.videoMessage?.caption
-                    || (msg.imageMessage ? "[Immagine]" : msg.documentMessage ? "[Documento]" : msg.audioMessage ? "[Audio]" : msg.videoMessage ? "[Video]" : msg.stickerMessage ? "[Sticker]" : "") || "";
-                // #wa: gli sticker (emoji animate / GIF) arrivano come stickerMessage
-                // (image/webp): senza mime non venivano scaricati e comparivano vuoti.
-                const mime = msg.imageMessage?.mimetype || msg.documentMessage?.mimetype || msg.audioMessage?.mimetype || msg.videoMessage?.mimetype || msg.stickerMessage?.mimetype || (msg.stickerMessage ? "image/webp" : null);
-                // CHT-02: un protocolMessage senza contenuto (revoca/modifica fatta
-                // dal telefono) non e' un messaggio da mostrare — lo gestiscono gli
-                // eventi messages.edited / messages.delete, niente righe fantasma.
-                // niente testo e niente media = reazione (👍/❤️) o evento di
-                // servizio: NON è un messaggio — salvarlo creava bolle vuote,
-                // falsi «senza risposta» e non-letti fantasma (caso Elvira,
-                // 14 righe in 9 chat trovate il 25/08)
+                // estrazione UNICA (waContenuto): svolge effimeri/view-once/
+                // documento+didascalia e dà un'etichetta a contatti, posizioni,
+                // sondaggi… Resta vuota SOLO la roba di servizio (reazioni,
+                // protocolMessage, voti) → scartata: salvarla creava bolle
+                // vuote, falsi «senza risposta» e non-letti fantasma (caso
+                // Elvira, 14 righe in 9 chat trovate il 25/08)
+                const { body, mime } = contenutoMessaggio(m?.message);
                 if (!body && !mime) continue;
                 const ts = toIsoMs(m?.messageTimestamp);
                 // media in ARRIVO (o inviato da un altro dispositivo): scaricalo e

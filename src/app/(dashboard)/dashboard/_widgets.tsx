@@ -1320,13 +1320,24 @@ const WA_VOCAB_CHIUSURA = new Set([
     "anche", "te", "lei", "voi", "altrettanto", "idem", "bacioni", "1000",
 ]);
 export function chiusuraDiCortesia(testo) {
-    const t = String(testo || "").toLowerCase().trim();
+    // apostrofo tipografico di iPhone (’) normalizzato, sennò «d’accordo»
+    // e «d'accordo» si comportano diversamente
+    const t = String(testo || "").toLowerCase().replace(/[’‘`]/g, "'").trim();
     if (!t || t.length > 60) return false;
     if (t.includes("?")) return false;
+    if (t.startsWith("[")) return false;   // etichette ([Sticker], [Posizione]…): non giudicare
     if (/quando|come|dove|perch|posso|potete|puoi|vorrei|serve|aspetto|attendo|fatemi|fammi|mandami|inviami|richiam|prezzo|costo|quanto/.test(t)) return false;
     const parole = t.replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ").trim();
-    if (!parole) return true;   // solo emoji o punteggiatura (👍 🙏 ❤️)
-    return parole.split(" ").every((p) => WA_VOCAB_CHIUSURA.has(p.replace(/'/g, "")));
+    // niente parole: cortesia SOLO se c'è davvero un'emoji (👍🙏❤️) — un
+    // «!!!» arrabbiato non è un congedo
+    if (!parole) return /[☀-➿\u{1f300}-\u{1faff}❤]/u.test(t);
+    const lista = parole.split(" ").map((p) => p.replace(/'/g, ""));
+    if (!lista.every((p) => WA_VOCAB_CHIUSURA.has(p))) return false;
+    // un «ok» / «va bene» / «perfetto» SECCO è una conferma (spesso chiede
+    // un'azione nostra: fissare, attivare, richiamare) — per essere un
+    // congedo serve anche una parola di saluto o un grazie (revisore 25/08)
+    const CONGEDO = ["grazie", "grz", "ringrazio", "arrivederci", "ciao", "salve", "saluti", "buona", "buon", "buongiorno", "buonasera", "buonanotte", "notte", "bacioni", "altrettanto", "gentilissimo", "gentilissima"];
+    return lista.some((p) => CONGEDO.includes(p));
 }
 
 function fmtDurataWa(ms) {
@@ -1464,11 +1475,16 @@ function WidgetWhatsApp({ ctx, size }) {
     }, [uid, ctx.user?.role, ctx.negoziKey, giro]); // eslint-disable-line react-hooks/exhaustive-deps
     const azione = <Link href="/chat?mode=wa" className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
     // ✓ sull'alert: la chat è a posto così, niente risposta necessaria —
-    // sparisce subito; se il cliente riscrive, riappare da sola
-    const chiudiAlert = async (id) => {
-        const { error } = await supabase.from("wa_conversations").update({ chiusa_il: new Date().toISOString() }).eq("id", id);
+    // sparisce subito; se il cliente riscrive, riappare da sola. Il widget
+    // può essere vecchio fino a 2 minuti: se nel frattempo è arrivato un
+    // messaggio nuovo NON si chiude sopra roba mai vista — si ricarica.
+    const chiudiAlert = async (a) => {
+        const { data: fresca } = await supabase.from("wa_conversations").select("last_message_at").eq("id", a.id).maybeSingle();
+        const ultimoTs = fresca?.last_message_at ? new Date(fresca.last_message_at).getTime() : 0;
+        if (ultimoTs > a.da + 1500) { setGiro((g) => g + 1); return; }
+        const { error } = await supabase.from("wa_conversations").update({ chiusa_il: new Date().toISOString() }).eq("id", a.id);
         if (error) return;
-        setDati((p) => p && p.alerts ? { ...p, alerts: p.alerts.filter((x) => x.id !== id), concluse: (p.concluse || 0) + 1 } : p);
+        setDati((p) => p && p.alerts ? { ...p, alerts: p.alerts.filter((x) => x.id !== a.id), concluse: (p.concluse || 0) + 1 } : p);
     };
     const shell = (figli) => (
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
@@ -1516,7 +1532,7 @@ function WidgetWhatsApp({ ctx, size }) {
                                 <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
                                 <span className={cn("shrink-0 font-bold", adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")}>da {fmtDurataWa(adesso - a.da)}</span>
                             </Link>
-                            <button onClick={() => chiudiAlert(a.id)} title="Segna conclusa: non serve una risposta (se il cliente riscrive, torna qui)"
+                            <button onClick={() => chiudiAlert(a)} title="Segna conclusa: non serve una risposta (se il cliente riscrive, torna qui)"
                                 className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
                         </div>
                     ))}

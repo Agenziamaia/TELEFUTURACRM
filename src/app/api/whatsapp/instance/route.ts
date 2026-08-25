@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
+import { contenutoMessaggio } from "@/lib/waContenuto";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +12,9 @@ function codaNumero(s: string | null | undefined, n = 9): string {
     return d.length >= n ? d.slice(-n) : d;
 }
 // testo leggibile dal messaggio Baileys (o placeholder per gli allegati)
-function estraiCorpo(msg: any): string {
-    if (!msg) return "";
-    return msg.conversation || msg.extendedTextMessage?.text
-        || msg.imageMessage?.caption || msg.videoMessage?.caption
-        || (msg.imageMessage ? "[Immagine]" : msg.documentMessage ? "[Documento]" : msg.audioMessage ? "[Audio]" : msg.videoMessage ? "[Video]" : msg.stickerMessage ? "[Sticker]" : "") || "";
-}
+// il corpo lo estrae la regola unica in @/lib/waContenuto (svolge anche
+// effimeri/view-once e etichetta contatti, posizioni, sondaggi…)
+const estraiCorpo = (msg: any): string => contenutoMessaggio(msg).body;
 // nome del contatto: mai il "se stesso". Quando l'ultimo messaggio e' in uscita,
 // il pushName e' il MIO nome (Evolution lo mette "Voce'"/"You"): da ignorare.
 function nomeContatto(ch: any): string | null {
@@ -211,9 +209,7 @@ export async function POST(request: Request) {
             for (const m of recs) {
                 const key = m?.key || {};
                 if (!key.id) continue;
-                const msg = m?.message || {};
-                const body = estraiCorpo(msg);
-                const mime = msg.imageMessage?.mimetype || msg.documentMessage?.mimetype || msg.audioMessage?.mimetype || msg.videoMessage?.mimetype || null;
+                const { body, mime } = contenutoMessaggio(m?.message);
                 if (!body && !mime) continue;   // salta reazioni / protocolMessage senza contenuto
                 const tsSec = Number(m?.messageTimestamp);
                 const ts = (!Number.isNaN(tsSec) && tsSec > 1e9) ? new Date(tsSec * 1000).toISOString() : null;

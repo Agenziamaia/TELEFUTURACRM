@@ -223,7 +223,17 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         let alive = true;
         const load = async () => {
             const { data } = await supabase.from("wa_conversations").select("*").eq("instance_id", selInst).order("last_message_at", { ascending: false, nullsFirst: false });
-            if (alive) setConvs((data ?? []) as Conv[]);
+            if (!alive) return;
+            setConvs((data ?? []) as Conv[]);
+            // la chat aperta segue il DB: senza questo «conclusa»/nome/cliente
+            // nell'header restavano stantii finché non cambiavi chat
+            setSelConv(p => {
+                if (!p) return p;
+                const f = ((data ?? []) as Conv[]).find(c => c.id === p.id);
+                if (!f) return p;
+                const diverso = (f.chiusa_il ?? null) !== (p.chiusa_il ?? null) || f.customer_name !== p.customer_name || f.client_id !== p.client_id;
+                return diverso ? { ...p, chiusa_il: f.chiusa_il ?? null, customer_name: f.customer_name, client_id: f.client_id } : p;
+            });
         };
         load(); const t = setInterval(load, 3000);
         return () => { alive = false; clearInterval(t); };
