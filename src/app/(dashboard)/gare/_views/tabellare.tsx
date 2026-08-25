@@ -61,6 +61,28 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // brand che usano il tabellare (VF in testa)
     const [aperteTab, setAperteTab] = useState<Set<string>>(new Set());
     const toggleTab = (k: string) => setAperteTab(prev => { const c = new Set(prev); if (c.has(k)) c.delete(k); else c.add(k); return c; });
+    // EMOJI di pista (Luca 25/08: «come su Wind3») — dalla semantica del
+    // nome, senza toccare i dati; famiglia + 💼 quando è business
+    const emojiPista = (nome: string): string => {
+        const n = String(nome || "").toLowerCase();
+        const fam =
+            /mobile|\bsim\b/.test(n) ? "📱" :
+            /wireline|fisso|fwa/.test(n) ? "🏠" :
+            /smartphone|telefon|device/.test(n) ? "📞" :
+            /\bvas\b|soluzioni|digital/.test(n) ? "🧩" :
+            /luce/.test(n) ? "💡" :
+            /\bgas\b/.test(n) ? "🔥" :
+            /energia/.test(n) ? "⚡" :
+            /bonus|completezza/.test(n) ? "🎁" :
+            /assicur/.test(n) ? "🛡" :
+            /protetti/.test(n) ? "🏠🛡" :
+            /customer|\bcb\b/.test(n) ? "🔁" :
+            /partnership/.test(n) ? "🏅" :
+            /sky|\btv\b/.test(n) ? "📺" :
+            /\bpos\b|dojo/.test(n) ? "💳" :
+            /sped/.test(n) ? "📦" : "📊";
+        return /business|\bbiz\b|p\.?\s*iva/.test(n) && fam !== "📊" ? `${fam}💼` : fam;
+    };
     const [righe, setRighe] = useState<Riga[]>([]);
     const [orig, setOrig] = useState<Map<string, string>>(new Map());   // id → JSON per il dirty
     const [carico, setCarico] = useState(false);
@@ -586,7 +608,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         return (
                             <div key={px.id} className="glass-panel rounded-2xl overflow-hidden">
                                 <button onClick={() => toggleTab(`der|${px.chiave}`)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
-                                    <span className="text-sm font-bold text-white">{px.nome}</span>
+                                    <span className="text-sm font-bold text-white">{emojiPista(px.nome)} {px.nome}</span>
                                     <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>
                                     <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                                 </button>
@@ -732,7 +754,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         const pays = ctx === "windtre" && lato === "azienda" && !conBonus ? payPerSoglia(p.chiave, maxT) : [];
                                         return (
                                         <tr key={p.id} className="border-t border-white/5">
-                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{der && <span className="text-sky-400/80 text-[10px] font-normal ml-1.5">× {der.pct}%</span>}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
+                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{emojiPista(p.nome)} {p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{der && <span className="text-sky-400/80 text-[10px] font-normal ml-1.5">× {der.pct}%</span>}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
                                             {Array.from({ length: maxT }, (_, i) => {
                                                 const s = mostra[i];
                                                 if (!s) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
@@ -820,7 +842,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         {/* header stile Commissioning W3 (Luca 25/08): chiuso
                             dice quante voci contiene, il click esplode */}
                         <button onClick={() => toggleTab(p.chiave)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
-                            <span className="text-sm font-bold text-white">{p.nome}</span>
+                            <span className="text-sm font-bold text-white">{emojiPista(p.nome)} {p.nome}</span>
                             <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                         </button>
                         {/* nascosto ma MONTATO (revisore 25/08: chiudere il
