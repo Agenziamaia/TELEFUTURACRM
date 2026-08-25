@@ -676,8 +676,14 @@ export default function CalcolatorePage() {
                         <div className="glass-panel rounded-2xl p-5">
                             <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Avanzamento {pdvRow ? `${pdvRow.negozio}` : "rete"} · {mese}</div>
                             {ctxKey && CONTESTI_LABEL[ctxKey] && <div className="text-[11px] text-slate-500 mb-3">{CONTESTI_LABEL[ctxKey]}</div>}
-                            {!avz ? <div className="text-slate-500 text-sm">Calcolo…</div> : tab.piste.map(p => {
+                            {/* SOGLIA UNICA (Luca 25/08, S4): le piste APPOGGIATE
+                                (soglie_di) non hanno una barra propria — i loro pezzi
+                                sono già nel conteggio della madre. La barra è UNA:
+                                quella del canvass, con lo spaccato per sezione. */}
+                            {!avz ? <div className="text-slate-500 text-sm">Calcolo…</div> : tab.piste.filter(p => !p.soglie_di).map(p => {
                                 const a = avz.piste[p.chiave]; if (!a) return null;
+                                const appoggiate = tab.piste.filter(x => x.soglie_di === p.chiave);
+                                const unita = p.um === "pezzi" ? "pezzi" : "punti";
                                 const target = a.prossima?.soglia_da ?? a.soglia?.soglia_da ?? 0;
                                 const perc = target > 0 ? Math.min(100, Math.round(a.punti / target * 100)) : 100;
                                 const scalaP = (tabEff || tab).soglie.filter(sg => sg.pista === p.chiave).sort((x, y) => x.tier - y.tier);
@@ -688,15 +694,20 @@ export default function CalcolatorePage() {
                                     <div key={p.chiave} className="mb-4 last:mb-0">
                                         {/* la PROIEZIONE è il dato principale (Luca 11/08); l'attuale sotto */}
                                         <div className="flex justify-between text-sm mb-0.5">
-                                            <span className="text-slate-200 font-semibold">{p.nome}</span>
+                                            <span className="text-slate-200 font-semibold">{appoggiate.length ? "Energia · soglia unica" : p.nome}</span>
                                             {proiezioneOn ? (
                                                 <span className="text-white font-bold">📈 {projP} <span className="text-indigo-300">{tierP > 0 ? `S${tierP}` : "sotto soglia"}</span></span>
                                             ) : (
-                                                <span className="text-slate-400">{a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
+                                                <span className="text-slate-400">{a.punti} {unita} · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
                                             )}
                                         </div>
                                         {proiezioneOn && (
-                                            <div className="text-[11px] text-slate-500 mb-1">oggi: {a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</div>
+                                            <div className="text-[11px] text-slate-500 mb-1">oggi: {a.punti} {unita} · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</div>
+                                        )}
+                                        {appoggiate.length > 0 && (
+                                            <div className="text-[11px] text-slate-500 mb-1">
+                                                conta tutto insieme: {[p, ...appoggiate].map(x => `${x.nome} ${avz.piste[x.chiave]?.pezzi ?? 0} pz`).join(" + ")}
+                                            </div>
                                         )}
                                         {scalaP.length > 0 && <div className="text-[11px] text-slate-500 mb-1">soglie: {scalaP.map(sg => sg.soglia_da).join(" · ")}</div>}
                                         <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
