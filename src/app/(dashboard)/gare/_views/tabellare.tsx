@@ -581,33 +581,39 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         const apertaP = aperteTab.has(`der|${px.chiave}`);
                         return (
                             <div key={px.id} className="glass-panel rounded-2xl overflow-hidden">
-                                <button onClick={() => toggleTab(`der|${px.chiave}`)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2 flex-wrap">
+                                <button onClick={() => toggleTab(`der|${px.chiave}`)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
                                     <span className="text-sm font-bold text-white">{px.nome}</span>
                                     <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>
                                     <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
-                                    {apertaP && <span className="text-[11px] text-slate-500 font-normal">{scala.map((x, i) => `S${i + 1}: ${x.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}</span>}
-                                    {/* € FISSI (Luca 25/08, altra sessione): gli importi si
-                                        correggono a mano — vincono su % e mappa */}
-                                    {apertaP && <span className="text-[10px] text-slate-600 font-normal" title="Gli importi derivano dall'azienda × %. Correggi le caselle e salva col 💾 per fissarli in € (vincono su % e mappa soglie); ↺ torna alla derivazione.">✎ importi correggibili — in ambra quelli fissati a mano</span>}
                                 </button>
-                                {apertaP && (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm border-collapse">
-                                        <thead>
-                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
-                                                <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
-                                                <th className="px-1.5 py-1.5 font-semibold text-center w-12 text-indigo-300">Punti</th>
-                                                {ctx !== "s4" && <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>}
-                                                {Array.from({ length: nT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
-                                                <th className="px-2 py-1.5 w-16"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {rr.map(r => <RigaPayRagazzi key={r.id} r={r} nT={nT} senzaBase={ctx === "s4"} dopo={load} />)}
-                                        </tbody>
-                                    </table>
+                                {/* CONTENUTO nascosto ma MONTATO (revisore 25/08: lo
+                                    smontaggio bruciava i draft € fissi non salvati);
+                                    scala e nota FUORI dal button — selezionarle non
+                                    deve richiudere il pannello */}
+                                <div className={apertaP ? "" : "hidden"}>
+                                    <div className="px-4 pb-1.5 flex items-center gap-3 flex-wrap">
+                                        <span className="text-[11px] text-slate-500">{scala.map((x, i) => `S${i + 1}: ${x.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}</span>
+                                        {/* € FISSI (Luca 25/08, altra sessione): gli importi si
+                                            correggono a mano — vincono su % e mappa */}
+                                        <span className="text-[10px] text-slate-600" title="Gli importi derivano dall'azienda × %. Correggi le caselle e salva col 💾 per fissarli in € (vincono su % e mappa soglie); ↺ torna alla derivazione.">✎ importi correggibili — in ambra quelli fissati a mano</span>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                    <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
+                                                    <th className="px-1.5 py-1.5 font-semibold text-center w-12 text-indigo-300">Punti</th>
+                                                    {ctx !== "s4" && <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>}
+                                                    {Array.from({ length: nT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                                    <th className="px-2 py-1.5 w-16"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {rr.map(r => <RigaPayRagazzi key={r.id} r={r} nT={nT} senzaBase={ctx === "s4"} dopo={load} />)}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                )}
                             </div>
                         );
                     })}
@@ -622,7 +628,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 <span className="text-xs font-normal text-slate-500">{apertaG ? "▾" : `▸ ${gettoni.length} voci`}</span>
                                 <span className="text-[11px] text-slate-500 font-normal">pagano sempre, senza soglia</span>
                             </button>
-                            {apertaG && (
+                            <div className={apertaG ? "" : "hidden"}>
                             <table className="w-full text-sm border-collapse">
                                 <thead>
                                     <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
@@ -639,7 +645,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     ))}
                                 </tbody>
                             </table>
-                            )}
+                            </div>
                         </div>
                         );
                     })()}
@@ -813,7 +819,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             <span className="text-sm font-bold text-white">{p.nome}</span>
                             <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                         </button>
-                        {apertaP && (<>
+                        {/* nascosto ma MONTATO (revisore 25/08: chiudere il
+                            pannello non deve bruciare NuovaRiga o i dirty) */}
+                        <div className={apertaP ? "" : "hidden"}>
                         <div className="flex items-center justify-end px-4 pb-2 gap-3 flex-wrap">
                             {/* % PAY ai ragazzi QUI, dove i pay si vedono (Luca 13/08) */}
                             {lato === "azienda" && (
@@ -849,7 +857,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             </div>
                         )}
                         {!rr.length && <div className="text-slate-500 text-sm px-4 pb-3">Nessuna riga su questa pista.</div>}
-                        </>)}
+                        </div>
                     </div>
                 );
             })}
@@ -858,8 +866,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 ha senso che sia lì»): tutto il pay S4 vive nelle piste */}
             {ctx !== "s4" && (
             <div className="glass-panel rounded-2xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 pt-3 pb-2">
-                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">💰 Gettoni — pagano sempre, senza soglia <span className="text-slate-600">({gettoni.length})</span></div>
+                <button onClick={() => toggleTab("__gettoni")} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">💰 Gettoni</span>
+                    <span className="text-xs font-normal text-slate-500">{aperteTab.has("__gettoni") ? "▾" : `▸ ${gettoni.length} voci`}</span>
+                    <span className="text-[11px] text-slate-500 font-normal">pagano sempre, senza soglia</span>
+                </button>
+                <div className={aperteTab.has("__gettoni") ? "" : "hidden"}>
+                <div className="flex items-center justify-end px-4 pb-2">
                     <button onClick={() => setNuovaRigaPer(nuovaRigaPer === "__gettoni" ? null : "__gettoni")} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Gettone</button>
                 </div>
                 {nuovaRigaPer === "__gettoni" && <div className="px-4"><NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} /></div>}
@@ -878,6 +891,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     </table>
                 )}
                 {!gettoni.length && <div className="text-slate-500 text-sm px-4 pb-3">Nessun gettone.</div>}
+                </div>
             </div>
             )}
         </div>
