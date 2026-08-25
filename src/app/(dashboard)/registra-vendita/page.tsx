@@ -5370,6 +5370,16 @@ function CRM() {
           || (miei.length && _identRiga(o._det).some(v => miei.includes(v)))));
       if (principale) { r.contratto = "associato"; r._mainKey = principale.key; }
     });
+    // S4 = CONTRATTO UNICO PER ORDINE (Luca 25/08): anche con 5 luce e 3 gas
+    // nel carrello, S4 genera UN contratto solo — si chiede sulla PRIMA riga
+    // S4 e le altre si agganciano (stesso meccanismo del telefono a rate: al
+    // salvataggio il PDF si propaga a tutte le pratiche). Il documento era
+    // gia' unico per ordine per costruzione.
+    {
+      const s4 = rows.filter(r => (SLUG_CATALOGO[r.brandId] || String(r.brandId || "").toLowerCase()) === "s4"
+        && r.contratto !== "assente" && r.contratto !== "associato");
+      for (let i = 1; i < s4.length; i++) { s4[i].contratto = "associato"; s4[i]._mainKey = s4[0].key; }
+    }
     rows.forEach(r => { r.multi = (conta[r.base] || 0) > 1; });
     return rows;
   };
