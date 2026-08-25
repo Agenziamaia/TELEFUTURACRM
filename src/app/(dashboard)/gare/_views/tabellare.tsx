@@ -26,8 +26,12 @@ type Riga = {
     // contratto) + € fissi ai ragazzi per soglia (vincono su % e mappa)
     ricorrente?: number | null; pay_ragazzi_tiers?: number[] | null;
     // metadati del DERIVATO ragazzi (solo vista, mai a DB): originali azienda
-    // e % di pista — alimentano il tooltip «azienda × % = pay» (Luca 25/08)
+    // e % di pista — alimentano il tooltip «azienda × % = pay» (Luca 25/08).
+    // _mappaTiers: quando la pista ha la mappa % per soglia (pay girato),
+    // per ogni colonna la % usata, la soglia azienda di provenienza e il
+    // valore originale — la bolla racconta quello.
     _origBase?: number | null; _origTiers?: number[]; _perc?: number;
+    _mappaTiers?: ({ perc: number; loro: number; orig: number } | null)[] | null;
 };
 
 const BRAND_VENDITA = ["windtre", "vodafone", "fastweb", "sky", "tim", "iliad", "very", "ho", "kena", "s4", "dojo", "kipoint"];
@@ -154,11 +158,19 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         onVuoto?.(!(p.data || []).length && !(lato === "ragazzi" && (az.count || 0) > 0));
         // ragazzi senza tabellare proprio + azienda presente → carica e SCALA
         if (lato === "ragazzi" && !(p.data || []).length && (az.count || 0) > 0) {
-            const [ap, as, ar] = await Promise.all([
+            const [ap, as, ar, am] = await Promise.all([
                 supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
                 supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
+                supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc").eq("brand", ctx).eq("month", monthISO),
             ]);
+            // mappa % per soglia (pay girato): dove esiste SOSTITUISCE la % di
+            // pista, riga per riga — stessa precedenza del motore (deriva)
+            const mappaDi = new Map<string, Map<number, { loro: number; perc: number }>>();
+            for (const v of (am.data || []) as { pista: string; tier_nostro: number; tier_loro: number; perc: number }[]) {
+                if (!mappaDi.has(v.pista)) mappaDi.set(v.pista, new Map());
+                mappaDi.get(v.pista)!.set(Number(v.tier_nostro), { loro: Number(v.tier_loro), perc: Number(v.perc) });
+            }
             // PISTE SOLO AZIENDA (Luca 13/08: gara business/assicurazioni W3
             // «di rete, resta solo all'azienda»): perc_ragazzi = 0 le esclude
             // dal derivato — qui come in commissioning.caricaTabellare
@@ -196,22 +208,39 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 righe: ((ar.data || []) as Riga[]).filter(x => !x.pista || chiaviAz.has(x.pista)).map(x => {
                     // pay_tiers tagliati come le soglie (soglie_max della pista)
                     const mx = x.pista ? pisteAz.find(p => p.chiave === x.pista)?.soglie_max : null;
-                    // € FISSI ai ragazzi (Luca 25/08): dove impostati vincono
-                    // sulla derivazione a % — stessa precedenza del motore.
-                    // ⚠️ QUI la pay_mappa_soglie NON è applicata (solo % e €
-                    // fissi): oggi i brand con griglia derivata non hanno mappe
-                    // (W3 usa i suoi pannelli) — se una mappa arrivasse su un
-                    // brand derivato, allineare questa vista al motore prima
+                    const cut = mx ? Number(mx) : undefined;
+                    const azTiers = Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : [];
+                    // PRECEDENZA come nel motore (deriva): € fissi a mano →
+                    // mappa % per soglia → % unica di pista (25/08: la mappa
+                    // ora è applicata anche qui — prima la vista la ignorava
+                    // e con una mappa salvata avrebbe raccontato numeri
+                    // diversi dal Calcolatore)
                     const manuali = Array.isArray(x.pay_ragazzi_tiers) && x.pay_ragazzi_tiers.length ? x.pay_ragazzi_tiers.map(Number) : null;
+                    const mp = !manuali && !x.gettone && x.pista ? mappaDi.get(x.pista) : undefined;
+                    let tiers: number[];
+                    let mappaMeta: ({ perc: number; loro: number; orig: number } | null)[] | null = null;
+                    if (mp && mp.size) {
+                        const nMax = Math.max(...mp.keys());
+                        tiers = []; mappaMeta = [];
+                        for (let tn = 1; tn <= nMax; tn++) {
+                            const voce = mp.get(tn);
+                            const az = voce ? azTiers[voce.loro - 1] : undefined;
+                            if (voce == null || az == null) { tiers.push(null as unknown as number); mappaMeta.push(null); }
+                            else { tiers.push(Math.round(az * voce.perc / 100 * 100) / 100); mappaMeta.push({ perc: voce.perc, loro: voce.loro, orig: az }); }
+                        }
+                    } else {
+                        tiers = manuali ?? azTiers.map(v => scala(v, x.pista) as number);
+                    }
                     return {
                         ...x, punti: Number(x.punti || 0),
                         pay_base: scala(x.pay_base == null ? null : Number(x.pay_base), x.pista),
-                        pay_tiers: (manuali ?? (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).map(v => scala(v, x.pista) as number)).slice(0, mx ? Number(mx) : undefined),
-                        // originali azienda + % di pista per il tooltip
+                        pay_tiers: tiers.slice(0, cut),
+                        // originali azienda + % (o mappa) per il tooltip
                         // «azienda × % = pay» sulle celle (Luca 25/08)
                         _origBase: x.pay_base == null ? null : Number(x.pay_base),
-                        _origTiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []).slice(0, mx ? Number(mx) : undefined),
+                        _origTiers: azTiers.slice(0, cut),
                         _perc: x.pista ? (percDi.get(x.pista) ?? 100) : 100,
+                        _mappaTiers: mappaMeta ? mappaMeta.slice(0, cut) : null,
                     };
                 }),
             });
@@ -623,7 +652,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     piste con soglie manuali — sotto la tabella */}
                                 {righeS.filter(x => x.mie.length).map(({ px, mie }) => (
                                     <div key={px.id} className="flex items-center gap-2 flex-wrap mt-2">
-                                        <span className="text-[11px] text-slate-500">↘ pay girato · <b className="text-slate-300">{px.nome}</b>:</span>
+                                        {/* niente doppioni con la % azienda (Luca 25/08 sera):
+                                            vuoto = si applica quella; compilato = ritocco fine
+                                            per soglia che le vince sopra */}
+                                        <span className="text-[11px] text-slate-500">↘ pay girato · <b className="text-slate-300">{px.nome}</b> <span className="text-slate-600">(vuoto = × {px.perc_ragazzi ?? 100}% del lato azienda; qui la ritocchi soglia per soglia)</span>:</span>
                                         {(() => {
                                             const percs = mie.map((_, i) => (mappa[px.chiave] || {})[i + 1]?.perc ?? "");
                                             const unica = percs.length && percs.every(p => p === percs[0]) ? percs[0] : "";
@@ -677,8 +709,14 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     {(() => {
                                         const man = rr.filter(r => Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0).length;
                                         if (man === rr.length) return <span className="text-[11px] text-amber-300 font-semibold" title="Tutti gli importi di questa sezione sono inseriti a mano: la % di derivazione dall'azienda non si applica">✍️ commissioning manuale</span>;
-                                        if (man > 0) return <><span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span><span className="text-[11px] text-amber-300 font-semibold" title="Alcune righe hanno importi inseriti a mano: per quelle la % non si applica">✍️ {man} a mano</span></>;
-                                        return <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>;
+                                        // MAPPA % per soglia attiva (pay girato): la % unica
+                                        // non conta più — il badge non deve mentire
+                                        const conMappa = rr.some(r => r._mappaTiers);
+                                        const pctBadge = conMappa
+                                            ? <span className="text-[11px] text-amber-300/80 font-semibold" title="Questa pista usa la mappa «pay girato»: % per soglia (vince sulla % unica di pista)">× % per soglia</span>
+                                            : <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>;
+                                        if (man > 0) return <>{pctBadge}<span className="text-[11px] text-amber-300 font-semibold" title="Alcune righe hanno importi inseriti a mano: per quelle la % non si applica">✍️ {man} a mano</span></>;
+                                        return pctBadge;
                                     })()}
                                     <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                                 </button>
@@ -1074,6 +1112,22 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
     const unita = r.moltiplicatore ? "" : " €";
     const codaMolt: TipRiga[] = r.moltiplicatore ? [{ testo: "(i valori sono moltiplicatori del canone)", stile: "flat" }] : [];
     const tipTier = (i: number): TipRiga[] | null => {
+        // MAPPA % PER SOGLIA (pay girato): la bolla cita la % della soglia e
+        // la soglia azienda di provenienza — la % unica di pista qui non conta
+        if (!manuale && r._mappaTiers) {
+            const mv = r._mappaTiers[i];
+            if (!mv) return [
+                { testo: `S${i + 1} · senza voce di mappa`, stile: "formula" },
+                { testo: "cella vuota: il motore qui non paga", stile: "flat" },
+            ];
+            return [
+                { testo: `S${i + 1} · ${eurIt(mv.perc)}% ai ragazzi${mv.loro !== i + 1 ? ` (dalla S${mv.loro} azienda)` : ""}`, stile: "formula" },
+                { testo: `· all'azienda: ${eurIt(mv.orig)}${unita}${mv.loro !== i + 1 ? ` (S${mv.loro})` : ""}`, stile: "voce" },
+                ...(mv.perc !== 100 ? [{ testo: `· ${eurIt(mv.orig)}${unita} × ${eurIt(mv.perc)}%`, stile: "voce" as const }] : []),
+                ...codaMolt,
+                { testo: `= ${eurIt(r.pay_tiers[i])}${unita}`, stile: "tot" },
+            ];
+        }
         const orig = r._origTiers?.[i];
         if (orig == null) return null;
         if (manuale) {
