@@ -331,8 +331,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const prev = `${fonteCopia}-01`;
         const [p, s, r] = await Promise.all([
             // ⚠️ soglie_max DEVE viaggiare con la copia (revisore 25/08): senza,
-            // il mese nuovo derivava ai ragazzi TUTTE le soglie azienda (gas a 5)
-            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", prev).eq("lato", lato),
+            // il mese nuovo derivava ai ragazzi TUTTE le soglie azienda (gas a 5).
+            // E soglie_di IDEM (revisore 25/08 sera): senza, la pista appoggiata
+            // (S4 business) nasceva nel mese nuovo senza scala né madre → tier 0
+            // → vendite business pagate 0 in silenzio
+            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max, soglie_di").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             // opzione/provenienza/ricorrente/€ fissi ragazzi viaggiano con la
             // copia (S4 25/08: le fasce business sono ancorate all'opzione)

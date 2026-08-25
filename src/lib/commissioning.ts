@@ -809,7 +809,8 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     // PISTA APPOGGIATA (S4 25/08, «la soglia è unica»): i pezzi delle piste
     // con soglie_di si sommano nel conteggio della MADRE prima di leggere le
     // soglie — il canvass 75/150 conta TUTTI i PDP, il commissioning resta
-    // diviso per sezione. A video ogni sezione conserva i suoi punti/pezzi.
+    // diviso per sezione. A video la MADRE espone i punti UNIFICATI (è la
+    // posizione del canvass); appoggiate e pezzi restano per sezione.
     for (const p of tab.piste) {
         if (!p.soglie_di || p.soglie_di === p.chiave) continue;
         punti[p.soglie_di] = Math.round(((punti[p.soglie_di] || 0) + (punti[p.chiave] || 0)) * 100) / 100;
