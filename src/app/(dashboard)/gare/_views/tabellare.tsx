@@ -1005,7 +1005,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     <thead>
                                         <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                             <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
-                                            {mostraRic && <th className="px-1.5 py-1.5 font-semibold text-center w-20" title="€ al mese per pezzo dall'8° mese dal contratto (≈ 6° di fornitura: il PDP entra in fornitura dopo ~2 mesi). Informativo: fuori dal gettone one-shot.">🔁 Ricorr. €/m</th>}
+                                            {mostraRic && <th className="px-1.5 py-1.5 font-semibold text-center w-20" title="€ a maturazione per pezzo — ricorrente mensile (S4: dall'8° mese dal contratto) o una tantum (Fastweb energia: compenso M+6). Informativo: il motore non lo paga, si monitora col cantiere compensi/fatture.">🔁 Ricorr. €/m</th>}
                                             {/* S4 parla di PEZZI, non di punti (Luca 25/08: «si
                                                 rapporta sempre 1:1») — ogni riga conta 1 */}
                                             <th className="px-1.5 py-1.5 font-semibold text-center w-12">{ctx === "s4" ? "Pezzi" : "Punti"}</th>
@@ -1068,12 +1068,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         <thead>
                             <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
                                 <th className="text-left font-semibold px-3 py-1.5">Voce</th>
+                                {/* maturazioni (25/08): il gas Fastweb ha l'M+6 — colonna
+                                    quando almeno un gettone ce l'ha */}
+                                {gettoni.some(g => g.ricorrente != null) && <th className="px-1.5 py-1.5 font-semibold text-center w-20" title="€ a maturazione per pezzo (ricorrente mensile o una tantum, es. M+6). Informativo: si monitora col cantiere compensi/fatture.">🔁 Matur. €</th>}
                                 <th className="px-1.5 py-1.5 font-semibold text-center w-20">Gettone €</th>
                                 <th className="px-2 py-1.5 w-20"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
+                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={gettoni.some(g => g.ricorrente != null)} />)}
                         </tbody>
                     </table>
                 )}
@@ -1215,7 +1218,9 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
                     {r.note && <span title={tip} className="text-slate-600 text-[11px] cursor-help shrink-0">ⓘ</span>}
                 </div>
             </td>
-            {conRicorrente && !r.gettone && <td className="px-1 py-0.5"><input value={r.ricorrente ?? ""} title="€ al mese per pezzo dall'8° mese dal contratto" onChange={e => onUp(r.id, { ricorrente: e.target.value === "" ? null : num(e.target.value) })} className={cell + " text-sky-200"} /></td>}
+            {/* anche sui GETTONI (25/08: il gas Fastweb ha il compenso M+6 —
+                senza questa cella la colonna 🔁 non esisteva per loro) */}
+            {conRicorrente && <td className="px-1 py-0.5"><input value={r.ricorrente ?? ""} title="€ a maturazione per pezzo (ricorrente mensile o una tantum, es. M+6)" onChange={e => onUp(r.id, { ricorrente: e.target.value === "" ? null : num(e.target.value) })} className={cell + " text-sky-200"} /></td>}
             {!r.gettone && <td className="px-1 py-0.5"><input value={r.punti} onChange={e => onUp(r.id, { punti: num(e.target.value) })} className={cell} /></td>}
             {!senzaBase && <td className="px-1 py-0.5"><input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={cell} /></td>}
             {!r.gettone && Array.from({ length: nTiers }, (_, i) => (
