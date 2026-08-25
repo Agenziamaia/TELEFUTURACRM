@@ -13,6 +13,7 @@ import { CatalogoView } from "./_views/catalogo";
 import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
 import { TrackingEsitiView } from "./_views/tracking_esiti";
+import { WhatsAppAdminView } from "./_views/whatsapp_admin";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -86,6 +87,7 @@ import {
     Ticket,
     Receipt,
     Percent,
+    MessageCircle,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -218,6 +220,9 @@ const SEZIONI: Sezione[] = [
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
     { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
+    // PANNELLO WHATSAPP (Luca 25/08): numeri collegati, verifica, ricollega col QR,
+    // collegamento a QUALSIASI utente o negozio — sempre da selezione, mai testo libero
+    { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "I numeri WhatsApp del CRM: stato e verifica live, ricollega col QR, collega numeri nuovi intestati a un utente (anche caller) o a un negozio — condivisione automatica per visibilità." },
     // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
     // nate col registratore telematico — stesso pattern del mini-hub Costi.
     { id: "fiscalita", label: "Fiscalità", icon: Receipt, desc: "Il mini-hub fiscale: Reparti & IVA, Cassa & Scontrini e Coupon — in sequenza, con le stesse regole di permesso delle singole sezioni." },
@@ -627,6 +632,8 @@ function AmministrazioneInner() {
                 <CalendarioEsitiView />
             ) : sez === "trackingesiti" ? (
                 <TrackingEsitiView />
+            ) : sez === "whatsapp" ? (
+                <WhatsAppAdminView />
             ) : (sez === "fiscalita" || FISC_IDS.includes(sez || "")) ? (
                 (() => {
                     // Il mini-hub FISCALITÀ (Luca 24/08): stessa veste del

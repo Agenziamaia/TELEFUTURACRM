@@ -24,6 +24,9 @@ const VARIABILI: { prefisso: "senza" | "succ" | "compl"; label: string; desc: st
     { prefisso: "succ", label: "Ferma dopo un aggiornamento", desc: "giorni dall'ULTIMO aggiornamento (dal secondo in poi)" },
     { prefisso: "compl", label: "Non completata", desc: "giorni dall'inserimento finché la pratica non è completata" },
 ];
+// data LOCALE (revisore 25/08: toISOString tra mezzanotte e le 2 timbrava IERI
+// — un giorno di conteggio in più, mini-retroattività)
+const oggiLocaleISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const FASCE: { suffisso: "lavorare" | "warning" | "malus"; icona: string; colore: string }[] = [
     { suffisso: "lavorare", icona: "⚡", colore: "var(--tf-eab308)" },
     { suffisso: "warning", icona: "⚠️", colore: "var(--tf-f97316)" },
@@ -64,13 +67,17 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
     // decorrenza (lezione incidente sky dello stesso giorno): i valori nuovi
     // valgono solo in avanti — un esito già assegnato non paga la una tantum
     // e il giornaliero conta solo i giorni dalla configurazione in poi.
-    type EsitoAdm = { id: string; categoria: string; etichetta: string; brand: string | null; malus_fisso: number | null; malus_giorno: number | null; malus_decorrenza: string | null };
+    type EsitoAdm = { id: string; categoria: string; etichetta: string; brand: string | null; attiva: boolean; completata: boolean; malus_fisso: number | null; malus_giorno: number | null; malus_decorrenza: string | null };
     const [esitiAdm, setEsitiAdm] = useState<EsitoAdm[]>([]);
     const [admBozza, setAdmBozza] = useState<Record<string, { fisso: string; giorno: string }>>({});
     const caricaEsiti = async () => {
+        // in lista anche gli esiti SPENTI o definitivi che hanno ancora €
+        // (revisore 25/08): il motore li applica lo stesso — senza riga qui
+        // sarebbero € fantasma non azzerabili
         const { data } = await supabase.from("tracking_esiti")
-            .select("id, categoria, etichetta, brand, malus_fisso, malus_giorno, malus_decorrenza")
-            .eq("lato", "admin").eq("attiva", true).eq("completata", false)
+            .select("id, categoria, etichetta, brand, attiva, completata, malus_fisso, malus_giorno, malus_decorrenza")
+            .eq("lato", "admin")
+            .or("and(attiva.eq.true,completata.eq.false),malus_giorno.not.is.null,malus_fisso.not.is.null")
             .order("categoria").order("ordine");
         const rows = (data || []) as EsitoAdm[];
         setEsitiAdm(rows);
@@ -90,7 +97,7 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
         const b = admBozza[r.id]; if (!b) return;
         const { error } = await supabase.from("tracking_esiti").update({
             malus_fisso: admNum(b.fisso), malus_giorno: admNum(b.giorno),
-            malus_decorrenza: new Date().toISOString().slice(0, 10),
+            malus_decorrenza: oggiLocaleISO(),
         }).eq("id", r.id);
         if (error) { alert("Salvataggio non riuscito: " + error.message); return; }
         // cache esiti rinfrescata subito: il tracking ricalcola senza reload
@@ -109,7 +116,7 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
             // in vigore OGGI — i contatori non contano mai giorni precedenti;
             // le righe intatte conservano la loro data. Confronto normalizzato
             // (a DB malus_euro arriva come stringa).
-            const oggiISO = new Date().toISOString().slice(0, 10);
+            const oggiISO = oggiLocaleISO();
             const CAMPI: (keyof RegolaTracking)[] = ["senza_lavorare", "senza_warning", "senza_malus", "succ_lavorare", "succ_warning", "succ_malus", "compl_lavorare", "compl_warning", "compl_malus", "malus_euro"];
             const nrm = (v: unknown) => v == null || v === "" ? null : Number(v);
             // si scrivono SOLO le righe cambiate (revisore 25/08): riscrivere
@@ -243,6 +250,8 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                                             <span className="font-bold" style={{ color: cat?.color || "var(--tf-94a3b8)" }}>{cat?.label || r.categoria}</span>
                                             <span className="text-slate-300 font-semibold ml-2">{r.etichetta}</span>
                                             {r.brand && <span className="text-[10px] text-slate-500 ml-1.5">({r.brand})</span>}
+                                            {!r.attiva && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-400 ml-1.5" title="Esito spento nel pannello esiti: i € però valgono ancora — azzerali qui se non li vuoi">spento</span>}
+                                            {r.completata && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-400 ml-1.5" title="Esito definitivo: i € valgono ancora — azzerali qui se non li vuoi">definitivo</span>}
                                             {inVigore && <div className="text-[10px] text-slate-500 mt-0.5" title="I € valgono da questa data: un esito assegnato prima non paga la una tantum e il giornaliero conta solo i giorni successivi.">in vigore dal {String(r.malus_decorrenza).slice(0, 10).split("-").reverse().join("/")}</div>}
                                         </td>
                                         <td className="py-2 px-3">

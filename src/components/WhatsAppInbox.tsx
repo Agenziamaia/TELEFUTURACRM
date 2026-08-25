@@ -226,13 +226,20 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     //    Cerca la conversazione tra i numeri visibili (aggancio per coda di
     //    cifre, come il ponte Aircall); se non esiste la CREA sull'istanza
     //    selezionata (o la prima visibile).
-    const apriPerNumero = async (dig: string): Promise<boolean> => {
+    const apriPerNumero = async (digIn: string): Promise<boolean> => {
         if (!visibleInstances.length) return false;
+        // normalizzazione: "0039…" → "39…" (revisore 25/08: il non-canonico
+        // spezzava il thread alla risposta del cliente)
+        const dig = digIn.startsWith("00") ? digIn.slice(2) : digIn;
         const coda = dig.slice(-9);
         const ids = visibleInstances.map(i => i.id);
-        const patt = "%" + coda.split("").join("%") + "%";
+        // coda CONTIGUA e NIENTE GRUPPI (revisore 25/08): la vecchia
+        // sottosequenza %3%3%1%… poteva agganciare l'id di un gruppo (~18
+        // cifre) o un numero sbagliato — i numeri a DB sono cifre canoniche
         const { data: trovate } = await supabase.from("wa_conversations")
-            .select("*").in("instance_id", ids).ilike("customer_number", patt)
+            .select("*").in("instance_id", ids)
+            .or("is_group.is.null,is_group.eq.false")
+            .ilike("customer_number", "%" + coda)
             .order("last_message_at", { ascending: false }).limit(1);
         let conv = (trovate && trovate[0]) as Conv | undefined;
         if (!conv) {
@@ -396,11 +403,15 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                             <CheckCheck className="w-4 h-4" /> Connesso
                         </span>
                     )}
-                    {/* "Collega numero" (nuovo): admin/manager sempre; caller solo se
-                        non ha ancora un numero SUO (i numeri di negozio visti in
-                        automatico non contano — 25/08). */}
-                    {(waScope !== "own" || !instances.some(i => i.owner_user_id === user?.id)) && (
-                        <button onClick={() => setLinkModal(true)} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega numero</button>
+                    {/* "Collega numero" (25/08, niente testo libero): il caller
+                        collega solo il SUO numero — nome automatico = il suo;
+                        tutti gli altri numeri (utenti, negozi) si collegano dal
+                        Pannello WhatsApp in Amministrazione, a selezione. */}
+                    {waScope === "own" && !instances.some(i => i.owner_user_id === user?.id) && (
+                        <button onClick={() => setLinkModal(true)} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega il mio numero</button>
+                    )}
+                    {waScope !== "own" && (
+                        <a href="/amministrazione?sez=whatsapp" className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Pannello numeri</a>
                     )}
                 </div>
             </div>
@@ -449,8 +460,8 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 <div className={cn("glass-card p-12 text-center text-slate-400", embedded && "flex-1 flex flex-col items-center justify-center")}>
                     <QrCode className="w-12 h-12 mx-auto mb-3 text-slate-600" />
                     {waScope === "own"
-                        ? <span>Non hai ancora un numero WhatsApp collegato. Premi <b className="text-emerald-300">Collega numero</b> e scansiona il QR col tuo telefono.</span>
-                        : <span>Nessun numero collegato per la tua visibilita'. Premi <b className="text-emerald-300">Collega numero</b> e scansiona il QR con WhatsApp del telefono.</span>}
+                        ? <span>Non hai ancora un numero WhatsApp collegato. Premi <b className="text-emerald-300">Collega il mio numero</b> e scansiona il QR col tuo telefono.</span>
+                        : <span>Nessun numero collegato per la tua visibilita&apos;. I numeri si collegano dal <b className="text-emerald-300">Pannello numeri</b> (Amministrazione → WhatsApp), intestati a un utente o a un negozio.</span>}
                 </div>
             ) : (
                 <div className={cn("grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-230px)]")}>
@@ -629,7 +640,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
             )}
 
             {nuovaChat && <NuovaChatModal apri={apriPerNumero} onClose={() => setNuovaChat(false)} />}
-            {linkModal && <LinkModal onClose={() => { setLinkModal(false); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
+            {linkModal && <LinkModal presetName={user?.name || undefined} onClose={() => { setLinkModal(false); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
             {relinkName && <LinkModal reconnectName={relinkName} onClose={() => { setRelinkName(null); loadInstances(); }} onLinked={(name) => sincronizza(name, { silent: true })} ownerUserId={user?.id} />}
         </div>
     );
@@ -679,8 +690,12 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string) => Promise<bool
     );
 }
 
-function LinkModal({ onClose, onLinked, ownerUserId, reconnectName }: { onClose: () => void; onLinked?: (instanceName: string) => void; ownerUserId?: string; reconnectName?: string }) {
-    const [name, setName] = useState("");
+// Esportato per il PANNELLO WHATSAPP in Amministrazione (Luca 25/08 sera):
+// da lì si collega un numero a QUALSIASI utente o a un NEGOZIO — sempre da
+// selezione, mai testo libero. `presetName` blocca il nome (chip in sola
+// lettura), `negozio` marca il numero come numero di punto vendita.
+export function LinkModal({ onClose, onLinked, ownerUserId, reconnectName, presetName, negozio }: { onClose: () => void; onLinked?: (instanceName: string) => void; ownerUserId?: string; reconnectName?: string; presetName?: string; negozio?: string | null }) {
+    const [name, setName] = useState(presetName || "");
     const [instanceName, setInstanceName] = useState<string | null>(reconnectName || null);
     const [qr, setQr] = useState<string | null>(null);
     const [state, setState] = useState<string>("");
@@ -692,6 +707,11 @@ function LinkModal({ onClose, onLinked, ownerUserId, reconnectName }: { onClose:
         const res = await api({ action: "create", displayName: name.trim(), ownerUserId });
         setBusy(false);
         if (res?.error) { alert(res.error); return; }
+        // numero DI NEGOZIO (pannello 25/08): la colonna negozio attiva la
+        // condivisione automatica con chi ha quel punto vendita in visibilità
+        if (negozio && res.instanceName) {
+            await supabase.from("wa_instances").update({ negozio }).eq("instance_name", res.instanceName);
+        }
         setInstanceName(res.instanceName);
         setQr(res.qr || null);
     };
@@ -732,8 +752,19 @@ function LinkModal({ onClose, onLinked, ownerUserId, reconnectName }: { onClose:
                 </div>
                 {!instanceName ? (
                     <div className="space-y-3">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nome (es. "Caller Giulia")</label>
-                        <input value={name} onChange={e => setName(e.target.value)} className="glass-input w-full text-sm" placeholder="Nome del numero" autoFocus />
+                        {presetName ? (
+                            <>
+                                {/* niente testo libero (Luca 25/08): il nome arriva
+                                    dalla selezione — utente o negozio — già fatta */}
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Numero intestato a</label>
+                                <div className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-sm font-bold text-white">{negozio ? "🏪 " : "👤 "}{presetName}</div>
+                            </>
+                        ) : (
+                            <>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nome (es. "Caller Giulia")</label>
+                                <input value={name} onChange={e => setName(e.target.value)} className="glass-input w-full text-sm" placeholder="Nome del numero" autoFocus />
+                            </>
+                        )}
                         <button onClick={crea} disabled={busy || !name.trim()} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold flex items-center justify-center gap-2">
                             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />} Genera QR
                         </button>

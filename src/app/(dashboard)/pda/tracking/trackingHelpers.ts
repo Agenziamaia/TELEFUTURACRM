@@ -413,6 +413,15 @@ export function malusAdminDecorrenza(statoAdmin: string, categoria: string, bran
   return d ? String(d).slice(0, 10) : null;
 }
 
+/** Data dell'ULTIMA assegnazione di esito admin nella storia (o null): è
+ *  l'ancora della UNA TANTUM — l'ultimo evento qualsiasi (una nota!) non
+ *  deve farla scattare (revisore 25/08). */
+function dataUltimoStatoAdmin(storia: TrackingRow["storia"]): string | null {
+  let out: string | null = null;
+  (storia || []).forEach((ev) => { if (ev.tipo === "stato_admin" && ev.data) out = ev.data; });
+  return out;
+}
+
 /** Esito admin DEFINITIVO (flag amministrabile): chiude il cerchio della
  *  pratica — esce dalla coda ⚡ Da lavorare della verifica amministrazione. */
 export function esitoAdminDefinitivo(statoAdmin: string, categoria: string, brand?: string | null): boolean {
@@ -623,7 +632,13 @@ export function calcolaMalus(row: TrackingRow): number {
     const dec2 = malusAdminDecorrenza(row.statoAdmin, row.categoria, row.brand);
     const ggDec = dec2 ? giorniApertiDa(dec2, row.negozio, row.venditore) : Number.POSITIVE_INFINITY;
     const giorni = mAdm > 0 ? Math.min(Math.max(1, m.aAgg), Math.max(0, ggDec)) : 0;
-    const fisso = m.aAgg <= ggDec ? mFis : 0;
+    // la UNA TANTUM si ancora all'ASSEGNAZIONE dell'esito (evento stato_admin),
+    // non all'ultimo evento qualsiasi: una nota su un esito pre-configurazione
+    // non deve farla scattare (revisore 25/08). Storia senza evento stato_admin
+    // (pratiche d'epoca) = niente una tantum: mai retroattivi.
+    const dEsito = parseRuleDate(dataUltimoStatoAdmin(row.storia) || "");
+    const dDec = dec2 ? parseRuleDate(dec2) : null;
+    const fisso = mFis > 0 && !!dEsito && (!dDec || dEsito >= dDec) ? mFis : 0;
     return Math.round((fisso + giorni * mAdm) * 100) / 100;
   }
   const r = regolaDi(row.categoria);

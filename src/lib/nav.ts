@@ -253,6 +253,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
             // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
             { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
+            // Pannello WhatsApp (Luca 25/08): numeri, verifica, ricollega, intestazioni
+            { name: "WhatsApp", sez: "whatsapp", icon: MessagesSquare, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

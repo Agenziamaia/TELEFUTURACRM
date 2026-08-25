@@ -24,6 +24,7 @@ import {
   addAperti,
   malusAdminGiorno,
   malusAdminFisso,
+  malusAdminDecorrenza,
 } from "./trackingHelpers";
 
 // I 4 SPAZI del malus (Luca 21/08 sera): in_corso = la pratica lo sta ancora
@@ -257,12 +258,17 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
         || malusAdminFisso(row.statoAdmin || "", row.categoria, row.brand) > 0;
       if (admin) {
         const ancora = eventi.length ? eventi[eventi.length - 1].d : (t0 || oggi);
+        // giorni allineati al conteggio PAGATO: aperti dall'ancora, clampati
+        // alla decorrenza dei € dell'esito (revisore 25/08 — coi lavorativi
+        // di calendario giorni × € non tornava con l'importo)
+        const decE = parseData(malusAdminDecorrenza(row.statoAdmin || "", row.categoria, row.brand) || "");
+        const da = decE && decE > ancora ? decE : ancora;
         out.push({
           ...base,
           venditore: nomeDelegato || nomeOriginale,
           data_inizio: toISODate(ancora),
           data_fine: null,
-          giorni: Math.max(1, lavorativiTra(ancora, oggi)),
+          giorni: Math.max(1, apertiTra(da, oggi, row.negozio, row.venditore)),
           importo,
           stato: "in_corso",
         });

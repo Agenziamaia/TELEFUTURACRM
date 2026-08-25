@@ -20,6 +20,8 @@ type Esito = {
     colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
     lato?: string | null;   // 'negozio' | 'admin' (verifica amministrativa)
     malus_giorno?: number | null;   // €/gg dell'esito admin (es. Non Conforme)
+    malus_fisso?: number | null;    // € una tantum dell'esito admin (25/08)
+    malus_decorrenza?: string | null;   // i € valgono da questa data (mai retroattivi)
     brand?: string | null;  // NULL = generale; es. 'windtre' = solo per quell'operatore (fisso)
 };
 
@@ -111,6 +113,9 @@ export function TrackingEsitiView() {
         const { error } = await supabase.from("tracking_esiti").insert(gen.map((r) => ({
             categoria: "fisso", chiave: r.chiave, etichetta: r.etichetta, colore: r.colore, bg: r.bg,
             ordine: r.ordine, attiva: r.attiva, completata: r.completata, lato, malus_giorno: r.malus_giorno ?? null, brand: b,
+            // fisso e decorrenza VIAGGIANO col clone (revisore 25/08): senza, la
+            // lista per-brand nasceva con €/gg retroattivo e senza una tantum
+            malus_fisso: r.malus_fisso ?? null, malus_decorrenza: r.malus_decorrenza ?? null,
         })));
         if (error) { setErr(error.message); return; }
         carica();
@@ -136,11 +141,16 @@ export function TrackingEsitiView() {
         await supabase.from("tracking_esiti").update({ completata: !r.completata }).eq("id", r.id);
         carica();
     };
-    // €/GIORNO dell'esito admin (10/08): vuoto = nessun malus
+    // €/GIORNO dell'esito admin (10/08): vuoto = nessun malus.
+    // DECORRENZA OBBLIGATORIA (revisore 25/08, lezione incidente sky): il €
+    // cambiato da qui vale solo in avanti — senza timbro il motore contava
+    // anche il passato (stessa classe del bug sky).
     const salvaMalus = async (r: Esito, v: string) => {
         const n = v.trim() === "" ? null : (parseFloat(v.replace(",", ".")) || null);
         if ((n ?? null) === (r.malus_giorno ?? null)) return;
-        await supabase.from("tracking_esiti").update({ malus_giorno: n }).eq("id", r.id);
+        const d = new Date();
+        const dec = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        await supabase.from("tracking_esiti").update({ malus_giorno: n, malus_decorrenza: dec }).eq("id", r.id);
         carica();
     };
     const elimina = async (r: Esito) => {
