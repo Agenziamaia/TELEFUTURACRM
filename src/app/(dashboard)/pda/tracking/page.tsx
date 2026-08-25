@@ -1382,6 +1382,13 @@ export default function TrackingPdaPage() {
   const seesWhole = seesWholeStore(user?.role);
   // seesAll dalla fonte unica: per l'amministrativo dipende dalle restrizioni admin.
   const { seesAll, stores: visibleStores, loaded: visLoaded } = useVisibleStores();
+  // Con la capacità esito admin la platea diventa COMPLETA — tutte le pratiche
+  // di tutti i punti vendita, ma SOLO qui nel Tracking (Luca 25/08 sera-2): il
+  // lavoro di controllo richiede la visione totale senza toccare la visibilità
+  // negozi globale dell'utente (le altre sezioni non cambiano). Vale per la
+  // lista pratiche e per l'archivio malus in sola lettura; lo spazzino della
+  // sync malus resta gated sul seesAll vero.
+  const vedeTutteTracking = seesAll || canEditAdmin;
 
   // Il manager puo' delegare SOLO ai collaboratori dei propri punti vendita —
   // TUTTI quelli visibili, non solo il principale.
@@ -1604,7 +1611,7 @@ export default function TrackingPdaPage() {
         DELEGHE = mappa;
         impostaDelegheMalus(mappa);
       }
-      const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
+      const scoped = vedeTutteTracking ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
         // Le pratiche FATTE DA ME si vedono SEMPRE, anche se registrate su un
         // negozio fuori dalla mia visibilità (coperture in altri PV — Luca
@@ -1621,12 +1628,14 @@ export default function TrackingPdaPage() {
     } finally {
       setLoading(false);
     }
-  }, [seesAll, seesWhole, visibleStores, user?.name, user?.id]);
+  }, [vedeTutteTracking, seesWhole, visibleStores, user?.name, user?.id]);
 
   useEffect(() => {
     // NON interrogare i dati prima che la visibilita' negozi sia arrivata: un
     // utente "scopato" (es. store manager) altrimenti parte con stores=[] e la
     // sua lista resta VUOTA (nessuna pratica del suo negozio). seesAll non attende.
+    // (la capacità arriva coi permessi: al flip di vedeTutteTracking cambia
+    // l'identità di fetchData e la lista si ricarica completa da sola)
     if (seesAll || visLoaded) fetchData();
   }, [fetchData, seesAll, visLoaded]);
 
@@ -1766,7 +1775,10 @@ export default function TrackingPdaPage() {
     // i TOMBSTONE (mig. 150, eliminati dall'admin) restano solo per la sync:
     // fuori da archivio, contatori e badge per chiunque
     const vivi = episodi.filter((e) => !e.eliminato);
-    if (seesAll) return vivi;
+    // capacità esito admin = archivio completo in SOLA lettura (le azioni
+    // restano su puoCompensare/puoEliminare): coi badge di riga sulla platea
+    // completa, un archivio scopato mostrerebbe pratiche senza il loro malus
+    if (vedeTutteTracking) return vivi;
     // Gli episodi MIEI si vedono SEMPRE, anche se maturati su un negozio fuori
     // dalla mia visibilità (coperture — Luca 23/08, caso Staicu a Magliana: la
     // penale è sua ma da SM di Promontori non gli compariva nello storico).
@@ -1774,7 +1786,7 @@ export default function TrackingPdaPage() {
     const mio = (e: EpisodioMalus) => !!e.venditore && !!user?.name && e.venditore === user.name;
     if (seesWhole) return vivi.filter((e) => mio(e) || visibleStores.some((st) => sameStore(e.negozio, st)));
     return vivi.filter(mio);
-  }, [episodi, seesAll, seesWhole, visibleStores, user?.name]);
+  }, [episodi, vedeTutteTracking, seesWhole, visibleStores, user?.name]);
 
   const episodiPerRiga = useMemo(() => {
     const m = new Map<string, EpisodioMalus[]>();
@@ -1846,12 +1858,13 @@ export default function TrackingPdaPage() {
     [baseVisibile, seesAll]
   );
   const venditoriAttivi = useMemo(
-    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
-    [baseVisibile, seesWhole, seesAll]
+    () => (seesWhole && !vedeTutteTracking ? Array.from(new Set(baseVisibile.flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
+    [baseVisibile, seesWhole, vedeTutteTracking]
   );
+  // con la capacità (o seesAll) vale la tendina utenti a cascata sul negozio
   const utentiAttivi = useMemo(
-    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
-    [baseVisibile, seesAll, negozioSel]
+    () => (vedeTutteTracking ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
+    [baseVisibile, vedeTutteTracking, negozioSel]
   );
   const catAttive = useMemo(() => new Set(
     baseVisibile

@@ -380,7 +380,7 @@ export const CAP_PASSWORD: CapGroupFlags = {
 export const CAP_TRACKING_ESITO_ADMIN: CapDef = {
     id: "esito_admin",
     label: "Lavora l'esito admin (⚡ Da lavorare)",
-    desc: "Vede il pulsante «⚡ Da lavorare» con le pratiche in attesa di verifica e mette l'esito amministrativo con nota dalla scheda Admin. Non concede altro: compensazione malus ed eliminazioni restano all'amministrazione. Default: amministrazione e direzione generale.",
+    desc: "Vede il pulsante «⚡ Da lavorare» con le pratiche in attesa di verifica e mette l'esito amministrativo con nota dalla scheda Admin. Dentro il Tracking la platea è completa: le pratiche di TUTTI i punti vendita (la visibilità negozi delle altre sezioni non cambia). Non concede altro: compensazione malus ed eliminazioni restano all'amministrazione. Default: amministrazione e direzione generale.",
     default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
 };
 export const CAP_TRACKING: CapGroupFlags = {
