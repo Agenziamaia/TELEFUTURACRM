@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -307,8 +307,13 @@ export default function CalcolatorePage() {
             const p = prods.find(x => x.id === o.prodotto_id); if (!p) continue;
             const c = cats.find(x => x.id === p.categoria_id); if (!c) continue;
             if (esclusaDalleGare({ categoria: c.nome, prodotto: p.nome, offerta: o.nome })) continue;   // escluse per regola, non scoperture
-            const r = matchRigheAttivazione(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome, opzioni: tutteOpzioni }, brand);
-            if (!r.length) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
+            // le opzioni si concedono SOLO al pick-one (revisore 25/08): date
+            // anche alle componenti, un'offerta W3 senza base risulterebbe
+            // «coperta» dai soli extra (Netflix, Pronto…) — scopertura nascosta
+            const r = matchRigheAttivazione(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome }, brand);
+            const coperta = r.length > 0
+                || (tutteOpzioni != null && !!matchRigaTabellare(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome, opzioni: tutteOpzioni }, brand));
+            if (!coperta) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
         }
         return out;
     }, [tab, offs, prods, cats, brand, tutteOpzioni]);
@@ -445,7 +450,8 @@ export default function CalcolatorePage() {
                                 <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                                     {offsProd.map(o => {
                                         const on = offId === o.id;
-                                        const r = tab && catSel && prodSel ? (matchRigheAttivazione(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome, opzioni: tutteOpzioni }, brand)[0] ?? null) : null;
+                                        const r = tab && catSel && prodSel ? (matchRigheAttivazione(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome }, brand)[0]
+                                            ?? (tutteOpzioni != null ? matchRigaTabellare(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome, opzioni: tutteOpzioni }, brand) : null)) : null;
                                         return (
                                             <button key={o.id} onClick={() => { setOffId(o.id); setTierSel(null); setOpzSel([]); }}
                                                 className="rounded-xl px-3 py-3 text-sm font-semibold text-left border transition"
@@ -503,10 +509,18 @@ export default function CalcolatorePage() {
                             ) : !tab ? (
                                 <div className="text-amber-300 text-sm">Tabellare non caricato per questo mese: nessun pay calcolabile.</div>
                             ) : !riga ? (
+                                // fasce S4 & co.: il pay c'è ma dipende dalle opzioni —
+                                // senza scelta la guida, non il falso «senza commissioning»
+                                opzRilevanti.length > 0 && !opzSel.length ? (
+                                    <div className="text-amber-300 font-semibold flex items-center gap-2">
+                                        <TriangleAlert size={20} /> Scegli le «Opzioni della vendita» qui sopra (es. la fascia di consumo): il pay di questa offerta dipende da quelle.
+                                    </div>
+                                ) : (
                                 <div className="text-amber-300 font-semibold flex items-center gap-2">
                                     <TriangleAlert size={20} /> Questa offerta non ha una riga di commissioning: NON genera pay.
                                     <span className="text-slate-400 text-xs font-normal">Va aggiunta la riga al tabellare (regola del catalogo).</span>
                                 </div>
+                                )
                             ) : (
                                 <>
                                     <div className="flex items-start justify-between flex-wrap gap-4">

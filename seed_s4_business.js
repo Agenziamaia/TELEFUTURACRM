@@ -100,13 +100,15 @@ const FASCE = {
       let ord = 10;
       for (const prodotto of ["Luce", "Gas"]) {
         for (const f of FASCE[prodotto]) {
+          // pay_base NULL (revisore 25/08): su S4 la «base» non esiste — con
+          // S1 da 0 il tier è sempre ≥1 e la pillola Base non deve ricomparire
           await client.query(
             `insert into pay_righe (brand, month, lato, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione,
                punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente)
              values ('s4', $1, 'azienda', 'energia', $2, 'Business', null, $3, 'Altri Usi Smart', $4,
-               0, $5, $6, false, true, $7, $8, $9)`,
+               0, null, $5, false, true, $6, $7, $8)`,
             [month, `Altri Usi · ${prodotto} ${f.opzione.replace("Consumo ", "")}`, prodotto, f.opzione,
-              f.pay, [f.pay, f.pay, f.pay], NOTE_BUSINESS, ord++, f.ric]);
+              [f.pay, f.pay, f.pay], NOTE_BUSINESS, ord++, f.ric]);
         }
         ord = prodotto === "Luce" ? 20 : ord;
       }

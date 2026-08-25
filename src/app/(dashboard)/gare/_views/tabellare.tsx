@@ -130,7 +130,11 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     // pay_tiers tagliati come le soglie (soglie_max della pista)
                     const mx = x.pista ? pisteAz.find(p => p.chiave === x.pista)?.soglie_max : null;
                     // € FISSI ai ragazzi (Luca 25/08): dove impostati vincono
-                    // sulla derivazione a % — stessa precedenza del motore
+                    // sulla derivazione a % — stessa precedenza del motore.
+                    // ⚠️ QUI la pay_mappa_soglie NON è applicata (solo % e €
+                    // fissi): oggi i brand con griglia derivata non hanno mappe
+                    // (W3 usa i suoi pannelli) — se una mappa arrivasse su un
+                    // brand derivato, allineare questa vista al motore prima
                     const manuali = Array.isArray(x.pay_ragazzi_tiers) && x.pay_ragazzi_tiers.length ? x.pay_ragazzi_tiers.map(Number) : null;
                     return {
                         ...x, punti: Number(x.punti || 0),
@@ -911,6 +915,9 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
     const vals = draft ?? mostrati;
     const dirty = draft != null && draft.join("|") !== mostrati.join("|");
     const salva = async () => {
+        // la casella vuota NON è uno 0 (revisore 25/08: Number("") === 0
+        // passava il controllo e salvava 0 € in silenzio)
+        if (vals.some(v => String(v).trim() === "")) { notify("C'è una casella vuota: compila tutti gli importi"); return; }
         const nums = vals.map(v => Number(String(v).trim().replace(",", ".")));
         if (nums.some(n => !Number.isFinite(n))) { notify("Compila tutti gli importi con numeri validi"); return; }
         const { error } = await supabase.from("pay_righe").update({ pay_ragazzi_tiers: nums }).eq("id", r.id);
@@ -1009,7 +1016,8 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
             brand_vendita: bv, punti: pista ? Number(punti.replace(",", ".")) || 0 : 0,
             pay_base: base === "" ? null : Number(base.replace(",", ".")) || 0,
             pay_tiers: pista ? tiers.map(t => Number(t.replace(",", ".")) || 0) : [],
-            ricorrente: pista && ric !== "" ? Number(ric.replace(",", ".")) || null : null,
+            // parse esplicito: «0» resta 0 (il vecchio «|| null» lo mangiava)
+            ricorrente: (() => { if (!pista || ric.trim() === "") return null; const n = Number(ric.replace(",", ".")); return Number.isFinite(n) ? n : null; })(),
             gettone: !pista, attivo: true, ordine: 999,
         });
         if (dbError("Nuova riga", error)) return;
