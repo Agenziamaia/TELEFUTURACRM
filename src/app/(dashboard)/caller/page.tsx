@@ -835,7 +835,10 @@ function CallerPageInner() {
     // SheetJS al caricamento — prima il conteggio era una stima (f.size/200)
     // e la conferma creava lead segnaposto senza numeri
     const [listaDati, setListaDati] = useState<string[][]>([]);
+    // tutte le righe non vuote (intestazione compresa): la spunta la esclude
+    const [listaDatiFull, setListaDatiFull] = useState<string[][]>([]);
     const [listaHeaderSaltata, setListaHeaderSaltata] = useState(false);
+    const [listaBusy, setListaBusy] = useState(false);
     const [listaProvenienza, setListaProvenienza] = useState("");
     const [listaSegnalatore, setListaSegnalatore] = useState("");
     const [listaCampagna, setListaCampagna] = useState("");
@@ -2084,6 +2087,7 @@ function CallerPageInner() {
         setListaFileObj(null);
         setListaRows(0);
         setListaDati([]);
+        setListaDatiFull([]);
         setListaHeaderSaltata(false);
         setListaProvenienza("");
         setListaSegnalatore("");
@@ -2108,23 +2112,56 @@ function CallerPageInner() {
         if (!f) return;
         try {
             const XLSX = await import("xlsx");
-            const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+            const buf = await f.arrayBuffer();
+            // CSV utf-8 SENZA BOM: SheetJS da array ripiega su codepage 1252 e
+            // gli accenti escono in mojibake — se decodifica pulito, via testo
+            let wb;
+            if (/\.csv$/i.test(f.name)) {
+                let testo: string | null = null;
+                try { testo = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { /* non utf-8 */ }
+                wb = testo !== null ? XLSX.read(testo, { type: "string" }) : XLSX.read(buf, { type: "array" });
+            } else {
+                wb = XLSX.read(buf, { type: "array" });
+            }
             const sheet = wb.Sheets[wb.SheetNames[0]];
             const grezze = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false }) as unknown[][];
-            let righe = grezze.map((r) => (r ?? []).map((c) => String(c ?? "").trim()))
-                .filter((r) => r.some((c) => c !== ""));
+            // seconda lettura RAW (rilievo alto del revisore): i telefoni in
+            // cella NUMERICA da 12+ cifre (393401234567) col testo formattato
+            // escono in notazione scientifica «3.93401E+11» e si corrompono
+            const grezzeRaw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }) as unknown[][];
+            const righe = grezze.map((r, ri) => (r ?? []).map((c, ci) => {
+                let s = String(c ?? "").trim();
+                if (/e\+/i.test(s)) {
+                    const raw = grezzeRaw[ri]?.[ci];
+                    if (typeof raw === "number" && Number.isFinite(raw)) s = raw.toFixed(0);
+                }
+                return s;
+            })).filter((r) => r.some((c) => c !== ""));
             const haTelefono = (r: string[]) => r.some((c) => c.replace(/\D/g, "").length >= 6);
             const header = righe.length > 1 && !haTelefono(righe[0]) && haTelefono(righe[1]);
-            if (header) righe = righe.slice(1);
-            if (!righe.length) { alert("File vuoto o non leggibile: serve almeno una riga con i dati."); return; }
+            const dati = header ? righe.slice(1) : righe;
+            if (!dati.length) { alert("File vuoto o non leggibile: serve almeno una riga con i dati."); return; }
             setListaFile(f.name);
             setListaFileObj(f);
-            setListaDati(righe);
+            setListaDatiFull(righe);
+            setListaDati(dati);
             setListaHeaderSaltata(header);
-            setListaRows(righe.length);
+            setListaRows(dati.length);
         } catch (err) {
             alert("File non leggibile: " + (err instanceof Error ? err.message : "formato non riconosciuto") + ". Usa un Excel (.xlsx) o un CSV.");
         }
+        // stesso file riselezionabile dopo un errore (l'onChange non riscatta
+        // se il value resta pieno)
+        e.target.value = "";
+    }
+    // spunta intestazione (rilievo revisore): l'euristica pre-compila ma
+    // l'utente può correggerla — righe e conteggio si riallineano da soli
+    function toggleHeaderLista(v: boolean) {
+        const dati = v ? listaDatiFull.slice(1) : listaDatiFull;
+        if (!dati.length) return;
+        setListaHeaderSaltata(v);
+        setListaDati(dati);
+        setListaRows(dati.length);
     }
 
     function updateMappa(col: string, val: string) {
@@ -2158,13 +2195,42 @@ function CallerPageInner() {
         setListaInternoRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
     }
 
-    const totaleAssegnato = listaSplits.reduce((sum, s) => sum + (s.quantita || 0), 0);
+    // si contano SOLO gli split validi (rilievo alto del revisore): uno split
+    // con quantità ma senza caller mostrava «✓ Completo» e quelle righe
+    // sparivano in silenzio alla conferma
+    const totaleAssegnato = listaSplits.filter(s => s.caller && s.quantita > 0).reduce((sum, s) => sum + s.quantita, 0);
     const splitsValidi = listaSplits.filter(s => s.caller && s.quantita > 0).length > 0 && totaleAssegnato === listaRows;
 
     async function confermaLista() {
-        if (!listaFileObj) return;
+        if (!listaFileObj || listaBusy) return;
         if (!listaDati.length || listaDati.length !== listaRows) {
             alert("Le righe del file non sono più in memoria: torna allo step 2 e ricarica il file.");
+            return;
+        }
+        // nome univoco: le pratiche si agganciano alla lista PER NOME e il
+        // cestino cancella per nome — un omonimo mischierebbe due liste
+        setListaBusy(true);
+        try {
+        const { data: omonima } = await supabase.from("liste").select("id").eq("nome", listaNome).limit(1);
+        if (omonima && omonima.length) {
+            alert(`Esiste già una lista chiamata «${listaNome}»: cambia il nome allo step 2.`);
+            return;
+        }
+        // mappa colonne → indici, PRIMA di toccare storage e database: la
+        // domanda sulle righe senza telefono deve poter annullare tutto senza
+        // lasciare file o liste orfane
+        const idxCampo = (campo: string) => {
+            const col = colsAttive.find((c) => listaMappa[c] === campo);
+            return col ? COL_LETTERS.indexOf(col) : -1;
+        };
+        const cella = (riga: string[], idx: number) => (idx >= 0 ? String(riga[idx] ?? "").trim() : "");
+        const iNumero = idxCampo("Numero");
+        const iNome = idxCampo("Nome"), iCognome = idxCampo("Cognome"), iCF = idxCampo("Codice Fiscale");
+        const iRagione = idxCampo("Ragione Sociale"), iPiva = idxCampo("Partita IVA"), iNote = idxCampo("Note");
+        // righe senza un telefono valido nella colonna mappata: dichiarate,
+        // mai perse in silenzio (rilievo revisore) — si sceglie consapevolmente
+        const senzaTelefono = listaDati.filter((r) => cella(r, iNumero).replace(/\D/g, "").length < 6).length;
+        if (senzaTelefono > 0 && !window.confirm(`${senzaTelefono} righe su ${listaDati.length} non hanno un numero valido nella colonna mappata su «Numero»: le pratiche nasceranno senza telefono. Continuare comunque?`)) {
             return;
         }
 
@@ -2221,14 +2287,6 @@ function CallerPageInner() {
         // rimasto dallo scaffolding. Le date vuote vanno a null, mai "" (i
         // timestamptz rifiutano la stringa vuota); numero come il flusso
         // manuale: nazionale normalizzato con ripiego sul grezzo.
-        const idxCampo = (campo: string) => {
-            const col = colsAttive.find((c) => listaMappa[c] === campo);
-            return col ? COL_LETTERS.indexOf(col) : -1;
-        };
-        const cella = (riga: string[], idx: number) => (idx >= 0 ? String(riga[idx] ?? "").trim() : "");
-        const iNumero = idxCampo("Numero");
-        const iNome = idxCampo("Nome"), iCognome = idxCampo("Cognome"), iCF = idxCampo("Codice Fiscale");
-        const iRagione = idxCampo("Ragione Sociale"), iPiva = idxCampo("Partita IVA"), iNote = idxCampo("Note");
         const callsPayloads: Record<string, unknown>[] = [];
         let rowIdx = 0;
         listaSplits.filter((s) => s.caller && s.quantita > 0).forEach((split) => {
@@ -2263,15 +2321,27 @@ function CallerPageInner() {
             }
         });
         if (callsPayloads.length > 0) {
-            const { error: callsError } = await supabase.from("calls").insert(callsPayloads);
-            if (callsError) {
-                alert("Errore creazione call: " + callsError.message);
+            // a blocchi da 500 (pattern import listini) — e su errore ROLLBACK
+            // pulito: via le pratiche già inserite e la lista appena creata,
+            // niente liste orfane né doppioni al tentativo successivo
+            let errore: string | null = null;
+            for (let i = 0; i < callsPayloads.length && !errore; i += 500) {
+                const { error: callsError } = await supabase.from("calls").insert(callsPayloads.slice(i, i + 500));
+                if (callsError) errore = callsError.message;
+            }
+            if (errore) {
+                try {
+                    await supabase.from("calls").delete().eq("lista_origine", listaNome);
+                    await supabase.from("liste").delete().eq("file_path", filePath);
+                } catch { /* best-effort */ }
+                alert("Errore creazione pratiche: " + errore + " — nessuna pratica creata, riprova.");
                 return;
             }
         }
 
         await Promise.all([fetchCalls(), fetchListe()]);
         closeLista();
+        } finally { setListaBusy(false); }
     }
 
     /* ── Step navigation flags ── */
@@ -3778,9 +3848,17 @@ function CallerPageInner() {
                                         </label>
                                     </FormGroup>
                                     {listaFile && listaRows > 0 && (
-                                        <div className="flex justify-between items-center p-3 bg-violet-500/10 border border-violet-500/30 rounded-xl">
-                                            <span className="text-sm text-white font-semibold">{listaFile}</span>
-                                            <span className="text-xs text-violet-300 font-bold">{listaRows} righe rilevate{listaHeaderSaltata ? " (intestazione esclusa)" : ""}</span>
+                                        <div className="p-3 bg-violet-500/10 border border-violet-500/30 rounded-xl space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm text-white font-semibold">{listaFile}</span>
+                                                <span className="text-xs text-violet-300 font-bold">{listaRows} righe rilevate{listaHeaderSaltata ? " (intestazione esclusa)" : ""}</span>
+                                            </div>
+                                            {/* la spunta corregge l'euristica quando sbaglia (liste
+                                                senza telefoni in riga 1, intestazioni con numeri) */}
+                                            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+                                                <input type="checkbox" checked={listaHeaderSaltata} onChange={(e) => toggleHeaderLista(e.target.checked)} className="accent-violet-500" />
+                                                La prima riga del file è un&apos;intestazione (non un contatto)
+                                            </label>
                                         </div>
                                     )}
                                 </div>
@@ -3943,10 +4021,10 @@ function CallerPageInner() {
                             ) : (
                                 <button
                                     onClick={confermaLista}
-                                    disabled={!canConfirm}
+                                    disabled={!canConfirm || listaBusy}
                                     className="px-8 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest shadow-lg shadow-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    Conferma e Assegna
+                                    {listaBusy ? "Assegnazione…" : "Conferma e Assegna"}
                                 </button>
                             )}
                         </div>
