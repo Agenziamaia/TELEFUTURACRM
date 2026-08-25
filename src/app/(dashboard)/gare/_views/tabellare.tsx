@@ -676,7 +676,8 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                     S{tn} ← loro
                                                     <select value={v?.tier_loro ?? tn} onChange={e => setVoceMappa(px.chiave, tn, { tier_loro: Number(e.target.value) })}
                                                         className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white">
-                                                        {[1, 2, 3, 4, 5, 6].map(t => <option key={t} value={t} className="bg-slate-800">S{t}</option>)}
+                                                        {/* fino a S8: la scala azienda Sky ha 8 soglie (conversione 25/08) */}
+                                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(t => <option key={t} value={t} className="bg-slate-800">S{t}</option>)}
                                                     </select>
                                                     ×
                                                     <input value={v?.perc ?? ""} placeholder="%" onChange={e => setVoceMappa(px.chiave, tn, { perc: e.target.value })}
