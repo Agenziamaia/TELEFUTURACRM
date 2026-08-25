@@ -15,7 +15,7 @@ import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { TabellareEditor } from "./_views/tabellare";
 import { W3PdvPanel } from "./_views/w3_pdv";
-import { W3CommissioningPanel, W3PercRagazzi } from "./_views/w3_commissioning";
+import { W3CommissioningPanel, W3PercRagazzi, W3RagazziSoglie } from "./_views/w3_commissioning";
 import { W3PartnershipPanel } from "./_views/w3_partnership";
 import { LettereGara } from "./_views/lettere";
 import { CalendarioGareView } from "./_views/calendario_gare";
@@ -235,7 +235,15 @@ function GareInner() {
                         il pannello PDV con segmento e target resta sempre in testa;
                         sul franchising il resto vive in TRE SCHEDE — 🏅 Partnership,
                         💶 Commissioning €, 📜 Lettera & tabellare — una alla volta. */}
-                    {PAY_CTX[brand.id] === "windtre" && lato === "azienda" ? (
+                    {PAY_CTX[brand.id] === "windtre" && lato === "ragazzi" ? (
+                        <>
+                            {/* SCHEDA RAGAZZI W3 (Luca 25/08): niente schemi-regole —
+                                solo le SOGLIE (tutte le piste, prime 3) e il tabellare
+                                dei PAY = commissioning azienda × % della soglia */}
+                            <W3RagazziSoglie key={`w3rsg|${month}`} mese={month.slice(0, 7)} />
+                            <W3CommissioningPanel key={`w3rcomm|${month}`} mese={month.slice(0, 7)} colore={brand.color} ragazzi />
+                        </>
+                    ) : PAY_CTX[brand.id] === "windtre" && lato === "azienda" ? (
                         <>
                             <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
                             {segW3 === "franchising" && (

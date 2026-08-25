@@ -15,7 +15,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { esclusaDalleGare, matchComponenti, matchRigaTabellare, PayRiga } from "@/lib/commissioning";
+import { esclusaDalleGare, matchComponenti, matchRigaTabellare, PayRiga , caricaTabellare } from "@/lib/commissioning";
 import { cn } from "@/utils";
 
 interface OffCanone {
@@ -53,7 +53,7 @@ const COMP_LABEL: Record<string, string> = {
 // vendita (le applica l'analisi leggendo campi e opzioni)
 const COMP_RUNTIME = new Set(["la", "ftth", "opzioni"]);
 
-export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: string }) {
+export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: string; colore: string; ragazzi?: boolean }) {
     const monthISO = `${mese}-01`;
     const [righe, setRighe] = useState<PayRiga[]>([]);
     const [offerte, setOfferte] = useState<OffCanone[]>([]);
@@ -76,10 +76,38 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                 supabase.from("pay_soglie").select("pista, tier")
                     .eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda"),
             ]);
-            const rows = ((r.data ?? []) as PayRiga[])
+            let rows = ((r.data ?? []) as PayRiga[])
                 .map(x => ({ ...x, punti: Number(x.punti || 0), pay_base: x.pay_base == null ? null : Number(x.pay_base), pay_tiers: (Array.isArray(x.pay_tiers) ? x.pay_tiers.map(Number) : []) }));
             const tm: Record<string, number> = {};
             ((sg.data ?? []) as { pista: string; tier: number }[]).forEach(s => { tm[s.pista] = Math.max(tm[s.pista] || 0, Number(s.tier)); });
+            if (ragazzi) {
+                // MODALITÀ RAGAZZI (Luca 25/08): stessi dati dell'azienda,
+                // SCALATI con la stessa formula del motore — tier × % della
+                // soglia (pay_mappa_soglie), base × % unica (perc_ragazzi).
+                // Le tabelle mostrano ESATTAMENTE ciò che il motore deriva.
+                const [mp, pi] = await Promise.all([
+                    supabase.from("pay_mappa_soglie").select("pista, tier_nostro, perc").eq("brand", "windtre").eq("month", monthISO),
+                    supabase.from("pay_piste").select("chiave, perc_ragazzi").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda"),
+                ]);
+                const mappa: Record<string, Record<number, number>> = {};
+                ((mp.data ?? []) as { pista: string; tier_nostro: number; perc: number }[]).forEach(x => { (mappa[x.pista] ??= {})[x.tier_nostro] = Number(x.perc); });
+                const unica: Record<string, number> = {};
+                ((pi.data ?? []) as { chiave: string; perc_ragazzi: number | null }[]).forEach(x => { unica[x.chiave] = x.perc_ragazzi == null ? 100 : Number(x.perc_ragazzi); });
+                const fT = (pista: string | null, i: number) => {
+                    if (!pista) return 1;
+                    const perSoglia = mappa[pista]?.[i + 1];
+                    return (perSoglia ?? unica[pista] ?? 100) / 100;
+                };
+                const fU = (pista: string | null) => (pista ? (unica[pista] ?? 100) / 100 : 1);
+                rows = rows
+                    .filter(x => (unica[String(x.pista || "")] ?? 100) !== 0)   // piste di rete fuori
+                    .map(x => ({
+                        ...x,
+                        pay_base: x.pay_base == null ? null : Math.round(x.pay_base * fU(x.pista) * 100) / 100,
+                        pay_tiers: x.pay_tiers.map((v2, i) => (v2 == null ? v2 : Math.round(Number(v2) * fT(x.pista, i) * 100) / 100)),
+                    }));
+                for (const k of Object.keys(tm)) tm[k] = Math.min(tm[k], 3);   // i ragazzi vedono le prime 3 soglie
+            }
             // catalogo: prodotti → offerte con canone (per le sezioni a canone)
             const [cats, prods] = await Promise.all([
                 supabase.from("catalog_categorie").select("id, nome"),
@@ -122,7 +150,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
     // premio a evento (25/35/45 € alla soglia di rete, target nella tabella
     // sopra) si somma al pay — qui compare nelle colonne 💼 S1-S3
     const bizRighe = useMemo(() => righe.filter(r => r.pista === "business_piva"), [righe]);
-    const bizN = bizRighe.length ? Math.min(3, tierMax["business_piva"] || 3) : 0;
+    const bizN = ragazzi ? 0 : (bizRighe.length ? Math.min(3, tierMax["business_piva"] || 3) : 0);
     // SONDA (Luca vede le colonne 💼 vuote, la simulazione le dà piene): la
     // cella vuota porta nel title il MOTIVO esatto — da togliere a baco chiuso
     type BizEsito = { scale: number[]; punti: number } | { err: string };
@@ -244,10 +272,10 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
         <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
             <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                 <div className="text-[11px] uppercase tracking-wider text-slate-400">
-                    Commissioning in € — il pay di ogni attivazione, per soglia: la soglia raggiunta sceglie la colonna
+                    {ragazzi ? "Pay ai ragazzi in € — il commissioning azienda × la % della soglia (card 👥 del lato azienda)" : "Commissioning in € — il pay di ogni attivazione, per soglia: la soglia raggiunta sceglie la colonna"}
                 </div>
                 <div className="flex items-center gap-2">
-                    {dirtyPay && (
+                    {!ragazzi && dirtyPay && (
                         <button onClick={salvaPay} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">💾 Salva gettoni</button>
                     )}
                     <div className="relative w-64">
@@ -257,7 +285,7 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                     </div>
                 </div>
             </div>
-            {SEZIONI.map(sez => {
+            {SEZIONI.filter(sez => !(ragazzi && sez.id === "assicurazioni")).map(sez => {
                 const aperta = aperte.has(sez.id) || !!cerca.trim();
                 /* ---- TELEFONI & DEVICE: gettoni one-shot della lettera,
                    celle EDITABILI (Luca 14/08 sera-3) — righe spente per il
@@ -297,9 +325,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                         {!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa di aggancio</span>}
                                                     </td>
                                                     <td className="px-2 py-1 text-center">
-                                                        <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                        {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                             onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                                            className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                            className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -561,9 +589,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                             <tr key={r.id} className="border-t border-white/[0.04]">
                                                                 <td className="px-3 py-1 text-slate-200">{r.nome}{!r.attivo && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>in attesa dell&apos;importo premio</span>}</td>
                                                                 <td className="px-2 py-1 text-center w-24">
-                                                                    <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                    {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                                         onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                                                        className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                                        className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -610,7 +638,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     {conPunti && <td className="px-2 py-1 text-center font-bold text-white tabular-nums">{it(r.punti)}</td>}
                                                     {Array.from({ length: maxT }, (_, i) => (
                                                         <td key={i} className="px-1.5 py-1 text-center">
-                                                            {r.pay_tiers[i] == null ? <span className="text-slate-700">—</span> : (
+                                                            {r.pay_tiers[i] == null ? <span className="text-slate-700">—</span> : ragazzi ? (
+                                                                <span className="font-semibold text-emerald-200 tabular-nums">{String(r.pay_tiers[i])} €</span>
+                                                            ) : (
                                                                 <input value={payDraft[`${r.id}|${i}`] ?? String(r.pay_tiers[i])}
                                                                     onChange={e => setPayDraft(prev => ({ ...prev, [`${r.id}|${i}`]: e.target.value }))}
                                                                     className={inputPay} />
@@ -641,9 +671,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                                     <tr key={r.id} className="border-t border-white/[0.04]">
                                                                         <td className="px-3 py-1 text-slate-200">{r.nome}</td>
                                                                         <td className="px-2 py-1 text-center w-24">
-                                                                            <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                                            {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                                                 onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                                                                className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                                                className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                                         </td>
                                                                     </tr>
                                                                 ))}
@@ -697,9 +727,9 @@ export function W3CommissioningPanel({ mese, colore }: { mese: string; colore: s
                                                     <tr className="border-t border-white/[0.04] hover:bg-white/[0.03]">
                                                         <td className="px-3 py-1 text-slate-200">{r.nome}{Number(r.pay_base) === 0 && <span className="text-[10px] text-slate-500 ml-1.5" title={r.note || ""}>esclusa per lettera</span>}</td>
                                                         <td className="px-2 py-1 text-center">
-                                                            <input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
+                                                            {ragazzi ? <span className="font-semibold text-emerald-200 tabular-nums">{r.pay_base == null ? "—" : `${r.pay_base} €`}</span> : <><input value={payDraft[r.id] ?? (r.pay_base == null ? "" : String(r.pay_base))}
                                                                 onChange={e => setPayDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
-                                                                className={inputPay} /> <span className="text-[11px] text-slate-500">€</span>
+                                                                className={inputPay} /></>} <span className="text-[11px] text-slate-500">€</span>
                                                         </td>
                                                     </tr>
                                                     )}
@@ -852,6 +882,60 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
                 ))}
             </div>
             {msg && <p className="text-xs mt-3 text-emerald-300">{msg}</p>}
+        </div>
+    );
+}
+
+
+/* ═══ 📐 SOGLIE RAGAZZI W3 (Luca 25/08): in testa alla scheda ragazzi —
+   TUTTE le piste a soglie (mobile, fisso, luce&gas), derivate dal lato
+   azienda (prime 3, S1=S1). Sola lettura: le soglie si governano
+   dall'azienda. ═══════════════════════════════════════════════════════ */
+const NOME_PISTA_SOGLIE: Record<string, string> = { mobile: "📱 Mobile", fisso: "🏠 Fisso", lucegas: "⚡ Luce & Gas" };
+export function W3RagazziSoglie({ mese }: { mese: string }) {
+    const monthISO = `${mese}-01`;
+    const [soglie, setSoglie] = useState<{ pista: string; tier: number; soglia_da: number }[] | null>(null);
+    const [um, setUm] = useState<Record<string, string>>({});
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const tab = await caricaTabellare("windtre", monthISO);
+            if (!vivo) return;
+            setSoglie((tab?.soglie || []).filter(sg => NOME_PISTA_SOGLIE[sg.pista]));
+            setUm(Object.fromEntries((tab?.piste || []).map(pp => [pp.chiave, pp.um])));
+        })();
+        return () => { vivo = false; };
+    }, [monthISO]);
+    if (soglie === null) return null;
+    const piste = Object.keys(NOME_PISTA_SOGLIE).filter(k => soglie.some(sg => sg.pista === k));
+    if (!piste.length) return null;
+    const maxT = Math.max(...piste.map(k => soglie.filter(sg => sg.pista === k).length));
+    return (
+        <div className="glass-panel rounded-2xl p-5 border-l-4 border-amber-400/60">
+            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">📐 Soglie — le prime {maxT} della gara azienda (la tua S1 è la S1 del negozio)</div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse max-w-2xl">
+                    <thead>
+                        <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                            <th className="text-left font-semibold px-3 py-1.5">Pista</th>
+                            {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-2 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {piste.map(k => {
+                            const sg = soglie.filter(x => x.pista === k).sort((a, b) => a.tier - b.tier);
+                            return (
+                                <tr key={k} className="border-t border-white/[0.04]">
+                                    <td className="px-3 py-1.5 text-slate-200 font-semibold whitespace-nowrap">{NOME_PISTA_SOGLIE[k]} <span className="text-[10px] text-slate-500 font-normal">({um[k] || "punti"})</span></td>
+                                    {Array.from({ length: maxT }, (_, i) => (
+                                        <td key={i} className="px-2 py-1.5 text-center font-bold text-white tabular-nums">{sg[i] ? sg[i].soglia_da : <span className="text-slate-700">—</span>}</td>
+                                    ))}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
