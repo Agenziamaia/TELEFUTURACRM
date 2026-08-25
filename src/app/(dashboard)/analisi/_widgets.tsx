@@ -1404,7 +1404,7 @@ function WidgetMixPezzi({ ctx }) {
                     );
                 })}
             </div>
-            <div className="w-full min-h-[22px] flex flex-wrap items-start justify-center gap-1">
+            <div className="w-full h-[52px] flex flex-wrap content-center justify-center gap-1 overflow-hidden">
                 {att && dett.map((rg) => (
                     <span key={rg.label} className="flex items-center gap-1 text-[9px] text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: rg.colore || att.g.colore }} />
