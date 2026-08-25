@@ -59,6 +59,20 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const etichettaIstanza = (i: Instance) =>
         i.display_name || (i.owner_user_id && nomiTitolari[i.owner_user_id]) || i.negozio || (i.wa_number ? `+${i.wa_number}` : i.instance_name);
 
+    // MITTENTE INTERNO (Luca 25/08 notte): sui numeri condivisi più persone
+    // scrivono dallo stesso numero — sopra ogni bolla in USCITA il nome CRM
+    // di chi l'ha scritta (sent_by_user_id, salvato da sempre all'invio).
+    // Solo lato nostro: al cliente non arriva nulla. Vale anche sullo storico.
+    const [nomiMittenti, setNomiMittenti] = useState<Record<string, string>>({});
+    useEffect(() => {
+        const ids = [...new Set(msgs.map(m => m.sent_by_user_id).filter(Boolean))] as string[];
+        const mancanti = ids.filter(id => !nomiMittenti[id]);
+        if (!mancanti.length) return;
+        supabase.from("app_users").select("id, full_name").in("id", mancanti)
+            .then(({ data }) => setNomiMittenti(p => ({ ...p, ...Object.fromEntries((data ?? []).map((u: { id: string; full_name: string }) => [u.id, u.full_name])) })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [msgs]);
+
     // Modello "un numero per caller": ognuno vede i PROPRI numeri. Eccezioni:
     //  - admin/dev/amministrativo -> tutti i numeri
     //  - store_manager            -> i numeri del proprio negozio
@@ -556,6 +570,14 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                                 <div className={cn("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm", mine ? "bg-emerald-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5")}>
                                                     {selConv.is_group && !mine && m.sender_name && (
                                                         <p className="text-[11px] font-bold text-sky-300 mb-0.5">{m.sender_name}</p>
+                                                    )}
+                                                    {/* CHI L'HA SCRITTO (Luca 25/08 notte): sui numeri
+                                                        condivisi si risale a Ben vs Alberto — solo qui,
+                                                        il cliente non lo vede */}
+                                                    {mine && m.sent_by_user_id && nomiMittenti[m.sent_by_user_id] && (
+                                                        <p className="text-[11px] font-bold text-emerald-100/90 mb-0.5" title="Chi l'ha inviato dal CRM — visibile solo a noi, mai al cliente">
+                                                            {nomiMittenti[m.sent_by_user_id]}{m.sent_by_user_id === user?.id ? " (tu)" : ""}
+                                                        </p>
                                                     )}
                                                     {/* CHT-02: eliminato -> solo segnaposto in corsivo, mai body/media */}
                                                     {m.deleted_at ? (
