@@ -1324,11 +1324,14 @@ const WA_VOCAB_CHIUSURA = new Set([
     "e", "ed", "di", "del", "della", "per", "con", "un", "una", "il", "lo", "le", "che",
     "davvero", "veramente", "comunque", "poi", "allora", "intanto", "sempre",
     "cara", "caro", "cari", "signora", "signor", "signore", "dott", "dottore", "dottoressa",
+    // «sì grazie, buona giornata» (iOS scrive Sì accentato): il congedo resta
+    // il cancello, quindi un «sì» secco NON chiude comunque
+    "si", "sì",
 ]);
 
 // il cliente ha dato una CONFERMA SECCA («ok», «va bene», «perfetto»)? Da
 // sola non dice se la chat è finita: dipende da cosa avevamo scritto NOI.
-const WA_CONFERME = new Set(["ok", "okay", "okk", "oki", "va bene", "vabbe", "vabbè", "perfetto", "d accordo", "daccordo", "ricevuto", "ricevuta", "certo", "certamente", "ottimo", "top", "benissimo", "va benissimo", "si si", "sisi"]);
+const WA_CONFERME = new Set(["ok", "okay", "okk", "oki", "va bene", "vabbe", "vabbè", "perfetto", "d accordo", "daccordo", "ricevuto", "ricevuta", "certo", "certamente", "ottimo", "top", "benissimo", "va benissimo", "si si", "sisi", "si", "sì", "sì sì", "ok va bene", "va bene ok", "si va bene", "sì va bene", "ok perfetto", "perfetto ok"]);
 export function confermaSecca(testo) {
     const t = String(testo || "").toLowerCase().replace(/[’‘`]/g, " ").replace(/[^\p{L}\p{N} ]+/gu, " ").replace(/\s+/g, " ").trim();
     return WA_CONFERME.has(t);
@@ -1341,9 +1344,14 @@ export function confermaSecca(testo) {
 // richiesta esplicite.
 export function richiedeRisposta(testo) {
     const t = String(testo || "").toLowerCase();
-    if (!t.trim() || t.startsWith("[")) return false;
-    if (t.includes("?")) return true;
-    return /mi mandi|mi invii|mi giri|mandami|inviami|girami|mi pu[oò] (mandare|inviare|girare|dire|far)|mi serve|mi servirebbe|ci serve|fammi sapere|mi faccia sapere|ci faccia sapere|facci sapere|fatemi sapere|attendo|aspetto|resto in attesa|restiamo in attesa|mi confermi|ci confermi|mi dica|mi dici|appena (pu[oò]|puoi|riesce|riesci)|quando (pu[oò]|puoi|riesce|riesci)|le chiedo di|ti chiedo di|serve che|servirebbe che/.test(t);
+    if (!t.trim() || t.startsWith("[") || t.startsWith("📍")) return false;
+    // i link portano «?» nella query string (posizione → maps.google.com/?q=,
+    // promo con utm…): il punto di domanda si giudica sul testo SENZA url
+    const senzaUrl = t.replace(/https?:\/\/\S+/g, " ");
+    if (senzaUrl.includes("?")) return true;
+    // «aspetto»/«attendo» solo con un oggetto («attendo riscontro», «aspetto
+    // una risposta») — «la aspetto in negozio!» non è una richiesta di replica
+    return /mi mandi|mi invii|mi giri|mandami|inviami|girami|mi pu[oò] (mandare|inviare|girare|dire|far)|mi serve|mi servirebbe|ci serve|fammi sapere|mi faccia sapere|ci faccia sapere|facci sapere|fatemi sapere|(attendo|aspetto) (un |una |il |la |le |sue |suo |vostr|riscontro|risposta|conferma|notizie|di sapere)|resto in attesa|restiamo in attesa|mi confermi|ci confermi|mi dica|mi dici|appena (pu[oò]|puoi|riesce|riesci)|quando (pu[oò]|puoi|riesce|riesci)|le chiedo di|ti chiedo di|serve che|servirebbe che/.test(senzaUrl);
 }
 export function chiusuraDiCortesia(testo) {
     // apostrofo tipografico di iPhone (’) normalizzato, sennò «d’accordo»
@@ -1385,6 +1393,9 @@ function AnelloTeamWa({ fette, uid, grande }) {
     const [pin, setPin] = useState(null);
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
+    // il 📌 su una persona sparita al refresh spegnerebbe tutto senza
+    // selezione visibile: si sgancia da solo (il clone di Analisi lo perdeva)
+    useEffect(() => { if (pin && !fette.some((f) => f.k === pin)) setPin(null); }, [fette, pin]);
     const tot = fette.reduce((s, f) => s + f.v, 0);
     let acc = 0;
     const conQuote = fette.map((f) => { const fr = tot > 0 ? f.v / tot : 0; const o = acc; acc += fr; return { ...f, f: fr, o, pct: tot > 0 ? Math.round((f.v / tot) * 100) : 0 }; });
@@ -1514,7 +1525,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 const blocco = ids.slice(b, b + 100);
                 for (let p = 0; p < 3; p++) {
                     const { data: pag } = await supabase.from("wa_messages")
-                        .select("conversation_id, direction, wa_timestamp, created_at, sent_by_user_id, body, media_mime")
+                        .select("conversation_id, direction, wa_timestamp, created_at, sent_by_user_id, body, media_mime, status")
                         .in("conversation_id", blocco).is("deleted_at", null)
                         .gte("created_at", da)
                         .order("created_at", { ascending: false }).order("id", { ascending: false })
@@ -1534,7 +1545,10 @@ function WidgetWhatsApp({ ctx, size }) {
             const righe = msgs
                 .map((m) => ({ ...m, t: new Date(m.wa_timestamp || m.created_at).getTime() }))
                 .filter((m) => !isNaN(m.t) && m.t >= daMs && (m.direction === "in" || m.direction === "out")
-                    && (String(m.body || "").trim() !== "" || m.media_mime))
+                    && (String(m.body || "").trim() !== "" || m.media_mime)
+                    // un invio MAI partito non è una risposta: non deve
+                    // spegnere il rosso né aprire un'attesa (rilievo revisore)
+                    && !(m.direction === "out" && m.status === "failed"))
                 .sort((a, b) => a.t - b.t);
             const perConv = new Map();
             righe.forEach((m) => { const a = perConv.get(m.conversation_id) || []; a.push(m); perConv.set(m.conversation_id, a); });
@@ -1562,16 +1576,28 @@ function WidgetWhatsApp({ ctx, size }) {
                 // messaggio PIÙ NUOVO (di chiunque): dopo, si rivaluta
                 const chiusaOk = c?.chiusa_il && new Date(c.chiusa_il).getTime() >= ultimo.t - 1500;
                 if (ultimo.direction === "in") {
-                    if (chiusaOk || chiusuraDiCortesia(ultimo.body)) { concluse++; return; }
-                    // «ok» secco del cliente: se il NOSTRO messaggio prima
-                    // non chiedeva nulla («ci risentiamo a settembre…»), è
-                    // un congedo → conclusa; se chiedeva qualcosa, resta
-                    // da gestire (c'è un'azione in ballo)
-                    const prevOut = [...arr].reverse().find((m) => m.direction === "out");
-                    if (confermaSecca(ultimo.body) && prevOut && !richiedeRisposta(prevOut.body)) { concluse++; return; }
-                    daRisp.push({ id: cid, nome: nomeChat, da: ultimo.t });
+                    if (chiusaOk) { concluse++; return; }
+                    // si giudica l'intero BLOCCO finale del cliente, non solo
+                    // l'ultima bolla: «mi mandi il preventivo» + «grazie buona
+                    // giornata» NON è una chat conclusa (rilievo del revisore)
+                    let i = arr.length - 1; const blocco = [];
+                    while (i >= 0 && arr[i].direction === "in") { blocco.unshift(arr[i]); i--; }
+                    const prevOut = i >= 0 && arr[i].direction === "out" ? arr[i] : null;
+                    if (blocco.every((m) => chiusuraDiCortesia(m.body))) { concluse++; return; }
+                    // conferma secca («ok», «sì», anche in due bolle): dopo un
+                    // NOSTRO messaggio senza richieste è un congedo → conclusa;
+                    // dopo una nostra RICHIESTA è un impegno → aspettiamo il
+                    // FATTO dal cliente (lista azzurra, non rosso: nessuno
+                    // deve «rispondere» a quell'ok — semmai sollecitare)
+                    if (confermaSecca(blocco.map((m) => String(m.body || "")).join(" "))) {
+                        if (prevOut && richiedeRisposta(prevOut.body)) { attesa.push({ id: cid, nome: nomeChat, da: prevOut.t }); return; }
+                        if (prevOut) { concluse++; return; }
+                    }
+                    daRisp.push({ id: cid, nome: nomeChat, da: blocco[0].t });
                 } else {
-                    if (chiusaOk) return;   // chiusa dopo la nostra richiesta: non aspettiamo più
+                    // chiusa a mano dopo la nostra richiesta: non aspettiamo
+                    // più — conta tra le concluse solo se sarebbe stata in lista
+                    if (chiusaOk) { if (richiedeRisposta(ultimo.body)) concluse++; return; }
                     // ultima parola NOSTRA che chiede qualcosa → aspettiamo
                     // il cliente: da non dimenticare (sollecito)
                     if (richiedeRisposta(ultimo.body)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t });
