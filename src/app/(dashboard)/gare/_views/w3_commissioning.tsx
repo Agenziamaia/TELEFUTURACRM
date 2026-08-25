@@ -52,6 +52,13 @@ const COMP_LABEL: Record<string, string> = {
 // componenti che il pannello non può accendere da solo: dipendono dalla
 // vendita (le applica l'analisi leggendo campi e opzioni)
 const COMP_RUNTIME = new Set(["la", "ftth", "opzioni"]);
+// da dove si accende ogni componente da vendita (per la sotto-tabella —
+// Luca 25/08 sera: la notina non bastava, «non stiamo considerando…»)
+const ACCENDE_DA: Record<string, string> = {
+    la: "opzione GNP (gruppo Attivazione GA/GNP)",
+    ftth: "gruppo Tecnologia: FTTH — o FTTH Extra",
+    opzioni: "opzioni Chiamate Illimitate / Internazionali",
+};
 
 export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: string; colore: string; ragazzi?: boolean }) {
     const monthISO = `${mese}-01`;
@@ -361,6 +368,42 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                 onMouseLeave={() => setTip(null)}>{r.pay_base} €</span>
         )
     );
+    // COMPONENTI DALLA VENDITA (Luca 25/08 sera): L.A/GNP, FTTH e Opzioni
+    // aggiuntive erano solo in una notina e sembravano dimenticate — tabella
+    // vera coi moltiplicatori per soglia (lato ragazzi arrivano già scalati)
+    const TabRuntime = ({ rr }: { rr: PayRiga[] }) => {
+        if (!rr.length) return null;
+        const maxT = Math.max(...rr.map(r => r.pay_tiers.length));
+        return (
+            <div className="mt-2">
+                <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">➕ Componenti dalla vendita — si sommano al moltiplicatore ×canone dell&apos;attivazione</p>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm border-collapse max-w-3xl">
+                        <thead>
+                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                <th className="text-left font-semibold px-3 py-1.5">Componente</th>
+                                <th className="text-left font-semibold px-2 py-1.5">Si accende da</th>
+                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {[...rr].sort((a, b) => a.ordine - b.ordine).map(r => (
+                                <tr key={r.id} className="border-t border-white/[0.04] hover:bg-white/[0.03]">
+                                    <td className="px-3 py-1 text-slate-200 whitespace-nowrap">{r.nome.replace(/\s*×\s*canone.*$/i, "")}</td>
+                                    <td className="px-2 py-1 text-[11px] text-slate-500 whitespace-nowrap">{ACCENDE_DA[String(r.componente)] || "dalla vendita"}</td>
+                                    {Array.from({ length: maxT }, (_, i) => (
+                                        <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums">
+                                            {r.pay_tiers[i] == null ? <span className="text-slate-700">—</span> : `×${it(r.pay_tiers[i])}`}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    };
 
     if (loading) return null;
 
@@ -536,15 +579,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                             })}
                                         </tbody>
                                     </table>
-                                    {(() => {
-                                        const runtime = righe.filter(r => r.pista === "mobile" && r.componente && COMP_RUNTIME.has(r.componente));
-                                        return runtime.length ? (
-                                            <p className="text-[11px] text-slate-500 mt-1">
-                                                ➕ Componenti che dipendono dalla vendita (le aggiunge l&apos;analisi):{" "}
-                                                {runtime.map(r => `${r.nome.replace(/\s*×\s*canone\s*$/i, "")} (${r.pay_tiers.map(it).join("/")})`).join(" · ")} ×canone.
-                                            </p>
-                                        ) : null;
-                                    })()}
+                                    <TabRuntime rr={righe.filter(r => r.pista === "mobile" && r.componente && COMP_RUNTIME.has(r.componente))} />
                                 </div>
                             )}
                         </div>
@@ -668,12 +703,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                             })()}
                                         </tbody>
                                     </table>
-                                    {!!runtime.length && (
-                                        <p className="text-[11px] text-slate-500 mt-1">
-                                            ➕ Componenti che dipendono dalla vendita (le aggiunge l&apos;analisi):{" "}
-                                            {runtime.map(r => `${r.nome.replace(/\s*×\s*canone\s*$/i, "")} (${r.pay_tiers.map(it).join("/")})`).join(" · ")} ×canone.
-                                        </p>
-                                    )}
+                                    <TabRuntime rr={runtime} />
                                     {/* gettoni assicurazioni SENZA canone (Pronto Intervento,
                                         Giro X Il Mondo): non passano dall'esploso a canone —
                                         tabellina editabile qui sotto (Luca 14/08) */}

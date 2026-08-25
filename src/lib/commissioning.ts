@@ -434,6 +434,11 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     if (ha("bollettino")) f.add("lg_bollettino");
     if (ha("ftth", "ftth extra")) f.add("ftth");               // componente +1 ×canone
     if (ha("chiamate illimitate", "internazionali")) f.add("opzioni");   // componente 0,25-1,5 ×canone
+    // L.A della lettera FISSO (Luca 25/08 sera: componente dimenticata):
+    // +1 ×canone quando l'acquisizione è una GNP — l'opzione GNP del
+    // catalogo (gruppo Attivazione, con la tendina «Operatore GNP») è il
+    // segnale; GA è l'opzione neutra dello stesso gruppo
+    if (ha("gnp")) f.add("la");
     return f;
 }
 

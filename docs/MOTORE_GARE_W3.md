@@ -54,7 +54,8 @@ Per OGNI vendita valida (`produzioneValidaGare`, sostituzioni escluse):
 | base | fisso | sempre | molt 2/3/3,5/4/5 · punti 1 |
 | conv | fisso | offerta ~Conv | molt +2 |
 | piva | fisso | tipo cliente Business | molt +1 · punti +0,5 |
-| ftth | fisso | opzione FTTH / FTTH Extra | molt +1 |
+| la | fisso | opzione GNP (gruppo Attivazione obbligatorio GA/GNP) | molt +1 |
+| ftth | fisso | opzione FTTH (gruppo Tecnologia obbligatorio FTTH/FTTC) o FTTH Extra | molt +1 |
 | fwa | fisso | prodotto/offerta ~FWA/Super Internet | molt +1,5 |
 | opzioni | fisso | opzione Chiamate Illimitate/Internazionali | molt 0,25-1,5 |
 | netflix | fisso | opzione Netflix | +10 € · punti +0,5 |
