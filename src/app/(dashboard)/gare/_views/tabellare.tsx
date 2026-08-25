@@ -20,6 +20,9 @@ type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; sog
 type Riga = {
     id: string; pista: string | null; nome: string;
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null; offerta: string | null;
+    // condizione a OPZIONE (es. le combo «+ Protect», i telefoni fascia|modalità):
+    // solo lettura qui — si vede nel tooltip-ancora, si edita da DB/runner
+    opzione?: string | null;
     brand_vendita: string | null; moltiplicatore?: boolean; componente?: string | null; punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
     // S4 (Luca 25/08): ricorrente €/pezzo/mese informativo (dall'8° mese dal
@@ -154,7 +157,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const [p, s, r, az] = await Promise.all([
             supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
-            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
+            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
         setAziendaEsiste((az.count || 0) > 0);
@@ -171,7 +174,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             const [ap, as, ar, am] = await Promise.all([
                 supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
-                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
+                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
                 supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc").eq("brand", ctx).eq("month", monthISO),
             ]);
             // mappa % per soglia (pay girato): dove esiste SOSTITUISCE la % di
@@ -797,7 +800,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 <tbody>
                                     {gettoni.map(r => (
                                         <tr key={r.id} className="border-t border-white/5">
-                                            <td className="px-3 py-1" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
+                                            <td className="px-3 py-1" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
                                             {/* wording condizionale (revisore): un gettone CON pista
                                                 a % < 100 viene scalato — la bolla non deve giurare
                                                 il contrario */}
@@ -1195,7 +1198,7 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
     ];
     return (
         <tr className="border-t border-white/5 hover:bg-white/[0.03]">
-            <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
+            <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
                 {r.nome}
                 {manuale && <span className="text-amber-300/90 text-[10px] font-bold ml-1.5" title="€ fissati a mano: vincono su % di pista e mappa soglie">€ fissi</span>}
                 {r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}
@@ -1226,7 +1229,7 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
     // S4 (Luca 25/08): colonna ricorrente €/mese prima dei Punti; niente Base
     conRicorrente?: boolean; senzaBase?: boolean;
 }) {
-    const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") || "qualsiasi vendita";
+    const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") || "qualsiasi vendita";
     const tip = anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.moltiplicatore ? " · i valori sono MOLTIPLICATORI del canone mensile" : "") + (r.note ? ` — ${r.note}` : "");
     const cell = "w-full bg-transparent text-center text-sm text-white border-b border-transparent focus:border-indigo-400 outline-none py-0.5";
     return (

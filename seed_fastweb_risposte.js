@@ -83,7 +83,11 @@ const PROTECT = [
   if (fs.existsSync(dumpFile)) dumpFile = dumpFile.replace(/\.json$/, `_${Date.now()}.json`);
   fs.writeFileSync(dumpFile, JSON.stringify(dump, null, 1));
   console.log("Dump:", path.basename(dumpFile), Object.entries(dump).map(([t, r]) => `${t}=${r.length}`).join(" · "));
-  const giaNomi = new Set(dump.pay_righe.filter(r => String(r.month).startsWith("2026-08") && r.lato === L).map(r => r.nome));
+  // idempotenza a QUERY (rilievo revisore notturno: il filtro JS sul dump
+  // confrontava String(Date) e non matchava mai — un rilancio duplicava)
+  const { rows: nomiEs } = await client.query(
+    "select nome from pay_righe where brand=$1 and month=$2 and lato=$3", [B, M, L]);
+  const giaNomi = new Set(nomiEs.map(r => r.nome));
 
   try {
     await client.query("begin");
