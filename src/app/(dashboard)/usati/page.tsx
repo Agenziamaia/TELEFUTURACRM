@@ -64,6 +64,9 @@ interface Pagamento {
   bonifico_effettuato: boolean | null;
   bonifico_operatore: string | null;
   bonifico_date: Date | null;
+  // contabile del bonifico eseguito (Luca 25/08): resta archiviata con la
+  // riga — l'amministrazione la ritrova dai filtri dello storico Fatti
+  bonifico_contabile?: { path: string; nome: string; da: string; il: string } | null;
 }
 
 interface ExtraMargine {
@@ -702,8 +705,23 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
 
   const toggleBonifico = () => {
     const nowEff = !dev.pagamento.bonifico_effettuato;
-    const upd: Device = { ...dev, pagamento: { ...dev.pagamento, bonifico_effettuato: nowEff, bonifico_operatore: nowEff ? (user?.name || "Amministrazione") : null, bonifico_date: nowEff ? new Date() : null }, note_tecnico: noteTecnico };
+    // si allinea anche bonifico_stato: scheda e pannello Bonifici leggono lo
+    // stesso stato (il toggle lasciava "stampato"/"fatto" e i due divergevano)
+    const upd: Device = { ...dev, pagamento: { ...dev.pagamento, bonifico_effettuato: nowEff, bonifico_stato: nowEff ? "fatto" : "da_fare", bonifico_operatore: nowEff ? (user?.name || "Amministrazione") : null, bonifico_date: nowEff ? new Date() : null }, note_tecnico: noteTecnico };
     setDev(upd); onSave(upd);
+  };
+  const [contabileBusy, setContabileBusy] = useState(false);
+  const allegaContabile = async (file: File) => {
+    setContabileBusy(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `contabili/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+      const { error } = await supabase.storage.from("usati_attachments").upload(path, file);
+      if (error) throw error;
+      const upd: Device = { ...dev, pagamento: { ...dev.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "Amministrazione", il: new Date().toISOString() } }, note_tecnico: noteTecnico };
+      setDev(upd); onSave(upd);
+    } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
+    setContabileBusy(false);
   };
   const getFileUrl = (path: string) => supabase.storage.from("usati_attachments").getPublicUrl(path).data.publicUrl;
   const copyIban = () => { try { navigator.clipboard.writeText(dev.pagamento.iban); setIbanCopied(true); setTimeout(() => setIbanCopied(false), 2000); } catch (e) { } };
@@ -951,6 +969,27 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                     {dev.pagamento.bonifico_effettuato && dev.pagamento.bonifico_operatore && (
                       <div className="text-xs text-slate-500 mt-1"> {dev.pagamento.bonifico_operatore}   {fmtDateTime(dev.pagamento.bonifico_date)}</div>
                     )}
+                    {/* contabile del bonifico: chip che apre il file; se manca si carica da qui */}
+                    {dev.pagamento.bonifico_contabile ? (
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <a href={getFileUrl(dev.pagamento.bonifico_contabile.path)} target="_blank" rel="noreferrer"
+                          className="text-[11px] font-bold px-2 py-1 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-all"
+                          title={`Caricata da ${dev.pagamento.bonifico_contabile.da} il ${fmtDateTime(new Date(dev.pagamento.bonifico_contabile.il))}`}>
+                          📎 {dev.pagamento.bonifico_contabile.nome}
+                        </a>
+                        <label className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer underline decoration-dotted">
+                          {contabileBusy ? "carico…" : "sostituisci"}
+                          <input type="file" accept="application/pdf,image/*" className="hidden" disabled={contabileBusy}
+                            onChange={e => { const f = e.target.files?.[0]; if (f) void allegaContabile(f); e.target.value = ""; }} />
+                        </label>
+                      </div>
+                    ) : dev.pagamento.bonifico_effettuato ? (
+                      <label className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/25 text-[11px] font-bold cursor-pointer transition-all">
+                        {contabileBusy ? "Carico…" : "📎 Allega contabile"}
+                        <input type="file" accept="application/pdf,image/*" className="hidden" disabled={contabileBusy}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) void allegaContabile(f); e.target.value = ""; }} />
+                      </label>
+                    ) : null}
                   </div>
                   <div className="flex flex-col gap-2">
                     {!dev.pagamento.bonifico_effettuato && (
@@ -1801,6 +1840,43 @@ function GestioneUsatiInner() {
   const [bonNegozio, setBonNegozio] = useState("");
   const [bonDa, setBonDa] = useState("");
   const [bonA, setBonA] = useState("");
+  // filtro contabile (Luca 25/08): "" = tutte, oppure con/senza allegato
+  const [bonContabile, setBonContabile] = useState("");
+  // modale "✓ Fatto": chiede la contabile da archiviare con la riga (facoltativa)
+  const [bonFattoDev, setBonFattoDev] = useState<Device | null>(null);
+  const [bonFattoFile, setBonFattoFile] = useState<File | null>(null);
+  const [bonBusy, setBonBusy] = useState(false);
+  const uploadContabileBon = async (file: File) => {
+    const ext = file.name.split(".").pop();
+    const path = `contabili/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+    const { error } = await supabase.storage.from("usati_attachments").upload(path, file);
+    if (error) throw error;
+    return path;
+  };
+  // allega (o sostituisce) la contabile su una riga già fatta, dal pannello
+  const allegaContabileBon = async (d: Device, file: File) => {
+    try {
+      const path = await uploadContabileBon(file);
+      const pag: Pagamento = { ...d.pagamento, bonifico_contabile: { path, nome: file.name, da: user?.name || "—", il: new Date().toISOString() } };
+      await handleSaveDevice({ ...d, pagamento: pag });
+    } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
+  };
+  // conferma della modale: segna fatto e archivia l'eventuale contabile
+  const confermaBonFatto = async () => {
+    if (!bonFattoDev) return;
+    setBonBusy(true);
+    try {
+      let contabile = bonFattoDev.pagamento.bonifico_contabile || null;
+      if (bonFattoFile) {
+        const path = await uploadContabileBon(bonFattoFile);
+        contabile = { path, nome: bonFattoFile.name, da: user?.name || "—", il: new Date().toISOString() };
+      }
+      const pag: Pagamento = { ...bonFattoDev.pagamento, bonifico_stato: "fatto", bonifico_effettuato: true, bonifico_operatore: user?.name || "—", bonifico_date: new Date(), bonifico_contabile: contabile };
+      await handleSaveDevice({ ...bonFattoDev, pagamento: pag });
+      setBonFattoDev(null); setBonFattoFile(null);
+    } catch (e) { alert("Salvataggio non riuscito: " + (e instanceof Error ? e.message : "errore")); }
+    setBonBusy(false);
+  };
   // anagrafiche dei venditori-clienti (mig. 113): nome ed email nelle righe
   const [bonClienti, setBonClienti] = useState<Record<string, { nome: string; email: string }>>({});
   useEffect(() => {
@@ -2543,6 +2619,7 @@ function GestioneUsatiInner() {
           (visibile col toggle). Click sul telefono = apre la scheda. ── */}
       {showBonifici && (() => {
         const conStato = (d: Device) => (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) as "da_fare" | "stampato" | "fatto";
+        const pubUrl = (p: string) => supabase.storage.from("usati_attachments").getPublicUrl(p).data.publicUrl;
         // FILTRI (Luca 31/07): il periodo guarda l'acquisto per i DA FARE e la
         // data di esecuzione per i FATTI
         const cliDi = (d: Device) => (d.client_id && bonClienti[d.client_id]) || { nome: "", email: "" };
@@ -2552,6 +2629,10 @@ function GestioneUsatiInner() {
           if (bonEmail && !cli.email.toLowerCase().includes(bonEmail.toLowerCase())) return false;
           if (bonIban && !String(d.pagamento.iban || "").toLowerCase().replace(/\s/g, "").includes(bonIban.toLowerCase().replace(/\s/g, ""))) return false;
           if (bonNegozio && d.store !== bonNegozio) return false;
+          if (bonContabile) {
+            const ha = !!d.pagamento.bonifico_contabile;
+            if (bonContabile.includes("Senza") ? ha : !ha) return false;
+          }
           if (bonDa || bonA) {
             if (!dataRef || isNaN(dataRef.getTime())) return false;
             const g = isoDate(dataRef);
@@ -2568,11 +2649,11 @@ function GestioneUsatiInner() {
           .sort((a, b) => (b.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0) - (a.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0));
         const fatti = filtrati.filter(d => conStato(d) === "fatto");
         const mostrati = bonVista === "da_fare" ? daFare : bonVista === "fatti" ? fatti : [...daFare, ...fatti];
-        const filtriAttivi = !!(bonNome || bonEmail || bonIban || bonNegozio || bonDa || bonA);
+        const filtriAttivi = !!(bonNome || bonEmail || bonIban || bonNegozio || bonDa || bonA || bonContabile);
         // EXPORT sui filtrati (stesso formato leggibile dei report presenze)
         // GLB-03: da CSV a vero .xlsx — importo come cella numerica
         const esporta = (lista: Device[], nome: string) => {
-          const intestazioni = ["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "SWIFT", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da"];
+          const intestazioni = ["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "SWIFT", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da", "Contabile"];
           const righe: CellaXlsx[][] = lista.map((d) => {
             const cli = cliDi(d);
             return [
@@ -2582,6 +2663,7 @@ function GestioneUsatiInner() {
               conStato(d),
               d.pagamento.bonifico_date ? fmtDate(d.pagamento.bonifico_date) : "",
               d.pagamento.bonifico_operatore || "",
+              d.pagamento.bonifico_contabile?.nome || "",
             ];
           });
           void scaricaXlsx(`bonifici_${nome}_${new Date().toISOString().slice(0, 10)}`, intestazioni, righe, "Bonifici");
@@ -2610,13 +2692,27 @@ function GestioneUsatiInner() {
               {d.pagamento.iban && <span className="text-[11px] font-mono text-slate-500">{d.pagamento.iban}</span>}
               <span className="ml-auto flex items-center gap-2">
                 {st === "stampato" && !storico && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-sky-500/15 text-sky-300">🖨 stampato</span>}
+                {/* contabile archiviata con la riga (Luca 25/08): chip che la apre;
+                    se manca, l'amministrazione la allega da qui anche a posteriori */}
+                {storico && (d.pagamento.bonifico_contabile ? (
+                  <a href={pubUrl(d.pagamento.bonifico_contabile.path)} target="_blank" rel="noreferrer"
+                    title={`Contabile: ${d.pagamento.bonifico_contabile.nome} · caricata da ${d.pagamento.bonifico_contabile.da}`}
+                    className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 hover:bg-purple-500/35">📎 contabile</a>
+                ) : (
+                  <label title="Allega la contabile del bonifico: resta archiviata con la riga"
+                    className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border border-purple-500/40 text-purple-300 hover:bg-purple-500/20 cursor-pointer">
+                    📎 allega
+                    <input type="file" accept="application/pdf,image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) void allegaContabileBon(d, f); e.target.value = ""; }} />
+                  </label>
+                ))}
                 {storico ? (
                   <span className="text-[11px] text-slate-500">fatto {d.pagamento.bonifico_date ? new Date(d.pagamento.bonifico_date).toLocaleDateString("it-IT") : ""} · {d.pagamento.bonifico_operatore || "—"}</span>
                 ) : (
                   <>
                     {st !== "stampato" && <button onClick={() => setStatoBon(d, "stampato")} title="Stampato e passato a chi esegue il bonifico"
                       className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/25 text-xs font-bold">🖨 Stampato</button>}
-                    <button onClick={() => setStatoBon(d, "fatto")} title="Bonifico eseguito: va nello storico"
+                    <button onClick={() => { setBonFattoDev(d); setBonFattoFile(null); }} title="Bonifico eseguito: allega la contabile e archivia nello storico"
                       className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold">✓ Fatto</button>
                   </>
                 )}
@@ -2644,11 +2740,15 @@ function GestioneUsatiInner() {
                     placeholder="Tutti i negozi — scrivi per filtrare" className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" />
                   <input type="date" value={bonDa} onChange={e => setBonDa(e.target.value)} title="Periodo dal (acquisto per i da fare, esecuzione per i fatti)"
                     className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none" />
+                  <input type="date" value={bonA} onChange={e => setBonA(e.target.value)} title="Periodo al"
+                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none" />
                   <div className="flex gap-2">
-                    <input type="date" value={bonA} onChange={e => setBonA(e.target.value)} title="Periodo al"
-                      className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none min-w-0" />
+                    <div className="flex-1 min-w-0">
+                      <SelectOpzioni value={bonContabile} onChange={setBonContabile} opzioni={["📎 Con contabile", "Senza contabile"]}
+                        placeholder="Contabile: tutte" className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" />
+                    </div>
                     {filtriAttivi && (
-                      <button onClick={() => { setBonNome(""); setBonEmail(""); setBonIban(""); setBonNegozio(""); setBonDa(""); setBonA(""); }}
+                      <button onClick={() => { setBonNome(""); setBonEmail(""); setBonIban(""); setBonNegozio(""); setBonDa(""); setBonA(""); setBonContabile(""); }}
                         title="Azzera i filtri" className="px-2.5 rounded-lg border border-white/10 text-slate-400 hover:text-white text-xs">✕</button>
                     )}
                   </div>
@@ -2680,6 +2780,34 @@ function GestioneUsatiInner() {
                 </div>
               </div>
             </div>
+            {/* ── MODALE "✓ Fatto" (Luca 25/08): il bonifico eseguito si archivia
+                con la sua contabile — facoltativa, si può caricare anche dopo ── */}
+            {bonFattoDev && (
+              <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+                onClick={e => { e.stopPropagation(); if (!bonBusy) { setBonFattoDev(null); setBonFattoFile(null); } }}>
+                <div className="glass-panel w-full max-w-md p-5 space-y-4 shadow-2xl border-white/10" onClick={e => e.stopPropagation()}>
+                  <div>
+                    <h4 className="text-base font-bold text-white">✓ Bonifico eseguito</h4>
+                    <p className="text-xs text-slate-400 mt-1">{bonFattoDev.model} · €{bonFattoDev.purchase_price} · {bonFattoDev.store}</p>
+                  </div>
+                  <label className={cn("flex items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 text-xs font-semibold cursor-pointer transition-all text-center",
+                    bonFattoFile ? "border-purple-500/50 bg-purple-500/10 text-purple-200" : "border-white/15 text-slate-400 hover:border-purple-500/40 hover:text-purple-300")}>
+                    {bonFattoFile ? <>📎 {bonFattoFile.name}</> : <>📎 Allega la contabile (PDF o foto) — facoltativa</>}
+                    <input type="file" accept="application/pdf,image/*" className="hidden" disabled={bonBusy}
+                      onChange={e => setBonFattoFile(e.target.files?.[0] || null)} />
+                  </label>
+                  <p className="text-[11px] text-slate-500">La contabile resta archiviata con la riga: la ritrovi nei Fatti coi filtri (anche «📎 Con contabile»). Puoi caricarla o sostituirla anche dopo.</p>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => { if (!bonBusy) { setBonFattoDev(null); setBonFattoFile(null); } }}
+                      className="px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white text-xs font-bold">Annulla</button>
+                    <button onClick={() => void confermaBonFatto()} disabled={bonBusy}
+                      className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold disabled:opacity-50">
+                      {bonBusy ? "Salvataggio…" : bonFattoFile ? "✓ Fatto, archivia contabile" : "✓ Fatto senza contabile"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
