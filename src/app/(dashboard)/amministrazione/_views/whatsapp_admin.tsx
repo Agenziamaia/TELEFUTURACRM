@@ -76,9 +76,11 @@ export function WhatsAppAdminView() {
     }, []);
 
     const nomeTitolare = (id: string | null) => utenti.find(u => u.id === id)?.full_name || null;
-    /** negozio effettivo del numero (colonna o nome che coincide con un PV) */
+    /** negozio CONDIVISO del numero: solo per i numeri SENZA titolare — i
+     *  personali hanno negozio=primary_store dal create ma restano personali
+     *  (rilievo alto del revisore 25/08) */
     const storeDi = (i: Istanza): string | null =>
-        i.negozio || negozi.find(n => sameStore(n, i.display_name || "")) || null;
+        i.owner_user_id ? null : (i.negozio || negozi.find(n => sameStore(n, i.display_name || "")) || null);
     /** chi VEDE un numero di negozio: unione assegnati + visibilità + login */
     const utentiCheVedono = (store: string): string[] =>
         utenti.filter(u => {
@@ -114,11 +116,17 @@ export function WhatsAppAdminView() {
         try {
             const res = await api({ action: "state", instanceName: i.instance_name });
             setVerifiche(p => ({ ...p, [i.instance_name]: res?.state || res?.error || "sconosciuto" }));
+            // riallineo in ENTRAMBE le direzioni (revisore 25/08): l'action
+            // "state" promuove solo open→connessa — se il webhook ha perso il
+            // close il DB restava «connessa» e Ricollega non compariva mai
+            if (res?.state && res.state !== "open" && i.status === "connessa") {
+                await supabase.from("wa_instances").update({ status: "disconnessa" }).eq("id", i.id);
+            }
         } catch {
             setVerifiche(p => ({ ...p, [i.instance_name]: "errore di rete" }));
         }
         setVerificando(null);
-        carica();   // l'azione "state" riallinea anche lo status a DB
+        carica();
     };
 
     const elimina = async (i: Istanza) => {
@@ -212,10 +220,12 @@ export function WhatsAppAdminView() {
                                                 <div className="text-[11px] text-slate-500">{i.wa_number ? `+${i.wa_number}` : "numero non ancora rilevato"}</div>
                                             </td>
                                             <td className="px-3 py-2">
-                                                {i.negozio ? (
+                                                {/* PRIMA il titolare: un numero con titolare è PERSONALE
+                                                    anche se ha il negozio scritto (viene dal create) */}
+                                                {tit ? (
+                                                    <span className="text-emerald-300 text-[12px] font-semibold inline-flex items-center gap-1"><UserIcon className="w-3.5 h-3.5" /> {tit} <span className="text-slate-500 font-normal">(personale{i.negozio ? ` · ${i.negozio}` : ""})</span></span>
+                                                ) : i.negozio ? (
                                                     <span className="text-sky-300 text-[12px] font-semibold inline-flex items-center gap-1"><Store className="w-3.5 h-3.5" /> {i.negozio} <span className="text-slate-500 font-normal">(condiviso col negozio)</span></span>
-                                                ) : tit ? (
-                                                    <span className="text-emerald-300 text-[12px] font-semibold inline-flex items-center gap-1"><UserIcon className="w-3.5 h-3.5" /> {tit}</span>
                                                 ) : (
                                                     <span className="text-slate-500 text-[12px]">— da intestare</span>
                                                 )}

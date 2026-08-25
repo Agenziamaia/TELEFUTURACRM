@@ -37,16 +37,19 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
     opts: { soloConnesse?: boolean } = {},
 ): T[] {
     const scope = waScopeDi(userId, role);
-    // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08): il numero nominato col nome
-    // del punto vendita (o con `negozio` valorizzato) è visibile a chiunque
-    // abbia quel negozio in visibilità — il nome È l'assegnazione. Vale per
-    // tutti gli scope non-completi, in aggiunta al numero personale.
-    const diNegozio = (i: T) =>
-        (!!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s)))
-        || (!!i.display_name && myStores.some((s) => sameStore(i.display_name as string, s)));
+    // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08): SOLO i numeri SENZA titolare
+    // si condividono per nome/negozio (rilievo alto del revisore: i personali
+    // hanno negozio = primary_store dal create → i colleghi si vedevano le
+    // chat a vicenda). Personale = del titolare e basta.
+    const condiviso = (i: T) =>
+        !i.owner_user_id && (
+            (!!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s)))
+            || (!!i.display_name && myStores.some((s) => sameStore(i.display_name as string, s))));
     return instances.filter((i) => {
         if (opts.soloConnesse && i.status !== "connessa") return false;
         if (scope === "all") return true;
-        return (!!userId && i.owner_user_id === userId) || diNegozio(i);
+        if (scope === "store") return (!!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s)))
+            || condiviso(i) || (!!userId && i.owner_user_id === userId);
+        return (!!userId && i.owner_user_id === userId) || condiviso(i);
     });
 }

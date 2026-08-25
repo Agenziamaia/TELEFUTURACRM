@@ -73,13 +73,24 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // disposizione di CHIUNQUE abbia quel negozio in visibilità — nessuna
     // assegnazione manuale: il nome È l'assegnazione. Il numero personale
     // resta visibile solo al titolare (e il badge in sidebar conta solo quello).
-    const diNegozio = (i: Instance) =>
-        (!!i.negozio && myStores.some(s => sameStore(i.negozio, s)))
-        || (!!i.display_name && myStores.some(s => sameStore(i.display_name, s)));
+    // ⚠️ SOLO i numeri SENZA titolare sono «di negozio» (revisore 25/08 notte,
+    // rilievo alto): i personali hanno negozio = primary_store scritto dal
+    // create fin dalla mig 094 — senza questo gate i colleghi dello stesso
+    // negozio si vedevano le chat personali a vicenda. Personale = ha un
+    // titolare, e lo vede solo lui; condiviso = senza titolare, nominato
+    // come (o assegnato a) un punto vendita.
+    const condivisoNegozio = (i: Instance) =>
+        !i.owner_user_id && (
+            (!!i.negozio && myStores.some(s => sameStore(i.negozio, s)))
+            || (!!i.display_name && myStores.some(s => sameStore(i.display_name, s))));
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
-        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id || diNegozio(i));
-        return instances.filter(i => diNegozio(i) || i.owner_user_id === user?.id);
+        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i));
+        // store manager: come da sempre TUTTI i numeri del suo negozio (anche
+        // personali dei suoi), più i condivisi per nome e il suo personale
+        return instances.filter(i =>
+            (!!i.negozio && myStores.some(s => sameStore(i.negozio, s)))
+            || condivisoNegozio(i) || i.owner_user_id === user?.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [instances, waScope, user?.id, myStores]);
 
@@ -368,8 +379,13 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                     {waScope === "own" && !instances.some(i => i.owner_user_id === user?.id) && (
                         <button onClick={() => setLinkModal(true)} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega il mio numero</button>
                     )}
-                    {waScope !== "own" && (
+                    {/* il link al pannello solo a chi può entrarci (revisore:
+                        per lo store manager era un vicolo cieco → redirect) */}
+                    {waScope === "all" && (
                         <a href="/amministrazione?sez=whatsapp" className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Pannello numeri</a>
+                    )}
+                    {waScope === "store" && (
+                        <span className="text-[11px] text-slate-500">i numeri si collegano dall&apos;amministrazione</span>
                     )}
                 </div>
             </div>
