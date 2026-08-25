@@ -44,7 +44,8 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
     const negoziTutti = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.negozio === "—") continue; per.set(it.negozio, (per.get(it.negozio) || 0) + 1); }
-        return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+        // alfabetica come la tendina dell'area Negozio (Luca 25/08)
+        return [...per.keys()].sort((a, b) => a.localeCompare(b, "it"));
     }, [items]);
 
     const itemsDi = (b) => items.filter((it) => it.brandGara === b);

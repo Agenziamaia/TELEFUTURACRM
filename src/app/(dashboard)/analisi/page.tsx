@@ -319,7 +319,8 @@ function AnalisiInner() {
     const negoziAttivi = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.negozio === "—") continue; per.set(it.negozio, (per.get(it.negozio) || 0) + 1); }
-        return [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+        // in fila ALFABETICA (Luca 25/08: la tendina per volume era un caos)
+        return [...per.keys()].sort((a, b) => a.localeCompare(b, "it"));
     }, [items]);
     // nell'area Negozio si vedono SOLO i PV in visibilità nel profilo (Utenti)
     const negoziVisibili = useMemo(
