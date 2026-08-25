@@ -29,7 +29,7 @@ export function waIstanzeBadge<T extends { id: string; owner_user_id?: string | 
     return instances.filter((i) => !!userId && i.owner_user_id === userId && i.status === "connessa");
 }
 
-export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string | null; negozio?: string | null; status?: string | null }>(
+export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string | null; negozio?: string | null; display_name?: string | null; status?: string | null }>(
     instances: T[],
     userId: string | null | undefined,
     role: string | null | undefined,
@@ -37,10 +37,16 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
     opts: { soloConnesse?: boolean } = {},
 ): T[] {
     const scope = waScopeDi(userId, role);
+    // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08): il numero nominato col nome
+    // del punto vendita (o con `negozio` valorizzato) è visibile a chiunque
+    // abbia quel negozio in visibilità — il nome È l'assegnazione. Vale per
+    // tutti gli scope non-completi, in aggiunta al numero personale.
+    const diNegozio = (i: T) =>
+        (!!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s)))
+        || (!!i.display_name && myStores.some((s) => sameStore(i.display_name as string, s)));
     return instances.filter((i) => {
         if (opts.soloConnesse && i.status !== "connessa") return false;
         if (scope === "all") return true;
-        if (scope === "store") return !!i.negozio && myStores.some((s) => sameStore(i.negozio as string, s));
-        return !!userId && i.owner_user_id === userId;
+        return (!!userId && i.owner_user_id === userId) || diNegozio(i);
     });
 }

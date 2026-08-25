@@ -69,16 +69,30 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // regola estratta in lib condivisa (Sheekel 11/08): inbox e BADGE della
     // voce Chat devono usare la stessa identica visibilità
     const waScope: "all" | "store" | "own" = useMemo(() => waScopeDi(user?.id, user?.role), [user?.id, user?.role]);
+    // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08 sera): un numero NOMINATO col
+    // nome del punto vendita (o con la colonna negozio valorizzata) è a
+    // disposizione di CHIUNQUE abbia quel negozio in visibilità — nessuna
+    // assegnazione manuale: il nome È l'assegnazione. Il numero personale
+    // resta visibile solo al titolare (e il badge in sidebar conta solo quello).
+    const diNegozio = (i: Instance) =>
+        (!!i.negozio && myStores.some(s => sameStore(i.negozio, s)))
+        || (!!i.display_name && myStores.some(s => sameStore(i.display_name, s)));
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
-        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id);
-        return instances.filter(i => i.negozio && myStores.some(s => sameStore(i.negozio, s)));
+        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id || diNegozio(i));
+        return instances.filter(i => diNegozio(i) || i.owner_user_id === user?.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [instances, waScope, user?.id, myStores]);
 
-    // tieni selInst sempre dentro i numeri visibili
+    // tieni selInst sempre dentro i numeri visibili — preferendo il PROPRIO
+    // numero: chi ha anche quello del negozio parte comunque dal suo
     useEffect(() => {
         if (visibleInstances.length === 0) { if (selInst) setSelInst(null); return; }
-        if (!selInst || !visibleInstances.some(i => i.id === selInst)) { setSelInst(visibleInstances[0].id); setSelConv(null); }
+        if (!selInst || !visibleInstances.some(i => i.id === selInst)) {
+            const mio = visibleInstances.find(i => i.owner_user_id === user?.id);
+            setSelInst((mio || visibleInstances[0]).id); setSelConv(null);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visibleInstances, selInst]);
 
     // NON LETTI per NUMERO (Luca 11/08): il pallino della sidebar riguarda solo
@@ -382,8 +396,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                             <CheckCheck className="w-4 h-4" /> Connesso
                         </span>
                     )}
-                    {/* "Collega numero" (nuovo): admin/manager sempre; caller solo se non ne ha ancora uno. */}
-                    {(waScope !== "own" || visibleInstances.length === 0) && (
+                    {/* "Collega numero" (nuovo): admin/manager sempre; caller solo se
+                        non ha ancora un numero SUO (i numeri di negozio visti in
+                        automatico non contano — 25/08). */}
+                    {(waScope !== "own" || !instances.some(i => i.owner_user_id === user?.id)) && (
                         <button onClick={() => setLinkModal(true)} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega numero</button>
                     )}
                 </div>
