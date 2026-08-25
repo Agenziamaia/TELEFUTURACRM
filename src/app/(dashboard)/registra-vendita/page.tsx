@@ -3367,7 +3367,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
       <div style={{marginTop:10}}>
         {grpObb.map(g=>{
           const scelte=offSel.opzioni.filter(o=>o.gruppo===g&&o.obb);
-          const fatta=scelte.some(o=>opz[o.nome]);
+          // stessa semantica del gate di salvataggio: QUALUNQUE opzione del
+          // gruppo soddisfa (anche una non-obb dello stesso gruppo)
+          const fatta=offSel.opzioni.some(o=>o.gruppo===g&&opz[o.nome]);
           return(
           <div key={g} style={{marginBottom:8}}>
             <div style={{fontSize:11,fontWeight:700,color:fatta?"var(--tf-28a745)":"var(--tf-f59e0b)",marginBottom:4}}>

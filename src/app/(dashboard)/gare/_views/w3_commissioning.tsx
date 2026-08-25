@@ -47,7 +47,9 @@ const COMP_LABEL: Record<string, string> = {
     base: "base", base_underground: "base Underground", mnp: "MNP", tied: "Tied",
     piva: "P.IVA", conv: "Convergenza", la: "L.A (GNP)", ftth: "FTTH", fwa: "FWA", opzioni: "Opzioni",
     contrattuale: "contrattuale", contrattuale_conv: "contrattuale conv.", contrattuale_voce: "contrattuale Voce Casa",
-    contrattuale_untied: "contrattuale Untied", contrattuale_tied: "contrattuale Tied",
+    contrattuale_untied: "contrattuale Untied", contrattuale_tied: "contrattuale Tied", contrattuale_2linea: "contrattuale 2ª linea",
+    netflix: "Netflix", pscu: "Più Sicuri", cloud: "Cloud", fritz: "FRITZ!Box",
+    seconda_linea: "2ª linea", lg_pronto: "Pronto assistenza", lg_bollettino: "Bollettino",
 };
 // componenti che il pannello non può accendere da solo: dipendono dalla
 // vendita (le applica l'analisi leggendo campi e opzioni)
@@ -70,6 +72,10 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
     // l'azienda, la % della soglia e il conteggio, non il calcolo originale)
     const [origRagazzi, setOrigRagazzi] = useState<Map<string, { base: number | null; tiers: number[] }> | null>(null);
     const [percRagazzi, setPercRagazzi] = useState<{ mappa: Record<string, Record<number, { loro: number; perc: number }>>; unica: Record<string, number> } | null>(null);
+    // declinazioni fisso DATA-DRIVEN (revisore 25/08: le FWA hanno GNP e
+    // Illimitate a catalogo — l'hardcode le lasciava a riga unica mentre il
+    // motore pagava il +1): per offerta, quali scelte esistono davvero
+    const [opzDiOff, setOpzDiOff] = useState<Map<string, Set<string>>>(new Map());
     const [loading, setLoading] = useState(true);
     const [cerca, setCerca] = useState("");
     // tutte RACCOLTE all'ingresso (Luca 25/08 sera: «dammi tutte le categorie
@@ -165,12 +171,24 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     offs.push({ id: x.id, nome: x.nome, canone: Number(x.canone_mensile), prodotto: p.nome, tipo_cliente: p.tipo_cliente, categoria: String(nomeCat.get(p.categoria_id) || "") });
                 });
             }
+            // le sole opzioni che pilotano le declinazioni del fisso
+            const opzOff = new Map<string, Set<string>>();
+            const offIds = offs.map(x => x.id);
+            for (let i = 0; i < offIds.length; i += 60) {
+                const oo = await supabase.from("catalog_opzioni").select("offerta_id, nome")
+                    .in("offerta_id", offIds.slice(i, i + 60)).in("nome", ["GNP", "FTTH", "Chiamate Illimitate"]).eq("attivo", true);
+                ((oo.data ?? []) as { offerta_id: string; nome: string }[]).forEach(x => {
+                    if (!opzOff.has(x.offerta_id)) opzOff.set(x.offerta_id, new Set());
+                    opzOff.get(x.offerta_id)!.add(x.nome.toLowerCase());
+                });
+            }
             if (!vivo) return;
             setRighe(rows);
             setTierMax(tm);
             setOfferte(offs);
             setOrigRagazzi(origMap);
             setPercRagazzi(percInfo);
+            setOpzDiOff(opzOff);
             setLoading(false);
         })();
         return () => { vivo = false; };
@@ -308,12 +326,17 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
         setTip({ x: r.left + r.width / 2, y: r.top, righe });
     };
-    const righeTip = (canone: number, moltParti: PayRiga[], i: number, flat: number): TipRiga[] => {
+    const righeTip = (canone: number, setR: PayRiga[], i: number): TipRiga[] => {
+        const moltParti = setR.filter(r => r.moltiplicatore && r.pay_tiers[i] != null);
+        // i flat si elencano per NOME (revisore 25/08: sul Professional Box i
+        // 63 € erano 23 contrattuale + 40 FRITZ!Box, non «contrattuale»)
+        const flatParti = setR.filter(r => !r.moltiplicatore && Number(r.pay_base || 0) !== 0);
         const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
+        const flat = flatParti.reduce((s, r) => s + Number(r.pay_base || 0), 0);
         return [
             { testo: `${eur(canone)} € × ${it(molt)}`, stile: "formula" },
             ...moltParti.map(r => ({ testo: `· ${it(r.pay_tiers[i])} ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`, stile: "voce" as const })),
-            ...(flat ? [{ testo: `+ ${eur(flat)} € contrattuale`, stile: "flat" as const }] : []),
+            ...flatParti.map(r => ({ testo: `+ ${eur(Number(r.pay_base))} € ${r.componente ? (COMP_LABEL[r.componente] || r.componente) : r.nome}`, stile: "flat" as const })),
             { testo: `= ${eur(canone * molt + flat)} €`, stile: "tot" },
         ];
     };
@@ -341,8 +364,12 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
             { testo: `· all'azienda: ${eur(aCanone + flatOrig)} €${loro !== i + 1 ? ` (S${loro} della lettera)` : ""}`, stile: "voce" },
         ];
         if (flatOrig) {
-            righe.push({ testo: `· ${eur(aCanone)} € a canone × ${it(perc)}%`, stile: "voce" });
-            righe.push({ testo: `+ contrattuale ${eur(flatOrig)} € × ${it(pu)}%`, stile: "flat" });
+            // gli importi mostrati SOMMANO alla cella (revisore 25/08: il
+            // conto a mano «aCanone × %» divergeva di centesimi per gli
+            // arrotondamenti per-riga — qui la quota canone è cella − flat)
+            const flatScal = Math.round(setR.filter(r => !r.moltiplicatore).reduce((s, r) => s + Number(r.pay_base || 0), 0) * 100) / 100;
+            righe.push({ testo: `· ${eur(aCanone)} € a canone × ${it(perc)}% → ${eur(Math.round((cella - flatScal) * 100) / 100)} €`, stile: "voce" });
+            righe.push({ testo: `+ contrattuale ${eur(flatOrig)} € × ${it(pu)}% → ${eur(flatScal)} €`, stile: "flat" });
         }
         righe.push({ testo: `= ${eur(cella)} €`, stile: "tot" });
         return righe;
@@ -579,7 +606,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                     const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
                                                                     return (
                                                                         <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                            onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(v.set, i, v.o.canone, v.o.canone * molt + flat) : righeTip(v.o.canone, moltParti, i, flat))}
+                                                                            onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(v.set, i, v.o.canone, v.o.canone * molt + flat) : righeTip(v.o.canone, v.set, i))}
                                                                             onMouseLeave={() => setTip(null)}>
                                                                             {eur(v.o.canone * molt + flat)} €
                                                                         </td>
@@ -612,17 +639,26 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     const gruppiF: { tipo: string; nome: string; vars: VarF[] }[] = [];
                     const idxF = new Map<string, number>();
                     rr.forEach(({ o }) => {
-                        const fwa = /fwa/i.test(o.prodotto);
-                        const voce = /voce\s*casa/i.test(o.nome);
-                        const varianti = fwa ? [{ label: "FWA", opz: "", ord: 0 }]
-                            : voce ? [{ label: "GA", opz: "GA", ord: 0 }, { label: "GNP", opz: "GNP", ord: 1 }]
-                                : (() => {
-                                    const out: { label: string; opz: string; ord: number }[] = [];
-                                    let k = 0;
-                                    for (const att of ["GA", "GNP"]) for (const tec of ["FTTC", "FTTH"]) for (const ill of [false, true])
-                                        out.push({ label: `${att} · ${tec}${ill ? " + Illimitate" : ""}`, opz: `${att}, ${tec}${ill ? ", Chiamate Illimitate" : ""}`, ord: k++ });
-                                    return out;
-                                })();
+                        // DATA-DRIVEN (revisore 25/08): le assi delle varianti
+                        // sono le scelte che l'offerta HA a catalogo — così le
+                        // FWA con GNP/Illimitate hanno le loro declinazioni e
+                        // le business senza Illimitate non mostrano
+                        // combinazioni invendibili. Voce Casa (solo GNP) fa
+                        // GA/GNP da sola, senza casi speciali.
+                        const scelte = opzDiOff.get(o.id) || new Set<string>();
+                        const assiAtt = scelte.has("gnp") ? ["GA", "GNP"] : [""];
+                        const assiTec = scelte.has("ftth") ? ["FTTC", "FTTH"] : [""];
+                        const assiIll = scelte.has("chiamate illimitate") ? [false, true] : [false];
+                        const varianti: { label: string; opz: string; ord: number }[] = [];
+                        let kOrd = 0;
+                        for (const att of assiAtt) for (const tec of assiTec) for (const ill of assiIll) {
+                            const testa = [att, tec].filter(Boolean).join(" · ");
+                            varianti.push({
+                                label: [testa, ill ? "Illimitate" : ""].filter(Boolean).join(" + ") || (/fwa/i.test(o.prodotto) ? "FWA" : "base"),
+                                opz: [att, tec, ill ? "Chiamate Illimitate" : ""].filter(Boolean).join(", "),
+                                ord: kOrd++,
+                            });
+                        }
                         varianti.forEach(v => {
                             const set = setPerOpz(o, v.opz);
                             if (!set.length || !set.some(r2 => r2.pay_tiers.length)) return;
@@ -694,7 +730,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                     const molt = Math.round(moltParti.reduce((s, r2) => s + r2.pay_tiers[i], 0) * 100) / 100;
                                                                     return (
                                                                         <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                            onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(v.set, i, v.o.canone, v.o.canone * molt + flat) : righeTip(v.o.canone, moltParti, i, flat))}
+                                                                            onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(v.set, i, v.o.canone, v.o.canone * molt + flat) : righeTip(v.o.canone, v.set, i))}
                                                                             onMouseLeave={() => setTip(null)}>
                                                                             {eur(v.o.canone * molt + flat)} €
                                                                         </td>
@@ -816,7 +852,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                 const molt = Math.round(moltParti.reduce((s, r) => s + r.pay_tiers[i], 0) * 100) / 100;
                                                                 return (
                                                                     <td key={i} className="px-1.5 py-1 text-center font-semibold text-emerald-200 tabular-nums cursor-help"
-                                                                        onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(set, i, o.canone, o.canone * molt + flat) : righeTip(o.canone, moltParti, i, flat))}
+                                                                        onMouseEnter={e => mostraTip(e, ragazzi ? tipRagazziCanone(set, i, o.canone, o.canone * molt + flat) : righeTip(o.canone, set, i))}
                                                                         onMouseLeave={() => setTip(null)}>
                                                                         {eur(o.canone * molt + flat)} €
                                                                     </td>
