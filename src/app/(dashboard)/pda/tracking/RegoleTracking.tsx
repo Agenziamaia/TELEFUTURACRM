@@ -62,7 +62,20 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
         if (busy) return;
         setBusy(true); setMsg("");
         try {
-            const payload = CATEGORIE_UI.map((c) => ({ ...bozza[c.id], categoria: c.id, malus_euro: Number(bozza[c.id]?.malus_euro) || 0, updated_at: new Date().toISOString() }));
+            // DECORRENZA (incidente sky 25/08: la regola accesa ha ricostruito
+            // 119 malus RETROATTIVI da luglio): la riga davvero CAMBIATA entra
+            // in vigore OGGI — i contatori non contano mai giorni precedenti;
+            // le righe intatte conservano la loro data. Confronto normalizzato
+            // (a DB malus_euro arriva come stringa).
+            const oggiISO = new Date().toISOString().slice(0, 10);
+            const CAMPI: (keyof RegolaTracking)[] = ["senza_lavorare", "senza_warning", "senza_malus", "succ_lavorare", "succ_warning", "succ_malus", "compl_lavorare", "compl_warning", "compl_malus", "malus_euro"];
+            const nrm = (v: unknown) => v == null || v === "" ? null : Number(v);
+            const payload = CATEGORIE_UI.map((c) => {
+                const orig = righe.find((r) => r.categoria === c.id);
+                const b = { ...bozza[c.id], categoria: c.id, malus_euro: Number(bozza[c.id]?.malus_euro) || 0 };
+                const cambiata = !orig || CAMPI.some((k) => nrm(orig[k]) !== nrm(b[k]));
+                return { ...b, decorrenza: cambiata ? oggiISO : (orig?.decorrenza ? String(orig.decorrenza).slice(0, 10) : null), updated_at: new Date().toISOString() };
+            });
             const { error } = await supabase.from("tracking_regole").upsert(payload, { onConflict: "categoria" });
             if (error) { setMsg("⚠️ Salvataggio non riuscito: " + error.message); return; }
             await carica();          // rilettura dal DB: quello che vedi è ciò che vale
@@ -94,6 +107,12 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                                     <span className="inline-flex items-center gap-2 font-extrabold" style={{ color: c.color }}>
                                         <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />{c.label}
                                     </span>
+                                    {bozza[c.id]?.decorrenza && (
+                                        <div className="text-[10px] text-slate-500 mt-0.5"
+                                            title="Le soglie di questa categoria valgono da questa data: i contatori non contano i giorni precedenti — un cambio di regole non è mai retroattivo.">
+                                            in vigore dal {String(bozza[c.id].decorrenza).slice(0, 10).split("-").reverse().join("/")}
+                                        </div>
+                                    )}
                                 </td>
                                 {VARIABILI.map((v) => (
                                     <td key={v.prefisso} className="py-2 px-3">

@@ -462,6 +462,10 @@ export interface RegolaTracking {
   succ_lavorare: number | null;  succ_warning: number | null;  succ_malus: number | null;
   compl_lavorare: number | null; compl_warning: number | null; compl_malus: number | null;
   malus_euro: number;
+  // DECORRENZA (incidente sky 25/08: la regola accesa a 8 €/g ha fatto
+  // ricostruire 119 episodi RETROATTIVI da luglio): il pannello la timbra
+  // sulle righe modificate — i contatori non contano MAI giorni precedenti.
+  decorrenza?: string | null;
 }
 export const REGOLE_TRACKING_DEFAULT: RegolaTracking[] = [
   { categoria: "mnp",           senza_lavorare: 2, senza_warning: 5,  senza_malus: 6,  succ_lavorare: 2,    succ_warning: 5,  succ_malus: 6,  compl_lavorare: null, compl_warning: 5,    compl_malus: null, malus_euro: 5 },
@@ -479,16 +483,36 @@ export function regolaDi(categoria: string): RegolaTracking | undefined {
   const base = REGOLE_ATTIVE ?? Object.fromEntries(REGOLE_TRACKING_DEFAULT.map((r) => [r.categoria, r]));
   return base[categoria];
 }
+/** Decorrenza della regola (yyyy-mm-dd) o null. */
+export function decorrenzaDi(categoria: string): string | null {
+  const d = regolaDi(categoria)?.decorrenza;
+  return d ? String(d).slice(0, 10) : null;
+}
+/** La più recente tra la data della pratica/evento e la decorrenza della
+ *  regola: un cambio di regole vale solo dal giorno del cambio, mai prima. */
+function clampDecorrenza(dataStr: string, categoria: string): string {
+  const dec = decorrenzaDi(categoria);
+  if (!dec) return dataStr;
+  const a = parseRuleDate(dataStr);
+  const b = parseRuleDate(dec);
+  if (!a || !b) return dataStr;
+  return a >= b ? dataStr : dec;
+}
 function misure(row: TrackingRow) {
-  const gg = giorniLavorativiDa(row.dataInserimento);
+  // DECORRENZA (incidente sky 25/08): i contatori partono al più presto dal
+  // giorno in cui la regola della categoria è entrata in vigore — un cambio
+  // di regole non conta mai i giorni precedenti al cambio.
+  const dataIns = clampDecorrenza(row.dataInserimento, row.categoria);
+  const gg = giorniLavorativiDa(dataIns);
   // caso Becattini (11/08): si considera solo l'ultimo evento DATATO — gli
   // eventi di modifica contratto (senza `data`) non azzerano il contatore
   const ultimo = ultimoEventoDatato(row.storia);
-  const ggUltimo = ultimo ? giorniLavorativiDa(ultimo.data) : null;
+  const dataUlt = ultimo ? clampDecorrenza(ultimo.data, row.categoria) : null;
+  const ggUltimo = dataUlt ? giorniLavorativiDa(dataUlt) : null;
   // varianti APERTI (Luca 11/08): warning e malus corrono solo nei giorni in
   // cui il negozio della pratica era aperto (festivi e chiusure esclusi)
-  const aGg = giorniApertiDa(row.dataInserimento, row.negozio, row.venditore);
-  const aUltimo = ultimo ? giorniApertiDa(ultimo.data, row.negozio, row.venditore) : null;
+  const aGg = giorniApertiDa(dataIns, row.negozio, row.venditore);
+  const aUltimo = dataUlt ? giorniApertiDa(dataUlt, row.negozio, row.venditore) : null;
   // RIASSEGNAZIONE (Luca 21/08): la pratica consegnata in MALUS al delegato
   // NON puo' arrivargli in malus — al massimo in WARNING. L'evento
   // "riassegnazione" (scritto solo sulle pratiche in malus alla consegna)

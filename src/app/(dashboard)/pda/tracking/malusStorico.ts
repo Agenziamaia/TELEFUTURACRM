@@ -156,6 +156,11 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
   const euro = Number(r?.malus_euro) || 0;
   if (!r || euro <= 0) return [];
+  // DECORRENZA (incidente sky 25/08: la regola accesa a 8 €/g ha ricostruito
+  // 119 episodi retroattivi da luglio, compresi periodi azzerati
+  // dall'amministrazione): nessun episodio può iniziare prima del giorno in
+  // cui la regola è entrata in vigore — il passato non si riscrive.
+  const dec = r.decorrenza ? parseData(String(r.decorrenza).slice(0, 10)) : null;
   // MOD-28: le etichette sono persistite in chiaro negli eventi, e dal pannello
   // ora si possono RINOMINARE — il vocabolario unisce hardcoded storico e DB,
   // COMPRESE le liste per operatore (fix 10/08: un esito solo-brand come
@@ -218,13 +223,17 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     const seg = segs[i];
     if (seg.completato || seg.soglia == null) continue;
     const fine = segs[i + 1].start;
-    const misura = apertiTra(seg.start, fine, row.negozio, row.venditore);
+    // decorrenza: il segmento interamente nel passato non esiste; quello a
+    // cavallo parte dal giorno di vigore (il contatore riparte da lì)
+    if (dec && fine <= dec) continue;
+    const startEff = dec && dec > seg.start ? dec : seg.start;
+    const misura = apertiTra(startEff, fine, row.negozio, row.venditore);
     if (misura < seg.soglia) continue;
     const giorni = misura - seg.soglia + 1;
     out.push({
       ...base,
       venditore: nomeDelegato && delegaD && seg.start >= delegaD ? nomeDelegato : nomeOriginale,
-      data_inizio: toISODate(addAperti(seg.start, seg.soglia, row.negozio, row.venditore)),
+      data_inizio: toISODate(addAperti(startEff, seg.soglia, row.negozio, row.venditore)),
       data_fine: toISODate(fine),
       giorni,
       importo: giorni * euro,
