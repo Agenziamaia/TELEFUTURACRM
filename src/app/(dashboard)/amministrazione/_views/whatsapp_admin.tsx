@@ -46,6 +46,11 @@ export function WhatsAppAdminView() {
     const puoNegozi = capAllowed(user?.role, CAP_WHATSAPP_ADMIN.section, CAP_WA_NEGOZI, perms);
     /** può gestire QUESTO numero? personale → capacità utenti; senza titolare → negozi */
     const puoGestire = (i: Istanza) => i.owner_user_id ? puoUtenti : puoNegozi;
+    /** in ELENCO solo il dominio concesso (Luca 25/08 notte, caso direttore
+     *  call center: «se non può smanettarci, non deve neanche vederli») —
+     *  con entrambe le capacità (o nessuna: sola consultazione) si vede tutto */
+    const inElenco = (i: Istanza) =>
+        (puoUtenti && puoNegozi) || (!puoUtenti && !puoNegozi) || puoGestire(i);
 
     // ── collegamento nuovo: SELEZIONE utente o negozio/i, mai testo libero.
     // NEGOZI GEMELLI (Luca 25/08 notte, Magliana/Acilia/Collatina): la
@@ -259,10 +264,10 @@ export function WhatsAppAdminView() {
 
             {/* TUTTI I NUMERI: stato, verifica, ricollega, riassegna, elimina */}
             <div className="glass-panel rounded-2xl overflow-hidden">
-                <div className="px-4 pt-3 pb-2 text-[11px] uppercase tracking-wider text-slate-400 font-semibold">📱 Numeri collegati <span className="text-slate-600">({istanze?.length ?? "…"})</span></div>
+                <div className="px-4 pt-3 pb-2 text-[11px] uppercase tracking-wider text-slate-400 font-semibold">📱 Numeri collegati <span className="text-slate-600">({istanze == null ? "…" : istanze.filter(inElenco).length})</span></div>
                 {istanze === null ? (
                     <div className="p-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>
-                ) : istanze.length === 0 ? (
+                ) : istanze.filter(inElenco).length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-sm">Nessun numero collegato: usa «Collega un numero nuovo» qui sopra.</div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -277,7 +282,7 @@ export function WhatsAppAdminView() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {istanze.map(i => {
+                                {istanze.filter(inElenco).map(i => {
                                     const tit = nomeTitolare(i.owner_user_id);
                                     const ver = verifiche[i.instance_name];
                                     return (
