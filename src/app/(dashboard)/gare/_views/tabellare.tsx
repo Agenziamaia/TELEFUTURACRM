@@ -55,6 +55,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     const [piste, setPiste] = useState<Pista[]>([]);
     const [soglie, setSoglie] = useState<Soglia[]>([]);          // copia editabile
     const [soglieDirty, setSoglieDirty] = useState<Set<string>>(new Set());   // per pista
+    // sezioni-pista RACCOLTE all'ingresso (Luca 25/08, screenshot del
+    // Commissioning W3: «si devono chiudere e si possono esplodere,
+    // dall'esterno vedo quante voci ne fanno parte») — vale per tutti i
+    // brand che usano il tabellare (VF in testa)
+    const [aperteTab, setAperteTab] = useState<Set<string>>(new Set());
+    const toggleTab = (k: string) => setAperteTab(prev => { const c = new Set(prev); if (c.has(k)) c.delete(k); else c.add(k); return c; });
     const [righe, setRighe] = useState<Riga[]>([]);
     const [orig, setOrig] = useState<Map<string, string>>(new Map());   // id → JSON per il dirty
     const [carico, setCarico] = useState(false);
@@ -572,15 +578,19 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         const rr = derivato.righe.filter(r => r.pista === px.chiave && !r.gettone);
                         if (!rr.length) return null;
                         const nT = scala.length || Math.max(0, ...rr.map(r => r.pay_tiers.length));
+                        const apertaP = aperteTab.has(`der|${px.chiave}`);
                         return (
                             <div key={px.id} className="glass-panel rounded-2xl overflow-hidden">
-                                <div className="px-4 pt-3 pb-1.5 flex items-center gap-3 flex-wrap">
-                                    <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{px.nome} <span className="text-amber-300/80">× {px.perc_ragazzi ?? 100}%</span></span>
-                                    <span className="text-[11px] text-slate-500">{scala.map((x, i) => `S${i + 1}: ${x.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}</span>
-                                    {/* € FISSI (Luca 25/08): gli importi si possono correggere
-                                        a mano — vincono su % e mappa, in vista e nel motore */}
-                                    <span className="text-[10px] text-slate-600" title="Gli importi derivano dall'azienda × %. Correggi le caselle e salva col 💾 per fissarli in € (vincono su % e mappa soglie); ↺ torna alla derivazione.">✎ importi correggibili — in ambra quelli fissati a mano</span>
-                                </div>
+                                <button onClick={() => toggleTab(`der|${px.chiave}`)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-bold text-white">{px.nome}</span>
+                                    <span className="text-[11px] text-amber-300/80 font-semibold">× {px.perc_ragazzi ?? 100}%</span>
+                                    <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
+                                    {apertaP && <span className="text-[11px] text-slate-500 font-normal">{scala.map((x, i) => `S${i + 1}: ${x.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}</span>}
+                                    {/* € FISSI (Luca 25/08, altra sessione): gli importi si
+                                        correggono a mano — vincono su % e mappa */}
+                                    {apertaP && <span className="text-[10px] text-slate-600 font-normal" title="Gli importi derivano dall'azienda × %. Correggi le caselle e salva col 💾 per fissarli in € (vincono su % e mappa soglie); ↺ torna alla derivazione.">✎ importi correggibili — in ambra quelli fissati a mano</span>}
+                                </button>
+                                {apertaP && (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm border-collapse">
                                         <thead>
@@ -597,12 +607,22 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         </tbody>
                                     </table>
                                 </div>
+                                )}
                             </div>
                         );
                     })}
-                    {(derivato.righe.some(r => r.gettone || !r.pista) || righe.length > 0) && (
+                    {(() => {
+                        const gettoni = [...derivato.righe.filter(r => r.gettone || !r.pista), ...righe.filter(r => r.gettone || !r.pista)];
+                        if (!gettoni.length) return null;
+                        const apertaG = aperteTab.has("der|_gettoni");
+                        return (
                         <div className="glass-panel rounded-2xl overflow-hidden">
-                            <div className="px-4 pt-3 pb-1.5 text-[11px] uppercase tracking-wider text-slate-400 font-semibold">💰 Gettoni — pagano sempre, senza soglia</div>
+                            <button onClick={() => toggleTab("der|_gettoni")} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
+                                <span className="text-sm font-bold text-white">💰 Gettoni</span>
+                                <span className="text-xs font-normal text-slate-500">{apertaG ? "▾" : `▸ ${gettoni.length} voci`}</span>
+                                <span className="text-[11px] text-slate-500 font-normal">pagano sempre, senza soglia</span>
+                            </button>
+                            {apertaG && (
                             <table className="w-full text-sm border-collapse">
                                 <thead>
                                     <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
@@ -611,7 +631,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {[...derivato.righe.filter(r => r.gettone || !r.pista), ...righe.filter(r => r.gettone || !r.pista)].map(r => (
+                                    {gettoni.map(r => (
                                         <tr key={r.id} className="border-t border-white/5">
                                             <td className="px-3 py-1" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
                                             <td className="px-1 py-1 text-center text-white font-medium">{r.pay_base ?? "—"}</td>
@@ -619,8 +639,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     ))}
                                 </tbody>
                             </table>
+                            )}
                         </div>
-                    )}
+                        );
+                    })()}
                 </div>
             );
         }
@@ -782,24 +804,29 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 // RICORRENTE (Luca 25/08, S4): colonna €/pezzo/mese prima dei
                 // Punti — su S4 sempre, altrove appare se qualche riga ce l'ha
                 const mostraRic = ctx === "s4" || rr.some(r => r.ricorrente != null);
+                const apertaP = aperteTab.has(p.chiave);
                 return (
                     <div key={p.id} className="glass-panel rounded-2xl overflow-hidden">
-                        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-3 flex-wrap">
-                            <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{p.nome} <span className="text-slate-600">({rr.length})</span></div>
-                            <div className="flex items-center gap-3">
-                                {/* % PAY ai ragazzi QUI, dove i pay si vedono (Luca 13/08) */}
-                                {lato === "azienda" && (
-                                    <label className="text-[11px] text-amber-300/90" title="Quota dei pay girata ai ragazzi: il loro tabellare deriva da questi importi × la %. Vuota = 100%.">
-                                        % pay ai ragazzi
-                                        <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
-                                            onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                            className={inputCls + " ml-1 w-16"} placeholder="100" />
-                                        {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
-                                            <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                    </label>
-                                )}
-                                <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
-                            </div>
+                        {/* header stile Commissioning W3 (Luca 25/08): chiuso
+                            dice quante voci contiene, il click esplode */}
+                        <button onClick={() => toggleTab(p.chiave)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
+                            <span className="text-sm font-bold text-white">{p.nome}</span>
+                            <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
+                        </button>
+                        {apertaP && (<>
+                        <div className="flex items-center justify-end px-4 pb-2 gap-3 flex-wrap">
+                            {/* % PAY ai ragazzi QUI, dove i pay si vedono (Luca 13/08) */}
+                            {lato === "azienda" && (
+                                <label className="text-[11px] text-amber-300/90" title="Quota dei pay girata ai ragazzi: il loro tabellare deriva da questi importi × la %. Vuota = 100%.">
+                                    % pay ai ragazzi
+                                    <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
+                                        onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                        className={inputCls + " ml-1 w-16"} placeholder="100" />
+                                    {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
+                                        <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                </label>
+                            )}
+                            <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
                         </div>
                         {nuovaRigaPer === p.chiave && <div className="px-4"><NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} /></div>}
                         {rr.length > 0 && (
@@ -822,6 +849,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             </div>
                         )}
                         {!rr.length && <div className="text-slate-500 text-sm px-4 pb-3">Nessuna riga su questa pista.</div>}
+                        </>)}
                     </div>
                 );
             })}
