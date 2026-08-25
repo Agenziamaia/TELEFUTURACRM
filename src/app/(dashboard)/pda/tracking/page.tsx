@@ -808,6 +808,7 @@ function Drawer({
   members = [],
   canDelegate = false,
   canEditAdmin = false,
+  canEditNegozio = true,
   onDelegate,
   delegatoNome = null,
   episodiMalus = [],
@@ -819,6 +820,9 @@ function Drawer({
   members?: { id: string; full_name: string }[];
   canDelegate?: boolean;
   canEditAdmin?: boolean;
+  /** false = pratica visibile solo grazie alla capacità esito admin: lato
+   *  negozio è in sola lettura (niente esito negozio né delega) */
+  canEditNegozio?: boolean;
   onDelegate?: (rowId: string, toId: string | null) => void;
   delegatoNome?: string | null;
   episodiMalus?: EpisodioMalus[];
@@ -991,7 +995,7 @@ function Drawer({
         </div>
         {/* Delega verifica: NON fa parte della sezione admin — e' una funzione
             dallo store manager in su, quindi sta fuori dai tab. */}
-        {canDelegate && (
+        {canDelegate && canEditNegozio && (
           <div className="mt-3.5 p-3 rounded-lg border border-slate-700 bg-black/25">
             <div className={labelStyle + " mb-2"}>Delega verifica a</div>
             {row.delegated_to && (
@@ -1154,6 +1158,15 @@ function Drawer({
                 <div className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Esito negozio</div>
               </div>
+              {/* pratica vista SOLO grazie alla capacità esito admin: lato
+                  negozio niente mani — badge e stop (Luca: «nient'altro») */}
+              {!canEditNegozio && (
+                <div>
+                  <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
+                  <p className="mt-3 text-[11px] text-slate-500">🔒 Pratica fuori dai tuoi punti vendita: l&apos;esito negozio resta al negozio — qui lavori solo l&apos;esito admin.</p>
+                </div>
+              )}
+              {canEditNegozio && <>
               <div className="flex flex-wrap gap-2 mb-3.5">
                 {getStatiNegozioPerCategoria(row.categoria, row.brand).map((s) => {
                   const sel = editStatoN === s.id;
@@ -1199,6 +1212,7 @@ function Drawer({
               <p className="text-[11px] text-slate-500 text-center">
                 💾 Si salva da solo quando cambi sezione o pratica, o chiudi questa scheda.
               </p>
+              </>}
             </div>
           </div>
         )}
@@ -1359,7 +1373,7 @@ export default function TrackingPdaPage() {
   // Delega: dallo store manager in su. Esito admin: capacità della rotellina
   // Permessi (Luca 25/08) — prima era il ruolo cablato "amministrativo in su",
   // nato quando il pannello non esisteva; il default della capacità lo replica.
-  const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
+  const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
   const canDelegate = ["store_manager", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
   const canEditAdmin = capAllowed(user?.role, CAP_TRACKING.section, CAP_TRACKING_ESITO_ADMIN, perms);
   // La capacità concede SOLO la coda «⚡ Da lavorare» e l'esito admin con nota
@@ -1388,7 +1402,24 @@ export default function TrackingPdaPage() {
   // negozi globale dell'utente (le altre sezioni non cambiano). Vale per la
   // lista pratiche e per l'archivio malus in sola lettura; lo spazzino della
   // sync malus resta gated sul seesAll vero.
-  const vedeTutteTracking = seesAll || canEditAdmin;
+  // Fail-closed sui permessi (rilievo quarto revisore): finché le righe perms
+  // sono in volo vale il default di ruolo — un'esclusione per-persona non deve
+  // avere la finestra in cui la platea completa appare comunque.
+  const vedeTutteTracking = seesAll || (permsLoaded && canEditAdmin);
+  // Pratiche nel perimetro REALE (senza capacità): fuori da qui il capacitato
+  // lavora SOLO l'esito admin — niente esito negozio, niente delega (Luca:
+  // «non deve poter fare nient'altro»). Specchia il filtro di fetchData;
+  // mieiAgenti (direttore outbound) arriva via ref dall'ultimo fetch.
+  const mieiAgentiRef = useRef<Set<string>>(new Set());
+  const inPerimetroReale = useCallback((r0: unknown) => {
+    if (seesAll) return true;
+    const r = (r0 ?? {}) as { negozio?: unknown; venditore?: unknown; delegated_to?: unknown };
+    const vend = r.venditore ? String(r.venditore) : "";
+    if (mieiAgentiRef.current.size && vend && mieiAgentiRef.current.has(vend)) return true;
+    const mie = (!!vend && !!user?.name && vend === user.name) || (!!r.delegated_to && r.delegated_to === user?.id);
+    if (seesWhole) return mie || visibleStores.some((st) => sameStore(String(r.negozio || ""), st));
+    return mie;
+  }, [seesAll, seesWhole, visibleStores, user?.name, user?.id]);
 
   // Il manager puo' delegare SOLO ai collaboratori dei propri punti vendita —
   // TUTTI quelli visibili, non solo il principale.
@@ -1472,7 +1503,11 @@ export default function TrackingPdaPage() {
     })();
   }, []);
 
+  // generation-guard (rilievo quarto revisore): il flip della capacità rende
+  // normali due run sovrapposte — vince sempre l'ULTIMA partita, mai la stale
+  const fetchGen = useRef(0);
   const fetchData = useCallback(async () => {
+    const gen = ++fetchGen.current;
     setLoading(true);
     setLoadError(null);
     try {
@@ -1611,6 +1646,7 @@ export default function TrackingPdaPage() {
         DELEGHE = mappa;
         impostaDelegheMalus(mappa);
       }
+      mieiAgentiRef.current = mieiAgenti;
       const scoped = vedeTutteTracking ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (mieiAgenti.size && !!r.venditore && mieiAgenti.has(String(r.venditore))) return true;
         // Le pratiche FATTE DA ME si vedono SEMPRE, anche se registrate su un
@@ -1621,12 +1657,15 @@ export default function TrackingPdaPage() {
         if (seesWhole) return mie || visibleStores.some((st) => sameStore(r.negozio as string, st));
         return mie;
       });
+      if (gen !== fetchGen.current) return;
       setRawList(scoped as RawRow[]);
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : String(err));
-      setRawList([]);
+      if (gen === fetchGen.current) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+        setRawList([]);
+      }
     } finally {
-      setLoading(false);
+      if (gen === fetchGen.current) setLoading(false);
     }
   }, [vedeTutteTracking, seesWhole, visibleStores, user?.name, user?.id]);
 
@@ -1866,6 +1905,9 @@ export default function TrackingPdaPage() {
     () => (vedeTutteTracking ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).flatMap((r) => respRigaTutti(r)).filter((n) => n && n !== "—"))).sort() : []),
     [baseVisibile, vedeTutteTracking, negozioSel]
   );
+  // tendina Venditore sparita (flip a platea completa) = filtro azzerato:
+  // niente filtri fantasma invisibili (rilievo quarto revisore)
+  useEffect(() => { if (venditoreSel && !venditoriAttivi.length) setVenditoreSel(""); }, [venditoriAttivi, venditoreSel]);
   const catAttive = useMemo(() => new Set(
     baseVisibile
       .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || respRigaTutti(r).some((n) => utentiSel.includes(n))))
@@ -2020,6 +2062,9 @@ export default function TrackingPdaPage() {
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
     const target = rawList.find((r) => (r.id as string) === rowId);
+    // pratica vista solo con la capacità esito admin = niente delega (la UI
+    // già non la offre: guardia al varco unico delle scritture di delega)
+    if (target && !inPerimetroReale(target)) { alert("Pratica fuori dai tuoi punti vendita: con la capacità esito admin si lavora solo l'esito, niente delega."); return; }
     const oggi = new Date().toLocaleDateString("it-IT");
     const storia = Array.isArray((target as any)?.storia) ? [...(target as any).storia] : [];
     storia.push({ data: oggi, tipo: "delega",
@@ -2030,7 +2075,7 @@ export default function TrackingPdaPage() {
     if (error) { setLoadError(error.message); return; }
     setRawList((prev) => prev.map((r) => (r.id as string) === rowId ? { ...r, delegated_to: toId, delegated_by: toId ? user?.id : null, storia } : r));
     setSelected((s) => s && s.id === rowId ? { ...s, delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia } : s);
-  }, [rawList, memberName, user]);
+  }, [rawList, memberName, user, inPerimetroReale]);
 
   // Cestino — NUOVO DISEGNO (Luca 06/08): dal Tracking NON si elimina mai la
   // vendita. Il cestino NASCONDE la pratica da questa vista (flag
@@ -2057,6 +2102,14 @@ export default function TrackingPdaPage() {
   // Delega rapida di piu' pratiche insieme dalla dashboard.
   const handleBulkDelegate = useCallback(async (ids: string[], toId: string) => {
     if (!ids.length || !toId) return;
+    // fuori dal perimetro reale niente delega: si delegano solo le pratiche
+    // che si vedrebbero anche senza la capacità esito admin
+    const fuori = ids.filter((id) => { const t = rawList.find((r) => (r.id as string) === id); return t && !inPerimetroReale(t); });
+    if (fuori.length) {
+      alert(`${fuori.length} pratiche fuori dai tuoi punti vendita: escluse dalla delega (con la capacità esito admin si lavora solo l'esito).`);
+      ids = ids.filter((id) => !fuori.includes(id));
+      if (!ids.length) return;
+    }
     const nome = memberName(toId) || "collaboratore";
     const oggi = new Date().toLocaleDateString("it-IT");
     for (const id of ids) {
@@ -2066,7 +2119,7 @@ export default function TrackingPdaPage() {
       await supabase.from("contracts").update({ delegated_to: toId, delegated_by: user?.id ?? null, delegated_at: toId ? new Date().toISOString() : null, storia }).eq("id", id);
     }
     setRawList((prev) => prev.map((r) => ids.includes(r.id as string) ? { ...r, delegated_to: toId, delegated_by: user?.id } : r));
-  }, [rawList, memberName, user]);
+  }, [rawList, memberName, user, inPerimetroReale]);
 
   const handleUpdate = useCallback(
     async (updated: TrackingRow, opts?: { salvaFollowup?: boolean }) => {
@@ -2342,7 +2395,7 @@ export default function TrackingPdaPage() {
              istanza fa anche il commit automatico della sua bozza */
           <Drawer key={selected.rowKey || `${selected.id}#${selected.categoria}`}
             row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
-            members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)}
+            members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} canEditNegozio={inPerimetroReale(selected)} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)}
             episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []}
             scartaRef={scartaCommitRef} />
         )}
