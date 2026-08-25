@@ -118,6 +118,13 @@ export default function Dashboard() {
     // niente più editMode: come nell'Analisi la griglia è SEMPRE viva — drag
     // dalla pillola in testa alla card, resize dall'angolo, X su hover
     const { width: gridW, containerRef: gridRef, mounted: gridMounted } = useContainerWidth();
+    // pila mobile con ISTERESI (entra <600, esce >680): ballando sul confine
+    // il cambio pila↔griglia rimonterebbe tutti i widget (e le loro fetch)
+    const [pilaMobile, setPilaMobile] = useState(false);
+    useEffect(() => {
+        if (!gridW) return;
+        setPilaMobile((cur) => (cur ? gridW < 680 : gridW < 600));
+    }, [gridW]);
     const [addOpen, setAddOpen] = useState(false);
 
     const [negoziAss, setNegoziAss] = useState([]);
@@ -439,8 +446,10 @@ export default function Dashboard() {
     const aggiungi = (id) => {
         const info = infoWidget(id, ctx);
         if (!info || layout.some((w) => w.k === id)) return;
-        // y: Infinity = in coda; la compattazione la porta al primo buco utile
-        salvaLayout([...layout, { k: id, s: COLS_DA_TAGLIA[info.def] || 4, h: H_DA_TAGLIA[info.def] || 4, x: 0, y: Infinity }]);
+        // in CODA vera (niente Infinity: il payload lo serializzerebbe a 0 e
+        // senza il giro della griglia — pila mobile — finirebbe in testa)
+        const coda = layout.reduce((m, w) => Math.max(m, (w.y || 0) + (w.h || 4)), 0);
+        salvaLayout([...layout, { k: id, s: COLS_DA_TAGLIA[info.def] || 4, h: H_DA_TAGLIA[info.def] || 4, x: 0, y: coda }]);
     };
 
     if (!user) return null;
@@ -529,10 +538,16 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* il ref di misura vive su un wrapper SEMPRE montato (seconda
+                bocciatura): useContainerWidth misura una volta sola al mount —
+                se il contenitore nascesse a dati pronti la larghezza resterebbe
+                il default 1280 per sempre (pila mobile irraggiungibile,
+                buco/overflow su ogni schermo diverso, zero reflow al resize) */}
+            <div ref={gridRef}>
             {loading ? (
                 <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento dati…</div>
             ) : (
-                <div ref={gridRef}>
+                <div>
                     {/* TETRIS COME L'ANALISI (Luca 25/08 notte): react-grid-layout —
                         la card si trascina dalla pillola in testa e va dove la
                         molli, resize dall'angolo in basso a destra, le altre si
@@ -543,14 +558,24 @@ export default function Dashboard() {
                         gridConfig/dragConfig (bocciatura del revisore: coi
                         default giravano 12 colonne e drag dall'intera card,
                         cioè il «buco a destra» e lo scroll touch morto). */}
-                    {gridMounted && gridW < 640 ? (
+                    {gridMounted && pilaMobile ? (
                         /* telefono: pila semplice nell'ordine del layout — il
-                           tetris a 8 colonne su 390px farebbe francobolli */
+                           tetris a 8 colonne su 390px farebbe francobolli.
+                           Taglia 2 (non 1): in 390px le griglie a due tile ci
+                           stanno e non si perdono assicurazioni/L&G/sparkline */
                         <div className="space-y-4">
                             {[...layout].sort((a, b) => (a.y - b.y) || (a.x - b.x)).map((w) => {
                                 const info = infoWidget(w.k, ctx);
                                 if (!info) return null;
-                                return <div key={w.k}>{renderWidget(w.k, ctx, 1)}</div>;
+                                return (
+                                    <div key={w.k} className="relative group/pw">
+                                        <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
+                                            className="absolute top-2 right-2 z-10 p-1 rounded-full bg-slate-900/80 border border-white/10 text-rose-300 opacity-60 active:opacity-100"><X className="w-3 h-3" /></button>
+                                        {/* tetto: senza altezza di cella gli scroll interni sono
+                                            inerti e le liste lunghe (Accessi) sarebbero infinite */}
+                                        <div className="max-h-[70vh] overflow-y-auto rounded-2xl">{renderWidget(w.k, ctx, 2)}</div>
+                                    </div>
+                                );
                             })}
                         </div>
                     ) : gridMounted && (
@@ -588,6 +613,7 @@ export default function Dashboard() {
                     )}
                 </div>
             )}
+            </div>
 
             {/* pannello Aggiungi widget */}
             {addOpen && (
