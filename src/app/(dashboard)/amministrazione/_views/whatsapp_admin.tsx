@@ -22,7 +22,10 @@ type Istanza = {
     id: string; instance_name: string; display_name: string | null; wa_number: string | null;
     status: string; owner_user_id: string | null; negozio: string | null; created_at?: string;
 };
-type Utente = { id: string; full_name: string; negozio: string | null };
+// ⚠️ le colonne vere sono `active` e `primary_store` (bug del primo giro:
+// «attivo»/«negozio» non esistono — la query falliva in silenzio e la lista
+// «lo vedono» usciva sempre vuota, caso Donna/Ben Aziza)
+type Utente = { id: string; full_name: string; primary_store: string | null };
 
 const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 
@@ -54,7 +57,7 @@ export function WhatsAppAdminView() {
     useEffect(() => {
         carica();
         const t = setInterval(carica, 5000);
-        supabase.from("app_users").select("id, full_name, negozio").eq("attivo", true).order("full_name")
+        supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name")
             .then(({ data }) => setUtenti((data ?? []) as Utente[]));
         supabase.from("stores").select("name").order("name")
             .then(({ data }) => setNegozi(((data ?? []) as { name: string }[]).map(s => s.name)));
@@ -79,7 +82,7 @@ export function WhatsAppAdminView() {
     /** chi VEDE un numero di negozio: unione assegnati + visibilità + login */
     const utentiCheVedono = (store: string): string[] =>
         utenti.filter(u => {
-            const suoi = [...(visStores[u.id] || []), ...(u.negozio ? [u.negozio] : [])];
+            const suoi = [...(visStores[u.id] || []), ...(u.primary_store ? [u.primary_store] : [])];
             return suoi.some(s => sameStore(s, store));
         }).map(u => u.full_name);
 
