@@ -34,6 +34,8 @@ const num = (v: string): number => {
     const n = Number(String(v).replace(",", "."));
     return Number.isFinite(n) ? n : 0;
 };
+// formato importi dei tooltip di derivazione (it-IT, max 2 decimali)
+const eurIt = (v: number | null | undefined) => v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
 
 export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto, nascondiSoglie, soloRegole }: {
     ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
@@ -687,7 +689,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     {gettoni.map(r => (
                                         <tr key={r.id} className="border-t border-white/5">
                                             <td className="px-3 py-1" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
-                                            <td className="px-1 py-1 text-center text-white font-medium cursor-help" title={"Gettone: paga sempre, senza soglia — non si scala:\nai ragazzi va l'importo pieno dell'azienda"}>{r.pay_base ?? "—"}</td>
+                                            {/* wording condizionale (revisore): un gettone CON pista
+                                                a % < 100 viene scalato — la bolla non deve giurare
+                                                il contrario */}
+                                            <td className="px-1 py-1 text-center text-white font-medium cursor-help" title={r._origBase != null && r.pista && (r._perc ?? 100) !== 100
+                                                ? `Gettone: paga sempre, senza soglia\nall'azienda: ${eurIt(r._origBase)} €\n× ${r._perc}% ai ragazzi\n= ${eurIt(r.pay_base)} €`
+                                                : "Gettone: paga sempre, senza soglia — importo pieno, non scalato dalla %"}>{r.pay_base ?? "—"}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -976,8 +983,9 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
         notify("Tornata alla derivazione a % ✓", "ok"); setDraft(null); dopo();
     };
     // TOOLTIP di derivazione (Luca 25/08, «come su Vodafone»): sul pay si
-    // leggono l'importo azienda e l'operazione che porta al numero mostrato
-    const eur = (v: number | null | undefined) => v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
+    // leggono l'importo azienda e l'operazione che porta al numero mostrato.
+    // Il «=» cita SEMPRE il valore in cella (rilievo revisore: mai ricalcolare
+    // ciò che si può leggere — a % il conto serve solo per il «sarebbero»)
     const perc = r._perc ?? 100;
     const unita = r.moltiplicatore ? "" : " €";
     const codaMolt = r.moltiplicatore ? "\n(i valori sono moltiplicatori del canone mensile)" : "";
@@ -985,12 +993,13 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
         const orig = r._origTiers?.[i];
         if (orig == null) return undefined;
         const aPerc = Math.round(orig * perc / 100 * 100) / 100;
-        return manuale
-            ? `S${i + 1} — € fissati a mano\nall'azienda: ${eur(orig)}${unita}\ncon la derivazione al ${perc}% sarebbero ${eur(aPerc)}${unita}${codaMolt}`
-            : `S${i + 1} — all'azienda: ${eur(orig)}${unita}\n× ${perc}% ai ragazzi\n= ${eur(aPerc)}${unita}${codaMolt}`;
+        if (!manuale) return `S${i + 1} — all'azienda: ${eurIt(orig)}${unita}\n× ${perc}% ai ragazzi\n= ${eurIt(r.pay_tiers[i])}${unita}${codaMolt}`;
+        return r.pay_tiers[i] == null
+            ? `S${i + 1} — non fissato (cella vuota, il motore qui non paga)\nall'azienda: ${eurIt(orig)}${unita}\ncon la derivazione al ${perc}% sarebbero ${eurIt(aPerc)}${unita}${codaMolt}`
+            : `S${i + 1} — € fissati a mano\nall'azienda: ${eurIt(orig)}${unita}\ncon la derivazione al ${perc}% sarebbero ${eurIt(aPerc)}${unita}${codaMolt}`;
     };
     const tipBase = r._origBase == null ? undefined
-        : `Base sotto la 1ª soglia — all'azienda: ${eur(r._origBase)}${unita}\n× ${perc}% ai ragazzi\n= ${eur(r.pay_base)}${unita}${codaMolt}`;
+        : `Base sotto la 1ª soglia — all'azienda: ${eurIt(r._origBase)}${unita}\n× ${perc}% ai ragazzi\n= ${eurIt(r.pay_base)}${unita}${codaMolt}`;
     return (
         <tr className="border-t border-white/5 hover:bg-white/[0.03]">
             <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
