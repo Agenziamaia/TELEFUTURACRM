@@ -10,6 +10,8 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { waScopeDi } from "@/lib/waVisibilita";
+import { areaOf } from "@/lib/roles";
+import { SelectOpzioni } from "@/components/SelectPersona";
 import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -50,11 +52,15 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // del titolare (dipendente) o del negozio, non col cellulare — utile a
     // colpo d'occhio e per le analisi (tasso di risposta per caller/negozio).
     const [nomiTitolari, setNomiTitolari] = useState<Record<string, string>>({});
+    const [ruoliTitolari, setRuoliTitolari] = useState<Record<string, string>>({});
     useEffect(() => {
         const ids = [...new Set(instances.map(i => i.owner_user_id).filter(Boolean))] as string[];
         if (!ids.length) return;
-        supabase.from("app_users").select("id, full_name").in("id", ids)
-            .then(({ data }) => setNomiTitolari(Object.fromEntries((data ?? []).map((u: { id: string; full_name: string }) => [u.id, u.full_name]))));
+        supabase.from("app_users").select("id, full_name, role").in("id", ids)
+            .then(({ data }) => {
+                setNomiTitolari(Object.fromEntries((data ?? []).map((u: { id: string; full_name: string }) => [u.id, u.full_name])));
+                setRuoliTitolari(Object.fromEntries((data ?? []).map((u: { id: string; role: string }) => [u.id, u.role])));
+            });
     }, [instances]);
     const etichettaIstanza = (i: Instance) =>
         i.display_name || (i.owner_user_id && nomiTitolari[i.owner_user_id]) || i.negozio || (i.wa_number ? `+${i.wa_number}` : i.instance_name);
@@ -102,16 +108,33 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         !i.owner_user_id && (
             negoziIstanza(i).some(n => myStores.some(s => sameStore(n, s)))
             || (!!i.display_name && myStores.some(s => sameStore(i.display_name, s))));
+    // DIRETTORE CALL CENTER (Luca 25/08 notte-6): supervisiona gli operatori →
+    // vede anche i numeri PERSONALI del reparto cc (caller e back office).
+    // Solo il suo ruolo: la regola «personale = solo il titolare» resta per
+    // tutti gli altri.
+    const supervisioneCC = (i: Instance) =>
+        user?.role === "direttore_cc" && !!i.owner_user_id
+        && areaOf((ruoliTitolari[i.owner_user_id] || "") as never) === "cc";
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
-        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i));
+        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i) || supervisioneCC(i));
         // store manager: come da sempre TUTTI i numeri del suo negozio (anche
         // personali dei suoi), più i condivisi per nome e il suo personale
         return instances.filter(i =>
             negoziIstanza(i).some(n => myStores.some(s => sameStore(n, s)))
             || condivisoNegozio(i) || i.owner_user_id === user?.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [instances, waScope, user?.id, myStores]);
+    }, [instances, waScope, user?.id, myStores, ruoliTitolari]);
+
+    // FILTRO PER PERSONA/NUMERO (Luca 25/08 notte-6): con tanti numeri in
+    // visibilità i chip esplodono — la tendina restringe a un solo titolare
+    const [filtroNum, setFiltroNum] = useState("");
+    const chipsVisibili = useMemo(() => {
+        if (!filtroNum) return visibleInstances;
+        const out = visibleInstances.filter(i => etichettaIstanza(i) === filtroNum);
+        return out.length ? out : visibleInstances;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visibleInstances, filtroNum, nomiTitolari]);
 
     // tieni selInst sempre dentro i numeri visibili — preferendo il PROPRIO
     // numero: chi ha anche quello del negozio parte comunque dal suo
@@ -417,8 +440,25 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 preferenza: nome scelto a mano → titolare → negozio → numero.
                 La matita (solo amministrazione) rinomina l'etichetta. */}
             {visibleInstances.length > 0 && (
-                <div className="flex gap-2 flex-wrap shrink-0">
-                    {visibleInstances.map(i => (
+                <div className="flex gap-2 flex-wrap shrink-0 items-center">
+                    {/* FILTRO (Luca 25/08 notte-6): con tanti numeri si sceglie
+                        la persona/il negozio e resta solo il suo chip */}
+                    {visibleInstances.length > 4 && (
+                        <div className="min-w-[190px]">
+                            <SelectOpzioni value={filtroNum}
+                                onChange={(v) => {
+                                    setFiltroNum(v);
+                                    const hit = visibleInstances.find(i => etichettaIstanza(i) === v);
+                                    if (hit) { setSelInst(hit.id); setSelConv(null); }
+                                }}
+                                opzioni={[...new Set(visibleInstances.map(etichettaIstanza))]}
+                                placeholder="🔍 Filtra per persona o negozio…" maxVoci={100} />
+                        </div>
+                    )}
+                    {filtroNum && (
+                        <button onClick={() => setFiltroNum("")} className="text-[11px] text-slate-500 hover:text-slate-300" title="Torna a tutti i numeri">✕ tutti</button>
+                    )}
+                    {chipsVisibili.map(i => (
                         <span key={i.id} className="inline-flex items-center">
                             <button onClick={() => { setSelInst(i.id); setSelConv(null); }}
                                 title={i.wa_number ? `+${i.wa_number}` : i.instance_name}
