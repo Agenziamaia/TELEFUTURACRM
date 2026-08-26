@@ -29,7 +29,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS , areaOf } from "@/lib/roles";
-import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel } from "@/lib/commissioning";
+import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel, caricaTabellare, calcolaAvanzamento, payEuroAttivazione, esclusaDalleGare } from "@/lib/commissioning";
+import { esitaAppuntamento } from "@/lib/esitoAppuntamento";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -40,6 +41,7 @@ import {
     AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
     Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, CalendarClock,
     LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords, MessageCircle,
+    Euro, Flame, TrainFront, CalendarCheck,
 } from "lucide-react";
 
 // ── Regole di conteggio (UNICHE: le usa anche lo script di riscontro) ───────
@@ -1691,15 +1693,23 @@ function WidgetWhatsApp({ ctx, size }) {
     const shell = (figli) => (
         <WidgetShell icon={MessageCircle} title="WhatsApp del team" accent="var(--tf-22c55e)" action={azione}>{figli}</WidgetShell>
     );
+    // il className di SelectOpzioni SOSTITUISCE il default (niente merge):
+    // deve portare lui glass-input, sennò l'input resta nudo e quasi
+    // invisibile; le classi di layout stanno sul wrapper (il flex-1
+    // sull'input non agisce: il padre interno del componente non è un flex)
     const filtroRow = (
         <div className="flex items-center gap-1.5 flex-wrap">
             {((dati?.etichette?.length || 0) > 1 || filtro) && (
-                <SelectOpzioni value={filtro} onChange={setFiltro} opzioni={dati?.etichette || []}
-                    placeholder="Tutti i numeri" className="flex-1 min-w-[150px]" />
+                <div className="flex-1 min-w-[150px]">
+                    <SelectOpzioni value={filtro} onChange={setFiltro} opzioni={dati?.etichette || []}
+                        placeholder="Tutti i numeri" className="glass-input w-full text-xs px-3 py-2" />
+                </div>
             )}
-            <SelectOpzioni value={periodoW} onChange={setPeriodoW} opzioni={["Oggi", "Ultimi 7 giorni", "Ultimi 30 giorni", "Questo mese", "Mese scorso"]}
-                placeholder="Periodo della Home" className="flex-1 min-w-[140px]" />
-            {(filtro || periodoW) && <button onClick={() => { setFiltro(""); setPeriodoW(""); }} className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white px-2 py-1.5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">✕ tutto</button>}
+            <div className="flex-1 min-w-[140px]">
+                <SelectOpzioni value={periodoW} onChange={setPeriodoW} opzioni={["Oggi", "Ultimi 7 giorni", "Ultimi 30 giorni", "Questo mese", "Mese scorso"]}
+                    placeholder="Periodo della Home" className="glass-input w-full text-xs px-3 py-2" />
+            </div>
+            {(filtro || periodoW) && <button onClick={() => { setFiltro(""); setPeriodoW(""); }} className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white px-2 py-2 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">✕ tutto</button>}
         </div>
     );
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
@@ -1779,7 +1789,294 @@ function WidgetWhatsApp({ ctx, size }) {
     );
 }
 
+/* ═══ HOME v2, primo treno (26/08 — docs/HOME_V2_WIDGET.md) ═══════════════
+   Quattro widget nuovi: 💶 Vale X€ (il retroattivo di soglia in euro,
+   motore lato RAGAZZI), 🚂 Il Treno delle 19 (countdown all'ora di
+   scatto), 🔥 La Serie (streak), 📅 Agenda del giorno (esiti a 1 tap con
+   escalation sul debito). Regole: ponte (tutto dal motore), aggregazione
+   sul negozio che registra, quote ragazzi mai esposte. ═══════════════════ */
+
+// ── 💶 VALE X€ — la soglia più vicina tradotta in euro retroattivi ─────────
+// Per W3 e Sky (derivato pieno; VF arriva col contesto lettera A nel giro
+// 2): avanzamento coi tabellari RAGAZZI (soglie della gara interna) e delta
+// € = Σ [pay(tier+1) − pay(tier)] sulle vendite già fatte della pista.
+function WidgetSogliaEuro({ ctx, size }) {
+    const [tabs, setTabs] = useState(null);        // { w3, sky } tabellari ragazzi
+    const [canoni, setCanoni] = useState(null);    // "brand|offerta|prodotto" → canone
+    const ym = ctx.w3?.ym || ctx.sky?.ym || null;
+    useEffect(() => {
+        if (!ym) { setTabs(null); return; }
+        let vivo = true;
+        (async () => {
+            const iso = `${ym}-01`;
+            const [tw3, tsky, offs] = await Promise.all([
+                caricaTabellare("windtre", iso).catch(() => null),
+                caricaTabellare("sky", iso).catch(() => null),
+                supabase.from("catalog_offerte")
+                    .select("nome, canone_mensile, catalog_prodotti!inner(nome, brand_id)")
+                    .in("catalog_prodotti.brand_id", ["windtre", "sky"]).not("canone_mensile", "is", null).limit(2000),
+            ]);
+            if (!vivo) return;
+            const m = new Map();
+            ((offs.data || [])).forEach((o) => {
+                const p = o.catalog_prodotti;
+                if (p) m.set(`${p.brand_id}|${norm(o.nome)}|${norm(p.nome)}`, Number(o.canone_mensile));
+            });
+            setTabs({ w3: tw3, sky: tsky });
+            setCanoni(m);
+        })();
+        return () => { vivo = false; };
+    }, [ym]);
+    const occasioni = useMemo(() => {
+        if (!tabs || !canoni) return null;
+        const out = [];
+        const brands = [
+            { key: "windtre", label: "WindTre", tab: tabs.w3, rows: ctx.w3?.packs?.[0]?.rows || [] },
+            { key: "sky", label: "Sky", tab: tabs.sky, rows: ctx.sky?.packs?.[0]?.rows || [] },
+        ];
+        for (const b of brands) {
+            if (!b.tab || !b.rows.length) continue;
+            const rows = b.rows.filter((c) => !esclusaDalleGare(c));
+            const avz = calcolaAvanzamento(b.tab, rows);
+            for (const p of Object.values(avz.piste)) {
+                if (!p.prossima || !p.pezzi) continue;
+                // delta retroattivo: quanto varrebbero IN PIÙ i pezzi già
+                // fatti della pista passando alla soglia successiva
+                let delta = 0;
+                for (const c of rows) {
+                    const set = matchRigheAttivazione(b.tab.righe, c, brandIdDaLabel(c.brand));
+                    if (!set.length || set[0].pista !== p.chiave) continue;
+                    const canone = canoni.get(`${b.key}|${norm(c.offerta)}|${norm(c.prodotto)}`) ?? null;
+                    const ora = payEuroAttivazione(set, p.tier, canone);
+                    const poi = payEuroAttivazione(set, p.tier + 1, canone);
+                    if (ora != null && poi != null && poi > ora) delta += poi - ora;
+                }
+                if (delta <= 0) continue;
+                out.push({
+                    brand: b.label, brandKey: b.key, pista: p.nome, punti: p.punti,
+                    mancano: p.mancano, prossima: p.prossima.tier, pezzi: p.pezzi,
+                    delta: Math.round(delta * 100) / 100,
+                    frazione: p.prossima.soglia_da > 0 ? Math.min(1, p.punti / p.prossima.soglia_da) : 0,
+                });
+            }
+        }
+        // prima le soglie più vicine in proporzione
+        return out.sort((a, b) => (a.mancano / (a.mancano + a.punti || 1)) - (b.mancano / (b.mancano + b.punti || 1)));
+    }, [tabs, canoni, ctx.w3, ctx.sky]);
+    const top = occasioni?.slice(0, size >= 2 ? 3 : 1) || [];
+    return (
+        <WidgetShell icon={Euro} title="Vale X€" accent="var(--tf-34d399)"
+            action={<span className="text-[10px] text-slate-500">pay ragazzi · retroattivo</span>}>
+            {!occasioni ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Calcolo dal motore…</div>
+            ) : !top.length ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Nessuna soglia a portata con pay in crescita: guarda le Gare per il quadro completo.</div>
+            ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5">
+                    {top.map((o, i) => {
+                        const caldissima = o.mancano <= 5;
+                        return (
+                            <Link key={i} href="/gare" className={cn("block rounded-xl border p-2.5 transition-colors",
+                                caldissima ? "border-emerald-500/50 bg-emerald-500/10 animate-pulse" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]")}>
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-slate-200">{o.brand} · {o.pista}</span>
+                                    <span className="text-[10px] text-slate-500">S{o.prossima} a {it2(o.mancano)} punti</span>
+                                </div>
+                                <div className="text-xl font-black text-emerald-300 leading-tight my-0.5">+{it2(o.delta)} €</div>
+                                <div className="text-[10px] text-slate-400">retroattivi sui {o.pezzi} pezzi già fatti, appena scatta la soglia</div>
+                                <div className="h-1.5 rounded-full bg-white/[0.07] overflow-hidden mt-1.5">
+                                    <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${Math.round(o.frazione * 100)}%` }} />
+                                </div>
+                            </Link>
+                        );
+                    })}
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+const it2 = (v) => Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
+
+// ── 🚂 IL TRENO DELLE 19 — i pezzi di oggi salgono in gara all'ora di scatto ─
+function WidgetTreno19({ ctx, size }) {
+    const [ora, setOra] = useState(() => new Date());
+    useEffect(() => { const t = setInterval(() => setOra(new Date()), 30000); return () => clearInterval(t); }, []);
+    const scatto = ctx.gl?.oraScatto ?? 19;
+    const oggi = ctx.oggiISO;
+    const festivo = ora.getDay() === 0 || (ctx.gl?.festivi || []).includes(oggi) || (ctx.gl?.congelati || []).includes(ora.getDate());
+    const diOggi = useMemo(() => (ctx.scoped || []).filter((c) =>
+        isCtr(c) && validaProduzione(c) && giornoDi(c) === oggi && ctx.scopeVendita(c)), [ctx.scoped, oggi, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const partito = ora.getHours() >= scatto;
+    const mancaMin = Math.max(0, (scatto * 60) - (ora.getHours() * 60 + ora.getMinutes()));
+    const hh = Math.floor(mancaMin / 60), mm = mancaMin % 60;
+    const vagoni = Math.min(diOggi.length, 8);
+    return (
+        <WidgetShell icon={TrainFront} title="Il Treno delle 19" accent="var(--tf-f59e0b)"
+            action={<span className="text-[10px] text-slate-500">ora di scatto h{scatto}</span>}>
+            <div className="flex-1 flex flex-col justify-center gap-1.5">
+                {festivo ? (
+                    <div className="text-slate-500 text-xs text-center">Oggi il treno non parte (festivo) — i pezzi salgono sul prossimo giorno lavorativo.</div>
+                ) : (
+                    <>
+                        <div className="text-2xl leading-none tracking-tight" aria-hidden>
+                            {"🚂" + "🚃".repeat(vagoni)}{diOggi.length > 8 ? "…" : ""}
+                        </div>
+                        <div className="text-3xl font-black text-white leading-none">{diOggi.length}<span className="text-sm font-bold text-slate-400 ml-1.5">pezzi a bordo oggi</span></div>
+                        {partito ? (
+                            <div className="text-[11px] text-emerald-300 font-semibold">🎉 Partito! Da adesso ogni pezzo sale sul treno di domani.</div>
+                        ) : (
+                            <div className="text-[11px] text-amber-300 font-semibold">Parte tra {hh > 0 ? `${hh}h ` : ""}{mm}m — ogni pezzo registrato entro le {scatto}:00 conta in gara OGGI.</div>
+                        )}
+                        {size >= 2 && <div className="text-[10px] text-slate-500">Il carico di oggi entra nei punti gara all&apos;ora di scatto: registra adesso, non domani.</div>}
+                    </>
+                )}
+            </div>
+        </WidgetShell>
+    );
+}
+
+// ── 🔥 LA SERIE — giorni lavorativi consecutivi con almeno una vendita ─────
+function WidgetSerie({ ctx }) {
+    const dati = useMemo(() => {
+        const miei = (ctx.scoped || []).filter((c) => isCtr(c) && validaProduzione(c) && ctx.scopeVendita(c));
+        const giorni = new Set(miei.map(giornoDi).filter(Boolean));
+        const festivi = new Set(ctx.gl?.festivi || []);
+        const lavorativo = (d) => d.getDay() !== 0 && !festivi.has(d.toISOString().slice(0, 10));
+        // streak corrente: da oggi (o da ieri se oggi è ancora vuoto) a ritroso
+        const conta = (start) => {
+            let n = 0; const d = new Date(start);
+            for (let i = 0; i < 90; i++) {
+                if (lavorativo(d)) {
+                    if (giorni.has(d.toISOString().slice(0, 10))) n++;
+                    else break;
+                }
+                d.setDate(d.getDate() - 1);
+            }
+            return n;
+        };
+        const oggiHa = giorni.has(ctx.oggiISO);
+        const ieri = new Date(); ieri.setDate(ieri.getDate() - 1);
+        const streak = oggiHa ? conta(new Date()) : conta(ieri);
+        // record sul perimetro CRM (dal go-live di fine luglio)
+        const tutte = [...giorni].sort();
+        let best = 0, run = 0, prev = null;
+        for (const g of tutte) {
+            if (prev) {
+                const d = new Date(prev); let salto = false;
+                for (;;) {
+                    d.setDate(d.getDate() + 1);
+                    const isoD = d.toISOString().slice(0, 10);
+                    if (isoD >= g) break;
+                    if (d.getDay() !== 0 && !festivi.has(isoD)) { salto = true; break; }
+                }
+                run = salto ? 1 : run + 1;
+            } else run = 1;
+            best = Math.max(best, run); prev = g;
+        }
+        return { streak, best, oggiHa };
+    }, [ctx.scoped, ctx.oggiISO, ctx.gl, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const spegne = !dati.oggiHa && new Date().getHours() >= 17;
+    return (
+        <WidgetShell icon={Flame} title="La Serie" accent="var(--tf-fb923c)"
+            action={<span className="text-[10px] text-slate-500">record {dati.best}</span>}>
+            <div className="flex-1 flex flex-col items-center justify-center gap-1">
+                <div className={cn("leading-none", dati.streak >= 10 ? "text-5xl" : dati.streak >= 5 ? "text-4xl" : "text-3xl", spegne && "opacity-50")} aria-hidden>🔥</div>
+                <div className="text-3xl font-black text-white leading-none">{dati.streak}</div>
+                <div className="text-[10px] text-slate-400 text-center">
+                    {dati.streak === 0 ? "riaccendi la fiamma: basta 1 pezzo oggi"
+                        : spegne ? "⚠️ oggi ancora a zero: la serie si spegne stasera"
+                        : dati.oggiHa ? "giorni di fila con almeno una vendita — anche oggi ✓"
+                        : "giorni di fila — oggi manca ancora il pezzo"}
+                </div>
+                {dati.streak > 0 && dati.streak === dati.best && <div className="text-[10px] font-bold text-amber-300">🏆 è il tuo record</div>}
+            </div>
+        </WidgetShell>
+    );
+}
+
+// ── 📅 AGENDA DEL GIORNO — esiti a 1 tap, escalation sul debito ────────────
+function WidgetAgenda({ ctx, size }) {
+    const [rows, setRows] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const [giro, setGiro] = useState(0);
+    const stores = ctx.seesAll ? null : (ctx.myStores.length ? ctx.myStores : (ctx.user?.negozio ? [ctx.user.negozio] : []));
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const da = new Date(); da.setDate(da.getDate() - 14);
+            let q = supabase.from("appointments")
+                .select("id, date, time, type, store, customer_name, customer_phone, status, notes, created_by")
+                .gte("date", da.toISOString().slice(0, 10)).lte("date", ctx.oggiISO)
+                .or("is_demo.is.null,is_demo.eq.false")
+                .order("date", { ascending: false }).order("time").limit(200);
+            const { data } = await q;
+            if (!vivo) return;
+            const mie = ((data || [])).filter((a) => !stores || stores.some((s) => sameStoreW(a.store, s)));
+            setRows(mie);
+        })();
+        return () => { vivo = false; };
+    }, [ctx.oggiISO, ctx.visKey, giro]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const oggi = (rows || []).filter((a) => a.date === ctx.oggiISO);
+    const debito = (rows || []).filter((a) => a.date < ctx.oggiISO && a.status === "scheduled");
+    const esita = async (a, chiave) => {
+        setBusy(a.id);
+        const { error } = await esitaAppuntamento(a.id, chiave, a.status, ctx.user?.name || "Negozio");
+        setBusy(null);
+        if (!error) setGiro((g) => g + 1);
+    };
+    const ieriISO = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+    const Riga = ({ a, vecchio }) => {
+        const rosso = vecchio && a.date < ieriISO;
+        return (
+            <div className={cn("rounded-lg border p-2 flex items-center gap-2",
+                rosso ? "border-rose-500/60 bg-rose-500/10 animate-pulse" : vecchio ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-white/10 bg-white/[0.03]")}>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-slate-200 truncate">{a.customer_name || "Cliente"} {a.time ? <span className="text-slate-500 font-normal">· {String(a.time).slice(0, 5)}</span> : null}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{vecchio ? `${fmtGiornoIT(a.date)} · SENZA ESITO` : (a.store || "")}{ctx.seesAll && !vecchio ? ` · ${a.store}` : ""}{ctx.seesAll && vecchio ? ` · ${a.store}` : ""}</div>
+                </div>
+                {a.status === "scheduled" ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                        <button disabled={busy === a.id} onClick={() => esita(a, "no_show")} title="Non si è presentato"
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/15">🚫</button>
+                        <button disabled={busy === a.id} onClick={() => esita(a, "ko")} title="Venuto, non interessato (il caller verificherà)"
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/15">👎</button>
+                        <Link href="/calendario" title="Altri esiti (da richiamare, attivazioni…) nel calendario"
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg border border-white/15 text-slate-300 hover:bg-white/10">…</Link>
+                    </div>
+                ) : (
+                    <span className="text-[10px] text-slate-500 shrink-0">{a.status}</span>
+                )}
+            </div>
+        );
+    };
+    const nOggi = size >= 4 ? 8 : 4, nDeb = size >= 4 ? 6 : 3;
+    return (
+        <WidgetShell icon={CalendarCheck} title="Agenda del giorno" accent="var(--tf-38bdf8)"
+            action={debito.length > 0
+                ? <span className="text-[10px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/40 rounded-full px-2 py-0.5">🔥 {debito.length} senza esito</span>
+                : <span className="text-[10px] font-bold text-emerald-300">✨ esiti a zero</span>}>
+            {rows === null ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Carico l&apos;agenda…</div>
+            ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+                    {debito.slice(0, nDeb).map((a) => <Riga key={a.id} a={a} vecchio />)}
+                    {debito.length > nDeb && <div className="text-[10px] text-rose-300/80">…e altri {debito.length - nDeb} da esitare (calendario)</div>}
+                    {oggi.length > 0 && <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold pt-1">Oggi · {oggi.length} appuntament{oggi.length === 1 ? "o" : "i"}</div>}
+                    {oggi.slice(0, nOggi).map((a) => <Riga key={a.id} a={a} />)}
+                    {!oggi.length && !debito.length && <div className="text-slate-500 text-xs text-center py-4">Nessun appuntamento oggi e nessun esito arretrato 🎉</div>}
+                    <Link href="/calendario" className="block text-[10px] text-sky-300/80 hover:text-sky-200 pt-1">Apri il calendario <ArrowRight size={10} className="inline" /></Link>
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+const fmtGiornoIT = (iso) => { const d = String(iso || ""); return d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : ""; };
+
 const FISSI = {
+    soglia_euro: { label: "Vale X€", icon: Euro, sizes: [1, 2], def: 1, gruppo: "performance" },
+    treno19: { label: "Il Treno delle 19", icon: TrainFront, sizes: [1, 2], def: 1, gruppo: "strumenti" },
+    serie: { label: "La Serie", icon: Flame, sizes: [1], def: 1, gruppo: "performance" },
+    agenda: { label: "Agenda del giorno", icon: CalendarCheck, sizes: [2, 4], def: 2, gruppo: "strumenti" },
     marginalita: { label: "Marginalità", icon: ShoppingBag, sizes: [1, 2, 4], def: 2, gruppo: "performance" },
     kpi_contratti: { label: "Contratti", icon: FileText, sizes: [1, 2], def: 1, gruppo: "statistiche" },
     kpi_attivi: { label: "Attivi", icon: CheckCircle2, sizes: [1, 2], def: 1, gruppo: "statistiche" },
@@ -1825,6 +2122,10 @@ export function renderWidget(id, ctx, size) {
         return <WidgetConfronto ctx={ctx} size={size} widgetKey={id} param={parti.length >= 3 ? parti.slice(2).join(":") : null} />;
     }
     switch (id) {
+        case "soglia_euro": return <WidgetSogliaEuro ctx={ctx} size={size} />;
+        case "treno19": return <WidgetTreno19 ctx={ctx} size={size} />;
+        case "serie": return <WidgetSerie ctx={ctx} />;
+        case "agenda": return <WidgetAgenda ctx={ctx} size={size} />;
         case "marginalita": return <WidgetMarginalita ctx={ctx} size={size} />;
         case "kpi_contratti": return <KpiTile icon={FileText} label="Contratti" value={ctx.mine.length} color="var(--tf-6366f1)" sub={`registrati ${ctx.periodoLabel}`} />;
         case "kpi_attivi": return <KpiTile icon={CheckCircle2} label="Attivi" value={ctx.attivi} color="var(--tf-22c55e)" sub={ctx.mine.length ? `${Math.round((ctx.attivi / ctx.mine.length) * 100)}% del periodo` : "—"} />;
@@ -1886,8 +2187,11 @@ export function perfDefaults(ctx) {
 
 export function layoutDefault(ctx) {
     const perf = perfDefaults(ctx);
+    // HOME v2 (26/08): l'agenda con gli esiti e la soglia in € aprono la
+    // Home di default — i numeri di consultazione vivono in Analisi
     if (ctx.level === "global") {
         return decodeLayout([
+            "agenda@2", "soglia_euro@2",
             "kpi_contratti@1", "kpi_attivi@1", "kpi_lavorazione@1", "kpi_clienti@1",
             ...perf,
             "chart_brand@2", "chart_stato@2", "chart_top@2", "bacheca@2",
@@ -1896,6 +2200,7 @@ export function layoutDefault(ctx) {
     }
     if (ctx.level === "store") {
         return decodeLayout([
+            "agenda@2", "soglia_euro@1", "treno19@1",
             ...perf, "confronto@2",
             "kpi_contratti@1", "kpi_attivi@1", "kpi_lavorazione@1", "kpi_clienti@1",
             "chart_top@2", "bacheca@2", "obiettivo@1", "azioni@1", "bussola@1", "chart_stato@1",
@@ -1903,6 +2208,7 @@ export function layoutDefault(ctx) {
         ]);
     }
     return decodeLayout([
+        "agenda@2", "soglia_euro@1", "serie@1", "treno19@1",
         ...perf, "confronto@2",
         "kpi_contratti@1", "kpi_attivi@1", "obiettivo@1", "azioni@1",
         "bacheca@2", "chart_brand@2", "classifica@2", "bussola@1",
