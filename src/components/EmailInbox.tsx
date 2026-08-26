@@ -531,7 +531,12 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
             <style>{MAIL_CSS}</style>
-            <TopBar embedded={embedded} onConnect={puoGestireCaselle ? () => setConnectModal(true) : undefined} onManage={puoGestireCaselle ? () => setManageModal(true) : undefined} onRefresh={() => aggiorna(undefined, true)} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
+            {/* Nell'OMNICHAT la colonna centrale è SOLO la mail aperta (Luca
+                27/08): niente barra di ricerca, niente «Collega email», niente
+                pillole delle caselle e niente cartelle. Quella roba è della
+                scheda Email — qui ruba lo spazio al messaggio, che diventa un
+                francobollo in mezzo allo schermo. */}
+            {!senzaLista && <TopBar embedded={embedded} onConnect={puoGestireCaselle ? () => setConnectModal(true) : undefined} onManage={puoGestireCaselle ? () => setManageModal(true) : undefined} onRefresh={() => aggiorna(undefined, true)} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />}
             {pollErr && (
                 <p className="mail-in text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3.5 py-2 shrink-0 flex items-center gap-2">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0" /> {pollErr}
@@ -540,7 +545,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
 
             {/* selettore casella (se piu' di una): pillole col colore della casella,
                 badge non-letti e spia rossa se la casella è in errore */}
-            {visibleAccounts.length > 1 && (
+            {!senzaLista && visibleAccounts.length > 1 && (
                 <div className="mail-in flex gap-2 flex-wrap shrink-0">
                     {visibleAccounts.map(a => { const col = coloreCasella(a.id); const un = unreadPerAcc[a.id] || 0; const attiva = selAcc === a.id; return (
                         <button key={a.id} onClick={() => { setSelAcc(a.id); setSelConv(null); }}
@@ -555,9 +560,10 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                 </div>
             )}
 
-            <div className={cn("grid grid-cols-1 gap-3", senzaLista ? "lg:grid-cols-[196px_1fr]" : "lg:grid-cols-[196px_minmax(300px,360px)_1fr]", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-264px)] min-h-[480px]")}>
-                {/* ── RAIL cartelle ── */}
-                <div className={cn("glass-panel shadow-lg p-3 flex flex-col gap-2", selConv && "hidden lg:flex")}>
+            <div className={cn("grid grid-cols-1 gap-3", senzaLista ? "lg:grid-cols-1" : "lg:grid-cols-[196px_minmax(300px,360px)_1fr]", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-264px)] min-h-[480px]")}>
+                {/* ── RAIL cartelle ── (nell'Omnichat non c'è: si sta leggendo
+                    UNA conversazione, non si naviga fra le cartelle) */}
+                <div className={cn("glass-panel shadow-lg p-3 flex flex-col gap-2", selConv && "hidden lg:flex", senzaLista && "hidden lg:hidden")}>
                     <button onClick={openNewCompose}
                         className="group w-full mb-1 px-4 py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-sky-500/30 transition-all duration-200 hover:shadow-xl hover:shadow-sky-500/40 hover:-translate-y-0.5 active:scale-[0.97]">
                         <PenSquare className="w-4 h-4 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110" /> Scrivi
