@@ -21,7 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
     caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice,
-    finestraBilancia, codiceBilancia, codiceAssociato, W3_PALETTO_BUSINESS,
+    finestraBilancia, codiceBilancia, codiceAssociato,
     DIR_BRANDS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
@@ -367,9 +367,11 @@ export function DirezioneInserimentoAdmin() {
                     // ECCEDENZA (Luca 27/08): SEMPRE caricato − target SFRIDATO
                     // (k.targets è già col +sfrido), e contano anche i punti su
                     // codici SENZA target — «non ne avevano bisogno» per definizione
-                    const sforati = dir.codici
+                    // …ma SOLO se sulla pista c'è una richiesta: senza target
+                    // non esiste spreco (revisore 27/08: falso allarme rosso)
+                    const sforati = richiesto > 0 ? dir.codici
                         .map((k) => { const t = k.targets[pk] || 0; return { nome: k.negozio, extra: Math.round((fattoDi(k) - t) * 100) / 100, senza: !(t > 0) }; })
-                        .filter((x) => x.extra > 0);
+                        .filter((x) => x.extra > 0) : [];
                     const sforo = Math.round(sforati.reduce((s, x) => s + x.extra, 0) * 100) / 100;
                     const proj = proiezioneDir(dir, fatto);
                     // proiezione UTILE: il ritmo di rete meno gli sforamenti già
@@ -546,7 +548,9 @@ export function DirezioneInserimentoAdmin() {
                                 const cbSem = dir.brand === "windtre" && p.chiave === "cb";
                                 const f = cbSem ? (k.cbPunti || 0) : (k.piste[p.chiave]?.punti || 0);
                                 const pj = proiezioneDir(dir, f);
-                                const stato = f >= t ? "verde" : (pj != null && pj >= t) ? "giallo" : "rosso";
+                                // proiezione SPENTA (inizio mese) → grigio neutro,
+                                // niente falsi rossi lampeggianti (revisore 27/08)
+                                const stato = f >= t ? "verde" : pj == null ? "grigio" : pj >= t ? "giallo" : "rosso";
                                 return { chiave: p.chiave, nome: p.nome, t, f, stato };
                             });
                         return (
@@ -564,11 +568,12 @@ export function DirezioneInserimentoAdmin() {
                                             <span className="flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5">
                                                 {semafori.map((sm) => (
                                                     <span key={sm.chiave}
-                                                        title={`${sm.nome}: ${it(sm.f)} / ${it(sm.t)} — ${sm.stato === "verde" ? "🎯 target preso" : sm.stato === "giallo" ? "in proiezione lo prende" : "nemmeno in proiezione: serve una spinta"}`}
+                                                        title={`${sm.nome}: ${it(sm.f)} / ${it(sm.t)} — ${sm.stato === "verde" ? "🎯 target preso" : sm.stato === "giallo" ? "in proiezione lo prende" : sm.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione: serve una spinta"}`}
                                                         className={cn("w-2.5 h-2.5 rounded-full", sm.stato === "rosso" && "animate-pulse")}
                                                         style={sm.stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
                                                             : sm.stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
-                                                                : { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} />
+                                                                : sm.stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
+                                                                    : { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} />
                                                 ))}
                                             </span>
                                         )}
@@ -679,20 +684,20 @@ export function DirezioneInserimentoAdmin() {
                                         {dir.brand === "windtre" && !k.multibrand && (() => {
                                             const fatti = k.businessPezzi || 0;
                                             const spPaletto = Math.round(Number(dir.sfridi[SFRIDO_PALETTO]) || 0);
-                                            const obiettivo = W3_PALETTO_BUSINESS + spPaletto;
-                                            const salvo = fatti >= W3_PALETTO_BUSINESS;      // niente malus
+                                            const obiettivo = dir.palettoBusiness + spPaletto;
+                                            const salvo = fatti >= dir.palettoBusiness;      // niente malus
                                             const okP = fatti >= obiettivo;                   // cuscinetto pieno
                                             const percP = Math.min(100, Math.round((fatti / obiettivo) * 100));
                                             return (
                                                 <div className="px-4 py-3.5">
                                                     <div className="flex items-center justify-between gap-2 mb-1.5">
-                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {W3_PALETTO_BUSINESS} attivazioni P.IVA mobile{spPaletto ? ` + ${spPaletto} di sfrido = obiettivo ${obiettivo}` : ""} o malus 30% sul mobile (vale anche col fisso sotto S1)</span></span>
+                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {dir.palettoBusiness} attivazioni P.IVA mobile{spPaletto ? ` + ${spPaletto} di sfrido = obiettivo ${obiettivo}` : ""} o malus 30% sul mobile (vale anche col fisso sotto S1)</span></span>
                                                         <span className={cn("text-[11px] font-black tabular-nums", okP ? "text-emerald-400" : salvo ? "text-amber-300" : "text-rose-300")}>{fatti} / {obiettivo}{okP ? " ✅" : ""}</span>
                                                     </div>
                                                     <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
                                                         <div className={cn("h-full rounded-full transition-all", okP ? "bg-emerald-400" : salvo ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${percP}%` }} />
                                                     </div>
-                                                    {!salvo && <div className="text-[10px] text-rose-300/80 mt-1">⚠ mancano {W3_PALETTO_BUSINESS - fatti} al paletto: sotto scatta il −30% sul mobile.</div>}
+                                                    {!salvo && <div className="text-[10px] text-rose-300/80 mt-1">⚠ mancano {dir.palettoBusiness - fatti} al paletto: sotto scatta il −30% sul mobile.</div>}
                                                     {salvo && !okP && <div className="text-[10px] text-amber-300/80 mt-1">paletto salvo — mancano {obiettivo - fatti} al cuscinetto di sicurezza.</div>}
                                                 </div>
                                             );
@@ -910,7 +915,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                 {/* ④ LA RISPOSTA — la carta col codice, grande */}
                 {pista === BIZMOB && dir && (() => {
                     const spPaletto = Math.round(Number(dir.sfridi["__paletto_business__"]) || 0);
-                    const obiettivo = W3_PALETTO_BUSINESS + spPaletto;
+                    const obiettivo = dir.palettoBusiness + spPaletto;
                     const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll)
                         .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0, mio: èMioCodice(k, negozio) }))
                         .sort((a, b) => a.fatti - b.fatti);
@@ -918,7 +923,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     // POI il pezzo di sfrido su chi manca; dentro la fase
                     // vale la strategia (default: si CHIUDE il più vicino)
                     const strat = strategiaDi(dir, BIZMOB);
-                    const sottoPaletto = franchising.filter((f) => f.fatti < W3_PALETTO_BUSINESS);
+                    const sottoPaletto = franchising.filter((f) => f.fatti < dir.palettoBusiness);
                     const sottoObiettivo = franchising.filter((f) => f.fatti < obiettivo);
                     const fase = sottoPaletto.length ? sottoPaletto : sottoObiettivo;
                     const prioB = prioritaDi(dir, BIZMOB);
@@ -932,9 +937,10 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     const ordinati = [...fase].sort((a, b) =>
                         (rankB(a.nome) - rankB(b.nome))
                         || (strat === "scoperto" && a.mio !== b.mio ? (a.mio ? -1 : 1) : 0)
-                        || (strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti)));
+                        || (strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti))
+                        || (Number(b.mio) - Number(a.mio)));
                     const scelto = ordinati[0] || null;
-                    const faseLabel = sottoPaletto.length ? W3_PALETTO_BUSINESS : obiettivo;
+                    const faseLabel = sottoPaletto.length ? dir.palettoBusiness : obiettivo;
                     // CASCATA (Luca 27/08-2): paletti tutti salvi → si passa
                     // all'esigenza dei PUNTI MOBILE (i target della direzione)
                     const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio, strategiaDi(dir, "mobile")) : [];

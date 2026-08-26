@@ -60,6 +60,7 @@ export type Direzione = {
     kpiCodice: string[];                  // piste mostrate per-codice
     pisteGruppo: string[];                // piste di gruppo (politica proprio/bilancia)
     politiche: Record<string, PoliticaPista>;   // pista → politica (+ '__associati__')
+    palettoBusiness: number;              // W3: pezzi P.IVA mobile del paletto — dalla LETTERA del mese
 };
 
 // W3: cosa pesa per codice (dettato Luca 26/08 sera-3); TUTTO il resto del
@@ -98,12 +99,17 @@ function scaleDiRete(tab: Tabellare | null): Record<string, number[]> {
 }
 
 export async function caricaDirezione(brand: DirBrandId, monthISO: string): Promise<Direzione> {
-    const [tgtRes, sfrRes, polRes, glRes] = await Promise.all([
+    const [tgtRes, sfrRes, polRes, glRes, regRes] = await Promise.all([
         supabase.from("direzione_targets").select("cod_gara, pista, target, tier").eq("brand", brand).eq("month", monthISO),
         supabase.from("direzione_sfridi").select("pista, pct").eq("brand", brand).eq("month", monthISO),
         supabase.from("direzione_politiche").select("pista, modo, dati").eq("brand", brand).eq("month", monthISO),
         giorniLavorativiMese(monthISO).catch(() => null),
+        // parametri della LETTERA del mese (Luca 27/08: il paletto business
+        // «è 6 questo mese ma poi cambierà» — segue l'upload in Gare)
+        supabase.from("pay_regole_lettera").select("chiave, valore").eq("brand", brand).eq("month", monthISO),
     ]);
+    const regoleLettera: Record<string, number> = {};
+    (regRes.data || []).forEach((r) => { regoleLettera[String(r.chiave)] = Number(r.valore); });
 
     let codici: CodiceDir[] = [];
     let tab: Tabellare | null = null;
@@ -229,6 +235,7 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
         brand, monthISO, codici, nonAllocati,
         pisteTab, tab, sfridi, gl: glv,
         kpiCodice, pisteGruppo, politiche,
+        palettoBusiness: Number(regoleLettera["paletto_piva_mobile"]) || W3_PALETTO_BUSINESS,
     };
 }
 
@@ -329,7 +336,9 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
     // esigenza — in tutti i casi — è coprire la Soglia 1 NUDA di ogni
     // codice in corsa (per la CB la S1 è l'80% del target Partnership):
     // lo sfrido lo colma il negozio stesso con le attivazioni sue
-    const faseT1 = pista === "mobile" || pista === "fisso" || cbW3;
+    // solo W3: le scale Vodafone sono di RETE duplicate sui canali — lì
+    // una «S1 per codice» non esiste (revisore 27/08)
+    const faseT1 = dir.brand === "windtre" && (pista === "mobile" || pista === "fisso" || cbW3);
     return dir.codici
         .filter((k) => (k.targets[pista] || 0) > 0)
         .map((k) => {
