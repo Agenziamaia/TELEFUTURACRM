@@ -14,9 +14,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { cn } from "@/utils";
-import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores } from "@/lib/roles";
-import { caricaConversazioni } from "./dati";
+import { caricaConversazioni, elencoNegozi, elencoPersone, membriNegozio } from "./dati";
 import type { ChatOmni } from "./tipi";
 
 export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onScegli: (c: ChatOmni) => void }) {
@@ -27,9 +26,12 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
     // due modi in cui si guarda davvero una lista: «cosa è successo adesso»
     // e «cosa devo ancora sbrigare». La scelta si ricorda: è il modo di
     // leggere di quella persona, non un filtro di perimetro.
+    // DI DEFAULT I NON LETTI DAVANTI (Luca 27/08: «di default mettimi che mi
+    // dai le chat non lette prima e poi io posso cambiarle in recenti»): si
+    // apre la chat per sbrigare quello che aspetta, non per guardare l'orario.
     const [ordine, setOrdine] = useState<"recenti" | "nonletti">(() => {
-        if (typeof window === "undefined") return "recenti";
-        return (localStorage.getItem("crm_omni_ordine") as "recenti" | "nonletti") || "recenti";
+        if (typeof window === "undefined") return "nonletti";
+        return (localStorage.getItem("crm_omni_ordine") as "recenti" | "nonletti") || "nonletti";
     });
     useEffect(() => { try { localStorage.setItem("crm_omni_ordine", ordine); } catch { } }, [ordine]);
     const [cerca, setCerca] = useState("");
@@ -42,21 +44,19 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
     // non ha il selettore: vedrebbe solo se stesso.
     const [comeChi, setComeChi] = useState<string>("io");
     const [persone, setPersone] = useState<{ id: string; nome: string; role: string; negozio: string | null }[]>([]);
+    const [negozi, setNegozi] = useState<string[]>([]);
     const puoImmedesimarsi = seesAllStores(user?.role);
     const [errore, setErrore] = useState<string | null>(null);
 
     useEffect(() => {
         if (!puoImmedesimarsi) return;
         let vivo = true;
-        supabase.from("app_users").select("id, full_name, role, primary_store")
-            .eq("active", true).order("full_name").limit(300)
-            .then(({ data }) => {
-                if (!vivo) return;
-                setPersone((data || []).map((u: Record<string, unknown>) => ({
-                    id: String(u.id), nome: String(u.full_name || "—"),
-                    role: String(u.role || ""), negozio: (u.primary_store as string) || null,
-                })));
-            });
+        // ⚠️ I NEGOZI VENGONO DA `stores`, non da useVisibleStores: per chi
+        // vede tutta la rete quella lista è vuota per costruzione, ed è il
+        // motivo per cui nel selettore comparivano solo le persone.
+        Promise.all([elencoPersone(), elencoNegozi()])
+            .then(([p, n]) => { if (vivo) { setPersone(p); setNegozi(n); } })
+            .catch((e) => { if (vivo) setErrore(String((e as Error)?.message || e)); });
         return () => { vivo = false; };
     }, [puoImmedesimarsi]);
 
@@ -67,23 +67,49 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
         // manager) oppure una persona con il SUO ruolo e il SUO negozio
         const p = comeChi.startsWith("u:") ? persone.find((x) => x.id === comeChi.slice(2)) : null;
         const neg = comeChi.startsWith("n:") ? comeChi.slice(2) : null;
-        const chi = p
-            ? { id: p.id, role: p.role, stores: p.negozio ? [p.negozio] : [] }
-            : neg
-                ? { id: user?.id || null, role: "store_manager", stores: [neg] }
-                : { id: user?.id || null, role: user?.role || null, stores };
         setChats(null);
-        caricaConversazioni(chi)
+        (async () => {
+            // per un NEGOZIO servono anche i suoi: numero e casella sono del
+            // punto vendita, le chat interne sono di ciascuno
+            const membri = neg ? await membriNegozio(neg) : null;
+            const chi = p
+                ? { id: p.id, role: p.role, stores: p.negozio ? [p.negozio] : [], membri: null }
+                : neg
+                    ? { id: user?.id || null, role: "store_manager", stores: [neg], membri }
+                    : { id: user?.id || null, role: user?.role || null, stores, membri: null };
+            return caricaConversazioni(chi);
+        })()
             .then((c) => { if (vivo) setChats(c); })
             .catch((e) => { if (vivo) { setChats([]); setErrore(String((e as Error)?.message || e)); } });
         return () => { vivo = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, user?.role, stores.join("|"), comeChi, persone.length]);
 
+    /* ── IL SELETTORE «VEDI COME» ─────────────────────────────────────────
+       Con 150 collaboratori una tendina è inservibile: si scrive e si filtra
+       (Luca 27/08). Negozi e persone nello stesso elenco, perché il modo in
+       cui uno cerca è «Magliana» o «Alessio», non «prima scelgo la
+       categoria». */
+    const [apertoSel, setApertoSel] = useState(false);
+    const [cercaChi, setCercaChi] = useState("");
+    const etichettaChi = useMemo(() => {
+        if (comeChi.startsWith("n:")) return `🏪 ${comeChi.slice(2)}`;
+        if (comeChi.startsWith("u:")) return `👤 ${persone.find((x) => x.id === comeChi.slice(2))?.nome || "collaboratore"}`;
+        return "👁 Quello che vedo io";
+    }, [comeChi, persone]);
+    const opzioni = useMemo(() => {
+        const q = cercaChi.trim().toLowerCase();
+        const neg = negozi.filter((n) => !q || n.toLowerCase().includes(q))
+            .map((n) => ({ chiave: `n:${n}`, icona: "🏪", nome: n, sotto: "punto vendita" }));
+        const per = persone.filter((p) => !q || `${p.nome} ${p.negozio || ""}`.toLowerCase().includes(q))
+            .map((p) => ({ chiave: `u:${p.id}`, icona: "👤", nome: p.nome, sotto: p.negozio || p.role.replace(/_/g, " ") }));
+        return [...neg, ...per];
+    }, [negozi, persone, cercaChi]);
+
     const lista = useMemo(() => {
         const q = cerca.trim().toLowerCase();
         const out = (chats || [])
-            .filter((c) => !q || `${c.nome} ${c.anteprima} ${c.sottotitolo || ""} ${c.numero || ""}`.toLowerCase().includes(q));
+            .filter((c) => !q || `${c.nome} ${c.anteprima} ${c.sottotitolo || ""} ${c.numero || ""} ${c.perChi || ""}`.toLowerCase().includes(q));
         // arriva già in ordine di tempo: «non letti prima» li fa risalire
         // SENZA mescolarli — dentro ogni fascia il tempo continua a scendere
         if (ordine === "nonletti") {
@@ -108,21 +134,54 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
                     </h2>
                 </div>
                 {puoImmedesimarsi && (
-                    <select value={comeChi} onChange={(e) => setComeChi(e.target.value)}
-                        title="Guarda la posta e le chat con gli occhi di un negozio o di una persona"
-                        className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-2 py-1.5 text-[11px] text-white outline-none focus:border-indigo-500/50">
-                        <option value="io">👁 Quello che vedo io</option>
-                        {stores.length > 0 && (
-                            <optgroup label="Punti vendita">
-                                {stores.map((n) => <option key={n} value={`n:${n}`}>🏪 {n}</option>)}
-                            </optgroup>
+                    <div className="relative">
+                        <button type="button" onClick={() => { setApertoSel((v) => !v); setCercaChi(""); }}
+                            title="Guarda la posta e le chat con gli occhi di un negozio o di una persona"
+                            className={cn("w-full flex items-center justify-between gap-2 border rounded-xl px-2.5 py-1.5 text-[11px] text-white outline-none transition-colors",
+                                comeChi === "io" ? "bg-white/[0.04] border-white/10 hover:border-white/20"
+                                    : "bg-amber-400/10 border-amber-400/30 hover:border-amber-400/50")}>
+                            <span className="truncate">{etichettaChi}</span>
+                            <span className="text-slate-500 shrink-0">▾</span>
+                        </button>
+                        {apertoSel && (
+                            <>
+                                <div className="fixed inset-0 z-20" onClick={() => setApertoSel(false)} />
+                                <div className="absolute z-30 mt-1 left-0 right-0 rounded-xl border border-white/10 bg-[#141726] shadow-2xl overflow-hidden">
+                                    <div className="p-2 border-b border-white/5">
+                                        <input autoFocus value={cercaChi} onChange={(e) => setCercaChi(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Escape") setApertoSel(false);
+                                                // invio = prendi il primo della lista filtrata
+                                                if (e.key === "Enter" && opzioni.length) { setComeChi(opzioni[0].chiave); setApertoSel(false); }
+                                            }}
+                                            placeholder="Scrivi un negozio o una persona…"
+                                            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder-slate-600 outline-none focus:border-indigo-500/50" />
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto py-1">
+                                        <button type="button" onClick={() => { setComeChi("io"); setApertoSel(false); }}
+                                            className={cn("w-full text-left px-3 py-1.5 text-[11px] hover:bg-white/[0.06] flex items-center gap-2",
+                                                comeChi === "io" ? "text-white font-bold" : "text-slate-300")}>
+                                            👁 Quello che vedo io
+                                        </button>
+                                        {!opzioni.length && (
+                                            <p className="px-3 py-3 text-[11px] text-slate-500">Nessun negozio e nessuna persona con queste lettere.</p>
+                                        )}
+                                        {opzioni.map((o) => (
+                                            <button key={o.chiave} type="button" onClick={() => { setComeChi(o.chiave); setApertoSel(false); }}
+                                                className={cn("w-full text-left px-3 py-1.5 hover:bg-white/[0.06] flex items-center gap-2",
+                                                    comeChi === o.chiave ? "bg-white/[0.06]" : "")}>
+                                                <span className="shrink-0">{o.icona}</span>
+                                                <span className="flex-1 min-w-0">
+                                                    <span className={cn("block truncate text-[11px]", comeChi === o.chiave ? "text-white font-bold" : "text-slate-200")}>{o.nome}</span>
+                                                    {o.sotto && <span className="block truncate text-[9px] text-slate-500">{o.sotto}</span>}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
                         )}
-                        {persone.length > 0 && (
-                            <optgroup label="Persone">
-                                {persone.map((p) => <option key={p.id} value={`u:${p.id}`}>👤 {p.nome}</option>)}
-                            </optgroup>
-                        )}
-                    </select>
+                    </div>
                 )}
                 <input value={cerca} onChange={(e) => setCerca(e.target.value)} placeholder="Cerca in tutti i canali…"
                     className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-600 outline-none focus:border-indigo-500/50" />
@@ -147,7 +206,11 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
 
             {comeChi !== "io" && (
                 <div className="mx-3 mt-2 text-[10px] text-amber-200/90 bg-amber-400/10 border border-amber-400/25 rounded-lg px-2.5 py-1.5">
-                    Stai guardando con gli occhi di <b>{comeChi.startsWith("n:") ? comeChi.slice(2) : (persone.find((x) => x.id === comeChi.slice(2))?.nome || "un collega")}</b>: la lista è la sua, non la tua.
+                    {comeChi.startsWith("n:") ? (
+                        <>Stai guardando il punto vendita <b>{comeChi.slice(2)}</b>: il suo numero, la sua casella e le chat interne di chi ci lavora — ognuna con il nome di chi ce l&apos;ha.</>
+                    ) : (
+                        <>Stai guardando con gli occhi di <b>{persone.find((x) => x.id === comeChi.slice(2))?.nome || "un collega"}</b>: la lista è la sua, non la tua.</>
+                    )}
                 </div>
             )}
             {errore && <div className="m-3 text-[11px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-3 py-2">⚠️ {errore}</div>}
@@ -185,6 +248,9 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
                                 <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{c.ora}</span>
                             </div>
                             <p className={cn("text-[11px] truncate", c.daLeggere ? "text-indigo-300 font-medium" : "text-slate-500")}>
+                                {/* di chi è: solo guardando un negozio, dove la stessa
+                                    lista tiene le chat interne di più persone */}
+                                {c.perChi && <span className="text-amber-300/80 font-semibold">di {c.perChi} · </span>}
                                 {c.sottotitolo || c.anteprima || "—"}
                             </p>
                         </div>

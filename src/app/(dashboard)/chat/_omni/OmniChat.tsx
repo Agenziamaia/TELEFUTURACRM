@@ -12,21 +12,25 @@
    libero, cartelle e caselle della posta. L'Omnichat aggiunge due colonne:
    la lista fusa a sinistra e la spalla del radar a destra.
 
-   Per la chat interna la conversazione vive dentro la pagina Chat (non è un
-   componente a sé): finché non è estratta, l'Omnichat porta lì con un clic
-   invece di rifarne una copia povera — è la stessa scelta di non riscrivere.
+   Anche la chat interna si legge e si scrive QUI (Luca 27/08: «l'omnichat
+   deve esistere per fare tutto lì dentro, perché mi sta riportando in
+   giro?»): la pagina Chat passa il suo thread — quello vero, con reazioni,
+   allegati, modifica e inoltro — e l'Omnichat lo monta al centro. Stesso
+   componente, stesso stato: nessuna copia da tenere allineata.
 */
 
-import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { ListaOmni } from "./ListaOmni";
 import { RadarOmni } from "./RadarOmni";
 import type { ChatOmni } from "./tipi";
 
-export function OmniChat() {
-    const router = useRouter();
+export function OmniChat({ thread, apriInterna, internaAperta }: {
+    thread?: ReactNode;                                   // il thread della chat interna, dalla pagina Chat
+    apriInterna?: (id: string | null) => void;            // quale conversazione interna deve aprire
+    internaAperta?: string | null;
+}) {
     const [attiva, setAttiva] = useState<ChatOmni | null>(null);
     // la risposta suggerita dall'AI: si passa all'inbox come testo iniziale
     const [bozza, setBozza] = useState<string | null>(null);
@@ -35,6 +39,16 @@ export function OmniChat() {
         setAttiva(c);
         setBozza(null);
     }, []);
+
+    // scegliendo una chat interna si dice alla pagina QUALE aprire: è lei che
+    // tiene messaggi, sottoscrizioni e bozze, e va avvisata come se avessi
+    // cliccato nella sua lista
+    useEffect(() => {
+        if (!apriInterna) return;
+        if (attiva?.canale === "interna") apriInterna(attiva.id.split(":")[1]);
+        else if (attiva && internaAperta) apriInterna(null);   // passato a un altro canale
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attiva?.id]);
 
     const idNudo = attiva ? attiva.id.split(":")[1] : null;
 
@@ -66,19 +80,13 @@ export function OmniChat() {
                     <EmailInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} />
                 )}
                 {attiva?.canale === "interna" && (
-                    <div className="h-full flex items-center justify-center p-8 text-center">
-                        <div>
-                            <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-2xl mx-auto mb-3">💬</div>
-                            <p className="text-sm font-semibold text-white mb-1">{attiva.nome}</p>
-                            <p className="text-xs text-slate-500 leading-relaxed max-w-xs mb-4">
-                                La chat interna vive nella sua scheda, con tutte le sue funzioni —
-                                reazioni, risposte, allegati, inoltro multiplo.
-                            </p>
-                            <button onClick={() => router.push("/chat")}
-                                className="text-xs font-bold px-3 py-2 rounded-xl border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20">
-                                Aprila in Chat interna →
-                            </button>
-                        </div>
+                    // il thread VERO della chat interna, montato qui dentro
+                    <div className="h-full flex overflow-hidden">
+                        {thread || (
+                            <div className="h-full w-full flex items-center justify-center p-8 text-center text-xs text-slate-500">
+                                Questa conversazione si apre nella scheda «Chat interna».
+                            </div>
+                        )}
                     </div>
                 )}
             </section>

@@ -741,197 +741,15 @@ function ChatPageInner() {
 
   let lastDay = null;
 
-  return (
-    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex flex-col overflow-hidden">
-      {/* interruttore: Chat interna <-> WhatsApp (stessa pagina) */}
-      <div className="h-12 shrink-0 flex items-center gap-1 px-3 border-b border-white/5 bg-[#0f111a]/70">
-        {/* OMNICHAT (Luca 26/08): la quarta scheda UNISCE le altre tre e ci
-            mette accanto l'AI — recap, analisi e risposte pronte — più i dati
-            del cliente. Le tre inbox non vengono riscritte: vengono RIUSATE
-            senza la loro lista, così restano tutte le loro funzioni.
-            Compare solo a chi ha il permesso: è ancora in lavorazione. */}
-        {vedeOmni && <button onClick={() => setMode("omni")}
-          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
-          <Sparkles className="w-4 h-4" /> Omnichat
-        </button>}
-        <button onClick={() => setMode("chat")}
-          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "chat" ? "bg-indigo-500/15 text-indigo-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
-          <MessageSquare className="w-4 h-4" /> Chat interna
-          {chatUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
-        </button>
-        <button onClick={() => setMode("whatsapp")}
-          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
-          <MessageCircle className="w-4 h-4" /> WhatsApp
-          {waUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{waUnread > 99 ? "99+" : waUnread}</span>}
-        </button>
-        <button onClick={() => setMode("email")}
-          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "email" ? "bg-sky-500/15 text-sky-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
-          <Mail className="w-4 h-4" /> Email
-          {mailUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
-        </button>
-      </div>
-
-      {mode === "omni" && vedeOmni ? (
-        <OmniChat />
-      ) : mode === "whatsapp" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
-      ) : mode === "email" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} apriConvId={mconvParam} /></div>
-      ) : (
-      <div className="flex-1 min-h-0 flex overflow-hidden">
-      {/* ── LEFT: conversation list ─────────────────────────────── */}
-      {/* CHT-01: sotto sm i pannelli si alternano (colonna singola pilotata da
-          selId): chat aperta -> solo thread; nessuna chat -> solo lista. */}
-      <aside className={cn("w-full sm:w-80 lg:w-96 shrink-0 flex-col border-r border-white/5 bg-[#0f111a]/60", selId ? "hidden sm:flex" : "flex")}>
-        <div className="flex items-center justify-between px-4 h-14 border-b border-white/5">
-          <h2 className="text-white font-semibold flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> Chat</h2>
-          <div className="flex items-center gap-1">
-            {/* CHT-03: lente = ricerca per parole in TUTTE le mie chat */}
-            <button onClick={() => setSearchMode(true)}
-              className={cn("p-2 rounded-lg transition-colors", searchMode ? "bg-amber-500/15 text-amber-300" : "text-slate-400 hover:text-indigo-300 hover:bg-white/5")}
-              title="Cerca nei messaggi di tutte le chat">
-              <Search className="w-4 h-4" />
-            </button>
-            <button onClick={() => setShowNew(true)} className="p-2 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25" title="Nuova conversazione">
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        <div className="px-3 py-2">
-          {searchMode ? (
-            /* CHT-03: campo della ricerca globale — X (o Esc) per tornare alla lista */
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400" />
-              <input autoFocus value={globalQ} onChange={(e) => setGlobalQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Escape") chiudiRicerca(); }}
-                placeholder="Cerca parole in tutte le chat…" className="glass-input w-full pl-9 pr-9 h-9 text-sm" />
-              <button onClick={chiudiRicerca} title="Chiudi la ricerca"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca conversazioni…" className="glass-input w-full pl-9 h-9 text-sm" />
-            </div>
-          )}
-          {/* pillole filtro stile WhatsApp (Luca 04/08) */}
-          {!searchMode && (
-            <div className="flex gap-1.5 mt-2">
-              <button type="button" onClick={() => setSoloNonLetti(false)}
-                className={cn("px-3 py-1 rounded-full border text-[11px] font-bold transition-colors",
-                  !soloNonLetti ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>Tutte</button>
-              <button type="button" onClick={() => setSoloNonLetti(true)}
-                className={cn("px-3 py-1 rounded-full border text-[11px] font-bold transition-colors",
-                  soloNonLetti ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
-                Non lette{chatUnread > 0 && <span className="ml-1.5 px-1.5 py-[1px] rounded-full bg-indigo-500 text-white text-[10px]">{chatUnread > 99 ? "99+" : chatUnread}</span>}
-              </button>
-            </div>
-          )}
-        </div>
-        {/* CHT-03: in modalita' ricerca la lista mostra SOLO le chat che
-            contengono la parola cercata, con snippet e conteggio (stile Telegram) */}
-        {searchMode ? (
-        <div className="flex-1 overflow-y-auto px-2 pb-2">
-          {globalQ.trim().length < 3 ? (
-            <p className="text-center text-sm text-slate-500 py-10 px-4">Scrivi almeno 3 caratteri:<br />codice fiscale, email, qualsiasi parola.</p>
-          ) : searchBusy && searchGroups.length === 0 ? (
-            <p className="text-center text-sm text-slate-500 py-10">Cerco…</p>
-          ) : searchGroups.length === 0 ? (
-            <p className="text-center text-sm text-slate-500 py-10 px-4">Nessun messaggio contiene<br />“{globalQ.trim()}”.</p>
-          ) : searchGroups.map(({ top, count }) => {
-            const conv = inbox.find((c: any) => c.conversation_id === top.conversation_id);
-            const nome = conv ? (conv.type === "group" ? conv.title : conv.other_name) : "Chat";
-            const sn = snippetMatch(top.body, globalQ.trim());
-            return (
-              <button key={top.conversation_id} onClick={() => apriRisultato(top)}
-                className="w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left hover:bg-white/5 transition-colors">
-                {conv?.type === "group" ? (
-                  <span className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
-                    <Users className="w-5 h-5" />
-                  </span>
-                ) : (
-                  /* FOTO PROFILO (Luca 05/08): la foto dell'utente, iniziali se manca */
-                  <AvatarUtente userId={conv?.other_id} nome={nome || ""} className="w-11 h-11 text-xs" />
-                )}
-                <span className="flex-1 min-w-0">
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-white truncate">{nome || "—"}</span>
-                    <span className="text-[10px] text-slate-500 shrink-0">{dayLabel(top.created_at)}</span>
-                  </span>
-                  <span className="block text-xs text-slate-400 truncate">
-                    {sn.prima}
-                    {sn.match && <span className="bg-amber-400/30 text-amber-100 rounded-sm px-0.5">{sn.match}</span>}
-                    {sn.dopo}
-                  </span>
-                  {count > 1 && <span className="block text-[10px] text-indigo-300 mt-0.5">{count} messaggi</span>}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        ) : (
-        <div className="flex-1 overflow-y-auto px-2 pb-2">
-          {filteredInbox.length === 0 && (
-            <p className="text-center text-sm text-slate-500 py-10">Nessuna conversazione.<br />Premi + per iniziare.</p>
-          )}
-          {filteredInbox.map((c) => {
-            const name = c.type === "group" ? c.title : c.other_name;
-            const active = c.conversation_id === selId;
-            return (
-              <button key={c.conversation_id} onClick={() => setSelId(c.conversation_id)}
-                className={`group/riga w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left transition-colors ${active ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
-                <span className="relative shrink-0">
-                  {c.type === "group" ? (
-                    <span className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
-                      <Users className="w-5 h-5" />
-                    </span>
-                  ) : (
-                    /* FOTO PROFILO (Luca 05/08): foto nelle chat 1:1, iniziali se manca */
-                    <AvatarUtente userId={c.other_id} nome={name} className="w-11 h-11 text-xs" />
-                  )}
-                  {c.type === "dm" && isOnline(c.other_id) && (
-                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-[#0f111a]" />
-                  )}
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-white truncate">{name || "—"}</span>
-                    <span className="text-[10px] text-slate-500 shrink-0">{fmtTime(c.last_message_at)}</span>
-                  </span>
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-slate-500 truncate">{c.last_body || "Nessun messaggio"}</span>
-                    <span className="flex items-center gap-1 shrink-0">
-                      {c.pinned_at && <Pin className="w-3 h-3 text-indigo-300" />}
-                      <span role="button" tabIndex={0} title={c.pinned_at ? "Sgancia la chat" : "Fissa in alto (max 5)"}
-                        onClick={(e) => onTogglePin(e, c)}
-                        className="opacity-0 group-hover/riga:opacity-100 pointer-coarse:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
-                        {c.pinned_at ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-                      </span>
-                      {c.unread === 0 && (
-                        <span role="button" tabIndex={0} title="Segna come da leggere"
-                          onClick={(e) => onMarkUnread(e, c.conversation_id)}
-                          className="opacity-0 group-hover/riga:opacity-100 pointer-coarse:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
-                          <EyeOff className="w-3.5 h-3.5" />
-                        </span>
-                      )}
-                      {c.unread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{c.unread}</span>}
-                    </span>
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        )}
-      </aside>
-
-      {/* ── RIGHT: thread ───────────────────────────────────────── */}
+  /* ── IL THREAD DELLA CHAT INTERNA ─────────────────────────────────────
+     È lo STESSO blocco che si vede nella scheda «Chat interna»: non una
+     copia e non una versione povera. Sta in una variabile perché serve in
+     DUE posti — la scheda, e la colonna centrale dell'Omnichat — e vive
+     dentro questo componente, quindi si porta dietro tutto lo stato che ha
+     già: reazioni, allegati, modifica, inoltro, bozze, ricevute di lettura.
+     (Luca 27/08: «l'omnichat deve esistere per fare tutto lì dentro,
+     perché mi sta riportando in giro?»)  */
+  const threadInterna = (
       <section className={cn("flex-1 flex-col bg-[#0b0d14] relative", selId ? "flex" : "hidden sm:flex")}
         onDragEnter={selConv ? onDragEnter : undefined}
         onDragOver={selConv ? onDragOver : undefined}
@@ -1392,6 +1210,200 @@ function ChatPageInner() {
           </>
         )}
       </section>
+  );
+
+  return (
+    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex flex-col overflow-hidden">
+      {/* interruttore: Chat interna <-> WhatsApp (stessa pagina) */}
+      <div className="h-12 shrink-0 flex items-center gap-1 px-3 border-b border-white/5 bg-[#0f111a]/70">
+        {/* OMNICHAT (Luca 26/08): la quarta scheda UNISCE le altre tre e ci
+            mette accanto l'AI — recap, analisi e risposte pronte — più i dati
+            del cliente. Le tre inbox non vengono riscritte: vengono RIUSATE
+            senza la loro lista, così restano tutte le loro funzioni.
+            Compare solo a chi ha il permesso: è ancora in lavorazione. */}
+        {vedeOmni && <button onClick={() => setMode("omni")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <Sparkles className="w-4 h-4" /> Omnichat
+        </button>}
+        <button onClick={() => setMode("chat")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "chat" ? "bg-indigo-500/15 text-indigo-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <MessageSquare className="w-4 h-4" /> Chat interna
+          {chatUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+        </button>
+        <button onClick={() => setMode("whatsapp")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <MessageCircle className="w-4 h-4" /> WhatsApp
+          {waUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{waUnread > 99 ? "99+" : waUnread}</span>}
+        </button>
+        <button onClick={() => setMode("email")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "email" ? "bg-sky-500/15 text-sky-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <Mail className="w-4 h-4" /> Email
+          {mailUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
+        </button>
+      </div>
+
+      {mode === "omni" && vedeOmni ? (
+        <OmniChat thread={threadInterna} apriInterna={setSelId} internaAperta={selId} />
+      ) : mode === "whatsapp" ? (
+        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
+      ) : mode === "email" ? (
+        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} apriConvId={mconvParam} /></div>
+      ) : (
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+      {/* ── LEFT: conversation list ─────────────────────────────── */}
+      {/* CHT-01: sotto sm i pannelli si alternano (colonna singola pilotata da
+          selId): chat aperta -> solo thread; nessuna chat -> solo lista. */}
+      <aside className={cn("w-full sm:w-80 lg:w-96 shrink-0 flex-col border-r border-white/5 bg-[#0f111a]/60", selId ? "hidden sm:flex" : "flex")}>
+        <div className="flex items-center justify-between px-4 h-14 border-b border-white/5">
+          <h2 className="text-white font-semibold flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> Chat</h2>
+          <div className="flex items-center gap-1">
+            {/* CHT-03: lente = ricerca per parole in TUTTE le mie chat */}
+            <button onClick={() => setSearchMode(true)}
+              className={cn("p-2 rounded-lg transition-colors", searchMode ? "bg-amber-500/15 text-amber-300" : "text-slate-400 hover:text-indigo-300 hover:bg-white/5")}
+              title="Cerca nei messaggi di tutte le chat">
+              <Search className="w-4 h-4" />
+            </button>
+            <button onClick={() => setShowNew(true)} className="p-2 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25" title="Nuova conversazione">
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <div className="px-3 py-2">
+          {searchMode ? (
+            /* CHT-03: campo della ricerca globale — X (o Esc) per tornare alla lista */
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400" />
+              <input autoFocus value={globalQ} onChange={(e) => setGlobalQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") chiudiRicerca(); }}
+                placeholder="Cerca parole in tutte le chat…" className="glass-input w-full pl-9 pr-9 h-9 text-sm" />
+              <button onClick={chiudiRicerca} title="Chiudi la ricerca"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca conversazioni…" className="glass-input w-full pl-9 h-9 text-sm" />
+            </div>
+          )}
+          {/* pillole filtro stile WhatsApp (Luca 04/08) */}
+          {!searchMode && (
+            <div className="flex gap-1.5 mt-2">
+              <button type="button" onClick={() => setSoloNonLetti(false)}
+                className={cn("px-3 py-1 rounded-full border text-[11px] font-bold transition-colors",
+                  !soloNonLetti ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>Tutte</button>
+              <button type="button" onClick={() => setSoloNonLetti(true)}
+                className={cn("px-3 py-1 rounded-full border text-[11px] font-bold transition-colors",
+                  soloNonLetti ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
+                Non lette{chatUnread > 0 && <span className="ml-1.5 px-1.5 py-[1px] rounded-full bg-indigo-500 text-white text-[10px]">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+              </button>
+            </div>
+          )}
+        </div>
+        {/* CHT-03: in modalita' ricerca la lista mostra SOLO le chat che
+            contengono la parola cercata, con snippet e conteggio (stile Telegram) */}
+        {searchMode ? (
+        <div className="flex-1 overflow-y-auto px-2 pb-2">
+          {globalQ.trim().length < 3 ? (
+            <p className="text-center text-sm text-slate-500 py-10 px-4">Scrivi almeno 3 caratteri:<br />codice fiscale, email, qualsiasi parola.</p>
+          ) : searchBusy && searchGroups.length === 0 ? (
+            <p className="text-center text-sm text-slate-500 py-10">Cerco…</p>
+          ) : searchGroups.length === 0 ? (
+            <p className="text-center text-sm text-slate-500 py-10 px-4">Nessun messaggio contiene<br />“{globalQ.trim()}”.</p>
+          ) : searchGroups.map(({ top, count }) => {
+            const conv = inbox.find((c: any) => c.conversation_id === top.conversation_id);
+            const nome = conv ? (conv.type === "group" ? conv.title : conv.other_name) : "Chat";
+            const sn = snippetMatch(top.body, globalQ.trim());
+            return (
+              <button key={top.conversation_id} onClick={() => apriRisultato(top)}
+                className="w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left hover:bg-white/5 transition-colors">
+                {conv?.type === "group" ? (
+                  <span className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
+                    <Users className="w-5 h-5" />
+                  </span>
+                ) : (
+                  /* FOTO PROFILO (Luca 05/08): la foto dell'utente, iniziali se manca */
+                  <AvatarUtente userId={conv?.other_id} nome={nome || ""} className="w-11 h-11 text-xs" />
+                )}
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-white truncate">{nome || "—"}</span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{dayLabel(top.created_at)}</span>
+                  </span>
+                  <span className="block text-xs text-slate-400 truncate">
+                    {sn.prima}
+                    {sn.match && <span className="bg-amber-400/30 text-amber-100 rounded-sm px-0.5">{sn.match}</span>}
+                    {sn.dopo}
+                  </span>
+                  {count > 1 && <span className="block text-[10px] text-indigo-300 mt-0.5">{count} messaggi</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        ) : (
+        <div className="flex-1 overflow-y-auto px-2 pb-2">
+          {filteredInbox.length === 0 && (
+            <p className="text-center text-sm text-slate-500 py-10">Nessuna conversazione.<br />Premi + per iniziare.</p>
+          )}
+          {filteredInbox.map((c) => {
+            const name = c.type === "group" ? c.title : c.other_name;
+            const active = c.conversation_id === selId;
+            return (
+              <button key={c.conversation_id} onClick={() => setSelId(c.conversation_id)}
+                className={`group/riga w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left transition-colors ${active ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
+                <span className="relative shrink-0">
+                  {c.type === "group" ? (
+                    <span className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
+                      <Users className="w-5 h-5" />
+                    </span>
+                  ) : (
+                    /* FOTO PROFILO (Luca 05/08): foto nelle chat 1:1, iniziali se manca */
+                    <AvatarUtente userId={c.other_id} nome={name} className="w-11 h-11 text-xs" />
+                  )}
+                  {c.type === "dm" && isOnline(c.other_id) && (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-[#0f111a]" />
+                  )}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-white truncate">{name || "—"}</span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{fmtTime(c.last_message_at)}</span>
+                  </span>
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500 truncate">{c.last_body || "Nessun messaggio"}</span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      {c.pinned_at && <Pin className="w-3 h-3 text-indigo-300" />}
+                      <span role="button" tabIndex={0} title={c.pinned_at ? "Sgancia la chat" : "Fissa in alto (max 5)"}
+                        onClick={(e) => onTogglePin(e, c)}
+                        className="opacity-0 group-hover/riga:opacity-100 pointer-coarse:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
+                        {c.pinned_at ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                      </span>
+                      {c.unread === 0 && (
+                        <span role="button" tabIndex={0} title="Segna come da leggere"
+                          onClick={(e) => onMarkUnread(e, c.conversation_id)}
+                          className="opacity-0 group-hover/riga:opacity-100 pointer-coarse:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
+                          <EyeOff className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      {c.unread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{c.unread}</span>}
+                    </span>
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        )}
+      </aside>
+
+      {/* ── RIGHT: thread ───────────────────────────────────────── */}
+      {threadInterna}
       </div>
       )}
 

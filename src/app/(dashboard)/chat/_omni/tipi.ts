@@ -36,6 +36,12 @@ export type ChatOmni = {
     numero?: string | null;      // WA: il numero, che va in testata e non in lista
     utenteId: string | null;     // chat interna: l'id del collega
     aggiornata: string | null;   // last_message_at, per l'ordinamento
+    // DI CHI È QUESTA CHAT. Vuoto quando la lista è di una persona sola (la
+    // mia, o quella in cui mi immedesimo). Pieno quando guardo un PUNTO
+    // VENDITA: lì il numero e la casella sono del negozio, ma le chat interne
+    // sono di ciascuno, e senza il nome non si capisce di chi si sta leggendo
+    // la conversazione (Luca 27/08).
+    perChi?: string | null;
 };
 
 /* ── LE TRE FORME DEL RADAR ────────────────────────────────────────────── */

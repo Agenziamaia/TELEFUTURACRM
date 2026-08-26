@@ -40,9 +40,17 @@ const oraBreve = (iso: string | null) => {
    recente in cima, i non letti sempre davanti. È questa fusione che rende
    il tab «Tutti» una cosa sola invece di tre liste appiccicate.          */
 export async function caricaConversazioni(
-    me: { id: string | null; role: string | null; stores: string[] },
+    me: { id: string | null; role: string | null; stores: string[]; membri?: { id: string; nome: string }[] | null },
 ): Promise<ChatOmni[]> {
     const meId = me.id;
+    // QUANDO GUARDO UN NEGOZIO le chat interne non sono di «uno»: sono di
+    // tutti quelli che ci lavorano (Luca 27/08: «l'unica cosa che cambia sono
+    // le chat interne, però a quel punto me le dai tutte di tutte le persone
+    // che fanno parte di quel punto vendita»). Il numero e la casella invece
+    // restano quelli del negozio: quelli il perimetro li prende già da solo.
+    const membri = me.membri && me.membri.length ? me.membri : null;
+    const proprietari = membri ? membri.map((m) => m.id) : meId ? [meId] : [];
+    const nomeProprietario = new Map((membri || []).map((m) => [m.id, m.nome]));
     // ⛔ IL PERIMETRO, PRIMA DI TUTTO. Su wa_conversations e
     // email_conversations non c'è RLS: se non si filtra qui, si legge tutto —
     // compresi i numeri e le caselle PERSONALI dei colleghi. Le due funzioni
@@ -75,9 +83,10 @@ export async function caricaConversazioni(
                 .eq("spam", false).eq("trashed", false).eq("archived", false)
                 .order("last_message_at", { ascending: false, nullsFirst: false }).limit(80)
             : Promise.resolve({ data: [], error: null }),
-        meId
-            ? supabase.from("chat_participants").select("conversation_id, last_read_at").eq("user_id", meId).limit(120)
-            : Promise.resolve({ data: [] as { conversation_id: string; last_read_at: string | null }[] }),
+        proprietari.length
+            ? supabase.from("chat_participants").select("conversation_id, user_id, last_read_at")
+                .in("user_id", proprietari).limit(120 * Math.min(6, proprietari.length))
+            : Promise.resolve({ data: [] as { conversation_id: string; user_id: string; last_read_at: string | null }[] }),
     ]);
 
     if (wa.error) throw new Error(`WhatsApp: ${wa.error.message}`);
@@ -111,9 +120,17 @@ export async function caricaConversazioni(
         });
     }
 
-    // CHAT INTERNA: le conversazioni a cui partecipo, col nome del collega
-    const convIds = ((itn as { data?: { conversation_id: string }[] }).data || []).map(x => x.conversation_id);
-    if (convIds.length && meId) {
+    // CHAT INTERNA: le conversazioni dei proprietari, col nome del collega.
+    // Con un proprietario solo (io, o la persona in cui mi immedesimo) è la
+    // sua rubrica; con un negozio sono le rubriche di tutti quelli che ci
+    // lavorano, e ogni riga porta scritto DI CHI è.
+    const partecipazioni = ((itn as { data?: { conversation_id: string; user_id: string; last_read_at: string | null }[] }).data || []);
+    const convIds = [...new Set(partecipazioni.map(x => x.conversation_id))];
+    // di chi è la conversazione: se due colleghi dello stesso negozio si
+    // scrivono, la riga esce UNA volta sola, intestata al primo dei due
+    const proprietarioDi = new Map<string, string>();
+    for (const p of partecipazioni) if (!proprietarioDi.has(p.conversation_id)) proprietarioDi.set(p.conversation_id, p.user_id);
+    if (convIds.length && proprietari.length) {
         const [parts, ultimi] = await Promise.all([
             supabase.from("chat_participants").select("conversation_id, user_id").in("conversation_id", convIds).limit(400),
             supabase.from("chat_messages").select("conversation_id, body, created_at, sender_id")
@@ -121,7 +138,8 @@ export async function caricaConversazioni(
         ]);
         const altri = new Map<string, string>();
         for (const p of (parts.data || []) as { conversation_id: string; user_id: string }[]) {
-            if (p.user_id !== meId && !altri.has(p.conversation_id)) altri.set(p.conversation_id, p.user_id);
+            const mio = proprietarioDi.get(p.conversation_id);
+            if (p.user_id !== mio && !altri.has(p.conversation_id)) altri.set(p.conversation_id, p.user_id);
         }
         const ids = [...new Set(altri.values())];
         // ⚠️ la colonna è `full_name`, non `name` (che non esiste): con la
@@ -138,8 +156,7 @@ export async function caricaConversazioni(
         const { data: convs } = await supabase.from("chat_conversations")
             .select("id, type").in("id", convIds).limit(200);
         const gruppi = new Set((convs || []).filter((c: { type?: string }) => c.type === "group").map((c: { id: string }) => c.id));
-        const letturaMia = new Map(((itn as { data?: { conversation_id: string; last_read_at: string | null }[] }).data || [])
-            .map(x => [x.conversation_id, x.last_read_at]));
+        const letturaMia = new Map(partecipazioni.map(x => [`${x.conversation_id}|${x.user_id}`, x.last_read_at]));
         const visti = new Set<string>();
         for (const m of (ultimi.data || []) as Record<string, unknown>[]) {
             const cid = String(m.conversation_id);
@@ -148,16 +165,20 @@ export async function caricaConversazioni(
             if (gruppi.has(cid)) continue;
             const altro = altri.get(cid);
             if (!altro) continue;
+            const mio = proprietarioDi.get(cid) || "";
             out.push({
                 id: `in:${cid}`, canale: "interna", nome: nomi.get(altro) || "Collega",
                 sottotitolo: null, anteprima: String(m.body || ""), ora: oraBreve(m.created_at as string),
                 daLeggere: (() => {
-                    const letto = letturaMia.get(cid);
+                    const letto = letturaMia.get(`${cid}|${mio}`);
                     return !letto || String(m.created_at) > String(letto);
                 })(),
                 iniziali: iniziali(nomi.get(altro) || "C"),
                 clientId: null, riferimento: null, utenteId: altro,
                 aggiornata: (m.created_at as string) || null,
+                // il nome del proprietario compare SOLO guardando un negozio:
+                // nella mia lista sarei sempre io, e sarebbe rumore
+                perChi: membri ? (nomeProprietario.get(mio) || null) : null,
             });
         }
     }
@@ -170,6 +191,47 @@ export async function caricaConversazioni(
     // deve spostare le righe: in una lista fusa di tre canali l'unica cosa che
     // permette di orientarsi è che il tempo scenda sempre.
     return out.sort((a, b) => String(b.aggiornata || "").localeCompare(String(a.aggiornata || "")));
+}
+
+/* ── CHI POSSO GUARDARE ───────────────────────────────────────────────────
+   Le due liste del selettore «vedi come». I negozi arrivano dalla tabella
+   `stores` e NON da `useVisibleStores`: chi vede tutta la rete lì dentro ha
+   una lista VUOTA (`seesAll` senza elenco), ed è per questo che nel selettore
+   comparivano solo le persone (Luca 27/08).                              */
+export async function elencoNegozi(): Promise<string[]> {
+    const { data, error } = await supabase.from("stores").select("name").eq("active", true).order("name").limit(200);
+    if (error) throw new Error(`Punti vendita: ${error.message}`);
+    return [...new Set((data || []).map((s: { name?: string | null }) => String(s.name || "")).filter(Boolean))];
+}
+
+export async function elencoPersone(): Promise<{ id: string; nome: string; role: string; negozio: string | null }[]> {
+    const { data, error } = await supabase.from("app_users")
+        .select("id, full_name, role, primary_store").eq("active", true).order("full_name").limit(300);
+    if (error) throw new Error(`Collaboratori: ${error.message}`);
+    return (data || []).map((u: Record<string, unknown>) => ({
+        id: String(u.id), nome: String(u.full_name || "—"),
+        role: String(u.role || ""), negozio: (u.primary_store as string) || null,
+    }));
+}
+
+/** CHI LAVORA IN QUEL NEGOZIO — serve per le chat interne quando mi
+ *  immedesimo in un punto vendita. Sia chi ce l'ha come negozio principale
+ *  sia chi ci è stato aggiunto (`user_stores`): l'appartenenza nel CRM è
+ *  queste due cose insieme, non una sola. */
+export async function membriNegozio(negozio: string): Promise<{ id: string; nome: string }[]> {
+    const [pri, agg] = await Promise.all([
+        supabase.from("app_users").select("id, full_name").eq("active", true).eq("primary_store", negozio).limit(80),
+        supabase.from("user_stores").select("user_id").eq("store_name", negozio).limit(150),
+    ]);
+    if (pri.error) throw new Error(`Persone del negozio: ${pri.error.message}`);
+    const out = new Map<string, string>();
+    for (const u of (pri.data || []) as { id: string; full_name: string }[]) out.set(u.id, u.full_name || "—");
+    const extra = [...new Set(((agg.data || []) as { user_id: string }[]).map(x => x.user_id))].filter(id => !out.has(id));
+    if (extra.length) {
+        const { data } = await supabase.from("app_users").select("id, full_name").eq("active", true).in("id", extra).limit(150);
+        for (const u of (data || []) as { id: string; full_name: string }[]) out.set(u.id, u.full_name || "—");
+    }
+    return [...out.entries()].map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
 }
 
 /* ── I MESSAGGI DELLA CONVERSAZIONE APERTA ──────────────────────────────
