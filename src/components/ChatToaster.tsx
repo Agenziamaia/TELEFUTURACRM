@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { markDelivered } from "@/lib/chat";
 import { useAuth } from "@/context/AuthContext";
+import { seesAllStores } from "@/lib/roles";
 import { MessageSquare, Mail, X } from "lucide-react";
 
 type Fonte = "chat" | "wa" | "mail";
@@ -85,6 +86,10 @@ export function ChatToaster() {
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "email_messages" }, async (payload) => {
                 const m: any = payload.new; // eslint-disable-line @typescript-eslint/no-explicit-any
                 if (!m || m.direction !== "in") return;
+                // niente toast email per l'AMMINISTRAZIONE (Luca 26/08 sera,
+                // «spengile SOLO a me»): vede tutte le caselle, riceverebbe
+                // il toast di ogni negozio — ai punti vendita restano
+                if (seesAllStores(user.role)) return;
                 // Il backfill dello storico inserisce mail VECCHIE: niente toast
                 // (e niente query owner) per messaggi più vecchi di 24 ore.
                 if (m.email_date && Date.now() - new Date(m.email_date).getTime() > 24 * 3600 * 1000) return;
