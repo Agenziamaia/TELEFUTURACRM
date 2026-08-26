@@ -1001,7 +1001,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             <span className="text-[11px] font-bold text-slate-200 tabular-nums shrink-0">{it(consigliato.fatti)} / {it(consigliato.target)}</span>
                         </div>
                         <div className="text-[11px] font-semibold mt-1">{consigliato.sottoS1
-                            ? <span className="text-rose-300">🚨 prima esigenza: il Target 1 — mancano {it(consigliato.mancanoS1)} alla S1{consigliato.mio ? " del tuo negozio" : ""}</span>
+                            ? <span className="text-rose-300">🚨 prima esigenza: {pista === "cb" ? "l'80% Partnership" : "il Target 1"} — mancano {it(consigliato.mancanoS1)} {pista === "cb" ? "punti all'80%" : "alla S1"}{consigliato.mio ? " del tuo negozio" : ""}</span>
                             : <span className="text-slate-300">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "🎯 target raggiunto: prosegui qui o guarda le altre realtà"}</span>}</div>
                     </div>
                 )}

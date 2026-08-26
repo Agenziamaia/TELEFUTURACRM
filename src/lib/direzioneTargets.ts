@@ -325,10 +325,11 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
     // la CB W3 «va a punti»: i fatti sono i punti PARTNERSHIP, non la
     // pista a pezzi (bug visto da Luca in prova: barre a zero)
     const cbW3 = dir.brand === "windtre" && pista === "cb";
-    // FASE T1 (Luca 27/08): su mobile e fisso la PRIMA esigenza — in tutti
-    // i casi — è coprire la Soglia 1 NUDA di ogni codice in corsa: lo
-    // sfrido lo colma il negozio stesso con le attivazioni sue
-    const faseT1 = pista === "mobile" || pista === "fisso";
+    // FASE T1 (Luca 27/08): su mobile, fisso e CB Partnership la PRIMA
+    // esigenza — in tutti i casi — è coprire la Soglia 1 NUDA di ogni
+    // codice in corsa (per la CB la S1 è l'80% del target Partnership):
+    // lo sfrido lo colma il negozio stesso con le attivazioni sue
+    const faseT1 = pista === "mobile" || pista === "fisso" || cbW3;
     return dir.codici
         .filter((k) => (k.targets[pista] || 0) > 0)
         .map((k) => {
