@@ -78,7 +78,13 @@ export async function POST(req: Request) {
         const r = await chat({
             messages: [{ role: "system", content: SISTEMA }, utente],
             model: MODEL_FAST,
-            maxTokens: 700,
+            // ⚠️ IL TETTO DEVE COMPRENDERE IL RAGIONAMENTO. deepseek-v4-flash
+            // pensa prima di rispondere e i token del pensiero SONO token di
+            // completamento: con 700 se li mangiava tutti (finish_reason
+            // «length», reasoning_tokens 700) e il testo usciva VUOTO. Misurato
+            // sulla chat di Rita: ~730 di ragionamento + ~160 di risposta.
+            // È lo stesso tranello già annotato in waTriage.
+            maxTokens: 3000,
             // il prompt cita JSON: con questo l'API lo garantisce, invece di
             // sperare che il modello non incarti la risposta in un blocco
             responseFormat: "json_object",

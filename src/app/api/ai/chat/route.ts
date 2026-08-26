@@ -109,7 +109,10 @@ export async function POST(req: Request) {
 
       if (pendingAction) {
         // chiudi il giro chiedendo al modello di formulare la proposta
-        const res2 = await chat({ messages: convo, model: MODEL_FAST, maxTokens: 400 });
+        // 400 non bastavano: il ragionamento del modello li consuma tutti e
+        // la proposta usciva vuota (stesso difetto trovato nell'Omnichat il
+        // 27/08) — restava il fallback «Confermi l'azione proposta?»
+        const res2 = await chat({ messages: convo, model: MODEL_FAST, maxTokens: 1500 });
         promptTokens += res2.usage?.prompt_tokens ?? 0;
         completionTokens += res2.usage?.completion_tokens ?? 0;
         answer = res2.message.content || "Confermi l'azione proposta?";
