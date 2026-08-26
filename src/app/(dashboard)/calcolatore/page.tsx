@@ -312,7 +312,13 @@ export default function CalcolatorePage() {
         const set = new Set<string>();
         for (const r of tab.righe) {
             if (!r.attivo || !r.opzione || !String(r.opzione).trim()) continue;
-            if (r.componente || r.pista === "partnership") continue;
+            // le COMPONENTI del modello additivo (base, MNP, Tied…) non hanno
+            // opzioni da scegliere — ma gli EXTRA DA OPZIONE sì: sono proprio
+            // le righe che pagano solo se quell'opzione c'è (il gettone device
+            // del finanziato, la Protect di Fastweb). Saltarle voleva dire non
+            // mostrare la fascia del telefono, e senza fascia il finanziamento
+            // in GA restava a 0 € (Luca 26/08).
+            if ((r.componente && r.componente !== "extra_opzione") || r.pista === "partnership") continue;
             if (r.tipo_cliente != null && !eqci(r.tipo_cliente, prodSel.tipo_cliente)) continue;
             if (r.categoria != null && !eqci(r.categoria, catSel.nome)) continue;
             if (r.prodotto != null && !eqci(r.prodotto, prodSel.nome)) continue;
@@ -708,6 +714,15 @@ export default function CalcolatorePage() {
                                             ))}
                                         </div>
                                     </div>
+                                    {/* TELEFONO SENZA FASCIA: il gettone dipende dal prezzo
+                                        del terminale, che in Registra Vendita arriva dal
+                                        modello — qui va scelto a mano, altrimenti il pay
+                                        resta a 0 e sembra che non paghi (Luca 26/08) */}
+                                    {/^telefono a rate$/i.test(catSel?.nome || "") && !opzSel.some(o => /^SP\s/.test(o)) && (
+                                        <div className="text-sky-300/90 text-sm mt-3">
+                                            📱 Scegli la <b>fascia di prezzo del telefono</b> qui sopra: il gettone della lettera va da 5 a 40 € a seconda del prezzo e della finanziaria. In Registra Vendita non si sceglie — la ricava il listino dal Modello Terminale.
+                                        </div>
+                                    )}
                                     {/* RICORRENTE (S4 25/08): informativo, fuori dal one-shot */}
                                     {(() => { const ric = righeSet.reduce((s, r) => s + (r.ricorrente ?? 0), 0); return ric > 0 ? (
                                         <div className="text-sky-300/90 text-sm mt-3">🔁 In più <b>{euro(ric)}</b> al mese di ricorrente dall&apos;8° mese dal contratto (≈ 6° di fornitura)</div>
