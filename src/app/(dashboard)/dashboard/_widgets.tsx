@@ -2017,18 +2017,38 @@ function WidgetEmail({ ctx, size }) {
     const nRosse = size >= 4 ? 8 : 3;
     const nArancio = size >= 4 ? 5 : 2;
     const adesso = Date.now();
+    // ✓ come sul widget WhatsApp (Luca 26/08 sera): «a posto così» —
+    // l'email si ARCHIVIA (esce dalla Posta in arrivo e dalle liste; se il
+    // mittente riscrive, il poll la riporta in inbox e il triage rivaluta).
+    // Guardia identica al WA: mai chiudere sopra messaggi mai visti.
+    const chiudiMail = async (a) => {
+        const { data: fresca } = await supabase.from("email_conversations").select("last_message_at").eq("id", a.id).maybeSingle();
+        const ultimoTs = fresca?.last_message_at ? new Date(fresca.last_message_at).getTime() : 0;
+        if (ultimoTs > a.da + 1500) { setGiro((g) => g + 1); return; }
+        const { error } = await supabase.from("email_conversations").update({ archived: true }).eq("id", a.id);
+        if (error) return;
+        setDati((p) => p ? {
+            ...p,
+            daRisp: (p.daRisp || []).filter((x) => x.id !== a.id),
+            daLeggere: (p.daLeggere || []).filter((x) => x.id !== a.id),
+        } : p);
+    };
     const rigaMail = (a, tinta) => (
-        <a key={a.id} href={`/chat?mconv=${a.id}`}
-            onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return; e.preventDefault(); e.stopPropagation(); router.push(`/chat?mconv=${a.id}`); }}
-            className="block min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors cursor-pointer">
-            <div className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="font-semibold text-slate-200 truncate">{a.nome}{a.oggetto ? <span className="text-slate-500 font-normal"> · {a.oggetto}</span> : null}</span>
-                <span className={cn("shrink-0 font-bold", tinta === "rossa"
-                    ? (adesso - a.da > 24 * 3600000 ? "text-rose-300" : "text-amber-300")
-                    : "text-amber-300/80")}>da {fmtDurataWa(adesso - a.da)}</span>
-            </div>
-            {a.azione && <div className="text-[10px] text-slate-500 truncate leading-tight">{a.azione}</div>}
-        </a>
+        <div key={a.id} className="flex items-center gap-1">
+            <a href={`/chat?mconv=${a.id}`}
+                onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return; e.preventDefault(); e.stopPropagation(); router.push(`/chat?mconv=${a.id}`); }}
+                className="flex-1 min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors cursor-pointer">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-semibold text-slate-200 truncate">{a.nome}{a.oggetto ? <span className="text-slate-500 font-normal"> · {a.oggetto}</span> : null}</span>
+                    <span className={cn("shrink-0 font-bold", tinta === "rossa"
+                        ? (adesso - a.da > 24 * 3600000 ? "text-rose-300" : "text-amber-300")
+                        : "text-amber-300/80")}>da {fmtDurataWa(adesso - a.da)}</span>
+                </div>
+                {a.azione && <div className="text-[10px] text-slate-500 truncate leading-tight">{a.azione}</div>}
+            </a>
+            <button onClick={() => chiudiMail(a)} title="Segna conclusa: l'email si archivia (se il mittente riscrive, torna in elenco)"
+                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
+        </div>
     );
     return shell(
         <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">

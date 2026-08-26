@@ -329,6 +329,15 @@ function ChatPageInner() {
     if (_modeDaUrl.current) { _modeDaUrl.current = false; return; }
     try { localStorage.setItem("crm_chat_mode", mode); } catch { }
   }, [mode]);
+  // Il TAB segue i parametri REATTIVI, non solo l'initializer (bug del
+  // widget, video Luca 26/08: col router.push l'initializer di mode gira
+  // mentre window.location è ANCORA la pagina di partenza → vinceva la
+  // preferenza salvata e /chat?conv=… atterrava sulla chat interna).
+  useEffect(() => {
+    if (waParam || convParam) { _modeDaUrl.current = true; setMode("whatsapp"); }
+    else if (mailParam || mconvParam) { _modeDaUrl.current = true; setMode("email"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waParam, convParam, mailParam, mconvParam]);
 
   const onDeleteConversation = async () => {
     if (!selId || !isAdmin) return;
