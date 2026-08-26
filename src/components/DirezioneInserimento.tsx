@@ -34,6 +34,7 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
     label: string; emoji?: string; punti: number; pezzi?: number;
     soglie: { tier: number; soglia_da: number }[]; colore?: string;
     proiezione?: number | null; nota?: string | null; unit?: string;
+    targetDir?: number | null;
 }) => React.ReactElement;
 
 const it = (v: number) => Number(v || 0).toLocaleString("it-IT", { maximumFractionDigits: 2 });
@@ -624,6 +625,9 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const [liberi, setLiberi] = useState<Set<string>>(new Set());
     const [brandSel, setBrandSel] = useState<DirBrandId | "">("");
     const [pista, setPista] = useState<string>("");
+    // ② TIPO CLIENTE prima della categoria (Luca 27/08-3): preselezione
+    // obbligatoria Consumer/Business — così non si sbagliano
+    const [tipoCli, setTipoCli] = useState<"consumer" | "business" | "">("");
     // 🔔 notifica cambi (Luca 26/08 notte-5): l'ultimo updated_at della
     // direzione confrontato con l'ultima visita (localStorage per dispositivo)
     const [novita, setNovita] = useState<string | null>(null);
@@ -681,10 +685,17 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     // 💼 BUSINESS MOBILE W3 (Luca 27/08): variabile dedicata — la Bussola
     // SPARTISCE le attivazioni per portare TUTTI i codici oltre il paletto
     const BIZMOB = "__bizmob__";
-    const pisteBussola = useMemo(() => dir?.brand === "windtre"
-        ? [...pisteAttive, { chiave: BIZMOB, nome: "Business mobile", um: "pezzi" }]
-        : pisteAttive, [dir, pisteAttive]);
-    useEffect(() => { if (pisteBussola.length && !pisteBussola.some((p) => p.chiave === pista)) setPista(pisteBussola[0].chiave); }, [pisteBussola]); // eslint-disable-line
+    const èBusinessPista = (p: { chiave: string; nome: string }) => p.chiave === BIZMOB || /business|piva/i.test(p.chiave + " " + p.nome);
+    const pisteBussola = useMemo(() => {
+        const base = dir?.brand === "windtre"
+            ? [...pisteAttive, { chiave: BIZMOB, nome: "Business mobile", um: "pezzi" }]
+            : pisteAttive;
+        if (tipoCli === "business") return base.filter(èBusinessPista);
+        if (tipoCli === "consumer") return base.filter((p) => !èBusinessPista(p));
+        return [];   // niente categoria finché non si sceglie il cliente
+    }, [dir, pisteAttive, tipoCli]); // eslint-disable-line
+    useEffect(() => { setTipoCli(""); setPista(""); }, [brandSel]);
+    useEffect(() => { if (pisteBussola.length && !pisteBussola.some((p) => p.chiave === pista)) setPista(pisteBussola[0]?.chiave || ""); }, [pisteBussola]); // eslint-disable-line
     // risposta SECCA per le piste di gruppo (Luca: «per alcune categorie non
     // devono essere costretti a consultare la direzione ogni volta»)
     const [tipGruppo, setTipGruppo] = useState<{ testo: string; sub: string } | null>(null);
@@ -772,9 +783,23 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     <div className="text-[11px] text-slate-400 mt-1">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
                 </div>
             ) : (<>
-                {/* ② COSA STAI VENDENDO — le variabili dell'operatore */}
+                {/* ② TIPO CLIENTE — preselezione anti-errore */}
                 <div className="space-y-1.5">
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">② Cosa stai vendendo?</div>
+                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">② Cliente</div>
+                    <div className="flex gap-2">
+                        {([["consumer", "👤 Consumer"], ["business", "💼 Business"]] as const).map(([v, l]) => (
+                            <button key={v} onClick={() => { setTipoCli(v); setPista(""); }}
+                                className={cn("flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
+                                    tipoCli === v ? "text-white border-transparent scale-[1.02]" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
+                                style={tipoCli === v ? { background: bMeta?.color || "#38bdf8", boxShadow: `0 0 12px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 50%, transparent)` } : undefined}>
+                                {l}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {/* ③ COSA STAI VENDENDO — le variabili dell'operatore */}
+                {tipoCli !== "" && <div className="space-y-1.5">
+                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">③ Cosa stai vendendo?</div>
                     <div className="flex flex-wrap gap-1.5">
                         {pisteBussola.map((p) => (
                             <button key={p.chiave} onClick={() => setPista(p.chiave)}
@@ -785,8 +810,8 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             </button>
                         ))}
                     </div>
-                </div>
-                {/* ③ LA RISPOSTA — la carta col codice, grande */}
+                </div>}
+                {/* ④ LA RISPOSTA — la carta col codice, grande */}
                 {pista === BIZMOB && dir && (() => {
                     const spPaletto = Math.round(Number(dir.sfridi["__paletto_business__"]) || 0);
                     const obiettivo = W3_PALETTO_BUSINESS + spPaletto;
