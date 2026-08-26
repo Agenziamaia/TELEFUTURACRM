@@ -153,11 +153,13 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
     const user = `${oggiRoma()}\nCliente: ${conv.customer_name || "(senza nome)"}\nConversazione (dal più vecchio):\n${tr.testo}`;
     const res = await chat({
         messages: [{ role: "system", content: PROMPT_TRIAGE }, { role: "user", content: user }],
-        // 500 token: col tetto a 220 la PRIMA corsa vera (26/08) ha troncato
-        // 26 risposte su 49 («risposta non JSON», finish_reason length —
-        // esattamente il caso previsto dal revisore). Il JSON pieno sta in
-        // ~60 token, il margine assorbe le divagazioni del modello.
-        model: MODEL_FAST, maxTokens: 500, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
+        // 1600 token: deepseek-v4-flash è un modello REASONING — il
+        // ragionamento interno (completion_tokens_details.reasoning_tokens,
+        // ~300-1200 per chat) CONSUMA il maxTokens prima che esca il content:
+        // a 220 e perfino a 500 il JSON veniva soffocato («risposta non
+        // JSON», ~40% delle chiamate delle prime corse del 26/08). Il JSON
+        // vero pesa ~60 token; si paga solo il generato (~0,04 cent/chat).
+        model: MODEL_FAST, maxTokens: 1600, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
     });
     const out = estraiJson(res.message.content || "");
     // risposta rotta o stato sconosciuto → NIENTE upsert: la chat resta alle
