@@ -220,6 +220,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // bolla stile W3 per i gettoni del derivato (le righe hanno la loro
     // dentro RigaPayRagazzi)
     const bollaGettoni = useBolla();
+    const [mostraMappa, setMostraMappa] = useState(false);   // rigo «pay girato»: di norma inutile, si apre a richiesta
 
     const load = useCallback(async () => {
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
@@ -713,7 +714,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                 const mostra = manuali ? mie : scalaAz;
                                                 return (
                                                     <tr key={px.id} className="border-t border-white/5">
-                                                        <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{px.nome} <span className="text-slate-500 font-normal text-xs">({px.um})</span>{!manuali && <span className="text-slate-500 text-[10px] font-normal ml-1.5">= azienda</span>}</td>
+                                                        <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{emojiPista(px.nome)} {px.nome} <span className="text-slate-500 font-normal text-xs">({px.um})</span>
+                                                            {/* la QUOTA delle soglie sotto gli occhi (Luca 26/08:
+                                                                «se non me la ricordo devo andare su azienda e
+                                                                tornare qui») */}
+                                                            {manuali
+                                                                ? <span className="ml-1.5 text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5">✍️ a mano</span>
+                                                                : px.soglie_pct != null
+                                                                    ? <span className="ml-1.5 text-[10px] font-bold text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-full px-2 py-0.5" title="Le soglie dei ragazzi sono quelle dell'azienda scalate di questa percentuale (impostata sul lato azienda)">× {eurIt(px.soglie_pct)}% dell&apos;azienda</span>
+                                                                    : <span className="ml-1.5 text-[10px] font-bold text-slate-400 bg-white/[0.06] border border-white/10 rounded-full px-2 py-0.5" title="Stessa scala del lato azienda (nessuna percentuale impostata)">= azienda</span>}</td>
                                                         {Array.from({ length: maxT }, (_, i) => {
                                                             const s = mostra[i];
                                                             if (!s) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
@@ -761,7 +770,16 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 </div>
                                 {/* MAPPA loro↔nostre + % per soglia (pay girato), per le
                                     piste con soglie manuali — sotto la tabella */}
-                                {righeS.filter(x => x.mie.length).map(({ px, mie, scalaAz }) => (
+                                {/* RITOCCO PER SOGLIA nascosto di default (Luca 26/08: «non trovo
+                                    nessun motivo per compilare queste caselle, l'impostazione
+                                    la faccio lato azienda»): la % di pista basta a tutto, questo
+                                    serve solo se una soglia deve girare una quota diversa. */}
+                                {righeS.some(x => x.mie.length) && (
+                                    <button onClick={() => setMostraMappa(v => !v)} className="mt-2 text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                                        {mostraMappa ? "▾ Nascondi il ritocco per soglia" : "▸ Ritocca la quota soglia per soglia (di norma non serve)"}
+                                    </button>
+                                )}
+                                {mostraMappa && righeS.filter(x => x.mie.length).map(({ px, mie, scalaAz }) => (
                                     <div key={px.id} className="flex items-center gap-2 flex-wrap mt-2">
                                         {/* niente doppioni con la % azienda (Luca 25/08 sera):
                                             vuoto = si applica quella; compilato = ritocco fine
@@ -1012,7 +1030,9 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         const pays = ctx === "windtre" && lato === "azienda" && !conBonus ? payPerSoglia(p.chiave, maxT) : [];
                                         return (
                                         <tr key={p.id} className="border-t border-white/5">
-                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{emojiPista(p.nome)} {p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{der && <span className="text-sky-400/80 text-[10px] font-normal ml-1.5">× {der.pct}%</span>}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
+                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{emojiPista(p.nome)} {p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{lato === "ragazzi" && (der
+                                                ? <span className="ml-1.5 text-[10px] font-bold text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-full px-2 py-0.5" title="Le soglie dei ragazzi sono quelle dell'azienda scalate di questa percentuale (impostata sul lato azienda)">× {eurIt(der.pct)}% dell&apos;azienda</span>
+                                                : <span className="ml-1.5 text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5" title="Soglie scritte a mano su questo lato: non seguono l'azienda">✍️ a mano</span>)}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
                                             {Array.from({ length: maxT }, (_, i) => {
                                                 const s = mostra[i];
                                                 if (!s) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
