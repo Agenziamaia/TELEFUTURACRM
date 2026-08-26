@@ -448,18 +448,17 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // è compresa (l'opzione c'è sui fratelli NON-Box: Super Fibra, Super Fibra
     // Conv, Super Internet Professional 5G e 5G Conv) — quindi il flag non si
     // accendeva mai e il Box valeva 2,75 invece di 4,25.
-    // ⚠️ APERTO: anche «Super Internet Professional 5G Box» e la Conv hanno lo
-    // stesso canone (51,99/44,99) e nessuna opzione 2°Linea a catalogo — cioè
-    // la stessa firma delle fibra Box — ma la regex non le prende e la lettera
-    // nomina solo la Super Fibra Professional Box. Zero vendite finora:
-    // allargare la regola solo dopo conferma di Luca/W3.
+    // Vale per TUTTE le «… Professional … Box» (Luca 26/08: «la Super Internet
+    // Professional 5G Box è la stessa offerta, solo in FWA invece che in
+    // fibra»): stesso canone (51,99/44,99), stesso modem, stessa 2ª linea
+    // inclusa. La regex prende le 4 Box del catalogo e nient'altro.
     // ⚠️ SOLO PUNTI, NIENTE EURO: il Box costa 51,99 contro i 31,99 della
     // Super Fibra, e il pay è canone × moltiplicatore — la seconda linea è
     // già pagata dentro il canone maggiorato. Sommarci anche il tier della
     // riga «seconda linea» (20-50 €) la pagherebbe due volte. Stessa cosa per
     // il contrattuale: la lettera dà 10 € all'OFFERTA «2ª linea Professional»
     // venduta a sé, non a una seconda linea inclusa in un altro contratto.
-    if (/professional box/i.test(off)) {
+    if (/professional\s+(\S+\s+)?box/i.test(off)) {
         f.add("fritz");                     // +40 € e +1 punto (FRITZ!Box)
         f.add("seconda_linea_inclusa");     // +1,5 punti, nessun € (già nel canone)
     }

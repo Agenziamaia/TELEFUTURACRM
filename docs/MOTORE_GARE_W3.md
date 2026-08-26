@@ -81,9 +81,10 @@ Per OGNI vendita valida (`produzioneValidaGare`, sostituzioni escluse):
 > include già e il pay è canone × moltiplicatore. Il contrattuale da 10 € è
 > dell'OFFERTA «2ª linea Professional» venduta a sé, non di una linea
 > inclusa. L'opzione e l'inclusa sono mutuamente esclusive.
-> APERTI: ① «Super Internet Professional 5G Box» e Conv hanno la stessa
-> firma (canone +20 €, niente opzione 2°Linea) ma la regex non le prende e
-> la lettera non le nomina — decisione di Luca; ② Extra Gara P.IVA, colonna
+> Vale per tutte e QUATTRO le Box del catalogo, fibra e FWA (Luca 26/08: «la
+> Super Internet Professional 5G Box è la stessa offerta, solo in FWA»):
+> regex `professional\s+(\S+\s+)?box`.
+> APERTO: ② Extra Gara P.IVA, colonna
 > Punti Soglia Fisso: «FRITZ!Box 1,5 PER LINEA» — oggi la riga business_piva
 > dà 1 punto secco al Box: da rivedere (muove la soglia di Ragione Sociale).
 
