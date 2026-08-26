@@ -677,7 +677,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         // la risposta è la POLITICA, non serve un target
         return dir.pisteTab.filter((p) => (con.has(p.chiave) || dir.pisteGruppo.includes(p.chiave)) && !PISTE_FUORI.has(p.chiave));
     }, [dir]);
-    useEffect(() => { if (pisteAttive.length && !pisteAttive.some((p) => p.chiave === pista)) setPista(pisteAttive[0].chiave); }, [pisteAttive]); // eslint-disable-line
+    // 💼 BUSINESS MOBILE W3 (Luca 27/08): variabile dedicata — la Bussola
+    // SPARTISCE le attivazioni per portare TUTTI i codici oltre il paletto
+    const BIZMOB = "__bizmob__";
+    const pisteBussola = useMemo(() => dir?.brand === "windtre"
+        ? [...pisteAttive, { chiave: BIZMOB, nome: "Business mobile", um: "pezzi" }]
+        : pisteAttive, [dir, pisteAttive]);
+    useEffect(() => { if (pisteBussola.length && !pisteBussola.some((p) => p.chiave === pista)) setPista(pisteBussola[0].chiave); }, [pisteBussola]); // eslint-disable-line
     // risposta SECCA per le piste di gruppo (Luca: «per alcune categorie non
     // devono essere costretti a consultare la direzione ogni volta»)
     const [tipGruppo, setTipGruppo] = useState<{ testo: string; sub: string } | null>(null);
@@ -769,7 +775,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                 <div className="space-y-1.5">
                     <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">② Cosa stai vendendo?</div>
                     <div className="flex flex-wrap gap-1.5">
-                        {pisteAttive.map((p) => (
+                        {pisteBussola.map((p) => (
                             <button key={p.chiave} onClick={() => setPista(p.chiave)}
                                 className={cn("px-3 py-1.5 rounded-xl text-xs font-bold border transition-all",
                                     pista === p.chiave ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
@@ -780,14 +786,52 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </div>
                 </div>
                 {/* ③ LA RISPOSTA — la carta col codice, grande */}
-                {pistaDiGruppo && tipGruppo && (
+                {pista === BIZMOB && dir && (() => {
+                    const spPaletto = Math.round(Number(dir.sfridi["__paletto_business__"]) || 0);
+                    const obiettivo = W3_PALETTO_BUSINESS + spPaletto;
+                    const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll)
+                        .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0 }))
+                        .sort((a, b) => a.fatti - b.fatti);
+                    const sotto = franchising.filter((f) => f.fatti < obiettivo);
+                    const scelto = sotto[0] || null;
+                    return (<>
+                        {scelto ? (
+                            <div className="rounded-2xl px-4 py-4 border"
+                                style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
+                                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
+                                <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
+                                <div className="text-[11px] font-semibold text-slate-300 mt-1.5">è il più scoperto sul paletto business: {scelto.fatti} / {obiettivo}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, manca il cuscinetto)"}</div>
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl px-4 py-4 border border-emerald-500/30 text-center"
+                                style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))" }}>
+                                <div className="text-lg font-black text-emerald-300">✅ Tutti i codici sopra il paletto</div>
+                                <div className="text-[11px] text-slate-400 mt-1">carica dove preferisci (meglio sul tuo negozio)</div>
+                            </div>
+                        )}
+                        <div className="space-y-1">
+                            {franchising.map((f) => (
+                                <div key={f.nome} className="text-[11px]">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate text-slate-300">{f.nome}</span>
+                                        <span className={cn("shrink-0 tabular-nums font-bold", f.fatti >= obiettivo ? "text-emerald-400" : f.fatti >= W3_PALETTO_BUSINESS ? "text-amber-300" : "text-rose-300")}>{f.fatti} / {obiettivo}</span>
+                                    </div>
+                                    <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mt-0.5">
+                                        <div className={cn("h-full rounded-full", f.fatti >= obiettivo ? "bg-emerald-400" : f.fatti >= W3_PALETTO_BUSINESS ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${Math.min(100, Math.round((f.fatti / obiettivo) * 100))}%` }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </>);
+                })()}
+                {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
                     <div className="rounded-2xl px-4 py-4 border text-center"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 16%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 35%, transparent)`, boxShadow: `0 0 22px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 22%, transparent)` }}>
                         <div className="text-base font-black text-white leading-snug">{tipGruppo.testo}</div>
                         <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div>
                     </div>
                 )}
-                {!pistaDiGruppo && consigliato && (
+                {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
                     <div className="rounded-2xl px-4 py-4 border"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                         <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
@@ -805,7 +849,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </div>
                 )}
                 {/* le altre realtà, in piccolo */}
-                {altre.length > 0 && (
+                {pista !== BIZMOB && altre.length > 0 && (
                     <div className="space-y-1">
                         {altre.map((k) => {
                             const perc = k.target > 0 ? Math.min(100, Math.round((k.fatti / k.target) * 100)) : 0;
