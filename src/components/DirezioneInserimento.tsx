@@ -87,6 +87,7 @@ export function DirezioneInserimentoAdmin() {
     const [salvate, setSalvate] = useState<Record<string, boolean>>({});
     const [erroriSalva, setErroriSalva] = useState<Record<string, boolean>>({});
     const [gruppoAperto, setGruppoAperto] = useState(true);
+    const [recapAperto, setRecapAperto] = useState(true);
     const [giro, setGiro] = useState(0);
 
     useEffect(() => {
@@ -278,11 +279,12 @@ export function DirezioneInserimentoAdmin() {
                 if (!righe.length) return null;
                 return (
                     <div className="glass-card p-4 space-y-3.5">
-                        <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setRecapAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">📊 Totale richiesto vs rete</span>
                             <span className="text-[10px] text-slate-600">Σ target sui codici (sfrido incluso) · il progresso valido si ferma al target di ogni codice: gli sforamenti non recuperano</span>
-                        </div>
-                        {righe.map((r) => (
+                            <span className={cn("ml-auto text-slate-500 transition-transform text-xs", recapAperto && "rotate-180")}>▾</span>
+                        </button>
+                        {recapAperto && righe.map((r) => (
                             <div key={r.pk} className="space-y-1">
                                 <SogliaBar emoji={EMOJI_PISTA(r.meta.nome)}
                                     label={r.richiesto > 0 ? `${r.meta.nome} · richiesti ${it(r.richiesto)}` : `${r.meta.nome} · nessun target dato`}
@@ -329,6 +331,84 @@ export function DirezioneInserimentoAdmin() {
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">{sez.label}</span>
                             <span className="text-[10px] text-slate-600">{sez.items.length}</span>
                             <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
+                        </div>
+                    )}
+                    {/* 🌍 TARGET DI GRUPPO (W3): luce&gas, assicurazioni… — non
+                        importa DOVE si caricano: qui la barra di RETE e la
+                        POLITICA di caricamento per la Bussola dei ragazzi */}
+                    {sez.label === "🏪 Franchising" && dir.pisteGruppo.length > 0 && (
+                        <div className="glass-card p-4 space-y-4">
+                            {/* header CLICCABILE: la card si chiude (Luca 26/08 notte-4) */}
+                            <button type="button" onClick={() => setGruppoAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
+                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">🌍 Target di gruppo</span>
+                                <span className="text-[10px] text-slate-600">contano a RETE: la politica decide dove la Bussola fa caricare</span>
+                                <span className={cn("ml-auto text-slate-500 transition-transform text-xs", gruppoAperto && "rotate-180")}>▾</span>
+                            </button>
+                            {gruppoAperto && dir.pisteGruppo.map((pg) => {
+                                const meta = dir.pisteTab.find((p) => p.chiave === pg);
+                                if (!meta) return null;
+                                const puntiRete = Math.round(dir.codici.reduce((s, k) => s + (k.piste[pg]?.punti || 0), 0) * 100) / 100;
+                                const pezziRete = dir.codici.reduce((s, k) => s + (k.piste[pg]?.pezzi || 0), 0);
+                                const scalaRete = (dir.tab?.soglie || []).filter((s) => s.pista === pg).sort((a, b) => a.tier - b.tier).map((s) => ({ tier: s.tier, soglia_da: Number(s.soglia_da) }));
+                                const pol = dir.politiche[pg]?.modo || "proprio";
+                                const polKey = `pol|${pg}`;
+                                const projRete = proiezioneDir(dir, puntiRete);
+                                return (
+                                    <div key={pg} className="space-y-2">
+                                        <SogliaBar emoji={EMOJI_PISTA(meta.nome)} label={`${meta.nome} · rete`}
+                                            punti={puntiRete} pezzi={pezziRete} soglie={scalaRete}
+                                            colore={bMeta.color} proiezione={projRete}
+                                            unit={meta.um === "pezzi" ? "pz" : "pt"} nota={null} />
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase">politica</span>
+                                            <button onClick={() => salvaPolitica(pg, "proprio")}
+                                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                                                    pol === "proprio" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
+                                                🏠 Ognuno sul suo
+                                            </button>
+                                            <button onClick={() => salvaPolitica(pg, "bilancia")}
+                                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                                                    pol === "bilancia" ? "bg-sky-500/15 text-sky-300 border-sky-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
+                                                ⚖️ Bilancia ({finestraBilancia().label})
+                                            </button>
+                                            {salvate[polKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                            {erroriSalva[polKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                                            <span className="text-[10px] text-slate-600">{pol === "proprio" ? "ogni negozio carica sul suo codice (i multibrand sull'associato)" : "la Bussola indirizza sul codice più scarico, stabile nella finestra"}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {/* i MULTIBRAND non caricano MAI sul loro codice: qui
+                                l'ASSOCIAZIONE al franchising per le categorie libere */}
+                            {gruppoAperto && dir.codici.some((k) => k.multibrand) && (
+                                <div className="pt-3 border-t border-white/5 space-y-2">
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase">Codice associato dei multibrand <span className="normal-case font-normal">(per le categorie «ognuno sul suo»)</span></div>
+                                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                                        {dir.codici.filter((k) => k.multibrand).map((mb) => {
+                                            const franchising = dir.codici.filter((k) => !k.multibrand);
+                                            const mappa = (dir.politiche["__associati__"]?.dati || {}) as Record<string, string>;
+                                            const attuale = mappa[mb.cod_gara] || "";
+                                            return (
+                                                <div key={mb.cod_gara} className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-slate-300">{mb.negozio} →</span>
+                                                    <div className="flex gap-1">
+                                                        {franchising.map((f) => (
+                                                            <button key={f.cod_gara}
+                                                                onClick={() => salvaPolitica("__associati__", "mappa", { ...mappa, [mb.cod_gara]: attuale === f.cod_gara ? "" : f.cod_gara })}
+                                                                title={f.negozio}
+                                                                className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
+                                                                    attuale === f.cod_gara ? "text-white border-transparent" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}
+                                                                style={attuale === f.cod_gara ? { background: bMeta.color } : undefined}>
+                                                                {f.negozio.split(/\s+/)[0]}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                     {sez.items.map((k) => {
@@ -481,84 +561,6 @@ export function DirezioneInserimentoAdmin() {
                     })}
                     </div>
                     ))}
-                    {/* 🌍 TARGET DI GRUPPO (W3): luce&gas, assicurazioni… — non
-                        importa DOVE si caricano: qui la barra di RETE e la
-                        POLITICA di caricamento per la Bussola dei ragazzi */}
-                    {dir.pisteGruppo.length > 0 && (
-                        <div className="glass-card p-4 space-y-4">
-                            {/* header CLICCABILE: la card si chiude (Luca 26/08 notte-4) */}
-                            <button type="button" onClick={() => setGruppoAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
-                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">🌍 Target di gruppo</span>
-                                <span className="text-[10px] text-slate-600">contano a RETE: la politica decide dove la Bussola fa caricare</span>
-                                <span className={cn("ml-auto text-slate-500 transition-transform text-xs", gruppoAperto && "rotate-180")}>▾</span>
-                            </button>
-                            {gruppoAperto && dir.pisteGruppo.map((pg) => {
-                                const meta = dir.pisteTab.find((p) => p.chiave === pg);
-                                if (!meta) return null;
-                                const puntiRete = Math.round(dir.codici.reduce((s, k) => s + (k.piste[pg]?.punti || 0), 0) * 100) / 100;
-                                const pezziRete = dir.codici.reduce((s, k) => s + (k.piste[pg]?.pezzi || 0), 0);
-                                const scalaRete = (dir.tab?.soglie || []).filter((s) => s.pista === pg).sort((a, b) => a.tier - b.tier).map((s) => ({ tier: s.tier, soglia_da: Number(s.soglia_da) }));
-                                const pol = dir.politiche[pg]?.modo || "proprio";
-                                const polKey = `pol|${pg}`;
-                                const projRete = proiezioneDir(dir, puntiRete);
-                                return (
-                                    <div key={pg} className="space-y-2">
-                                        <SogliaBar emoji={EMOJI_PISTA(meta.nome)} label={`${meta.nome} · rete`}
-                                            punti={puntiRete} pezzi={pezziRete} soglie={scalaRete}
-                                            colore={bMeta.color} proiezione={projRete}
-                                            unit={meta.um === "pezzi" ? "pz" : "pt"} nota={null} />
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase">politica</span>
-                                            <button onClick={() => salvaPolitica(pg, "proprio")}
-                                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
-                                                    pol === "proprio" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
-                                                🏠 Ognuno sul suo
-                                            </button>
-                                            <button onClick={() => salvaPolitica(pg, "bilancia")}
-                                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
-                                                    pol === "bilancia" ? "bg-sky-500/15 text-sky-300 border-sky-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
-                                                ⚖️ Bilancia ({finestraBilancia().label})
-                                            </button>
-                                            {salvate[polKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                                            {erroriSalva[polKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
-                                            <span className="text-[10px] text-slate-600">{pol === "proprio" ? "ogni negozio carica sul suo codice (i multibrand sull'associato)" : "la Bussola indirizza sul codice più scarico, stabile nella finestra"}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {/* i MULTIBRAND non caricano MAI sul loro codice: qui
-                                l'ASSOCIAZIONE al franchising per le categorie libere */}
-                            {gruppoAperto && dir.codici.some((k) => k.multibrand) && (
-                                <div className="pt-3 border-t border-white/5 space-y-2">
-                                    <div className="text-[10px] font-bold text-slate-500 uppercase">Codice associato dei multibrand <span className="normal-case font-normal">(per le categorie «ognuno sul suo»)</span></div>
-                                    <div className="flex flex-wrap gap-x-6 gap-y-2">
-                                        {dir.codici.filter((k) => k.multibrand).map((mb) => {
-                                            const franchising = dir.codici.filter((k) => !k.multibrand);
-                                            const mappa = (dir.politiche["__associati__"]?.dati || {}) as Record<string, string>;
-                                            const attuale = mappa[mb.cod_gara] || "";
-                                            return (
-                                                <div key={mb.cod_gara} className="flex items-center gap-2">
-                                                    <span className="text-xs font-semibold text-slate-300">{mb.negozio} →</span>
-                                                    <div className="flex gap-1">
-                                                        {franchising.map((f) => (
-                                                            <button key={f.cod_gara}
-                                                                onClick={() => salvaPolitica("__associati__", "mappa", { ...mappa, [mb.cod_gara]: attuale === f.cod_gara ? "" : f.cod_gara })}
-                                                                title={f.negozio}
-                                                                className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
-                                                                    attuale === f.cod_gara ? "text-white border-transparent" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}
-                                                                style={attuale === f.cod_gara ? { background: bMeta.color } : undefined}>
-                                                                {f.negozio.split(/\s+/)[0]}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
                     <div className="text-[10px] text-slate-600 px-1">Punti dal motore gare (tabellare azienda) · produzione allocata per Cod.Ins. · proiezione a strisce sul ritmo dei giorni lavorativi · l&apos;ora di scatto vale anche qui.</div>
                 </div>
             )}
