@@ -709,45 +709,43 @@ export async function cutoffProduzione(monthISO: string): Promise<string | null>
 export const FASCIA_SP = { basso: "SP <200€", medio: "SP 200-600€", alto: "SP ≥600€" } as const;
 export const TOKEN_5G = "Terminale 5G";
 
-/** Finanziaria e importo aggiuntivo: la lettera divide il gettone del telefono
- *  per finanziaria (VAR/Findomestic/Compass) e, sul Customer Base, per importo
- *  aggiuntivo (= 0 oppure > 0). Il catalogo li dice già nel NOME OFFERTA
- *  («Findomestic 0», «Compass > 600€», «Rata 0», «Rata > 0»), ma il nome ha
- *  troppe varianti per ancorarci una riga: qui diventano due token puliti. */
-export function tokenTelefono(offerta: unknown, prodotto: unknown): string[] {
-    const off = String(offerta || ""), prod = String(prodotto || "");
-    if (!/telefon|rata|finanziato/i.test(off + " " + prod)) return [];
-    const t: string[] = [];
-    t.push(/compass/i.test(off) ? "Fin. Compass" : (/findomestic/i.test(off) ? "Fin. Findomestic" : "Fin. VAR"));
-    // «> 0» / «< 600€» / «> 600€» = c'è un importo aggiuntivo; «0» secco = no.
-    // ⚠️ TERZO STATO OBBLIGATORIO (revisore 26/08): un ternario qui pagava
-    // alla tariffa ALTA ogni nome che non dicesse nulla — «Rata 5G» e «Rata»
-    // finivano su «>0» e prendevano 15 € invece di 10 (28 vendite ad agosto).
-    // Meglio una scopertura visibile che un pagamento sbagliato in silenzio.
-    const senzaZero = off.replace(/>\s*0/g, "");
-    if (/>\s*0/.test(off) || /[<>]\s*\d/.test(off)) t.push("Imp.agg. >0");
-    else if (/(^|\s)0(\s|$)/.test(senzaZero)) t.push("Imp.agg. 0");
-    else t.push("Imp.agg. ignoto");
-    return t;
-}
+/* Finanziaria e rata mensile NON sono più token sintetici (26/08 sera): dopo
+   la semplificazione del catalogo sono OPZIONI VERE della vendita — «Rata
+   mensile 0 €», «Findomestic», «Rata Smart» — scelte dal ragazzo in un gruppo
+   obbligatorio, come la fascia di consumo su luce e gas. Il motore non deve
+   più interpretare il nome dell'offerta: legge le opzioni e basta. Restano
+   sintetici solo i due token che il ragazzo NON può sapere, e che vengono dal
+   listino: la fascia di street price e il 5G. */
 
 type VoceListino = { prezzo: number; modello: string };
 const _listini = new Map<string, Map<string, VoceListino>>();
 /** la cache vive quanto la pagina: chi aggiorna il listino dal CRM la svuota */
 export function svuotaCacheListini() { _listini.clear(); }
 
-/** normalizzazione tollerante: i modelli si scrivono a mano, con tagli e colori */
-function chiaveModello(x: unknown): string {
-    // ⚠️ 5G e 4G NON si tolgono (revisore 26/08): a listino esistono coppie
-    // stesso-nome 4G/5G con prezzi di fascia diversa (Galaxy A15 199,90 vs
-    // 239,90) — toglierli le faceva collassare e l'importo dipendeva
-    // dall'ordine con cui il DB restituiva le righe.
-    return String(x || "").toLowerCase()
-        .replace(/\+/g, " plus ")
+/** I modelli si scrivono a mano, con tagli, colori e refusi. Il confronto non
+ *  può essere per stringa: si lavora sull'INSIEME DEI TOKEN, così «TCL K70 5G
+ *  4GB+128GB Midnight Black» trova «TCL K70 5G 4+128GB» (il colore in più non
+ *  disturba) ma «TCL K70» secco NON aggancia niente, perché sta a metà fra il
+ *  K70 5G e il K70 SE e tirare a indovinare vorrebbe dire pagare a caso. */
+function tokenModello(x: unknown): Set<string> {
+    const s = String(x || "").toLowerCase()
+        .replace(/\+/g, " ")
         .replace(/[^a-z0-9]+/g, " ")
-        .replace(/\b(gb|tb|dual sim|ds)\b/g, "")
-        .replace(/\s+/g, " ").trim();
+        .trim();
+    const out = new Set<string>();
+    for (const t of s.split(" ")) {
+        if (!t) continue;
+        // «128gb» e «128» sono la stessa cosa; «gb»/«tb» da soli non dicono nulla
+        const n = t.replace(/^(\d+)(gb|tb)$/, "$1");
+        if (n === "gb" || n === "tb" || n === "ds") continue;
+        out.add(n);
+    }
+    return out;
 }
+function chiaveModello(x: unknown): string {
+    return [...tokenModello(x)].sort().join(" ");
+}
+const sottoinsieme = (a: Set<string>, b: Set<string>) => [...a].every(x => b.has(x));
 
 async function listinoDi(brandListino: string): Promise<Map<string, VoceListino>> {
     const k = brandListino.toLowerCase();
@@ -770,18 +768,45 @@ async function listinoDi(brandListino: string): Promise<Map<string, VoceListino>
 /** prezzo del modello: esatto, poi sottostringa se e solo se è UNIVOCA
  *  (due candidati = non si sa quale, meglio nessuna fascia che una sbagliata) */
 export function voceListino(listino: Map<string, VoceListino>, modello: unknown): VoceListino | null {
-    const c = chiaveModello(modello);
-    if (!c || c.length < 6) return null;
-    const esatto = listino.get(c);
+    const tok = tokenModello(modello);
+    if (tok.size < 2) return null;
+    const esatto = listino.get(chiaveModello(modello));
     if (esatto) return esatto;
-    // SOLO in una direzione (revisore 26/08): «vivo v70 5g fe» non deve
-    // pescare il «vivo v70», che è un telefono diverso. Il contrario sì: chi
-    // scrive «tcl k70» intende il «TCL K70 5G» del listino, purché sia unico.
-    let trovato: VoceListino | null = null, n = 0;
-    for (const [k, v] of listino) {
-        if (k.includes(c)) { trovato = v; n++; if (n > 1) return null; }
+    // AMBIGUITÀ TOLLERATA SE NON CAMBIA NULLA (26/08 sera): «TCL K70» sta fra
+    // il K70 5G (159,90) e il K70 SE (109,90) — non si sa quale, ma stanno
+    // nella STESSA fascia, quindi il gettone è identico e rinunciare sarebbe
+    // solo pignoleria. Si rinuncia solo quando i candidati pagherebbero
+    // diverso. Fra pari a parità di fascia vince il più economico.
+    const scegli = (cand: VoceListino[]): VoceListino | null => {
+        if (!cand.length) return null;
+        if (cand.length === 1) return cand[0];
+        const fasce = new Set(cand.map(v => fasciaDaPrezzo(v.prezzo)));
+        if (fasce.size > 1) return null;
+        return cand.reduce((a, b) => (a.prezzo <= b.prezzo ? a : b));
+    };
+    // ① il listino è CONTENUTO nel testo della vendita (il caso normale: la
+    //    vendita ha in più il colore o il taglio). Vince il più specifico.
+    let bestN = 0; let cand: VoceListino[] = [];
+    for (const v of listino.values()) {
+        const t = tokenModello(v.modello);
+        if (!sottoinsieme(t, tok)) continue;
+        if (t.size > bestN) { bestN = t.size; cand = [v]; }
+        else if (t.size === bestN) cand.push(v);
     }
-    return n === 1 ? trovato : null;
+    const a = scegli(cand);
+    if (a) return a;
+    // ② il contrario (la vendita scritta più corta del listino, es. «iphone 17
+    //    256»): vince chi ha MENO parole in più — «Apple iPhone 17 256GB»
+    //    batte «Apple iPhone 17 Pro 256GB».
+    let extraMin = Infinity; let cand2: VoceListino[] = [];
+    for (const v of listino.values()) {
+        const t = tokenModello(v.modello);
+        if (!sottoinsieme(tok, t)) continue;
+        const extra = t.size - tok.size;
+        if (extra < extraMin) { extraMin = extra; cand2 = [v]; }
+        else if (extra === extraMin) cand2.push(v);
+    }
+    return scegli(cand2);
 }
 export function prezzoTerminale(listino: Map<string, VoceListino>, modello: unknown): number | null {
     return voceListino(listino, modello)?.prezzo ?? null;
@@ -831,7 +856,6 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
             // lettura della lettera (le colonne ≥200 sono solo 5G).
             const testo = `${modello} ${r.offerta || ""} ${voce?.modello || ""}`;
             if (/5g/i.test(testo) || (voce != null && voce.prezzo >= 200)) token.push(TOKEN_5G);
-            token.push(...tokenTelefono(r.offerta, r.prodotto));
         }
         const opzBase = opz == null ? "" : String(opz);
         const opzTot = [opzBase, ...token].filter(Boolean).join(", ");
