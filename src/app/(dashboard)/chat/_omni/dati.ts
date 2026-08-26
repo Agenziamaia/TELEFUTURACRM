@@ -91,7 +91,7 @@ export async function caricaConversazioni(
             id: `wa:${c.id}`, canale: "wa", nome,
             sottotitolo: null,          // il numero sta in testata: qui serve il messaggio
             anteprima: String(c.last_preview || ""), ora: oraBreve(c.last_message_at as string),
-            daLeggere: !!c.unread, iniziali: c.client_id ? iniziali(nome) : "#",
+            daLeggere: !!c.unread, iniziali: /^[+\d\s]+$/.test(nome) ? "#" : iniziali(nome),
             clientId: (c.client_id as string) || null,
             riferimento: String(c.customer_number || "") || null,
             numero: String(c.customer_number || "") || null,
@@ -104,7 +104,7 @@ export async function caricaConversazioni(
             id: `em:${c.id}`, canale: "email", nome,
             sottotitolo: String(c.subject || ""),
             anteprima: String(c.last_preview || ""), ora: oraBreve(c.last_message_at as string),
-            daLeggere: !!c.unread, iniziali: c.client_id ? iniziali(nome) : "@",
+            daLeggere: !!c.unread, iniziali: nome.includes("@") ? "@" : iniziali(nome),
             clientId: (c.client_id as string) || null,
             riferimento: String(c.customer_email || "") || null,
             utenteId: null, aggiornata: (c.last_message_at as string) || null,
@@ -162,11 +162,14 @@ export async function caricaConversazioni(
         }
     }
 
-    // ORDINE UNICO: i non letti davanti, poi il più recente
-    return out.sort((a, b) => {
-        if (a.daLeggere !== b.daLeggere) return a.daLeggere ? -1 : 1;
-        return String(b.aggiornata || "").localeCompare(String(a.aggiornata || ""));
-    });
+    // ORDINE UNICO: IL PIÙ RECENTE IN CIMA, e basta.
+    // ⚠️ Prima mettevo i non letti davanti, e il risultato era che una mail di
+    // ieri non letta stava sopra un WhatsApp di stamattina: l'ordine di tempo
+    // spariva (Luca 26/08: «non me le mette in ordine di tempo, cosa che
+    // chiaramente non deve accadere»). Il non letto si vede dal pallino — non
+    // deve spostare le righe: in una lista fusa di tre canali l'unica cosa che
+    // permette di orientarsi è che il tempo scenda sempre.
+    return out.sort((a, b) => String(b.aggiornata || "").localeCompare(String(a.aggiornata || "")));
 }
 
 /* ── I MESSAGGI DELLA CONVERSAZIONE APERTA ──────────────────────────────
