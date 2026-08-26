@@ -1069,15 +1069,18 @@ function KpiTile({ icon: Icon, label, value, sub, color }) {
         // sottotitolo). Le query di ALTEZZA guardano la cella della griglia
         // (container-type: size); per la LARGHEZZA la card è container di sé
         // (inline-size, sicuro anche nella pila mobile dove la cella non
-        // c'è): il numero scala con la larghezza reale via cqw e non
-        // trabocca mai, fino a 1 colonna su 16.
+        // c'è): il numero scala con la larghezza reale via cqw. Pavimento a
+        // 12px + tracking-tight (revisore 26/08: a 15px un 5 cifre sforava
+        // già sulla tile 2×1 con finestra 600-800px); a 12px entrano 6 cifre
+        // puntate nel caso peggiore — oltre (7+ glifi su 1 colonna) spunta lo
+        // scroll orizzontale della cella, il numero non si tronca mai.
         <div className="glass-card border-t-2 h-full [container-type:inline-size]" style={{ borderTopColor: color }}>
             <div className="h-full min-w-0 flex flex-col justify-center p-4 [@container(max-height:150px)]:p-2.5 [@container(max-width:180px)]:p-2.5">
                 <div className="flex items-center gap-1.5 text-slate-400 text-[10px] [@container(max-width:140px)]:text-[9px] uppercase tracking-widest [@container(max-width:140px)]:tracking-wider font-bold mb-1.5 [@container(max-height:150px)]:mb-1 min-w-0">
                     <Icon className="w-3.5 h-3.5 [@container(max-width:140px)]:w-3 [@container(max-width:140px)]:h-3 shrink-0" style={{ color }} />
                     <span className="truncate" title={label}>{label}</span>
                 </div>
-                <p className="font-black text-white leading-none [font-size:clamp(15px,20cqw,30px)]">{Number(value).toLocaleString("it-IT")}</p>
+                <p className="font-black text-white leading-none tracking-tight [font-size:clamp(12px,20cqw,30px)]">{Number(value).toLocaleString("it-IT")}</p>
                 <p className="text-xs [@container(max-width:140px)]:text-[10px] text-slate-500 mt-1.5 [@container(max-height:150px)]:mt-1 truncate" title={sub || ""}>{sub || "—"}</p>
             </div>
         </div>

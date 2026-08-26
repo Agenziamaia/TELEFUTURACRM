@@ -212,6 +212,9 @@ export default function Dashboard() {
 
     const [layout, setLayout] = useState([]);
     const layoutPronto = useRef(false);
+    // true se a DB c'è un formato layout più nuovo di questa build: si
+    // mostra ma non si risalva (guardia rolling deploy, revisore 26/08)
+    const layoutSoloVista = useRef(false);
     // niente più editMode: come nell'Analisi la griglia è SEMPRE viva — drag
     // dalla pillola in testa alla card, resize dall'angolo, X su hover.
     // La MISURA della larghezza vive dentro GrigliaHome (componente a parte):
@@ -513,6 +516,12 @@ export default function Dashboard() {
         if (loading || savedLayout === undefined || layoutPronto.current) return;
         layoutPronto.current = true;
         const raw = savedLayout;
+        // GUARDIA DI VERSIONE (revisore 26/08): un layout con __v PIÙ NUOVO
+        // di quello che questa build conosce si mostra come si può ma NON si
+        // risalva MAI — nella finestra di rolling deploy una tab con i chunk
+        // vecchi riscriverebbe (storpiandolo) il layout appena salvato da una
+        // build più nuova. Da qui in poi ogni bump di formato è protetto.
+        if (raw && !Array.isArray(raw) && Number(raw.__v) > 10) layoutSoloVista.current = true;
         // formato a coordinate: v10 diretto, v9 (griglia a 8) raddoppiato;
         // i legacy passano da risolviLayout (blocchi vecchi compresi) e poi
         // dal packing per righe. Un oggetto malformato (né coordinate né
@@ -526,6 +535,7 @@ export default function Dashboard() {
 
     const salvaLayout = async (next) => {
         setLayout(next);
+        if (layoutSoloVista.current) return;   // formato più nuovo del mio: non lo tocco
         const payload = { __v: 10, lista: next.map((w) => `${w.k}@${Number.isFinite(w.x) ? w.x : 0},${Number.isFinite(w.y) ? w.y : 0},${w.s},${w.h || 4}`) };
         try { await supabase.from("app_users").update({ dashboard_layout: payload }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
