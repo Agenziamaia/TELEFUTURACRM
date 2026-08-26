@@ -40,6 +40,7 @@ const SEZIONI = [
     { id: "assicurazioni", label: "🛡 Assicurazioni", tipo: "canone", sub: "canone della polizza × moltiplicatore (dalle Regole di gara)" },
     { id: "protetti", label: "🏠🛡 W3 Protetti (kit)", tipo: "device", sub: "commissioning dei kit dalla slide — editabile; si distingue col kit scelto in vendita, manca solo il dato finanziato/non (campo in arrivo)" },
     { id: "cb", label: "🔁 Customer Base", tipo: "flat", sub: "gettone per evento, senza soglia — editabile" },
+    { id: "smartphone_cb", label: "📱🏆 Extra Smartphone CB 5G", tipo: "evento", sub: "slide 11: 15 € per ogni smartphone 5G su Customer Base con street price ≥ 200 €, al raggiungimento di 45 5G per punto vendita (×4 PDV in gara = 180). Le righe «solo conteggio» fanno avanzare la soglia senza pagare, come dice la lettera" },
 ] as const;
 
 // etichette corte delle componenti per la scomposizione nel tooltip
@@ -490,6 +491,11 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                         if (!r.gettone || !filtro(`${r.nome} ${r.opzione || ""}`)) return false;
                         if (sez.id === "protetti") return r.pista === "protetti";
                         if (sez.id === "fisso_extra") return r.pista === "fisso" && !(r.componente || "").startsWith("contrattuale");
+                        // il gettone device vive sulla sua pista dal 26/08 (prima
+                        // stava su `mobile` e finiva ai ragazzi al 100%); le voci
+                        // del finanziato sono EXTRA additivi, vanno mostrate lo
+                        // stesso o quelle da 20-40 € sparivano dalla pagina
+                        if (sez.id === "device") return r.pista === "device";
                         return r.pista === "mobile" && !r.componente;
                     }).sort((a, b) => a.ordine - b.ordine);
                     if (!rr.length) return null;
@@ -911,13 +917,13 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                 }
                 /* ---- sezioni a EVENTO: € diretti per soglia di rete ---- */
                 if (sez.tipo === "evento") {
-                    const rr = righe.filter(r => r.pista === sez.id && !r.gettone && r.pay_tiers.length && filtro(`${r.nome} ${r.offerta || ""}`))
+                    const rr = righe.filter(r => r.pista === sez.id && !r.gettone && (r.pay_tiers.length || Number(r.punti || 0) > 0) && filtro(`${r.nome} ${r.offerta || ""}`))
                         .sort((a, b) => a.ordine - b.ordine);
                     if (!rr.length) return null;
                     // colonne = soglie VERE della pista
-                    const maxT = Math.min(tierMax[sez.id] || 99, Math.max(...rr.map(r => r.pay_tiers.length)));
-                    // (l'unica sezione a evento rimasta è Luce&Gas: niente colonna punti)
-                    const conPunti = false;
+                    const maxT = Math.max(1, Math.min(tierMax[sez.id] || 99, Math.max(...rr.map(r => r.pay_tiers.length))));
+                    // Luce&Gas non ha punti; la gara smartphone CB sì (è la soglia)
+                    const conPunti = sez.id === "smartphone_cb";
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">

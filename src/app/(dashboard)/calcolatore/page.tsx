@@ -20,8 +20,7 @@ import { SogliaBar as SogliaBarRaw } from "../analisi/_charts";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, matchRigheGaraParallela, PISTE_PARALLELE, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
-} from "@/lib/commissioning";
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, matchRigheGaraParallela, PISTE_PARALLELE, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim, PARALLELE_SOLO_AZIENDA } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
 type Prod = { id: string; categoria_id: string; tipo_cliente: string; nome: string; ordine: number; attivo: boolean | null };
@@ -349,17 +348,20 @@ export default function CalcolatorePage() {
     // conteggi a parte — la vendita ha già il suo pay — quindi si mostrano
     // come righe dedicate, con lo stesso motore del Master.
     const gareParallele = useMemo(() => {
-        // SOLO LATO AZIENDA (Luca 26/08, netto): «è giusto che i ragazzi non
-        // abbiano PER NIENTE visibilità di questi punti — è un bonus dedicato
-        // all'azienda, visibile solo internamente e sul calcolatore solo
-        // quando si switcha a lato azienda». Non ci si affida al fatto che il
-        // derivato ragazzi non abbia quelle piste: qui è una porta chiusa.
-        if (!latoAzienda) return [];
+        // La porta è PER PISTA, non per lato (26/08 sera). L'Extra Gara P.IVA
+        // e la Partnership restano un fatto dell'azienda — Luca è stato netto:
+        // «è giusto che i ragazzi non ne abbiano PER NIENTE visibilità». Ma
+        // l'extra smartphone CB l'ha voluto condiviso, quindi ai ragazzi si
+        // mostra. Il filtro sta in PARALLELE_SOLO_AZIENDA.
         if (!tabEff || !offSel) return [];
         // stessa fonte del pay (prodSel), non lo stato del selettore
         const c = { tipo_cliente: prodSel?.tipo_cliente ?? tipoCli, categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome, provenienza: provSel, opzioni: opzSel.join(", ") };
-        const ETICHETTE: Record<string, string> = { partnership: "🏅 Partnership Reward (eventi Customer Base)", business_piva: "💼 Extra Gara P.IVA (soglia di Ragione Sociale)" };
-        return [...PISTE_PARALLELE].map(pista => {
+        const ETICHETTE: Record<string, string> = {
+            partnership: "🏅 Partnership Reward (eventi Customer Base)",
+            business_piva: "💼 Extra Gara P.IVA (soglia di Ragione Sociale)",
+            smartphone_cb: "📱 Extra Smartphone CB 5G (soglia di rete)",
+        };
+        return [...PISTE_PARALLELE].filter(p => latoAzienda || !PARALLELE_SOLO_AZIENDA.has(p)).map(pista => {
             const set = matchRigheGaraParallela(tabEff.righe, c, pista);
             if (!set.length) return null;
             const punti = Math.round(set.reduce((a, r) => a + Number(r.punti || 0), 0) * 100) / 100;

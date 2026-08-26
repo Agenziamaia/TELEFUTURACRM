@@ -342,6 +342,11 @@ function provenienzaOk(tokens: string, vendita: unknown): boolean {
    componenti (es. Protezione Pro Negozi business, categoria Multi-Servizi)
    verrebbe pagata dalla riga della gara parallela invece che dalla sua.  */
 export const PISTE_PARALLELE = new Set(["partnership", "business_piva", "smartphone_cb"]);
+/** Delle gare parallele, quelle che restano un fatto dell'AZIENDA e non si
+ *  mostrano mai ai ragazzi. Non tutte lo sono: l'extra smartphone CB Luca ha
+ *  chiesto esplicitamente di condividerlo («non dedicarla solamente
+ *  all'azienda ma farla anche per i ragazzi»), quindi passa. */
+export const PARALLELE_SOLO_AZIENDA = new Set(["partnership", "business_piva"]);
 
 export function matchRigaTabellare(
     righe: PayRiga[],
@@ -714,32 +719,49 @@ export function tokenTelefono(offerta: unknown, prodotto: unknown): string[] {
     if (!/telefon|rata|finanziato/i.test(off + " " + prod)) return [];
     const t: string[] = [];
     t.push(/compass/i.test(off) ? "Fin. Compass" : (/findomestic/i.test(off) ? "Fin. Findomestic" : "Fin. VAR"));
-    // «> 0» / «< 600€» / «> 600€» = c'è un importo aggiuntivo; «0» secco = no
-    const zero = /(^|\s)0(\s|$)/.test(off.replace(/>\s*0/g, "")) && !/>\s*0/.test(off);
-    t.push(zero ? "Imp.agg. 0" : "Imp.agg. >0");
+    // «> 0» / «< 600€» / «> 600€» = c'è un importo aggiuntivo; «0» secco = no.
+    // ⚠️ TERZO STATO OBBLIGATORIO (revisore 26/08): un ternario qui pagava
+    // alla tariffa ALTA ogni nome che non dicesse nulla — «Rata 5G» e «Rata»
+    // finivano su «>0» e prendevano 15 € invece di 10 (28 vendite ad agosto).
+    // Meglio una scopertura visibile che un pagamento sbagliato in silenzio.
+    const senzaZero = off.replace(/>\s*0/g, "");
+    if (/>\s*0/.test(off) || /[<>]\s*\d/.test(off)) t.push("Imp.agg. >0");
+    else if (/(^|\s)0(\s|$)/.test(senzaZero)) t.push("Imp.agg. 0");
+    else t.push("Imp.agg. ignoto");
     return t;
 }
 
-const _listini = new Map<string, Map<string, number>>();
+type VoceListino = { prezzo: number; modello: string };
+const _listini = new Map<string, Map<string, VoceListino>>();
+/** la cache vive quanto la pagina: chi aggiorna il listino dal CRM la svuota */
+export function svuotaCacheListini() { _listini.clear(); }
 
 /** normalizzazione tollerante: i modelli si scrivono a mano, con tagli e colori */
 function chiaveModello(x: unknown): string {
+    // ⚠️ 5G e 4G NON si tolgono (revisore 26/08): a listino esistono coppie
+    // stesso-nome 4G/5G con prezzi di fascia diversa (Galaxy A15 199,90 vs
+    // 239,90) — toglierli le faceva collassare e l'importo dipendeva
+    // dall'ordine con cui il DB restituiva le righe.
     return String(x || "").toLowerCase()
+        .replace(/\+/g, " plus ")
         .replace(/[^a-z0-9]+/g, " ")
-        .replace(/\b(gb|tb|5g|4g|dual sim|ds)\b/g, "")
+        .replace(/\b(gb|tb|dual sim|ds)\b/g, "")
         .replace(/\s+/g, " ").trim();
 }
 
-async function listinoDi(brandListino: string): Promise<Map<string, number>> {
+async function listinoDi(brandListino: string): Promise<Map<string, VoceListino>> {
     const k = brandListino.toLowerCase();
     const gia = _listini.get(k);
     if (gia) return gia;
-    const m = new Map<string, number>();
-    const { data } = await supabase.from("listini_terminali").select("modello, prezzo").ilike("brand", brandListino).limit(3000);
+    const m = new Map<string, VoceListino>();
+    // ORDER esplicito (revisore 26/08): senza, «quale prezzo vince» a parità
+    // di chiave cambiava dopo un qualsiasi update sulla tabella
+    const { data } = await supabase.from("listini_terminali").select("modello, prezzo")
+        .ilike("brand", brandListino).order("modello").limit(3000);
     for (const r of (data || []) as { modello: string; prezzo: number | null }[]) {
         if (r.prezzo == null) continue;
         const c = chiaveModello(r.modello);
-        if (c && !m.has(c)) m.set(c, Number(r.prezzo));
+        if (c && !m.has(c)) m.set(c, { prezzo: Number(r.prezzo), modello: String(r.modello) });
     }
     _listini.set(k, m);
     return m;
@@ -747,16 +769,22 @@ async function listinoDi(brandListino: string): Promise<Map<string, number>> {
 
 /** prezzo del modello: esatto, poi sottostringa se e solo se è UNIVOCA
  *  (due candidati = non si sa quale, meglio nessuna fascia che una sbagliata) */
-export function prezzoTerminale(listino: Map<string, number>, modello: unknown): number | null {
+export function voceListino(listino: Map<string, VoceListino>, modello: unknown): VoceListino | null {
     const c = chiaveModello(modello);
-    if (!c) return null;
+    if (!c || c.length < 6) return null;
     const esatto = listino.get(c);
-    if (esatto != null) return esatto;
-    let trovato: number | null = null, n = 0;
+    if (esatto) return esatto;
+    // SOLO in una direzione (revisore 26/08): «vivo v70 5g fe» non deve
+    // pescare il «vivo v70», che è un telefono diverso. Il contrario sì: chi
+    // scrive «tcl k70» intende il «TCL K70 5G» del listino, purché sia unico.
+    let trovato: VoceListino | null = null, n = 0;
     for (const [k, v] of listino) {
-        if (k.includes(c) || c.includes(k)) { trovato = v; n++; if (n > 1) return null; }
+        if (k.includes(c)) { trovato = v; n++; if (n > 1) return null; }
     }
     return n === 1 ? trovato : null;
+}
+export function prezzoTerminale(listino: Map<string, VoceListino>, modello: unknown): number | null {
+    return voceListino(listino, modello)?.prezzo ?? null;
 }
 
 export function fasciaDaPrezzo(p: number | null): string | null {
@@ -777,7 +805,7 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
             .order("id").range(from, to) as unknown as PromiseLike<{ data: Raw[] | null; error: { message?: string } | null }>);
     // il listino serve solo se nel mese c'è almeno un telefono
     const conTerminale = (data || []).some(r => (r.dettagli as Record<string, unknown> | null)?.["Modello Terminale"]);
-    const listino = conTerminale ? await listinoDi(brandLabelPrefix) : new Map<string, number>();
+    const listino = conTerminale ? await listinoDi(brandLabelPrefix) : new Map<string, VoceListino>();
     return (data || []).map(r => {
         const d = (r.dettagli || {}) as Record<string, unknown>;
         const cod = d["Cod.Ins."] ?? d["Codice Inserimento"] ?? null;
@@ -793,9 +821,16 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
         const modello = d["Modello Terminale"];
         const token: string[] = [];
         if (modello) {
-            const f = fasciaDaPrezzo(prezzoTerminale(listino, modello));
+            const voce = voceListino(listino, modello);
+            const f = fasciaDaPrezzo(voce?.prezzo ?? null);
             if (f) token.push(f);
-            if (/5g/i.test(String(modello)) || /5g/i.test(String(r.offerta || ""))) token.push(TOKEN_5G);
+            // 5G: il testo scritto a mano non basta (revisore 26/08 — «Apple
+            // iPhone 17», «Galaxy S26» e «Z Fold8» sono 5G e non lo dicono).
+            // Si guarda anche il nome DI LISTINO, che è scritto bene, e il
+            // prezzo: sopra i 200 € i 4G di fatto non esistono, ed è la
+            // lettura della lettera (le colonne ≥200 sono solo 5G).
+            const testo = `${modello} ${r.offerta || ""} ${voce?.modello || ""}`;
+            if (/5g/i.test(testo) || (voce != null && voce.prezzo >= 200)) token.push(TOKEN_5G);
             token.push(...tokenTelefono(r.offerta, r.prodotto));
         }
         const opzBase = opz == null ? "" : String(opz);
