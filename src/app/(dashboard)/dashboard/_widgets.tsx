@@ -914,7 +914,9 @@ function WidgetBrand({ ctx, size, brand }) {
                     )}
                     {(fwInGaraVF > 0 || enT2 > 0) && (
                         <div className="flex flex-wrap gap-1.5">
-                            {fwInGaraVF > 0 && <ChipSonda tono="neutro" testo={<>🟨 in gara Vodafone <b className="font-mono text-slate-100">{fwInGaraVF}</b></>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "NON contano qui — stanno nella gara Vodafone", "(lettera A), punti compresi. Qui c'è solo il T2.", ...(fwEnT1 > 0 ? [`Di queste, ${fwEnT1} sono Luce & Gas.`] : [])]} />}
+                            {/* «+N oltre questi»: sono IN PIÙ rispetto ai numeri della card,
+                                non un di-cui (gare separate — chiarimento Luca 26/08) */}
+                            {fwInGaraVF > 0 && <ChipSonda tono="neutro" testo={<>🟨 +<b className="font-mono text-slate-100">{fwInGaraVF}</b> oltre questi · gara Vodafone</>} righe={["Vendite Fastweb sui codici dei Vodafone Store (T1):", "sono IN PIÙ, non un di-cui — NON contano qui,", "stanno nella gara Vodafone (lettera A), punti", "compresi. Qui c'è solo il T2.", ...(fwEnT1 > 0 ? [`Di queste, ${fwEnT1} sono Luce & Gas.`] : [])]} />}
                             {/* energia T2 sempre DETTA, a ogni taglia (Luca 23/08) */}
                             {enT2 > 0 && <ChipSonda tono="neutro" testo={<>⚡ Energia <b className="font-mono text-slate-100">{enT2}</b></>} righe={["Luce & Gas Fastweb sui codici multibrand (T2):", "contano qui, nella gara Fastweb."]} />}
                         </div>
