@@ -183,7 +183,13 @@ export function DirezioneInserimentoAdmin() {
                         <span className="text-[10px] text-slate-600">vale su tutti i codici {bMeta.label} · % intera, il target esce già maggiorato per eccesso</span>
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-2.5">
-                        {dir.pisteTab.filter((p) => !PISTE_FUORI.has(p.chiave)).map((p) => {
+                        {/* SOLO dove lo sfrido lavora davvero: le piste per-codice
+                            con soglie cliccabili (mobile, fisso, CB). Niente
+                            Protetti («almeno 1» non si sfrida) né piste di gruppo
+                            (Luca 26/08 notte-3: «su Protetti non serve, e su
+                            Telefoni&device a cosa ti riferivi?» — a nulla: era il
+                            pannello che elencava tutto il tabellare) */}
+                        {dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && p.chiave !== "protetti").map((p) => {
                             const sfrido = Math.round(Number(dir.sfridi[p.chiave]) || 0);
                             const sfrKey = `sfr|${p.chiave}`;
                             const bozzaSfr = bozzeSfr[p.chiave] ?? (sfrido ? String(sfrido) : "");
