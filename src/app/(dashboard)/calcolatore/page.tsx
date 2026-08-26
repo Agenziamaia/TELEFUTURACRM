@@ -12,9 +12,11 @@
 // catalogo vero (pillole opzioni = catalog_opzioni dell'offerta) e il
 // motore vero (matchRigheAttivazione con le opzioni scelte) — MAI calcoli
 // o liste di opzioni hardcodate qui dentro.
+import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { SogliaBar as SogliaBarRaw } from "../analisi/_charts";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
@@ -52,6 +54,23 @@ const CONTESTI_BRAND: Record<string, { key: string; label: string }[]> = {
 const meseCorrente = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+// il componente del master non ha props tipizzati (TS inferisce never[] sui
+// default): lo si adotta con la firma vera, senza toccare il file dell'Analisi
+const SogliaBar = SogliaBarRaw as unknown as (p: {
+    emoji?: string; label: string; punti: number; pezzi?: number | null;
+    soglie?: PaySoglia[]; colore?: string; gate?: string | null; malus?: string | null;
+    nota?: string | null; proiezione?: number | null; onClick?: () => void; unit?: string;
+}) => React.ReactElement;
+
+// emoji di pista, stessa semantica del tabellare (la barra del master ne ha una)
+const emojiPistaCalc = (nome: string): string => {
+    const n = String(nome || "").toLowerCase();
+    return /mobile|\bsim\b/.test(n) ? "📱" : /fisso|wireline|fwa/.test(n) ? "🏠"
+        : /luce/.test(n) ? "💡" : /\bgas\b/.test(n) ? "🔥" : /energia|energy/.test(n) ? "⚡"
+        : /telefon|device|smartphone/.test(n) ? "📞" : /assicur/.test(n) ? "🛡"
+        : /boost|extra/.test(n) ? "🚀" : /\bvas\b|soluzioni|digital/.test(n) ? "🧩"
+        : /sky|\btv\b/.test(n) ? "📺" : /partnership/.test(n) ? "🏅" : "📊";
 };
 const euro = (v: number | null | undefined) =>
     v == null ? "—" : v.toLocaleString("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -150,7 +169,10 @@ export default function CalcolatorePage() {
             }
             return [...prev, nome];
         });
-        setTierSel(null);
+        // la SOGLIA SCELTA RESTA (Luca 26/08, video): cambiare un'opzione
+        // serve proprio a confrontare quanto paga la stessa soglia con
+        // FTTC o FTTH — azzerarla riportava ogni volta alla base. Le
+        // opzioni non cambiano la pista, quindi la scala soglie è la stessa.
     };
     const [mostraScoperte, setMostraScoperte] = useState(false);
 
@@ -513,9 +535,9 @@ export default function CalcolatorePage() {
                                     <div className="mt-4">
                                         <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Operatore di provenienza</div>
                                         <div className="flex gap-2 flex-wrap">
-                                            <Pill on={provSel == null} onClick={() => { setProvSel(null); setTierSel(null); }}>Standard</Pill>
+                                            <Pill on={provSel == null} onClick={() => setProvSel(null)}>Standard</Pill>
                                             {provOpzioni.map(p => (
-                                                <Pill key={p.token} on={provSel === p.token} onClick={() => { setProvSel(p.token); setTierSel(null); }}>{p.label}</Pill>
+                                                <Pill key={p.token} on={provSel === p.token} onClick={() => setProvSel(p.token)}>{p.label}</Pill>
                                             ))}
                                         </div>
                                     </div>
@@ -687,30 +709,25 @@ export default function CalcolatorePage() {
                                 const projP = proietta(a.punti);
                                 let tierP = 0;
                                 for (const sg of scalaP) if (projP >= sg.soglia_da) tierP = sg.tier;
+                                // BARRA DEL MASTER (Luca 26/08: «riprendi quella
+                                // impostazione e portala qui»): stesso componente
+                                // dell'Analisi — tacche alle soglie, riempimento
+                                // animato, coda a strisce della proiezione, tooltip
+                                // su ogni soglia. Una fonte sola, uno stile solo.
                                 return (
-                                    <div key={p.chiave} className="mb-4 last:mb-0">
-                                        {/* la PROIEZIONE è il dato principale (Luca 11/08); l'attuale sotto */}
-                                        <div className="flex justify-between text-sm mb-0.5">
-                                            <span className="text-slate-200 font-semibold">{appoggiate.length ? "Energia · soglia unica" : p.nome}</span>
-                                            {proiezioneOn ? (
-                                                <span className="text-white font-bold">📈 {projP} <span className="text-indigo-300">{tierP > 0 ? `S${tierP}` : "sotto soglia"}</span></span>
-                                            ) : (
-                                                <span className="text-slate-400">{a.punti} {unita} · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
-                                            )}
-                                        </div>
-                                        {proiezioneOn && (
-                                            <div className="text-[11px] text-slate-500 mb-1">oggi: {a.punti} {unita} · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</div>
-                                        )}
-                                        {appoggiate.length > 0 && (
-                                            <div className="text-[11px] text-slate-500 mb-1">
-                                                conta tutto insieme: {[p, ...appoggiate].map(x => `${x.nome} ${avz.piste[x.chiave]?.pezzi ?? 0} pz`).join(" + ")}
-                                            </div>
-                                        )}
-                                        {scalaP.length > 0 && <div className="text-[11px] text-slate-500 mb-1">soglie: {scalaP.map(sg => sg.soglia_da).join(" · ")}</div>}
-                                        <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                                            <div className="h-full rounded-full" style={{ width: `${perc}%`, background: meta?.color || "#6366f1" }} />
-                                        </div>
-                                        {a.mancano != null && <div className="text-[11px] text-slate-500 mt-1">mancano {a.mancano} alla S{a.prossima?.tier}</div>}
+                                    <div key={p.chiave} className="mb-2.5 last:mb-0">
+                                        <SogliaBar
+                                            emoji={emojiPistaCalc(p.nome)}
+                                            label={appoggiate.length ? "Energia · soglia unica" : p.nome}
+                                            punti={a.punti} pezzi={a.pezzi} soglie={scalaP}
+                                            colore={meta?.color || "#6366f1"}
+                                            proiezione={proiezioneOn ? projP : null}
+                                            gate={a.gate || null}
+                                            unit={p.um === "pezzi" ? "pz" : "pt"}
+                                            nota={appoggiate.length
+                                                ? `conta tutto insieme: ${[p, ...appoggiate].map(x => `${x.nome} ${avz.piste[x.chiave]?.pezzi ?? 0} pz`).join(" + ")}`
+                                                : (a.mancano != null && a.prossima ? `mancano ${a.mancano} alla S${a.prossima.tier}` : null)}
+                                        />
                                     </div>
                                 );
                             })}
