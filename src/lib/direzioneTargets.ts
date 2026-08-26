@@ -232,41 +232,38 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
     };
 }
 
-/** Finestra di stabilità del «bilancia» (Luca: «da qui a fine settimana»):
- *  lun→gio = finestra A, ven→dom = finestra B — chiave deterministica. */
-export function finestraBilancia(): { chiave: string; label: string } {
-    const d = new Date();
-    const dow = (d.getDay() + 6) % 7;   // lun=0 … dom=6
-    const lun = new Date(d); lun.setDate(d.getDate() - dow);
-    const ymdLun = `${lun.getFullYear()}-${String(lun.getMonth() + 1).padStart(2, "0")}-${String(lun.getDate()).padStart(2, "0")}`;
-    const meta = dow <= 3 ? "A" : "B";
-    return { chiave: `${ymdLun}·${meta}`, label: meta === "A" ? "fino a giovedì" : "fino a domenica" };
+/** Finestra del «bilancia» (Luca 26/08 notte-8): vale FINO ALLA DATA scelta
+ *  dalla direzione col calendario (dati.fino); senza data (o scaduta) la
+ *  scelta vale per il giorno corrente e domani si ricalcola. */
+const ymdOggi = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+export function finestraBilancia(fino?: string | null): { label: string } {
+    if (fino && fino >= ymdOggi()) return { label: `fino al ${fino.slice(8, 10)}/${fino.slice(5, 7)}` };
+    return { label: "solo per oggi" };
 }
 
-/** Il codice consigliato dal «bilancia» per una pista di gruppo: il
- *  FRANCHISING più scarico, scelto UNA volta per finestra e persistito in
- *  direzione_politiche.dati {finestra, scelto} — stabilità vera, niente
- *  ping-pong intra-finestra. */
-export async function codiceBilancia(dir: Direzione, pista: string): Promise<CodiceDir | null> {
+/** Il codice consigliato dal «bilancia»: il FRANCHISING più scarico, scelto
+ *  una volta e PERSISTITO in direzione_politiche.dati {fino, scelto} —
+ *  stabile fino alla data del calendario (o fino a fine giornata se la
+ *  direzione non ha dato una data). */
+export async function codiceBilancia(dir: Direzione, pista: string): Promise<{ codice: CodiceDir; fino: string } | null> {
     const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll);
     if (!franchising.length) return null;
-    const fin = finestraBilancia();
     const pol = dir.politiche[pista];
-    const dati = (pol?.dati || {}) as { finestra?: string; scelto?: string };
-    if (dati.finestra === fin.chiave && dati.scelto) {
+    const dati = (pol?.dati || {}) as { fino?: string; scelto?: string };
+    const oggi = ymdOggi();
+    if (dati.scelto && dati.fino && dati.fino >= oggi) {
         const k = franchising.find((x) => x.cod_gara === dati.scelto);
-        if (k) return k;
+        if (k) return { codice: k, fino: dati.fino };
     }
-    // nuova finestra: il più scarico ADESSO, e si scrive SOLO `dati` — mai il
-    // modo (revisore: una Home in cache poteva ripristinare 'bilancia' sopra
-    // un 'proprio' appena scelto dall'admin). La riga esiste per forza: siamo
-    // qui solo se modo==='bilancia' a DB.
+    // scelta nuova: il più scarico ADESSO; vale fino alla data della
+    // direzione se ancora valida, altrimenti solo per oggi
     const scelto = [...franchising].sort((a, b) => (a.piste[pista]?.punti || 0) - (b.piste[pista]?.punti || 0))[0];
+    const fino = dati.fino && dati.fino >= oggi ? dati.fino : oggi;
     await supabase.from("direzione_politiche")
-        .update({ dati: { finestra: fin.chiave, scelto: scelto.cod_gara }, updated_at: new Date().toISOString() })
+        .update({ dati: { ...dati, fino, scelto: scelto.cod_gara }, updated_at: new Date().toISOString() })
         .eq("brand", dir.brand).eq("month", dir.monthISO).eq("pista", pista)
         .then(() => null, () => null);
-    return scelto;
+    return { codice: scelto, fino };
 }
 
 /** Il codice ASSOCIATO di un multibrand per le categorie libere (mappa

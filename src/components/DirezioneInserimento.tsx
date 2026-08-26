@@ -404,8 +404,19 @@ export function DirezioneInserimentoAdmin() {
                                             <button onClick={() => salvaPolitica(pg, "bilancia")}
                                                 className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
                                                     pol === "bilancia" ? "bg-sky-500/15 text-sky-300 border-sky-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
-                                                ⚖️ Bilancia ({finestraBilancia().label})
+                                                ⚖️ Bilancia{pol === "bilancia" ? ` (${finestraBilancia(String((dir.politiche[pg]?.dati as { fino?: string } | null)?.fino || "")).label})` : ""}
                                             </button>
+                                            {/* 📅 il calendario del bilancia (Luca notte-8): la scelta
+                                                vale FINO a questa data, poi si ricalcola */}
+                                            {pol === "bilancia" && (
+                                                <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                                                    vale fino al
+                                                    <input type="date" min={dir.monthISO.slice(0, 8) + "01"}
+                                                        value={String((dir.politiche[pg]?.dati as { fino?: string } | null)?.fino || "")}
+                                                        onChange={(e) => salvaPolitica(pg, "bilancia", { ...((dir.politiche[pg]?.dati as Record<string, unknown>) || {}), fino: e.target.value })}
+                                                        className="glass-input !h-8 text-xs" />
+                                                </label>
+                                            )}
                                             {salvate[polKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
                                             {erroriSalva[polKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
                                             <span className="text-[10px] text-slate-600">{pol === "proprio" ? "ogni negozio carica sul suo codice (i multibrand sull'associato)" : "la Bussola indirizza sul codice più scarico, stabile nella finestra"}</span>
@@ -680,8 +691,8 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         const modo = dir.politiche[pista]?.modo || "proprio";
         (async () => {
             if (modo === "bilancia") {
-                const k = await codiceBilancia(dir, pista);
-                if (vivo && k) setTipGruppo({ testo: `⚖️ ${finestraBilancia().label}: caricala su ${k.negozio}`, sub: "vale per tutti — così i codici restano bilanciati e non devi ricontrollare ogni volta" });
+                const r = await codiceBilancia(dir, pista);
+                if (vivo && r) setTipGruppo({ testo: `⚖️ ${finestraBilancia(r.fino).label.charAt(0).toUpperCase() + finestraBilancia(r.fino).label.slice(1)}: caricala su ${r.codice.negozio}`, sub: "vale per tutti — così i codici restano bilanciati e non devi ricontrollare ogni volta" });
                 return;
             }
             // «ognuno sul suo»: il multibrand carica sul codice ASSOCIATO
@@ -711,10 +722,10 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const lista = dir && !pistaDiGruppo ? consigliaCodici(dir, pista, negozio).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
+    const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
     return (
-        <div className="flex flex-col p-3 gap-2">
-            {/* 🔔 la direzione ha CAMBIATO gli inserimenti: avviso acceso finché
-                non lo si spegne — così si sa di dover riconsultare la Bussola */}
+        <div className="flex flex-col p-3.5 gap-3">
+            {/* 🔔 la direzione ha CAMBIATO gli inserimenti */}
             {novita && (
                 <div className="rounded-xl bg-amber-500/[0.12] border border-amber-500/40 px-3 py-2 flex items-center gap-2 animate-pulse">
                     <span className="flex-1 text-[11px] font-bold text-amber-200">🔔 La direzione ha aggiornato gli inserimenti: controlla dove caricare!</span>
@@ -722,69 +733,97 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         className="shrink-0 px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-[11px] font-bold text-amber-100 hover:bg-amber-500/30">✓ visto</button>
                 </div>
             )}
-            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa stai vendendo?</div>
-            {tuttiBrand.length > 1 && (
-                <div className="flex flex-wrap gap-1.5">
+            {/* ① OPERATORE — tessere logo, come nel caller */}
+            <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">① Operatore</div>
+                <div className="flex gap-2">
                     {tuttiBrand.map((d) => {
                         const m = DIR_BRANDS.find((b) => b.id === d.id)!;
                         const logo = TRK_BRAND_LOGOS[m.id];
+                        const scala = TRK_LOGO_SCALE[m.id] || 1;
                         const attivo = brandSel === d.id;
                         return (
-                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); }} title={m.label}
-                                className={cn("px-3 py-1.5 rounded-lg border transition-all flex items-center justify-center",
-                                    attivo ? "border-transparent scale-105" : "bg-white/[0.04] border-white/10 hover:bg-white/10")}
-                                style={attivo ? { background: `color-mix(in srgb, ${m.color} 22%, #0c0d14)`, boxShadow: `0 0 12px color-mix(in srgb, ${m.color} 40%, transparent)`, border: `1px solid color-mix(in srgb, ${m.color} 50%, transparent)` } : undefined}>
-                                {logo ? <img src={logo} alt={m.label} className={cn("h-4 w-auto max-w-[64px] object-contain", attivo ? "" : "opacity-75")} /> : <span className="text-[11px] font-bold text-slate-200">{m.label}</span>}
+                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); }} title={m.label} aria-label={m.label}
+                                className={cn("flex-1 min-w-0 h-12 flex items-center justify-center rounded-xl border px-2 transition-all",
+                                    attivo
+                                        ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
+                                        : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
+                                {logo ? (
+                                    <img src={logo} alt={m.label} className="block object-contain max-w-full"
+                                        style={{ maxHeight: 30, transform: scala !== 1 ? `scale(${Math.min(scala, 1.3)})` : undefined }} />
+                                ) : <span className="text-xs font-bold text-slate-200">{m.label}</span>}
                             </button>
                         );
                     })}
                 </div>
-            )}
-            {/* brand in INSERIMENTO LIBERO: nessuna regia, si carica dove si vuole */}
-            {brandLibero && (
-                <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/25 px-3 py-3 text-center">
-                    <div className="text-sm font-black text-emerald-300">🕊️ Inserimento libero</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
-                </div>
-            )}
-            {!brandLibero && <div className="flex flex-wrap gap-1.5">
-                {pisteAttive.map((p) => (
-                    <button key={p.chiave} onClick={() => setPista(p.chiave)}
-                        className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors",
-                            pista === p.chiave ? "bg-sky-500 text-white border-transparent" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
-                        {EMOJI_PISTA(p.nome)} {p.nome}
-                    </button>
-                ))}
-            </div>}
-            {/* pista di GRUPPO: risposta secca dalla politica, niente lista */}
-            {pistaDiGruppo && tipGruppo && (
-                <div className="rounded-xl px-3 py-2 border" style={{ background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 9%, transparent)`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)` }}>
-                    <div className="text-[11px] font-bold text-slate-100">{tipGruppo.testo}</div>
-                    <div className="text-[10px] text-slate-400">{tipGruppo.sub}</div>
-                </div>
-            )}
-            {!pistaDiGruppo && consigliato && (
-                <div className="rounded-xl px-3 py-2 border" style={{ background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 9%, transparent)`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)` }}>
-                    <div className="text-[11px] font-bold text-slate-100">📍 Caricala su <span className="text-white">{consigliato.negozio}</span>{consigliato.mio ? " (il tuo negozio)" : ""}</div>
-                    <div className="text-[10px] text-slate-400">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "target già raggiunto: prosegui qui o guarda le altre realtà"}</div>
-                </div>
-            )}
-            <div className="space-y-1">
-                {lista.map((k) => {
-                    const perc = k.target > 0 ? Math.min(100, Math.round((k.fatti / k.target) * 100)) : 0;
-                    return (
-                        <div key={k.cod_gara} className="text-[11px]">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className={cn("truncate", k.mio ? "text-white font-bold" : "text-slate-300")}>{k.mio ? "🏠 " : ""}{k.negozio}</span>
-                                <span className="shrink-0 tabular-nums text-slate-400">{it(k.fatti)} / {it(k.target)}</span>
-                            </div>
-                            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mt-0.5">
-                                <div className={cn("h-full rounded-full", perc >= 100 ? "bg-emerald-400" : "bg-sky-400/80")} style={{ width: `${perc}%` }} />
-                            </div>
-                        </div>
-                    );
-                })}
             </div>
+            {/* brand LIBERO: risposta immediata, niente step 2 */}
+            {brandLibero ? (
+                <div className="rounded-2xl px-4 py-5 text-center border border-emerald-500/30"
+                    style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))", boxShadow: "0 0 24px rgba(16,185,129,0.18)" }}>
+                    <div className="text-2xl font-black text-emerald-300 drop-shadow">🕊️ Inserimento libero</div>
+                    <div className="text-[11px] text-slate-400 mt-1">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
+                </div>
+            ) : (<>
+                {/* ② COSA STAI VENDENDO — le variabili dell'operatore */}
+                <div className="space-y-1.5">
+                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">② Cosa stai vendendo?</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {pisteAttive.map((p) => (
+                            <button key={p.chiave} onClick={() => setPista(p.chiave)}
+                                className={cn("px-3 py-1.5 rounded-xl text-xs font-bold border transition-all",
+                                    pista === p.chiave ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
+                                style={pista === p.chiave ? { background: bMeta?.color || "#38bdf8", boxShadow: `0 0 12px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 50%, transparent)` } : undefined}>
+                                {EMOJI_PISTA(p.nome)} {p.nome}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {/* ③ LA RISPOSTA — la carta col codice, grande */}
+                {pistaDiGruppo && tipGruppo && (
+                    <div className="rounded-2xl px-4 py-4 border text-center"
+                        style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 16%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 35%, transparent)`, boxShadow: `0 0 22px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 22%, transparent)` }}>
+                        <div className="text-base font-black text-white leading-snug">{tipGruppo.testo}</div>
+                        <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div>
+                    </div>
+                )}
+                {!pistaDiGruppo && consigliato && (
+                    <div className="rounded-2xl px-4 py-4 border"
+                        style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
+                        <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
+                        <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">
+                            {consigliato.negozio}
+                            {consigliato.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                            <div className="h-2 flex-1 rounded-full bg-black/30 overflow-hidden">
+                                <div className="h-full rounded-full transition-all" style={{ width: `${consigliato.target > 0 ? Math.min(100, Math.round((consigliato.fatti / consigliato.target) * 100)) : 0}%`, background: bMeta?.color || "#38bdf8" }} />
+                            </div>
+                            <span className="text-[11px] font-bold text-slate-200 tabular-nums shrink-0">{it(consigliato.fatti)} / {it(consigliato.target)}</span>
+                        </div>
+                        <div className="text-[11px] font-semibold text-slate-300 mt-1">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "🎯 target raggiunto: prosegui qui o guarda le altre realtà"}</div>
+                    </div>
+                )}
+                {/* le altre realtà, in piccolo */}
+                {altre.length > 0 && (
+                    <div className="space-y-1">
+                        {altre.map((k) => {
+                            const perc = k.target > 0 ? Math.min(100, Math.round((k.fatti / k.target) * 100)) : 0;
+                            return (
+                                <div key={k.cod_gara} className="text-[11px]">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className={cn("truncate", k.mio ? "text-white font-bold" : "text-slate-400")}>{k.mio ? "🏠 " : ""}{k.negozio}</span>
+                                        <span className="shrink-0 tabular-nums text-slate-500">{it(k.fatti)} / {it(k.target)}</span>
+                                    </div>
+                                    <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mt-0.5">
+                                        <div className={cn("h-full rounded-full", perc >= 100 ? "bg-emerald-400" : "bg-sky-400/60")} style={{ width: `${perc}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </>)}
             <div className="text-[10px] text-slate-600">Avanzamento per codice di inserimento, dal motore gare · aggiornato all&apos;apertura.</div>
         </div>
     );

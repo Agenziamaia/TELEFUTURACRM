@@ -2965,7 +2965,7 @@ const FISSI = {
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
     classifica: { label: "Classifica venditori", icon: Trophy, sizes: [2, 4], def: 4, gruppo: "statistiche" },
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [1, 2], def: 1, gruppo: "strumenti" , aree: ["pv", "ob"] },
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv", "ob"] },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
@@ -3065,7 +3065,7 @@ export function decodeLayout(arr) {
 const LEGACY_BLOCKS = {
     kpi: ["kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s"],
     charts: ["chart_stato@2", "chart_top@2"],
-    widgets: ["bussola@1", "obiettivo@1", "azioni@1", "bacheca@1", "accessi@2"],
+    widgets: ["bussola@2", "obiettivo@1", "azioni@1", "bacheca@1", "accessi@2"],
     leaderboard: ["classifica@4"],
 };
 export const isLegacyLayout = (arr) => Array.isArray(arr) && arr.length > 0 && arr.every((s) => typeof s === "string" && LEGACY_BLOCKS[s]);
@@ -3089,7 +3089,7 @@ export function layoutDefault(ctx) {
             "scudo@1", "derby@1", "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
             ...perf,
             "chart_stato@2", "chart_top@2", "bacheca@2",
-            "bussola@1", "obiettivo@1", "azioni@1", "accessi@2", "classifica@4",
+            "bussola@2", "obiettivo@1", "azioni@1", "accessi@2", "classifica@4",
         ]);
     }
     if (ctx.level === "store") {
@@ -3098,7 +3098,7 @@ export function layoutDefault(ctx) {
             "scudo@1", "contatore@1", "derby@1",
             ...perf, "confronto@2",
             "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
-            "chart_top@2", "bacheca@2", "obiettivo@1", "azioni@1", "bussola@1", "chart_stato@1",
+            "chart_top@2", "bacheca@2", "obiettivo@1", "azioni@1", "bussola@2", "chart_stato@1",
             "classifica@4",
         ]);
     }
@@ -3107,7 +3107,7 @@ export function layoutDefault(ctx) {
         "contatore@1", "scudo@1", "derby@1",
         ...perf, "confronto@2",
         "kpi_contratti@s", "kpi_attivi@s", "obiettivo@1", "azioni@1",
-        "bacheca@2", "classifica@2", "bussola@1",
+        "bacheca@2", "classifica@2", "bussola@2",
     ]);
 }
 
