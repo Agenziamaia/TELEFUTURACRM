@@ -1063,17 +1063,23 @@ function WidgetMarginalita({ ctx, size }) {
 // ── WIDGET: KPI singoli ─────────────────────────────────────────────────────
 function KpiTile({ icon: Icon, label, value, sub, color }) {
     return (
-        // contenuto CENTRATO in verticale: a qualsiasi altezza della card la
-        // tile resta composta, niente numero in alto col vuoto sotto (25/08).
-        // Sotto ~150px di cella (riquadro «schiacciato» a 1 riga) la tile si
-        // COMPATTA: etichetta e numero sulla stessa riga, niente sottotitolo
-        // — la cella è un container (container-type: size), la query è sua.
-        <div className="glass-card p-4 [@container(max-height:150px)]:p-3 border-t-2 h-full flex flex-col justify-center [@container(max-height:150px)]:flex-row [@container(max-height:150px)]:items-center [@container(max-height:150px)]:gap-3" style={{ borderTopColor: color }}>
-            <div className="flex items-center gap-2 text-slate-400 text-[10px] uppercase tracking-widest font-bold mb-2 [@container(max-height:150px)]:mb-0 min-w-0">
-                <Icon className="w-3.5 h-3.5 shrink-0" style={{ color }} /> <span className="truncate">{label}</span>
+        // SEMPRE in verticale e SEMPRE completa — etichetta, numero e
+        // sottotitolo si vedono a qualsiasi taglia, anche alla minima (Luca
+        // 26/08: prima a 1 riga la tile girava in orizzontale e perdeva il
+        // sottotitolo). Le query di ALTEZZA guardano la cella della griglia
+        // (container-type: size); per la LARGHEZZA la card è container di sé
+        // (inline-size, sicuro anche nella pila mobile dove la cella non
+        // c'è): il numero scala con la larghezza reale via cqw e non
+        // trabocca mai, fino a 1 colonna su 16.
+        <div className="glass-card border-t-2 h-full [container-type:inline-size]" style={{ borderTopColor: color }}>
+            <div className="h-full min-w-0 flex flex-col justify-center p-4 [@container(max-height:150px)]:p-2.5 [@container(max-width:180px)]:p-2.5">
+                <div className="flex items-center gap-1.5 text-slate-400 text-[10px] [@container(max-width:140px)]:text-[9px] uppercase tracking-widest [@container(max-width:140px)]:tracking-wider font-bold mb-1.5 [@container(max-height:150px)]:mb-1 min-w-0">
+                    <Icon className="w-3.5 h-3.5 [@container(max-width:140px)]:w-3 [@container(max-width:140px)]:h-3 shrink-0" style={{ color }} />
+                    <span className="truncate" title={label}>{label}</span>
+                </div>
+                <p className="font-black text-white leading-none [font-size:clamp(15px,20cqw,30px)]">{Number(value).toLocaleString("it-IT")}</p>
+                <p className="text-xs [@container(max-width:140px)]:text-[10px] text-slate-500 mt-1.5 [@container(max-height:150px)]:mt-1 truncate" title={sub || ""}>{sub || "—"}</p>
             </div>
-            <p className="text-3xl [@container(max-height:150px)]:text-2xl [@container(max-height:150px)]:ml-auto font-black text-white leading-none">{Number(value).toLocaleString("it-IT")}</p>
-            {sub && <p className="text-xs text-slate-500 mt-1.5 [@container(max-height:150px)]:hidden">{sub}</p>}
         </div>
     );
 }
@@ -2107,10 +2113,12 @@ const FISSI = {
     serie: { label: "La Serie", icon: Flame, sizes: [1], def: 1, gruppo: "performance" },
     agenda: { label: "Agenda del giorno", icon: CalendarCheck, sizes: [2, 4], def: 2, gruppo: "strumenti" },
     marginalita: { label: "Marginalità", icon: ShoppingBag, sizes: [1, 2, 4], def: 2, gruppo: "performance" },
-    kpi_contratti: { label: "Contratti", icon: FileText, sizes: [1, 2], def: 1, gruppo: "statistiche" },
-    kpi_attivi: { label: "Attivi", icon: CheckCircle2, sizes: [1, 2], def: 1, gruppo: "statistiche" },
-    kpi_lavorazione: { label: "In lavorazione", icon: Clock, sizes: [1, 2], def: 1, gruppo: "statistiche" },
-    kpi_clienti: { label: "Clienti", icon: Users, sizes: [1, 2], def: 1, gruppo: "statistiche" },
+    // def "s": i KPI singoli nascono alla TAGLIA MINIMA (tile 2×1) — Luca
+    // 26/08: «la dimensione più piccola deve essere quella di default»
+    kpi_contratti: { label: "Contratti", icon: FileText, sizes: [1, 2], def: "s", gruppo: "statistiche" },
+    kpi_attivi: { label: "Attivi", icon: CheckCircle2, sizes: [1, 2], def: "s", gruppo: "statistiche" },
+    kpi_lavorazione: { label: "In lavorazione", icon: Clock, sizes: [1, 2], def: "s", gruppo: "statistiche" },
+    kpi_clienti: { label: "Clienti", icon: Users, sizes: [1, 2], def: "s", gruppo: "statistiche" },
     chart_brand: { label: "Grafico per brand", icon: TrendingUp, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
@@ -2189,8 +2197,10 @@ export function decodeLayout(arr) {
         if (typeof s !== "string") return;
         const i = s.lastIndexOf("@");
         if (i <= 0) return;
-        const k = s.slice(0, i); const sz = Number(s.slice(i + 1));
-        if (![1, 2, 4].includes(sz)) return;
+        // "s" = tile minima (2 colonne × 1 riga): il default dei KPI singoli
+        const k = s.slice(0, i); const raw = s.slice(i + 1);
+        const sz = raw === "s" ? "s" : Number(raw);
+        if (sz !== "s" && ![1, 2, 4].includes(sz)) return;
         if (!out.some((w) => w.k === k)) out.push({ k, s: sz });
     });
     return out;
@@ -2199,7 +2209,7 @@ export function decodeLayout(arr) {
 // I 4 blocchi storici (kpi/charts/widgets/leaderboard) esplosi nei singoli
 // widget: chi aveva un layout salvato lo ritrova identico, ma spacchettato.
 const LEGACY_BLOCKS = {
-    kpi: ["kpi_contratti@1", "kpi_attivi@1", "kpi_lavorazione@1", "kpi_clienti@1"],
+    kpi: ["kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s"],
     charts: ["chart_brand@2", "chart_stato@2", "chart_top@2"],
     widgets: ["bussola@1", "obiettivo@1", "azioni@1", "bacheca@1", "accessi@2"],
     leaderboard: ["classifica@4"],
@@ -2221,7 +2231,7 @@ export function layoutDefault(ctx) {
     if (ctx.level === "global") {
         return decodeLayout([
             "agenda@2", "soglia_euro@2",
-            "kpi_contratti@1", "kpi_attivi@1", "kpi_lavorazione@1", "kpi_clienti@1",
+            "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
             ...perf,
             "chart_brand@2", "chart_stato@2", "chart_top@2", "bacheca@2",
             "bussola@1", "obiettivo@1", "azioni@1", "accessi@2", "classifica@4",
@@ -2231,7 +2241,7 @@ export function layoutDefault(ctx) {
         return decodeLayout([
             "agenda@2", "soglia_euro@1", "treno19@1",
             ...perf, "confronto@2",
-            "kpi_contratti@1", "kpi_attivi@1", "kpi_lavorazione@1", "kpi_clienti@1",
+            "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
             "chart_top@2", "bacheca@2", "obiettivo@1", "azioni@1", "bussola@1", "chart_stato@1",
             "classifica@4",
         ]);
@@ -2239,7 +2249,7 @@ export function layoutDefault(ctx) {
     return decodeLayout([
         "agenda@2", "soglia_euro@1", "serie@1", "treno19@1",
         ...perf, "confronto@2",
-        "kpi_contratti@1", "kpi_attivi@1", "obiettivo@1", "azioni@1",
+        "kpi_contratti@s", "kpi_attivi@s", "obiettivo@1", "azioni@1",
         "bacheca@2", "chart_brand@2", "classifica@2", "bussola@1",
     ]);
 }
@@ -2273,4 +2283,4 @@ export function widgetsDisponibili(ctx, giaPresenti) {
     return out;
 }
 
-export const SIZE_LABEL = { 1: "1 blocco", 2: "2 blocchi", 4: "Mezza pagina" };
+export const SIZE_LABEL = { s: "Tile", 1: "1 blocco", 2: "2 blocchi", 4: "Mezza pagina" };

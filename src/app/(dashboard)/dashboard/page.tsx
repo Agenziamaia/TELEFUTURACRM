@@ -37,16 +37,19 @@ const daysAgoISO = (n) => { const d = new Date(); d.setDate(d.getDate() - n); re
 const CLOSED_TASK = ["fatta", "abbandonata"];
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 
-// ── GRIGLIA A COORDINATE, come l'Analisi (Luca 25/08 notte): 8 colonne,
+// ── GRIGLIA A COORDINATE, come l'Analisi (Luca 25/08 notte): 16 colonne,
 // riga 96px, react-grid-layout — drag dalla pillola in testa, resize
 // dall'angolo, compattazione verticale. Persistenza in dashboard_layout come
-// { __v: 9, lista: ["k@x,y,w,h", ...] }; i layout vecchi ["id@taglia"]
-// vengono convertiti al volo (1→2, 2→4, 4→8 colonne, packing per righe).
-const COLS_DA_TAGLIA = { 1: 2, 2: 4, 4: 8 };
-const H_DA_TAGLIA = { 1: 2, 2: 4, 4: 5 };
+// { __v: 10, lista: ["k@x,y,w,h", ...] }; i v9 (griglia a 8) raddoppiano x e
+// larghezza al volo, i layout vecchi ["id@taglia"] passano dal packing.
+// 16 e non 8 (Luca 26/08): con la colonna dimezzata i KPI si stringono
+// «ancora più verso sinistra» — la tile minima è 2 colonne × 1 riga.
+// La taglia legacy "s" è proprio lei: la tile dei KPI singoli.
+const COLS_DA_TAGLIA = { s: 2, 1: 4, 2: 8, 4: 16 };
+const H_DA_TAGLIA = { s: 1, 1: 2, 2: 4, 4: 5 };
 // i widget dentro ragionano ancora a taglie 1·2·4 (size >= 2, size >= 4…):
 // la taglia di compatibilità deriva dalle colonne correnti della card
-const tagliaDaCols = (cols) => (cols >= 6 ? 4 : cols >= 3 ? 2 : 1);
+const tagliaDaCols = (cols) => (cols >= 12 ? 4 : cols >= 6 ? 2 : 1);
 const decodeCoord = (arr) => {
     const visti = new Set();
     return (Array.isArray(arr) ? arr : []).map((str) => {
@@ -62,7 +65,7 @@ const decodeCoord = (arr) => {
             k,
             x: Number.isFinite(x) ? Math.max(0, Math.round(x)) : 0,
             y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
-            s: Math.min(8, Math.max(1, Math.round(w))),
+            s: Math.min(16, Math.max(1, Math.round(w))),
             // minimo 1 riga (96px): i KPI di solo riferimento si schiacciano
             // a barretta (Luca 25/08 notte: «dammi la possibilità di
             // stringerli in verticalità»)
@@ -70,13 +73,15 @@ const decodeCoord = (arr) => {
         };
     }).filter(Boolean);
 };
+// v9 = stessa codifica su griglia a 8: identiche proporzioni, colonna doppia
+const daV9 = (arr) => decodeCoord(arr).map((w) => ({ ...w, x: w.x * 2, s: Math.min(16, w.s * 2) }));
 const daLegacy = (lista) => {
     const out = [];
     let x = 0, y = 0, rigaH = 0;
     for (const w of lista) {
         const cols = COLS_DA_TAGLIA[w.s] || 4;
         const h = H_DA_TAGLIA[w.s] || 4;
-        if (x + cols > 8) { x = 0; y += rigaH; rigaH = 0; }
+        if (x + cols > 16) { x = 0; y += rigaH; rigaH = 0; }
         out.push({ k: w.k, x, y, s: cols, h });
         x += cols; rigaH = Math.max(rigaH, h);
     }
@@ -115,7 +120,7 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                         giravano 12 colonne e drag dall'intera card). */}
                     {pilaMobile ? (
                         /* telefono: pila semplice nell'ordine del layout — il
-                           tetris a 8 colonne su 390px farebbe francobolli.
+                           tetris a 16 colonne su 390px farebbe francobolli.
                            Taglia 2 (non 1): in 390px le griglie a due tile ci
                            stanno e non si perdono assicurazioni/L&G/sparkline */
                         <div className="space-y-4">
@@ -135,7 +140,7 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                         </div>
                     ) : (
                         <GridLayout className="tf-griglia" width={gridW}
-                            gridConfig={{ cols: 8, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
+                            gridConfig={{ cols: 16, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
                             dragConfig={{ handle: ".tf-drag", cancel: "button" }}
                             layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 1 }))}
                             onLayoutChange={onLayoutChange}>
@@ -508,20 +513,20 @@ export default function Dashboard() {
         if (loading || savedLayout === undefined || layoutPronto.current) return;
         layoutPronto.current = true;
         const raw = savedLayout;
-        // formato a coordinate (v9) diretto; i legacy passano da risolviLayout
-        // (blocchi vecchi compresi) e poi dal packing per righe
-        // oggetto v9 → coordinate dirette; ARRAY legacy → conversione; un
-        // oggetto malformato (né v9 né array) NON deve arrivare a
-        // risolviLayout (farebbe .forEach su un oggetto → Home bianca)
+        // formato a coordinate: v10 diretto, v9 (griglia a 8) raddoppiato;
+        // i legacy passano da risolviLayout (blocchi vecchi compresi) e poi
+        // dal packing per righe. Un oggetto malformato (né coordinate né
+        // array) NON deve arrivare a risolviLayout (farebbe .forEach su un
+        // oggetto → Home bianca)
         const lista = (raw && !Array.isArray(raw) && Number(raw.__v) >= 9)
-            ? decodeCoord(raw.lista).filter((w) => infoWidget(w.k, ctx))
+            ? (Number(raw.__v) >= 10 ? decodeCoord(raw.lista) : daV9(raw.lista)).filter((w) => infoWidget(w.k, ctx))
             : daLegacy(risolviLayout(Array.isArray(raw) ? raw : [], ctx));
         setLayout(lista.length ? lista : daLegacy(layoutDefault(ctx)));
     }, [loading, savedLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const salvaLayout = async (next) => {
         setLayout(next);
-        const payload = { __v: 9, lista: next.map((w) => `${w.k}@${Number.isFinite(w.x) ? w.x : 0},${Number.isFinite(w.y) ? w.y : 0},${w.s},${w.h || 4}`) };
+        const payload = { __v: 10, lista: next.map((w) => `${w.k}@${Number.isFinite(w.x) ? w.x : 0},${Number.isFinite(w.y) ? w.y : 0},${w.s},${w.h || 4}`) };
         try { await supabase.from("app_users").update({ dashboard_layout: payload }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
     // il drag/resize arriva da react-grid-layout: si riallineano x/y/w/h
