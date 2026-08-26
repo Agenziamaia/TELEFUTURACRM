@@ -25,7 +25,15 @@ export const TRIAGE_VERSIONE = 1;          // alzarla = riclassificare tutto
 const FINESTRA_GG = 35;                    // il widget guarda 30 giorni: margine
 const MAX_PER_CORSA = 60;                  // tetto chat per giro (il chiamante può abbassarlo)
 const CONCORRENZA = 4;
-const TOLLERANZA_MS = 2000;               // created_at identici dei backfill
+// tolleranza sui timestamp (created_at identici dei backfill). Il widget usa
+// una tolleranza PIÙ LARGA (2500ms) sul confronto col fingerprint: deve
+// essere ≥ di questa, sennò una chat può restare per sempre «stantia» per
+// il widget e «già classificata» per il motore (rilievo revisore B1)
+export const TOLLERANZA_MS = 2000;
+// budget di tempo di una corsa: DEVE stare sotto i 3' del lock morto — col
+// caso peggiore (60 chat lente, timeout 25s) una corsa senza budget durava
+// 6'+ e un secondo chiamante ri-claimava il lock a metà (rilievo A2)
+const SCADENZA_CORSA_MS = 150000;
 
 const PROMPT_TRIAGE = `Sei il triage delle chat WhatsApp di Telefutura (negozi di telefonia WindTre/Vodafone/Fastweb/Sky a Roma). Leggi UNA conversazione tra un punto vendita e un cliente e decidi se oggi serve un'azione, e di chi è la palla.
 
@@ -106,23 +114,29 @@ function estraiJson(testo: string): any | null {
     try { return JSON.parse(m[0]); } catch { return null; }
 }
 
-// rinvio del modello (YYYY-MM-DD) → timestamptz alle ~08:00 di Roma; date
-// assurde o mancanti su una "programmata" → due settimane, mai null
+// rinvio del modello (YYYY-MM-DD) → timestamptz alle ~08:00 di Roma; mai
+// null su una "programmata". Data PASSATA = rinvio già scaduto: si tiene
+// (clampata a ieri per non mostrare «da 6 anni») così la chat riemerge
+// SUBITO tra i solleciti — la vecchia guardia la spediva a +14gg (rilievo
+// E3). La quindicina resta per date mancanti/non parsabili/assurde future.
 function normalizzaRinvio(raw: any, stato: StatoTriage): string | null {
     if (stato !== "programmata") return null;
     const quindicina = () => new Date(Date.now() + 14 * 86400000).toISOString();
     const m = String(raw || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!m) return quindicina();
     const ts = Date.parse(`${m[1]}-${m[2]}-${m[3]}T06:00:00Z`);
-    if (isNaN(ts) || ts < Date.now() - 86400000 || ts > Date.now() + 400 * 86400000) return quindicina();
-    return new Date(ts).toISOString();
+    if (isNaN(ts) || ts > Date.now() + 400 * 86400000) return quindicina();
+    return new Date(Math.max(ts, Date.now() - 86400000)).toISOString();
 }
 
 async function classificaUna(conv: { id: string; customer_name: string | null; last_message_at: string; chiusa_il: string | null }) {
+    // tie-break su id (created_at identici dei backfill, stesso motivo del
+    // widget) e 60 righe grezze: le reazioni/righe di servizio che il filtro
+    // scarta non devono consumare il budget delle 30 utili (rilievo B2)
     const { data: msgs } = await supabase.from("wa_messages")
         .select("direction, body, media_mime, status, wa_timestamp, created_at")
         .eq("conversation_id", conv.id).is("deleted_at", null)
-        .order("created_at", { ascending: false }).limit(30);
+        .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(60);
     const tr = costruisciTrascrizione((msgs || []) as RigaMsg[]);
     const fingerprint = new Date(Math.max(
         tr?.ultimoTs || 0, new Date(conv.last_message_at).getTime()
@@ -142,13 +156,17 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
         model: MODEL_FAST, maxTokens: 220, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
     });
     const out = estraiJson(res.message.content || "");
-    const stato: StatoTriage = STATI.includes(out?.stato) ? out.stato : "rispondere"; // risposta rotta → prudenza: meglio in lista che sparita
+    // risposta rotta o stato sconosciuto → NIENTE upsert: la chat resta alle
+    // euristiche e si ritenta al giro dopo. Il vecchio fallback «rispondere»
+    // con fingerprint fresco piantava un rosso cieco che nessuno riprendeva
+    // più in mano (rilievo E1)
+    if (!out || !STATI.includes(out.stato)) return { riga: null, usage: res.usage };
+    const stato: StatoTriage = out.stato;
     return {
         riga: {
             ...base, stato,
-            azione: String(out?.azione || "").slice(0, 140) || null,
-            rinvio_fino: normalizzaRinvio(out?.rinvio_fino, stato),
-            errore: out ? null : "risposta non JSON",
+            azione: String(out.azione || "").slice(0, 140) || null,
+            rinvio_fino: normalizzaRinvio(out.rinvio_fino, stato),
         },
         usage: res.usage,
     };
@@ -216,14 +234,19 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
         rimanenti = daFare.length - lotto.length;
 
         // pool di lavoro a CONCORRENZA fissa; sul 402 (credito finito) si
-        // smette subito: inutile bruciare 60 tentativi identici
+        // smette subito: inutile bruciare 60 tentativi identici. Il budget di
+        // tempo tiene la corsa SEMPRE sotto i 3' del lock morto (rilievo A2):
+        // quel che non entra resta in `rimanenti` per il giro dopo
         let idx = 0;
         const lavora = async () => {
-            while (idx < lotto.length && !senzaCredito) {
+            while (idx < lotto.length && !senzaCredito && Date.now() - inizio < SCADENZA_CORSA_MS) {
                 const conv = lotto[idx++];
                 try {
                     const { riga, usage } = await classificaUna(conv as any);
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
+                    // riga null = risposta del modello inservibile: niente
+                    // upsert, la chat resta alle euristiche e si ritenta
+                    if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
                     const { error } = await supabase.from("wa_triage").upsert(riga, { onConflict: "conversation_id" });
                     if (error) { errori++; if (!primoErrore) primoErrore = error.message; continue; }
                     if (usage) classificate++; else dirette++;
@@ -231,12 +254,14 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
                     errori++;
                     const msg = String(e?.message || e);
                     if (!primoErrore) primoErrore = msg.slice(0, 200);
-                    if (msg.includes("Insufficient Balance") || msg.includes("402")) senzaCredito = true;
+                    // match STRETTO (rilievo E2: un generico «402» nel testo di
+                    // un altro errore armava il freno-credito per un'ora)
+                    if (msg.includes("Insufficient Balance") || msg.startsWith("DeepSeek 402")) senzaCredito = true;
                 }
             }
         };
         await Promise.all(Array.from({ length: CONCORRENZA }, lavora));
-        if (senzaCredito) rimanenti = daFare.length - classificate - dirette;
+        rimanenti = Math.max(0, daFare.length - classificate - dirette - errori);
 
         const costoUsd = estimateCost(MODEL_FAST, promptTok, complTok);
         const esito = senzaCredito

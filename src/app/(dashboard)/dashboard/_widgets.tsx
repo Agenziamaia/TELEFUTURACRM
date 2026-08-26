@@ -1520,23 +1520,20 @@ function WidgetWhatsApp({ ctx, size }) {
     // suo, poi al periodo generale della Home (in alto a destra)
     const [periodoW, setPeriodoW] = useState("");
     useEffect(() => { const t = setInterval(() => setGiro((g) => g + 1), 120000); return () => clearInterval(t); }, []);
-    // sveglia il MOTORE DI TRIAGE AI (fire-and-forget): classifica le chat
-    // con messaggi nuovi — lock/debounce stanno nel server (corsaTriage), qui
-    // solo 3' di parsimonia sui remount; a catena max 5 giri per smaltire
-    // l'arretrato la prima volta. Se l'AI non può girare (niente credito),
-    // il widget resta sulle regole euristiche qui sotto: nessun buco.
+    // sveglia il MOTORE DI TRIAGE AI (fire-and-forget): UN solo giro —
+    // lock/debounce stanno nel server (corsaTriage), qui solo 3' di
+    // parsimonia sui remount. L'arretrato lo smaltisce il cron a lotti
+    // (una catena client qui era codice morto: il debounce server boccia
+    // sempre il secondo giro ravvicinato — rilievo revisore D1). Se l'AI
+    // non può girare (niente credito), restano le euristiche: nessun buco.
     useEffect(() => {
         const ora = Date.now();
         if (ora - corsaTriageClient.t < 3 * 60000) return;
         corsaTriageClient.t = ora;
-        let giri = 0;
-        const corri = () => fetch("/api/whatsapp/triage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        fetch("/api/whatsapp/triage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
             .then((r) => r.json())
-            .then((j) => {
-                if (j && j.classificate > 0) setGiro((g) => g + 1);
-                if (j && j.rimanenti > 0 && j.classificate > 0 && ++giri < 5) corri();
-            }).catch(() => { });
-        corri();
+            .then((j) => { if (j && j.classificate > 0) setGiro((g) => g + 1); })
+            .catch(() => { });
     }, []);
     useEffect(() => {
         let vivo = true;
@@ -1668,26 +1665,36 @@ function WidgetWhatsApp({ ctx, size }) {
                 // messaggio PIÙ NUOVO (di chiunque): dopo, si rivaluta
                 const chiusaOk = c?.chiusa_il && new Date(c.chiusa_il).getTime() >= ultimo.t - 1500;
                 // ── prima parola al TRIAGE AI, se ha letto fino all'ultimo
-                // messaggio; il ✓ manuale vince comunque su tutto ──
+                // messaggio (tolleranza 2500 ≥ dei 2000 del motore, mai il
+                // contrario: una chat non deve restare per sempre «stantia»
+                // qui e «già fatta» là); il ✓ manuale vince comunque ──
                 const tri = triMap.get(cid);
-                if (tri && new Date(tri.ultimo_msg_ts).getTime() >= ultimo.t - 1500) {
+                if (tri && new Date(tri.ultimo_msg_ts).getTime() >= ultimo.t - 2500) {
+                    // rinvio mancante su una programmata = trattala scaduta
+                    // (mai una chat invisibile per sempre — rilievo revisore)
+                    const rinvio = tri.stato === "programmata" ? (tri.rinvio_fino ? new Date(tri.rinvio_fino).getTime() : ultimo.t) : 0;
+                    if (chiusaOk) {
+                        // come il ramo euristico: conta «conclusa fuori elenco»
+                        // solo se il ✓ ha tolto una chat che SAREBBE in lista
+                        if (tri.stato === "rispondere" || tri.stato === "attesa_cliente" || (tri.stato === "programmata" && rinvio <= adessoMs)) concluse++;
+                        return;
+                    }
                     aiFresche++;
-                    if (chiusaOk) { concluse++; return; }
                     if (tri.stato === "rispondere") {
                         let i = arr.length - 1, daT = ultimo.t;   // inizio del blocco finale del cliente
                         while (i >= 0 && arr[i].direction === "in") { daT = arr[i].t; i--; }
-                        daRisp.push({ id: cid, nome: nomeChat, da: daT, azione: tri.azione });
+                        daRisp.push({ id: cid, nome: nomeChat, da: daT, fine: ultimo.t, azione: tri.azione });
                     } else if (tri.stato === "attesa_cliente") {
                         // regola business FUORI dall'AI: i numeri del call center
                         // (contatti a freddo) non generano mai attese azzurre
-                        if (!ccIds.has(c?.instance_id)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t, azione: tri.azione });
+                        if (!ccIds.has(c?.instance_id)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t, fine: ultimo.t, azione: tri.azione });
                     } else if (tri.stato === "programmata") {
                         // rinvio esplicito («ci sentiamo a settembre»): dorme
-                        // fino alla data, poi riemerge tra i solleciti
-                        const r = tri.rinvio_fino ? new Date(tri.rinvio_fino).getTime() : 0;
-                        if (r && r <= adessoMs) {
-                            if (!ccIds.has(c?.instance_id)) attesa.push({ id: cid, nome: nomeChat, da: r, azione: tri.azione || "riprendere il contatto", ripresa: true });
-                        } else agendate++;
+                        // fino alla data, poi riemerge tra i solleciti — i
+                        // numeri cc non riemergeranno mai: fuori anche dal 🗓
+                        if (ccIds.has(c?.instance_id)) return;
+                        if (rinvio <= adessoMs) attesa.push({ id: cid, nome: nomeChat, da: Math.min(rinvio, adessoMs), fine: ultimo.t, azione: tri.azione || "riprendere il contatto", ripresa: true });
+                        else agendate++;
                     } else concluse++;   // "niente": conclusa/rifiuto/promo senza risposta
                     return;
                 }
@@ -1707,7 +1714,7 @@ function WidgetWhatsApp({ ctx, size }) {
                     // FATTO dal cliente (lista azzurra, non rosso: nessuno
                     // deve «rispondere» a quell'ok — semmai sollecitare)
                     if (confermaSecca(testoBlocco)) {
-                        if (prevOut && richiedeRisposta(prevOut.body)) { attesa.push({ id: cid, nome: nomeChat, da: prevOut.t }); return; }
+                        if (prevOut && richiedeRisposta(prevOut.body)) { attesa.push({ id: cid, nome: nomeChat, da: prevOut.t, fine: ultimo.t }); return; }
                         if (prevOut) { concluse++; return; }
                     }
                     // risposta alle NOSTRE quattro chiacchiere («te come
@@ -1715,7 +1722,7 @@ function WidgetWhatsApp({ ctx, size }) {
                     // chiacchiera breve senza domande né richieste = conclusa
                     if (prevOut && domandaDiCortesia(prevOut.body) && !testoBlocco.includes("?") && testoBlocco.length <= 80
                         && !/quando|posso|potete|vorrei|serve|prezzo|costo|richiam|mandi|invii|aiut/.test(testoBlocco.toLowerCase())) { concluse++; return; }
-                    daRisp.push({ id: cid, nome: nomeChat, da: blocco[0].t });
+                    daRisp.push({ id: cid, nome: nomeChat, da: blocco[0].t, fine: ultimo.t });
                 } else {
                     // chiusa a mano dopo la nostra richiesta: non aspettiamo
                     // più — conta tra le concluse solo se sarebbe stata in lista
@@ -1725,7 +1732,7 @@ function WidgetWhatsApp({ ctx, size }) {
                     if (ccIds.has(c?.instance_id)) return;
                     // ultima parola NOSTRA che chiede qualcosa → aspettiamo
                     // il cliente: da non dimenticare (sollecito)
-                    if (richiedeRisposta(ultimo.body)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t });
+                    if (richiedeRisposta(ultimo.body)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t, fine: ultimo.t });
                 }
             });
             daRisp.sort((a, b) => a.da - b.da);
@@ -1747,11 +1754,14 @@ function WidgetWhatsApp({ ctx, size }) {
     // ✓ su una riga (da rispondere O in attesa): la chat è a posto così —
     // sparisce subito; se il cliente riscrive, riappare da sola. Il widget
     // può essere vecchio fino a 2 minuti: se nel frattempo è arrivato un
-    // messaggio nuovo NON si chiude sopra roba mai vista — si ricarica.
+    // messaggio nuovo NON si chiude sopra roba mai vista — si ricarica. La
+    // guardia confronta l'ULTIMO messaggio visto (a.fine), non a.da: sul
+    // blocco rosso a.da è l'inizio del blocco cliente e il ✓ restava
+    // perpetuamente inerte su ogni raffica di 2+ messaggi (rilievo revisore)
     const chiudiAlert = async (a) => {
         const { data: fresca } = await supabase.from("wa_conversations").select("last_message_at").eq("id", a.id).maybeSingle();
         const ultimoTs = fresca?.last_message_at ? new Date(fresca.last_message_at).getTime() : 0;
-        if (ultimoTs > a.da + 1500) { setGiro((g) => g + 1); return; }
+        if (ultimoTs > (a.fine ?? a.da) + 1500) { setGiro((g) => g + 1); return; }
         const { error } = await supabase.from("wa_conversations").update({ chiusa_il: new Date().toISOString() }).eq("id", a.id);
         if (error) return;
         setDati((p) => p ? {
