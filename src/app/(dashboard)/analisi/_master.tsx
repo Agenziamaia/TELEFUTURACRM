@@ -21,9 +21,11 @@
 //   le considerazioni (soglie, mancanti) si fanno sulla proiezione.
 // · TUTTO si apre nel drill fino ai contratti (Ricerca/Tracking).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SelectMulti } from "@/components/SelectPersona";
 import { contestoVfFw, calcolaAvanzamento, matchRigheGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel, PISTE_PARALLELE } from "@/lib/commissioning";
+import { W3_PALETTO_BUSINESS } from "@/lib/direzioneTargets";
+import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
 import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
@@ -221,6 +223,20 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         return { fr, t1, t2, t2Nomi, frSel, rawFr, modo, eventi, puntiPr, pr, eventiBiz, puntiBiz };
     }, [b, tab, raw, targetW3, filtroAttivo, selezione.join("|"), idxDi, codiciBrand]);
 
+    // SFRIDO DEL PALETTO: lo stesso numero che Luca imposta nella Direzione
+    // Inserimento (direzione_sfridi, pista «__paletto_business__»). Senza,
+    // le due schermate mostravano due obiettivi diversi sullo stesso KPI —
+    // la Direzione 6+1=7, il Master 6 secco.
+    const [sfridoPaletto, setSfridoPaletto] = useState(0);
+    useEffect(() => {
+        if (b !== "w3" || !tab?.month) return;
+        let vivo = true;
+        supabase.from("direzione_sfridi").select("pct")
+            .eq("brand", "windtre").eq("month", tab.month).eq("pista", "__paletto_business__").maybeSingle()
+            .then(({ data }) => { if (vivo) setSfridoPaletto(Math.round(Number(data?.pct) || 0)); });
+        return () => { vivo = false; };
+    }, [b, tab?.month]);
+
     // motore azienda sulla PRODUZIONE della selezione (le soglie decidono da
     // sole quando comparire, la produzione aggregata c'è sempre)
     const av = useMemo(() => {
@@ -278,14 +294,23 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         // questa conta solo le attivazioni P.IVA mobile che aprono il premio.
         if (b === "w3" && p.chiave === "business_piva") {
             const fatte = av?.pivaMobile ?? 0;
-            const SERVONO = 6;
+            const SERVONO = W3_PALETTO_BUSINESS;
+            const obiettivo = SERVONO + sfridoPaletto;
+            const salvo = fatte >= SERVONO;        // niente malus
+            const pieno = fatte >= obiettivo;      // cuscinetto raggiunto
             const items = (raw || []).filter((c) => /^mobile/i.test(String(c.categoria || "")) && /business/i.test(String(c.tipo_cliente || "")));
             return (
-                <SogliaBar key="paletto_biz" emoji="💼" label={`Paletto Business — P.IVA mobile (${fatte}/${SERVONO})`}
-                    punti={fatte} pezzi={fatte} soglie={[{ tier: 1, soglia_da: SERVONO }]} colore={G.colore}
-                    nota={fatte >= SERVONO
-                        ? "✅ paletto preso: il premio della gara mobile è al sicuro"
-                        : `⚠️ ne ${SERVONO - fatte === 1 ? "manca 1" : `mancano ${SERVONO - fatte}`}: sotto le ${SERVONO} il premio della gara mobile viene decurtato del 30%`}
+                <SogliaBar key="paletto_biz" emoji="💼" label={`Paletto Business — P.IVA mobile (${fatte}/${obiettivo})`}
+                    punti={fatte} pezzi={fatte}
+                    soglie={sfridoPaletto > 0
+                        ? [{ tier: 1, soglia_da: SERVONO }, { tier: 2, soglia_da: obiettivo }]
+                        : [{ tier: 1, soglia_da: SERVONO }]}
+                    colore={G.colore}
+                    nota={pieno
+                        ? "✅ paletto preso e cuscinetto pieno: il premio della gara mobile è al sicuro"
+                        : salvo
+                            ? `paletto salvo — ${obiettivo - fatte === 1 ? "ne manca 1" : `ne mancano ${obiettivo - fatte}`} al cuscinetto di sicurezza${sfridoPaletto ? ` (${SERVONO} + ${sfridoPaletto} di sfrido)` : ""}`
+                            : `⚠️ ne ${SERVONO - fatte === 1 ? "manca 1" : `mancano ${SERVONO - fatte}`} al paletto: sotto le ${SERVONO} il premio della gara mobile viene decurtato del 30%`}
                     onClick={() => apri({ titolo: "Paletto Business — attivazioni P.IVA mobile", sub: filtroLabel, items: items.map((c) => ({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: 1, g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 })) })}
                 />
             );
