@@ -53,6 +53,13 @@ const PISTE_FUORI = new Set<string>([...PISTE_PARALLELE]);
 // speciale (pct = pezzi, non percentuale)
 const SFRIDO_PALETTO = "__paletto_business__";
 
+// nome breve dei codici nelle pillole: prima parola, MA se è corta («San»)
+// si tiene anche la seconda — «San Paolo» non diventa mai «San» (Luca 27/08)
+const nomeBreve = (n: string) => {
+    const w = String(n || "").trim().split(/\s+/);
+    return w[0] && w[0].length <= 4 && w[1] ? `${w[0]} ${w[1]}` : (w[0] || n);
+};
+
 // etichette parlanti per le scale «di regola» (Luca 26/08 notte): la CB ha
 // il target Partnership (80% = premio ridotto, 100% = pieno), i Protetti
 // hanno la soglia-malus «almeno 1»
@@ -329,7 +336,7 @@ export function DirezioneInserimentoAdmin() {
                                                     className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold border transition-all",
                                                         on ? "text-white border-transparent" : "bg-white/[0.03] text-slate-500 border-white/10 hover:bg-white/10")}
                                                     style={on ? { background: bMeta.color } : undefined}>
-                                                    {on ? `${["①", "②", "③", "④", "⑤", "⑥", "⑦"][idx] || idx + 1} ` : ""}{k.negozio.split(/\s+/)[0]}
+                                                    {on ? `${["①", "②", "③", "④", "⑤", "⑥", "⑦"][idx] || idx + 1} ` : ""}{nomeBreve(k.negozio)}
                                                 </button>
                                             );
                                         })}
@@ -507,7 +514,7 @@ export function DirezioneInserimentoAdmin() {
                                                                 className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
                                                                     attuale === f.cod_gara ? "text-white border-transparent" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}
                                                                 style={attuale === f.cod_gara ? { background: bMeta.color } : undefined}>
-                                                                {f.negozio.split(/\s+/)[0]}
+                                                                {nomeBreve(f.negozio)}
                                                             </button>
                                                         ))}
                                                     </div>
