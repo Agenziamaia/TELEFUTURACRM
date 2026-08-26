@@ -40,11 +40,18 @@ export function ModuloChatOmni() {
     const [testo, setTesto] = useState("");
     const [apertoId, setApertoId] = useState<string | null>(null);
     const [valoreStaff, setValoreStaff] = useState(false);
+    const [errore, setErrore] = useState<string | null>(null);
     const fondo = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         let vivo = true;
-        caricaConversazioni(user?.id || null).then((c) => { if (vivo) setChats(c); });
+        setErrore(null);
+        caricaConversazioni(user?.id || null)
+            .then((c) => { if (vivo) setChats(c); })
+            // ⚠️ senza questo, al primo errore lo stato restava null e la
+            // schermata diceva «Carico…» per sempre, con l'errore solo in
+            // console: un guasto che sembra lentezza
+            .catch((e) => { if (vivo) { setChats([]); setErrore(String(e?.message || e)); } });
         return () => { vivo = false; };
     }, [user?.id]);
 
@@ -63,13 +70,17 @@ export function ModuloChatOmni() {
         if (!attiva) { setMessaggi(null); setRadar(null); return; }
         let vivo = true;
         setMessaggi(null); setRadar(null); setApertoId(null); setValoreStaff(false);
-        caricaMessaggi(attiva).then((m) => { if (vivo) setMessaggi(m); });
+        caricaMessaggi(attiva, user?.id || null)
+            .then((m) => { if (vivo) setMessaggi(m); })
+            .catch((e) => { if (vivo) { setMessaggi([]); setErrore(String(e?.message || e)); } });
         caricaRadar(attiva, { id: user?.id || null, nome: user?.name || null })
-            .then((r) => { if (vivo) setRadar(r); });
+            .then((r) => { if (vivo) setRadar(r); })
+            .catch((e) => { if (vivo) setErrore(String(e?.message || e)); });
         return () => { vivo = false; };
     }, [attiva?.id, user?.id, user?.name]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-    useEffect(() => { fondo.current?.scrollIntoView({ behavior: "smooth" }); }, [messaggi]);
+    // niente scroll quando non c'è ancora niente da scorrere
+    useEffect(() => { if (messaggi?.length) fondo.current?.scrollIntoView({ behavior: "smooth" }); }, [messaggi]);
 
     const cambiaTab = useCallback((t: TabOmni) => { setTab(t); setAttivaId(null); }, []);
 
@@ -95,6 +106,11 @@ export function ModuloChatOmni() {
                         ))}
                     </div>
                 </div>
+                {errore && (
+                    <div className="mx-3 mt-3 text-[11px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-3 py-2">
+                        ⚠️ {errore}
+                    </div>
+                )}
                 <div className="flex-1 overflow-y-auto p-3 space-y-1">
                     {chats === null && <p className="text-xs text-slate-500 text-center py-8">Carico le conversazioni…</p>}
                     {chats !== null && !lista.length && <p className="text-xs text-slate-500 text-center py-8">Nessuna conversazione in questo canale.</p>}
@@ -144,7 +160,7 @@ export function ModuloChatOmni() {
                                 <h3 className="font-bold text-white text-lg tracking-wide truncate">{attiva.nome}</h3>
                                 <p className="text-[10px] text-slate-400 mt-0.5 truncate">
                                     {attiva.canale === "email" ? (attiva.sottotitolo || "—")
-                                        : attiva.canale === "wa" ? (attiva.sottotitolo || "WhatsApp")
+                                        : attiva.canale === "wa" ? (attiva.numero || "WhatsApp")
                                             : "Chat interna"}
                                 </p>
                             </div>
@@ -200,7 +216,7 @@ export function ModuloChatOmni() {
             </section>
 
             {/* ══ 3 · RADAR ══ */}
-            <aside className="w-[420px] shrink-0 bg-white/[0.015] overflow-y-auto">
+            <aside key={attiva?.id || "vuoto"} className="w-[420px] shrink-0 bg-white/[0.015] overflow-y-auto">
                 {!attiva || !radar ? (
                     <p className="text-xs text-slate-500 text-center py-10">{attiva ? "Preparo il radar…" : ""}</p>
                 ) : (
@@ -262,8 +278,8 @@ export function ModuloChatOmni() {
                                                 </div>
                                                 <div className="mt-4 pt-3 border-t border-white/5">
                                                     <div className="flex justify-between items-end mb-1.5">
-                                                        <span className="text-[9px] font-bold text-slate-400">Rate pagate ({radar.hardware.rate}/{radar.hardware.rateTotali})</span>
-                                                        <span className="text-[9px] font-bold text-indigo-400">Scade tra {radar.hardware.scade}</span>
+                                                        <span className="text-[9px] font-bold text-slate-400">Rate pagate ({radar.hardware.rate}/{radar.hardware.rateTotali}{radar.hardware.stimata ? " ~" : ""})</span>
+                                                        <span className="text-[9px] font-bold text-indigo-400" title={radar.hardware.stimata ? "La durata del finanziamento non è registrata a catalogo: stimata sui 24 mesi standard" : undefined}>Scade tra {radar.hardware.scade}</span>
                                                     </div>
                                                     <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
                                                         <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${radar.hardware.percentuale}%` }} />

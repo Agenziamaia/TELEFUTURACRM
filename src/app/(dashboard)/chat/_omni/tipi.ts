@@ -33,6 +33,7 @@ export type ChatOmni = {
     iniziali: string;
     clientId: string | null;     // ⚠️ È LO STATUS: null = «Non Registrato»
     riferimento: string | null;  // numero WA o indirizzo email, per il match
+    numero?: string | null;      // WA: il numero, che va in testata e non in lista
     utenteId: string | null;     // chat interna: l'id del collega
     aggiornata: string | null;   // last_message_at, per l'ordinamento
 };
@@ -57,6 +58,7 @@ export type Hardware = {
     percentuale: number;
     scade: string;
     stato: string;
+    stimata: boolean;   // la durata non è a catalogo: 24 mesi è lo standard
 };
 
 /** CASO A — cliente registrato: AI Summary, Valore, Hardware (se c'è), Timeline */

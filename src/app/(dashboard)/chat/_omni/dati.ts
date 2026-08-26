@@ -17,7 +17,7 @@ import {
     contestoVfFw, esclusaDalleGare, matchRigheAttivazione, payEuroAttivazione,
     type ContrattoPay, type Tabellare,
 } from "@/lib/commissioning";
-import type { ChatOmni, Radar, VoceTimeline, Hardware } from "./tipi";
+import type { ChatOmni, MessaggioOmni, Radar, VoceTimeline, Hardware } from "./tipi";
 
 const iniziali = (s: string) => String(s || "?").trim().split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toUpperCase() || "#";
 
@@ -38,16 +38,23 @@ const oraBreve = (iso: string | null) => {
    il tab «Tutti» una cosa sola invece di tre liste appiccicate.          */
 export async function caricaConversazioni(meId: string | null): Promise<ChatOmni[]> {
     const [wa, em, itn] = await Promise.all([
+        // ⚠️ nullsFirst: false — in ORDER BY … DESC Postgres mette i NULL PER
+        // PRIMI: senza questo il limite si riempiva di conversazioni senza
+        // data (47 su WhatsApp, 29 sulla mail) e quelle vere restavano fuori
         supabase.from("wa_conversations")
             .select("id, customer_name, customer_number, client_id, last_preview, last_message_at, unread, chiusa_il")
-            .is("chiusa_il", null).order("last_message_at", { ascending: false }).limit(80),
+            .is("chiusa_il", null).order("last_message_at", { ascending: false, nullsFirst: false }).limit(80),
         supabase.from("email_conversations")
-            .select("id, customer_name, customer_email, client_id, subject, last_preview, last_message_at, unread, spam, trashed")
-            .eq("spam", false).eq("trashed", false).order("last_message_at", { ascending: false }).limit(80),
+            .select("id, customer_name, customer_email, client_id, subject, last_preview, last_message_at, unread, spam, trashed, archived")
+            .eq("spam", false).eq("trashed", false).eq("archived", false)
+            .order("last_message_at", { ascending: false, nullsFirst: false }).limit(80),
         meId
             ? supabase.from("chat_participants").select("conversation_id, last_read_at").eq("user_id", meId).limit(120)
             : Promise.resolve({ data: [] as { conversation_id: string; last_read_at: string | null }[] }),
     ]);
+
+    if (wa.error) throw new Error(`WhatsApp: ${wa.error.message}`);
+    if (em.error) throw new Error(`Email: ${em.error.message}`);
 
     const out: ChatOmni[] = [];
 
@@ -55,11 +62,12 @@ export async function caricaConversazioni(meId: string | null): Promise<ChatOmni
         const nome = String(c.customer_name || c.customer_number || "Sconosciuto");
         out.push({
             id: `wa:${c.id}`, canale: "wa", nome,
-            sottotitolo: String(c.customer_number || ""),
+            sottotitolo: null,          // il numero sta in testata: qui serve il messaggio
             anteprima: String(c.last_preview || ""), ora: oraBreve(c.last_message_at as string),
             daLeggere: !!c.unread, iniziali: c.client_id ? iniziali(nome) : "#",
             clientId: (c.client_id as string) || null,
             riferimento: String(c.customer_number || "") || null,
+            numero: String(c.customer_number || "") || null,
             utenteId: null, aggiornata: (c.last_message_at as string) || null,
         });
     }
@@ -89,21 +97,38 @@ export async function caricaConversazioni(meId: string | null): Promise<ChatOmni
             if (p.user_id !== meId && !altri.has(p.conversation_id)) altri.set(p.conversation_id, p.user_id);
         }
         const ids = [...new Set(altri.values())];
-        const { data: users } = ids.length
-            ? await supabase.from("app_users").select("id, name").in("id", ids).limit(200)
-            : { data: [] as { id: string; name: string }[] };
-        const nomi = new Map((users || []).map(u => [u.id, u.name]));
+        // ⚠️ la colonna è `full_name`, non `name` (che non esiste): con la
+        // colonna sbagliata la query tornava 400 e OGNI chat si chiamava
+        // «Collega» — e il confronto del CASO C cercava un venditore di nome
+        // «Collega», quindi era sempre zero a zero
+        const { data: users, error: eU } = ids.length
+            ? await supabase.from("app_users").select("id, full_name").in("id", ids).limit(200)
+            : { data: [] as { id: string; full_name: string }[], error: null };
+        if (eU) throw new Error(`Colleghi: ${eU.message}`);
+        const nomi = new Map((users || []).map(u => [u.id, u.full_name]));
+        // i GRUPPI restano fuori (il radar è un confronto a due): senza questo
+        // un gruppo da cinque compariva come chat singola con un membro a caso
+        const { data: convs } = await supabase.from("chat_conversations")
+            .select("id, type").in("id", convIds).limit(200);
+        const gruppi = new Set((convs || []).filter((c: { type?: string }) => c.type === "group").map((c: { id: string }) => c.id));
+        const letturaMia = new Map(((itn as { data?: { conversation_id: string; last_read_at: string | null }[] }).data || [])
+            .map(x => [x.conversation_id, x.last_read_at]));
         const visti = new Set<string>();
         for (const m of (ultimi.data || []) as Record<string, unknown>[]) {
             const cid = String(m.conversation_id);
             if (visti.has(cid)) continue;         // solo l'ultimo per conversazione
             visti.add(cid);
+            if (gruppi.has(cid)) continue;
             const altro = altri.get(cid);
-            if (!altro) continue;                  // gruppi: fuori dal modulo, per ora
+            if (!altro) continue;
             out.push({
                 id: `in:${cid}`, canale: "interna", nome: nomi.get(altro) || "Collega",
                 sottotitolo: null, anteprima: String(m.body || ""), ora: oraBreve(m.created_at as string),
-                daLeggere: false, iniziali: iniziali(nomi.get(altro) || "C"),
+                daLeggere: (() => {
+                    const letto = letturaMia.get(cid);
+                    return !letto || String(m.created_at) > String(letto);
+                })(),
+                iniziali: iniziali(nomi.get(altro) || "C"),
                 clientId: null, riferimento: null, utenteId: altro,
                 aggiornata: (m.created_at as string) || null,
             });
@@ -117,33 +142,53 @@ export async function caricaConversazioni(meId: string | null): Promise<ChatOmni
     });
 }
 
-/* ── I MESSAGGI DELLA CONVERSAZIONE APERTA ───────────────────────────── */
-export async function caricaMessaggi(chat: ChatOmni) {
+/* ── I MESSAGGI DELLA CONVERSAZIONE APERTA ──────────────────────────────
+   ⚠️ Le colonne sono quelle VERE, verificate a schema: `direction` (non
+   `from_me`), `wa_timestamp` e `email_date` (non `timestamp`/`sent_at`).
+   Con quelle sbagliate PostgREST rispondeva 400, il codice non guardava
+   l'errore e l'utente leggeva «Nessun messaggio» su due canali su tre.
+   Da qui in poi ogni errore viene sollevato: meglio una schermata che dice
+   cosa non ha funzionato di una che finge di essere vuota.            */
+export async function caricaMessaggi(chat: ChatOmni, meId: string | null): Promise<MessaggioOmni[]> {
     const [tipo, id] = chat.id.split(":");
     if (tipo === "wa") {
-        const { data } = await supabase.from("wa_messages")
-            .select("id, from_me, body, timestamp").eq("conversation_id", id)
-            .order("timestamp", { ascending: true }).limit(200);
+        const { data, error } = await supabase.from("wa_messages")
+            .select("id, direction, body, wa_timestamp, created_at").eq("conversation_id", id)
+            .is("deleted_at", null)
+            .order("wa_timestamp", { ascending: true, nullsFirst: true }).limit(200);
+        if (error) throw new Error(`Messaggi WhatsApp: ${error.message}`);
         return (data || []).map((m: Record<string, unknown>) => ({
-            id: String(m.id), verso: m.from_me ? "out" as const : "in" as const,
-            testo: String(m.body || ""), ora: oraBreve(m.timestamp as string),
+            id: String(m.id), verso: m.direction === "out" ? "out" as const : "in" as const,
+            testo: String(m.body || ""), ora: oraBreve((m.wa_timestamp || m.created_at) as string),
         }));
     }
     if (tipo === "em") {
-        const { data } = await supabase.from("email_messages")
-            .select("id, from_me, body_text, snippet, sent_at").eq("conversation_id", id)
-            .order("sent_at", { ascending: true }).limit(100);
+        const { data, error } = await supabase.from("email_messages")
+            .select("id, direction, body_text, subject, email_date, created_at").eq("conversation_id", id)
+            .order("email_date", { ascending: true, nullsFirst: true }).limit(100);
+        if (error) throw new Error(`Messaggi email: ${error.message}`);
         return (data || []).map((m: Record<string, unknown>) => ({
-            id: String(m.id), verso: m.from_me ? "out" as const : "in" as const,
-            testo: String(m.body_text || m.snippet || ""), ora: oraBreve(m.sent_at as string), isMail: true,
+            id: String(m.id), verso: m.direction === "out" ? "out" as const : "in" as const,
+            testo: String(m.body_text || m.subject || ""),
+            ora: oraBreve((m.email_date || m.created_at) as string), isMail: true,
         }));
     }
-    const { data } = await supabase.from("chat_messages")
+    // CHAT INTERNA: i MIEI messaggi devono stare a destra. `sender_id` c'era
+    // già nella select e veniva buttato via: tutta la conversazione appariva
+    // in arrivo, anche quello che avevo scritto io.
+    const { data, error } = await supabase.from("chat_messages")
         .select("id, body, created_at, sender_id").eq("conversation_id", id)
         .is("deleted_at", null).order("created_at", { ascending: true }).limit(200);
+    if (error) throw new Error(`Chat interna: ${error.message}`);
+    const altrui = [...new Set((data || []).map((m: Record<string, unknown>) => String(m.sender_id)).filter(x => x && x !== meId))];
+    const { data: users } = altrui.length
+        ? await supabase.from("app_users").select("id, full_name").in("id", altrui).limit(50)
+        : { data: [] as { id: string; full_name: string }[] };
+    const nomi = new Map((users || []).map(u => [u.id, u.full_name]));
     return (data || []).map((m: Record<string, unknown>) => ({
-        id: String(m.id), verso: "in" as const, testo: String(m.body || ""),
-        ora: oraBreve(m.created_at as string), autore: null,
+        id: String(m.id), verso: String(m.sender_id) === meId ? "out" as const : "in" as const,
+        testo: String(m.body || ""), ora: oraBreve(m.created_at as string),
+        autore: String(m.sender_id) === meId ? null : (nomi.get(String(m.sender_id)) || null),
     }));
 }
 
@@ -167,24 +212,31 @@ export async function caricaRadar(chat: ChatOmni, me: { id: string | null; nome:
 async function aiSummary(chat: ChatOmni): Promise<string> {
     const [tipo, id] = chat.id.split(":");
     const tab = tipo === "wa" ? "wa_triage" : "email_triage";
-    const { data } = await supabase.from(tab).select("stato, azione").eq("conversation_id", id).maybeSingle();
+    const { data, error } = await supabase.from(tab).select("stato, azione").eq("conversation_id", id).maybeSingle();
+    if (error) return "Il triage non è raggiungibile in questo momento.";
     const stato = String(data?.stato || "");
     const perche = String(data?.azione || "");
     if (!stato && !perche) return "Il triage non ha ancora letto questa conversazione.";
+    // ⚠️ GLI STATI VERI, quelli del vincolo a DB: `leggere` e `attesa` non
+    // esistono, e con la mappa sbagliata il 67% delle email mostrava lo slug
+    // grezzo nel riquadro che deve stare per primo («da_leggere — …»)
     const ETICHETTA: Record<string, string> = {
         rispondere: "Aspetta una risposta da noi",
-        leggere: "Da leggere, senza fretta",
+        da_leggere: "Da leggere, senza fretta",
+        programmata: "Già programmata",
+        attesa_cliente: "In attesa del cliente",
+        spazzatura: "Spazzatura",
         niente: "Non serve fare niente",
-        attesa: "In attesa del cliente",
     };
     return `${ETICHETTA[stato] || stato}${perche ? ` — ${perche}` : ""}`;
 }
 
 /* ── CASO A: il cliente registrato ───────────────────────────────────── */
 async function radarCliente(clientId: string, aiSummaryTxt: string): Promise<Radar> {
-    const { data: righe } = await supabase.from("contracts")
+    const { data: righe, error: eC } = await supabase.from("contracts")
         .select("id, data, brand, categoria, prodotto, offerta, negozio, stato, dettagli, is_demo, nascosta_gestione")
-        .eq("client_id", clientId).order("data", { ascending: false }).limit(200);
+        .eq("client_id", clientId).order("data", { ascending: false, nullsFirst: false }).limit(200);
+    if (eC) throw new Error(`Storia del cliente: ${eC.message}`);
     const vendite = (righe || []).filter((c: Record<string, unknown>) => !c.is_demo && !c.nascosta_gestione);
 
     return {
@@ -242,15 +294,7 @@ async function ltvServizi(vendite: Record<string, unknown>[]): Promise<{ euro: n
     const canoni = await mappaCanoni();
     let euro = 0, contate = 0, senzaPay = 0;
     for (const g of gruppi.values()) {
-        let tab: Tabellare | null = null;
-        let mese: ContrattoPay[] = [];
-        try {
-            const [t, cc] = await Promise.all([
-                caricaTabellareAzienda(g.ctx, g.mese),
-                caricaContrattiContesto(g.ctx, g.mese, g.prefix),
-            ]);
-            tab = t; mese = cc.contratti;
-        } catch { continue; }
+        const { tab, mese } = await meseContesto(g.ctx, g.mese, g.prefix);
         if (!tab) continue;
         // la SOGLIA raggiunta quel mese da tutta la produzione del contesto
         const avz = calcolaAvanzamento(tab, mese.filter((x) => !esclusaDalleGare(x)));
@@ -270,6 +314,26 @@ async function ltvServizi(vendite: Record<string, unknown>[]): Promise<{ euro: n
 }
 
 const chiave = (x: unknown) => String(x || "").trim().toLowerCase();
+
+/** un mese di un contesto si carica UNA volta: il confronto fra due colleghi
+ *  tocca gli stessi mesi, e senza cache si pagherebbe due volte */
+const _mesi = new Map<string, Promise<{ tab: Tabellare | null; mese: ContrattoPay[] }>>();
+function meseContesto(ctx: string, mese: string, prefix: string) {
+    const k = `${ctx}|${mese}`;
+    const gia = _mesi.get(k);
+    if (gia) return gia;
+    const p = (async () => {
+        try {
+            const [tab, cc] = await Promise.all([
+                caricaTabellareAzienda(ctx, mese),
+                caricaContrattiContesto(ctx, mese, prefix),
+            ]);
+            return { tab, mese: cc.contratti };
+        } catch { return { tab: null, mese: [] as ContrattoPay[] }; }
+    })();
+    _mesi.set(k, p);
+    return p;
+}
 
 function nota(contate: number, senzaPay: number, scontrinate: number): string {
     const parti = [`${contate} ${contate === 1 ? "attivazione" : "attivazioni"} a commissioning`];
@@ -306,7 +370,9 @@ function hardwareDa(vendite: Record<string, unknown>[]): Hardware | null {
     const inizio = new Date(String(tel.data));
     const mesiPassati = Math.max(0, Math.floor((Date.now() - inizio.getTime()) / (30.44 * 86400000)));
     // durata: se non la sappiamo, i 24 mesi che sono lo standard delle rate
-    const totali = Number(d["Mesi"] || 24);
+    // ⚠️ la durata NON è a catalogo: 24 è lo standard delle rate, e la UI
+    // lo dice invece di far passare una stima per un dato letto
+    const totali = 24;
     const pagate = Math.min(totali, mesiPassati);
     const restano = Math.max(0, totali - pagate);
     if (restano === 0) return null;              // finanziamento chiuso: non è più «in corso»
@@ -318,6 +384,7 @@ function hardwareDa(vendite: Record<string, unknown>[]): Hardware | null {
         percentuale: Math.round((pagate / totali) * 100),
         scade: restano === 1 ? "1 mese" : `${restano} mesi`,
         stato: "In corso",
+        stimata: true,
     };
 }
 
@@ -336,11 +403,11 @@ function timelineDa(vendite: Record<string, unknown>[]): VoceTimeline[] {
             icona: arr.some(x => String((x.dettagli as Record<string, unknown>)?.categoria_catalogo || "") === "Telefono a Rate") ? "📱" : "💰",
             coloreIcona: "text-amber-500 border-amber-500/50 bg-amber-500/10",
             data: new Date(g).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }),
-            titolo: String(arr[0].negozio || "Vendita"),
+            titolo: [...new Set(arr.map((x) => String(x.negozio || "")).filter(Boolean))].join(" · ") || "Vendita",
             sottotitolo: `${arr.length} ${arr.length === 1 ? "contratto" : "contratti"} · ${brands.join(" · ")}`,
             dettagli: arr.map((x) => ({
-                brand: `${x.brand} · ${x.categoria}`,
-                desc: `${x.prodotto || ""} — ${x.offerta || ""}`.trim(),
+                brand: [x.brand, x.categoria].map(String).filter((v, k, a) => v && a.indexOf(v) === k).join(" · "),
+                desc: [x.prodotto, x.offerta].map((v) => String(v || "").trim()).filter(Boolean).join(" — "),
                 stato: (x.stato as string) || null,
                 logo: "🌀",
             })),
@@ -355,27 +422,34 @@ function timelineDa(vendite: Record<string, unknown>[]): VoceTimeline[] {
 async function radarStaff(chat: ChatOmni, me: { id: string | null; nome: string | null }): Promise<Radar> {
     const oggi = new Date();
     const ymd = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
-    const { data } = await supabase.from("contracts")
-        .select("id, venditore, dettagli, is_demo, nascosta_gestione, stato")
-        .eq("data", ymd).limit(500);
+    // solo i due che si stanno confrontando: due filtri invece di scaricare
+    // tutta la giornata della rete e cercarci dentro (e senza `order` il
+    // limite tagliava righe a caso nei giorni di picco)
+    const nomi = [chat.nome, me.nome].filter(Boolean) as string[];
+    const { data, error } = nomi.length
+        ? await supabase.from("contracts")
+            .select("id, data, brand, negozio, categoria, prodotto, offerta, stato, dettagli, venditore, is_demo, nascosta_gestione")
+            .eq("data", ymd).in("venditore", nomi).order("id").limit(400)
+        : { data: [], error: null };
+    if (error) throw new Error(`Attivazioni di oggi: ${error.message}`);
     const valide = (data || []).filter((c: Record<string, unknown>) =>
         String(c.id).startsWith("CTR-") && !c.is_demo && !c.nascosta_gestione && !/annull/i.test(String(c.stato || "")));
-    const conta = (nome: string | null) => {
-        const mie = valide.filter((c) => String(c.venditore || "").trim().toLowerCase() === String(nome || "").trim().toLowerCase());
-        let euro = 0;
-        for (const c of mie) {
-            const d = (c.dettagli || {}) as Record<string, unknown>;
-            euro += Number(d["Prezzo"] ?? d["Importo"] ?? 0);
-        }
-        return { pezzi: mie.length, valore: Math.round(euro * 100) / 100 };
+
+    // «valore generato» è la STESSA cosa del cliente: il commissioning
+    // dell'attivazione (Luca 26/08). Niente scontrinato: non è ancora
+    // valorizzato, e infatti le righe EXT- restano fuori anche dai pezzi.
+    const conta = async (nome: string | null) => {
+        const mie = valide.filter((c) => chiave(c.venditore) === chiave(nome));
+        const { euro } = mie.length ? await ltvServizi(mie) : { euro: 0 };
+        return { pezzi: mie.length, valore: euro };
     };
-    const loroC = conta(chat.nome), tuoC = conta(me.nome);
+    const [loroC, tuoC] = await Promise.all([conta(chat.nome), conta(me.nome)]);
     return {
         tipo: "staff", stato: "Staff",
         umore: tuoC.pezzi >= loroC.pezzi ? "Sei avanti" : "Sei dietro",
         coloreUmore: tuoC.pezzi >= loroC.pezzi ? "emerald" : "indigo",
         aiSummary: tuoC.pezzi === loroC.pezzi
-            ? `Oggi siete pari: ${tuoC.pezzi} pezzi a testa.`
+            ? `Oggi siete pari: ${tuoC.pezzi} ${tuoC.pezzi === 1 ? "pezzo" : "pezzi"} a testa.`
             : tuoC.pezzi > loroC.pezzi
                 ? `Oggi sei avanti di ${tuoC.pezzi - loroC.pezzi} ${tuoC.pezzi - loroC.pezzi === 1 ? "pezzo" : "pezzi"}.`
                 : `Oggi ${chat.nome} è avanti di ${loroC.pezzi - tuoC.pezzi} ${loroC.pezzi - tuoC.pezzi === 1 ? "pezzo" : "pezzi"}.`,
