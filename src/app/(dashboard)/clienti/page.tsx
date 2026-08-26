@@ -290,8 +290,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const [disdetteRaw, setDisdetteRaw] = useState<DisdettaRaw[]>([]);
     useEffect(() => {
         (async () => {
-            // la colonna è `status` (inglese) — beccato dal collaudo sul caso Melis
-            const { data, error } = await supabase.from("richieste_disdette").select("id, brand, status, storico").eq("client_id", cliente.id);
+            // la colonna è `status` (inglese) — beccato dal collaudo sul caso
+            // Melis; order(id) = tie-break stabile per i ticket gemelli
+            const { data, error } = await supabase.from("richieste_disdette").select("id, brand, status, storico").eq("client_id", cliente.id).order("id");
             if (error) { setDisdetteRaw([]); return; }   // tabella assente pre-mig. 125: timeline invariata
             setDisdetteRaw(((data ?? []) as { id: string; brand: string; status: string | null; storico: unknown }[]).map((r) => ({
                 id: r.id, brand: r.brand, stato: r.status ?? null,
@@ -413,7 +414,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
             const g0 = String(r.storico.find((e) => e.quando)?.quando || "").slice(0, 10);
             if (!g0) return;
             const delta = Math.abs(new Date(g).getTime() - new Date(g0).getTime());
-            if (delta < dist) { dist = delta; best = r.id; }
+            // a parità di giorno (ticket gemelli, 10 clienti reali) vince
+            // sempre l'id minore: assegnazione stabile tra sessioni (revisore)
+            if (delta < dist || (delta === dist && best != null && r.id < best)) { dist = delta; best = r.id; }
         });
         if (best) docsSuDisdetta.set(best, (docsSuDisdetta.get(best) || 0) + 1);
     });
@@ -959,7 +962,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     // DOCUMENTI D'IDENTITÀ (Luca 08/08): niente livello brand né mesi —
                                     // apri la categoria e vedi i file del cliente. Il brand distingue
                                     // solo i CONTRATTI (le altre categorie tengono brand→mesi).
-                                    const catPiatta = cat.id === "documento";
+                                    // «disdetta» piatta come i documenti d'identità: i file dei
+                                    // ticket hanno contract_id NULL by design e nel ramo brand
+                                    // finivano sotto «Contratti eliminati» — falso (revisore 26/08)
+                                    const catPiatta = cat.id === "documento" || cat.id === "disdetta";
                                     const filePiatti = catPiatta
                                         ? [...new Map([...perBrand.values()].flatMap((pm) => [...pm.values()].flat()).map((f) => [f.key, f])).values()]
                                         : [];
