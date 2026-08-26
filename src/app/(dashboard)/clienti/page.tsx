@@ -467,80 +467,112 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
+    // ── MASTER DASHBOARD FLUTTUANTE (Luca 26/08, scheletro Gemini innestato
+    //    sulla logica esistente): console centrale max-w-[1300px] h-[90vh],
+    //    header FOTOGRAFICO (business/consumer da /public/clienti), colonna
+    //    sinistra 320px con KPI/azioni/WhatsApp, tab a destra con underline
+    //    viola. Dark-only per scelta di design (palette #0c0d14/#161722).
+    const isBiz = cliente.tipo === "business";
+    const heroImg = isBiz ? "/clienti/hero-business.jpg" : "/clienti/hero-consumer.jpg";
+    const iniziali = (nomeCompleto || "?").split(/\s+/).map((w) => w.charAt(0)).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+    const pratAttive = contratti.filter((c) => c.stato === "Attivato").length;
+    const nFileVisibili = new Set(docs.filter((d) => isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly).map((d) => d.file_url)).size;
+    const EMOJI_CAT: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾", dichiarazione_usato: "♻️", smarrito: "⚠️", archiviato: "🗄️", altro: "📁" };
     return (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            {/* max-w-6xl (Luca 01/08): a 4xl le due colonne stavano strette e si leggeva piccolo */}
-            <div className="glass-panel w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl border-white/10">
-                {/* MODAL HEADER */}
-                <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-                    <div className="flex items-center gap-4 min-w-0">
-                        {/* badge INCOLONNATI a sinistra del nome (tipo sopra, ID sotto) — richiesta Luca */}
-                        <div className="flex flex-col gap-1 items-start shrink-0">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
-                                {cliente.tipo}
-                            </span>
-                            <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 tracking-widest font-mono">
-                                {cliente.id}
-                            </span>
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 lg:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="relative w-full max-w-[1300px] h-[92vh] bg-[#0c0d14]/95 backdrop-blur-2xl border border-[#262836] rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(124,58,237,0.05)] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
+
+                {/* ═══ HEADER FOTOGRAFICO ═══ */}
+                <div className="h-32 sm:h-36 border-b border-[#262836] flex items-end shrink-0 relative overflow-hidden bg-cover bg-center"
+                    style={{ backgroundImage: `url(${heroImg})` }}>
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d14] via-[#0c0d14]/80 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#0c0d14] via-transparent to-transparent" />
+                    <div className="flex gap-4 sm:gap-5 items-end relative z-10 w-full p-5 sm:p-6 pb-4">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-[#0c0d14]/80 backdrop-blur-md border border-[#262836] flex items-center justify-center font-black text-2xl sm:text-3xl shadow-[0_0_30px_rgba(0,0,0,0.8)] relative shrink-0">
+                            <span className="bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent">{iniziali}</span>
+                            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 border-[#0c0d14] ${isBiz ? "bg-amber-500" : "bg-[#10b981]"}`} />
                         </div>
-                        <h2 className="text-xl font-bold text-white uppercase tracking-tight truncate">
-                            {nomeCompleto}
-                        </h2>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        {/* STORICO CONVERSAZIONI (Luca 29/07): chiamate inbound/outbound + registrazioni Aircall */}
-                        <button onClick={() => setShowStorico(true)}
-                            className="px-3 py-2 rounded-full border border-white/20 bg-transparent text-slate-200 hover:bg-white/5 text-xs font-semibold flex items-center gap-1.5">
-                            📞 Storico chiamate
-                        </button>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
-                            <X className="w-6 h-6" />
-                        </button>
+                        <div className="flex-1 min-w-0 pb-0.5">
+                            <div className="flex items-center gap-3 mb-1 min-w-0">
+                                <h2 className="text-xl sm:text-3xl font-black text-white tracking-tight uppercase drop-shadow-lg truncate">{nomeCompleto}</h2>
+                                <span className={`shrink-0 text-[9px] font-black border px-2.5 py-1 rounded-md uppercase tracking-widest backdrop-blur-md ${isBiz ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]"}`}>{cliente.tipo}</span>
+                            </div>
+                            <div className="flex items-center gap-4 text-[11px] sm:text-sm font-mono text-gray-300 drop-shadow-sm min-w-0 flex-wrap">
+                                <span className="flex items-center gap-1.5 min-w-0"><span className="text-gray-500">{isBiz ? "P.IVA" : "CF"}:</span> <span className="truncate">{cliente.cf_piva || "—"}</span></span>
+                                {cliente.cellulare && <span className="flex items-center gap-1.5">📞 {cliente.cellulare}</span>}
+                                <span className="text-gray-500">{cliente.id}</span>
+                            </div>
+                        </div>
+                        {/* STORICO CHIAMATE nel top header (regola Luca) + chiudi */}
+                        <div className="flex gap-2 pb-0.5 shrink-0">
+                            <button onClick={() => setShowStorico(true)}
+                                className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-xs font-bold text-white px-3.5 py-2 rounded-xl transition-all shadow-lg flex items-center gap-1.5">
+                                📞 <span className="hidden sm:inline">Storico chiamate</span>
+                            </button>
+                            <button onClick={onClose} title="Chiudi"
+                                className="w-9 h-9 bg-black/40 hover:bg-red-500/80 backdrop-blur-md border border-white/10 hover:border-red-500 text-white rounded-xl flex items-center justify-center transition-all shadow-lg">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 {showStorico && <StoricoChiamateCliente cliente={cliente} onClose={() => setShowStorico(false)} />}
 
-                {/* MODAL BODY — due colonne: profilo a sinistra, schede a destra */}
-                <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-                  <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 items-start">
+                {/* ═══ CORPO: colonna sinistra 320px + tab a destra ═══ */}
+                <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0">
 
-                    {/* ───────── COLONNA SINISTRA: profilo + portafoglio ───────── */}
-                    <div className="space-y-4">
-                        <div className="glass-card p-5">
-                            <div className="flex items-center gap-4 mb-5">
-                                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black text-white shrink-0"
-                                    style={{ background: cliente.tipo === "business" ? "linear-gradient(135deg,#f59e0b,#b45309)" : "linear-gradient(135deg,#6366f1,#a855f7)" }}>
-                                    {iniziale}
-                                </div>
-                                <div className="min-w-0">
-                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{cliente.tipo === "business" ? "Partita IVA" : "Codice Fiscale"}</div>
-                                    <div className="text-sm font-bold text-slate-100 font-mono truncate">{cliente.cf_piva || "—"}</div>
-                                </div>
+                    {/* ───────── COLONNA SINISTRA ───────── */}
+                    <div className="lg:w-[320px] shrink-0 lg:border-r border-b lg:border-b-0 border-[#262836] bg-[#0c0d14]/50 p-5 flex flex-col gap-4 lg:overflow-y-auto scrollbar-hide">
+                        {/* KPI banners — dati VERI del cliente, niente numeri finti */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-[#161722] border border-[#262836] p-3.5 rounded-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-[#10b981]/10 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-150" />
+                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Pratiche</span>
+                                <span className="text-lg font-black text-[#10b981] relative z-10">{pratAttive} <span className="text-[11px] text-gray-500 font-bold">attive / {contratti.length}</span></span>
                             </div>
-
-                            {/* azioni rapide */}
-                            <div className="grid grid-cols-3 gap-2 pb-5 border-b border-white/5">
-                                <button onClick={async () => { if (!cliente.cellulare) return; const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
-                                    disabled={!cliente.cellulare} title="Chiama con Aircall"
-                                    className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 hover:bg-indigo-500/20 text-[11px] font-bold disabled:opacity-30 disabled:cursor-not-allowed">
-                                    <span className="text-lg">📞</span> Chiama
-                                </button>
-                                {cliente.cellulare
-                                    ? <Link href={"/chat?wa=" + String(cliente.cellulare).replace(/\D/g, "")} title="Scrivi su WhatsApp"
-                                        className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 text-[11px] font-bold"><span className="text-lg">💬</span> WhatsApp</Link>
-                                    : <div className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-slate-600 text-[11px] font-bold opacity-40"><span className="text-lg">💬</span> WhatsApp</div>}
-                                {cliente.email
-                                    ? <Link href={"/chat?mail=" + encodeURIComponent(cliente.email)} title="Scrivi una email"
-                                        className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-[11px] font-bold"><span className="text-lg">✉️</span> Email</Link>
-                                    : <div className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-slate-600 text-[11px] font-bold opacity-40"><span className="text-lg">✉️</span> Email</div>}
+                            <div className="bg-[#161722] border border-[#262836] p-3.5 rounded-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-[#7c3aed]/10 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-150" />
+                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Documenti</span>
+                                <span className="text-lg font-black text-white relative z-10">{nFileVisibili} <span className="text-[11px] text-gray-500 font-bold">file</span></span>
                             </div>
+                        </div>
+                        {/* Pulsantiera Quick Actions (logica invariata: Aircall / chat) */}
+                        <div className="bg-[#161722] border border-[#262836] rounded-2xl p-1.5 flex gap-1">
+                            <button onClick={async () => { if (!cliente.cellulare) return; const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
+                                disabled={!cliente.cellulare} title="Chiama con Aircall"
+                                className="flex-1 py-2.5 flex flex-col items-center justify-center gap-1 hover:bg-[#262836] rounded-xl transition-colors text-gray-400 hover:text-white group disabled:opacity-30 disabled:cursor-not-allowed">
+                                <span className="text-lg group-hover:scale-110 transition-transform">📞</span>
+                                <span className="text-[9px] font-bold uppercase tracking-widest">Chiama</span>
+                            </button>
+                            {cliente.cellulare
+                                ? <Link href={"/chat?wa=" + String(cliente.cellulare).replace(/\D/g, "")} title="Scrivi su WhatsApp"
+                                    className="flex-1 py-2.5 flex flex-col items-center justify-center gap-1 hover:bg-[#10b981]/10 rounded-xl transition-colors text-gray-400 hover:text-[#10b981] group">
+                                    <span className="text-lg group-hover:scale-110 transition-transform">💬</span>
+                                    <span className="text-[9px] font-bold uppercase tracking-widest">WhatsApp</span>
+                                </Link>
+                                : <div className="flex-1 py-2.5 flex flex-col items-center justify-center gap-1 rounded-xl text-gray-600 opacity-40">
+                                    <span className="text-lg">💬</span><span className="text-[9px] font-bold uppercase tracking-widest">WhatsApp</span>
+                                </div>}
+                            {cliente.email
+                                ? <Link href={"/chat?mail=" + encodeURIComponent(cliente.email)} title="Scrivi una email"
+                                    className="flex-1 py-2.5 flex flex-col items-center justify-center gap-1 hover:bg-[#262836] rounded-xl transition-colors text-gray-400 hover:text-white group">
+                                    <span className="text-lg group-hover:scale-110 transition-transform">✉️</span>
+                                    <span className="text-[9px] font-bold uppercase tracking-widest">Email</span>
+                                </Link>
+                                : <div className="flex-1 py-2.5 flex flex-col items-center justify-center gap-1 rounded-xl text-gray-600 opacity-40">
+                                    <span className="text-lg">✉️</span><span className="text-[9px] font-bold uppercase tracking-widest">Email</span>
+                                </div>}
+                        </div>
 
-                            {/* STORICO WHATSAPP del cliente (Luca 25/08 notte): con quali
-                                numeri nostri ha parlato — un click apre LA chat esatta */}
+                        {/* CONVERSAZIONE WHATSAPP nella colonna sinistra (regola Luca):
+                            con quali numeri nostri ha parlato — un click apre LA chat */}
+                        <div className="bg-[#161722] border border-[#262836] rounded-2xl p-4">
                             <WhatsAppStoricoCliente clientId={cliente.id} />
+                        </div>
 
-                            {/* dettagli contatto */}
-                            <div className="pt-5 space-y-3">
+                        {/* Info Box — tutti i dettagli di contatto (logica invariata) */}
+                        <div className="bg-[#161722] border border-[#262836] rounded-2xl p-4">
+                            <div className="space-y-3">
                                 {/* REFERENTE (Luca 01/08): per le business va mostrato — legge nome_ref
                                     con ripiego su nome (storico caller pre-mig. 124) */}
                                 {cliente.tipo === "business" && (
@@ -578,14 +610,14 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
 
                         {/* Portafoglio servizi (contratti come card) */}
-                        <div className="glass-card p-5">
-                            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Portafoglio Servizi</h3>
-                            {contratti.length === 0 ? <p className="text-xs text-slate-600">Nessun contratto.</p> : (
+                        <div className="bg-[#161722] border border-[#262836] rounded-2xl p-4">
+                            <h3 className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-3">Portafoglio Servizi</h3>
+                            {contratti.length === 0 ? <p className="text-xs text-gray-600">Nessun contratto.</p> : (
                                 <div className="space-y-2">
                                     {contratti.slice(0, 6).map(c => (
                                         <button key={c.id} onClick={() => openContract(c.id)} title="Apri in Ricerca Vendite"
-                                            className="w-full flex items-center justify-between gap-2 p-2.5 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 text-left transition-all">
-                                            <div className="min-w-0"><div className="text-xs font-semibold text-slate-100 truncate">{c.brand}</div><div className="text-[10px] text-slate-500 truncate">{c.categoria}</div></div>
+                                            className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#0c0d14]/60 border border-[#262836] hover:border-[#7c3aed]/60 text-left transition-all">
+                                            <div className="min-w-0"><div className="text-xs font-semibold text-slate-100 truncate">{c.brand}</div><div className="text-[10px] text-gray-500 truncate">{c.categoria}</div></div>
                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 border ${c.stato === "Attivato" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : c.stato === "In Lavorazione" ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-rose-500/10 border-rose-500/20 text-rose-400"}`}>{c.stato}</span>
                                         </button>
                                     ))}
@@ -594,27 +626,29 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
                     </div>
 
-                    {/* ───────── COLONNA DESTRA: schede ───────── */}
-                    <div className="glass-card flex flex-col min-h-[440px]">
-                        <div className="flex border-b border-white/5 px-3 shrink-0">
+                    {/* ───────── COLONNA DESTRA: tabs col glow viola ───────── */}
+                    <div className="flex-1 flex flex-col bg-[#11131a] min-h-0 relative">
+                        <div className="flex px-5 sm:px-7 pt-4 border-b border-[#262836] shrink-0 gap-5 bg-[#0c0d14]/50 backdrop-blur-md sticky top-0 z-20 overflow-x-auto scrollbar-hide">
                             {/* il badge conta i FILE veri (dedup per file_url), e SOLO quelli
                                 visibili: smarriti/archiviati contano solo per l'amministrazione (MOD-14) */}
-                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${new Set(docs.filter(d => isAdminDoc || !CATEGORIE_DOC.find(c => c.match(d.file_type))?.adminOnly).map(d => d.file_url)).size})`, icon: "📎" }] : [])].map(t => (
+                            {[{ id: "timeline", label: "Timeline 360°", n: null as number | null }, { id: "contratti", label: "Contratti Registrati", n: contratti.length }, ...(vedeAllegati ? [{ id: "documenti", label: "Fascicolo Documenti", n: nFileVisibili }] : [])].map(t => (
                                 <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
-                                    className={`px-4 py-3.5 text-[13px] font-semibold flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab === t.id ? "border-indigo-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
-                                    <span>{t.icon}</span> {t.label}
+                                    className={`pb-3.5 text-[13px] font-bold transition-all relative whitespace-nowrap ${tab === t.id ? "text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                                    {t.label}
+                                    {t.n != null && <span className={`ml-1.5 text-[10px] px-2 py-0.5 rounded-full border ${tab === t.id ? "bg-[#7c3aed]/20 text-[#a855f7] border-[#7c3aed]/50" : "bg-[#262836] text-gray-400 border-transparent"}`}>{t.n}</span>}
+                                    {tab === t.id && <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[#7c3aed] rounded-t-full shadow-[0_-2px_15px_rgba(124,58,237,0.8)]" />}
                                 </button>
                             ))}
                         </div>
-                        <div className="p-5 flex-1 overflow-y-auto scrollbar-hide">
+                        <div className="p-5 sm:p-7 flex-1 lg:overflow-y-auto scrollbar-hide">
 
-                    {/* ===== TAB TIMELINE (interattiva, TML-01) ===== */}
+                    {/* ===== TAB TIMELINE (interattiva, TML-01 — layout a linea connessa) ===== */}
                     {tab === "timeline" && (timeline.length === 0 ? (
-                        <div className="text-center py-16 text-slate-600 text-sm">Nessuna attività registrata per questo cliente.</div>
+                        <div className="text-center py-16 text-gray-600 text-sm">Nessuna attività registrata per questo cliente.</div>
                     ) : (
-                        <div className="relative">
-                            <div className="absolute left-[19px] top-2 bottom-2 w-px bg-white/5" />
-                            <div className="space-y-6">
+                        <div className="max-w-3xl animate-in fade-in duration-300">
+                            <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-7">Cronologia Eventi</h3>
+                            <div className="relative border-l-2 border-[#262836] ml-4 space-y-7 pb-6">
                                 {timeline.map(ev => {
                                     // MOD-21: espandibile anche la CHIAMATA con appuntamento dentro
                                     // e il RITIRO USATO coi suoi documenti (12/08)
@@ -622,7 +656,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     const cliccabile = espandibile || !!ev.apreStorico;
                                     const aperta = espandibile && !!gruppiAperti[ev.key];
                                     return (
-                                        <div key={ev.key} className="relative">
+                                        <div key={ev.key} className="relative pl-8 group/tml">
+                                            {/* nodo sulla linea, col glow della sua tinta */}
+                                            <div className="absolute -left-[17px] top-0 w-8 h-8 rounded-full flex items-center justify-center text-sm z-10 transition-transform group-hover/tml:scale-110 bg-[#0c0d14]"
+                                                style={{ background: `color-mix(in srgb, ${ev.color} 12%, #0c0d14)`, border: `1px solid color-mix(in srgb, ${ev.color} 50%, transparent)`, boxShadow: `0 0 15px color-mix(in srgb, ${ev.color} 30%, transparent)` }}>{ev.icon}</div>
                                             <div role={cliccabile ? "button" : undefined} tabIndex={cliccabile ? 0 : undefined}
                                                 onClick={() => {
                                                     if (espandibile) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
@@ -630,27 +667,24 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 }}
                                                 onKeyDown={(e) => { if (cliccabile && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                                                 title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : (ev.appuntamenti && ev.appuntamenti.length) ? (aperta ? "Chiudi il dettaglio" : "Mostra l'appuntamento fissato") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
-                                                className={`flex gap-4 relative ${cliccabile ? "cursor-pointer group/tml rounded-xl -mx-2 px-2 py-1 -my-1 hover:bg-white/[0.03] transition-colors" : ""}`}>
-                                                {/* color-mix: le tinte stanno nei CSS var del tema (chiaro incluso) */}
-                                                <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 z-10"
-                                                    style={{ background: `color-mix(in srgb, ${ev.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${ev.color} 33%, transparent)` }}>{ev.icon}</div>
-                                                <div className="flex-1 min-w-0 pt-1.5">
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5 min-w-0">
-                                                            <span className="truncate">{ev.title}</span>
-                                                            {espandibile && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
-                                                            {ev.apreStorico && !(ev.appuntamenti && ev.appuntamenti.length) && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
-                                                        </h4>
-                                                        <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
-                                                    </div>
-                                                    <p className="text-xs text-slate-400 mt-0.5">{ev.desc}{ev.stato ? ` · ${ev.stato}` : ""}</p>
+                                                className={`bg-[#161722] border border-[#262836] p-3.5 rounded-2xl transition-colors ${cliccabile ? "cursor-pointer" : ""}`}
+                                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = `color-mix(in srgb, ${ev.color} 50%, transparent)`; }}
+                                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = ""; }}>
+                                                <p className="text-[10px] text-gray-400 font-mono mb-1">{new Date(ev.when).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <h4 className="text-sm font-bold text-white flex items-center gap-1.5 min-w-0">
+                                                        <span className="truncate">{ev.title}</span>
+                                                        {espandibile && <span className="text-gray-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                        {ev.apreStorico && !(ev.appuntamenti && ev.appuntamenti.length) && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
+                                                    </h4>
                                                 </div>
+                                                <p className="text-xs text-gray-400 mt-0.5">{ev.desc}{ev.stato ? ` · ${ev.stato}` : ""}</p>
                                             </div>
                                             {/* esplosione INLINE dei contratti del giorno: brand col logo,
                                                 tipologia/prodotto, venditore — il click sulla riga apre il
                                                 dettaglio contratto (stesso deep link della tab Contratti) */}
                                             {aperta && (
-                                                <div className="ml-14 mt-2 space-y-1.5">
+                                                <div className="pl-3 mt-2 space-y-1.5">
                                                     {/* MOD-21: l'APPUNTAMENTO fissato dalla chiamata del call center */}
                                                     {(ev.appuntamenti || []).map((a) => {
                                                         const st = APP_STATO[a.status || ""] || { label: a.status || "—", cls: "bg-slate-500/10 border-slate-500/20 text-slate-300" };
@@ -714,48 +748,49 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
                     ))}
 
-                    {/* ===== TAB CONTRATTI ===== */}
+                    {/* ===== TAB CONTRATTI (dati invariati, veste «tabella rich») ===== */}
                     {tab === "contratti" && (
-                    <div className="space-y-4">
+                    <div className="space-y-3 animate-in fade-in duration-300">
                         <div className="flex items-center justify-end">
-                            <span className="text-[10px] text-slate-500 italic">Prelevati da tracking PDA</span>
+                            <span className="text-[10px] text-gray-500 italic">Prelevati da tracking PDA</span>
                         </div>
-                        <div className="bg-white/[0.01] border border-white/5 rounded-2xl overflow-hidden">
-                            <table className="w-full text-left text-xs">
-                                <thead className="bg-white/[0.03] text-slate-500 uppercase">
-                                    <tr>
-                                        <th className="px-4 py-3 font-bold">Data</th>
-                                        <th className="px-4 py-3 font-bold">Brand</th>
-                                        <th className="px-4 py-3 font-bold">Categoria</th>
+                        <div className="bg-[#161722] border border-[#262836] rounded-2xl overflow-hidden shadow-lg overflow-x-auto">
+                            <table className="w-full text-left text-xs whitespace-nowrap">
+                                <thead className="bg-[#0c0d14]/50 border-b border-[#262836]">
+                                    <tr className="text-[#8b92a5] text-[10px] uppercase tracking-widest">
+                                        <th className="px-5 py-3.5 font-bold">Data</th>
+                                        <th className="px-5 py-3.5 font-bold">Brand</th>
+                                        <th className="px-5 py-3.5 font-bold">Categoria</th>
                                         {/* Segnalazione 97: Venditore e Negozio fra Categoria e Stato. */}
-                                        <th className="px-4 py-3 font-bold">Venditore</th>
-                                        <th className="px-4 py-3 font-bold">Negozio</th>
-                                        <th className="px-4 py-3 font-bold text-right">Stato</th>
+                                        <th className="px-5 py-3.5 font-bold">Venditore</th>
+                                        <th className="px-5 py-3.5 font-bold">Negozio</th>
+                                        <th className="px-5 py-3.5 font-bold text-right">Stato</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-white/5">
+                                <tbody className="divide-y divide-[#262836]">
                                     {contratti.length === 0 && (
-                                        <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-600">Nessun contratto per questo cliente.</td></tr>
+                                        <tr><td colSpan={6} className="px-5 py-6 text-center text-gray-600">Nessun contratto per questo cliente.</td></tr>
                                     )}
                                     {contratti.map((ctr: Contratto) => (
                                         <tr key={ctr.id} onClick={() => openContract(ctr.id)}
-                                            className="hover:bg-indigo-500/5 cursor-pointer transition-colors group" title="Apri in Ricerca Vendite">
-                                            <td className="px-4 py-3 text-slate-400 flex items-center gap-2">
-                                                <Calendar className="w-3 h-3 text-slate-600" /> {ctr.data}
+                                            className="hover:bg-[#1a1c28] cursor-pointer transition-colors group" title="Apri in Ricerca Vendite">
+                                            <td className="px-5 py-3.5 text-gray-300 font-mono">{ctr.data}</td>
+                                            <td className="px-5 py-3.5">
+                                                <span className="text-white font-bold">{ctr.brand}</span>
                                             </td>
-                                            <td className="px-4 py-3 text-white font-semibold">{ctr.brand}</td>
-                                            <td className="px-4 py-3 text-slate-400">{ctr.categoria}</td>
-                                            <td className="px-4 py-3 text-slate-300">{ctr.venditore || "—"}</td>
-                                            <td className="px-4 py-3 text-slate-400 text-xs">{ctr.negozio || "—"}</td>
-                                            <td className="px-4 py-3 text-right">
+                                            <td className="px-5 py-3.5 text-gray-400">{ctr.categoria}</td>
+                                            <td className="px-5 py-3.5 text-gray-300">{ctr.venditore || "—"}</td>
+                                            <td className="px-5 py-3.5 text-gray-400">{ctr.negozio || "—"}</td>
+                                            <td className="px-5 py-3.5 text-right">
                                                 <span className="inline-flex items-center gap-1.5">
-                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${ctr.stato === 'Attivato' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                                                        ctr.stato === 'In Lavorazione' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                                                            'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                                    <span className={`inline-flex items-center gap-1.5 text-[9px] font-bold px-2.5 py-1 rounded uppercase tracking-wider border ${ctr.stato === 'Attivato' ? 'text-[#10b981] bg-[#10b981]/10 border-[#10b981]/20' :
+                                                        ctr.stato === 'In Lavorazione' ? 'text-[#eab308] bg-[#eab308]/10 border-[#eab308]/20' :
+                                                            'text-rose-400 bg-rose-500/10 border-rose-500/20'
                                                         }`}>
+                                                        <span className={`w-1.5 h-1.5 rounded-full ${ctr.stato === 'Attivato' ? 'bg-[#10b981]' : ctr.stato === 'In Lavorazione' ? 'bg-[#eab308]' : 'bg-rose-400'}`} />
                                                         {ctr.stato}
                                                     </span>
-                                                    <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-indigo-400 transition-colors" />
+                                                    <ExternalLink className="w-3 h-3 text-gray-600 group-hover:text-[#a855f7] transition-colors" />
                                                 </span>
                                             </td>
                                         </tr>
@@ -766,39 +801,39 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     </div>
                     )}
 
-                    {/* ===== TAB DOCUMENTI ===== */}
-                    {tab === "documenti" && vedeAllegati && (<div className="space-y-4">
+                    {/* ===== TAB DOCUMENTI (accordion + Smart Card) ===== */}
+                    {tab === "documenti" && vedeAllegati && (<div className="space-y-4 animate-in fade-in duration-300">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
+                            <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                                <Paperclip className="w-3 h-3" /> Fascicolo Digitale
                             </h3>
                             {puoCaricareDoc && !caricaOpen && (
                                 <button onClick={() => { setCaricaOpen(true); setUpContract(contrattiCaricabili[0]?.id || ""); }}
-                                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
-                                    <Plus className="w-3.5 h-3.5" /> Carica documento
+                                    className="bg-transparent border border-[#7c3aed] text-[#a855f7] hover:bg-[#7c3aed] hover:text-white text-xs font-bold px-4 py-2 rounded-lg transition-all shadow-[0_0_15px_rgba(124,58,237,0.2)] flex items-center gap-1.5">
+                                    <Plus className="w-3.5 h-3.5" /> Upload File
                                 </button>
                             )}
                         </div>
                         {/* Segnalazione 114: carica un documento/PDA dimenticato su un contratto esistente */}
                         {caricaOpen && (
-                            <div className="bg-white/[0.02] border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                            <div className="bg-[#161722] border border-[#7c3aed]/30 rounded-2xl p-4 space-y-3">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contratto</label>
-                                        <select value={upContract} onChange={e => setUpContract(e.target.value)} className="w-full mt-1 bg-[#0f111a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Contratto</label>
+                                        <select value={upContract} onChange={e => setUpContract(e.target.value)} className="w-full mt-1 bg-[#0c0d14] border border-[#262836] rounded-lg px-3 py-2 text-sm text-white">
                                             {contrattiCaricabili.map(c => <option key={c.id} value={c.id}>{c.brand} · {c.categoria}{c.data ? " · " + new Date(c.data).toLocaleDateString("it-IT") : ""}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tipo</label>
-                                        <select value={upType} onChange={e => setUpType(e.target.value)} className="w-full mt-1 bg-[#0f111a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tipo</label>
+                                        <select value={upType} onChange={e => setUpType(e.target.value)} className="w-full mt-1 bg-[#0c0d14] border border-[#262836] rounded-lg px-3 py-2 text-sm text-white">
                                             {CATEGORIE_DOC.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
                                         </select>
                                     </div>
                                 </div>
-                                <input type="file" onChange={e => setUpFile(e.target.files?.[0] || null)} className="block w-full text-xs text-slate-400 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white/10 file:text-slate-200 file:text-xs file:font-semibold" />
+                                <input type="file" onChange={e => setUpFile(e.target.files?.[0] || null)} className="block w-full text-xs text-gray-400 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white/10 file:text-slate-200 file:text-xs file:font-semibold" />
                                 <div className="flex gap-2">
-                                    <button onClick={caricaDocumento} disabled={!upContract || !upFile || upBusy} className="flex-1 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white text-sm font-semibold flex items-center justify-center gap-2">
+                                    <button onClick={caricaDocumento} disabled={!upContract || !upFile || upBusy} className="flex-1 py-2 rounded-lg bg-[#7c3aed] hover:bg-[#6d28d9] disabled:opacity-40 text-white text-sm font-semibold flex items-center justify-center gap-2">
                                         {upBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Carica
                                     </button>
                                     <button onClick={() => { setCaricaOpen(false); setUpFile(null); }} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm">Annulla</button>
@@ -806,7 +841,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             </div>
                         )}
                         {docs.length === 0 ? (
-                            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-6 text-center text-xs text-slate-600">
+                            <div className="bg-[#161722] border border-[#262836] rounded-2xl p-6 text-center text-xs text-gray-600">
                                 Nessun documento caricato per questo cliente.
                             </div>
                         ) : (
@@ -824,23 +859,33 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     const fileCat = new Set<string>();
                                     perBrand.forEach((pm) => pm.forEach((fl) => fl.forEach((f) => fileCat.add(f.key))));
                                     const aperta = !!openCat[cat.id];
-                                    // card file riusabile (stesso markup in vista piatta e brand→mesi)
+                                    // SMART CARD (Master Dashboard 26/08): miniatura VERA per le
+                                    // immagini, emoji di categoria per il resto; overlay 👁 al
+                                    // passaggio; il click apre lightbox (immagini) o il file.
                                     const cardFile = (f: DocFile, sub: string) => {
                                         const isImmagine = /^image\//i.test(f.tipo || "") || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.nome || "");
                                         const contenuto = (
                                             <>
-                                                <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-xs text-slate-300 truncate">{f.nome}</span>
-                                                    {sub ? <span className="block text-[10px] text-slate-600 truncate">{sub}</span> : null}
-                                                </span>
-                                                <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                                <div className="h-24 bg-[#0c0d14] border-b border-[#262836] flex items-center justify-center relative overflow-hidden">
+                                                    {isImmagine
+                                                        ? <img src={f.url} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover opacity-80" />
+                                                        : <span className="text-3xl opacity-60">{EMOJI_CAT[cat.id] || "📁"}</span>}
+                                                    <div className="absolute inset-0 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                                        style={{ background: `color-mix(in srgb, ${cat.color} 55%, transparent)` }}>
+                                                        <span className="w-9 h-9 bg-white/25 rounded-full flex items-center justify-center text-white text-base backdrop-blur-md">👁️</span>
+                                                    </div>
+                                                </div>
+                                                <div className="p-2.5">
+                                                    <h4 className="text-xs font-bold text-white truncate">{f.nome}</h4>
+                                                    {sub ? <p className="text-[10px] text-gray-500 mt-0.5 truncate">{sub}</p> : null}
+                                                </div>
                                             </>
                                         );
-                                        const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
+                                        const cls = "bg-[#161722] border border-[#262836] rounded-2xl overflow-hidden group text-left w-full block transition-colors shadow-lg cursor-pointer";
+                                        const hover = { onMouseEnter: (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.borderColor = cat.color; }, onMouseLeave: (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.borderColor = ""; } };
                                         return isImmagine
-                                            ? <button key={f.key} type="button" className={cls} onClick={() => setLightbox({ src: f.url, alt: f.nome })}>{contenuto}</button>
-                                            : <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls}>{contenuto}</a>;
+                                            ? <button key={f.key} type="button" className={cls} {...hover} title={f.nome} onClick={() => setLightbox({ src: f.url, alt: f.nome })}>{contenuto}</button>
+                                            : <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls} {...hover} title={f.nome}>{contenuto}</a>;
                                     };
                                     // DOCUMENTI D'IDENTITÀ (Luca 08/08): niente livello brand né mesi —
                                     // apri la categoria e vedi i file del cliente. Il brand distingue
@@ -850,19 +895,20 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                         ? [...new Map([...perBrand.values()].flatMap((pm) => [...pm.values()].flat()).map((f) => [f.key, f])).values()]
                                         : [];
                                     return (
-                                        <div key={cat.id} className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
+                                        <div key={cat.id} className="bg-[#161722]/60 border border-[#262836] rounded-2xl overflow-hidden">
                                             <button type="button" onClick={() => setOpenCat((o) => ({ ...o, [cat.id]: !o[cat.id] }))}
                                                 className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.03] transition-colors">
-                                                {aperta ? <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />}
+                                                {aperta ? <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-500 shrink-0" />}
+                                                <span className="text-sm shrink-0">{EMOJI_CAT[cat.id] || "📁"}</span>
                                                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
                                                     style={{ color: cat.color, background: cat.color + "1f", border: "1px solid " + cat.color + "44" }}>
                                                     {cat.label}
                                                 </span>
-                                                <span className="text-[10px] text-slate-600">{fileCat.size} file</span>
+                                                <span className="text-[10px] text-gray-600">{fileCat.size} file</span>
                                             </button>
                                             {aperta && catPiatta && (
                                                 <div className="px-3 pb-3">
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                                                         {filePiatti.map((f) => cardFile(f, ""))}
                                                     </div>
                                                 </div>
@@ -877,15 +923,15 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                         const nBrand = new Set([...perMese.values()].flat().map((f) => f.key)).size;
                                                         const logo = TRK_BRAND_LOGOS[trkBrandKey(brand)];
                                                         return (
-                                                            <div key={brand} className="border border-white/5 rounded-xl overflow-hidden">
+                                                            <div key={brand} className="border border-[#262836] rounded-xl overflow-hidden bg-[#0c0d14]/40">
                                                                 <button type="button" onClick={() => setOpenBrand((o) => ({ ...o, [bKey]: !bAperta }))}
                                                                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
-                                                                    {bAperta ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                                                                    {bAperta ? <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-500 shrink-0" />}
                                                                     {logo ? <img src={logo} alt={brand} className="w-5 h-5 object-contain shrink-0" /> : null}
                                                                     <span className="text-xs font-bold text-slate-200">
                                                                         {brand === "Conservati" ? "Contratti eliminati — documenti conservati" : brand}
                                                                     </span>
-                                                                    <span className="text-[10px] text-slate-600">{nBrand} file</span>
+                                                                    <span className="text-[10px] text-gray-600">{nBrand} file</span>
                                                                 </button>
                                                                 {bAperta && (
                                                                     <div className="px-3 pb-3 space-y-2">
@@ -893,13 +939,13 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                                             <div className="flex flex-wrap gap-1.5">
                                                                                 {mesi.map((m) => (
                                                                                     <button key={m} type="button" onClick={() => setMeseSel((s) => ({ ...s, [bKey]: m }))}
-                                                                                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${m === meseAttivo ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 font-semibold" : "bg-white/[0.02] border-white/10 text-slate-400 hover:bg-white/[0.05]"}`}>
+                                                                                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${m === meseAttivo ? "bg-[#7c3aed]/20 border-[#7c3aed]/50 text-[#a855f7] font-semibold" : "bg-white/[0.02] border-[#262836] text-gray-400 hover:bg-white/[0.05]"}`}>
                                                                                         {labelMeseDoc(m)} · {new Set((perMese.get(m) || []).map((f) => f.key)).size}
                                                                                     </button>
                                                                                 ))}
                                                                             </div>
                                                                         )}
-                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                        <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                                                                             {(perMese.get(meseAttivo) || []).map((f) => {
                                                                                 const sub = (f.pratiche.length === 0
                                                                                     ? "contratto eliminato — documento conservato"
@@ -923,17 +969,16 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
                         </div>{/* /tab content */}
                     </div>{/* /colonna destra */}
-                  </div>{/* /grid */}
-                </div>
+                </div>{/* /corpo */}
 
                 {/* MODAL FOOTER */}
-                <div className="flex-none px-6 py-4 border-t border-white/10 bg-white/[0.02] flex justify-between">
+                <div className="flex-none px-6 py-3.5 border-t border-[#262836] bg-[#0c0d14]/50 flex justify-between">
                     <button
                         onClick={() => {
                             onClose();
                             window.dispatchEvent(new CustomEvent("edit-client", { detail: cliente }));
                         }}
-                        className="px-6 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest transition-all shadow-lg shadow-violet-500/20"
+                        className="px-6 py-2 rounded-xl bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-bold text-xs uppercase tracking-widest transition-all shadow-lg shadow-[#7c3aed]/20"
                     >
                         Modifica
                     </button>
