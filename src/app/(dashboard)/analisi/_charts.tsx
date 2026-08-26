@@ -359,14 +359,14 @@ export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1, unit =
 /* ── BARRA DELLE SOGLIE (Master, Luca 21/08): una pista di gara come corsa
    orizzontale — tacche alle soglie (S1..S8), riempimento animato, la
    prossima soglia pulsa; tutto hoverabile, il click apre il drill. ──────── */
-export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#818cf8", gate, malus, nota, proiezione = null, onClick, unit = "pt" }) {
+export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#818cf8", gate, malus, nota, proiezione = null, onClick, unit = "pt", targetDir = null }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
     // il PROSPECT guida le considerazioni (Luca 21/08): barra piena = attuale,
     // coda a strisce = proiezione fine mese
     const proj = proiezione != null && proiezione > punti ? Math.round(proiezione * 100) / 100 : null;
     const ultima = soglie.length ? soglie[soglie.length - 1].soglia_da : 0;
-    const max = Math.max(ultima * 1.07, punti * 1.06, (proj || 0) * 1.04, 1);
+    const max = Math.max(ultima * 1.07, punti * 1.06, (proj || 0) * 1.04, (targetDir || 0) * 1.05, 1);
     const pct = (v) => Math.min(100, (v / max) * 100);
     const presa = [...soglie].reverse().find((s) => punti >= s.soglia_da) || null;
     const prossima = soglie.find((s) => s.soglia_da > punti) || null;
@@ -414,12 +414,29 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
                         </Tip>
                     );
                 })}
+                {/* 🎯 TARGET DIREZIONE (sfrido incluso, Luca 27/08): tacca
+                    smeraldo distinta — le soglie di lettera restano bianche */}
+                {targetDir != null && targetDir > 0 && (
+                    <Tip className="absolute -inset-y-1.5 w-4 -translate-x-1/2 items-center justify-center z-20" style={{ left: `${pct(targetDir)}%` }} tip={
+                        <div>
+                            <TipTitolo>🎯 Target direzione</TipTitolo>
+                            <TipRiga l="sfrido incluso" r={fmtN(targetDir)} colore="#34d399" />
+                            <TipRiga l={punti >= targetDir ? "raggiunto" : "mancano"} r={punti >= targetDir ? "✓" : fmtPt(targetDir - punti)} />
+                        </div>
+                    }>
+                        <span className="block w-[4px] h-full rounded-full"
+                            style={{ background: "linear-gradient(180deg, #34d399, #10b981)", boxShadow: "0 0 8px #34d399" }} />
+                    </Tip>
+                )}
             </div>
             {soglie.length > 0 && (
                 <div className="relative h-3 mt-0.5">
                     {soglie.map((s) => (
                         <span key={s.tier} className="absolute -translate-x-1/2 text-[8px] text-slate-500 tabular-nums whitespace-nowrap" style={{ left: `${pct(s.soglia_da)}%` }}>{fmtN(s.soglia_da)}</span>
                     ))}
+                    {targetDir != null && targetDir > 0 && (
+                        <span className="absolute -translate-x-1/2 text-[8px] font-bold text-emerald-400 tabular-nums whitespace-nowrap" style={{ left: `${pct(targetDir)}%` }}>🎯{fmtN(targetDir)}</span>
+                    )}
                 </div>
             )}
             <div className="mt-1 flex flex-wrap items-center gap-1.5 min-h-[18px]">

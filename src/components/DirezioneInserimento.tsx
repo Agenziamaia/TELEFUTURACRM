@@ -504,6 +504,7 @@ export function DirezioneInserimentoAdmin() {
                                                         punti={avz.punti} pezzi={avz.pezzi}
                                                         soglie={(scala || []).map((s, i) => ({ tier: i + 1, soglia_da: Number(s) }))}
                                                         colore={bMeta.color} proiezione={proj}
+                                                        targetDir={target > 0 ? target : null}
                                                         unit={cbW3 ? "pt" : (p.um === "pezzi" ? "pz" : "pt")}
                                                         nota={[cbW3 ? `${avz.pezzi} eventi CB` : null, target > 0 ? `target direzione ${it(target)} · ${avz.punti < target ? `mancano ${it(Math.max(0, Math.ceil(target - avz.punti)))}` : "🎯 fatto"}` : null].filter(Boolean).join(" · ") || null}
                                                     />
