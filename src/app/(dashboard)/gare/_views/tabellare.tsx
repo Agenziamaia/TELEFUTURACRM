@@ -8,7 +8,7 @@
 // motore commissioning. Le soglie si scrivono come le pensa Luca: solo il
 // "da S1..Sn", il fino-a si ricava da solo. Un brand con SOLO il lato azienda
 // deriva il ragazzi con la "% ai ragazzi" di ogni pista.
-import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -52,6 +52,55 @@ const num = (v: string): number => {
 const chiaveAncora = (r: Record<string, unknown>) =>
     ["pista", "tipo_cliente", "categoria", "prodotto", "offerta", "opzione", "brand_vendita", "provenienza"]
         .map(k => String(r[k] ?? "").trim().toLowerCase()).join("|");
+
+/* VARIANTI DI UN'OFFERTA (Luca 26/08: «adottiamo lo stile del commissioning
+   Wind3 ovunque ci siano variabili rispetto a un'offerta, per tutti i brand»).
+   Le righe che condividono l'OFFERTA si raccolgono sotto un titolo e ognuna
+   mostra solo ciò che la distingue — la modalità di acquisizione — come
+   pillola: si legge a colpo d'occhio come cambia il pay al variare di GA/MNP,
+   ricarica pura/automatica, FTTC/FTTH… Ambra per le acquisizioni da altro
+   operatore (MNP/GNP/Tied), grigia per le altre. */
+type Gruppo<T> = { titolo: string | null; righe: { r: T; variante: string | null }[] };
+function raggruppaPerOfferta<T extends { id: string; nome: string; offerta: string | null; categoria: string | null; prodotto: string | null; opzione?: string | null; ordine: number }>(righe: T[]): Gruppo<T>[] {
+    const out: Gruppo<T>[] = [];
+    const idx = new Map<string, Gruppo<T>>();
+    for (const r of righe) {
+        const off = String(r.offerta || "").trim();
+        // senza offerta (o offerta unica nel suo gruppo) resta una riga sola
+        const k = off ? `o|${off.toLowerCase()}` : `r|${r.id}`;
+        let g = idx.get(k);
+        if (!g) { g = { titolo: off || null, righe: [] }; idx.set(k, g); out.push(g); }
+        g.righe.push({ r, variante: null });
+    }
+    const CAMPI = ["tipo_cliente", "categoria", "prodotto", "opzione", "brand_vendita", "provenienza"] as const;
+    for (const g of out) {
+        if (g.righe.length < 2) { g.titolo = null; continue; }   // gruppo di uno: riga normale
+        // si mostra SOLO ciò che varia dentro il gruppo: se tutte le righe
+        // hanno la stessa categoria, dirla su ognuna sarebbe rumore
+        const varia = CAMPI.filter(k => new Set(g.righe.map(v => String((v.r as Record<string, unknown>)[k] ?? "").toLowerCase())).size > 1);
+        for (const v of g.righe) {
+            // solo i valori presenti: un campo vuoto vuol dire «vale comunque»,
+            // scriverlo allungherebbe la pillola senza aggiungere nulla
+            const daiCampi = varia
+                .map(k => String((v.r as Record<string, unknown>)[k] ?? "").trim().replace(/^Mobile\s+/i, ""))
+                .filter(Boolean).join(" · ")
+                || (varia.length ? "base" : "");   // la riga liscia dell'offerta
+            // fallback: il nome meno il nome dell'offerta (le righe che si
+            // distinguono solo per etichetta), poi il nome intero
+            const senzaOff = v.r.nome.replace(new RegExp(`^\\s*${(g.titolo || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[·:-]?\\s*`, "i"), "").trim();
+            v.variante = daiCampi || (senzaOff && senzaOff !== v.r.nome ? senzaOff : "") || v.r.nome;
+        }
+        // se le etichette risultassero uguali fra loro (righe gemelle), meglio
+        // tornare ai nomi interi che mostrare due pillole identiche
+        if (new Set(g.righe.map(v => v.variante)).size < g.righe.length) {
+            for (const v of g.righe) v.variante = v.r.nome;
+        }
+    }
+    return out;
+}
+const pillolaVariante = (label: string) => /\b(mnp|gnp|tied)\b/i.test(label) && !/untied/i.test(label)
+    ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+    : "border-white/10 bg-white/[0.04] text-slate-300";
 
 // formato importi dei tooltip di derivazione (it-IT, max 2 decimali)
 const eurIt = (v: number | null | undefined) => v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
@@ -801,7 +850,16 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {rr.map(r => <RigaPayRagazzi key={r.id} r={r} nT={nT} senzaBase={ctx === "s4"} dopo={load} />)}
+                                                {raggruppaPerOfferta(rr).map((g, gi) => (
+                                                    <Fragment key={g.titolo ? `g${gi}` : g.righe[0].r.id}>
+                                                        {g.titolo && (
+                                                            <tr className="border-t border-white/[0.06]">
+                                                                <td colSpan={2 + (ctx === "s4" ? 0 : 1) + nT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.titolo}</td>
+                                                            </tr>
+                                                        )}
+                                                        {g.righe.map(({ r, variante }) => <RigaPayRagazzi key={r.id} r={r} nT={nT} senzaBase={ctx === "s4"} dopo={load} variante={variante} />)}
+                                                    </Fragment>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
@@ -1036,7 +1094,20 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 in % all'azienda — va detto accanto al nome (Luca
                                 25/08). Solo se un lato azienda ESISTE: su TIM/Kena
                                 la lettera è unica e il badge confonderebbe. */}
-                            {lato === "ragazzi" && aziendaEsiste && <span className="text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5">✍️ manuale — non in % dall&apos;azienda</span>}
+                            {/* QUOTA VERA, non «manuale» e basta (Luca 26/08: «in
+                                realtà sono al 100%, cambiano solo le soglie»):
+                                si confrontano gli importi con la voce azienda
+                                corrispondente e si dice la percentuale che ne esce.
+                                Solo se differiscono davvero si parla di «a mano». */}
+                            {lato === "ragazzi" && aziendaEsiste && (() => {
+                                const conf = rr.map(x => ({ mio: x.pay_tiers, loro: azDi(x)?.tiers })).filter(x => x.loro?.length);
+                                if (!conf.length) return <span className="text-[10px] font-bold text-slate-400 bg-white/[0.06] border border-white/10 rounded-full px-2 py-0.5">voci proprie dei ragazzi</span>;
+                                const pcts = conf.flatMap(x => (x.loro || []).map((v, i) => v ? Math.round(Number(x.mio[i] ?? 0) / Number(v) * 1000) / 10 : null).filter((v): v is number => v != null));
+                                const uniche = [...new Set(pcts)];
+                                const testo = uniche.length === 1 ? `= ${eurIt(uniche[0])}% dell'azienda` : "✍️ importi a mano (quota non uniforme)";
+                                return <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${uniche.length === 1 ? "text-emerald-300/90 bg-emerald-500/10 border-emerald-500/30" : "text-amber-300/90 bg-amber-500/10 border-amber-500/30"}`}
+                                    title={uniche.length === 1 ? "Gli importi coincidono con questa quota su tutte le voci confrontabili; le soglie invece hanno la loro scala" : `Quote diverse fra le voci: ${uniche.slice(0, 6).join("% · ")}%`}>{testo}</span>;
+                            })()}
                             <span className="text-xs font-normal text-slate-500">{apertaP ? "▾" : `▸ ${rr.length} voci`}</span>
                         </button>
                         {/* nascosto ma MONTATO (revisore 25/08: chiudere il
@@ -1075,7 +1146,16 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} az={azRighe ? (azDi(r) ?? null) : undefined} />)}
+                                        {raggruppaPerOfferta(rr).map((g, gi) => (
+                                            <Fragment key={g.titolo ? `g${gi}` : g.righe[0].r.id}>
+                                                {g.titolo && (
+                                                    <tr className="border-t border-white/[0.06]">
+                                                        <td colSpan={2 + (mostraRic ? 1 : 0) + (ctx === "s4" ? 0 : 1) + nTiers} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.titolo}</td>
+                                                    </tr>
+                                                )}
+                                                {g.righe.map(({ r, variante }) => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} az={azRighe ? (azDi(r) ?? null) : undefined} variante={variante} />)}
+                                            </Fragment>
+                                        ))}
                                     </tbody>
                                 </table>
                             </div>
@@ -1154,7 +1234,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
 // scrive pay_ragazzi_tiers sulla riga AZIENDA — da lì vince su % di pista e
 // mappa soglie, qui in vista e nel motore (commissioning.deriva). ↺ li toglie
 // e torna alla derivazione. Top-level (lezione CardVoce: mai annidata).
-function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senzaBase: boolean; dopo: () => void }) {
+function RigaPayRagazzi({ r, nT, senzaBase, dopo, variante }: { r: Riga; nT: number; senzaBase: boolean; dopo: () => void; variante?: string | null }) {
     const manuale = Array.isArray(r.pay_ragazzi_tiers) && (r.pay_ragazzi_tiers?.length || 0) > 0;
     const mostrati = Array.from({ length: nT }, (_, i) => r.pay_tiers[i] == null ? "" : String(r.pay_tiers[i]));
     const [draft, setDraft] = useState<string[] | null>(null);
@@ -1234,8 +1314,10 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
     ];
     return (
         <tr className="border-t border-white/5 hover:bg-white/[0.03]">
-            <td className="px-3 py-1 min-w-[170px]" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
-                {r.nome}
+            <td className={`py-1 min-w-[170px] ${variante ? "pl-7 pr-2 whitespace-nowrap" : "px-3"}`} title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>
+                {variante
+                    ? <span className={`text-[11px] px-2 py-0.5 rounded-full border ${pillolaVariante(variante)}`}>{variante}</span>
+                    : r.nome}
                 {manuale && <span className="text-amber-300/90 text-[10px] font-bold ml-1.5" title="€ fissati a mano: vincono su % di pista e mappa soglie">€ fissi</span>}
                 {r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}
             </td>
@@ -1258,7 +1340,7 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
 
 // Riga di TABELLA — top-level (lezione CardVoce: mai annidata). Aggancio e
 // note vivono nel tooltip della cella Offerta: la riga resta alta una riga.
-function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, senzaBase, az }: {
+function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, senzaBase, az, variante }: {
     r: Riga; nTiers: number; isDirty: boolean;
     onUp: (id: string, patch: Partial<Riga>) => void;
     onSalva: (r: Riga) => void; onElimina: (r: Riga) => void;
@@ -1269,10 +1351,14 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
     // undefined = non siamo nel confronto (lato azienda); null = voce
     // senza corrispondente azienda; oggetto = riferimento trovato
     az?: { base: number | null; tiers: number[] } | null;
+    // etichetta della VARIANTE quando la riga sta sotto il titolo di
+    // un'offerta (stile W3): al posto del nome si mostra la pillola
+    variante?: string | null;
 }) {
     const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") || "qualsiasi vendita";
     const tip = anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.moltiplicatore ? " · i valori sono MOLTIPLICATORI del canone mensile" : "") + (r.note ? ` — ${r.note}` : "");
     const cell = "w-full bg-transparent text-center text-sm text-white border-b border-transparent focus:border-indigo-400 outline-none py-0.5";
+    const [rinomina, setRinomina] = useState(false);   // pillola → input col ✎
     // BOLLA di confronto (Luca 26/08): sul lato ragazzi con tabellare PROPRIO
     // non c'è una derivazione da raccontare — si mostra quanto prende l'azienda
     // sulla stessa voce e la quota che ne risulta, così il giorno che si
@@ -1304,10 +1390,19 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
     };
     return (
         <tr className={`border-t border-white/5 hover:bg-white/[0.03] ${r.attivo ? "" : "opacity-40"}`}>
-            <td className="px-3 py-0.5 min-w-[170px]">
+            <td className={`py-0.5 min-w-[170px] group ${variante ? "pl-7 pr-2 whitespace-nowrap" : "px-3"}`}>
                 <div className="flex items-center gap-1">
-                    <input value={r.nome} title={tip} onChange={e => onUp(r.id, { nome: e.target.value })}
-                        className="bg-transparent text-sm text-white w-full border-b border-transparent focus:border-indigo-400 outline-none py-0.5" />
+                    {variante && !rinomina ? (
+                        <>
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full border ${pillolaVariante(variante)}`} title={tip}>{variante}</span>
+                            <button onClick={() => setRinomina(true)} title="Rinomina la voce"
+                                className="text-[10px] text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">✎</button>
+                        </>
+                    ) : (
+                        <input value={r.nome} title={tip} autoFocus={!!variante} onBlur={() => setRinomina(false)}
+                            onChange={e => onUp(r.id, { nome: e.target.value })}
+                            className="bg-transparent text-sm text-white w-full border-b border-transparent focus:border-indigo-400 outline-none py-0.5" />
+                    )}
                     {r.moltiplicatore && <span title="moltiplicatori del canone mensile" className="text-indigo-300 text-[11px] font-bold shrink-0">×</span>}
                     {r.note && <span title={tip} className="text-slate-600 text-[11px] cursor-help shrink-0">ⓘ</span>}
                 </div>
