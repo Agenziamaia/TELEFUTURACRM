@@ -745,6 +745,16 @@ function ChatPageInner() {
     <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex flex-col overflow-hidden">
       {/* interruttore: Chat interna <-> WhatsApp (stessa pagina) */}
       <div className="h-12 shrink-0 flex items-center gap-1 px-3 border-b border-white/5 bg-[#0f111a]/70">
+        {/* OMNICHAT (Luca 26/08): la quarta scheda UNISCE le altre tre e ci
+            mette accanto l'AI — recap, analisi e risposte pronte — più i dati
+            del cliente. Le tre inbox non vengono riscritte: vengono RIUSATE
+            senza la loro lista, così restano tutte le loro funzioni.
+            Compare solo a chi ha il permesso: è ancora in lavorazione. */}
+        {vedeOmni && <button onClick={() => setMode("omni")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <Sparkles className="w-4 h-4" /> Omnichat
+        </button>}
         <button onClick={() => setMode("chat")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
             mode === "chat" ? "bg-indigo-500/15 text-indigo-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
@@ -763,16 +773,6 @@ function ChatPageInner() {
           <Mail className="w-4 h-4" /> Email
           {mailUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
         </button>
-        {/* OMNICHAT (Luca 26/08): la quarta scheda UNISCE le altre tre e ci
-            mette accanto l'AI — recap, analisi e risposte pronte — più i dati
-            del cliente. Le tre inbox non vengono riscritte: vengono RIUSATE
-            senza la loro lista, così restano tutte le loro funzioni.
-            Compare solo a chi ha il permesso: è ancora in lavorazione. */}
-        {vedeOmni && <button onClick={() => setMode("omni")}
-          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
-          <Sparkles className="w-4 h-4" /> Omnichat
-        </button>}
       </div>
 
       {mode === "omni" && vedeOmni ? (

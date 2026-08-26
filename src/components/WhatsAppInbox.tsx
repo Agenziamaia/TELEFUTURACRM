@@ -501,7 +501,12 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
 
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
-            <div className="flex items-center justify-between gap-4 flex-wrap shrink-0">
+            {/* NELL'OMNICHAT LA TESTATA DEI NUMERI NON CI VA (Luca 26/08: «per
+                chi gestisce più numerazioni è un puttanaio — lì non sono nella
+                sezione WhatsApp»): scegliere il numero è un gesto di QUESTA
+                sezione, nell'Omnichat si sceglie una persona o un negozio e si
+                vede quello che vede lui, su tutti e tre i canali. */}
+            {!senzaLista && <div className="flex items-center justify-between gap-4 flex-wrap shrink-0">
                 {embedded ? (
                     <p className="text-sm font-semibold text-slate-400">I numeri che gestisci</p>
                 ) : (
@@ -551,14 +556,14 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                         <span className="text-[11px] text-slate-500">i numeri si collegano dall&apos;amministrazione</span>
                     )}
                 </div>
-            </div>
+            </div>}
 
             {/* selettore numero — PER NOME, non per numero (Luca 31/07): il
                 titolare (dipendente) o il negozio, cosi' l'admin clicca
                 "Tommaso Evangelisti" senza ricordarsi il cellulare. Ordine di
                 preferenza: nome scelto a mano → titolare → negozio → numero.
                 La matita (solo amministrazione) rinomina l'etichetta. */}
-            {visibleInstances.length > 0 && (
+            {!senzaLista && visibleInstances.length > 0 && (
                 <div className="flex gap-2 flex-wrap shrink-0 items-center">
                     {/* FILTRO (Luca 25/08 notte-6): con tanti numeri si sceglie
                         la persona/il negozio e resta solo il suo chip */}
