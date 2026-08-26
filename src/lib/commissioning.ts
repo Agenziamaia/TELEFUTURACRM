@@ -471,7 +471,9 @@ export function matchComponenti(
 ): PayRiga[] | null {
     const pista = pistaComponenti(c);
     if (!pista) return null;
-    const comp = righe.filter(r => r.attivo && r.componente && r.pista === pista);
+    // le EXTRA DA OPZIONE non sono componenti del modello W3: vivono nel
+    // pick-one come addendo (matchExtraOpzioni), non qui
+    const comp = righe.filter(r => r.attivo && r.componente && r.componente !== EXTRA_OPZIONE && r.pista === pista);
     if (!comp.length) return null;
     const flags = flagsComponenti(c);
     const out: PayRiga[] = [];
@@ -497,18 +499,64 @@ export function matchComponenti(
     return out.length ? out : null;
 }
 
+/* ═══ EXTRA DA OPZIONE (Luca 26/08, «la Protect vale 30 € e basta: non
+   servono 19 righe») ═══════════════════════════════════════════════════
+   Il pick-one paga UNA riga: un'opzione che vale «+30 €» non poteva quindi
+   essere una riga sua (avrebbe SOSTITUITO la griglia) e si era costretti a
+   duplicare ogni offerta in versione «+ opzione». Con `componente =
+   'extra_opzione'` la riga diventa un ADDENDO: resta fuori dal pick-one
+   (matchRigaTabellare salta le componenti) e si somma al set quando la sua
+   opzione è nella vendita. Una riga per contesto — es. «Protect · mobile
+   consumer +30» — invece di una per offerta.
+   Per ogni NOME di opzione vale la riga più specifica (stesso punteggio del
+   pick-one): così si può fare l'eccezione («Protect su Ultra = 0») senza
+   toccare la generale. */
+export const EXTRA_OPZIONE = "extra_opzione";
+
+export function matchExtraOpzioni(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; opzioni?: string | null },
+    brandVendita?: string | null,
+): PayRiga[] {
+    const scelte = String(c.opzioni || "").split(",")
+        .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
+    if (!scelte.length) return [];
+    const best = new Map<string, { r: PayRiga; score: number }>();
+    for (const r of righe) {
+        if (!r.attivo || r.componente !== EXTRA_OPZIONE) continue;
+        const opz = String(r.opzione || "").trim();
+        if (!opz) continue;                                  // senza opzione non è un extra
+        const req = opz.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
+        if (!req.every(t => scelte.includes(t))) continue;
+        if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
+        let score = 0;
+        if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
+        if (r.categoria != null) { if (!eq(r.categoria, c.categoria)) continue; score++; }
+        if (r.prodotto != null) { if (!eq(r.prodotto, c.prodotto)) continue; score++; }
+        if (r.offerta != null) { if (!eq(r.offerta, c.offerta)) continue; score += 2; }
+        const k = req.join("|");
+        const pre = best.get(k);
+        if (!pre || score > pre.score || (score === pre.score && r.ordine < pre.r.ordine)) best.set(k, { r, score });
+    }
+    return [...best.values()].map(x => x.r);
+}
+
 /** Righe pay della vendita: il set additivo dove esiste, altrimenti la singola
- *  riga classica (array vuoto = scopertura). La prima riga del set è la base:
- *  porta pista, gettone e moltiplicatore per chi deve mostrare i metadati. */
+ *  riga classica (array vuoto = scopertura), più gli EXTRA DA OPZIONE che si
+ *  sommano a entrambi. La prima riga del set è la base: porta pista, gettone e
+ *  moltiplicatore per chi deve mostrare i metadati. */
 export function matchRigheAttivazione(
     righe: PayRiga[],
     c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
     brandVendita?: string | null,
 ): PayRiga[] {
+    const extra = matchExtraOpzioni(righe, c, brandVendita);
     const comp = matchComponenti(righe, c);
-    if (comp) return comp;
+    if (comp) return [...comp, ...extra];
     const r = matchRigaTabellare(righe, c, brandVendita);
-    return r ? [r] : [];
+    // senza base la vendita è SCOPERTA: un extra da solo non si paga (non
+    // deve nascondere una scopertura pagando i soli 30 € dell'opzione)
+    return r ? [r, ...extra] : [];
 }
 
 /** € (o moltiplicatore totale) del set alla soglia: somma dei payPerRiga. */

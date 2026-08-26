@@ -43,6 +43,13 @@ const num = (v: string): number => {
     const n = Number(String(v).replace(",", "."));
     return Number.isFinite(n) ? n : 0;
 };
+// chiave d'ANCORA di una riga pay (le stesse condizioni che guarda il motore):
+// serve ad appaiare la voce dei ragazzi con quella azienda quando i due lati
+// hanno tabellari propri (Vodafone)
+const chiaveAncora = (r: Record<string, unknown>) =>
+    ["pista", "tipo_cliente", "categoria", "prodotto", "offerta", "opzione"]
+        .map(k => String(r[k] ?? "").trim().toLowerCase()).join("|");
+
 // formato importi dei tooltip di derivazione (it-IT, max 2 decimali)
 const eurIt = (v: number | null | undefined) => v == null ? "—" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 2 });
 
@@ -148,6 +155,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // le soglie si derivano dall'azienda × pct (arrotondate) e qui si vedono
     // in sola lettura; il riferimento azienda serve per l'anteprima
     const [aziendaRef, setAziendaRef] = useState<{ piste: { chiave: string; ordine: number; soglie_pct: number | null }[]; soglie: Soglia[] } | null>(null);
+    // righe AZIENDA indicizzate: riferimento della bolla quando il lato
+    // ragazzi ha un tabellare PROPRIO (VF) — lì non c'è derivazione, quindi
+    // la bolla confronta i due importi e dice la quota che ne esce
+    const [azRighe, setAzRighe] = useState<Map<string, { base: number | null; tiers: number[] }> | null>(null);
+    const azDi = (r: Riga) => azRighe?.get(chiaveAncora(r as unknown as Record<string, unknown>))
+        ?? azRighe?.get(`n|${String(r.pista || "")}|${String(r.nome || "").trim().toLowerCase()}`);
     // bolla stile W3 per i gettoni del derivato (le righe hanno la loro
     // dentro RigaPayRagazzi)
     const bollaGettoni = useBolla();
@@ -262,15 +275,33 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             // riferimento azienda per le SOGLIE DERIVATE (% soglie da azienda,
             // Luca 13/08): serve al pannello ragazzi CON tabellare proprio
             if (lato === "ragazzi" && (az.count || 0) > 0) {
-                const [ap2, as2] = await Promise.all([
+                const [ap2, as2, ar2] = await Promise.all([
                     supabase.from("pay_piste").select("chiave, ordine, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                     supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
+                    // righe azienda = riferimento per la BOLLA del lato ragazzi
+                    // con tabellare PROPRIO (Luca 26/08: «mettila anche su
+                    // Vodafone, non si sa mai cambiassimo idea sulla %»)
+                    supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, pay_base, pay_tiers")
+                        .eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).limit(1000),
                 ]);
                 setAziendaRef({
                     piste: ((ap2.data || []) as { chiave: string; ordine: number; soglie_pct: number | null }[]),
                     soglie: ((as2.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
                 });
-            } else setAziendaRef(null);
+                const mapa = new Map<string, { base: number | null; tiers: number[] }>();
+                for (const x of (ar2.data || []) as Record<string, unknown>[]) {
+                    const v = {
+                        base: x.pay_base == null ? null : Number(x.pay_base),
+                        tiers: Array.isArray(x.pay_tiers) ? (x.pay_tiers as unknown[]).map(Number) : [],
+                    };
+                    // due chiavi: l'ANCORA (che è ciò che il motore guarda) e il
+                    // NOME (i tabellari VF hanno spesso nomi identici ai due lati)
+                    mapa.set(chiaveAncora(x), v);
+                    const kn = `n|${String(x.pista || "")}|${String(x.nome || "").trim().toLowerCase()}`;
+                    if (!mapa.has(kn)) mapa.set(kn, v);
+                }
+                setAzRighe(mapa);
+            } else { setAziendaRef(null); setAzRighe(null); }
         }
         if (dbError("Caricamento tabellare", p.error || s.error || r.error)) { setCarico(false); return; }
         setPiste((p.data || []) as Pista[]);
@@ -1039,7 +1070,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} />)}
+                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} az={azDi(r)} />)}
                                     </tbody>
                                 </table>
                             </div>
@@ -1100,7 +1131,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             </tr>
                         </thead>
                         <tbody>
-                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={gettoni.some(g => g.ricorrente != null)} />)}
+                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={gettoni.some(g => g.ricorrente != null)} az={azDi(r)} />)}
                         </tbody>
                     </table>
                 )}
@@ -1222,16 +1253,40 @@ function RigaPayRagazzi({ r, nT, senzaBase, dopo }: { r: Riga; nT: number; senza
 
 // Riga di TABELLA — top-level (lezione CardVoce: mai annidata). Aggancio e
 // note vivono nel tooltip della cella Offerta: la riga resta alta una riga.
-function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, senzaBase }: {
+function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, senzaBase, az }: {
     r: Riga; nTiers: number; isDirty: boolean;
     onUp: (id: string, patch: Partial<Riga>) => void;
     onSalva: (r: Riga) => void; onElimina: (r: Riga) => void;
     // S4 (Luca 25/08): colonna ricorrente €/mese prima dei Punti; niente Base
     conRicorrente?: boolean; senzaBase?: boolean;
+    // riga AZIENDA corrispondente (solo lato ragazzi con tabellare proprio):
+    // alimenta la bolla «all'azienda X · qui Y · = Z%» (Luca 26/08)
+    az?: { base: number | null; tiers: number[] } | null;
 }) {
     const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") || "qualsiasi vendita";
     const tip = anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.moltiplicatore ? " · i valori sono MOLTIPLICATORI del canone mensile" : "") + (r.note ? ` — ${r.note}` : "");
     const cell = "w-full bg-transparent text-center text-sm text-white border-b border-transparent focus:border-indigo-400 outline-none py-0.5";
+    // BOLLA di confronto (Luca 26/08): sul lato ragazzi con tabellare PROPRIO
+    // non c'è una derivazione da raccontare — si mostra quanto prende l'azienda
+    // sulla stessa voce e la quota che ne risulta, così il giorno che si
+    // decidesse di passare a una % il numero è già sotto gli occhi.
+    const { mostra, nascondi, bolla } = useBolla();
+    const unita = r.moltiplicatore ? "" : " €";
+    const quota = (mio: number | null | undefined, loro: number | null | undefined): TipRiga[] | null => {
+        if (!az) return null;
+        if (loro == null) return [
+            { testo: "Voce solo dei ragazzi", stile: "formula" },
+            { testo: "· nessuna corrispondente sul lato azienda", stile: "flat" },
+            ...(mio == null ? [] : [{ testo: `= ${eurIt(mio)}${unita}`, stile: "tot" as const }]),
+        ];
+        const pct = Number(loro) === 0 ? null : Math.round((Number(mio || 0) / Number(loro)) * 1000) / 10;
+        return [
+            { testo: pct == null ? "Confronto con l'azienda" : `${eurIt(pct)}% dell'azienda`, stile: "formula" },
+            { testo: `· all'azienda: ${eurIt(loro)}${unita}`, stile: "voce" },
+            { testo: "· importo scritto a mano (tabellare proprio, nessuna derivazione)", stile: "flat" },
+            { testo: `= ${eurIt(mio)}${unita}`, stile: "tot" },
+        ];
+    };
     return (
         <tr className={`border-t border-white/5 hover:bg-white/[0.03] ${r.attivo ? "" : "opacity-40"}`}>
             <td className="px-3 py-0.5 min-w-[170px]">
@@ -1246,9 +1301,10 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
                 senza questa cella la colonna 🔁 non esisteva per loro) */}
             {conRicorrente && <td className="px-1 py-0.5"><input value={r.ricorrente ?? ""} title="€ a maturazione per pezzo (ricorrente mensile o una tantum, es. M+6)" onChange={e => onUp(r.id, { ricorrente: e.target.value === "" ? null : num(e.target.value) })} className={cell + " text-sky-200"} /></td>}
             {!r.gettone && <td className="px-1 py-0.5"><input value={r.punti} onChange={e => onUp(r.id, { punti: num(e.target.value) })} className={cell} /></td>}
-            {!senzaBase && <td className="px-1 py-0.5"><input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={cell} /></td>}
+            {!senzaBase && <td className="px-1 py-0.5" onMouseEnter={e => mostra(e, quota(r.pay_base, az?.base))} onMouseLeave={nascondi}>
+                <input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={cell} /></td>}
             {!r.gettone && Array.from({ length: nTiers }, (_, i) => (
-                <td key={i} className="px-1 py-0.5">
+                <td key={i} className="px-1 py-0.5" onMouseEnter={e => mostra(e, quota(r.pay_tiers[i], az?.tiers[i]))} onMouseLeave={nascondi}>
                     <input value={r.pay_tiers[i] ?? ""} onChange={e => {
                         const t = [...r.pay_tiers]; t[i] = num(e.target.value); onUp(r.id, { pay_tiers: t });
                     }} className={cell} />
@@ -1260,6 +1316,7 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
                     className={`mr-1.5 align-middle text-[13px] ${r.attivo ? "text-emerald-400" : "text-slate-600"}`}>●</button>
                 <button onClick={() => onElimina(r)} title="Elimina" className="text-slate-600 hover:text-red-400 align-middle"><Trash2 size={13} /></button>
             </td>
+            {bolla}
         </tr>
     );
 }
