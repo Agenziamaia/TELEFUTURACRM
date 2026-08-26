@@ -50,7 +50,7 @@ const PAY_CTX: Record<string, string> = { w3: "windtre", vs: "vodafone", fastweb
 const GARE_GESTIONE = [
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
     { id: "obiettivi", label: "Obiettivi Home", icon: Target, desc: "Target contratti del mese per rete, negozio e venditore — la barra 'Obiettivo' nella Home." },
-    { id: "direzione", label: "Direzione Inserimento", icon: Compass, desc: "Mappa, per ogni negozio, su quale codice inserire ogni brand/categoria — alimenta la bussola in Home (sola lettura)." },
+    { id: "direzione", label: "Direzione Inserimento", icon: Compass, desc: "Target della direzione per CODICE di inserimento (W3): clicca il codice, esplodi le soglie, dai il target — la bussola in Home indirizza le vendite dove manca di più." },
     // CALENDARIO GARE (Luca 11/08): i giorni lavorativi guidano TUTTE le proiezioni
     { id: "calendariogare", label: "Calendario gare", icon: CalendarDays, desc: "Giorni lavorativi del mese, ora di scatto del giorno e visibilità della proiezione — la base di tutte le proiezioni di commissioning." },
 ] as const;

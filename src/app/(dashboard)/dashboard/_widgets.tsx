@@ -43,8 +43,9 @@ import {
     AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
     Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, CalendarClock,
     LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords, MessageCircle,
-    Euro, Flame, TrainFront, CalendarCheck,
+    Euro, Flame, TrainFront, CalendarCheck, Shield, Banknote,
 } from "lucide-react";
+import { CoronaOro } from "@/components/IconaCorona";
 
 // ── Regole di conteggio (UNICHE: le usa anche lo script di riscontro) ───────
 export const isCtr = (c) => String(c?.id || "").startsWith("CTR-");
@@ -2186,11 +2187,263 @@ function WidgetAgenda({ ctx, size }) {
 }
 const fmtGiornoIT = (iso) => { const d = String(iso || ""); return d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : ""; };
 
+/* ═══ HOME v2, secondo treno (26/08, mandato «implementa i widget in canna»):
+   🛡️ Scudo Malus (loss aversion sui tre motori di malus — qui il PDA da
+   malus_storico, il più caldo), 💶 Contatore € (il mese in euro dal motore,
+   pay ragazzi al tier live di rete), ⚔️ Derby (sfida settimanale col negozio
+   di pari peso). ═══════════════════════════════════════════════════════════ */
+
+// ── 🛡️ SCUDO MALUS — quanto stai perdendo (e quanto corre ancora) ──────────
+// Fonte: malus_storico del tracking PDA (episodi con importo; tombstone
+// `eliminato` SEMPRE filtrato — incidente Sky 25/08). SEMPRE il mese
+// CORRENTE, qualunque filtro periodo abbia la Home: il malus è igiene di
+// oggi, non consultazione. Perimetro con la stessa scala della Home
+// (ctx.scopeVendita su negozio/venditore della riga).
+function WidgetScudoMalus({ ctx, size }) {
+    const [righe, setRighe] = useState(null);
+    const [usato, setUsato] = useState(0);
+    const meseIni = ctx.oggiISO.slice(0, 7) + "-01";
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const q = supabase.from("malus_storico")
+                .select("contract_id, categoria, brand, negozio, venditore, nominativo, data_inizio, data_fine, giorni, malus_euro, importo, stato")
+                .or("eliminato.is.null,eliminato.eq.false")
+                .or(`data_fine.is.null,data_inizio.gte.${meseIni}`)
+                .limit(500);
+            const { data } = await q;
+            if (!vivo) return;
+            setRighe(data || []);
+            if (ctx.seesAll) {
+                const { data: u } = await supabase.from("usati_malus").select("importo, data_inizio").gte("data_inizio", meseIni).limit(300);
+                if (vivo) setUsato((u || []).reduce((s, r) => s + (Number(r.importo) || 0), 0));
+            }
+        })();
+        return () => { vivo = false; };
+    }, [meseIni, ctx.visKey, ctx.user?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const dati = useMemo(() => {
+        if (!righe) return null;
+        const mie = righe.filter((r) => ctx.scopeVendita({ negozio: r.negozio, venditore: r.venditore }));
+        const delMese = mie.filter((r) => String(r.data_inizio || "").slice(0, 10) >= meseIni);
+        const generato = delMese.reduce((s, r) => s + (Number(r.importo) || 0), 0);
+        const compensato = delMese.filter((r) => r.stato === "compensato").reduce((s, r) => s + (Number(r.importo) || 0), 0);
+        const aperti = mie.filter((r) => r.data_fine == null);
+        const alGiorno = aperti.reduce((s, r) => s + (Number(r.malus_euro) || 0), 0);
+        return { generato: Math.round(generato), compensato: Math.round(compensato), aperti, alGiorno: Math.round(alGiorno * 100) / 100 };
+    }, [righe, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const mese = new Date().toLocaleDateString("it-IT", { month: "long" });
+    return (
+        <WidgetShell icon={Shield} title="Scudo Malus" accent="var(--tf-ef4444)"
+            action={<span className="text-[10px] text-slate-500">PDA · {mese}</span>}>
+            {!dati ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Controllo il tracking…</div>
+            ) : dati.generato <= 0 && !dati.aperti.length ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-1 text-center px-3">
+                    <div className="text-4xl" aria-hidden>🛡️</div>
+                    <div className="text-sm font-black text-emerald-300">Scudo integro</div>
+                    <div className="text-[10px] text-slate-500">Zero € di malus PDA questo mese nel tuo perimetro.</div>
+                </div>
+            ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto p-3 pt-2 space-y-2">
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-black text-rose-300 leading-none">−{it2(dati.generato)} €</span>
+                        <span className="text-[10px] text-slate-500">di malus a {mese}{dati.compensato > 0 ? ` · ${it2(dati.compensato)} € compensati` : ""}</span>
+                    </div>
+                    {dati.aperti.length > 0 ? (
+                        <div className="rounded-xl bg-rose-500/[0.08] border border-rose-500/25 px-2.5 py-2 space-y-1">
+                            <div className="text-[11px] font-bold text-rose-300">⏳ {dati.aperti.length === 1 ? "1 pratica matura" : `${dati.aperti.length} pratiche maturano`} ADESSO · −{it2(dati.alGiorno)} €/giorno</div>
+                            {dati.aperti.slice(0, size >= 2 ? 4 : 2).map((r, i) => (
+                                <Link key={i} href="/pda/tracking" className="flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-md px-1 -mx-1 transition-colors">
+                                    <span className="truncate text-slate-200">{r.nominativo || r.contract_id}<span className="text-slate-500"> · {r.categoria}</span></span>
+                                    <span className="shrink-0 font-bold text-rose-300">−{it2(Number(r.malus_euro) || 0)} €/gg <span className="text-slate-500 font-normal">da {fmtGiornoIT(String(r.data_inizio || "").slice(0, 10))}</span></span>
+                                </Link>
+                            ))}
+                            {dati.aperti.length > (size >= 2 ? 4 : 2) && <div className="text-[10px] text-slate-500">…e altre {dati.aperti.length - (size >= 2 ? 4 : 2)}</div>}
+                        </div>
+                    ) : (
+                        <div className="text-[11px] text-emerald-300 font-semibold">✅ Niente sta maturando adesso: l&apos;emorragia è ferma.</div>
+                    )}
+                    {ctx.seesAll && usato > 0 && <div className="text-[10px] text-slate-500">🔧 Laboratorio usato: −{it2(Math.round(usato))} € nel mese (fuori perimetro negozi).</div>}
+                    <Link href="/pda/tracking" className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-300 hover:text-sky-200">Sistema le pratiche <ArrowRight className="w-3 h-3" /></Link>
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+
+// ── 💶 CONTATORE € — il tuo mese in euro, dal motore (pay ragazzi) ──────────
+// Somma payEuroAttivazione delle vendite DEL PERIMETRO al tier LIVE della
+// RETE (le gare sono di rete: il tier è quello). Brand col derivato pieno:
+// W3, Sky, Vodafone (pezzi VF della lettera A; i Fastweb hanno le loro
+// lettere e arrivano col contesto FW). Onestà: dichiarati esclusi e senza
+// canone. Sale da solo quando scatta una soglia (retroattivo compreso).
+function WidgetContatoreEuro({ ctx, size }) {
+    const [tabs, setTabs] = useState(null);
+    const [canoni, setCanoni] = useState(null);
+    const ym = ctx.w3?.ym || ctx.sky?.ym || null;
+    const multiMese = !!(ctx.w3 && !ctx.w3.ym && (ctx.w3.packs || []).length > 1);
+    useEffect(() => {
+        if (!ym) { setTabs(null); return; }
+        let vivo = true;
+        (async () => {
+            const iso = `${ym}-01`;
+            const [tw3, tsky, tvf, offs] = await Promise.all([
+                caricaTabellare("windtre", iso).catch(() => null),
+                caricaTabellare("sky", iso).catch(() => null),
+                caricaTabellare("vodafone", iso).catch(() => null),
+                supabase.from("catalog_offerte")
+                    .select("nome, canone_mensile, catalog_prodotti!inner(nome, brand_id)")
+                    .in("catalog_prodotti.brand_id", ["windtre", "sky", "vodafone"]).eq("attivo", true).not("canone_mensile", "is", null).limit(3000),
+            ]);
+            if (!vivo) return;
+            const m = new Map();
+            (offs.data || []).forEach((o) => {
+                const p = o.catalog_prodotti;
+                if (p) m.set(`${p.brand_id}|${norm(o.nome)}|${norm(p.nome)}`, Number(o.canone_mensile));
+            });
+            setTabs({ w3: tw3, sky: tsky, vf: tvf });
+            setCanoni(m);
+        })();
+        return () => { vivo = false; };
+    }, [ym]);
+    const conto = useMemo(() => {
+        if (!tabs || !canoni) return null;
+        const brands = [
+            { key: "windtre", label: "W3", tab: tabs.w3, rows: ctx.w3?.packs?.[0]?.rows || [] },
+            { key: "sky", label: "Sky", tab: tabs.sky, rows: ctx.sky?.packs?.[0]?.rows || [] },
+            { key: "vodafone", label: "VF", tab: tabs.vf, rows: ctx.vf?.packs?.[0]?.rows || [] },
+        ];
+        let tot = 0, pezziPagati = 0, senzaRiga = 0, senzaCanone = 0;
+        const perBrand = [];
+        for (const b of brands) {
+            if (!b.tab || !b.rows.length) continue;
+            const rete = b.rows.filter((c) => !esclusaDalleGare(c));
+            const avz = calcolaAvanzamento(b.tab, rete);            // tier di RETE
+            const mie = rete.filter((c) => ctx.scopeVendita(c));
+            let eb = 0;
+            for (const c of mie) {
+                const set = matchRigheAttivazione(b.tab.righe, c, brandIdDaLabel(c.brand));
+                if (!set.length) { senzaRiga++; continue; }
+                const pista = set[0].pista;
+                const tier = set[0].gettone ? 0 : (avz.piste[pista]?.tier ?? 0);
+                const canone = canoni.get(`${b.key}|${norm(c.offerta)}|${norm(c.prodotto)}`) ?? null;
+                const v = payEuroAttivazione(set, tier, canone);
+                if (v == null) { senzaCanone++; continue; }
+                eb += v; pezziPagati++;
+            }
+            if (mie.length) perBrand.push({ label: b.label, euro: Math.round(eb) });
+            tot += eb;
+        }
+        return { tot: Math.round(tot), pezziPagati, senzaRiga, senzaCanone, perBrand };
+    }, [tabs, canoni, ctx.w3, ctx.sky, ctx.vf, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const chi = ctx.level === "own" ? "il tuo mese" : ctx.level === "store" ? "il negozio" : "la rete";
+    return (
+        <WidgetShell icon={Banknote} title="Contatore €" accent="var(--tf-22c55e)"
+            action={<span className="text-[10px] text-slate-500">pay ragazzi · tier live</span>}>
+            {multiMese ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Le gare sono mensili: scegli un mese per contare gli euro.</div>
+            ) : !conto ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Conto dal motore…</div>
+            ) : (
+                <div className="flex-1 flex flex-col justify-center p-3 gap-1.5">
+                    <div className="text-3xl font-black text-emerald-300 leading-none">{it2(conto.tot)} €</div>
+                    <div className="text-[11px] text-slate-400">{chi} finora · {conto.pezziPagati} pezzi pagati al tier attuale della rete</div>
+                    {conto.perBrand.length > 1 && (
+                        <div className="flex flex-wrap gap-1.5">
+                            {conto.perBrand.map((b) => <span key={b.label} className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10 text-[10px] text-slate-300">{b.label} <b className="text-emerald-300">{it2(b.euro)} €</b></span>)}
+                        </div>
+                    )}
+                    <div className="text-[10px] text-slate-500">Sale da solo quando scatta una soglia (retroattivo compreso). W3 + Sky + Vodafone{conto.senzaRiga ? ` · ${conto.senzaRiga} senza riga pay` : ""}{conto.senzaCanone ? ` · ${conto.senzaCanone} senza canone a catalogo` : ""}.</div>
+                    {size >= 2 && <Link href="/calcolatore" className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-300 hover:text-sky-200">Apri il Calcolatore <ArrowRight className="w-3 h-3" /></Link>}
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+
+// ── ⚔️ DERBY — la sfida della settimana col negozio di pari peso ────────────
+// Gemello = il negozio con la produzione mensile più vicina alla tua (così
+// la sfida è sempre giocabile). Conta la produzione valida di gara della
+// settimana (lun→oggi), negozio che REGISTRA. Admin: il derby più caldo
+// della rete (i due negozi appaiati più vicini in testa).
+function WidgetDerby({ ctx }) {
+    const dati = useMemo(() => {
+        const valida = (c) => isCtr(c) && validaProduzione(c) && !esclusaDalleGare(c);
+        const rows = (ctx.allPeriod || []).filter(valida);
+        const perNeg = new Map();
+        rows.forEach((c) => { const n = (c.negozio || "").trim(); if (n) perNeg.set(n, (perNeg.get(n) || 0) + 1); });
+        const oggi = new Date();
+        const lun = new Date(oggi); lun.setDate(oggi.getDate() - ((oggi.getDay() + 6) % 7));
+        const lunISO = `${lun.getFullYear()}-${String(lun.getMonth() + 1).padStart(2, "0")}-${String(lun.getDate()).padStart(2, "0")}`;
+        const sett = (neg) => rows.filter((c) => sameStoreW(c.negozio, neg) && giornoDi(c) >= lunISO).length;
+        const mio = ctx.seesAll ? null : (ctx.myStores[0] || ctx.user?.negozio || null);
+        if (mio) {
+            const mioPeso = perNeg.get([...perNeg.keys()].find((n) => sameStoreW(n, mio))) || 0;
+            let gemello = null, dist = Infinity;
+            for (const [n, peso] of perNeg) {
+                if (sameStoreW(n, mio)) continue;
+                const d = Math.abs(peso - mioPeso);
+                if (d < dist) { dist = d; gemello = n; }
+            }
+            if (!gemello) return null;
+            return { a: { nome: mio, pz: sett(mio) }, b: { nome: gemello, pz: sett(gemello) }, tipo: "mio" };
+        }
+        // admin: i due negozi di testa più vicini tra loro
+        const top = [...perNeg.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6);
+        let best = null, bd = Infinity;
+        for (let i = 0; i < top.length - 1; i++) {
+            const d = Math.abs(top[i][1] - top[i + 1][1]);
+            if (d < bd) { bd = d; best = [top[i][0], top[i + 1][0]]; }
+        }
+        if (!best) return null;
+        return { a: { nome: best[0], pz: sett(best[0]) }, b: { nome: best[1], pz: sett(best[1]) }, tipo: "rete" };
+    }, [ctx.allPeriod, ctx.visKey, ctx.seesAll]);   // eslint-disable-line react-hooks/exhaustive-deps
+    if (!dati) return (
+        <WidgetShell icon={Swords} title="Derby" accent="var(--tf-f59e0b)">
+            <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Serve un negozio (e un rivale) per accendere il derby.</div>
+        </WidgetShell>
+    );
+    const { a, b } = dati;
+    const tot = a.pz + b.pz;
+    const guida = a.pz === b.pz ? null : (a.pz > b.pz ? "a" : "b");
+    const lato = (x, key) => (
+        <div className="flex-1 min-w-0 text-center">
+            <div className="h-6 flex items-end justify-center">{guida === key ? <CoronaOro h={20} /> : <span className="text-[10px] text-slate-600">&nbsp;</span>}</div>
+            <div className="text-2xl font-black text-white leading-none">{x.pz}</div>
+            <div className="text-[10px] text-slate-400 truncate" title={x.nome}>{x.nome}</div>
+        </div>
+    );
+    return (
+        <WidgetShell icon={Swords} title="Derby" accent="var(--tf-f59e0b)"
+            action={<span className="text-[10px] text-slate-500">{dati.tipo === "rete" ? "il più caldo della rete" : "settimana in corso"}</span>}>
+            <div className="flex-1 flex flex-col justify-center p-3 gap-2">
+                <div className="flex items-center gap-2">
+                    {lato(a, "a")}
+                    <div className="text-lg font-black text-slate-600 shrink-0">VS</div>
+                    {lato(b, "b")}
+                </div>
+                <div className="h-2 rounded-full bg-white/[0.07] overflow-hidden flex">
+                    <div className="h-full bg-amber-400/90 transition-all" style={{ width: tot ? `${Math.round((a.pz / tot) * 100)}%` : "50%" }} />
+                    <div className="h-full bg-sky-400/70 flex-1" />
+                </div>
+                <div className="text-[11px] text-center font-semibold text-slate-300">
+                    {guida == null ? "⚔️ Perfetta parità: la prossima vendita decide." :
+                        guida === "a" ? `${a.nome} avanti di ${a.pz - b.pz}` : `${b.nome} avanti di ${b.pz - a.pz}`}
+                </div>
+                <div className="text-[10px] text-slate-500 text-center">Pezzi validi di gara da lunedì · rivale di pari peso del mese.</div>
+            </div>
+        </WidgetShell>
+    );
+}
+
 const FISSI = {
     soglia_euro: { label: "Vale X€", icon: Euro, sizes: [1, 2], def: 1, gruppo: "performance" },
     treno19: { label: "Il Treno delle 19", icon: TrainFront, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     serie: { label: "La Serie", icon: Flame, sizes: [1], def: 1, gruppo: "performance" },
     agenda: { label: "Agenda del giorno", icon: CalendarCheck, sizes: [2, 4], def: 2, gruppo: "strumenti" },
+    scudo: { label: "Scudo Malus", icon: Shield, sizes: [1, 2], def: 1, gruppo: "performance" },
+    contatore: { label: "Contatore €", icon: Banknote, sizes: [1, 2], def: 1, gruppo: "performance" },
+    derby: { label: "Derby", icon: Swords, sizes: [1, 2], def: 1, gruppo: "confronto" },
     marginalita: { label: "Marginalità", icon: ShoppingBag, sizes: [1, 2, 4], def: 2, gruppo: "performance" },
     // def "s": i KPI singoli nascono alla TAGLIA MINIMA (tile 2×1) — Luca
     // 26/08: «la dimensione più piccola deve essere quella di default»
@@ -2242,6 +2495,9 @@ export function renderWidget(id, ctx, size) {
         case "treno19": return <WidgetTreno19 ctx={ctx} size={size} />;
         case "serie": return <WidgetSerie ctx={ctx} />;
         case "agenda": return <WidgetAgenda ctx={ctx} size={size} />;
+        case "scudo": return <WidgetScudoMalus ctx={ctx} size={size} />;
+        case "contatore": return <WidgetContatoreEuro ctx={ctx} size={size} />;
+        case "derby": return <WidgetDerby ctx={ctx} />;
         case "marginalita": return <WidgetMarginalita ctx={ctx} size={size} />;
         case "kpi_contratti": return <KpiTile icon={FileText} label="Contratti" value={ctx.mine.length} color="var(--tf-6366f1)" sub={`registrati ${ctx.periodoLabel}`} />;
         case "kpi_attivi": return <KpiTile icon={CheckCircle2} label="Attivi" value={ctx.attivi} color="var(--tf-22c55e)" sub={ctx.mine.length ? `${Math.round((ctx.attivi / ctx.mine.length) * 100)}% del periodo` : "—"} />;
@@ -2310,7 +2566,7 @@ export function layoutDefault(ctx) {
     if (ctx.level === "global") {
         return decodeLayout([
             "agenda@2", "soglia_euro@2",
-            "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
+            "scudo@1", "derby@1", "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
             ...perf,
             "chart_brand@2", "chart_stato@2", "chart_top@2", "bacheca@2",
             "bussola@1", "obiettivo@1", "azioni@1", "accessi@2", "classifica@4",
@@ -2319,6 +2575,7 @@ export function layoutDefault(ctx) {
     if (ctx.level === "store") {
         return decodeLayout([
             "agenda@2", "soglia_euro@1", "treno19@1",
+            "scudo@1", "contatore@1", "derby@1",
             ...perf, "confronto@2",
             "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
             "chart_top@2", "bacheca@2", "obiettivo@1", "azioni@1", "bussola@1", "chart_stato@1",
@@ -2327,6 +2584,7 @@ export function layoutDefault(ctx) {
     }
     return decodeLayout([
         "agenda@2", "soglia_euro@1", "serie@1", "treno19@1",
+        "contatore@1", "scudo@1", "derby@1",
         ...perf, "confronto@2",
         "kpi_contratti@s", "kpi_attivi@s", "obiettivo@1", "azioni@1",
         "bacheca@2", "chart_brand@2", "classifica@2", "bussola@1",
