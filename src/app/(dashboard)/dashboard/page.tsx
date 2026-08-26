@@ -12,6 +12,7 @@
 // Store manager → tutto il punto vendita; consulente → solo il suo.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, seesWholeStore } from "@/lib/roles";
@@ -574,6 +575,12 @@ export default function Dashboard() {
                     <p className="text-sm text-slate-500">{roleLabel(user.role)}{seesAll ? " · tutti i negozi" : myStores.length ? ` · ${myStores.join(", ")}` : ""}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {/* LA PORTA verso l'Analisi (26/08): i widget brand sono stati
+                        dismessi — i numeri completi vivono lì, la Home è azione */}
+                    <Link href="/analisi"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border bg-indigo-500/10 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/20 hover:text-white transition-colors">
+                        📊 Analisi
+                    </Link>
                     {/* come l'Analisi: griglia sempre viva, niente modalità Modifica */}
                     <button onClick={() => setAddOpen(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:text-white hover:bg-white/10 transition-colors">

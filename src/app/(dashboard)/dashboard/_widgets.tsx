@@ -2704,14 +2704,15 @@ const FISSI = {
     scudo: { label: "Scudo Malus", icon: Shield, sizes: [1, 2], def: 1, gruppo: "performance" },
     contatore: { label: "Contatore €", icon: Banknote, sizes: [1, 2], def: 1, gruppo: "performance" },
     derby: { label: "Derby", icon: Swords, sizes: [1, 2], def: 1, gruppo: "confronto" },
-    marginalita: { label: "Marginalità", icon: ShoppingBag, sizes: [1, 2, 4], def: 2, gruppo: "performance" },
+    // marginalita e chart_brand DISMESSI 26/08 (doppioni dell'Analisi — Luca:
+    // «toglierei anche la marginalità da subito» e «quello stupido widget per
+    // brand… eliminiamolo»). I componenti restano nel file, spenti dal registry.
     // def "s": i KPI singoli nascono alla TAGLIA MINIMA (tile 2×1) — Luca
     // 26/08: «la dimensione più piccola deve essere quella di default»
     kpi_contratti: { label: "Contratti", icon: FileText, sizes: [1, 2], def: "s", gruppo: "statistiche" },
     kpi_attivi: { label: "Attivi", icon: CheckCircle2, sizes: [1, 2], def: "s", gruppo: "statistiche" },
     kpi_lavorazione: { label: "In lavorazione", icon: Clock, sizes: [1, 2], def: "s", gruppo: "statistiche" },
     kpi_clienti: { label: "Clienti", icon: Users, sizes: [1, 2], def: "s", gruppo: "statistiche" },
-    chart_brand: { label: "Grafico per brand", icon: TrendingUp, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
     classifica: { label: "Classifica venditori", icon: Trophy, sizes: [2, 4], def: 4, gruppo: "statistiche" },
@@ -2729,11 +2730,11 @@ const FISSI = {
 const isManagerWa = (ctx) => ctx.seesAll || ctx.level === "store" || ["direttore_cc"].includes(ctx.user?.role);
 
 export function infoWidget(id, ctx) {
-    if (id.startsWith("brand:")) {
-        const brand = id.slice(6);
-        if (!brand) return null;
-        return { id, label: brand, icon: Signal, sizes: [1, 2, 4], def: 2, gruppo: "performance", logo: TRK_BRAND_LOGOS[trkBrandKey(brand)], accent: colDiBrand(brand) };
-    }
+    // WIDGET BRAND DISMESSI (decisione Luca 26/08 sera): erano doppioni di
+    // consultazione dell'Analisi — la Home è azione, i numeri completi
+    // vivono in /analisi. Il null qui li fa sparire OVUNQUE, layout salvati
+    // compresi (risolviLayout/decodeCoord filtrano su infoWidget).
+    if (id.startsWith("brand:")) return null;
     if (id.startsWith("confronto")) {
         return { id, label: "Confronto", icon: Swords, sizes: [2, 4], def: 2, gruppo: "confronto", accent: "var(--tf-f59e0b)" };
     }
@@ -2746,7 +2747,7 @@ export function infoWidget(id, ctx) {
 }
 
 export function renderWidget(id, ctx, size) {
-    if (id.startsWith("brand:")) return <WidgetBrand ctx={ctx} size={size} brand={id.slice(6)} />;
+    if (id.startsWith("brand:")) return null;   // dismessi 26/08 (doppioni dell'Analisi)
     if (id.startsWith("confronto")) {
         // id = "confronto" | "confronto:<tipo>:<bersaglio>" ("A|B" per il duello)
         const parti = id.split(":");
@@ -2760,12 +2761,10 @@ export function renderWidget(id, ctx, size) {
         case "scudo": return <WidgetScudoMalus ctx={ctx} size={size} />;
         case "contatore": return <WidgetContatoreEuro ctx={ctx} size={size} />;
         case "derby": return <WidgetDerby ctx={ctx} />;
-        case "marginalita": return <WidgetMarginalita ctx={ctx} size={size} />;
         case "kpi_contratti": return <KpiTile icon={FileText} label="Contratti" value={ctx.mine.length} color="var(--tf-6366f1)" sub={`registrati ${ctx.periodoLabel}`} />;
         case "kpi_attivi": return <KpiTile icon={CheckCircle2} label="Attivi" value={ctx.attivi} color="var(--tf-22c55e)" sub={ctx.mine.length ? `${Math.round((ctx.attivi / ctx.mine.length) * 100)}% del periodo` : "—"} />;
         case "kpi_lavorazione": return <KpiTile icon={Clock} label="In lavorazione" value={ctx.lavorazione} color="var(--tf-f59e0b)" sub="da completare" />;
         case "kpi_clienti": return <KpiTile icon={Users} label="Clienti" value={ctx.clienti} color="var(--tf-a855f7)" sub="serviti nel periodo" />;
-        case "chart_brand": return <BarChart icon={TrendingUp} title="Per brand" rows={ctx.byBrand} total={ctx.mine.length} colorFor={chartBrandColor} accent="var(--tf-818cf8)" size={size} />;
         case "chart_stato": return <BarChart icon={AlertTriangle} title="Per stato" rows={ctx.byStato} total={ctx.mine.length} colorFor={STATO_COLOR} accent="var(--tf-f59e0b)" size={size} />;
         case "chart_top": return ctx.terzo ? <BarChart icon={ctx.terzo.icon} title={ctx.terzo.title} rows={ctx.terzo.rows} total={ctx.mine.length} colorFor={() => ctx.terzo.color} accent={ctx.terzo.color} size={size} /> : null;
         case "classifica": return <WidgetClassifica ctx={ctx} size={size} />;
@@ -2808,7 +2807,7 @@ export function decodeLayout(arr) {
 // widget: chi aveva un layout salvato lo ritrova identico, ma spacchettato.
 const LEGACY_BLOCKS = {
     kpi: ["kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s"],
-    charts: ["chart_brand@2", "chart_stato@2", "chart_top@2"],
+    charts: ["chart_stato@2", "chart_top@2"],
     widgets: ["bussola@1", "obiettivo@1", "azioni@1", "bacheca@1", "accessi@2"],
     leaderboard: ["classifica@4"],
 };
@@ -2817,9 +2816,10 @@ export const isLegacyLayout = (arr) => Array.isArray(arr) && arr.length > 0 && a
 /** Widget performance da proporre in testa: i brand osservati nella
  *  produzione dello scope (max 4) + la marginalità. */
 export function perfDefaults(ctx) {
-    const out = ctx.brandsOsservati.slice(0, 4).map((b) => `brand:${b}@2`);
-    out.push("marginalita@2");
-    return out;
+    // vuota dal 26/08: i widget brand e la Marginalità sono dismessi
+    // (doppioni dell'Analisi) — la firma resta per i chiamanti legacy
+    void ctx;
+    return [];
 }
 
 export function layoutDefault(ctx) {
@@ -2831,7 +2831,7 @@ export function layoutDefault(ctx) {
             "agenda@2", "soglia_euro@2",
             "scudo@1", "derby@1", "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
             ...perf,
-            "chart_brand@2", "chart_stato@2", "chart_top@2", "bacheca@2",
+            "chart_stato@2", "chart_top@2", "bacheca@2",
             "bussola@1", "obiettivo@1", "azioni@1", "accessi@2", "classifica@4",
         ]);
     }
@@ -2850,7 +2850,7 @@ export function layoutDefault(ctx) {
         "contatore@1", "scudo@1", "derby@1",
         ...perf, "confronto@2",
         "kpi_contratti@s", "kpi_attivi@s", "obiettivo@1", "azioni@1",
-        "bacheca@2", "chart_brand@2", "classifica@2", "bussola@1",
+        "bacheca@2", "classifica@2", "bussola@1",
     ]);
 }
 
@@ -2870,8 +2870,8 @@ export function risolviLayout(salvato, ctx) {
  *  compaiono da soli quando hanno almeno una voce. */
 export function widgetsDisponibili(ctx, giaPresenti) {
     const presenti = new Set(giaPresenti);
-    const brandIds = ctx.brandsGallery.map((b) => `brand:${b}`);
-    const ids = [...brandIds, "confronto", ...Object.keys(FISSI)];
+    // niente più brand:* in galleria (dismessi 26/08 — i numeri stanno in Analisi)
+    const ids = ["confronto", ...Object.keys(FISSI)];
     const out = { performance: [], confronto: [], statistiche: [], comunicazione: [], squadra: [], strumenti: [] };
     ids.forEach((id) => {
         if (presenti.has(id)) return;
