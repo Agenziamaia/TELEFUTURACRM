@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
-    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi,
+    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi,
     finestraBilancia, codiceBilancia, codiceAssociato, W3_PALETTO_BUSINESS,
     DIR_BRANDS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
@@ -311,6 +311,29 @@ export function DirezioneInserimentoAdmin() {
                                     </button>
                                     {salvate[sKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
                                     {erroriSalva[sKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                                    {/* ① PRIORITÀ ESPLICITE (Luca 27/08-6): clicca i codici
+                                        nell'ordine — vincono su tutto finché non chiudono */}
+                                    <span className="text-[9px] font-bold text-slate-600 uppercase ml-1">priorità</span>
+                                    <div className="flex gap-1 flex-wrap">
+                                        {dir.codici.map((k) => {
+                                            const prio = ((dir.politiche[p.chiave]?.dati as { priorita?: string[] } | null)?.priorita) || [];
+                                            const idx = prio.indexOf(k.cod_gara);
+                                            const on = idx >= 0;
+                                            return (
+                                                <button key={k.cod_gara}
+                                                    onClick={() => {
+                                                        const nuova = on ? prio.filter((x) => x !== k.cod_gara) : [...prio, k.cod_gara];
+                                                        salvaPolitica(p.chiave, dir.politiche[p.chiave]?.modo || "vicino", { ...((dir.politiche[p.chiave]?.dati as Record<string, unknown>) || {}), priorita: nuova });
+                                                    }}
+                                                    title={on ? `Togli ${k.negozio} dalle priorità` : `Dai priorità a ${k.negozio}`}
+                                                    className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold border transition-all",
+                                                        on ? "text-white border-transparent" : "bg-white/[0.03] text-slate-500 border-white/10 hover:bg-white/10")}
+                                                    style={on ? { background: bMeta.color } : undefined}>
+                                                    {on ? `${["①", "②", "③", "④", "⑤", "⑥", "⑦"][idx] || idx + 1} ` : ""}{k.negozio.split(/\s+/)[0]}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             );
                         })}
@@ -864,7 +887,15 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     const sottoPaletto = franchising.filter((f) => f.fatti < W3_PALETTO_BUSINESS);
                     const sottoObiettivo = franchising.filter((f) => f.fatti < obiettivo);
                     const fase = sottoPaletto.length ? sottoPaletto : sottoObiettivo;
-                    const ordinati = [...fase].sort((a, b) => strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti));
+                    const prioB = prioritaDi(dir, BIZMOB);
+                    const rankB = (nome: string) => {
+                        const k = dir.codici.find((x) => x.negozio === nome);
+                        const i = k ? prioB.indexOf(k.cod_gara) : -1;
+                        return i >= 0 ? i : Infinity;
+                    };
+                    const ordinati = [...fase].sort((a, b) =>
+                        (rankB(a.nome) - rankB(b.nome))
+                        || (strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti)));
                     const scelto = ordinati[0] || null;
                     const faseLabel = sottoPaletto.length ? W3_PALETTO_BUSINESS : obiettivo;
                     // CASCATA (Luca 27/08-2): paletti tutti salvi → si passa

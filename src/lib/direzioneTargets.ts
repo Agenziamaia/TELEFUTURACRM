@@ -292,6 +292,13 @@ export function proiezioneDir(dir: Direzione, punti: number): number | null {
 }
 
 export type Strategia = "vicino" | "scoperto";
+/** Le PRIORITÀ esplicite di un KPI (Luca 27/08-6): l'ordine dei codici che
+ *  la direzione vuole servire PRIMA — vincono su strategia e spareggi
+ *  finché non chiudono il loro target. In politiche[pista].dati.priorita. */
+export function prioritaDi(dir: Direzione, pista: string): string[] {
+    const arr = (dir.politiche[pista]?.dati as { priorita?: unknown } | null)?.priorita;
+    return Array.isArray(arr) ? arr.map(String) : [];
+}
 /** La strategia di riempimento di un KPI (Luca 27/08-5, impostabile nel
  *  pannello): 'vicino' = si CHIUDE prima il codice più vicino al target
  *  (default — Libia a 5/6 prima di Collatina a 0/6); 'scoperto' = si
@@ -305,6 +312,11 @@ export function strategiaDi(dir: Direzione, pista: string): Strategia {
  *  completati in coda. Solo codici con un target. */
 export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null, strategia: Strategia = "vicino") {
     const nu = norm(negozioUtente);
+    const prio = prioritaDi(dir, pista);
+    const rankDi = (cod: string, mancano: number) => {
+        const i = prio.indexOf(cod);
+        return i >= 0 && mancano > 0 ? i : Infinity;   // prioritario finché non chiude
+    };
     // la CB W3 «va a punti»: i fatti sono i punti PARTNERSHIP, non la
     // pista a pezzi (bug visto da Luca in prova: barre a zero)
     const cbW3 = dir.brand === "windtre" && pista === "cb";
@@ -322,7 +334,9 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
         .sort((a, b) => {
             const aFatto = a.mancano <= 0, bFatto = b.mancano <= 0;
             if (aFatto !== bFatto) return aFatto ? 1 : -1;              // i completati in coda
+            const pr = rankDi(a.cod_gara, a.mancano) - rankDi(b.cod_gara, b.mancano);
+            if (pr) return pr;                                          // ① priorità esplicite
             const diff = strategia === "vicino" ? (a.mancano - b.mancano) : (b.mancano - a.mancano);
-            return diff || (Number(b.mio) - Number(a.mio));
+            return diff || (Number(b.mio) - Number(a.mio));             // ② strategia ③ negozio
         });
 }
