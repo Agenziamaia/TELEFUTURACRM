@@ -57,6 +57,12 @@ export function RadarOmni({ chat, onUsaRisposta }: { chat: ChatOmni | null; onUs
                     `valore generato ${euro(radar.ltv.euro)}`,
                     radar.hardware ? `telefono a rate: ${radar.hardware.nome}, ${radar.hardware.rate} rate su ${radar.hardware.rateTotali}` : null,
                     radar.timeline.length ? `${radar.timeline.length} giornate di operazioni a storico` : null,
+                    // anche l'AI deve sapere che ci ha già cercati altrove: tre
+                    // chiamate senza risposta cambiano il tono della risposta
+                    radar.contatti.length
+                        ? "ci ha contattati anche così: " + radar.contatti.map((c) =>
+                            `${c.n} ${c.canale === "tel" ? "chiamate" : c.canale === "wa" ? "chat WhatsApp" : "email"}${c.nota ? ` (${c.nota})` : ""}`).join(", ")
+                        : null,
                 ].filter(Boolean).join(" · ")
                 : radar?.tipo === "staff" ? `collega: oggi ${radar.kpi.loro.pezzi} pezzi contro i tuoi ${radar.kpi.tuo.pezzi}` : null;
             const r = await fetch("/api/ai/omnichat", {
@@ -157,6 +163,42 @@ export function RadarOmni({ chat, onUsaRisposta }: { chat: ChatOmni | null; onUs
                 {/* ── CASO A: cliente registrato ── */}
                 {radar?.tipo === "cliente" && (
                     <>
+                        {/* DOVE ALTRO L'ABBIAMO SENTITO — mai il canale in cui
+                            sto (Luca 27/08): quello ce l'ho davanti. Sta in
+                            cima perché è la cosa che cambia come rispondi:
+                            se ha chiamato tre volte e nessuno ha risposto,
+                            non gli scrivi «dimmi pure». */}
+                        {radar.contatti.length > 0 && (
+                            <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4">
+                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2.5">Anche su altri canali</h4>
+                                <div className="space-y-2">
+                                    {radar.contatti.map((c) => (
+                                        <div key={c.canale} className="flex items-center gap-2.5">
+                                            <span className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-[12px] shrink-0 border",
+                                                c.canale === "tel" ? "bg-amber-500/10 border-amber-500/20"
+                                                    : c.canale === "wa" ? "bg-emerald-500/10 border-emerald-500/20"
+                                                        : "bg-sky-500/10 border-sky-500/20")}>
+                                                {c.canale === "tel" ? "📞" : c.canale === "wa" ? "💬" : "✉️"}
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-[11px] text-slate-200 font-semibold truncate">
+                                                    {c.n} {c.canale === "tel" ? (c.n === 1 ? "chiamata" : "chiamate")
+                                                        : c.canale === "wa" ? (c.n === 1 ? "chat WhatsApp" : "chat WhatsApp")
+                                                            : (c.n === 1 ? "conversazione email" : "conversazioni email")}
+                                                    {c.nota && <span className="text-amber-300/80 font-normal"> · {c.nota}</span>}
+                                                </p>
+                                                {c.ultimo && (
+                                                    <p className="text-[9px] text-slate-500">
+                                                        ultima {new Date(c.ultimo).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4">
                             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Valore generato</h4>
                             <div className="text-2xl font-black text-white leading-none tracking-tight">{euro(radar.ltv.euro)}</div>

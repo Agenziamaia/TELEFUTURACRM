@@ -83,6 +83,17 @@ export type RadarCliente = {
     ltv: { euro: number; nota: string };
     hardware: Hardware | null;          // null ⇒ il modulo NON si disegna
     timeline: VoceTimeline[];
+    // DOVE ALTRO L'ABBIAMO SENTITO (Luca 27/08): telefono, WhatsApp, email —
+    // MAI il canale in cui sto già, che è sotto i miei occhi. Lista vuota ⇒ il
+    // modulo non si disegna: «solo qui» non è un'informazione utile.
+    contatti: PuntoContatto[];
+};
+
+export type PuntoContatto = {
+    canale: "tel" | "wa" | "email";
+    n: number;                          // quante volte
+    ultimo: string | null;              // ISO dell'ultimo contatto
+    nota?: string | null;               // es. «2 senza risposta»
 };
 
 /** CASO B — prospect: SOLO AI Summary e l'avviso di anagrafica mancante.

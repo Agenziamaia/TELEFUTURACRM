@@ -21,7 +21,7 @@ import { waIstanzeVisibili } from "@/lib/waVisibilita";
 import { emailCaselleVisibili, membershipEmail } from "@/lib/emailVisibilita";
 import { matchNegozi } from "@/lib/visibleStores";
 import { sendMessage, getInbox, type InboxItem } from "@/lib/chat";
-import type { ChatOmni, MessaggioOmni, Radar, VoceTimeline, Hardware } from "./tipi";
+import type { ChatOmni, MessaggioOmni, Radar, VoceTimeline, Hardware, PuntoContatto } from "./tipi";
 
 const iniziali = (s: string) => String(s || "?").trim().split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toUpperCase() || "#";
 
@@ -307,7 +307,67 @@ export async function caricaRadar(chat: ChatOmni, me: { id: string | null; nome:
         // Il tipo `RadarProspect` non ha nemmeno i campi ltv/timeline.
         return { tipo: "prospect", stato: "Non Registrato", umore: "Da qualificare", coloreUmore: "indigo", aiSummary: riassunto };
     }
-    return radarCliente(chat.clientId, riassunto);
+    return radarCliente(chat.clientId, riassunto, chat);
+}
+
+/* ── DOVE ALTRO L'ABBIAMO SENTITO ─────────────────────────────────────────
+   «I punti di contatto che abbiamo avuto con quel cliente: telefonici,
+   WhatsApp o email. Se sto su WhatsApp non citarmi quello — solo gli altri
+   canali» (Luca 27/08).
+
+   Il canale in cui sto è già davanti agli occhi: ripeterlo è rumore. Quello
+   che serve sapere è se quel cliente ci ha già chiamato, o se una mail è
+   rimasta indietro mentre qui si chiacchiera.                            */
+async function puntiDiContatto(clientId: string, chat: ChatOmni): Promise<PuntoContatto[]> {
+    // le chiamate si agganciano per client_id, ma NON sempre: il webhook lo
+    // risolve dal numero e se il numero non è in anagrafica resta vuoto —
+    // quindi si cerca anche per coda di 9 cifre, come fa la scheda cliente
+    const cifre = String(chat.numero || chat.riferimento || "").replace(/\D/g, "");
+    const coda = cifre.length >= 9 ? cifre.slice(-9) : "";
+    const patt = coda ? "%" + coda.split("").join("%") + "%" : "";
+
+    const [chiamate, perNum, wa, em] = await Promise.all([
+        supabase.from("call_events").select("id, started_at, missed, direction")
+            .eq("client_id", clientId).order("started_at", { ascending: false }).limit(200),
+        patt
+            ? supabase.from("call_events").select("id, started_at, missed, direction")
+                .ilike("cliente_num", patt).order("started_at", { ascending: false }).limit(200)
+            : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+        chat.canale === "wa"
+            ? Promise.resolve({ data: [] as Record<string, unknown>[] })
+            : supabase.from("wa_conversations").select("id, last_message_at")
+                .eq("client_id", clientId).order("last_message_at", { ascending: false, nullsFirst: false }).limit(50),
+        chat.canale === "email"
+            ? Promise.resolve({ data: [] as Record<string, unknown>[] })
+            : supabase.from("email_conversations").select("id, last_message_at")
+                .eq("client_id", clientId).eq("trashed", false).eq("spam", false)
+                .order("last_message_at", { ascending: false, nullsFirst: false }).limit(50),
+    ]);
+
+    const out: PuntoContatto[] = [];
+
+    // stessa chiamata può arrivare da tutt'e due le query: si dedupa per id
+    const viste = new Map<string, Record<string, unknown>>();
+    for (const c of [...((chiamate.data || []) as Record<string, unknown>[]), ...((perNum.data || []) as Record<string, unknown>[])]) {
+        viste.set(String(c.id), c);
+    }
+    if (viste.size) {
+        const tutte = [...viste.values()].sort((a, b) => String(b.started_at || "").localeCompare(String(a.started_at || "")));
+        const perse = tutte.filter((c) => c.missed).length;
+        out.push({
+            canale: "tel", n: tutte.length,
+            ultimo: (tutte[0]?.started_at as string) || null,
+            nota: perse ? `${perse} senza risposta` : null,
+        });
+    }
+    const conv = (r: { data?: Record<string, unknown>[] | null }) => (r.data || []) as Record<string, unknown>[];
+    if (conv(wa).length) {
+        out.push({ canale: "wa", n: conv(wa).length, ultimo: (conv(wa)[0]?.last_message_at as string) || null });
+    }
+    if (conv(em).length) {
+        out.push({ canale: "email", n: conv(em).length, ultimo: (conv(em)[0]?.last_message_at as string) || null });
+    }
+    return out;
 }
 
 /** AI SUMMARY: oggi viene dal triage che già gira (DeepSeek, ogni 10'), che
@@ -336,7 +396,7 @@ async function aiSummary(chat: ChatOmni): Promise<string> {
 }
 
 /* ── CASO A: il cliente registrato ───────────────────────────────────── */
-async function radarCliente(clientId: string, aiSummaryTxt: string): Promise<Radar> {
+async function radarCliente(clientId: string, aiSummaryTxt: string, chat: ChatOmni): Promise<Radar> {
     const { data: righe, error: eC } = await supabase.from("contracts")
         .select("id, data, brand, categoria, prodotto, offerta, negozio, stato, dettagli, is_demo, nascosta_gestione")
         .eq("client_id", clientId).order("data", { ascending: false, nullsFirst: false }).limit(200);
@@ -351,6 +411,7 @@ async function radarCliente(clientId: string, aiSummaryTxt: string): Promise<Rad
         ltv: await ltvServizi(vendite),
         hardware: hardwareDa(vendite),
         timeline: timelineDa(vendite),
+        contatti: await puntiDiContatto(clientId, chat),
     };
 }
 
