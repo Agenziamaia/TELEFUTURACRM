@@ -840,7 +840,7 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, 
                 </div>
                 <div className="glass-card an-card rounded-2xl p-4 an-in">
                     <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">📊 La rete giorno per giorno (pezzi, per operatore)</p>
-                    <BarStack giorni={giorniRete} oggi={oggi > 0 ? oggi - 1 : -1} media={mediaRete} unit="pz" h={200} />
+                    <BarStack giorni={giorniRete} oggi={oggi > 0 ? oggi - 1 : -1} media={mediaRete} unit="pz" h={200} oraScatto={gl?.oraScatto ?? null} />
                 </div>
             </div>
         </div>

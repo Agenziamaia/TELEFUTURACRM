@@ -195,7 +195,7 @@ export function AreaChart({ serie, ghost, oggi = -1, colore = "var(--tf-818cf8)"
    media: linea tratteggiata di riferimento (produzione media per giorno
    lavorativo); il giorno di OGGI pulsa e mostra il tratto che manca alla
    media come proiezione del giorno. */
-export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt" }) {
+export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt", oraScatto = null }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
     const max = Math.max(1, ...giorni.map((g) => g.tot), media || 0) * 1.08;
@@ -229,6 +229,15 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
                                     ))}
                                     {manca > 0 && <TipRiga l="per stare in media" r={`+${fmtPt(manca)} ${unit}`} />}
                                     {!g.parti.length && <p className="text-[10px] text-slate-500">nessuna produzione</p>}
+                                    {/* ORA DI SCATTO (Luca 26/08): quello di oggi si vede
+                                        subito qui, ma entra in contatori, anelli e
+                                        proiezioni solo allo scatto — quando la giornata
+                                        viene considerata lavorata. Dirlo dove si guarda. */}
+                                    {i === oggi && (
+                                        <p className="text-[10px] text-amber-300/90 mt-1.5 pt-1.5 border-t border-white/10 max-w-[240px] leading-4">
+                                            ⏳ Quello di oggi lo vedi già qui. Alle {oraScatto == null ? 19 : oraScatto}:00 la giornata viene contata come lavorata: entra nei contatori, negli anelli e nella produzione, e le proiezioni si aggiornano.
+                                        </p>
+                                    )}
                                 </div>
                             }>
                                 <div className="w-full flex flex-col justify-end h-full">
