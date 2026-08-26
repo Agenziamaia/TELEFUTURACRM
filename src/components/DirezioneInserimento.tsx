@@ -208,42 +208,60 @@ export function DirezioneInserimentoAdmin() {
                 </div>
             )}
 
-            {/* 📊 IL TOTALE DI QUELLO CHE STO CHIEDENDO (Luca 26/08 notte):
-                per ogni pista, Σ dei target dati ai codici (sfrido già dentro)
-                contro produzione ATTUALE di rete e PROIEZIONE — il termometro
-                che dice se i target sono veri o campati in aria */}
+            {/* 📊 IL TOTALE DI QUELLO CHE STO CHIEDENDO (Luca 26/08 notte, v2):
+                TUTTE le piste per-codice, con la regola dei SUPERAMENTI — i
+                punti oltre il target di un codice NON sono recuperabili (uno
+                sbaglio da 30 punti su Magliana non tappa il buco di Collatina):
+                il progresso VALIDO è Σ min(fatto, target) per codice */}
             {dir && dir.tab && dir.codici.length > 0 && (() => {
                 const righe = dir.kpiCodice.map((pk) => {
                     const meta = dir.pisteTab.find((p) => p.chiave === pk);
                     if (!meta) return null;
-                    const richiesto = dir.codici.reduce((s, k) => s + (k.targets[pk] || 0), 0);
-                    if (richiesto <= 0) return null;
                     const cbW3 = dir.brand === "windtre" && pk === "cb";
-                    const fatto = Math.round(dir.codici.reduce((s, k) => s + (cbW3 ? (k.cbPunti || 0) : (k.piste[pk]?.punti || 0)), 0) * 100) / 100;
+                    const fattoDi = (k: typeof dir.codici[number]) => cbW3 ? (k.cbPunti || 0) : (k.piste[pk]?.punti || 0);
+                    const conTargetK = dir.codici.filter((k) => (k.targets[pk] || 0) > 0);
+                    const richiesto = conTargetK.reduce((s, k) => s + (k.targets[pk] || 0), 0);
+                    const fatto = Math.round(dir.codici.reduce((s, k) => s + fattoDi(k), 0) * 100) / 100;
+                    const utile = Math.round(conTargetK.reduce((s, k) => s + Math.min(fattoDi(k), k.targets[pk] || 0), 0) * 100) / 100;
+                    const sforati = conTargetK
+                        .map((k) => ({ nome: k.negozio, extra: Math.round((fattoDi(k) - (k.targets[pk] || 0)) * 100) / 100 }))
+                        .filter((x) => x.extra > 0);
+                    const sforo = Math.round(sforati.reduce((s, x) => s + x.extra, 0) * 100) / 100;
                     const proj = proiezioneDir(dir, fatto);
-                    const rif = proj ?? fatto;
+                    // proiezione UTILE: il ritmo di rete meno gli sforamenti già
+                    // maturati (che non torneranno buoni) — approssimazione onesta
+                    const projUtile = proj != null ? Math.max(utile, Math.round(proj - sforo)) : null;
+                    const rif = projUtile ?? utile;
                     const ratio = richiesto > 0 ? rif / richiesto : 1;
-                    const verdetto = ratio >= 1
-                        ? { txt: "✅ in linea: la proiezione copre la richiesta", cls: "text-emerald-300" }
+                    const verdetto = richiesto <= 0 ? null : ratio >= 1
+                        ? { txt: "✅ in linea: la proiezione utile copre la richiesta", cls: "text-emerald-300" }
                         : ratio >= 0.85
-                            ? { txt: `🟡 quasi: la proiezione arriva a ${it(rif)} su ${it(richiesto)}`, cls: "text-amber-300" }
+                            ? { txt: `🟡 quasi: la proiezione utile arriva a ${it(rif)} su ${it(richiesto)}`, cls: "text-amber-300" }
                             : { txt: `🔴 sopra la proiezione di ${it(Math.max(0, Math.ceil(richiesto - rif)))}: o si spinge o si ridimensiona`, cls: "text-rose-300" };
-                    return { pk, meta, richiesto, fatto, proj, verdetto };
-                }).filter(Boolean) as { pk: string; meta: { chiave: string; nome: string; um: string }; richiesto: number; fatto: number; proj: number | null; verdetto: { txt: string; cls: string } }[];
+                    return { pk, meta, cbW3, richiesto, fatto, utile, sforati, sforo, proj: projUtile, verdetto };
+                }).filter(Boolean) as { pk: string; meta: { chiave: string; nome: string; um: string }; cbW3: boolean; richiesto: number; fatto: number; utile: number; sforati: { nome: string; extra: number }[]; sforo: number; proj: number | null; verdetto: { txt: string; cls: string } | null }[];
                 if (!righe.length) return null;
                 return (
-                    <div className="glass-card p-4 space-y-3">
+                    <div className="glass-card p-4 space-y-3.5">
                         <div className="flex items-center gap-2">
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">📊 Totale richiesto vs rete</span>
-                            <span className="text-[10px] text-slate-600">somma dei target dati ai codici (sfrido incluso) contro fatto e proiezione</span>
+                            <span className="text-[10px] text-slate-600">Σ target sui codici (sfrido incluso) · il progresso valido si ferma al target di ogni codice: gli sforamenti non recuperano</span>
                         </div>
                         {righe.map((r) => (
                             <div key={r.pk} className="space-y-1">
-                                <SogliaBar emoji={EMOJI_PISTA(r.meta.nome)} label={`${r.meta.nome} · richiesti ${it(r.richiesto)}`}
-                                    punti={r.fatto} soglie={[{ tier: 1, soglia_da: r.richiesto }]}
+                                <SogliaBar emoji={EMOJI_PISTA(r.meta.nome)}
+                                    label={r.richiesto > 0 ? `${r.meta.nome} · richiesti ${it(r.richiesto)}` : `${r.meta.nome} · nessun target dato`}
+                                    punti={r.richiesto > 0 ? r.utile : r.fatto}
+                                    soglie={r.richiesto > 0 ? [{ tier: 1, soglia_da: r.richiesto }] : []}
                                     colore={bMeta.color} proiezione={r.proj}
-                                    unit={r.meta.um === "pezzi" && !(dir.brand === "windtre" && r.pk === "cb") ? "pz" : "pt"} nota={null} />
-                                <div className={cn("text-[11px] font-semibold", r.verdetto.cls)}>{r.verdetto.txt}</div>
+                                    unit={r.meta.um === "pezzi" && !r.cbW3 ? "pz" : "pt"}
+                                    nota={r.richiesto > 0 && r.fatto !== r.utile ? `rete ${it(r.fatto)} · validi verso i target ${it(r.utile)}` : null} />
+                                {r.sforati.length > 0 && (
+                                    <div className="text-[11px] font-semibold text-amber-300">
+                                        ⚠ {it(r.sforo)} oltre target — non recuperabili: {r.sforati.map((x) => `${x.nome} (+${it(x.extra)})`).join(" · ")}
+                                    </div>
+                                )}
+                                {r.verdetto && <div className={cn("text-[11px] font-semibold", r.verdetto.cls)}>{r.verdetto.txt}</div>}
                             </div>
                         ))}
                     </div>
