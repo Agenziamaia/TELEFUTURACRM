@@ -37,6 +37,9 @@ export async function chat(opts: {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  // "json_object" forza la risposta a JSON puro (il prompt DEVE citare la
+  // parola JSON, requisito dell'API) — usato dal triage WhatsApp
+  responseFormat?: "json_object";
 }): Promise<ChatResult> {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY non configurata");
@@ -51,6 +54,7 @@ export async function chat(opts: {
         model: opts.model ?? MODEL_FAST,
         messages: opts.messages,
         ...(opts.tools?.length ? { tools: opts.tools, tool_choice: "auto" } : {}),
+        ...(opts.responseFormat ? { response_format: { type: opts.responseFormat } } : {}),
         max_tokens: opts.maxTokens ?? 1500,
         temperature: opts.temperature ?? 0.2,
       }),

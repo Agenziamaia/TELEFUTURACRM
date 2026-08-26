@@ -1501,6 +1501,11 @@ function AnelloTeamWa({ fette, uid, grande, titolo }) {
     );
 }
 
+// parsimonia CLIENT sul risveglio del triage (una per pagina, non per widget:
+// i remount del drag/resize non devono richiamare l'API) — il vero anti-doppione
+// è il lock server in wa_triage_stato
+const corsaTriageClient = { t: 0 };
+
 function WidgetWhatsApp({ ctx, size }) {
     const uid = ctx.user?.id;
     const [dati, setDati] = useState(null);
@@ -1512,6 +1517,24 @@ function WidgetWhatsApp({ ctx, size }) {
     // suo, poi al periodo generale della Home (in alto a destra)
     const [periodoW, setPeriodoW] = useState("");
     useEffect(() => { const t = setInterval(() => setGiro((g) => g + 1), 120000); return () => clearInterval(t); }, []);
+    // sveglia il MOTORE DI TRIAGE AI (fire-and-forget): classifica le chat
+    // con messaggi nuovi — lock/debounce stanno nel server (corsaTriage), qui
+    // solo 3' di parsimonia sui remount; a catena max 5 giri per smaltire
+    // l'arretrato la prima volta. Se l'AI non può girare (niente credito),
+    // il widget resta sulle regole euristiche qui sotto: nessun buco.
+    useEffect(() => {
+        const ora = Date.now();
+        if (ora - corsaTriageClient.t < 3 * 60000) return;
+        corsaTriageClient.t = ora;
+        let giri = 0;
+        const corri = () => fetch("/api/whatsapp/triage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+            .then((r) => r.json())
+            .then((j) => {
+                if (j && j.classificate > 0) setGiro((g) => g + 1);
+                if (j && j.rimanenti > 0 && j.classificate > 0 && ++giri < 5) corri();
+            }).catch(() => { });
+        corri();
+    }, []);
     useEffect(() => {
         let vivo = true;
         (async () => {
@@ -1588,6 +1611,17 @@ function WidgetWhatsApp({ ctx, size }) {
                     if (!pag || pag.length < 1000) break;
                 }
             }
+            // ── TRIAGE AI per-chat (lib/ai/waTriage): dove esiste una
+            // classificazione AGGIORNATA all'ultimo messaggio, decide lei le
+            // liste; le regole euristiche restano il ripiego per le chat non
+            // ancora (ri)classificate — mai un buco tra un giro e l'altro
+            const triMap = new Map();
+            for (let b = 0; b < ids.length; b += 100) {
+                const { data: tri } = await supabase.from("wa_triage")
+                    .select("conversation_id, stato, azione, rinvio_fino, ultimo_msg_ts")
+                    .in("conversation_id", ids.slice(b, b + 100));
+                (tri || []).forEach((r) => triMap.set(r.conversation_id, r));
+            }
             if (!vivo) return;
             // la finestra vale sul TEMPO VERO del messaggio (wa_timestamp):
             // un import dello storico ha created_at = adesso ma messaggi
@@ -1607,6 +1641,7 @@ function WidgetWhatsApp({ ctx, size }) {
             const perConv = new Map();
             righe.forEach((m) => { const a = perConv.get(m.conversation_id) || []; a.push(m); perConv.set(m.conversation_id, a); });
             let sommaRisp = 0, nRisp = 0, inMese = 0, outMese = 0, concluse = 0;
+            let aiFresche = 0, agendate = 0;   // chat giudicate dal triage AI · rinvii futuri (🗓)
             const perUtente = new Map(); const attive = new Set();
             const daRisp = [];   // il cliente ha scritto e tocca a NOI
             const attesa = [];   // richiesta NOSTRA senza risposta del cliente
@@ -1629,6 +1664,30 @@ function WidgetWhatsApp({ ctx, size }) {
                 // la chiusura manuale vale solo finché non arriva un
                 // messaggio PIÙ NUOVO (di chiunque): dopo, si rivaluta
                 const chiusaOk = c?.chiusa_il && new Date(c.chiusa_il).getTime() >= ultimo.t - 1500;
+                // ── prima parola al TRIAGE AI, se ha letto fino all'ultimo
+                // messaggio; il ✓ manuale vince comunque su tutto ──
+                const tri = triMap.get(cid);
+                if (tri && new Date(tri.ultimo_msg_ts).getTime() >= ultimo.t - 1500) {
+                    aiFresche++;
+                    if (chiusaOk) { concluse++; return; }
+                    if (tri.stato === "rispondere") {
+                        let i = arr.length - 1, daT = ultimo.t;   // inizio del blocco finale del cliente
+                        while (i >= 0 && arr[i].direction === "in") { daT = arr[i].t; i--; }
+                        daRisp.push({ id: cid, nome: nomeChat, da: daT, azione: tri.azione });
+                    } else if (tri.stato === "attesa_cliente") {
+                        // regola business FUORI dall'AI: i numeri del call center
+                        // (contatti a freddo) non generano mai attese azzurre
+                        if (!ccIds.has(c?.instance_id)) attesa.push({ id: cid, nome: nomeChat, da: ultimo.t, azione: tri.azione });
+                    } else if (tri.stato === "programmata") {
+                        // rinvio esplicito («ci sentiamo a settembre»): dorme
+                        // fino alla data, poi riemerge tra i solleciti
+                        const r = tri.rinvio_fino ? new Date(tri.rinvio_fino).getTime() : 0;
+                        if (r && r <= adessoMs) {
+                            if (!ccIds.has(c?.instance_id)) attesa.push({ id: cid, nome: nomeChat, da: r, azione: tri.azione || "riprendere il contatto", ripresa: true });
+                        } else agendate++;
+                    } else concluse++;   // "niente": conclusa/rifiuto/promo senza risposta
+                    return;
+                }
                 if (ultimo.direction === "in") {
                     if (chiusaOk) { concluse++; return; }
                     // si giudica l'intero BLOCCO finale del cliente, non solo
@@ -1676,6 +1735,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 media: nRisp ? sommaRisp / nRisp : null, nRisp, inMese, outMese,
                 chatAttive: attive.size, daRisp, attesa, fette, nNumeri: vis.length,
                 concluse, tetto: (convs || []).length >= 400, etichette, etichettaPeriodo,
+                aiFresche, agendate,
             });
         })();
         return () => { vivo = false; };
@@ -1728,11 +1788,15 @@ function WidgetWhatsApp({ ctx, size }) {
     const adesso = Date.now();
     const rigaChat = (a, tinta) => (
         <div key={a.id} className="flex items-center gap-1">
-            <Link href={`/chat?conv=${a.id}`} className="flex-1 min-w-0 flex items-center justify-between gap-2 text-[11px] hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
-                <span className="font-semibold text-slate-200 truncate">{a.nome}</span>
-                <span className={cn("shrink-0 font-bold", tinta === "rossa"
-                    ? (adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")
-                    : (adesso - a.da > 2 * 86400000 ? "text-sky-300" : "text-slate-400"))}>da {fmtDurataWa(adesso - a.da)}</span>
+            <Link href={`/chat?conv=${a.id}`} className="flex-1 min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-semibold text-slate-200 truncate">{a.ripresa ? "🗓 " : ""}{a.nome}</span>
+                    <span className={cn("shrink-0 font-bold", tinta === "rossa"
+                        ? (adesso - a.da > 3 * 3600000 ? "text-rose-300" : "text-amber-300")
+                        : (adesso - a.da > 2 * 86400000 ? "text-sky-300" : "text-slate-400"))}>da {fmtDurataWa(adesso - a.da)}</span>
+                </div>
+                {/* il PERCHÉ del triage AI: chi lavora capisce al volo cosa serve */}
+                {a.azione && <div className="text-[10px] text-slate-500 truncate leading-tight">{a.azione}</div>}
             </Link>
             <button onClick={() => chiudiAlert(a)} title="Segna conclusa: non aspettiamo più nulla qui (se il cliente riscrive, torna in elenco)"
                 className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
@@ -1792,7 +1856,7 @@ function WidgetWhatsApp({ ctx, size }) {
             )}
             {/* anello: chi scrive quanto (stile Analisi, cliccabile) */}
             {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4} titolo={`Messaggi scritti · ${dati.etichettaPeriodo}`} />}
-            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
+            <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.aiFresche ? ` · 🧠 triage AI su ${dati.aiFresche} chat` : ""}{dati.agendate ? ` · 🗓 ${dati.agendate} in agenda` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
         </div>
     );
 }
