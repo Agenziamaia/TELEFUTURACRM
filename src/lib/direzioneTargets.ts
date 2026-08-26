@@ -167,15 +167,19 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
 }
 
 /** Target dalla soglia con lo SFRIDO della pista: intero, per ECCESSO
- *  («un extra che copre l'errore» — mai frazioni, mai ritocchi a mano). */
+ *  («un extra che copre l'errore» — mai frazioni, mai ritocchi a mano).
+ *  ARITMETICA INTERA (revisore 26/08): Math.ceil(370*1.10) dava 408 invece
+ *  di 407 — il floating point gonfiava di +1 i prodotti esatti. */
 export function targetConSfrido(soglia: number, pct: number): number {
-    return Math.ceil(Number(soglia) * (1 + (Number(pct) || 0) / 100));
+    const n = Math.round(Number(soglia)) * (100 + Math.round(Number(pct) || 0));
+    return Math.floor(n / 100) + (n % 100 > 0 ? 1 : 0);
 }
 
-/** Proiezione a fine mese sul ritmo dei giorni lavorativi (interi). */
+/** Proiezione a fine mese sul ritmo dei giorni lavorativi (interi).
+ *  Gated da gl.mostraProiezione come l'Analisi (revisore 26/08). */
 export function proiezioneDir(dir: Direzione, punti: number): number | null {
     const gl = dir.gl;
-    if (!gl || !gl.trascorsi || gl.trascorsi <= 0 || !gl.totali || punti <= 0) return null;
+    if (!gl || !gl.mostraProiezione || !gl.trascorsi || gl.trascorsi <= 0 || !gl.totali || punti <= 0) return null;
     return Math.max(Math.round(punti), Math.round((punti / gl.trascorsi) * gl.totali));
 }
 

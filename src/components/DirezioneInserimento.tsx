@@ -210,9 +210,12 @@ export function DirezioneInserimentoAdmin() {
                                                     />
                                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                                                         {/* le SOGLIE: click = target (INTERO, sfrido incluso);
-                                                            RICLICK sulla attiva = si toglie (bug Collatina S2) */}
+                                                            RICLICK sulla attiva = si toglie (bug Collatina S2).
+                                                            Le soglie a 0 (S1 Sky) non fanno pillola: un target 0
+                                                            sarebbe un finto no-op (revisore) */}
                                                         <div className="flex flex-wrap gap-1.5 flex-1 min-w-[220px]">
                                                             {scala && scala.length ? scala.map((s, i) => {
+                                                                if (!(Number(s) > 0)) return null;
                                                                 const valore = targetConSfrido(Number(s), sfrido);
                                                                 const attiva = target === valore && target > 0;
                                                                 return (
@@ -260,6 +263,12 @@ export function DirezioneInserimentoAdmin() {
                                                             {erroriSalva[chiave] && <span className="text-[10px] font-bold text-rose-300" title="Scrittura fallita: riprova">✗</span>}
                                                         </div>
                                                     </div>
+                                                    {/* target che non combacia con nessuna pillola: scritto a
+                                                        mano O figlio di uno sfrido cambiato dopo il click —
+                                                        dirlo evita il mistero (rilievo revisore) */}
+                                                    {target > 0 && !!(scala && scala.some((s) => Number(s) > 0)) && !scala.some((s) => Number(s) > 0 && targetConSfrido(Number(s), sfrido) === target) && (
+                                                        <div className="text-[10px] text-amber-400/80">✍️ target impostato a mano (o con uno sfrido diverso da quello attuale): un click su una soglia lo riallinea.</div>
+                                                    )}
                                                     {target > 0 && (
                                                         <div className="flex items-center gap-2">
                                                             <div className="h-1.5 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
