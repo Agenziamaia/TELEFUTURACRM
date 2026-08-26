@@ -101,7 +101,13 @@ async function classificaUna(conv: Conv, casellaNome: string, regolaTitolare?: s
         conversation_id: conv.id, versione: EMAIL_TRIAGE_VERSIONE, modello: MODEL_FAST,
         ultimo_msg_ts: fingerprint, errore: null as string | null, classificato_il: new Date().toISOString(),
     };
-    if (!righe.length) return { riga: { ...base, stato: "niente" as StatoEmail, azione: "conversazione senza messaggi" }, usage: null, abbiamoRisposto: false };
+    if (!righe.length) {
+        // una conversazione SENZA messaggi scaricati che matcha una REGOLA va
+        // comunque in spazzatura: la regola è su mittente/oggetto, non serve
+        // leggere nulla (caso Merulana 26/08: restava «niente» per sempre)
+        if (regolaTitolare) return { riga: { ...base, stato: "spazzatura" as StatoEmail, azione: "regola sul mittente — conversazione senza contenuto" }, usage: null, abbiamoRisposto: false };
+        return { riga: { ...base, stato: "niente" as StatoEmail, azione: "conversazione senza messaggi" }, usage: null, abbiamoRisposto: false };
+    }
 
     // guardia sull'INTERA conversazione, non sulle ultime 6 righe (rilievo
     // M1): una nostra risposta oltre la finestra bucava la protezione
