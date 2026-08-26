@@ -945,38 +945,22 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
-                                <div className="text-[11px] font-semibold text-slate-300 mt-1.5">{strat === "vicino" ? "è il più vicino a chiudere" : scelto.mio ? "è il tuo negozio e ha ancora capienza" : "è il più scoperto"}: {scelto.fatti} / {faseLabel}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, ora il pezzo di sfrido)"}</div>
                             </div>
                         ) : mobScelto ? (
                             <div className="rounded-2xl px-4 py-4 border"
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
-                                <div className="text-[10px] uppercase tracking-widest font-bold text-emerald-300">✅ paletti tutti salvi → ora contano i punti mobile</div>
+                                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">
                                     {mobScelto.negozio}
                                     {mobScelto.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
                                 </div>
-                                <div className="text-[11px] font-semibold text-slate-300 mt-1">{mobScelto.mancano > 0 ? `mancano ${it(mobScelto.mancano)} punti mobile al target della direzione` : "🎯 anche il mobile è a target: carica dove preferisci"}</div>
                             </div>
                         ) : (
                             <div className="rounded-2xl px-4 py-4 border border-emerald-500/30 text-center"
                                 style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))" }}>
-                                <div className="text-lg font-black text-emerald-300">✅ Tutti i codici sopra il paletto</div>
-                                <div className="text-[11px] text-slate-400 mt-1">carica dove preferisci (meglio sul tuo negozio)</div>
+                                <div className="text-lg font-black text-emerald-300">🏠 Caricala sul codice del tuo negozio</div>
                             </div>
                         )}
-                        <div className="space-y-1">
-                            {franchising.map((f) => (
-                                <div key={f.nome} className="text-[11px]">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="truncate text-slate-300">{f.nome}</span>
-                                        <span className={cn("shrink-0 tabular-nums font-bold", f.fatti >= obiettivo ? "text-emerald-400" : f.fatti >= W3_PALETTO_BUSINESS ? "text-amber-300" : "text-rose-300")}>{f.fatti} / {obiettivo}</span>
-                                    </div>
-                                    <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mt-0.5">
-                                        <div className={cn("h-full rounded-full", f.fatti >= obiettivo ? "bg-emerald-400" : f.fatti >= W3_PALETTO_BUSINESS ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${Math.min(100, Math.round((f.fatti / obiettivo) * 100))}%` }} />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </>);
                 })()}
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
@@ -994,38 +978,11 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             {consigliato.negozio}
                             {consigliato.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
                         </div>
-                        <div className="mt-2 flex items-center gap-2">
-                            <div className="h-2 flex-1 rounded-full bg-black/30 overflow-hidden">
-                                <div className="h-full rounded-full transition-all" style={{ width: `${consigliato.target > 0 ? Math.min(100, Math.round((consigliato.fatti / consigliato.target) * 100)) : 0}%`, background: bMeta?.color || "#38bdf8" }} />
-                            </div>
-                            <span className="text-[11px] font-bold text-slate-200 tabular-nums shrink-0">{it(consigliato.fatti)} / {it(consigliato.target)}</span>
-                        </div>
-                        <div className="text-[11px] font-semibold mt-1">{consigliato.sottoS1
-                            ? <span className="text-rose-300">🚨 prima esigenza: {pista === "cb" ? "l'80% Partnership" : "il Target 1"} — mancano {it(consigliato.mancanoS1)} {pista === "cb" ? "punti all'80%" : "alla S1"}{consigliato.mio ? " del tuo negozio" : ""}</span>
-                            : <span className="text-slate-300">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "🎯 target raggiunto: prosegui qui o guarda le altre realtà"}</span>}</div>
                     </div>
                 )}
-                {/* le altre realtà, in piccolo */}
-                {pista !== BIZMOB && altre.length > 0 && (
-                    <div className="space-y-1">
-                        {altre.map((k) => {
-                            const perc = k.target > 0 ? Math.min(100, Math.round((k.fatti / k.target) * 100)) : 0;
-                            return (
-                                <div key={k.cod_gara} className="text-[11px]">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className={cn("truncate", k.mio ? "text-white font-bold" : "text-slate-400")}>{k.mio ? "🏠 " : ""}{k.negozio}</span>
-                                        <span className="shrink-0 tabular-nums text-slate-500">{it(k.fatti)} / {it(k.target)}</span>
-                                    </div>
-                                    <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden mt-0.5">
-                                        <div className={cn("h-full rounded-full", perc >= 100 ? "bg-emerald-400" : "bg-sky-400/60")} style={{ width: `${perc}%` }} />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
+
             </>)}
-            <div className="text-[10px] text-slate-600">Avanzamento per codice di inserimento, dal motore gare · aggiornato all&apos;apertura.</div>
+            <div className="text-[10px] text-slate-600">Indicazione della direzione · aggiornata all&apos;apertura.</div>
         </div>
     );
 }
