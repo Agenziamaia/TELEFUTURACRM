@@ -47,6 +47,11 @@ const mesePrimo = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 // perché la Bussola mostra le piste con target senza guardare il ruolo.
 const PISTE_FUORI = new Set<string>([...PISTE_PARALLELE]);
 
+// sfrido del PALETTO BUSINESS in PEZZI (Luca 26/08 notte-4): cuscinetto
+// sopra il 6 della lettera — vive in direzione_sfridi con questa pista
+// speciale (pct = pezzi, non percentuale)
+const SFRIDO_PALETTO = "__paletto_business__";
+
 // etichette parlanti per le scale «di regola» (Luca 26/08 notte): la CB ha
 // il target Partnership (80% = premio ridotto, 100% = pieno), i Protetti
 // hanno la soglia-malus «almeno 1»
@@ -81,6 +86,7 @@ export function DirezioneInserimentoAdmin() {
     const [bozzeSfr, setBozzeSfr] = useState<Record<string, string>>({}); // pista → input sfrido
     const [salvate, setSalvate] = useState<Record<string, boolean>>({});
     const [erroriSalva, setErroriSalva] = useState<Record<string, boolean>>({});
+    const [gruppoAperto, setGruppoAperto] = useState(true);
     const [giro, setGiro] = useState(0);
 
     useEffect(() => {
@@ -210,6 +216,29 @@ export function DirezioneInserimentoAdmin() {
                                 </div>
                             );
                         })}
+                        {/* 💼 sfrido del PALETTO in PEZZI (non %): cuscinetto sopra
+                            il 6 della lettera — l'obiettivo delle barre diventa 6+n */}
+                        {brand === "windtre" && (() => {
+                            const sp = Math.round(Number(dir.sfridi[SFRIDO_PALETTO]) || 0);
+                            const spKey = `sfr|${SFRIDO_PALETTO}`;
+                            const bozzaSp = bozzeSfr[SFRIDO_PALETTO] ?? (sp ? String(sp) : "");
+                            return (
+                                <div className="flex items-center gap-1.5" title="Cuscinetto in PEZZI sopra il paletto business della lettera (6): l'obiettivo mostrato diventa 6 + sfrido">
+                                    <span className="text-xs text-slate-300 font-semibold">💼 Paletto Business</span>
+                                    <input value={bozzaSp} onChange={(e) => setBozzeSfr((b) => ({ ...b, [SFRIDO_PALETTO]: e.target.value }))}
+                                        onBlur={() => {
+                                            if (String(bozzaSp).trim() === "") { setBozzeSfr((b) => ({ ...b, [SFRIDO_PALETTO]: sp ? String(sp) : "" })); return; }
+                                            const v = Math.max(0, Math.round(Number(String(bozzaSp).replace(",", "."))));
+                                            if (Number.isFinite(v) && v !== sp) salvaSfrido(SFRIDO_PALETTO, v);
+                                        }}
+                                        placeholder="0" inputMode="numeric"
+                                        className="glass-input !h-8 w-14 text-xs text-right" />
+                                    <span className="text-[10px] text-slate-500">pz</span>
+                                    {salvate[spKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                    {erroriSalva[spKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
@@ -426,18 +455,22 @@ export function DirezioneInserimentoAdmin() {
                                             è ancora censito come gate, qui almeno si monitora */}
                                         {dir.brand === "windtre" && !k.multibrand && (() => {
                                             const fatti = k.businessPezzi || 0;
-                                            const okP = fatti >= W3_PALETTO_BUSINESS;
-                                            const percP = Math.min(100, Math.round((fatti / W3_PALETTO_BUSINESS) * 100));
+                                            const spPaletto = Math.round(Number(dir.sfridi[SFRIDO_PALETTO]) || 0);
+                                            const obiettivo = W3_PALETTO_BUSINESS + spPaletto;
+                                            const salvo = fatti >= W3_PALETTO_BUSINESS;      // niente malus
+                                            const okP = fatti >= obiettivo;                   // cuscinetto pieno
+                                            const percP = Math.min(100, Math.round((fatti / obiettivo) * 100));
                                             return (
                                                 <div className="px-4 py-3.5">
                                                     <div className="flex items-center justify-between gap-2 mb-1.5">
-                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {W3_PALETTO_BUSINESS} attivazioni P.IVA mobile o malus 30% sul mobile (vale anche col fisso sotto S1)</span></span>
-                                                        <span className={cn("text-[11px] font-black tabular-nums", okP ? "text-emerald-400" : "text-rose-300")}>{fatti} / {W3_PALETTO_BUSINESS}{okP ? " ✅" : ""}</span>
+                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {W3_PALETTO_BUSINESS} attivazioni P.IVA mobile{spPaletto ? ` + ${spPaletto} di sfrido = obiettivo ${obiettivo}` : ""} o malus 30% sul mobile (vale anche col fisso sotto S1)</span></span>
+                                                        <span className={cn("text-[11px] font-black tabular-nums", okP ? "text-emerald-400" : salvo ? "text-amber-300" : "text-rose-300")}>{fatti} / {obiettivo}{okP ? " ✅" : ""}</span>
                                                     </div>
                                                     <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                                                        <div className={cn("h-full rounded-full transition-all", okP ? "bg-emerald-400" : percP >= 50 ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${percP}%` }} />
+                                                        <div className={cn("h-full rounded-full transition-all", okP ? "bg-emerald-400" : salvo ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${percP}%` }} />
                                                     </div>
-                                                    {!okP && <div className="text-[10px] text-rose-300/80 mt-1">⚠ mancano {W3_PALETTO_BUSINESS - fatti} pezzi business: sotto il paletto scatta il −30% sul mobile.</div>}
+                                                    {!salvo && <div className="text-[10px] text-rose-300/80 mt-1">⚠ mancano {W3_PALETTO_BUSINESS - fatti} al paletto: sotto scatta il −30% sul mobile.</div>}
+                                                    {salvo && !okP && <div className="text-[10px] text-amber-300/80 mt-1">paletto salvo — mancano {obiettivo - fatti} al cuscinetto di sicurezza.</div>}
                                                 </div>
                                             );
                                         })()}
@@ -453,11 +486,13 @@ export function DirezioneInserimentoAdmin() {
                         POLITICA di caricamento per la Bussola dei ragazzi */}
                     {dir.pisteGruppo.length > 0 && (
                         <div className="glass-card p-4 space-y-4">
-                            <div className="flex items-center gap-2">
+                            {/* header CLICCABILE: la card si chiude (Luca 26/08 notte-4) */}
+                            <button type="button" onClick={() => setGruppoAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
                                 <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">🌍 Target di gruppo</span>
                                 <span className="text-[10px] text-slate-600">contano a RETE: la politica decide dove la Bussola fa caricare</span>
-                            </div>
-                            {dir.pisteGruppo.map((pg) => {
+                                <span className={cn("ml-auto text-slate-500 transition-transform text-xs", gruppoAperto && "rotate-180")}>▾</span>
+                            </button>
+                            {gruppoAperto && dir.pisteGruppo.map((pg) => {
                                 const meta = dir.pisteTab.find((p) => p.chiave === pg);
                                 if (!meta) return null;
                                 const puntiRete = Math.round(dir.codici.reduce((s, k) => s + (k.piste[pg]?.punti || 0), 0) * 100) / 100;
@@ -493,7 +528,7 @@ export function DirezioneInserimentoAdmin() {
                             })}
                             {/* i MULTIBRAND non caricano MAI sul loro codice: qui
                                 l'ASSOCIAZIONE al franchising per le categorie libere */}
-                            {dir.codici.some((k) => k.multibrand) && (
+                            {gruppoAperto && dir.codici.some((k) => k.multibrand) && (
                                 <div className="pt-3 border-t border-white/5 space-y-2">
                                     <div className="text-[10px] font-bold text-slate-500 uppercase">Codice associato dei multibrand <span className="normal-case font-normal">(per le categorie «ognuno sul suo»)</span></div>
                                     <div className="flex flex-wrap gap-x-6 gap-y-2">
