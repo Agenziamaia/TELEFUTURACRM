@@ -20,7 +20,7 @@ import { SogliaBar as SogliaBarRaw } from "../analisi/_charts";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, matchRigheGaraParallela, PISTE_PARALLELE, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim, PARALLELE_SOLO_AZIENDA } from "@/lib/commissioning";
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, matchRigheGaraParallela, PISTE_PARALLELE, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim, PARALLELE_SOLO_AZIENDA, FASCIA_SP } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
 type Prod = { id: string; categoria_id: string; tipo_cliente: string; nome: string; ordine: number; attivo: boolean | null };
@@ -164,10 +164,17 @@ export default function CalcolatorePage() {
         return () => { vivo = false; };
     }, [offId]);
     // toggle con esclusività di gruppo (una sola per gruppo_singolo)
+    const FASCE = new Set<string>(Object.values(FASCIA_SP));
     const togOpzCalc = (nome: string) => {
         const o = opzCatalogo.find(x => x.nome === nome);
         setOpzSel(prev => {
             if (prev.includes(nome)) return prev.filter(x => x !== nome);
+            // LE FASCE DI PREZZO SI ESCLUDONO (Luca 26/08: «come possono essere
+            // sommabili?»): un telefono ha UN prezzo. Erano libere come le
+            // altre pillole e selezionandone due si sommavano i due gettoni —
+            // 20 + 25 = 45 € che non esistono. Non sono opzioni di catalogo,
+            // quindi il gruppo qui non c'era: si riconoscono dal token.
+            if (FASCE.has(nome)) return [...prev.filter(x => !FASCE.has(x)), nome];
             if (o?.gruppo) {
                 const stesso = new Set(opzCatalogo.filter(x => x.gruppo === o.gruppo).map(x => x.nome));
                 return [...prev.filter(x => !stesso.has(x)), nome];

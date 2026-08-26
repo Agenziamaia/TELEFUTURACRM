@@ -590,8 +590,14 @@ export function matchExtraOpzioni(
         }
         // gli extra a opzione competono per NOME OPZIONE (una sola vince, così
         // si fanno le eccezioni); quelli per condizioni sono indipendenti fra
-        // loro e si sommano tutti (ognuno è la sua voce di lettera)
-        const k = req.length ? req.join("|") : `riga:${r.id}`;
+        // loro e si sommano tutti (ognuno è la sua voce di lettera).
+        // ⚠️ LA FASCIA DI PREZZO NON FA CHIAVE: «Findomestic|SP <200€» e
+        // «Findomestic|SP 200-600€» sono la STESSA voce di lettera a prezzi
+        // diversi, quindi devono competere — non sommarsi. Un telefono ha un
+        // prezzo solo: senza questa riga bastava che una vendita portasse due
+        // fasce per pagare 20 + 25 = 45 € (Luca 26/08).
+        const chiave = req.filter(t => !FASCE_LOWER.has(t));
+        const k = req.length ? (chiave.length ? chiave.join("|") : "fascia") : `riga:${r.id}`;
         const pre = best.get(k);
         if (!pre || score > pre.score || (score === pre.score && r.ordine < pre.r.ordine)) best.set(k, { r, score });
     }
@@ -710,6 +716,7 @@ export async function cutoffProduzione(monthISO: string): Promise<string | null>
    opzioni che RICHIEDE sono tutte presenti), accende solo le righe nuove. */
 export const FASCIA_SP = { basso: "SP <200€", medio: "SP 200-600€", alto: "SP ≥600€" } as const;
 export const TOKEN_5G = "Terminale 5G";
+const FASCE_LOWER = new Set(Object.values(FASCIA_SP).map(x => x.toLowerCase()));
 
 /* Finanziaria e rata mensile NON sono più token sintetici (26/08 sera): dopo
    la semplificazione del catalogo sono OPZIONI VERE della vendita — «Rata
