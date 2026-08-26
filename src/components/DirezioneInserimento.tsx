@@ -871,10 +871,15 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     // 💼 BUSINESS MOBILE W3 (Luca 27/08): variabile dedicata — la Bussola
     // SPARTISCE le attivazioni per portare TUTTI i codici oltre il paletto
     const BIZMOB = "__bizmob__";
+    // BUSINESS FISSO (Luca 27/08-10): voce dedicata sotto «Business» così
+    // nessuno chiama chiedendo dov'è — ma è SPECULARE al fisso consumer:
+    // stessa pista, stessi consigli
+    const BIZFISSO = "__bizfisso__";
     const èBusinessPista = (p: { chiave: string; nome: string }) => p.chiave === BIZMOB || /business|piva/i.test(p.chiave + " " + p.nome);
     const pisteBussola = useMemo(() => {
         const base = dir?.brand === "windtre"
-            ? [...pisteAttive, { chiave: BIZMOB, nome: "Business mobile", um: "pezzi" }]
+            ? [...pisteAttive, { chiave: BIZMOB, nome: "Business mobile", um: "pezzi" },
+                ...(pisteAttive.some((p) => p.chiave === "fisso") ? [{ chiave: BIZFISSO, nome: "Business fisso", um: "pt" }] : [])]
             : pisteAttive;
         if (tipoCli === "business") return base.filter(èBusinessPista);
         if (tipoCli === "consumer") return base.filter((p) => !èBusinessPista(p));
@@ -932,12 +937,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             </div>
         );
     }
-    const lista = dir && !pistaDiGruppo ? consigliaCodici(dir, pista, negozio, strategiaDi(dir, pista)).slice(0, 5) : [];
+    const pistaCons = pista === BIZFISSO ? "fisso" : pista;
+    const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons)).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
     const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
     return (
-        <div className="flex flex-col p-3.5 gap-3">
+        <div className="h-full flex flex-col p-3.5 gap-3">
             {/* 🔔 la direzione ha CAMBIATO gli inserimenti */}
             {novita && (
                 <div className="rounded-xl bg-amber-500/[0.12] border border-amber-500/40 px-3 py-2 flex items-center gap-2 animate-pulse">
@@ -972,7 +978,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             </div>
             {/* brand LIBERO: risposta immediata, niente step 2 */}
             {brandLibero ? (
-                <div className="rounded-2xl px-4 py-5 text-center border border-emerald-500/30"
+                <div className="rounded-2xl px-4 py-6 text-center border border-emerald-500/30 my-auto"
                     style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))", boxShadow: "0 0 24px rgba(16,185,129,0.18)" }}>
                     <div className="text-2xl font-black text-emerald-300 drop-shadow">🕊️ Inserimento libero</div>
                     <div className="text-[11px] text-slate-400 mt-1">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
@@ -1041,13 +1047,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
                     return (<>
                         {scelto ? (
-                            <div className="rounded-2xl px-4 py-4 border"
+                            <div className="rounded-2xl px-4 py-5 border my-auto"
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
                             </div>
                         ) : mobScelto ? (
-                            <div className="rounded-2xl px-4 py-4 border"
+                            <div className="rounded-2xl px-4 py-5 border my-auto"
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">
@@ -1056,7 +1062,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 </div>
                             </div>
                         ) : (
-                            <div className="rounded-2xl px-4 py-4 border border-emerald-500/30 text-center"
+                            <div className="rounded-2xl px-4 py-5 border border-emerald-500/30 text-center my-auto"
                                 style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))" }}>
                                 <div className="text-lg font-black text-emerald-300">🏠 Caricala sul codice del tuo negozio</div>
                             </div>
@@ -1064,14 +1070,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </>);
                 })()}
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
-                    <div className="rounded-2xl px-4 py-4 border text-center"
+                    <div className="rounded-2xl px-4 py-5 border text-center my-auto"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 16%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 35%, transparent)`, boxShadow: `0 0 22px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 22%, transparent)` }}>
                         <div className="text-xl font-black text-white leading-snug">{tipGruppo.testo}</div>
                         {tipGruppo.sub ? <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div> : null}
                     </div>
                 )}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
-                    <div className="rounded-2xl px-4 py-4 border"
+                    <div className="rounded-2xl px-4 py-5 border my-auto"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                         <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                         <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">

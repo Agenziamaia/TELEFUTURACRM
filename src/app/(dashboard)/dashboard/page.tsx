@@ -143,7 +143,13 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                         <GridLayout className="tf-griglia" width={gridW}
                             gridConfig={{ cols: 16, rowHeight: 96, margin: [16, 16], containerPadding: [0, 0] }}
                             dragConfig={{ handle: ".tf-drag", cancel: "button" }}
-                            layout={layout.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || 4, minW: 1, minH: 1 }))}
+                            layout={layout.map((w) => {
+                                // minimi PER-WIDGET dal registry (Luca 27/08: la
+                                // Bussola sotto una certa taglia è inusabile)
+                                const inf = infoWidget(w.k, ctx);
+                                const mW = Number(inf?.minW) || 1, mH = Number(inf?.minH) || 1;
+                                return { i: w.k, x: w.x || 0, y: w.y || 0, w: Math.max(w.s, mW), h: Math.max(w.h || 4, mH), minW: mW, minH: mH };
+                            })}
                             onLayoutChange={onLayoutChange}>
                             {layout.map((w) => {
                                 const info = infoWidget(w.k, ctx);
@@ -554,7 +560,7 @@ export default function Dashboard() {
         // in CODA vera (niente Infinity: il payload lo serializzerebbe a 0 e
         // senza il giro della griglia — pila mobile — finirebbe in testa)
         const coda = layout.reduce((m, w) => Math.max(m, (w.y || 0) + (w.h || 4)), 0);
-        salvaLayout([...layout, { k: id, s: COLS_DA_TAGLIA[info.def] || 4, h: H_DA_TAGLIA[info.def] || 4, x: 0, y: coda }]);
+        salvaLayout([...layout, { k: id, s: Math.max(COLS_DA_TAGLIA[info.def] || 4, Number(info.minW) || 1), h: Math.max(H_DA_TAGLIA[info.def] || 4, Number(info.minH) || 1), x: 0, y: coda }]);
     };
 
     if (!user) return null;
