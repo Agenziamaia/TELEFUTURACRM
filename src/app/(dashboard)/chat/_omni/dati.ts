@@ -12,6 +12,11 @@
      · Storia    → contracts (LTV, telefono a rate, cronologia)          */
 
 import { supabase } from "@/lib/supabaseClient";
+import {
+    brandIdDaLabel, calcolaAvanzamento, caricaContrattiContesto, caricaTabellareAzienda,
+    contestoVfFw, esclusaDalleGare, matchRigheAttivazione, payEuroAttivazione,
+    type ContrattoPay, type Tabellare,
+} from "@/lib/commissioning";
 import type { ChatOmni, Radar, VoceTimeline, Hardware } from "./tipi";
 
 const iniziali = (s: string) => String(s || "?").trim().split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toUpperCase() || "#";
@@ -187,33 +192,106 @@ async function radarCliente(clientId: string, aiSummaryTxt: string): Promise<Rad
         umore: vendite.length > 3 ? "Cliente solido" : "Cliente attivo",
         coloreUmore: vendite.length > 3 ? "emerald" : "indigo",
         aiSummary: aiSummaryTxt,
-        ltv: ltvDa(vendite),
+        ltv: await ltvServizi(vendite),
         hardware: hardwareDa(vendite),
         timeline: timelineDa(vendite),
     };
 }
 
-/** VALORE GENERATO — «dal momento della registrazione».
- *  ⚠️ APERTO CON LUCA: qui sommo i prezzi delle voci di MARGINALITÀ, che
- *  sono le uniche con un euro scritto sulla vendita. Il valore delle
- *  attivazioni telco non è un numero sul contratto: è il pay della lettera
- *  di gara del mese in cui è stato fatto, e va deciso se «valore generato»
- *  vuol dire quello (ricavo dell'azienda) o il margine netto. Finché non è
- *  deciso, il numero mostrato è ONESTO su cosa contiene: lo dice la nota. */
-function ltvDa(vendite: Record<string, unknown>[]): { euro: number; nota: string } {
-    let euro = 0, conMargine = 0;
-    for (const c of vendite) {
+/** VALORE GENERATO = IL RICAVO DELL'AZIENDA (Luca 26/08, testuale: «sui
+ *  servizi degli operatori telefonici corrisponde al commissioning di quella
+ *  attivazione»). Quindi NON è un importo scritto sul contratto: è il pay
+ *  della lettera di gara del mese in cui l'attivazione è stata fatta, alla
+ *  soglia che quel mese è stata davvero raggiunta.
+ *
+ *  Per calcolarlo bene servono tre cose per ogni mese toccato dal cliente: il
+ *  tabellare azienda del contesto, la produzione di quel mese (le soglie si
+ *  raggiungono in gruppo, non da soli) e il canone dell'offerta. Si ricicla
+ *  il motore invece di riscriverlo, e si passa dal `caricaContrattiContesto`
+ *  invece di normalizzare a mano — così il cliente eredita gratis anche le
+ *  cose che il motore sa fare (fascia di prezzo dei telefoni dal listino,
+ *  opzioni, provenienza).
+ *
+ *  ⚠️ LO SCONTRINATO NON C'È, ED È VOLUTO: «dobbiamo ancora settare il
+ *  magazzino dove andiamo a definire il margine dell'azienda rispetto al
+ *  valore che scontriniamo, per ora mettici solo quelle dei servizi». Le
+ *  vendite di marginalità sono contate a parte e DICHIARATE nella nota, così
+ *  il numero non sembra completo quando non lo è. */
+async function ltvServizi(vendite: Record<string, unknown>[]): Promise<{ euro: number; nota: string }> {
+    const attivazioni = vendite.filter((c) =>
+        String(c.id).startsWith("CTR-") && !/annull/i.test(String(c.stato || "")));
+    const scontrinate = vendite.length - attivazioni.length;
+    if (!attivazioni.length) return { euro: 0, nota: nota(0, 0, scontrinate) };
+
+    // gruppi (contesto pay, mese): le soglie sono mensili e di contesto
+    const gruppi = new Map<string, { ctx: string; mese: string; ids: Set<string>; prefix: string }>();
+    for (const c of attivazioni) {
         const d = (c.dettagli || {}) as Record<string, unknown>;
-        const prezzo = Number(d["Prezzo"] ?? d["Importo"] ?? d["Totale"] ?? 0);
-        if (prezzo > 0) { euro += prezzo; conMargine++; }
+        const brandId = brandIdDaLabel(c.brand);
+        if (!brandId) continue;
+        const ctx = contestoVfFw(brandId, String(d["Cod.Ins."] || "") || null, String(c.negozio || ""), String(c.categoria || ""));
+        const mese = `${String(c.data).slice(0, 7)}-01`;
+        if (!ctx || String(c.data).length < 7) continue;
+        const k = `${ctx}|${mese}`;
+        const g = gruppi.get(k) || { ctx, mese, ids: new Set<string>(), prefix: String(c.brand || "") };
+        g.ids.add(String(c.id));
+        gruppi.set(k, g);
     }
-    const telco = vendite.length - conMargine;
-    return {
-        euro: Math.round(euro * 100) / 100,
-        nota: telco > 0
-            ? `${conMargine} vendite con importo · ${telco} attivazioni telco ancora da valorizzare`
-            : `${conMargine} vendite con importo`,
-    };
+    if (!gruppi.size) return { euro: 0, nota: nota(0, 0, scontrinate) };
+
+    const canoni = await mappaCanoni();
+    let euro = 0, contate = 0, senzaPay = 0;
+    for (const g of gruppi.values()) {
+        let tab: Tabellare | null = null;
+        let mese: ContrattoPay[] = [];
+        try {
+            const [t, cc] = await Promise.all([
+                caricaTabellareAzienda(g.ctx, g.mese),
+                caricaContrattiContesto(g.ctx, g.mese, g.prefix),
+            ]);
+            tab = t; mese = cc.contratti;
+        } catch { continue; }
+        if (!tab) continue;
+        // la SOGLIA raggiunta quel mese da tutta la produzione del contesto
+        const avz = calcolaAvanzamento(tab, mese.filter((x) => !esclusaDalleGare(x)));
+        for (const c of mese) {
+            if (!g.ids.has(String(c.id))) continue;
+            const set = matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand));
+            if (!set.length) { senzaPay++; continue; }
+            const pista = set[0].pista;
+            const tier = pista ? (avz.piste[pista]?.tier ?? 0) : 0;
+            const canone = canoni.get(`${brandIdDaLabel(c.brand)}|${chiave(c.offerta)}|${chiave(c.prodotto)}`) ?? null;
+            const v = payEuroAttivazione(set, set[0].gettone ? 0 : tier, canone);
+            if (v == null) { senzaPay++; continue; }
+            euro += v; contate++;
+        }
+    }
+    return { euro: Math.round(euro * 100) / 100, nota: nota(contate, senzaPay, scontrinate) };
+}
+
+const chiave = (x: unknown) => String(x || "").trim().toLowerCase();
+
+function nota(contate: number, senzaPay: number, scontrinate: number): string {
+    const parti = [`${contate} ${contate === 1 ? "attivazione" : "attivazioni"} a commissioning`];
+    if (senzaPay) parti.push(`${senzaPay} senza riga di pay`);
+    if (scontrinate) parti.push(`${scontrinate} di scontrinato, non ancora valorizzate`);
+    return parti.join(" · ");
+}
+
+/** canone mensile per offerta, che serve alle righe a moltiplicatore */
+let _canoni: Map<string, number> | null = null;
+async function mappaCanoni(): Promise<Map<string, number>> {
+    if (_canoni) return _canoni;
+    const { data } = await supabase.from("catalog_offerte")
+        .select("nome, canone_mensile, catalog_prodotti!inner(nome, brand_id)")
+        .not("canone_mensile", "is", null).limit(4000);
+    const m = new Map<string, number>();
+    for (const o of (data || []) as Record<string, unknown>[]) {
+        const p = o.catalog_prodotti as { nome: string; brand_id: string } | null;
+        if (p) m.set(`${p.brand_id}|${chiave(o.nome)}|${chiave(p.nome)}`, Number(o.canone_mensile));
+    }
+    _canoni = m;
+    return m;
 }
 
 /** ECOSISTEMA & HARDWARE — il telefono a rate ancora in corso.
