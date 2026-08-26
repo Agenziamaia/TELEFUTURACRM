@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { useVisibleStores, matchNegozi } from "@/lib/visibleStores";
+import { seesAllStores } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
 import {
@@ -103,11 +104,15 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         return () => { alive = false; clearInterval(t); };
     }, [user?.id]);
     // il campo negozio può essere MULTI ("Magliana W3, Magliana Multi" —
-    // gemelli con una casella sola, come i numeri WhatsApp): matchNegozi
+    // gemelli con una casella sola, come i numeri WhatsApp): matchNegozi.
+    // L'AMMINISTRAZIONE vede TUTTE le caselle (direttiva Luca 26/08 sera,
+    // «come vedo tutti i numeri WhatsApp» — supera la scelta del 03/08: da
+    // oggi le email si lavorano SOLO nel CRM, la regia serve completa)
     const visibleAccounts = useMemo(() =>
-        accounts.filter(a => a.owner_user_id === user?.id || membroDi.has(a.id)
+        seesAllStores(user?.role) ? accounts
+        : accounts.filter(a => a.owner_user_id === user?.id || membroDi.has(a.id)
             || (!a.owner_user_id && matchNegozi(a.negozio, myStores))),
-    [accounts, user?.id, myStores, membroDi]);
+    [accounts, user?.id, user?.role, myStores, membroDi]);
 
     // DEEP-LINK /chat?mconv=<id> (26/08, widget Email del team): apre LA
     // conversazione esatta. Tre lezioni del revisore (rilievi A2+M5): ① si

@@ -478,11 +478,11 @@ function ChatPageInner() {
         supabase.from("email_account_users").select("account_id").eq("user_id", meId),
       ]);
       // stessa regola di visibilità dell'Inbox (modello WhatsApp, 26/08):
-      // titolare O membro O negozio (anche multi) in visibilità; niente
-      // bypass admin — il pallino deve contare SOLO caselle apribili, sennò
-      // resta acceso su posta che qui non si può leggere (rilievo revisore)
+      // titolare O membro O negozio (anche multi) in visibilità; e
+      // amministrazione = TUTTE (direttiva 26/08 sera) — il pallino conta
+      // solo caselle apribili, e per l'admin ora lo sono tutte
       const membro = new Set((memb || []).map((r: any) => r.account_id));
-      const mine = (accs || []).filter((a: any) => a.owner_user_id === meId || membro.has(a.id) || (!a.owner_user_id && matchNegozi(a.negozio, myStores))).map((a: any) => a.id);
+      const mine = (accs || []).filter((a: any) => seesAllStores(user?.role) || a.owner_user_id === meId || membro.has(a.id) || (!a.owner_user_id && matchNegozi(a.negozio, myStores))).map((a: any) => a.id);
       if (mine.length) {
         const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine);
         setMailUnread((data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0));

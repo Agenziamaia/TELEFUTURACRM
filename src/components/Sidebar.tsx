@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
 import { comunicazionePerMe, brandDiUtente, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { useVisibleStores, sameStore, matchNegozi } from "@/lib/visibleStores";
+import { seesAllStores } from "@/lib/roles";
 import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { designatiIncarico } from "@/lib/incarichi";
 import {
@@ -180,10 +181,10 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                     supabase.from("email_account_users").select("account_id").eq("user_id", user.id),
                 ]);
                 // stessa regola dell'Inbox (26/08): titolare O membro O col
-                // negozio (anche MULTI, gemelli virgola-separati) in visibilità
+                // negozio (anche MULTI) in visibilità; amministrazione = tutte
                 // — il pallino conta solo posta apribile
                 const membro = new Set((memb || []).map((r: any) => r.account_id));
-                const mine = (accs || []).filter((a: any) => a.owner_user_id === user.id || membro.has(a.id) || (!a.owner_user_id && matchNegozi(a.negozio, myStores))).map((a: any) => a.id);
+                const mine = (accs || []).filter((a: any) => seesAllStores(user.role) || a.owner_user_id === user.id || membro.has(a.id) || (!a.owner_user_id && matchNegozi(a.negozio, myStores))).map((a: any) => a.id);
                 let n = 0;
                 if (mine.length) { const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine); n = (data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
                 if (alive) setMailUnread(n);
