@@ -1,5 +1,4 @@
-// SOLA LETTURA — perché le mail di gedmail@vnd.it sono ancora in inbox su
-// Magliana Multi dopo la segnalazione «non utile» (Luca 27/08).
+// SOLA LETTURA — verifica dopo il recupero storico (Luca 27/08).
 const fs = require("fs");
 const path = require("path");
 
@@ -15,18 +14,17 @@ const client = new Client({
 
 (async () => {
   await client.connect();
-  const q = async (t, sql, p = []) => { const { rows } = await client.query(sql, p); console.log(`\n── ${t}`); console.table(rows); return rows; };
-
-  await q("colonne di email_triage", `
-    select column_name from information_schema.columns
-    where table_name = 'email_triage' order by ordinal_position`);
-
-  await q("Triage delle conversazioni gedmail (in inbox e non)", `
-    select c.id, c.trashed, c.spam, t.stato, t.azione_auto, t.ripristinata_il, t.versione,
-           left(coalesce(t.azione,''),70) as perche
-    from email_conversations c left join email_triage t on t.conversation_id = c.id
-    where c.customer_email ilike '%gedmail@vnd.it%'
-    order by c.trashed, c.spam limit 25`);
-
+  const { rows } = await client.query(`
+    select a.display_name as casella, r.mittente,
+           count(*) filter (where c.trashed) as nel_cestino,
+           count(*) filter (where not c.trashed) as ancora_fuori
+      from email_regole_utente r
+      join email_accounts a on a.id = r.account_id
+      left join email_conversations c
+        on c.account_id = r.account_id and lower(c.customer_email) = lower(r.mittente)
+     where r.annullata_il is null
+     group by 1,2 order by 1,2`);
+  console.log("\n── Regole «non utile» attive: dove sono finite le mail");
+  console.table(rows);
   await client.end();
 })().catch(e => { console.error("ERRORE:", e.message); process.exit(1); });

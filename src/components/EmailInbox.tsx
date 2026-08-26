@@ -408,6 +408,35 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     // mittente entra nelle regole di questa casella e le sue prossime email
     // vengono cestinate in automatico; «Non è spam» annulla la regola.
     // L'elenco (con Annulla) sta nella sezione «Non utili» del rail.
+    /** LO STORICO DI QUEL MITTENTE, SUBITO NEL CESTINO (Luca 27/08: «nel
+     *  momento in cui metto un'email dentro i non utili parte immediatamente a
+     *  fare un check di tutte le email di quell'indirizzo su quell'account,
+     *  portando nel cestino quelle collegate»). Prima l'unico effetto era
+     *  svegliare il motore: che ripassava sì tutto lo storico, ma facendo
+     *  giudicare ogni mail all'AI — e sulle fatture l'AI le graziava.
+     *  Qui non si giudica niente: l'ha deciso una persona.
+     *  Restano fuori solo le stellate (un altro giudizio umano). */
+    const cestinaStoricoMittente = async (accountId: string, mittente: string): Promise<number> => {
+        const { data: conv } = await supabase.from("email_conversations")
+            .select("id, starred, trashed").eq("account_id", accountId)
+            .ilike("customer_email", mittente).limit(500);
+        const cand = (conv || []).filter((x: any) => !x.trashed && !x.starred).map((x: any) => x.id as string);
+        if (!cand.length) return 0;
+        // il ripristino di un admin non si scavalca mai
+        const stop = new Set<string>();
+        for (let i = 0; i < cand.length; i += 100) {
+            const { data } = await supabase.from("email_triage").select("conversation_id")
+                .in("conversation_id", cand.slice(i, i + 100)).not("ripristinata_il", "is", null);
+            (data || []).forEach((r: any) => stop.add(r.conversation_id));
+        }
+        const ids = cand.filter(id => !stop.has(id));
+        for (let i = 0; i < ids.length; i += 100) {
+            await supabase.from("email_conversations")
+                .update({ trashed: true, spam: false }).in("id", ids.slice(i, i + 100));
+        }
+        return ids.length;
+    };
+
     const doSpam = (c: Conv, val: boolean) => {
         patchConv(c.id, { spam: val });
         if (val && selConv?.id === c.id) setSelConv(null);
@@ -416,11 +445,12 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         if (val) {
             supabase.from("email_regole_utente")
                 .upsert({ account_id: c.account_id, mittente, creato_da: user?.id || null, annullata_il: null, annullata_da: null }, { onConflict: "account_id,mittente" })
-                .then(() => {
+                .then(async () => {
                     caricaRegoleCasella();
-                    // effetto RAPIDO (Luca 26/08 sera): la segnalazione sveglia
-                    // subito il motore, che ripassa le altre email dello stesso
-                    // mittente su questa casella (anche vecchie) e le cestina
+                    // PRIMA il cestino dello storico (immediato, deterministico),
+                    // POI il motore per quelle che arriveranno
+                    try { await cestinaStoricoMittente(c.account_id as string, mittente); } catch { }
+                    await aggiorna(undefined, true);
                     fetch("/api/email/triage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => { });
                 });
         } else {

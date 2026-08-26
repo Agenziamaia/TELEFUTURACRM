@@ -227,6 +227,17 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
             .map((r) => ({ pattern: String(r.pattern || "").toLowerCase(), oggetto: String(r.oggetto || "").toLowerCase(), note: String(r.note || "") }))
             .filter((r) => r.pattern);
         const regoleUtente = new Set((ru || []).map((r) => `${r.account_id}|${String(r.mittente || "").toLowerCase()}`));
+        // LA REGOLA DEL NEGOZIO È UN ORDINE, NON UN PARERE (Luca 27/08). Il
+        // titolare scrive PATTERN larghi (un pezzo di dominio) e lì l'AI resta
+        // il giudice, con diritto di eccezione motivata. Qui invece un umano ha
+        // indicato UN indirizzo esatto sulla SUA casella e ha detto «non mi
+        // serve»: non c'è niente da interpretare. Prima l'AI poteva graziarlo —
+        // e infatti su gedmail@vnd.it ne aveva salvate 4 su 14 perché erano
+        // fatture: cestinate 10, le altre restavano in inbox per sempre.
+        const regolaNegozioDi = (c: Conv): string | null => {
+            const em = String(c.customer_email || "").toLowerCase();
+            return em && regoleUtente.has(`${c.account_id}|${em}`) ? em : null;
+        };
         const matchBloccato = (c: Conv): { etichetta: string; testo: string } | null => {
             const em = String(c.customer_email || "").toLowerCase();
             const sub = String(c.subject || "").toLowerCase();
@@ -306,6 +317,38 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                 const conv = lotto[idx++];
                 try {
                     const acc = caselle.get(conv.account_id);
+                    // ── STRADA CORTA: mittente segnalato dal negozio ──
+                    // Nessuna chiamata all'AI (non serve, e costa): cestino
+                    // diretto. Restano solo le due guardie che proteggono un
+                    // GIUDIZIO UMANO diverso: la stella e il ripristino di un
+                    // admin. Il cliente censito qui non salva: se il negozio ha
+                    // segnalato quell'indirizzo, lo ha fatto sapendo chi è.
+                    const mitNegozio = regolaNegozioDi(conv);
+                    if (mitNegozio) {
+                        const gia = triMap.get(conv.id);
+                        if (gia?.ripristinata_il) { dirette++; continue; }
+                        const riga = {
+                            conversation_id: conv.id, versione: EMAIL_TRIAGE_VERSIONE, modello: MODEL_FAST,
+                            ultimo_msg_ts: new Date(Math.min(Date.now(), new Date(conv.last_message_at).getTime())).toISOString(),
+                            errore: null as string | null, classificato_il: new Date().toISOString(),
+                            stato: "spazzatura" as StatoEmail,
+                            azione: `[regola negozio · ${mitNegozio}] segnalato non utile dal punto vendita: cestinata senza passare dall'AI`,
+                        } as Record<string, unknown>;
+                        if (!conv.starred) {
+                            const { data: agite } = await supabase.from("email_conversations")
+                                .update({ trashed: true, spam: false })
+                                .eq("id", conv.id).eq("starred", false).select("id");
+                            if ((agite || []).length > 0) {
+                                riga.azione_auto = "cestinata";
+                                riga.azione_auto_il = new Date().toISOString();
+                                cestinate++;
+                            }
+                        }
+                        const { error: eR } = await supabase.from("email_triage").upsert(riga, { onConflict: "conversation_id" });
+                        if (eR) { errori++; if (!primoErrore) primoErrore = eR.message; continue; }
+                        dirette++;
+                        continue;
+                    }
                     // la regola del titolare (se matcha) entra nel prompt come
                     // certezza — l'AI classifica comunque, con diritto di
                     // eccezione motivata sui contenuti davvero importanti
