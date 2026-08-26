@@ -266,6 +266,20 @@ function AnalisiInner() {
                     return conIdx && g < 1 ? null : { negozio: r.negozio || "—", venditore: r.venditore || "—", prodotto: r.prodotto, qty: r.qty, prezzo: Number(r.prezzo) || 0, g };
                 }).filter(Boolean);
                 const gare4 = new Set(["windtre", "vodafone", "fastweb", "sky"]);
+                // VENDITE DI OGGI DEI BRAND IN GARA (Luca 26/08): `items` passa
+                // da caricaContrattiMese, che applica il cutoff dell'ora di
+                // scatto — giusto per soglie, punti e proiezioni, ma nel
+                // grafico giornaliero faceva sparire tutto il lavoro di oggi
+                // (un negozio con 32 vendite ne vedeva 3, le sole S4, che
+                // arrivano da questa query senza cutoff). Qui si tengono da
+                // parte SOLO per la barra del giorno.
+                const oggiISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+                const mapAltro = (r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 });
+                const oggiGara = (altRes?.data || [])
+                    .filter((r) => validaExt(r) && gare4.has(brandIdDaLabel(r.brand) || "")
+                        && !/sostituzione/i.test(String(r.prodotto || ""))
+                        && String(r.data || "").slice(0, 10) === oggiISO)
+                    .map(mapAltro).filter((r) => r.g >= 1);
                 const altri = (altRes?.data || [])
                     .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || "") && !/sostituzione/i.test(String(r.prodotto || "")))
                     .map((r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 }))
@@ -277,7 +291,7 @@ function AnalisiInner() {
                 setDati({
                     pacchi, soloMese, gl, targetW3: targetRes?.data || [],
                     aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null,
-                    prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri,
+                    prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri, oggiGara,
                     tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
                 });
             } catch (e) {
@@ -450,6 +464,7 @@ function AnalisiInner() {
             ext: collab ? extStore.filter((r) => norm(r.venditore) === norm(collab)) : extStore,
             extPrev: (dati?.extPrev || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             altri: (dati?.altri || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
+            oggiGara: (dati?.oggiGara || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             persona: collab || persona, negozio, negozi, negozioCasa: negozio,
             // il sub di drill/pannelli nell'area NEGOZIO dice il negozio (o il
             // collaboratore filtrato) — MAI la persona dell'area Io (refuso
@@ -632,7 +647,7 @@ function AnalisiInner() {
                         <GrigliaWidget key={`ng-${negozi.join("|")}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
-                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [] }} />}
+                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [], oggiGara: dati?.oggiGara || [] }} />}
                     {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente }} />}
                 </>
             )}
@@ -733,7 +748,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
 }
 
 /* ═══ AREA RETE (v1 — in attesa delle direttive di Luca) ═══════════════ */
-function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, altri }) {
+function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, altri, oggiGara = [] }) {
     const giorniRete = useMemo(() => {
         const v = Array.from({ length: nG }, (_, i) => ({ n: i + 1, label: labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
         for (const it of items) {
@@ -750,8 +765,18 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, 
             const e = g._p.get(it.brand) || { label: it.brand, colore: HEX_BRAND[kk] || "#64748b", val: 0 };
             e.val++; g._p.set(it.brand, e); g.tot++;
         }
+        // OGGI dei brand in gara (Luca 26/08): il cutoff dell'ora di scatto li
+        // tiene fuori da `items` — corretto per soglie e proiezioni, sbagliato
+        // qui, dove il negozio vuole vedere subito quello che ha fatto
+        for (const it of (oggiGara || [])) {
+            if (it.g < 1 || it.g > nG) continue;
+            const kk = trkBrandKey(it.brand); if (!kk) continue;
+            const g = v[it.g - 1];
+            const e = g._p.get(it.brand) || { label: it.brand, colore: HEX_BRAND[kk] || "#64748b", val: 0 };
+            e.val++; g._p.set(it.brand, e); g.tot++;
+        }
         return v.map((g) => ({ n: g.n, label: g.label, tot: g.tot, parti: [...g._p.values()].sort((a, b) => b.val - a.val) }));
-    }, [items, altri, nG, labels]);
+    }, [items, altri, oggiGara, nG, labels]);
     const mediaRete = useMemo(() => {
         const tot = giorniRete.reduce((s, g) => s + g.tot, 0);
         return tot > 0 ? Math.round((tot / Math.max(1, gLav || 1)) * 10) / 10 : null;

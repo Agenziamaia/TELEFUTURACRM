@@ -1103,7 +1103,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             {piste.map(p => {
                 // modalità soloRegole (W3): le piste a gettone e i gettoni
                 // sciolti si editano nel Commissioning, non qui
-                if (soloRegole && ["lucegas", "cb", "business_piva", "protetti"].includes(p.chiave)) return null;
+                // business_piva RESTA nelle Regole (Luca 26/08: «serve una tabella
+                // che riporti i punteggi delle attivazioni che concorrono
+                // all'extra gara P.IVA»): è una gara a punti, non un gettone
+                if (soloRegole && ["lucegas", "cb", "protetti"].includes(p.chiave)) return null;
                 const rr = righeDiPista(p.chiave).filter(r => !soloRegole || !(r.gettone && !r.componente));
                 // piste SOLO-GETTONI (gas/telefoni FW): niente sezione vuota —
                 // le righe vivono nella card Gettoni e la % si governa lì

@@ -791,10 +791,26 @@ export function matchRigaPartnership(
     righe: PayRiga[],
     c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
 ): PayRiga | null {
+    return matchRigaGaraParallela(righe, c, "partnership");
+}
+
+/**
+ * PICK-ONE DI UNA GARA PARALLELA (generalizzazione, 26/08). Alcune gare
+ * contano gli STESSI contratti di un'altra pista con un punteggio proprio:
+ * la Partnership (eventi CB) e l'Extra Gara P.IVA (ogni attivazione business
+ * vale i suoi punti verso la soglia di Ragione Sociale). Non sono
+ * alternative del pick-one principale — quella vendita ha già pagato sulla
+ * sua pista — quindi si contano a parte, con le stesse regole di specificità.
+ */
+export function matchRigaGaraParallela(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
+    pista: string,
+): PayRiga | null {
     let best: PayRiga | null = null;
     let bestScore = -1;
     for (const r of righe) {
-        if (!r.attivo || r.pista !== "partnership") continue;
+        if (!r.attivo || r.pista !== pista) continue;
         // le componenti (e gli extra da opzione) non sono alternative del
         // pick-one — stessa trappola chiusa il 14/08 su matchRigaTabellare
         if (r.componente) continue;

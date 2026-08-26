@@ -23,7 +23,7 @@
 
 import { useMemo, useState } from "react";
 import { SelectMulti } from "@/components/SelectPersona";
-import { contestoVfFw, calcolaAvanzamento, matchRigaPartnership, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
+import { contestoVfFw, calcolaAvanzamento, matchRigaPartnership, matchRigaGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
 import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
@@ -193,12 +193,26 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
             puntiPr += Number(r.punti || 0);
             eventi.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: Number(r.punti || 0), g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
         }
+        // EXTRA GARA P.IVA (Luca 26/08: «non esiste nemmeno nel master»): è una
+        // gara PARALLELA come la Partnership — ogni attivazione business vale
+        // i suoi punti verso la soglia di Ragione Sociale, mentre la vendita
+        // paga già sulla sua pista. Senza questo conteggio la pista restava a
+        // zero (calcolaAvanzamento attribuisce i punti alla pista della base)
+        // e la barra non compariva mai.
+        const eventiBiz = [];
+        let puntiBiz = 0;
+        for (const c of rawFr) {
+            const r = matchRigaGaraParallela(tab.righe, c, "business_piva");
+            if (!r) continue;
+            puntiBiz += Number(r.punti || 0);
+            eventiBiz.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: Number(r.punti || 0), g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
+        }
         // target/premi Partnership SOLO sul singolo PDV (le soglie sono sue)
         const rowPdv = modo === "pdv" ? frSel[0] : null;
         const pr = rowPdv?.extra?.pr
             ? { target: rowPdv.extra.pr.target || 0, premio: rowPdv.extra.pr.premio || 0, premio80: rowPdv.extra.pr.premio80 || 0 }
             : { target: 0, premio: 0, premio80: 0 };
-        return { fr, t1, t2, t2Nomi, frSel, rawFr, modo, eventi, puntiPr, pr };
+        return { fr, t1, t2, t2Nomi, frSel, rawFr, modo, eventi, puntiPr, pr, eventiBiz, puntiBiz };
     }, [b, tab, raw, targetW3, filtroAttivo, selezione.join("|"), idxDi, codiciBrand]);
 
     // motore azienda sulla PRODUZIONE della selezione (le soglie decidono da
@@ -308,6 +322,15 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                                                     : `🎁 ${fmtN(w3.pr.premio80)} € tra ${fmtN(Math.ceil(w3.pr.target * 0.8 - w3.puntiPr))} pt (80%) · ${fmtN(w3.pr.premio)} € al target`)
                                             : "🎯 target e premi sono del SINGOLO PDV: selezionane uno"}
                                         onClick={() => apri({ titolo: "Partnership Reward — eventi Customer Base", sub: filtroLabel, items: w3.eventi })}
+                                    />
+                                )}
+                                {b === "w3" && w3 && w3.puntiBiz > 0 && (
+                                    <SogliaBar emoji="💼" label="Extra Gara P.IVA (soglia di Ragione Sociale)"
+                                        punti={w3.puntiBiz} pezzi={w3.eventiBiz.length}
+                                        soglie={w3.modo === "gruppoFr" ? (tab?.soglie || []).filter((s) => s.pista === "business_piva").sort((x, y) => x.tier - y.tier) : []}
+                                        colore={G.colore} proiezione={prj(w3.puntiBiz)}
+                                        nota={w3.modo === "gruppoFr" ? null : "🌍 la soglia è di Ragione Sociale: seleziona «Franchising» per vederla"}
+                                        onClick={() => apri({ titolo: "Extra Gara P.IVA — attivazioni business", sub: filtroLabel, items: w3.eventiBiz })}
                                     />
                                 )}
                                 {b === "w3" && w3 && [["t1", w3.t1], ["t2", w3.t2]].filter(([m, r]) => r && w3.modo === m).map(([m, r]) => {
