@@ -21,7 +21,8 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
     caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir,
-    DIR_BRANDS, type DirBrandId, type Direzione,
+    finestraBilancia, codiceBilancia, codiceAssociato, W3_PALETTO_BUSINESS,
+    DIR_BRANDS, type DirBrandId, type Direzione, type CodiceDir,
 } from "@/lib/direzioneTargets";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
@@ -105,6 +106,16 @@ export function DirezioneInserimentoAdmin() {
             { onConflict: "brand,month,pista" });
         if (error) { flash(chiave, false); return; }
         setDir((p) => p ? { ...p, sfridi: { ...p.sfridi, [pista]: pct } } : p);
+        flash(chiave, true);
+    };
+    // politica di una pista di GRUPPO (proprio/bilancia) e associazioni MB
+    const salvaPolitica = async (pista: string, modo: string, dati?: Record<string, unknown> | null) => {
+        const chiave = `pol|${pista}`;
+        const { error } = await supabase.from("direzione_politiche").upsert(
+            { brand, month: monthISO, pista, modo, ...(dati !== undefined ? { dati } : {}), updated_at: new Date().toISOString(), updated_by: user?.name || null },
+            { onConflict: "brand,month,pista" });
+        if (error) { flash(chiave, false); return; }
+        setDir((p) => p ? { ...p, politiche: { ...p.politiche, [pista]: { modo, dati: dati ?? p.politiche[pista]?.dati ?? null } } } : p);
         flash(chiave, true);
     };
 
@@ -231,7 +242,10 @@ export function DirezioneInserimentoAdmin() {
                     )}
                     {sez.items.map((k) => {
                         const on = aperto === k.cod_gara;
-                        const pisteMostrate = dir.pisteTab.filter((p) => !PISTE_FUORI.has(p.chiave));
+                        // SOLO i KPI su cui l'operatore pesa PER CODICE (W3:
+                        // mobile, fisso, CB a punti, protetti — Luca 26/08):
+                        // le categorie di gruppo vivono nella card sotto
+                        const pisteMostrate = dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && !PISTE_FUORI.has(p.chiave));
                         const nTarget = Object.entries(k.targets).filter(([p, v]) => v > 0 && !PISTE_FUORI.has(p)).length;
                         return (
                             <div key={k.cod_gara} className="glass-card overflow-hidden transition-shadow"
@@ -252,7 +266,12 @@ export function DirezioneInserimentoAdmin() {
                                     <div className="border-t border-white/5 divide-y divide-white/[0.04]">
                                         {pisteMostrate.map((p) => {
                                             const scala = k.soglie[p.chiave] || null;
-                                            const avz = k.piste[p.chiave] || { punti: 0, pezzi: 0 };
+                                            // la CB «va a punti» (gara parallela Partnership):
+                                            // il numero che conta è cbPunti, i pezzi nel sub
+                                            const cbW3 = dir.brand === "windtre" && p.chiave === "cb";
+                                            const avz = cbW3
+                                                ? { punti: k.cbPunti || 0, pezzi: k.piste[p.chiave]?.pezzi || 0 }
+                                                : (k.piste[p.chiave] || { punti: 0, pezzi: 0 });
                                             const chiave = `${k.cod_gara}|${p.chiave}`;
                                             const target = k.targets[p.chiave] || 0;
                                             const sfrido = Math.round(Number(dir.sfridi[p.chiave]) || 0);
@@ -264,12 +283,12 @@ export function DirezioneInserimentoAdmin() {
                                                     {/* LA BARRA come in Analisi → Rete: produzione piena,
                                                         proiezione a strisce, tacche alle soglie */}
                                                     <SogliaBar
-                                                        emoji={EMOJI_PISTA(p.nome)} label={p.nome}
+                                                        emoji={EMOJI_PISTA(p.nome)} label={cbW3 ? `${p.nome} · punti` : p.nome}
                                                         punti={avz.punti} pezzi={avz.pezzi}
                                                         soglie={(scala || []).map((s, i) => ({ tier: i + 1, soglia_da: Number(s) }))}
                                                         colore={bMeta.color} proiezione={proj}
-                                                        unit={p.um === "pezzi" ? "pz" : "pt"}
-                                                        nota={target > 0 ? `target direzione ${it(target)} · ${avz.punti < target ? `mancano ${it(Math.max(0, Math.ceil(target - avz.punti)))}` : "🎯 fatto"}` : null}
+                                                        unit={cbW3 ? "pt" : (p.um === "pezzi" ? "pz" : "pt")}
+                                                        nota={[cbW3 ? `${avz.pezzi} eventi CB` : null, target > 0 ? `target direzione ${it(target)} · ${avz.punti < target ? `mancano ${it(Math.max(0, Math.ceil(target - avz.punti)))}` : "🎯 fatto"}` : null].filter(Boolean).join(" · ") || null}
                                                     />
                                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                                                         {/* le SOGLIE: click = target (INTERO, sfrido incluso);
@@ -340,6 +359,26 @@ export function DirezioneInserimentoAdmin() {
                                                 </div>
                                             );
                                         })}
+                                        {/* ⚔️ PALETTO BUSINESS (lettera W3): 6 pezzi business per
+                                            codice o malus 30% sulla gara mobile del PV — in Gare non
+                                            è ancora censito come gate, qui almeno si monitora */}
+                                        {dir.brand === "windtre" && !k.multibrand && (() => {
+                                            const fatti = k.businessPezzi || 0;
+                                            const okP = fatti >= W3_PALETTO_BUSINESS;
+                                            const percP = Math.min(100, Math.round((fatti / W3_PALETTO_BUSINESS) * 100));
+                                            return (
+                                                <div className="px-4 py-3.5">
+                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {W3_PALETTO_BUSINESS} pezzi o malus 30% sulla gara mobile</span></span>
+                                                        <span className={cn("text-[11px] font-black tabular-nums", okP ? "text-emerald-400" : "text-rose-300")}>{fatti} / {W3_PALETTO_BUSINESS}{okP ? " ✅" : ""}</span>
+                                                    </div>
+                                                    <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                                                        <div className={cn("h-full rounded-full transition-all", okP ? "bg-emerald-400" : percP >= 50 ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${percP}%` }} />
+                                                    </div>
+                                                    {!okP && <div className="text-[10px] text-rose-300/80 mt-1">⚠ mancano {W3_PALETTO_BUSINESS - fatti} pezzi business: sotto il paletto scatta il −30% sul mobile.</div>}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                             </div>
@@ -347,6 +386,82 @@ export function DirezioneInserimentoAdmin() {
                     })}
                     </div>
                     ))}
+                    {/* 🌍 TARGET DI GRUPPO (W3): luce&gas, assicurazioni… — non
+                        importa DOVE si caricano: qui la barra di RETE e la
+                        POLITICA di caricamento per la Bussola dei ragazzi */}
+                    {dir.pisteGruppo.length > 0 && (
+                        <div className="glass-card p-4 space-y-4">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">🌍 Target di gruppo</span>
+                                <span className="text-[10px] text-slate-600">contano a RETE: la politica decide dove la Bussola fa caricare</span>
+                            </div>
+                            {dir.pisteGruppo.map((pg) => {
+                                const meta = dir.pisteTab.find((p) => p.chiave === pg);
+                                if (!meta) return null;
+                                const puntiRete = Math.round(dir.codici.reduce((s, k) => s + (k.piste[pg]?.punti || 0), 0) * 100) / 100;
+                                const pezziRete = dir.codici.reduce((s, k) => s + (k.piste[pg]?.pezzi || 0), 0);
+                                const scalaRete = (dir.tab?.soglie || []).filter((s) => s.pista === pg).sort((a, b) => a.tier - b.tier).map((s) => ({ tier: s.tier, soglia_da: Number(s.soglia_da) }));
+                                const pol = dir.politiche[pg]?.modo || "proprio";
+                                const polKey = `pol|${pg}`;
+                                const projRete = proiezioneDir(dir, puntiRete);
+                                return (
+                                    <div key={pg} className="space-y-2">
+                                        <SogliaBar emoji={EMOJI_PISTA(meta.nome)} label={`${meta.nome} · rete`}
+                                            punti={puntiRete} pezzi={pezziRete} soglie={scalaRete}
+                                            colore={bMeta.color} proiezione={projRete}
+                                            unit={meta.um === "pezzi" ? "pz" : "pt"} nota={null} />
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase">politica</span>
+                                            <button onClick={() => salvaPolitica(pg, "proprio")}
+                                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                                                    pol === "proprio" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
+                                                🏠 Ognuno sul suo
+                                            </button>
+                                            <button onClick={() => salvaPolitica(pg, "bilancia")}
+                                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                                                    pol === "bilancia" ? "bg-sky-500/15 text-sky-300 border-sky-500/40" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}>
+                                                ⚖️ Bilancia ({finestraBilancia().label})
+                                            </button>
+                                            {salvate[polKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                            {erroriSalva[polKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                                            <span className="text-[10px] text-slate-600">{pol === "proprio" ? "ogni negozio carica sul suo codice (i multibrand sull'associato)" : "la Bussola indirizza sul codice più scarico, stabile nella finestra"}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {/* i MULTIBRAND non caricano MAI sul loro codice: qui
+                                l'ASSOCIAZIONE al franchising per le categorie libere */}
+                            {dir.codici.some((k) => k.multibrand) && (
+                                <div className="pt-3 border-t border-white/5 space-y-2">
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase">Codice associato dei multibrand <span className="normal-case font-normal">(per le categorie «ognuno sul suo»)</span></div>
+                                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                                        {dir.codici.filter((k) => k.multibrand).map((mb) => {
+                                            const franchising = dir.codici.filter((k) => !k.multibrand);
+                                            const mappa = (dir.politiche["__associati__"]?.dati || {}) as Record<string, string>;
+                                            const attuale = mappa[mb.cod_gara] || "";
+                                            return (
+                                                <div key={mb.cod_gara} className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-slate-300">{mb.negozio} →</span>
+                                                    <div className="flex gap-1">
+                                                        {franchising.map((f) => (
+                                                            <button key={f.cod_gara}
+                                                                onClick={() => salvaPolitica("__associati__", "mappa", { ...mappa, [mb.cod_gara]: attuale === f.cod_gara ? "" : f.cod_gara })}
+                                                                title={f.negozio}
+                                                                className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
+                                                                    attuale === f.cod_gara ? "text-white border-transparent" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}
+                                                                style={attuale === f.cod_gara ? { background: bMeta.color } : undefined}>
+                                                                {f.negozio.split(/\s+/)[0]}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="text-[10px] text-slate-600 px-1">Punti dal motore gare (tabellare azienda) · produzione allocata per Cod.Ins. · proiezione a strisce sul ritmo dei giorni lavorativi · l&apos;ora di scatto vale anche qui.</div>
                 </div>
             )}
@@ -386,9 +501,41 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         if (!dir) return [];
         const con = new Set<string>();
         dir.codici.forEach((k) => Object.entries(k.targets).forEach(([p, v]) => { if (v > 0) con.add(p); }));
-        return dir.pisteTab.filter((p) => con.has(p.chiave) && !PISTE_FUORI.has(p.chiave));
+        // le categorie di GRUPPO (luce&gas, assicurazioni…) compaiono sempre:
+        // la risposta è la POLITICA, non serve un target
+        return dir.pisteTab.filter((p) => (con.has(p.chiave) || dir.pisteGruppo.includes(p.chiave)) && !PISTE_FUORI.has(p.chiave));
     }, [dir]);
     useEffect(() => { if (pisteAttive.length && !pisteAttive.some((p) => p.chiave === pista)) setPista(pisteAttive[0].chiave); }, [pisteAttive]); // eslint-disable-line
+    // risposta SECCA per le piste di gruppo (Luca: «per alcune categorie non
+    // devono essere costretti a consultare la direzione ogni volta»)
+    const [tipGruppo, setTipGruppo] = useState<{ testo: string; sub: string } | null>(null);
+    const pistaDiGruppo = !!dir && dir.pisteGruppo.includes(pista);
+    useEffect(() => {
+        let vivo = true;
+        setTipGruppo(null);
+        if (!dir || !pistaDiGruppo) return;
+        const normS = (s: unknown) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        const nu = normS(negozio);
+        const modo = dir.politiche[pista]?.modo || "proprio";
+        (async () => {
+            if (modo === "bilancia") {
+                const k = await codiceBilancia(dir, pista);
+                if (vivo && k) setTipGruppo({ testo: `⚖️ ${finestraBilancia().label}: caricala su ${k.negozio}`, sub: "vale per tutti — così i codici restano bilanciati e non devi ricontrollare ogni volta" });
+                return;
+            }
+            // «ognuno sul suo»: il multibrand carica sul codice ASSOCIATO
+            const mioMb = nu ? dir.codici.find((k) => k.multibrand && k.token.some((t) => nu.startsWith(t) || t.startsWith(nu))) : null;
+            if (mioMb) {
+                const ass = codiceAssociato(dir, mioMb.cod_gara);
+                if (vivo) setTipGruppo(ass
+                    ? { testo: `🏠 Caricala su ${ass.negozio} (il codice associato al tuo negozio)`, sub: "il codice del multibrand resta a zero: per queste categorie usa sempre l'associato" }
+                    : { testo: "🏠 Chiedi alla direzione il codice associato del tuo negozio", sub: "il codice del multibrand resta a zero — l'associazione si imposta in Gare → Direzione" });
+                return;
+            }
+            if (vivo) setTipGruppo({ testo: "🏠 Caricala sul codice del tuo negozio", sub: "per questa categoria non serve la regia: ognuno il suo, senza pensieri" });
+        })();
+        return () => { vivo = false; };
+    }, [dir, pista, pistaDiGruppo, negozio]);
 
     if (!dirs) return <div className="p-5 flex items-center justify-center h-full min-h-[160px] text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /></div>;
     if (!conTarget.length) {
@@ -400,7 +547,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             </div>
         );
     }
-    const lista = dir ? consigliaCodici(dir, pista, negozio).slice(0, 5) : [];
+    const lista = dir && !pistaDiGruppo ? consigliaCodici(dir, pista, negozio).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
     return (
@@ -432,7 +579,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </button>
                 ))}
             </div>
-            {consigliato && (
+            {/* pista di GRUPPO: risposta secca dalla politica, niente lista */}
+            {pistaDiGruppo && tipGruppo && (
+                <div className="rounded-xl px-3 py-2 border" style={{ background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 9%, transparent)`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)` }}>
+                    <div className="text-[11px] font-bold text-slate-100">{tipGruppo.testo}</div>
+                    <div className="text-[10px] text-slate-400">{tipGruppo.sub}</div>
+                </div>
+            )}
+            {!pistaDiGruppo && consigliato && (
                 <div className="rounded-xl px-3 py-2 border" style={{ background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 9%, transparent)`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)` }}>
                     <div className="text-[11px] font-bold text-slate-100">📍 Caricala su <span className="text-white">{consigliato.negozio}</span>{consigliato.mio ? " (il tuo negozio)" : ""}</div>
                     <div className="text-[10px] text-slate-400">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "target già raggiunto: prosegui qui o guarda le altre realtà"}</div>
