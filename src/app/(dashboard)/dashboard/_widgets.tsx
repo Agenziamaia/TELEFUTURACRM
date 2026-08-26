@@ -2364,8 +2364,16 @@ function WidgetTreno19({ ctx, size }) {
 // ── 🔥 LA SERIE — giorni lavorativi consecutivi con almeno una vendita ─────
 function WidgetSerie({ ctx }) {
     const dati = useMemo(() => {
+        // SOGLIA DELLA SERIE (Luca 26/08): «per essere in serie bisogna fare
+        // almeno 3 vendite al giorno». Prima bastava un pezzo, e la fiamma
+        // restava accesa anche con giornate da uno: non raccontava lo sprint.
+        const MIN = 3;
         const miei = (ctx.scoped || []).filter((c) => isCtr(c) && validaProduzione(c) && ctx.scopeVendita(c));
-        const giorni = new Set(miei.map(giornoDi).filter(Boolean));
+        const perGiorno = new Map();
+        for (const c of miei) { const g = giornoDi(c); if (g) perGiorno.set(g, (perGiorno.get(g) || 0) + 1); }
+        // «giorno in serie» = giorno che ha raggiunto la soglia
+        const giorni = new Set([...perGiorno].filter(([, n]) => n >= MIN).map(([g]) => g));
+        const oggiPezzi = perGiorno.get(ctx.oggiISO) || 0;
         const festivi = new Set(ctx.gl?.festivi || []);
         const congelati = new Set(ctx.gl?.congelati || []);
         const meseCorr = ctx.oggiISO.slice(0, 7);
@@ -2404,9 +2412,34 @@ function WidgetSerie({ ctx }) {
             } else run = 1;
             best = Math.max(best, run); prev = g;
         }
-        return { streak, best, oggiHa };
+        // QUANDO SI È INTERROTTA e QUANDO RIPARTE (Luca 26/08): l'ultimo
+        // giorno lavorativo che ha raggiunto la soglia, e il primo giorno
+        // lavorativo utile da cui ricominciare a contare
+        let rotta = null, ripartiDa = null;
+        if (streak === 0) {
+            const d = new Date();
+            for (let i = 0; i < 120; i++) {
+                d.setDate(d.getDate() - (i === 0 ? 0 : 1));
+                if (i > 0 && lavorativo(d) && giorni.has(ymdLoc(d))) { rotta = ymdLoc(d); break; }
+            }
+            const r = new Date();
+            for (let i = 0; i < 30; i++) { if (lavorativo(r)) break; r.setDate(r.getDate() + 1); }
+            ripartiDa = ymdLoc(r);
+        }
+        return { streak, best, oggiHa, oggiPezzi, min: MIN, rotta, ripartiDa };
     }, [ctx.scoped, ctx.oggiISO, ctx.gl, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
     const spegne = !dati.oggiHa && new Date().getHours() >= 17;
+    const manca = Math.max(0, dati.min - dati.oggiPezzi);
+    const giornoIt = (iso) => {
+        if (!iso) return "";
+        const [y, m, g] = String(iso).split("-").map(Number);
+        const d = new Date(y, m - 1, g);
+        const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+        const diff = Math.round((oggi - d) / 86400000);
+        if (diff === 0) return "oggi";
+        if (diff === 1) return "ieri";
+        return d.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
+    };
     return (
         <WidgetShell icon={Flame} title="La Serie" accent="var(--tf-fb923c)"
             action={<span className="text-[10px] text-slate-500">record {dati.best}</span>}>
@@ -2414,11 +2447,19 @@ function WidgetSerie({ ctx }) {
                 <div className={cn("leading-none", dati.streak >= 10 ? "text-5xl" : dati.streak >= 5 ? "text-4xl" : "text-3xl", spegne && "opacity-50")} aria-hidden>🔥</div>
                 <div className="text-3xl font-black text-white leading-none">{dati.streak}</div>
                 <div className="text-[10px] text-slate-400 text-center">
-                    {dati.streak === 0 ? "riaccendi la fiamma: basta 1 pezzo oggi"
-                        : spegne ? "⚠️ oggi ancora a zero: la serie si spegne stasera"
-                        : dati.oggiHa ? "giorni di fila con almeno una vendita — anche oggi ✓"
-                        : "giorni di fila — oggi manca ancora il pezzo"}
+                    {dati.streak === 0
+                        ? (dati.rotta
+                            ? <>l&apos;ultima giornata in serie è stata <b className="text-slate-300">{giornoIt(dati.rotta)}</b>: {dati.oggiPezzi === 0
+                                ? <>oggi sei a zero, servono <b className="text-orange-300">{dati.min} vendite</b> per ripartire</>
+                                : <>oggi sei a <b className="text-orange-300">{dati.oggiPezzi}</b> su {dati.min}, {manca === 1 ? "ne manca 1" : `ne mancano ${manca}`}</>}</>
+                            : <>la serie non è mai partita: servono <b className="text-orange-300">{dati.min} vendite</b> in un giorno per accenderla</>)
+                        : spegne ? <>⚠️ oggi sei a <b>{dati.oggiPezzi}</b> su {dati.min}: se resti così la serie si spegne stasera</>
+                        : dati.oggiHa ? <>giorni di fila con almeno <b>{dati.min} vendite</b> — anche oggi ✓</>
+                        : <>giorni di fila — oggi sei a <b className="text-orange-300">{dati.oggiPezzi}</b> su {dati.min}, {manca === 1 ? "ne manca 1" : `ne mancano ${manca}`}</>}
                 </div>
+                {dati.streak === 0 && dati.ripartiDa && dati.ripartiDa !== ctx.oggiISO && (
+                    <div className="text-[10px] text-slate-500 text-center">oggi non è giornata di gara: si riparte <b className="text-slate-400">{giornoIt(dati.ripartiDa)}</b></div>
+                )}
                 {dati.streak > 0 && dati.streak === dati.best && <div className="text-[10px] font-bold text-amber-300">🏆 è il tuo record</div>}
             </div>
         </WidgetShell>
