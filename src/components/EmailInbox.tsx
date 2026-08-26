@@ -16,7 +16,7 @@ import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib
 import {
     Mail, Plus, Send, X, RefreshCw, Loader2, Paperclip, Check, PenSquare, Inbox,
     Star, Trash2, ShieldAlert, Archive, Search, CornerUpLeft, FileText, SendHorizontal,
-    RotateCcw, ChevronLeft, MailOpen, Code, Settings,
+    RotateCcw, ChevronLeft, MailOpen, Code, Settings, Ban,
 } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -24,7 +24,7 @@ type Account = { id: string; email_address: string; display_name: string | null;
 type Conv = { id: string; account_id: string; customer_email: string; customer_name: string | null; client_id: string | null; subject: string | null; last_preview: string | null; last_message_at: string | null; unread: number; starred?: boolean; spam?: boolean; trashed?: boolean; archived?: boolean };
 type Msg = { id: string; direction: string; from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; body_html: string | null; attachments: any[]; status: string | null; email_date: string | null; created_at: string };
 type Draft = { id: string; account_id: string; to_addr: string | null; subject: string | null; body: string | null; updated_at: string };
-type FolderId = "inbox" | "starred" | "sent" | "drafts" | "spam" | "trash";
+type FolderId = "inbox" | "starred" | "sent" | "drafts" | "spam" | "trash" | "nonutili";
 
 const api = (path: string, body: unknown) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 const FOLDERS: { id: FolderId; label: string; icon: any }[] = [
@@ -34,6 +34,10 @@ const FOLDERS: { id: FolderId; label: string; icon: any }[] = [
     { id: "drafts", label: "Bozze", icon: FileText },
     { id: "spam", label: "Spam", icon: ShieldAlert },
     { id: "trash", label: "Cestino", icon: Trash2 },
+    // «Non utili» (Luca 26/08 sera): i mittenti che QUESTO punto vendita ha
+    // segnalato come spam — l'AI cestina le loro prossime email su questa
+    // casella; da qui la segnalazione si può ANNULLARE (ripensamento)
+    { id: "nonutili", label: "Non utili", icon: Ban },
 ];
 
 export function EmailInbox({ embedded = false, componiA = null, apriConvId = null }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null }) {
@@ -139,6 +143,25 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apriConvId, visibleAccounts.map(a => a.id).join("|")]);
+
+    // REGOLE «NON UTILE» della casella corrente (26/08 sera): i mittenti
+    // segnalati dal punto vendita — elencati nella sezione «Non utili» con
+    // l'Annulla per i ripensamenti
+    const [regoleCasella, setRegoleCasella] = useState<{ id: string; mittente: string; creato_il: string; annullata_il: string | null }[]>([]);
+    const caricaRegoleCasella = useCallback(() => {
+        if (!selAcc) { setRegoleCasella([]); return; }
+        supabase.from("email_regole_utente")
+            .select("id, mittente, creato_il, annullata_il")
+            .eq("account_id", selAcc).order("creato_il", { ascending: false })
+            .then(({ data }) => setRegoleCasella((data ?? []) as any));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selAcc]);
+    useEffect(() => { caricaRegoleCasella(); }, [caricaRegoleCasella]);
+    const annullaRegola = async (r: { id: string }) => {
+        await supabase.from("email_regole_utente")
+            .update({ annullata_il: new Date().toISOString(), annullata_da: user?.id || null }).eq("id", r.id);
+        caricaRegoleCasella();
+    };
 
     // PRIORITÀ del triage AI per conversazione (Luca 26/08 sera: «i pallini
     // in linea con la priorità»): rispondere → badge ROSSO, da_leggere →
@@ -331,7 +354,26 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     const toggleStar = (c: Conv, e?: React.MouseEvent) => { e?.stopPropagation(); patchConv(c.id, { starred: !c.starred }); };
     const doArchive = (c: Conv) => { patchConv(c.id, { archived: true }); if (selConv?.id === c.id) setSelConv(null); };
     const doTrash = (c: Conv) => { patchConv(c.id, { trashed: true }); if (selConv?.id === c.id) setSelConv(null); };
-    const doSpam = (c: Conv, val: boolean) => { patchConv(c.id, { spam: val }); if (val && selConv?.id === c.id) setSelConv(null); };
+    // «Segna come spam» = anche SEGNALAZIONE all'AI (Luca 26/08 sera): il
+    // mittente entra nelle regole di questa casella e le sue prossime email
+    // vengono cestinate in automatico; «Non è spam» annulla la regola.
+    // L'elenco (con Annulla) sta nella sezione «Non utili» del rail.
+    const doSpam = (c: Conv, val: boolean) => {
+        patchConv(c.id, { spam: val });
+        if (val && selConv?.id === c.id) setSelConv(null);
+        const mittente = String(c.customer_email || "").toLowerCase();
+        if (!mittente || !c.account_id) return;
+        if (val) {
+            supabase.from("email_regole_utente")
+                .upsert({ account_id: c.account_id, mittente, creato_da: user?.id || null, annullata_il: null, annullata_da: null }, { onConflict: "account_id,mittente" })
+                .then(() => caricaRegoleCasella());
+        } else {
+            supabase.from("email_regole_utente")
+                .update({ annullata_il: new Date().toISOString(), annullata_da: user?.id || null })
+                .eq("account_id", c.account_id).eq("mittente", mittente)
+                .then(() => caricaRegoleCasella());
+        }
+    };
     const doRestore = (c: Conv) => { patchConv(c.id, { trashed: false, spam: false, archived: false }); };
     const markUnread = (c: Conv) => {
         patchConv(c.id, { unread: 1 }); if (selConv?.id === c.id) setSelConv(null);
@@ -386,6 +428,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
             case "sent": return convs.filter(c => sentIds.has(c.id) && !c.trashed && !c.spam);
             case "spam": return convs.filter(c => c.spam && !c.trashed);
             case "trash": return convs.filter(c => c.trashed);
+            case "nonutili": return [];   // vista dedicata: elenco regole, non conversazioni
             default: return convs;
         }
     }, [convs, folder, sentIds]);
@@ -397,7 +440,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     // il Cestino mostra quante conversazioni contiene (EML-03: "non vedo le
     // mail nel cestino" — il numero sul rail rende subito visibile l'import)
     const trashCount = convs.filter(c => c.trashed).length;
-    const counts: Record<FolderId, number> = { inbox: inboxUnread, starred: 0, sent: 0, drafts: drafts.length, spam: spamCount, trash: trashCount };
+    const counts: Record<FolderId, number> = { inbox: inboxUnread, starred: 0, sent: 0, drafts: drafts.length, spam: spamCount, trash: trashCount, nonutili: regoleCasella.filter(r => !r.annullata_il).length };
     const folderLabel = FOLDERS.find(f => f.id === folder)?.label || "";
 
     // ── stati "vuoto" ───────────────────────────────────────────────────────────
@@ -471,7 +514,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                 <div className={cn("glass-card overflow-hidden flex flex-col min-h-0", selConv && "hidden lg:flex")}>
                     <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between shrink-0">
                         <span className="text-sm font-bold text-white">{folderLabel}</span>
-                        <span className="text-[11px] text-slate-500">{folder === "drafts" ? draftsShown.length : shown.length}</span>
+                        <span className="text-[11px] text-slate-500">{folder === "drafts" ? draftsShown.length : folder === "nonutili" ? regoleCasella.length : shown.length}</span>
                     </div>
                     {selAccObj?.status !== "attiva" && <div className="p-3 text-xs text-rose-300 border-b border-rose-500/20 bg-rose-500/5 shrink-0">Casella in errore — {selAccObj?.last_error || "ricollega dalle impostazioni"}.</div>}
                     {/* backfill storico in corso (EML-01): indicatore discreto, sparisce da solo a backfill_done */}
@@ -482,7 +525,32 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                     )}
 
                     <div className="flex-1 overflow-y-auto">
-                        {folder === "drafts" ? (
+                        {folder === "nonutili" ? (
+                            /* ── NON UTILI: i mittenti segnalati da questa casella —
+                               l'AI cestina le loro prossime email; Annulla = ripensamento ── */
+                            regoleCasella.length === 0 ? (
+                                <EmptyList icon={Ban} label="Nessun mittente segnalato. Quando segni una email come Spam, il mittente finisce qui e le sue prossime email vanno nel cestino da sole." />
+                            ) : (
+                                <>
+                                    <div className="px-4 py-2 text-[11px] text-slate-500 border-b border-white/5">Le prossime email di questi mittenti vengono cestinate in automatico su questa casella. Ci hai ripensato? Annulla la segnalazione.</div>
+                                    {regoleCasella.map(r => (
+                                        <div key={r.id} className={cn("px-4 py-3 border-b border-white/5 flex items-center gap-3", r.annullata_il && "opacity-50")}>
+                                            <div className={cn("w-9 h-9 rounded-full border flex items-center justify-center shrink-0", r.annullata_il ? "bg-white/5 border-white/10 text-slate-500" : "bg-rose-500/15 border-rose-500/25 text-rose-300")}><Ban className="w-4 h-4" /></div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-sm font-semibold text-slate-200 truncate">{r.mittente}</div>
+                                                <div className="text-[11px] text-slate-500">{r.annullata_il ? "segnalazione annullata — torna al filtro normale" : `segnalato il ${new Date(r.creato_il).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })} · le sue email vanno nel cestino`}</div>
+                                            </div>
+                                            {!r.annullata_il && (
+                                                <button onClick={() => annullaRegola(r)}
+                                                    className="shrink-0 px-3 py-1.5 rounded-lg border border-white/10 text-[12px] font-bold text-slate-300 hover:bg-white/10 inline-flex items-center gap-1.5">
+                                                    <RotateCcw className="w-3.5 h-3.5" /> Annulla
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </>
+                            )
+                        ) : folder === "drafts" ? (
                             draftsShown.length === 0 ? <EmptyList icon={FileText} label="Nessuna bozza" />
                                 : draftsShown.map(d => (
                                     <button key={d.id} onClick={() => openDraft(d)} className="w-full text-left px-4 py-3 border-b border-white/5 hover:bg-white/[0.03] flex items-center gap-3 group">

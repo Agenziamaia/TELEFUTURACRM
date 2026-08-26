@@ -207,17 +207,28 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
         // chirurgica: caso suitemobile, dove i «trasferimento merce» cadono
         // e le Chiusure Fiscali restano. Il match riprende anche conv già
         // classificate ma mai agite (la regola può nascere dopo).
-        const { data: blk } = await supabase.from("email_mittenti_bloccati").select("pattern, oggetto, note");
+        const [{ data: blk }, { data: ru }] = await Promise.all([
+            supabase.from("email_mittenti_bloccati").select("pattern, oggetto, note"),
+            // regole «non utile» dei PUNTI VENDITA (26/08 sera): mittente
+            // esatto, scope della singola casella, annullabili dall'Inbox
+            supabase.from("email_regole_utente").select("account_id, mittente").is("annullata_il", null),
+        ]);
         const bloccati = (blk || [])
             .map((r) => ({ pattern: String(r.pattern || "").toLowerCase(), oggetto: String(r.oggetto || "").toLowerCase(), note: String(r.note || "") }))
             .filter((r) => r.pattern);
+        const regoleUtente = new Set((ru || []).map((r) => `${r.account_id}|${String(r.mittente || "").toLowerCase()}`));
         const matchBloccato = (c: Conv): { etichetta: string; testo: string } | null => {
             const em = String(c.customer_email || "").toLowerCase();
             const sub = String(c.subject || "").toLowerCase();
             const hit = bloccati.find((b) => em.includes(b.pattern) && (!b.oggetto || sub.includes(b.oggetto)));
-            if (!hit) return null;
-            const etichetta = hit.oggetto ? `${hit.pattern} · ${hit.oggetto}` : hit.pattern;
-            return { etichetta, testo: etichetta + (hit.note ? ` (${hit.note})` : "") };
+            if (hit) {
+                const etichetta = hit.oggetto ? `${hit.pattern} · ${hit.oggetto}` : hit.pattern;
+                return { etichetta, testo: etichetta + (hit.note ? ` (${hit.note})` : "") };
+            }
+            if (regoleUtente.has(`${c.account_id}|${em}`)) {
+                return { etichetta: `negozio · ${em}`, testo: `il punto vendita ha segnalato «${em}» come non utile su questa casella` };
+            }
+            return null;
         };
         const daFare = tutte.filter((c) => {
             // caselle ESCLUSE dall'AI (ai_protetta — direttiva Luca 26/08
