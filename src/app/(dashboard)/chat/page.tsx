@@ -27,6 +27,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
+import { OmniChat } from "./_omni/OmniChat";
 import { AvatarUtente } from "@/components/AvatarUtente";
 import { cn } from "@/utils";
 
@@ -316,12 +317,12 @@ function ChatPageInner() {
   // /chat?mconv=<id> (26/08, widget Email del team): apre LA conversazione email
   const mconvParam = searchParams.get("mconv");
   const _modeDaUrl = useRef(false);
-  const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
+  const [mode, setMode] = useState<"chat" | "whatsapp" | "email" | "omni">(() => {
     if (typeof window === "undefined") return "chat";
     const qs = new URLSearchParams(window.location.search);
     if (qs.get("wa") || qs.get("conv") || qs.get("mode") === "wa") { _modeDaUrl.current = true; return "whatsapp"; }
     if (qs.get("mail") || qs.get("mconv")) { _modeDaUrl.current = true; return "email"; }
-    return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
+    return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email" | "omni") || "chat";
   });
   // un arrivo da deep-link non deve diventare la preferenza salvata: la
   // scheda scelta a mano sì (rilievo del revisore 25/08)
@@ -755,9 +756,20 @@ function ChatPageInner() {
           <Mail className="w-4 h-4" /> Email
           {mailUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
         </button>
+        {/* OMNICHAT (Luca 26/08): la quarta scheda UNISCE le altre tre e ci
+            mette accanto l'AI — recap, analisi e risposte pronte — più i dati
+            del cliente. Le tre inbox non vengono riscritte: vengono RIUSATE
+            senza la loro lista, così restano tutte le loro funzioni. */}
+        <button onClick={() => setMode("omni")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <Sparkles className="w-4 h-4" /> Omnichat
+        </button>
       </div>
 
-      {mode === "whatsapp" ? (
+      {mode === "omni" ? (
+        <OmniChat />
+      ) : mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} apriConvId={mconvParam} /></div>

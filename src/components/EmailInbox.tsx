@@ -87,7 +87,9 @@ const iniziali = (s: string) => {
     return ini || "?";
 };
 
-export function EmailInbox({ embedded = false, componiA = null, apriConvId = null }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null }) {
+// `senzaLista` (26/08): come su WhatsApp — solo il thread, la lista la porta
+// l'Omnichat. Cartelle e caselle restano, che sono funzioni vere.
+export function EmailInbox({ embedded = false, componiA = null, apriConvId = null, senzaLista = false }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null; senzaLista?: boolean }) {
     const { user } = useAuth();
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [selAcc, setSelAcc] = useState<string | null>(null);
@@ -553,7 +555,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                 </div>
             )}
 
-            <div className={cn("grid grid-cols-1 lg:grid-cols-[196px_minmax(300px,360px)_1fr] gap-3", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-264px)] min-h-[480px]")}>
+            <div className={cn("grid grid-cols-1 gap-3", senzaLista ? "lg:grid-cols-[196px_1fr]" : "lg:grid-cols-[196px_minmax(300px,360px)_1fr]", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-264px)] min-h-[480px]")}>
                 {/* ── RAIL cartelle ── */}
                 <div className={cn("glass-panel shadow-lg p-3 flex flex-col gap-2", selConv && "hidden lg:flex")}>
                     <button onClick={openNewCompose}
@@ -593,8 +595,8 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                     )}
                 </div>
 
-                {/* ── LISTA ── */}
-                <div className={cn("glass-panel shadow-lg overflow-hidden flex flex-col min-h-0", selConv && "hidden lg:flex")}>
+                {/* ── LISTA ── (nell'Omnichat la porta la colonna unificata) */}
+                <div className={cn("glass-panel shadow-lg overflow-hidden flex flex-col min-h-0", selConv && "hidden lg:flex", senzaLista && "hidden lg:hidden")}>
                     <div className="px-4 py-2.5 border-b border-white/10 bg-white/[0.02] flex items-center justify-between shrink-0">
                         <span className="text-sm font-bold text-white flex items-center gap-2">
                             <FolderIcon className="w-3.5 h-3.5 text-sky-300 shrink-0" />

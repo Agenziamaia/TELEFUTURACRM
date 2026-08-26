@@ -28,7 +28,11 @@ const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST",
 const FIN_MODIFICA_WA_MS = 14 * 60 * 1000;
 const FIN_CANCELLA_WA_MS = 48 * 60 * 60 * 1000;
 
-export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null, apriConvId = null }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null; apriConvId?: string | null }) {
+// `senzaLista` (26/08): l'inbox rende SOLO la conversazione, perché la lista
+// gliela dà qualcun altro — è così che l'Omnichat riusa questa schermata con
+// TUTTE le sue funzioni (modifica, elimina, allegati, nuova chat, chip dei
+// numeri) invece di riscriverne una copia povera.
+export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null, apriConvId = null, senzaLista = false }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null; apriConvId?: string | null; senzaLista?: boolean }) {
     const { user } = useAuth();
     const [instances, setInstances] = useState<Instance[]>([]);
     const [selInst, setSelInst] = useState<string | null>(null);
@@ -617,10 +621,10 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                         : <span>Nessun numero collegato per la tua visibilita&apos;. I numeri si collegano dal <b className="text-emerald-300">Pannello numeri</b> (Amministrazione → WhatsApp), intestati a un utente o a un negozio.</span>}
                 </div>
             ) : (
-                <div className={cn("grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-230px)]")}>
+                <div className={cn("grid grid-cols-1 gap-4", senzaLista ? "lg:grid-cols-1" : "lg:grid-cols-[320px_1fr]", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-230px)]")}>
                     {/* elenco conversazioni — CHT-01: sotto lg lista e thread si
                         alternano (prima si impilavano entrambi, pannelli minuscoli) */}
-                    <div className={cn("glass-card overflow-y-auto", selConv && "hidden lg:block")}>
+                    <div className={cn("glass-card overflow-y-auto", selConv && "hidden lg:block", senzaLista && "hidden lg:hidden")}>
                         {/* NUOVA CHAT A NUMERO LIBERO (Luca 25/08): si scrive anche a
                             chi non è ancora cliente — documenti da farsi mandare
                             prima di avergli venduto qualcosa */}
