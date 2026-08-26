@@ -1029,8 +1029,11 @@ function adattaTema(doc: Document) {
         const l = lum(bg);
         if (l > 0.62 && sat(bg) < 0.28) {
             // superficie "carta": più era chiara più diventa profonda — i
-            // grigini restano un gradino sopra, le gerarchie si conservano
-            el.style.setProperty("background-color", grigioBlu(0.10 + (1 - l) * 0.55), "important");
+            // grigini restano un gradino sopra, le gerarchie si conservano.
+            // Base 14%: PIÙ CHIARA del fondo pagina (#0f111a ≈ 8%) — con la
+            // base a 9-10% carta e fondo si fondevano in un pozzo nero unico
+            // (caso Instagram, email nativa-dark senza più cornice visibile)
+            el.style.setProperty("background-color", grigioBlu(0.14 + (1 - l) * 0.5), "important");
             el.dataset.tfbg = "scuro";
         } else {
             el.dataset.tfbg = l < 0.35 ? "scuro" : "chiaro";           // brand e scuri: lasciati
@@ -1068,9 +1071,11 @@ function adattaTema(doc: Document) {
             if (toccato) el.dataset.tfbr = "1";
         }
     }
-    // la carta stessa: superficie base del tema + un filo di bordo per staccare
-    carta.style.setProperty("background-color", grigioBlu(0.09), "important");
-    carta.style.setProperty("border", "1px solid rgba(255,255,255,.07)", "important");
+    // la carta stessa: un gradino sopra il fondo pagina (superficie elevata,
+    // come le card del CRM) + un filo di bordo — così anche un'email
+    // nativa-dark (Instagram) resta dentro una cornice visibile
+    carta.style.setProperty("background-color", grigioBlu(0.14), "important");
+    carta.style.setProperty("border", "1px solid rgba(255,255,255,.09)", "important");
 }
 
 // Corpo di un'email. Se c'e' l'HTML lo mostra CON la grafica (tabelle, immagini,
@@ -1114,6 +1119,11 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
         const f = ref.current;
         try {
             const doc = f?.contentDocument;
+            // le immagini FALLITE (URL firmati scaduti: avatar Instagram…)
+            // lasciano l'icona rotta: via, lo spazio resta (visibility)
+            doc?.querySelectorAll("img").forEach((im) => {
+                if (im.complete && im.naturalWidth === 0 && im.src) im.style.visibility = "hidden";
+            });
             const h = doc ? Math.max(doc.documentElement?.scrollHeight || 0, doc.body?.scrollHeight || 0) : 0;
             if (f && h > 20) f.style.height = Math.min(h + 4, 6000) + "px";
             else if (f) f.style.height = "600px";   // "quadratone" da 80px mai piu': meglio larghi

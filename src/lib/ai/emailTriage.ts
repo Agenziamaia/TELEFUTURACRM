@@ -34,9 +34,9 @@ Rispondi SOLO con un oggetto JSON: {"stato": "...", "azione": "..."}
 
 I quattro stati:
 
-1. "rispondere" — un CLIENTE o una PRATICA aspetta una nostra risposta: domanda o richiesta esplicita (prezzo, disponibilità, problema, appuntamento), documenti mandati per una pratica, reclamo o disdetta, un cliente già in conversazione con noi che riscrive. Anche un fornitore/operatore che chiede a NOI qualcosa di operativo (un documento, una conferma) è "rispondere".
+1. "rispondere" — un CLIENTE o una PRATICA aspetta una nostra risposta: domanda o richiesta esplicita (prezzo, disponibilità, problema, appuntamento), reclamo o disdetta, un cliente già in conversazione con noi che riscrive facendo una domanda. Anche un fornitore/operatore che chiede a NOI qualcosa di operativo (un documento, una conferma) è "rispondere".
 
-2. "da_leggere" — informativa che CONTA ma senza risposta dovuta: comunicazioni degli operatori (WindTre, Vodafone, Fastweb, Sky) su listini, gare, attivazioni, storni; corrieri con tracking di spedizioni; fatture e contabilità; PEC; avvisi di sistemi che usiamo davvero. Chi la riceve deve vederla, non rispondere.
+2. "da_leggere" — informativa che CONTA ma senza risposta dovuta: comunicazioni degli operatori (WindTre, Vodafone, Fastweb, Sky) su listini, gare, attivazioni, storni; corrieri con tracking di spedizioni; fatture e contabilità; PEC; avvisi di sistemi che usiamo davvero; DOCUMENTI CONSEGNATI (un cliente o chiunque manda un allegato per una pratica: va scaricato e lavorato, non risposto). Chi la riceve deve vederla, non rispondere.
 
 3. "niente" — rumore innocuo: newsletter e marketing di fornitori legittimi, promozioni di servizi, notifiche automatiche di routine (social, conferme d'iscrizione), auguri circolari, e le notifiche gestionali RIPETITIVE che arrivano identiche ogni giorno dai sistemi interni (chiusure fiscali/di cassa dei gestionali, report automatici quotidiani): il dato vive nel gestionale, l'email è solo un eco. Non serve né leggere con urgenza né rispondere.
 
@@ -48,7 +48,8 @@ Regole d'oro:
 - IL MITTENTE PESA PIÙ DEL TONO. Un dominio ufficiale vero (windtre.it, vodafone.it, fastweb.it, sky.it, brt.it, gls-italy.com, poste.it, aruba.it, pec.it…) non è mai "spazzatura". Un dominio che IMITA (windtre-promo.xyz, poste-verifica.net) è il segnale principe del phishing.
 - SPAZZATURA = SOLO CERTEZZA. La cancellazione è automatica: se un'email potrebbe anche essere legittima (un fornitore vero che scrive male, una promo aggressiva ma reale), scegli "niente", MAI "spazzatura". Nel dubbio tra spazzatura e niente vince SEMPRE niente.
 - Se nella conversazione ci sono NOSTRI messaggi di risposta, non è spazzatura per definizione: qualcuno di noi ci sta lavorando.
-- Un cliente vero che scrive alla casella del negozio è quasi sempre "rispondere", anche solo per cortesia commerciale.
+- Un cliente vero che scrive alla casella del negozio è quasi sempre "rispondere", anche solo per cortesia commerciale — TRANNE il caso qui sotto.
+- CHI MANDA UN DOCUMENTO NON ASPETTA UNA RISPOSTA (regola del titolare): un'email che è la CONSEGNA di un allegato — corpo vuoto o di sola firma («Inviato da iPhone»), o due parole di accompagnamento («ecco i documenti», «in allegato») — è "da_leggere", ANCHE se arriva da un cliente. Diventa "rispondere" solo se nel testo c'è anche una domanda o una richiesta esplicita che aspetta noi.
 - Le richieste legate a un momento ormai passato («siete aperti oggi?» di dieci giorni fa) scivolano a "niente".
 
 "azione": una riga in italiano, max 90 caratteri, utile a chi lavora ("Rispondere: chiede un preventivo fibra per l'ufficio", "Da leggere: BRT, in consegna domani il pacco della Magliana", "phishing: finto corriere che chiede 2€"). Per "niente" una motivazione telegrafica ("newsletter fornitore", "promo circolare").`;
@@ -77,8 +78,11 @@ function estraiJson(testo: string): any | null {
 // bastano a capire la natura; l'HTML non serve (body_text c'è quasi sempre)
 function corpoCompatto(m: RigaMsg): string {
     const testo = String(m.body_text || "").replace(/\s+/g, " ").trim().slice(0, 500);
-    const nAll = Array.isArray(m.attachments) ? m.attachments.length : 0;
-    return (testo || "(senza testo)") + (nAll ? ` [${nAll} allegati]` : "");
+    // i NOMI degli allegati dicono la natura più del corpo («CI_fronte.jpg»,
+    // «Riepilogo ordine.pdf» = consegna documenti → da_leggere, non rispondere)
+    const nomi = (Array.isArray(m.attachments) ? m.attachments : [])
+        .map((a: { name?: string } | null) => String(a?.name || "").trim()).filter(Boolean).slice(0, 5);
+    return (testo || "(senza testo)") + (nomi.length ? ` [allegati: ${nomi.join(", ").slice(0, 180)}]` : "");
 }
 
 async function classificaUna(conv: Conv, casellaNome: string, regolaTitolare?: string | null) {
