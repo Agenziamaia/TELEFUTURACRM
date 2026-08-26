@@ -38,7 +38,7 @@ I quattro stati:
 
 2. "da_leggere" — informativa che CONTA ma senza risposta dovuta: comunicazioni degli operatori (WindTre, Vodafone, Fastweb, Sky) su listini, gare, attivazioni, storni; corrieri con tracking di spedizioni; fatture e contabilità; PEC; avvisi di sistemi che usiamo davvero. Chi la riceve deve vederla, non rispondere.
 
-3. "niente" — rumore innocuo: newsletter e marketing di fornitori legittimi, promozioni di servizi, notifiche automatiche di routine (social, conferme d'iscrizione), auguri circolari. Non serve né leggere con urgenza né rispondere.
+3. "niente" — rumore innocuo: newsletter e marketing di fornitori legittimi, promozioni di servizi, notifiche automatiche di routine (social, conferme d'iscrizione), auguri circolari, e le notifiche gestionali RIPETITIVE che arrivano identiche ogni giorno dai sistemi interni (chiusure fiscali/di cassa dei gestionali, report automatici quotidiani): il dato vive nel gestionale, l'email è solo un eco. Non serve né leggere con urgenza né rispondere.
 
 4. "spazzatura" — spam e phishing: finti corrieri che chiedono pagamenti per «sbloccare il pacco», finte banche/poste che chiedono credenziali, finte bollette o rimborsi con link sospetti, sedicenti eredità/lotterie/investimenti, mittenti camuffati (dominio che imita un marchio vero), estorsioni. Verrà eliminata in automatico.
 
@@ -199,12 +199,18 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
         // sistemi d'allarme): pattern governati dal Pannello Email — il match
         // sull'indirizzo cestina d'ufficio SENZA interpellare l'AI (costo
         // zero), stesse guardie dure. Vale anche per conversazioni GIÀ
-        // classificate ma mai agite (il pattern può nascere dopo).
-        const { data: blk } = await supabase.from("email_mittenti_bloccati").select("pattern");
-        const bloccati = (blk || []).map((r) => String(r.pattern || "").toLowerCase()).filter(Boolean);
+        // classificate ma mai agite (il pattern può nascere dopo). Col campo
+        // OGGETTO valorizzato il blocco è chirurgico: caso suitemobile, dove
+        // i «trasferimento merce» si cestinano e le Chiusure Fiscali restano.
+        const { data: blk } = await supabase.from("email_mittenti_bloccati").select("pattern, oggetto");
+        const bloccati = (blk || [])
+            .map((r) => ({ pattern: String(r.pattern || "").toLowerCase(), oggetto: String(r.oggetto || "").toLowerCase() }))
+            .filter((r) => r.pattern);
         const matchBloccato = (c: Conv): string | null => {
             const em = String(c.customer_email || "").toLowerCase();
-            return bloccati.find((p) => em.includes(p)) || null;
+            const sub = String(c.subject || "").toLowerCase();
+            const hit = bloccati.find((b) => em.includes(b.pattern) && (!b.oggetto || sub.includes(b.oggetto)));
+            return hit ? (hit.oggetto ? `${hit.pattern} · ${hit.oggetto}` : hit.pattern) : null;
         };
         const daFare = tutte.filter((c) => {
             // caselle ESCLUSE dall'AI (ai_protetta — direttiva Luca 26/08

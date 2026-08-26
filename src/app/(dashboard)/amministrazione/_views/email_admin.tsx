@@ -177,19 +177,20 @@ export function EmailAdminView() {
     // ── 🚫 MITTENTI BLOCCATI (Luca 26/08: «Verisure cancellale sempre», poi
     // allarmi.payprint): pattern = pezzo dell'indirizzo mittente; il motore
     // cestina d'ufficio senza interpellare l'AI, guardie dure comprese
-    const [bloccati, setBloccati] = useState<{ id: string; pattern: string; note: string | null }[]>([]);
+    const [bloccati, setBloccati] = useState<{ id: string; pattern: string; oggetto: string | null; note: string | null }[]>([]);
     const [nuovoPattern, setNuovoPattern] = useState("");
+    const [nuovoOggetto, setNuovoOggetto] = useState("");
     const [nuovaNota, setNuovaNota] = useState("");
-    const caricaBloccati = () => supabase.from("email_mittenti_bloccati").select("id, pattern, note").order("pattern")
+    const caricaBloccati = () => supabase.from("email_mittenti_bloccati").select("id, pattern, oggetto, note").order("pattern")
         .then(({ data }) => setBloccati((data ?? []) as any));
     useEffect(() => { caricaBloccati(); }, []);
     const aggiungiBloccato = async () => {
         const p = nuovoPattern.trim().toLowerCase();
         if (p.length < 4) { alert("Il pattern deve avere almeno 4 caratteri (es. «verisure», «allarmi.payprint») — troppo corto cestinerebbe mezzo mondo."); return; }
         const { error } = await supabase.from("email_mittenti_bloccati")
-            .insert({ pattern: p, note: nuovaNota.trim() || null, creato_da: user?.name || user?.id || null });
+            .insert({ pattern: p, oggetto: nuovoOggetto.trim().toLowerCase() || null, note: nuovaNota.trim() || null, creato_da: user?.name || user?.id || null });
         if (error) { alert("Non aggiunto: " + error.message); return; }
-        setNuovoPattern(""); setNuovaNota("");
+        setNuovoPattern(""); setNuovoOggetto(""); setNuovaNota("");
         caricaBloccati();
     };
     const rimuoviBloccato = async (id: string, pattern: string) => {
@@ -395,9 +396,11 @@ export function EmailAdminView() {
                 <p className="text-[11px] text-slate-500 mb-3">Il pattern è un pezzo dell&apos;indirizzo del mittente (es. «verisure» blocca tutto ciò che arriva da Verisure). Valgono comunque i paracadute: mai cestinata una conversazione con nostre risposte, di un cliente censito, stellata o ripristinata.</p>
                 <div className="flex items-center gap-2 flex-wrap mb-3">
                     <input value={nuovoPattern} onChange={e => setNuovoPattern(e.target.value)} placeholder="pezzo dell'indirizzo (es. verisure)"
-                        className="glass-input text-sm px-3 py-2 w-64" />
-                    <input value={nuovaNota} onChange={e => setNuovaNota(e.target.value)} placeholder="nota (facoltativa: perché lo blocchiamo)"
-                        className="glass-input text-sm px-3 py-2 flex-1 min-w-[220px]" />
+                        className="glass-input text-sm px-3 py-2 w-56" />
+                    <input value={nuovoOggetto} onChange={e => setNuovoOggetto(e.target.value)} placeholder="solo se l'oggetto contiene… (facoltativo)"
+                        className="glass-input text-sm px-3 py-2 w-64" title="Vuoto = blocca tutto del mittente. Compilato = cestina solo le email il cui oggetto contiene questo testo (es. «trasferimento merce»)" />
+                    <input value={nuovaNota} onChange={e => setNuovaNota(e.target.value)} placeholder="nota (perché lo blocchiamo)"
+                        className="glass-input text-sm px-3 py-2 flex-1 min-w-[180px]" />
                     <button onClick={aggiungiBloccato} className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Blocca
                     </button>
@@ -409,6 +412,7 @@ export function EmailAdminView() {
                         {bloccati.map(b => (
                             <div key={b.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
                                 <span className="font-mono text-[13px] font-bold text-rose-200">{b.pattern}</span>
+                                {b.oggetto && <span className="text-[11px] text-amber-300/90 shrink-0">solo oggetto: «{b.oggetto}»</span>}
                                 <span className="text-[11px] text-slate-500 truncate flex-1">{b.note || ""}</span>
                                 <button onClick={() => rimuoviBloccato(b.id, b.pattern)} title="Sblocca questo mittente"
                                     className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>

@@ -140,6 +140,29 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apriConvId, visibleAccounts.map(a => a.id).join("|")]);
 
+    // PRIORITÀ del triage AI per conversazione (Luca 26/08 sera: «i pallini
+    // in linea con la priorità»): rispondere → badge ROSSO, da_leggere →
+    // AMBRA, il resto resta blu. Si carica per le conversazioni correnti.
+    const [triStati, setTriStati] = useState<Record<string, string>>({});
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const ids = convs.map(c => c.id);
+            if (!ids.length) { if (alive) setTriStati({}); return; }
+            const m: Record<string, string> = {};
+            for (let b = 0; b < ids.length; b += 100) {
+                const { data } = await supabase.from("email_triage")
+                    .select("conversation_id, stato").in("conversation_id", ids.slice(b, b + 100));
+                (data || []).forEach((r: any) => { m[r.conversation_id] = r.stato; });
+            }
+            if (alive) setTriStati(m);
+        })();
+        return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [convs.map(c => c.id).join("|")]);
+    const badgePriorita = (c: Conv) =>
+        triStati[c.id] === "rispondere" ? "bg-rose-500" : triStati[c.id] === "da_leggere" ? "bg-amber-500" : "bg-sky-500";
+
     // non letti PER CASELLA (per i badge colorati sulle chip)
     const [unreadPerAcc, setUnreadPerAcc] = useState<Record<string, number>>({});
     useEffect(() => {
@@ -484,7 +507,9 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                                     <div className={cn("text-xs truncate", c.unread > 0 ? "text-slate-200 font-medium" : "text-slate-400")}>{c.subject || "(senza oggetto)"}</div>
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="text-xs text-slate-500 truncate">{c.last_preview || ""}</span>
-                                        {c.unread > 0 && <span className="text-[10px] font-bold bg-sky-500 text-white rounded-full px-1.5 shrink-0">{c.unread}</span>}
+                                        {/* pallino a PRIORITÀ del triage: rosso = cliente aspetta
+                                            noi, ambra = informativa da leggere, blu = il resto */}
+                                        {c.unread > 0 && <span className={cn("text-[10px] font-bold text-white rounded-full px-1.5 shrink-0", badgePriorita(c))} title={triStati[c.id] === "rispondere" ? "Il mittente aspetta una risposta" : triStati[c.id] === "da_leggere" ? "Informativa da leggere" : undefined}>{c.unread}</span>}
                                     </div>
                                 </div>
                                 {/* azioni rapide al hover */}
