@@ -310,8 +310,13 @@ export function strategiaDi(dir: Direzione, pista: string): Strategia {
 /** Consigli per una pista: i codici sotto target ordinati per STRATEGIA
  *  (vicino/scoperto), col negozio di chi chiede come spareggio; i
  *  completati in coda. Solo codici con un target. */
+// «è il negozio in cui lavoro?» — stesso match dei token dell'allocazione
+export function èMioCodice(k: { token: string[] }, negozio?: string | null): boolean {
+    const nu = norm(negozio);
+    return !!nu && k.token.some((t) => nu.startsWith(t) || t.startsWith(nu));
+}
+
 export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null, strategia: Strategia = "vicino") {
-    const nu = norm(negozioUtente);
     const prio = prioritaDi(dir, pista);
     const rankDi = (cod: string, mancano: number) => {
         const i = prio.indexOf(cod);
@@ -320,23 +325,45 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
     // la CB W3 «va a punti»: i fatti sono i punti PARTNERSHIP, non la
     // pista a pezzi (bug visto da Luca in prova: barre a zero)
     const cbW3 = dir.brand === "windtre" && pista === "cb";
+    // FASE T1 (Luca 27/08): su mobile e fisso la PRIMA esigenza — in tutti
+    // i casi — è coprire la Soglia 1 NUDA di ogni codice in corsa: lo
+    // sfrido lo colma il negozio stesso con le attivazioni sue
+    const faseT1 = pista === "mobile" || pista === "fisso";
     return dir.codici
         .filter((k) => (k.targets[pista] || 0) > 0)
         .map((k) => {
             const fatti = cbW3 ? (k.cbPunti || 0) : (k.piste[pista]?.punti || 0);
             const target = k.targets[pista] || 0;
+            const s1 = faseT1 ? Number((k.soglie[pista] || [])[0]) || 0 : 0;
+            const mancanoS1 = s1 > 0 ? Math.max(0, Math.round((s1 - fatti) * 100) / 100) : 0;
             return {
                 ...k, fatti, target,
                 mancano: Math.max(0, Math.round((target - fatti) * 100) / 100),
-                mio: !!nu && k.token.some((t) => nu.startsWith(t) || t.startsWith(nu)),
+                mio: èMioCodice(k, negozioUtente),
+                s1, mancanoS1, sottoS1: mancanoS1 > 0,
             };
         })
         .sort((a, b) => {
             const aFatto = a.mancano <= 0, bFatto = b.mancano <= 0;
             if (aFatto !== bFatto) return aFatto ? 1 : -1;              // i completati in coda
+            // ⓪ FASE T1: chi è sotto la S1 nuda passa davanti a tutto;
+            //    dentro la fase: il MIO negozio, poi le priorità del capo,
+            //    poi la S1 più vicina a chiudersi
+            if (a.sottoS1 !== b.sottoS1) return a.sottoS1 ? -1 : 1;
+            if (a.sottoS1 && b.sottoS1) {
+                if (a.mio !== b.mio) return a.mio ? -1 : 1;
+                const pr1 = rankDi(a.cod_gara, a.mancanoS1) - rankDi(b.cod_gara, b.mancanoS1);
+                if (pr1) return pr1;
+                const d1 = a.mancanoS1 - b.mancanoS1;
+                if (d1) return d1;
+            }
             const pr = rankDi(a.cod_gara, a.mancano) - rankDi(b.cod_gara, b.mancano);
             if (pr) return pr;                                          // ① priorità esplicite
+            // ② col «riempi il più scoperto» il negozio del RICHIEDENTE vince
+            //    finché ha capienza (Luca 27/08; i completati sono già in coda);
+            //    col «chiudi il più vicino» la strategia SCAVALCA il negozio
+            if (strategia === "scoperto" && a.mio !== b.mio) return a.mio ? -1 : 1;
             const diff = strategia === "vicino" ? (a.mancano - b.mancano) : (b.mancano - a.mancano);
-            return diff || (Number(b.mio) - Number(a.mio));             // ② strategia ③ negozio
+            return diff || (Number(b.mio) - Number(a.mio));             // ③ strategia ④ negozio
         });
 }

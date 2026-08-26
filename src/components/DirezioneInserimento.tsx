@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
-    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi,
+    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice,
     finestraBilancia, codiceBilancia, codiceAssociato, W3_PALETTO_BUSINESS,
     DIR_BRANDS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
@@ -35,6 +35,7 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
     soglie: { tier: number; soglia_da: number }[]; colore?: string;
     proiezione?: number | null; nota?: string | null; unit?: string;
     targetDir?: number | null;
+    bruciati?: number;
 }) => React.ReactElement;
 
 const it = (v: number) => Number(v || 0).toLocaleString("it-IT", { maximumFractionDigits: 2 });
@@ -305,13 +306,13 @@ export function DirezioneInserimentoAdmin() {
                                 <div key={p.chiave} className="flex items-center gap-1.5">
                                     <span className="text-xs text-slate-300 font-semibold">{p.nome}</span>
                                     <button onClick={() => salvaPolitica(p.chiave, "vicino")}
-                                        title="Si chiude prima il codice più VICINO al target"
+                                        title="Si chiude prima chi è già quasi a target: la strategia SCAVALCA il negozio del venditore"
                                         className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
                                             strat === "vicino" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}>
                                         🎯 Chiudi il più vicino
                                     </button>
                                     <button onClick={() => salvaPolitica(p.chiave, "scoperto")}
-                                        title="Si riempie prima il codice più LONTANO dal target (livella)"
+                                        title="Si livella dal basso — ma chi chiede carica PRIMA sul suo negozio, finché ha capienza sul target"
                                         className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
                                             strat === "scoperto" ? "bg-sky-500/15 text-sky-300 border-sky-500/40" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}>
                                         ⚖️ Riempi il più scoperto
@@ -363,8 +364,11 @@ export function DirezioneInserimentoAdmin() {
                     const richiesto = conTargetK.reduce((s, k) => s + (k.targets[pk] || 0), 0);
                     const fatto = Math.round(dir.codici.reduce((s, k) => s + fattoDi(k), 0) * 100) / 100;
                     const utile = Math.round(conTargetK.reduce((s, k) => s + Math.min(fattoDi(k), k.targets[pk] || 0), 0) * 100) / 100;
-                    const sforati = conTargetK
-                        .map((k) => ({ nome: k.negozio, extra: Math.round((fattoDi(k) - (k.targets[pk] || 0)) * 100) / 100 }))
+                    // ECCEDENZA (Luca 27/08): SEMPRE caricato − target SFRIDATO
+                    // (k.targets è già col +sfrido), e contano anche i punti su
+                    // codici SENZA target — «non ne avevano bisogno» per definizione
+                    const sforati = dir.codici
+                        .map((k) => { const t = k.targets[pk] || 0; return { nome: k.negozio, extra: Math.round((fattoDi(k) - t) * 100) / 100, senza: !(t > 0) }; })
                         .filter((x) => x.extra > 0);
                     const sforo = Math.round(sforati.reduce((s, x) => s + x.extra, 0) * 100) / 100;
                     const proj = proiezioneDir(dir, fatto);
@@ -379,13 +383,13 @@ export function DirezioneInserimentoAdmin() {
                             ? { txt: `🟡 quasi: la proiezione utile arriva a ${it(rif)} su ${it(richiesto)}`, cls: "text-amber-300" }
                             : { txt: `🔴 sopra la proiezione di ${it(Math.max(0, Math.ceil(richiesto - rif)))}: o si spinge o si ridimensiona`, cls: "text-rose-300" };
                     return { pk, meta, cbW3, richiesto, fatto, utile, sforati, sforo, proj: projUtile, verdetto };
-                }).filter(Boolean) as { pk: string; meta: { chiave: string; nome: string; um: string }; cbW3: boolean; richiesto: number; fatto: number; utile: number; sforati: { nome: string; extra: number }[]; sforo: number; proj: number | null; verdetto: { txt: string; cls: string } | null }[];
+                }).filter(Boolean) as { pk: string; meta: { chiave: string; nome: string; um: string }; cbW3: boolean; richiesto: number; fatto: number; utile: number; sforati: { nome: string; extra: number; senza: boolean }[]; sforo: number; proj: number | null; verdetto: { txt: string; cls: string } | null }[];
                 if (!righe.length) return null;
                 return (
                     <div className="glass-card p-4 space-y-3.5">
                         <button type="button" onClick={() => setRecapAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">📊 Totale richiesto vs rete</span>
-                            <span className="text-[10px] text-slate-600">Σ target sui codici (sfrido incluso) · il progresso valido si ferma al target di ogni codice: gli sforamenti non recuperano</span>
+                            <span className="text-[10px] text-slate-600">Σ target sui codici (sfrido incluso) · l'eccedenza si misura sul target SFRIDATO e non recupera: la proiezione utile la deduce</span>
                             <span className={cn("ml-auto text-slate-500 transition-transform text-xs", recapAperto && "rotate-180")}>▾</span>
                         </button>
                         {recapAperto && righe.map((r) => (
@@ -395,11 +399,12 @@ export function DirezioneInserimentoAdmin() {
                                     punti={r.richiesto > 0 ? r.utile : r.fatto}
                                     soglie={r.richiesto > 0 ? [{ tier: 1, soglia_da: r.richiesto }] : []}
                                     colore={bMeta.color} proiezione={r.proj}
+                                    bruciati={r.richiesto > 0 ? r.sforo : 0}
                                     unit={r.meta.um === "pezzi" && !r.cbW3 ? "pz" : "pt"}
-                                    nota={r.richiesto > 0 && r.fatto !== r.utile ? `rete ${it(r.fatto)} · validi verso i target ${it(r.utile)}` : null} />
+                                    nota={r.richiesto > 0 && r.fatto !== r.utile ? `rete ${it(r.fatto)} · validi verso i target ${it(r.utile)} · 🔥 ${it(r.sforo)} bruciati` : null} />
                                 {r.sforati.length > 0 && (
-                                    <div className="text-[11px] font-semibold text-amber-300">
-                                        ⚠ {it(r.sforo)} oltre target — non recuperabili: {r.sforati.map((x) => `${x.nome} (+${it(x.extra)})`).join(" · ")}
+                                    <div className="text-[11px] font-semibold text-rose-300">
+                                        🔥 {it(r.sforo)} bruciati oltre il target sfridato — non recuperano: {r.sforati.map((x) => `${x.nome} (+${it(x.extra)}${x.senza ? " · senza target" : ""})`).join(" · ")}
                                     </div>
                                 )}
                                 {r.verdetto && <div className={cn("text-[11px] font-semibold", r.verdetto.cls)}>{r.verdetto.txt}</div>}
@@ -532,7 +537,18 @@ export function DirezioneInserimentoAdmin() {
                         // mobile, fisso, CB a punti, protetti — Luca 26/08):
                         // le categorie di gruppo vivono nella card sotto
                         const pisteMostrate = dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && !PISTE_FUORI.has(p.chiave));
-                        const nTarget = Object.entries(k.targets).filter(([p, v]) => v > 0 && !PISTE_FUORI.has(p)).length;
+                        // SEMAFORO (Luca 27/08): un pallino per target — verde
+                        // preso, giallo lo prende in proiezione, rosso nemmeno lì
+                        const semafori = pisteMostrate
+                            .filter((p) => (k.targets[p.chiave] || 0) > 0)
+                            .map((p) => {
+                                const t = k.targets[p.chiave] || 0;
+                                const cbSem = dir.brand === "windtre" && p.chiave === "cb";
+                                const f = cbSem ? (k.cbPunti || 0) : (k.piste[p.chiave]?.punti || 0);
+                                const pj = proiezioneDir(dir, f);
+                                const stato = f >= t ? "verde" : (pj != null && pj >= t) ? "giallo" : "rosso";
+                                return { chiave: p.chiave, nome: p.nome, t, f, stato };
+                            });
                         return (
                             <div key={k.cod_gara} className="glass-card overflow-hidden transition-shadow"
                                 style={{ borderLeft: `3px solid ${on ? bMeta.color : `color-mix(in srgb, ${bMeta.color} 35%, transparent)`}`, boxShadow: on ? `0 0 22px color-mix(in srgb, ${bMeta.color} 22%, transparent)` : undefined }}>
@@ -544,7 +560,18 @@ export function DirezioneInserimentoAdmin() {
                                         {k.cluster && <span className="text-[10px] text-slate-500 truncate hidden sm:inline">· {k.cluster}</span>}
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
-                                        {nTarget > 0 && <span className="text-[10px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/25 rounded-md px-2 py-0.5">{nTarget} target</span>}
+                                        {semafori.length > 0 && (
+                                            <span className="flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5">
+                                                {semafori.map((sm) => (
+                                                    <span key={sm.chiave}
+                                                        title={`${sm.nome}: ${it(sm.f)} / ${it(sm.t)} — ${sm.stato === "verde" ? "🎯 target preso" : sm.stato === "giallo" ? "in proiezione lo prende" : "nemmeno in proiezione: serve una spinta"}`}
+                                                        className={cn("w-2.5 h-2.5 rounded-full", sm.stato === "rosso" && "animate-pulse")}
+                                                        style={sm.stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
+                                                            : sm.stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
+                                                                : { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} />
+                                                ))}
+                                            </span>
+                                        )}
                                         <span className={cn("text-slate-500 transition-transform text-xs", on && "rotate-180")}>▾</span>
                                     </div>
                                 </button>
@@ -885,7 +912,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     const spPaletto = Math.round(Number(dir.sfridi["__paletto_business__"]) || 0);
                     const obiettivo = W3_PALETTO_BUSINESS + spPaletto;
                     const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll)
-                        .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0 }))
+                        .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0, mio: èMioCodice(k, negozio) }))
                         .sort((a, b) => a.fatti - b.fatti);
                     // DUE FASI (Luca 27/08-5): prima TUTTI al paletto (6),
                     // POI il pezzo di sfrido su chi manca; dentro la fase
@@ -900,8 +927,11 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         const i = k ? prioB.indexOf(k.cod_gara) : -1;
                         return i >= 0 ? i : Infinity;
                     };
+                    // col «riempi il più scoperto» il negozio del richiedente vince
+                    // finché è in fase (= ha capienza); col «vicino» la strategia scavalca
                     const ordinati = [...fase].sort((a, b) =>
                         (rankB(a.nome) - rankB(b.nome))
+                        || (strat === "scoperto" && a.mio !== b.mio ? (a.mio ? -1 : 1) : 0)
                         || (strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti)));
                     const scelto = ordinati[0] || null;
                     const faseLabel = sottoPaletto.length ? W3_PALETTO_BUSINESS : obiettivo;
@@ -915,7 +945,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
-                                <div className="text-[11px] font-semibold text-slate-300 mt-1.5">{strat === "vicino" ? "è il più vicino a chiudere" : "è il più scoperto"}: {scelto.fatti} / {faseLabel}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, ora il pezzo di sfrido)"}</div>
+                                <div className="text-[11px] font-semibold text-slate-300 mt-1.5">{strat === "vicino" ? "è il più vicino a chiudere" : scelto.mio ? "è il tuo negozio e ha ancora capienza" : "è il più scoperto"}: {scelto.fatti} / {faseLabel}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, ora il pezzo di sfrido)"}</div>
                             </div>
                         ) : mobScelto ? (
                             <div className="rounded-2xl px-4 py-4 border"
@@ -970,7 +1000,9 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             </div>
                             <span className="text-[11px] font-bold text-slate-200 tabular-nums shrink-0">{it(consigliato.fatti)} / {it(consigliato.target)}</span>
                         </div>
-                        <div className="text-[11px] font-semibold text-slate-300 mt-1">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "🎯 target raggiunto: prosegui qui o guarda le altre realtà"}</div>
+                        <div className="text-[11px] font-semibold mt-1">{consigliato.sottoS1
+                            ? <span className="text-rose-300">🚨 prima esigenza: il Target 1 — mancano {it(consigliato.mancanoS1)} alla S1{consigliato.mio ? " del tuo negozio" : ""}</span>
+                            : <span className="text-slate-300">{consigliato.mancano > 0 ? `mancano ${it(consigliato.mancano)} al target della direzione` : "🎯 target raggiunto: prosegui qui o guarda le altre realtà"}</span>}</div>
                     </div>
                 )}
                 {/* le altre realtà, in piccolo */}

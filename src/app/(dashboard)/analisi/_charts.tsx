@@ -359,14 +359,17 @@ export function HeatCal({ giorni, colore = "var(--tf-818cf8)", oggi = -1, unit =
 /* ── BARRA DELLE SOGLIE (Master, Luca 21/08): una pista di gara come corsa
    orizzontale — tacche alle soglie (S1..S8), riempimento animato, la
    prossima soglia pulsa; tutto hoverabile, il click apre il drill. ──────── */
-export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#818cf8", gate, malus, nota, proiezione = null, onClick, unit = "pt", targetDir = null }) {
+export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#818cf8", gate, malus, nota, proiezione = null, onClick, unit = "pt", targetDir = null, bruciati = 0 }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
     // il PROSPECT guida le considerazioni (Luca 21/08): barra piena = attuale,
     // coda a strisce = proiezione fine mese
     const proj = proiezione != null && proiezione > punti ? Math.round(proiezione * 100) / 100 : null;
+    // punti BRUCIATI (Direzione): caricati oltre target+sfrido, non recuperano —
+    // coda ROSSA sfumata dopo la proiezione utile (Luca 27/08)
+    const rosso = Number(bruciati) > 0 ? Math.round(Number(bruciati) * 100) / 100 : 0;
     const ultima = soglie.length ? soglie[soglie.length - 1].soglia_da : 0;
-    const max = Math.max(ultima * 1.07, punti * 1.06, (proj || 0) * 1.04, (targetDir || 0) * 1.05, 1);
+    const max = Math.max(ultima * 1.07, punti * 1.06, (proj || 0) * 1.04, (targetDir || 0) * 1.05, ((proj || punti) + rosso) * 1.03, 1);
     const pct = (v) => Math.min(100, (v / max) * 100);
     const presa = [...soglie].reverse().find((s) => punti >= s.soglia_da) || null;
     const prossima = soglie.find((s) => s.soglia_da > punti) || null;
@@ -392,6 +395,16 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
                         </div>
                     }>
                         <span className="block w-full h-full" style={{ background: `repeating-linear-gradient(45deg, ${colore}55 0 5px, ${colore}18 5px 10px)` }} />
+                    </Tip>
+                )}
+                {rosso > 0 && (
+                    <Tip className="absolute inset-y-0 rounded-r-full overflow-hidden" style={{ left: `${pct(rif)}%`, width: on ? `${Math.max(0, pct(rif + rosso) - pct(rif))}%` : 0, transition: "width 1.2s .35s cubic-bezier(.22,1,.36,1)" }} tip={
+                        <div><TipTitolo>🔥 Punti bruciati</TipTitolo>
+                            <TipRiga l="oltre il target sfridato" r={`${fmtPt(rosso)} ${unit}`} colore="#f43f5e" />
+                            <TipRiga l="non recuperano" r="dedotti dalla proiezione utile" />
+                        </div>
+                    }>
+                        <span className="block w-full h-full" style={{ background: "linear-gradient(90deg, #f43f5ebb, #f43f5e26)", boxShadow: "inset 0 0 8px #f43f5e44" }} />
                     </Tip>
                 )}
                 <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000 ease-out"
