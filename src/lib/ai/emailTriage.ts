@@ -8,10 +8,11 @@
 //                 contabilità): nessuna risposta dovuta, ma va vista
 //   niente      → newsletter, marketing, notifiche di routine: silenzio
 //   spazzatura  → spam/phishing/truffe → CESTINATA in automatico (direttiva
-//                 Luca 26/08: «cancellale»), tranne che sulle caselle
-//                 PROTETTE (ai_protetta, es. amministrazione@) dove finisce
-//                 in quarantena Spam. Il cestino del CRM è ripristinabile e
-//                 ogni azione resta nel registro Attività AI del pannello.
+//                 Luca 26/08: «cancellale»). Il cestino del CRM è
+//                 ripristinabile e ogni azione resta nel registro Attività AI.
+//                 Le caselle con ai_protetta (es. amministrazione@) sono
+//                 ESCLUSE DEL TUTTO dal triage (direttiva 26/08 sera): il
+//                 motore non le legge, non le classifica, non le conteggia.
 //
 // GUARDIE DURE nel codice (mai delegate al modello): una conversazione dove
 // ABBIAMO SCRITTO NOI, o col cliente censito in anagrafica (client_id), o
@@ -194,9 +195,28 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                 .select("conversation_id, ultimo_msg_ts, versione, ripristinata_il").in("conversation_id", blocco);
             (rows || []).forEach((r) => triMap.set(r.conversation_id, r));
         }
+        // MITTENTI BLOCCATI (Luca 26/08, «Verisure cancellale sempre» + i
+        // sistemi d'allarme): pattern governati dal Pannello Email — il match
+        // sull'indirizzo cestina d'ufficio SENZA interpellare l'AI (costo
+        // zero), stesse guardie dure. Vale anche per conversazioni GIÀ
+        // classificate ma mai agite (il pattern può nascere dopo).
+        const { data: blk } = await supabase.from("email_mittenti_bloccati").select("pattern");
+        const bloccati = (blk || []).map((r) => String(r.pattern || "").toLowerCase()).filter(Boolean);
+        const matchBloccato = (c: Conv): string | null => {
+            const em = String(c.customer_email || "").toLowerCase();
+            return bloccati.find((p) => em.includes(p)) || null;
+        };
         const daFare = tutte.filter((c) => {
+            // caselle ESCLUSE dall'AI (ai_protetta — direttiva Luca 26/08
+            // sera: «escludimi amministrazione dalle attività AI e dalle
+            // statistiche»): il motore non le legge, non le classifica e non
+            // le tocca. Restano configurate e funzionanti nell'Inbox.
+            if (caselle.get(c.account_id)?.ai_protetta) return false;
             if (c.trashed) return false;                    // il cestino non si classifica
             const t = triMap.get(c.id);
+            // conv di un mittente bloccato mai agita (e non ripristinata) →
+            // rientra anche se già classificata: il cestino la aspetta
+            if (matchBloccato(c) && (!t || (!("azione_auto" in t ? (t as any).azione_auto : null) && !t.ripristinata_il))) return true;
             return !t || t.versione !== EMAIL_TRIAGE_VERSIONE
                 || new Date(t.ultimo_msg_ts).getTime() < new Date(c.last_message_at).getTime() - TOLLERANZA_MS;
         });
@@ -209,6 +229,35 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                 const conv = lotto[idx++];
                 try {
                     const acc = caselle.get(conv.account_id);
+                    // ── ramo MITTENTE BLOCCATO: niente AI, cestino diretto ──
+                    const patBloccato = matchBloccato(conv);
+                    if (patBloccato) {
+                        const { count: nOut } = await supabase.from("email_messages")
+                            .select("id", { count: "exact", head: true })
+                            .eq("conversation_id", conv.id).eq("direction", "out");
+                        const rigaB: any = {
+                            conversation_id: conv.id, versione: EMAIL_TRIAGE_VERSIONE, modello: "regola",
+                            stato: "spazzatura", azione: `mittente bloccato: ${patBloccato}`,
+                            ultimo_msg_ts: new Date(Math.min(Date.now(), new Date(conv.last_message_at).getTime())).toISOString(),
+                            errore: null, classificato_il: new Date().toISOString(),
+                        };
+                        const ripr = !!triMap.get(conv.id)?.ripristinata_il;
+                        if ((nOut ?? 0) === 0 && !conv.client_id && !conv.starred && !conv.spam && !ripr) {
+                            const { data: agite } = await supabase.from("email_conversations")
+                                .update({ trashed: true })
+                                .eq("id", conv.id).eq("starred", false).is("client_id", null)
+                                .select("id");
+                            if ((agite || []).length > 0) {
+                                rigaB.azione_auto = "cestinata";
+                                rigaB.azione_auto_il = new Date().toISOString();
+                                cestinate++;
+                            }
+                        }
+                        if (ripr) rigaB.ripristinata_il = triMap.get(conv.id)?.ripristinata_il;
+                        const { error: eB } = await supabase.from("email_triage").upsert(rigaB, { onConflict: "conversation_id" });
+                        if (eB) { errori++; if (!primoErrore) primoErrore = eB.message; } else dirette++;
+                        continue;
+                    }
                     const { riga, usage, abbiamoRisposto } = await classificaUna(conv, acc?.display_name || acc?.email_address || "negozio");
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
@@ -224,15 +273,14 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                     // cambiati nel frattempo); protette → quarantena Spam.
                     const ripristinata = !!triMap.get(conv.id)?.ripristinata_il;
                     if (riga.stato === "spazzatura" && !abbiamoRisposto && !conv.client_id && !conv.starred && !conv.spam && !ripristinata) {
-                        const protetta = !!acc?.ai_protetta;
                         const { data: agite, error: e2 } = await supabase.from("email_conversations")
-                            .update(protetta ? { spam: true } : { trashed: true })
+                            .update({ trashed: true })
                             .eq("id", conv.id).eq("starred", false).is("client_id", null)
                             .select("id");
                         if (!e2 && (agite || []).length > 0) {
-                            (riga as any).azione_auto = protetta ? "quarantena" : "cestinata";
+                            (riga as any).azione_auto = "cestinata";
                             (riga as any).azione_auto_il = new Date().toISOString();
-                            if (protetta) quarantene++; else cestinate++;
+                            cestinate++;
                         }
                     }
                     // il ripristino dell'admin sopravvive all'upsert (l'upsert
@@ -255,7 +303,7 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
         const costoUsd = estimateCost(MODEL_FAST, promptTok, complTok);
         const esito = senzaCredito
             ? `${quandoRoma(adessoIso)} · DeepSeek senza credito: da ricaricare (classificate ${classificate})`
-            : `${quandoRoma(adessoIso)} · ${classificate} con AI + ${dirette} dirette · 🗑 ${cestinate} cestinate · ${quarantene} in quarantena · ${errori} errori · ${rimanenti} in coda · $${costoUsd.toFixed(4)}`;
+            : `${quandoRoma(adessoIso)} · ${classificate} con AI + ${dirette} dirette · 🗑 ${cestinate} cestinate · ${errori} errori · ${rimanenti} in coda · $${costoUsd.toFixed(4)}`;
         if (classificate > 0 || (errori > 0 && !senzaCredito)) {
             supabase.from("ai_usage").insert({
                 user_id: null, model: MODEL_FAST, prompt_tokens: promptTok, completion_tokens: complTok,

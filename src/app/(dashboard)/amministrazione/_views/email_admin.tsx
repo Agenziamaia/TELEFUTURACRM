@@ -166,11 +166,37 @@ export function EmailAdminView() {
         carica();
     };
 
-    // 🛡 protetta: l'AI non cestina mai (quarantena Spam al posto del cestino)
+    // 🛡 esclusa dall'AI: il triage non la legge, non la classifica, non la
+    // conteggia (direttiva Luca 26/08 sera, caso amministrazione@)
     const toggleProtetta = async (c: Casella) => {
         const { error } = await supabase.from("email_accounts").update({ ai_protetta: !c.ai_protetta }).eq("id", c.id);
         if (error) { alert("Cambio non riuscito: " + error.message); return; }
         carica();
+    };
+
+    // ── 🚫 MITTENTI BLOCCATI (Luca 26/08: «Verisure cancellale sempre», poi
+    // allarmi.payprint): pattern = pezzo dell'indirizzo mittente; il motore
+    // cestina d'ufficio senza interpellare l'AI, guardie dure comprese
+    const [bloccati, setBloccati] = useState<{ id: string; pattern: string; note: string | null }[]>([]);
+    const [nuovoPattern, setNuovoPattern] = useState("");
+    const [nuovaNota, setNuovaNota] = useState("");
+    const caricaBloccati = () => supabase.from("email_mittenti_bloccati").select("id, pattern, note").order("pattern")
+        .then(({ data }) => setBloccati((data ?? []) as any));
+    useEffect(() => { caricaBloccati(); }, []);
+    const aggiungiBloccato = async () => {
+        const p = nuovoPattern.trim().toLowerCase();
+        if (p.length < 4) { alert("Il pattern deve avere almeno 4 caratteri (es. «verisure», «allarmi.payprint») — troppo corto cestinerebbe mezzo mondo."); return; }
+        const { error } = await supabase.from("email_mittenti_bloccati")
+            .insert({ pattern: p, note: nuovaNota.trim() || null, creato_da: user?.name || user?.id || null });
+        if (error) { alert("Non aggiunto: " + error.message); return; }
+        setNuovoPattern(""); setNuovaNota("");
+        caricaBloccati();
+    };
+    const rimuoviBloccato = async (id: string, pattern: string) => {
+        if (!window.confirm(`Sbloccare «${pattern}»? Le email future di quel mittente torneranno a passare dal triage normale (quelle già cestinate restano nel cestino).`)) return;
+        const { error } = await supabase.from("email_mittenti_bloccati").delete().eq("id", id);
+        if (error) { alert("Non rimosso: " + error.message); return; }
+        caricaBloccati();
     };
 
     // ── riassegnazione dalla riga: MULTI, con nome quando serve ──
@@ -285,7 +311,7 @@ export function EmailAdminView() {
                                             <td className="px-4 py-2">
                                                 <div className="font-semibold text-white flex items-center gap-1.5">
                                                     {c.display_name || c.email_address}
-                                                    {c.ai_protetta && <Shield className="w-3.5 h-3.5 text-emerald-300" aria-label="Protetta: l'AI non cancella" />}
+                                                    {c.ai_protetta && <Shield className="w-3.5 h-3.5 text-emerald-300" aria-label="Esclusa dall'AI" />}
                                                 </div>
                                                 <div className="text-[11px] text-slate-500">{c.email_address}</div>
                                             </td>
@@ -331,7 +357,7 @@ export function EmailAdminView() {
                                                 {puoGestire(c) && (
                                                 <>
                                                 <button onClick={() => toggleProtetta(c)}
-                                                    title={c.ai_protetta ? "Protetta: l'AI non cancella mai qui (lo spam va in quarantena). Clicca per togliere la protezione." : "Non protetta: lo spam/phishing viene cestinato in automatico dall'AI. Clicca per proteggerla."}
+                                                    title={c.ai_protetta ? "Esclusa dall'AI: il triage non la legge, non la classifica, non la conteggia nel widget (resta normale nell'Inbox). Clicca per includerla." : "Inclusa nell'AI: il triage la smista e cestina spam/phishing in automatico. Clicca per escluderla del tutto."}
                                                     className={cn("px-2 py-1.5 rounded-lg border text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1",
                                                         c.ai_protetta ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10" : "border-white/10 text-slate-400 hover:bg-white/10")}>
                                                     {c.ai_protetta ? <Shield className="w-3.5 h-3.5" /> : <ShieldOff className="w-3.5 h-3.5" />}
@@ -362,10 +388,41 @@ export function EmailAdminView() {
                 )}
             </div>
 
+            {/* 🚫 MITTENTI BLOCCATI — cestino d'ufficio, governabile da qui */}
+            {(puoUtenti || puoNegozi) && (
+            <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: "4px solid var(--tf-f43f5e, #f43f5e)" }}>
+                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">🚫 Mittenti bloccati — le loro email finiscono nel cestino da sole, senza passare dall&apos;AI</div>
+                <p className="text-[11px] text-slate-500 mb-3">Il pattern è un pezzo dell&apos;indirizzo del mittente (es. «verisure» blocca tutto ciò che arriva da Verisure). Valgono comunque i paracadute: mai cestinata una conversazione con nostre risposte, di un cliente censito, stellata o ripristinata.</p>
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                    <input value={nuovoPattern} onChange={e => setNuovoPattern(e.target.value)} placeholder="pezzo dell'indirizzo (es. verisure)"
+                        className="glass-input text-sm px-3 py-2 w-64" />
+                    <input value={nuovaNota} onChange={e => setNuovaNota(e.target.value)} placeholder="nota (facoltativa: perché lo blocchiamo)"
+                        className="glass-input text-sm px-3 py-2 flex-1 min-w-[220px]" />
+                    <button onClick={aggiungiBloccato} className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold flex items-center gap-2">
+                        <Plus className="w-4 h-4" /> Blocca
+                    </button>
+                </div>
+                {bloccati.length === 0 ? (
+                    <p className="text-[12px] text-slate-500">Nessun mittente bloccato.</p>
+                ) : (
+                    <div className="space-y-1.5">
+                        {bloccati.map(b => (
+                            <div key={b.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
+                                <span className="font-mono text-[13px] font-bold text-rose-200">{b.pattern}</span>
+                                <span className="text-[11px] text-slate-500 truncate flex-1">{b.note || ""}</span>
+                                <button onClick={() => rimuoviBloccato(b.id, b.pattern)} title="Sblocca questo mittente"
+                                    className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+            )}
+
             {/* REGISTRO ATTIVITÀ AI — cosa classifica e cancella il motore */}
             <AttivitaAI canale="email" />
 
-            <p className="text-[11px] text-slate-500 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Nell&apos;Inbox i collaboratori le caselle le usano e basta: collegare, riassegnare ed eliminare si fa solo da qui. 🛡 = l&apos;AI non cancella su quella casella.</p>
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Nell&apos;Inbox i collaboratori le caselle le usano e basta: collegare, riassegnare ed eliminare si fa solo da qui. 🛡 = casella esclusa dall&apos;AI (niente triage, niente cancellazioni, fuori dalle statistiche).</p>
 
             {modal && (
                 <ConnectModal ownerUserId={modal.ownerUserId} extraUserIds={modal.extraUserIds} negozio={modal.negozio}

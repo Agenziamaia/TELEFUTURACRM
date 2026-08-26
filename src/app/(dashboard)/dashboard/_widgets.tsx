@@ -1916,16 +1916,18 @@ function WidgetEmail({ ctx, size }) {
         let vivo = true;
         (async () => {
             const [{ data: accs }, { data: memb }] = await Promise.all([
-                supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status"),
+                supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status, ai_protetta"),
                 supabase.from("email_account_users").select("account_id").eq("user_id", uid),
             ]);
             if (!vivo) return;
             const membro = new Set((memb || []).map((r) => r.account_id));
             // stessa visibilità dell'Inbox: titolare, membro, o negozio (anche
             // multi) in visibilità; chi vede tutto (admin) qui vede TUTTE le
-            // caselle — è il widget di regia della squadra, non la sua Inbox
-            let vis = (accs || []).filter((a) => ctx.seesAll || a.owner_user_id === uid || membro.has(a.id)
-                || (!a.owner_user_id && matchNegozi(a.negozio, ctx.myStores)));
+            // caselle — è il widget di regia della squadra, non la sua Inbox.
+            // Le caselle ESCLUSE dall'AI (ai_protetta, es. amministrazione)
+            // restano fuori anche dalle statistiche (direttiva 26/08 sera)
+            let vis = (accs || []).filter((a) => !a.ai_protetta && (ctx.seesAll || a.owner_user_id === uid || membro.has(a.id)
+                || (!a.owner_user_id && matchNegozi(a.negozio, ctx.myStores))));
             if (!vis.length) { setDati({ vuoto: "Nessuna casella email collegata per i tuoi negozi." }); return; }
             const etichettaDi = (a) => a.display_name || a.email_address;
             const etichette = [...new Set(vis.map(etichettaDi))].sort((a, b) => a.localeCompare(b, "it"));
