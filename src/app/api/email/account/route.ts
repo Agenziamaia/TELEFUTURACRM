@@ -77,6 +77,18 @@ export async function POST(request: Request) {
             // WhatsApp): il vecchio backfill del primary_store faceva contare
             // la posta personale nel pallino dei colleghi del negozio
             const negozio: string | null = b.ownerUserId ? null : (b.negozio || null);
+            // MEMBRI EXTRA (26/08): casella multi-utente — il primo intestatario
+            // sta in owner_user_id, gli altri nella ponte email_account_users
+            const extraIds: string[] = Array.isArray(b.extraUserIds)
+                ? [...new Set<string>(b.extraUserIds.map((x: unknown) => String(x)).filter((x: string) => x && x !== String(b.ownerUserId || "")))]
+                : [];
+            const syncMembri = async (accountId: string) => {
+                await supabase.from("email_account_users").delete().eq("account_id", accountId);
+                if (extraIds.length) {
+                    await supabase.from("email_account_users")
+                        .insert(extraIds.map((uid) => ({ account_id: accountId, user_id: uid })));
+                }
+            };
 
             // Se la casella e' GIA' collegata (stesso indirizzo), la RI-collego invece
             // di fallire con "duplicate key ...email_address_key": aggiorno credenziali
@@ -97,6 +109,7 @@ export async function POST(request: Request) {
                     .update(upd).eq("id", existing.id)
                     .select("id, email_address, negozio, display_name, status").single();
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+                await syncMembri(existing.id);
                 return NextResponse.json({ ok: true, account: data, reconnected: true });
             }
 
@@ -104,6 +117,7 @@ export async function POST(request: Request) {
                 ...acc, negozio, owner_user_id: b.ownerUserId || null, status: "attiva",
             }).select("id, email_address, negozio, display_name, status").single();
             if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+            await syncMembri(data.id);
             return NextResponse.json({ ok: true, account: data });
         }
 

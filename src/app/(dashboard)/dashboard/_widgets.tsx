@@ -29,6 +29,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS , areaOf } from "@/lib/roles";
 import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel, caricaTabellare, calcolaAvanzamento, payEuroAttivazione, esclusaDalleGare } from "@/lib/commissioning";
@@ -39,13 +40,14 @@ import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAsset
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { waIstanzeVisibili } from "@/lib/waVisibilita";
+import { matchNegozi } from "@/lib/visibleStores";
 import { cn } from "@/utils";
 import {
     FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
     AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
     Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, CalendarClock,
     LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords, MessageCircle,
-    Euro, Flame, TrainFront, CalendarCheck, Shield, Banknote,
+    Euro, Flame, TrainFront, CalendarCheck, Shield, Banknote, Mail,
 } from "lucide-react";
 import { CoronaOro } from "@/components/IconaCorona";
 
@@ -1516,6 +1518,7 @@ const corsaTriageClient = { t: 0 };
 
 function WidgetWhatsApp({ ctx, size }) {
     const uid = ctx.user?.id;
+    const router = useRouter();
     const [dati, setDati] = useState(null);
     const [giro, setGiro] = useState(0);
     // filtro per negozio/persona (Luca 25/08 notte: chi gestisce più punti
@@ -1804,9 +1807,15 @@ function WidgetWhatsApp({ ctx, size }) {
     const nAlert = size >= 4 ? 8 : 3;
     const nAttesa = size >= 4 ? 5 : 2;
     const adesso = Date.now();
+    // navigazione PROGRAMMATICA, non <Link> (Luca 26/08: «clicco e non
+    // reindirizza da nessuna parte»): dentro la griglia drag della Home un
+    // preventDefault a monte fa DESISTERE Next Link (controlla
+    // e.defaultPrevented prima di navigare) — il push esplicito naviga sempre
     const rigaChat = (a, tinta) => (
         <div key={a.id} className="flex items-center gap-1">
-            <Link href={`/chat?conv=${a.id}`} className="flex-1 min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors">
+            <a href={`/chat?conv=${a.id}`}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/chat?conv=${a.id}`); }}
+                className="flex-1 min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors cursor-pointer">
                 <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="font-semibold text-slate-200 truncate">{a.ripresa ? "🗓 " : ""}{a.nome}</span>
                     <span className={cn("shrink-0 font-bold", tinta === "rossa"
@@ -1815,7 +1824,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 </div>
                 {/* il PERCHÉ del triage AI: chi lavora capisce al volo cosa serve */}
                 {a.azione && <div className="text-[10px] text-slate-500 truncate leading-tight">{a.azione}</div>}
-            </Link>
+            </a>
             <button onClick={() => chiudiAlert(a)} title="Segna conclusa: non aspettiamo più nulla qui (se il cliente riscrive, torna in elenco)"
                 className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-[11px] font-bold">✓</button>
         </div>
@@ -1875,6 +1884,200 @@ function WidgetWhatsApp({ ctx, size }) {
             {/* anello: chi scrive quanto (stile Analisi, cliccabile) */}
             {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4} titolo={`Messaggi scritti · ${dati.etichettaPeriodo}`} />}
             <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.aiFresche ? ` · 🧠 triage AI su ${dati.aiFresche} chat` : ""}{dati.agendate ? ` · 🗓 ${dati.agendate} in agenda` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
+        </div>
+    );
+}
+
+// ── 📧 EMAIL DEL TEAM (26/08, fase 2 Email-come-WhatsApp) — gemello del
+// widget WhatsApp: il triage AI (lib/ai/emailTriage) smista le conversazioni
+// e qui compaiono SOLO quelle vere — rosse (un cliente/pratica aspetta noi,
+// col perché) e arancio (informative da vedere, finché non lette); lo spam
+// lo cancella il motore da solo e si controlla dal pannello Amministrazione.
+const corsaTriageEmailClient = { t: 0 };
+function WidgetEmail({ ctx, size }) {
+    const uid = ctx.user?.id;
+    const router = useRouter();
+    const [dati, setDati] = useState(null);
+    const [giro, setGiro] = useState(0);
+    const [filtro, setFiltro] = useState("");
+    const [periodoW, setPeriodoW] = useState("");
+    useEffect(() => { const t = setInterval(() => setGiro((g) => g + 1), 120000); return () => clearInterval(t); }, []);
+    // sveglia del motore email (un giro, lock/debounce nel server)
+    useEffect(() => {
+        const ora = Date.now();
+        if (ora - corsaTriageEmailClient.t < 3 * 60000) return;
+        corsaTriageEmailClient.t = ora;
+        fetch("/api/email/triage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+            .then((r) => r.json())
+            .then((j) => { if (j && (j.classificate > 0 || j.cestinate > 0)) setGiro((g) => g + 1); })
+            .catch(() => { });
+    }, []);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const [{ data: accs }, { data: memb }] = await Promise.all([
+                supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status"),
+                supabase.from("email_account_users").select("account_id").eq("user_id", uid),
+            ]);
+            if (!vivo) return;
+            const membro = new Set((memb || []).map((r) => r.account_id));
+            // stessa visibilità dell'Inbox: titolare, membro, o negozio (anche
+            // multi) in visibilità; chi vede tutto (admin) qui vede TUTTE le
+            // caselle — è il widget di regia della squadra, non la sua Inbox
+            let vis = (accs || []).filter((a) => ctx.seesAll || a.owner_user_id === uid || membro.has(a.id)
+                || (!a.owner_user_id && matchNegozi(a.negozio, ctx.myStores)));
+            if (!vis.length) { setDati({ vuoto: "Nessuna casella email collegata per i tuoi negozi." }); return; }
+            const etichettaDi = (a) => a.display_name || a.email_address;
+            const etichette = [...new Set(vis.map(etichettaDi))].sort((a, b) => a.localeCompare(b, "it"));
+            if (filtro) vis = vis.filter((a) => etichettaDi(a) === filtro);
+            if (!vis.length) { setDati({ vuoto: "Nessuna casella per questo filtro.", etichette }); return; }
+            // periodo: filtro interno → periodo Home → mese corrente (pattern WA)
+            const oggi = new Date();
+            const adessoMs = oggi.getTime();
+            const inizioMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1).getTime();
+            let rDa = inizioMese, rA = adessoMs + 60000, etichettaPeriodo = "questo mese";
+            if (periodoW === "Oggi") { rDa = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate()).getTime(); etichettaPeriodo = "oggi"; }
+            else if (periodoW === "Ultimi 7 giorni") { rDa = adessoMs - 7 * 86400000; etichettaPeriodo = "ultimi 7 giorni"; }
+            else if (periodoW === "Ultimi 30 giorni") { rDa = adessoMs - 30 * 86400000; etichettaPeriodo = "ultimi 30 giorni"; }
+            else if (periodoW === "Questo mese") { rDa = inizioMese; etichettaPeriodo = "questo mese"; }
+            else if (periodoW === "Mese scorso") { rDa = new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1).getTime(); rA = inizioMese; etichettaPeriodo = "mese scorso"; }
+            else if (ctx.rangeShown) { rDa = new Date(ctx.rangeShown.da + "T00:00:00").getTime(); rA = new Date(ctx.rangeShown.a + "T00:00:00").getTime() + 86400000; etichettaPeriodo = ctx.periodoLabel || "periodo della Home"; }
+            else if (ctx.ymShown) { const [ya, ma] = ctx.ymShown.split("-").map(Number); rDa = new Date(ya, ma - 1, 1).getTime(); rA = new Date(ya, ma, 1).getTime(); etichettaPeriodo = ctx.periodoLabel || "il mese"; }
+            else { rDa = adessoMs - 90 * 86400000; etichettaPeriodo = "ultimi 90 giorni"; }
+            const inRange = (t) => t >= rDa && t < rA;
+            const ids = vis.map((a) => a.id);
+            const convs = [];
+            for (let p = 0; p < 3; p++) {
+                const { data: pag } = await supabase.from("email_conversations")
+                    .select("id, account_id, customer_name, customer_email, subject, unread, last_message_at, spam, trashed, archived")
+                    .in("account_id", ids)
+                    .gt("last_message_at", new Date(Math.min(rDa, adessoMs - 30 * 86400000)).toISOString())
+                    .order("last_message_at", { ascending: false })
+                    .range(p * 1000, p * 1000 + 999);
+                convs.push(...(pag || []));
+                if (!pag || pag.length < 1000) break;
+            }
+            if (!vivo) return;
+            const triMap = new Map();
+            for (let b = 0; b < convs.length; b += 100) {
+                const { data: tri } = await supabase.from("email_triage")
+                    .select("conversation_id, stato, azione, azione_auto, ripristinata_il, ultimo_msg_ts")
+                    .in("conversation_id", convs.slice(b, b + 100).map((c) => c.id));
+                (tri || []).forEach((r) => triMap.set(r.conversation_id, r));
+            }
+            if (!vivo) return;
+            const daRisp = []; const daLeggere = [];
+            let attive = 0, cestinateAI = 0, triFresche = 0;
+            convs.forEach((c) => {
+                const t = new Date(c.last_message_at).getTime();
+                if (inRange(t)) attive++;
+                const tri = triMap.get(c.id);
+                if (!tri) return;
+                if (tri.azione_auto === "cestinata" && !tri.ripristinata_il && inRange(t)) cestinateAI++;
+                if (c.trashed || c.spam || c.archived) return;
+                // il giudizio vale solo se copre l'ultimo messaggio (pattern WA)
+                if (new Date(tri.ultimo_msg_ts).getTime() < t - 2500) return;
+                triFresche++;
+                const riga = { id: c.id, nome: c.customer_name || c.customer_email, oggetto: c.subject || "", da: t, azione: tri.azione };
+                if (tri.stato === "rispondere") daRisp.push(riga);
+                else if (tri.stato === "da_leggere" && (c.unread || 0) > 0) daLeggere.push(riga);
+            });
+            daRisp.sort((a, b) => a.da - b.da);
+            daLeggere.sort((a, b) => a.da - b.da);
+            setDati({
+                daRisp, daLeggere, attive, cestinateAI, triFresche,
+                nCaselle: vis.length, etichette, etichettaPeriodo,
+            });
+        })();
+        return () => { vivo = false; };
+    }, [uid, ctx.negoziKey, giro, filtro, periodoW, ctx.ymShown, ctx.rangeShown ? ctx.rangeShown.da + ctx.rangeShown.a : ""]); // eslint-disable-line react-hooks/exhaustive-deps
+    const azione = <Link href="/chat" className="text-[11px] font-bold text-sky-300 hover:text-sky-200 flex items-center gap-1">Apri <ArrowRight className="w-3 h-3" /></Link>;
+    const shell = (figli) => (
+        <WidgetShell icon={Mail} title="Email del team" accent="var(--tf-38bdf8, #38bdf8)" action={azione}>{figli}</WidgetShell>
+    );
+    const filtroRow = (
+        <div className="flex items-center gap-1.5 flex-wrap">
+            {((dati?.etichette?.length || 0) > 1 || filtro) && (
+                <div className="flex-1 min-w-[150px]">
+                    <SelectOpzioni value={filtro} onChange={setFiltro} opzioni={dati?.etichette || []}
+                        placeholder="Tutte le caselle" className="glass-input w-full text-xs px-3 py-2" />
+                </div>
+            )}
+            <div className="flex-1 min-w-[140px]">
+                <SelectOpzioni value={periodoW} onChange={setPeriodoW} opzioni={["Oggi", "Ultimi 7 giorni", "Ultimi 30 giorni", "Questo mese", "Mese scorso"]}
+                    placeholder="Periodo della Home" className="glass-input w-full text-xs px-3 py-2" />
+            </div>
+            {(filtro || periodoW) && <button onClick={() => { setFiltro(""); setPeriodoW(""); }} className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white px-2 py-2 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">✕ tutto</button>}
+        </div>
+    );
+    if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
+    if (dati.vuoto) return shell(<div className="p-3 space-y-3">{filtroRow}<p className="text-xs text-slate-500 py-2">{dati.vuoto}</p></div>);
+    const nRosse = size >= 4 ? 8 : 3;
+    const nArancio = size >= 4 ? 5 : 2;
+    const adesso = Date.now();
+    const rigaMail = (a, tinta) => (
+        <a key={a.id} href={`/chat?mconv=${a.id}`}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/chat?mconv=${a.id}`); }}
+            className="block min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors cursor-pointer">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-semibold text-slate-200 truncate">{a.nome}{a.oggetto ? <span className="text-slate-500 font-normal"> · {a.oggetto}</span> : null}</span>
+                <span className={cn("shrink-0 font-bold", tinta === "rossa"
+                    ? (adesso - a.da > 24 * 3600000 ? "text-rose-300" : "text-amber-300")
+                    : "text-amber-300/80")}>da {fmtDurataWa(adesso - a.da)}</span>
+            </div>
+            {a.azione && <div className="text-[10px] text-slate-500 truncate leading-tight">{a.azione}</div>}
+        </a>
+    );
+    return shell(
+        <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
+            {filtroRow}
+            <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Da rispondere</div>
+                    <div className="text-lg font-black text-rose-300 leading-tight">{dati.daRisp.length}</div>
+                    <div className="text-[10px] text-slate-600">clienti e pratiche</div>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Da leggere</div>
+                    <div className="text-lg font-black text-amber-300 leading-tight">{dati.daLeggere.length}</div>
+                    <div className="text-[10px] text-slate-600">informative non lette</div>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Conversazioni</div>
+                    <div className="text-lg font-black text-white leading-tight">{dati.attive}</div>
+                    <div className="text-[10px] text-slate-600">attive · {dati.etichettaPeriodo}</div>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500">Spam eliminato</div>
+                    <div className="text-lg font-black text-emerald-300 leading-tight">{dati.cestinateAI}</div>
+                    <div className="text-[10px] text-slate-600">🗑 dall&apos;AI · {dati.etichettaPeriodo}</div>
+                </div>
+            </div>
+            {dati.daRisp.length > 0 ? (
+                <div className="rounded-xl bg-rose-500/[0.07] border border-rose-500/20 px-3 py-2 space-y-1">
+                    <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" /> {dati.daRisp.length === 1 ? "1 email da rispondere" : `${dati.daRisp.length} email da rispondere`}
+                        <span className="font-normal text-rose-300/60">— clienti e pratiche</span>
+                    </div>
+                    {dati.daRisp.slice(0, nRosse).map((a) => rigaMail(a, "rossa"))}
+                    {dati.daRisp.length > nRosse && <div className="text-[10px] text-slate-500">…e altre {dati.daRisp.length - nRosse}</div>}
+                </div>
+            ) : (
+                <div className="rounded-xl bg-emerald-500/[0.06] border border-emerald-500/15 px-3 py-2 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Nessuna email in attesa di una nostra risposta
+                </div>
+            )}
+            {dati.daLeggere.length > 0 && (
+                <div className="rounded-xl bg-amber-500/[0.06] border border-amber-500/20 px-3 py-2 space-y-1">
+                    <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <Megaphone className="w-3.5 h-3.5" /> {dati.daLeggere.length === 1 ? "1 informativa da leggere" : `${dati.daLeggere.length} informative da leggere`}
+                        <span className="font-normal text-amber-300/60">— operatori e fornitori</span>
+                    </div>
+                    {dati.daLeggere.slice(0, nArancio).map((a) => rigaMail(a, "arancio"))}
+                    {dati.daLeggere.length > nArancio && <div className="text-[10px] text-slate-500">…e altre {dati.daLeggere.length - nArancio}</div>}
+                </div>
+            )}
+            <div className="text-[10px] text-slate-600">{dati.nCaselle === 1 ? "1 casella" : `${dati.nCaselle} caselle`} · finestra ultimi 30 giorni{dati.triFresche ? ` · 🧠 triage AI su ${dati.triFresche} conversazioni` : ""} · lo spam si controlla da Amministrazione → Email</div>
         </div>
     );
 }
@@ -2495,7 +2698,9 @@ const FISSI = {
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
     accessi: { label: "Accessi collaboratori", icon: LogIn, sizes: [1, 2], def: 2, gruppo: "squadra", nonPer: ["own"] },
-    whatsapp: { label: "WhatsApp del team", icon: MessageCircle, sizes: [2, 4], def: 2, gruppo: "squadra", soloManager: true },
+    // i due canali col cliente stanno nel gruppo COMUNICAZIONE (Luca 26/08)
+    whatsapp: { label: "WhatsApp del team", icon: MessageCircle, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
+    email: { label: "Email del team", icon: Mail, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
 };
 
 // manager = vede la squadra: rete intera, store manager, direttore call center
@@ -2555,6 +2760,7 @@ export function renderWidget(id, ctx, size) {
         case "bacheca": return <WidgetBacheca ctx={ctx} size={size} />;
         case "accessi": return (ctx.seesAll || ctx.level === "store" || ["direttore_cc", "direttore_ob"].includes(ctx.user?.role)) ? <WidgetAccessi ctx={ctx} /> : null;
         case "whatsapp": return isManagerWa(ctx) ? <WidgetWhatsApp ctx={ctx} size={size} /> : null;
+        case "email": return isManagerWa(ctx) ? <WidgetEmail ctx={ctx} size={size} /> : null;
         default: return null;
     }
 }

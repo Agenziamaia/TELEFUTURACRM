@@ -89,7 +89,12 @@ export function ChatToaster() {
                 // (e niente query owner) per messaggi più vecchi di 24 ore.
                 if (m.email_date && Date.now() - new Date(m.email_date).getTime() > 24 * 3600 * 1000) return;
                 const { data: acc } = await supabase.from("email_accounts").select("owner_user_id").eq("id", m.account_id).maybeSingle();
-                if (acc?.owner_user_id && acc.owner_user_id !== user.id) return;
+                if (acc?.owner_user_id && acc.owner_user_id !== user.id) {
+                    // casella multi-utente (26/08): il toast arriva anche ai MEMBRI
+                    const { data: mm } = await supabase.from("email_account_users")
+                        .select("account_id").eq("account_id", m.account_id).eq("user_id", user.id).maybeSingle();
+                    if (!mm) return;
+                }
                 if (inChat()) return;
                 aggiungi({
                     id: `mail-${m.id}`, fonte: "mail",

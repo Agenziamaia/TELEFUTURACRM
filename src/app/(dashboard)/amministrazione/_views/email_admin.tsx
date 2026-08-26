@@ -2,13 +2,14 @@
 
 /* PANNELLO EMAIL (Luca 26/08 — governance caselle): il posto UNICO dove
    l'amministrazione governa le caselle email del CRM, gemello del Pannello
-   WhatsApp. Da qui si collegano caselle nuove intestate a un UTENTE (casella
-   personale) o a un NEGOZIO (condivisa per visibilità), si riassegnano, si
-   riprova la connessione con le credenziali salvate, si ri-collegano con la
-   password nuova e si eliminano. Nell'Inbox i collaboratori le USANO e
-   basta: niente più «Collega email» self-service (capacità CAP_EMAIL_ADMIN,
-   rotellina Permessi → «Pannello Email»). NIENTE testo libero: utente e
-   negozio nascono sempre da una selezione. */
+   WhatsApp. Caselle intestate a UNO O PIÙ utenti (multi-utente 26/08 sera:
+   primo = titolare, gli altri = membri in email_account_users) o a UNO O PIÙ
+   punti vendita gemelli (negozio virgola-separato come i numeri WhatsApp,
+   caso Magliana W3+Multi — col NOME personalizzato quando sono più d'uno).
+   Più il flag 🛡 «protetta»: su quelle caselle l'AI non cestina mai (lo
+   spam va in quarantena) — seed su amministrazione@. In fondo il registro
+   ATTIVITÀ AI: cosa ha classificato e cancellato il motore, col Ripristina.
+   NIENTE testo libero: utenti e negozi nascono sempre da una selezione. */
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -16,27 +17,41 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
 import { ConnectModal } from "@/components/EmailInbox";
-import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
-import { sameStore } from "@/lib/visibleStores";
-import { Mail, Loader2, Trash2, RefreshCw, User as UserIcon, Store, KeyRound, Plus } from "lucide-react";
+import { AttivitaAI } from "@/components/AttivitaAI";
+import { SelectMulti } from "@/components/SelectPersona";
+import { splitNegozi, sameStore } from "@/lib/visibleStores";
+import { Mail, Loader2, Trash2, RefreshCw, User as UserIcon, Store, KeyRound, Plus, Shield, ShieldOff, Check } from "lucide-react";
 import { cn } from "@/utils";
 
 type Casella = {
     id: string; email_address: string; display_name: string | null;
-    negozio: string | null; owner_user_id: string | null;
+    negozio: string | null; owner_user_id: string | null; ai_protetta: boolean | null;
     status: string; last_error: string | null; created_at?: string;
 };
 type Utente = { id: string; full_name: string; primary_store: string | null };
 
 const api = (body: unknown) => fetch("/api/email/account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 
+/** radice comune di più nomi negozio ("Magliana W3"+"Magliana Multi" → "Magliana") */
+const radiceComune = (nomi: string[]): string => {
+    if (!nomi.length) return "";
+    const parole = nomi.map(n => n.trim().split(/\s+/));
+    const out: string[] = [];
+    for (let k = 0; k < parole[0].length; k++) {
+        const w = parole[0][k];
+        if (parole.every(p => (p[k] || "").toLowerCase() === w.toLowerCase())) out.push(w);
+        else break;
+    }
+    return out.join(" ");
+};
+
 export function EmailAdminView() {
     const [caselle, setCaselle] = useState<Casella[] | null>(null);
     const [utenti, setUtenti] = useState<Utente[]>([]);
     const [negozi, setNegozi] = useState<string[]>([]);
+    // membri per casella (multi-utente): account_id → [user_id]
+    const [membri, setMembri] = useState<Record<string, string[]>>({});
 
-    // capacità: cosa può GESTIRE chi vede il pannello (pattern WhatsApp) —
-    // caselle personali, caselle dei punti vendita, o entrambe
     const { user } = useAuth();
     const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoUtenti = capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_UTENTI, perms);
@@ -45,29 +60,34 @@ export function EmailAdminView() {
     const inElenco = (c: Casella) =>
         (puoUtenti && puoNegozi) || (!puoUtenti && !puoNegozi) || puoGestire(c);
 
-    // collegamento nuovo: SELEZIONE utente o negozio, mai testo libero
+    // ── collega casella nuova: selezione MULTI di utenti o negozi ──
     const [tipoNuovo, setTipoNuovo] = useState<"utente" | "negozio">("negozio");
-    const [selNome, setSelNome] = useState("");
-    const [selNegozio, setSelNegozio] = useState("");
+    const [selUtenti, setSelUtenti] = useState<string[]>([]);
+    const [selNegozi, setSelNegozi] = useState<string[]>([]);
+    const [nomeMulti, setNomeMulti] = useState("");
     useEffect(() => {
         if (tipoNuovo === "utente" && !puoUtenti && puoNegozi) setTipoNuovo("negozio");
         if (tipoNuovo === "negozio" && !puoNegozi && puoUtenti) setTipoNuovo("utente");
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [puoUtenti, puoNegozi]);
-    const [modal, setModal] = useState<{ ownerUserId?: string; negozio?: string; presetEmail?: string; presetDisplay?: string } | null>(null);
+    const [modal, setModal] = useState<{ ownerUserId?: string; extraUserIds?: string[]; negozio?: string; presetEmail?: string; presetDisplay?: string } | null>(null);
 
     const [provando, setProvando] = useState<string | null>(null);
     const [esitiProva, setEsitiProva] = useState<Record<string, string>>({});
     const [deleting, setDeleting] = useState<string | null>(null);
 
     const carica = async () => {
-        const { data } = await supabase.from("email_accounts")
-            .select("id, email_address, display_name, negozio, owner_user_id, status, last_error, created_at")
-            .order("created_at");
+        const [{ data }, { data: memb }] = await Promise.all([
+            supabase.from("email_accounts")
+                .select("id, email_address, display_name, negozio, owner_user_id, ai_protetta, status, last_error, created_at")
+                .order("created_at"),
+            supabase.from("email_account_users").select("account_id, user_id"),
+        ]);
         setCaselle((data ?? []) as Casella[]);
+        const m: Record<string, string[]> = {};
+        (memb || []).forEach((r: any) => { (m[r.account_id] = m[r.account_id] || []).push(r.user_id); });
+        setMembri(m);
     };
-    // «LO VEDONO»: per le caselle di negozio, l'elenco vero delle persone —
-    // stessa unione della visibilità del CRM (pattern Pannello WhatsApp)
     const [visStores, setVisStores] = useState<Record<string, string[]>>({});
     useEffect(() => {
         carica();
@@ -90,26 +110,32 @@ export function EmailAdminView() {
         return () => clearInterval(t);
     }, []);
 
-    const nomeTitolare = (id: string | null) => utenti.find(u => u.id === id)?.full_name || null;
-    const utentiCheVedono = (negozio: string): string[] =>
-        utenti.filter(u => {
+    const nomeDi = (id: string | null | undefined) => utenti.find(u => u.id === id)?.full_name || null;
+    /** chi VEDE una casella di negozio (anche multi): unione visibilità CRM */
+    const utentiCheVedono = (negozioCsv: string): string[] => {
+        const stores = splitNegozi(negozioCsv);
+        return utenti.filter(u => {
             const suoi = [...(visStores[u.id] || []), ...(u.primary_store ? [u.primary_store] : [])];
-            return suoi.some(s => sameStore(s, negozio));
+            return stores.some(st => suoi.some(s => sameStore(s, st)));
         }).map(u => u.full_name);
+    };
 
     const apriCollega = () => {
         if (tipoNuovo === "utente") {
-            const u = utenti.find(x => x.full_name === selNome);
-            if (!u) { alert("Scegli l'utente DALLA TENDINA: il nome scritto a mano non vale."); return; }
-            setModal({ ownerUserId: u.id, presetDisplay: u.full_name });
+            const scelti = selUtenti.map(n => utenti.find(x => x.full_name === n)).filter(Boolean) as Utente[];
+            if (!scelti.length) { alert("Scegli almeno un collaboratore dalla tendina."); return; }
+            const nome = scelti.length === 1 ? scelti[0].full_name : nomeMulti.trim();
+            if (!nome) { alert("Con più persone serve il nome della casella (es. «Store Manager»)."); return; }
+            setModal({ ownerUserId: scelti[0].id, extraUserIds: scelti.slice(1).map(u => u.id), presetDisplay: nome });
         } else {
-            if (!negozi.includes(selNegozio)) { alert("Scegli il punto vendita dalla tendina."); return; }
-            setModal({ negozio: selNegozio, presetDisplay: selNegozio });
+            const scelti = selNegozi.filter(n => negozi.includes(n));
+            if (!scelti.length) { alert("Scegli almeno un punto vendita dalla tendina."); return; }
+            const nome = scelti.length === 1 ? scelti[0] : nomeMulti.trim();
+            if (!nome) { alert("Con più punti vendita serve il nome della casella (es. «" + (radiceComune(scelti) || "Magliana") + "»)."); return; }
+            setModal({ negozio: scelti.join(", "), presetDisplay: nome });
         }
     };
 
-    // riprova la connessione con le credenziali GIÀ salvate (IMAP+SMTP):
-    // per i «disconnessa/errore» senza dover reinserire la password
     const riprova = async (c: Casella) => {
         setProvando(c.id);
         try {
@@ -122,7 +148,6 @@ export function EmailAdminView() {
 
     const elimina = async (c: Casella) => {
         const nome = c.display_name || c.email_address;
-        // conteggi reali per la conferma esplicita (pattern ManageAccountsModal)
         const [conv, msg] = await Promise.all([
             supabase.from("email_conversations").select("id", { count: "exact", head: true }).eq("account_id", c.id),
             supabase.from("email_messages").select("id", { count: "exact", head: true }).eq("account_id", c.id),
@@ -138,60 +163,87 @@ export function EmailAdminView() {
         carica();
     };
 
-    // riassegnazione dalla riga: SEMPRE dalle tendine. La casella PERSONALE
-    // resta senza negozio (parità col gemello WhatsApp, rilievo 25/08 là e
-    // 26/08 qui): col negozio scritto il pallino Email della Chat contava la
-    // sua posta anche ai colleghi del negozio, che però non possono aprirla
-    const assegnaUtente = async (c: Casella, nome: string) => {
-        const u = utenti.find(x => x.full_name === nome);
-        if (!u) return;
-        const { error } = await supabase.from("email_accounts")
-            .update({ owner_user_id: u.id, display_name: u.full_name, negozio: null }).eq("id", c.id);
-        if (error) { alert("Assegnazione non riuscita: " + error.message); return; }
+    // 🛡 protetta: l'AI non cestina mai (quarantena Spam al posto del cestino)
+    const toggleProtetta = async (c: Casella) => {
+        const { error } = await supabase.from("email_accounts").update({ ai_protetta: !c.ai_protetta }).eq("id", c.id);
+        if (error) { alert("Cambio non riuscito: " + error.message); return; }
         carica();
     };
-    const assegnaNegozio = async (c: Casella, nome: string) => {
-        if (!negozi.includes(nome)) return;
-        const { error } = await supabase.from("email_accounts")
-            .update({ negozio: nome, display_name: nome, owner_user_id: null }).eq("id", c.id);
-        if (error) { alert("Assegnazione non riuscita: " + error.message); return; }
+
+    // ── riassegnazione dalla riga: MULTI, con nome quando serve ──
+    const [riass, setRiass] = useState<Record<string, { utenti: string[]; negozi: string[]; nome: string }>>({});
+    const riassDi = (id: string) => riass[id] || { utenti: [], negozi: [], nome: "" };
+    const setRiassDi = (id: string, patch: Partial<{ utenti: string[]; negozi: string[]; nome: string }>) =>
+        setRiass(p => ({ ...p, [id]: { ...riassDi(id), ...patch } }));
+    const applicaRiass = async (c: Casella) => {
+        const r = riassDi(c.id);
+        const utentiScelti = r.utenti.map(n => utenti.find(x => x.full_name === n)).filter(Boolean) as Utente[];
+        const negoziScelti = r.negozi.filter(n => negozi.includes(n));
+        if (utentiScelti.length && negoziScelti.length) { alert("O persone O punti vendita: la casella è personale oppure di negozio."); return; }
+        if (!utentiScelti.length && !negoziScelti.length) { alert("Scegli almeno una persona o un punto vendita."); return; }
+        const multi = (utentiScelti.length || negoziScelti.length) > 1;
+        const nome = multi ? r.nome.trim() : (utentiScelti[0]?.full_name || negoziScelti[0]);
+        if (!nome) { alert("Con più selezioni serve il nome della casella."); return; }
+        if (utentiScelti.length) {
+            // personale (anche condivisa tra più persone): SENZA negozio
+            const { error } = await supabase.from("email_accounts")
+                .update({ owner_user_id: utentiScelti[0].id, display_name: nome, negozio: null }).eq("id", c.id);
+            if (error) { alert("Assegnazione non riuscita: " + error.message); return; }
+            await supabase.from("email_account_users").delete().eq("account_id", c.id);
+            if (utentiScelti.length > 1) {
+                await supabase.from("email_account_users")
+                    .insert(utentiScelti.slice(1).map(u => ({ account_id: c.id, user_id: u.id })));
+            }
+        } else {
+            const { error } = await supabase.from("email_accounts")
+                .update({ negozio: negoziScelti.join(", "), display_name: nome, owner_user_id: null }).eq("id", c.id);
+            if (error) { alert("Assegnazione non riuscita: " + error.message); return; }
+            await supabase.from("email_account_users").delete().eq("account_id", c.id);
+        }
+        setRiass(p => { const n = { ...p }; delete n[c.id]; return n; });
         carica();
     };
 
     return (
         <div className="space-y-5">
-            {/* COLLEGA UNA CASELLA NUOVA — solo da selezione */}
+            {/* COLLEGA UNA CASELLA NUOVA — selezione MULTI, mai testo libero */}
             {(puoUtenti || puoNegozi) && (
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: "4px solid var(--tf-38bdf8, #38bdf8)" }}>
-                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">➕ Collega una casella nuova — scegli a chi intestarla (niente nomi a mano: l&apos;associazione automatica non sbaglia)</div>
+                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">➕ Collega una casella nuova — scegli a chi intestarla (anche più persone o più punti vendita gemelli)</div>
                 <div className="flex items-center gap-2 flex-wrap">
                     {puoUtenti && (
-                    <button onClick={() => { setTipoNuovo("utente"); setSelNegozio(""); }}
+                    <button onClick={() => { setTipoNuovo("utente"); setSelNegozi([]); setNomeMulti(""); }}
                         className={cn("px-3 py-2 rounded-xl text-sm font-bold border flex items-center gap-1.5",
                             tipoNuovo === "utente" ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10")}>
-                        <UserIcon className="w-4 h-4" /> Utente
+                        <UserIcon className="w-4 h-4" /> Utenti
                     </button>
                     )}
                     {puoNegozi && (
-                    <button onClick={() => { setTipoNuovo("negozio"); setSelNome(""); }}
+                    <button onClick={() => { setTipoNuovo("negozio"); setSelUtenti([]); setNomeMulti(""); }}
                         className={cn("px-3 py-2 rounded-xl text-sm font-bold border flex items-center gap-1.5",
                             tipoNuovo === "negozio" ? "bg-sky-500/15 border-sky-500/40 text-sky-200" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10")}>
-                        <Store className="w-4 h-4" /> Negozio
+                        <Store className="w-4 h-4" /> Negozi
                     </button>
                     )}
                     <div className="min-w-[260px]">
                         {tipoNuovo === "utente"
-                            ? <SelectPersona value={selNome} onChange={setSelNome} opzioni={utenti.map(u => u.full_name)} placeholder="Scegli il collaboratore…" />
-                            : <SelectOpzioni value={selNegozio} onChange={setSelNegozio} opzioni={negozi} placeholder="Scegli il punto vendita…" />}
+                            ? <SelectMulti values={selUtenti} onChange={setSelUtenti} opzioni={utenti.map(u => u.full_name)} placeholder="Scegli uno o più collaboratori…" />
+                            : <SelectMulti values={selNegozi} onChange={(v) => { setSelNegozi(v); if (v.length > 1 && !nomeMulti) setNomeMulti(radiceComune(v)); }} opzioni={negozi} placeholder="Scegli uno o più punti vendita…" maxVoci={100} />}
                     </div>
+                    {((tipoNuovo === "utente" && selUtenti.length > 1) || (tipoNuovo === "negozio" && selNegozi.length > 1)) && (
+                        <label className="text-[11px] text-sky-300/90 inline-flex items-center gap-1.5">nome della casella
+                            <input value={nomeMulti} onChange={e => setNomeMulti(e.target.value)}
+                                className="bg-white/[0.05] border border-sky-500/30 rounded-lg px-2.5 py-2 text-sm text-white w-44" placeholder={tipoNuovo === "negozio" ? "es. Magliana" : "es. Store Manager"} />
+                        </label>
+                    )}
                     <button onClick={apriCollega} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Credenziali e collega
                     </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-2.5">
-                    👤 <b>Utente</b>: casella personale — la vede solo lui nell&apos;Inbox.
-                    🏪 <b>Negozio</b>: casella del punto vendita — la vedono in automatico tutte le persone col negozio in visibilità.
-                    Le credenziali si verificano (lettura e invio) prima di salvare; la password resta cifrata e non torna mai al browser.
+                    👤 <b>Utenti</b>: casella personale — la vedono solo gli intestatari (uno o più).
+                    🏪 <b>Negozi</b>: casella del punto vendita (anche gemelli, es. Magliana W3+Multi) — la vedono tutte le persone con uno dei negozi in visibilità.
+                    Le credenziali si verificano prima di salvare; la password resta cifrata e non torna mai al browser.
                 </p>
             </div>
             )}
@@ -199,7 +251,7 @@ export function EmailAdminView() {
                 <p className="text-[12px] text-slate-500">Sei in sola consultazione: la gestione delle caselle si concede dalla rotellina Permessi → «Pannello Email».</p>
             )}
 
-            {/* TUTTE LE CASELLE: stato, riprova, ricollega, riassegna, elimina */}
+            {/* TUTTE LE CASELLE */}
             <div className="glass-panel rounded-2xl overflow-hidden">
                 <div className="px-4 pt-3 pb-2 text-[11px] uppercase tracking-wider text-slate-400 font-semibold">📬 Caselle collegate <span className="text-slate-600">({caselle == null ? "…" : caselle.filter(inElenco).length})</span></div>
                 {caselle === null ? (
@@ -215,22 +267,28 @@ export function EmailAdminView() {
                                     <th className="text-left font-semibold px-3 py-1.5">Intestata a</th>
                                     <th className="text-left font-semibold px-3 py-1.5">Stato</th>
                                     <th className="text-left font-semibold px-3 py-1.5" title="Riprova login IMAP e SMTP con le credenziali salvate">Prova connessione</th>
-                                    <th className="px-3 py-1.5 w-64"></th>
+                                    <th className="px-3 py-1.5 w-72"></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {caselle.filter(inElenco).map(c => {
-                                    const tit = nomeTitolare(c.owner_user_id);
+                                    const tit = nomeDi(c.owner_user_id);
+                                    const nomiMembri = (membri[c.id] || []).map(id => nomeDi(id)).filter(Boolean) as string[];
                                     const prova = esitiProva[c.id];
+                                    const r = riassDi(c.id);
+                                    const multiSel = (r.utenti.length + r.negozi.length) > 1;
                                     return (
-                                        <tr key={c.id} className="border-t border-white/5 hover:bg-white/[0.03]">
+                                        <tr key={c.id} className="border-t border-white/5 hover:bg-white/[0.03] align-top">
                                             <td className="px-4 py-2">
-                                                <div className="font-semibold text-white">{c.display_name || c.email_address}</div>
+                                                <div className="font-semibold text-white flex items-center gap-1.5">
+                                                    {c.display_name || c.email_address}
+                                                    {c.ai_protetta && <Shield className="w-3.5 h-3.5 text-emerald-300" aria-label="Protetta: l'AI non cancella" />}
+                                                </div>
                                                 <div className="text-[11px] text-slate-500">{c.email_address}</div>
                                             </td>
                                             <td className="px-3 py-2">
                                                 {tit ? (
-                                                    <span className="text-emerald-300 text-[12px] font-semibold inline-flex items-center gap-1"><UserIcon className="w-3.5 h-3.5" /> {tit} <span className="text-slate-500 font-normal">(personale{c.negozio ? ` · ${c.negozio}` : ""})</span></span>
+                                                    <span className="text-emerald-300 text-[12px] font-semibold inline-flex items-center gap-1"><UserIcon className="w-3.5 h-3.5" /> {tit}{nomiMembri.length ? ` + ${nomiMembri.join(", ")}` : ""} <span className="text-slate-500 font-normal">(personale{nomiMembri.length ? " condivisa" : ""})</span></span>
                                                 ) : c.negozio ? (
                                                     <span className="text-sky-300 text-[12px] font-semibold inline-flex items-center gap-1"><Store className="w-3.5 h-3.5" /> {c.negozio} <span className="text-slate-500 font-normal">(condivisa col negozio)</span></span>
                                                 ) : (
@@ -247,8 +305,13 @@ export function EmailAdminView() {
                                                 })()}
                                                 {puoGestire(c) && (
                                                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                                    {puoUtenti && <div className="min-w-[170px]"><SelectPersona value="" onChange={(v) => assegnaUtente(c, v)} opzioni={utenti.map(u => u.full_name)} placeholder="→ a un utente…" /></div>}
-                                                    {puoNegozi && <div className="min-w-[150px]"><SelectOpzioni value="" onChange={(v) => assegnaNegozio(c, v)} opzioni={negozi} placeholder="→ a un negozio…" /></div>}
+                                                    {puoUtenti && <div className="min-w-[170px]"><SelectMulti values={r.utenti} onChange={(v) => setRiassDi(c.id, { utenti: v, negozi: [] })} opzioni={utenti.map(u => u.full_name)} placeholder="→ a persone…" /></div>}
+                                                    {puoNegozi && <div className="min-w-[150px]"><SelectMulti values={r.negozi} onChange={(v) => setRiassDi(c.id, { negozi: v, utenti: [], nome: v.length > 1 && !r.nome ? radiceComune(v) : r.nome })} opzioni={negozi} maxVoci={100} placeholder="→ a negozi…" /></div>}
+                                                    {multiSel && <input value={r.nome} onChange={e => setRiassDi(c.id, { nome: e.target.value })} placeholder="nome casella" className="bg-white/[0.05] border border-sky-500/30 rounded-lg px-2 py-1.5 text-[12px] text-white w-32" />}
+                                                    {(r.utenti.length > 0 || r.negozi.length > 0) && (
+                                                        <button onClick={() => applicaRiass(c)} title="Applica la nuova intestazione"
+                                                            className="px-2 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[12px] font-bold inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Applica</button>
+                                                    )}
                                                 </div>
                                                 )}
                                             </td>
@@ -262,27 +325,29 @@ export function EmailAdminView() {
                                                 ) : <span className="text-slate-600 text-[12px]">—</span>}
                                             </td>
                                             <td className="px-3 py-2 text-right whitespace-nowrap">
-                                                {/* la route del retest è gated come il resto: senza capacità
-                                                    il bottone darebbe sempre 403 — meglio non mostrarlo */}
                                                 {puoGestire(c) && (
+                                                <>
+                                                <button onClick={() => toggleProtetta(c)}
+                                                    title={c.ai_protetta ? "Protetta: l'AI non cancella mai qui (lo spam va in quarantena). Clicca per togliere la protezione." : "Non protetta: lo spam/phishing viene cestinato in automatico dall'AI. Clicca per proteggerla."}
+                                                    className={cn("px-2 py-1.5 rounded-lg border text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1",
+                                                        c.ai_protetta ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10" : "border-white/10 text-slate-400 hover:bg-white/10")}>
+                                                    {c.ai_protetta ? <Shield className="w-3.5 h-3.5" /> : <ShieldOff className="w-3.5 h-3.5" />}
+                                                </button>
                                                 <button onClick={() => riprova(c)} disabled={provando === c.id}
                                                     className="px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/10 text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1">
                                                     {provando === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Prova
                                                 </button>
-                                                )}
-                                                {puoGestire(c) && (
-                                                    <button onClick={() => setModal({ presetEmail: c.email_address, presetDisplay: c.display_name || "", ownerUserId: c.owner_user_id || undefined, negozio: !c.owner_user_id ? (c.negozio || undefined) : undefined })}
-                                                        title="Ri-collega con la password nuova (es. credenziali cambiate): la posta già scaricata resta"
-                                                        className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[12px] font-bold mr-1.5 inline-flex items-center gap-1">
-                                                        <KeyRound className="w-3.5 h-3.5" /> Ricollega
-                                                    </button>
-                                                )}
-                                                {puoGestire(c) && (
+                                                <button onClick={() => setModal({ presetEmail: c.email_address, presetDisplay: c.display_name || "", ownerUserId: c.owner_user_id || undefined, extraUserIds: membri[c.id] || [], negozio: !c.owner_user_id ? (c.negozio || undefined) : undefined })}
+                                                    title="Ri-collega con la password nuova (es. credenziali cambiate): la posta già scaricata resta"
+                                                    className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[12px] font-bold mr-1.5 inline-flex items-center gap-1">
+                                                    <KeyRound className="w-3.5 h-3.5" /> Ricollega
+                                                </button>
                                                 <button onClick={() => elimina(c)} disabled={deleting === c.id}
                                                     title="Elimina la casella dal CRM con tutto lo storico scaricato (la casella sul server di posta non si tocca)"
                                                     className="p-1.5 rounded-lg text-slate-600 hover:text-rose-300 hover:bg-rose-500/10">
                                                     {deleting === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                                 </button>
+                                                </>
                                                 )}
                                             </td>
                                         </tr>
@@ -294,12 +359,15 @@ export function EmailAdminView() {
                 )}
             </div>
 
-            <p className="text-[11px] text-slate-500 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Nell&apos;Inbox i collaboratori le caselle le usano e basta: collegare, riassegnare ed eliminare si fa solo da qui.</p>
+            {/* REGISTRO ATTIVITÀ AI — cosa classifica e cancella il motore */}
+            <AttivitaAI canale="email" />
+
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Nell&apos;Inbox i collaboratori le caselle le usano e basta: collegare, riassegnare ed eliminare si fa solo da qui. 🛡 = l&apos;AI non cancella su quella casella.</p>
 
             {modal && (
-                <ConnectModal ownerUserId={modal.ownerUserId} negozio={modal.negozio}
+                <ConnectModal ownerUserId={modal.ownerUserId} extraUserIds={modal.extraUserIds} negozio={modal.negozio}
                     presetEmail={modal.presetEmail} presetDisplay={modal.presetDisplay} userId={user?.id}
-                    onClose={() => { setModal(null); carica(); }} />
+                    onClose={() => { setModal(null); setSelUtenti([]); setSelNegozi([]); setNomeMulti(""); carica(); }} />
             )}
         </div>
     );

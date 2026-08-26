@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useVisibleStores, matchNegozi } from "@/lib/visibleStores";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
 import {
@@ -35,7 +35,7 @@ const FOLDERS: { id: FolderId; label: string; icon: any }[] = [
     { id: "trash", label: "Cestino", icon: Trash2 },
 ];
 
-export function EmailInbox({ embedded = false, componiA = null }: { embedded?: boolean; componiA?: string | null }) {
+export function EmailInbox({ embedded = false, componiA = null, apriConvId = null }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null }) {
     const { user } = useAuth();
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [selAcc, setSelAcc] = useState<string | null>(null);
@@ -91,10 +91,39 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
         return PALETTE_CASELLE[(i >= 0 ? i : 0) % PALETTE_CASELLE.length];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [accounts]);
+    // DEEP-LINK /chat?mconv=<id> (26/08, widget Email del team): apre LA
+    // conversazione esatta — si seleziona la casella e la conversazione
+    // appena il fetch risponde; il ref si brucia solo ad apertura riuscita
+    const _mconvFatto = useRef<string | null>(null);
+    useEffect(() => {
+        if (!apriConvId || _mconvFatto.current === apriConvId) return;
+        (async () => {
+            const { data: c } = await supabase.from("email_conversations").select("*").eq("id", apriConvId).maybeSingle();
+            if (!c) { _mconvFatto.current = apriConvId; return; }
+            _mconvFatto.current = apriConvId;
+            setSelAcc(c.account_id);
+            setFolder(c.trashed ? "trash" : c.spam ? "spam" : "inbox");
+            setSelConv(c as Conv);
+        })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apriConvId]);
+    // casella MULTI-UTENTE (26/08): oltre al titolare (owner_user_id) la
+    // vedono i MEMBRI in email_account_users — set dei miei account condivisi
+    const [membroDi, setMembroDi] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        if (!user?.id) return;
+        let alive = true;
+        const load = () => supabase.from("email_account_users").select("account_id").eq("user_id", user.id)
+            .then(({ data }) => { if (alive) setMembroDi(new Set((data || []).map((r: any) => r.account_id))); });
+        load(); const t = setInterval(load, 30000);
+        return () => { alive = false; clearInterval(t); };
+    }, [user?.id]);
+    // il campo negozio può essere MULTI ("Magliana W3, Magliana Multi" —
+    // gemelli con una casella sola, come i numeri WhatsApp): matchNegozi
     const visibleAccounts = useMemo(() =>
-        accounts.filter(a => a.owner_user_id === user?.id
-            || (!a.owner_user_id && a.negozio && myStores.some(s => sameStore(a.negozio, s)))),
-    [accounts, user?.id, myStores]);
+        accounts.filter(a => a.owner_user_id === user?.id || membroDi.has(a.id)
+            || (!a.owner_user_id && matchNegozi(a.negozio, myStores))),
+    [accounts, user?.id, myStores, membroDi]);
 
     // non letti PER CASELLA (per i badge colorati sulle chip)
     const [unreadPerAcc, setUnreadPerAcc] = useState<Record<string, number>>({});
@@ -791,7 +820,7 @@ function ManageAccountsModal({ accounts, coloreCasella, userId, onClose, onDelet
 // ESPORTATO per il Pannello Email in Amministrazione (governance 26/08):
 // presetEmail/presetDisplay precompilano il ri-collega di una casella
 // esistente (il connect su indirizzo già noto aggiorna le credenziali).
-export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, presetDisplay, userId }: { onClose: () => void; ownerUserId?: string; negozio?: string; presetEmail?: string; presetDisplay?: string; userId?: string }) {
+export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, presetDisplay, userId, extraUserIds }: { onClose: () => void; ownerUserId?: string; negozio?: string; presetEmail?: string; presetDisplay?: string; userId?: string; extraUserIds?: string[] }) {
     const [email, setEmail] = useState(presetEmail || "");
     const [password, setPassword] = useState("");
     const [display, setDisplay] = useState(presetDisplay || negozio || "");
@@ -801,7 +830,7 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
     const collega = async () => {
         if (!email.trim() || !password) return;
         setBusy(true);
-        const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, userId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined });
+        const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, extraUserIds, userId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined });
         setBusy(false);
         if (res?.error) { alert(res.error); return; }
         if (res?.reconnected) alert("Questa casella era già collegata: l'ho ri-collegata con le credenziali appena inserite.");

@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_WHATSAPP_ADMIN, CAP_WA_UTENTI, CAP_WA_NEGOZI } from "@/lib/capabilities";
 import { LinkModal } from "@/components/WhatsAppInbox";
+import { AttivitaAI } from "@/components/AttivitaAI";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { sameStore } from "@/lib/visibleStores";
 import { QrCode, Loader2, Trash2, RefreshCw, User as UserIcon, Store, LogOut } from "lucide-react";
@@ -365,6 +366,10 @@ export function WhatsAppAdminView() {
                     </div>
                 )}
             </div>
+
+            {/* REGISTRO ATTIVITÀ AI (Luca 26/08): cosa classifica il triage
+                delle chat — controllo dell'operato del motore, canale WhatsApp */}
+            <AttivitaAI canale="wa" />
 
             {modal && (
                 <LinkModal presetName={modal.presetName} ownerUserId={modal.ownerUserId} negozio={modal.negozio}

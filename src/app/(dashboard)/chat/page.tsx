@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useVisibleStores, sameStore, matchNegozi } from "@/lib/visibleStores";
 import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -313,12 +313,14 @@ function ChatPageInner() {
   // (il testo arriva dal modello scelto nella sezione caller)
   const testoParam = searchParams.get("testo");
   const mailParam = searchParams.get("mail");
+  // /chat?mconv=<id> (26/08, widget Email del team): apre LA conversazione email
+  const mconvParam = searchParams.get("mconv");
   const _modeDaUrl = useRef(false);
   const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
     const qs = new URLSearchParams(window.location.search);
     if (qs.get("wa") || qs.get("conv") || qs.get("mode") === "wa") { _modeDaUrl.current = true; return "whatsapp"; }
-    if (qs.get("mail")) { _modeDaUrl.current = true; return "email"; }
+    if (qs.get("mail") || qs.get("mconv")) { _modeDaUrl.current = true; return "email"; }
     return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
   });
   // un arrivo da deep-link non deve diventare la preferenza salvata: la
@@ -462,12 +464,16 @@ function ChatPageInner() {
       } else setWaUnread(0);
     } catch { /* ignora */ }
     try {
-      const { data: accs } = await supabase.from("email_accounts").select("id, owner_user_id, negozio");
+      const [{ data: accs }, { data: memb }] = await Promise.all([
+        supabase.from("email_accounts").select("id, owner_user_id, negozio"),
+        supabase.from("email_account_users").select("account_id").eq("user_id", meId),
+      ]);
       // stessa regola di visibilità dell'Inbox (modello WhatsApp, 26/08):
-      // personale = solo il titolare, di negozio = chi ha il negozio; niente
+      // titolare O membro O negozio (anche multi) in visibilità; niente
       // bypass admin — il pallino deve contare SOLO caselle apribili, sennò
       // resta acceso su posta che qui non si può leggere (rilievo revisore)
-      const mine = (accs || []).filter((a: any) => a.owner_user_id === meId || (!a.owner_user_id && a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
+      const membro = new Set((memb || []).map((r: any) => r.account_id));
+      const mine = (accs || []).filter((a: any) => a.owner_user_id === meId || membro.has(a.id) || (!a.owner_user_id && matchNegozi(a.negozio, myStores))).map((a: any) => a.id);
       if (mine.length) {
         const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine);
         setMailUnread((data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0));
@@ -745,7 +751,7 @@ function ChatPageInner() {
       {mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} apriConvId={mconvParam} /></div>
       ) : (
       <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}

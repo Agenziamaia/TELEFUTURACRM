@@ -9,7 +9,7 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
 import { comunicazionePerMe, brandDiUtente, negoziAssegnati } from "@/lib/comunicazioniTarget";
-import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useVisibleStores, sameStore, matchNegozi } from "@/lib/visibleStores";
 import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { designatiIncarico } from "@/lib/incarichi";
 import {
@@ -175,10 +175,15 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                 if (alive) setWaUnread(n);
             } catch { }
             try {
-                const { data: accs } = await supabase.from("email_accounts").select("id, owner_user_id, negozio");
-                // stessa regola dell'Inbox (26/08): personale = solo il titolare,
-                // di negozio = chi ha il negozio — il pallino conta solo posta apribile
-                const mine = (accs || []).filter((a: any) => a.owner_user_id === user.id || (!a.owner_user_id && a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
+                const [{ data: accs }, { data: memb }] = await Promise.all([
+                    supabase.from("email_accounts").select("id, owner_user_id, negozio"),
+                    supabase.from("email_account_users").select("account_id").eq("user_id", user.id),
+                ]);
+                // stessa regola dell'Inbox (26/08): titolare O membro O col
+                // negozio (anche MULTI, gemelli virgola-separati) in visibilità
+                // — il pallino conta solo posta apribile
+                const membro = new Set((memb || []).map((r: any) => r.account_id));
+                const mine = (accs || []).filter((a: any) => a.owner_user_id === user.id || membro.has(a.id) || (!a.owner_user_id && matchNegozi(a.negozio, myStores))).map((a: any) => a.id);
                 let n = 0;
                 if (mine.length) { const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine); n = (data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
                 if (alive) setMailUnread(n);

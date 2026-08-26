@@ -27,6 +27,17 @@ export function sameStore(a?: string | null, b?: string | null): boolean {
     return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
 }
 
+/** Campo negozio MULTI (convenzione WhatsApp, estesa alle email il 26/08):
+ *  "Magliana W3, Magliana Multi" = una risorsa condivisa tra più punti
+ *  vendita gemelli, virgola-separati. */
+export function splitNegozi(csv?: string | null): string[] {
+    return String(csv || "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+/** La risorsa col campo negozio (anche multi) tocca UNO dei negozi dati? */
+export function matchNegozi(csv: string | null | undefined, stores: readonly string[]): boolean {
+    return splitNegozi(csv).some((n) => stores.some((s) => sameStore(n, s)));
+}
+
 /** Valori per un filtro query `.in("negozio", …)`: i nomi visibili piu' le radici
  *  legacy dei nomi composti (visibile "Magliana W3" ⇒ anche i contratti storici
  *  salvati come "Magliana"). Piu' preciso del vecchio ilike sulla radice, che a
