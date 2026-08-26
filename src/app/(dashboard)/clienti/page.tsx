@@ -480,7 +480,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const EMOJI_CAT: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾", dichiarazione_usato: "♻️", smarrito: "⚠️", archiviato: "🗄️", altro: "📁" };
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 lg:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="relative w-full max-w-[1300px] h-[92vh] bg-[#0c0d14]/95 backdrop-blur-2xl border border-[#262836] rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(124,58,237,0.05)] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
+            {/* com-scura: la console resta un MONDO SCURO anche in tema chiaro
+                (stesso pattern del popup Comunicazioni MOD-37 — revisore 26/08:
+                senza, html.light ribaltava i testi su sfondo rimasto scuro) */}
+            <div className="com-scura relative w-full max-w-[1300px] h-[92vh] bg-[#0c0d14]/95 backdrop-blur-2xl border border-[#262836] rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(124,58,237,0.05)] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
 
                 {/* ═══ HEADER FOTOGRAFICO ═══ */}
                 <div className="h-32 sm:h-36 border-b border-[#262836] flex items-end shrink-0 relative overflow-hidden bg-cover bg-center"
@@ -565,8 +568,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
 
                         {/* CONVERSAZIONE WHATSAPP nella colonna sinistra (regola Luca):
-                            con quali numeri nostri ha parlato — un click apre LA chat */}
-                        <div className="bg-[#161722] border border-[#262836] rounded-2xl p-4">
+                            con quali numeri nostri ha parlato — un click apre LA chat.
+                            empty:hidden — il componente ritorna null senza chat e il
+                            box scuro resterebbe vuoto (rilievo revisore) */}
+                        <div className="bg-[#161722] border border-[#262836] rounded-2xl px-4 pb-4 empty:hidden">
                             <WhatsAppStoricoCliente clientId={cliente.id} />
                         </div>
 
@@ -900,8 +905,11 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.03] transition-colors">
                                                 {aperta ? <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-500 shrink-0" />}
                                                 <span className="text-sm shrink-0">{EMOJI_CAT[cat.id] || "📁"}</span>
+                                                {/* color-mix: cat.color è una var(--tf-*) — la vecchia
+                                                    concatenazione hex ("+1f") era CSS invalido (preesistente,
+                                                    sistemato col restyle) */}
                                                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
-                                                    style={{ color: cat.color, background: cat.color + "1f", border: "1px solid " + cat.color + "44" }}>
+                                                    style={{ color: cat.color, background: `color-mix(in srgb, ${cat.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${cat.color} 27%, transparent)` }}>
                                                     {cat.label}
                                                 </span>
                                                 <span className="text-[10px] text-gray-600">{fileCat.size} file</span>

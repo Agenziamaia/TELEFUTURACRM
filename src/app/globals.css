@@ -929,6 +929,14 @@ html.light .com-scura [class~="text-violet-400"] { color: #a78bfa !important; }
 html.light .com-scura [class~="text-orange-300"] { color: #fdba74 !important; }
 html.light .com-scura [class~="text-orange-400"] { color: #fb923c !important; }
 html.light .com-scura [class~="text-blue-400"] { color: #60a5fa !important; }
+/* i GRAY della Master Dashboard cliente (26/08): fuori da queste regole il
+   ribaltone di r.568 (text-gray-300/400 → #556685 !important) vinceva anche
+   dentro l'isola scura → testo blu-scuro su #161722 (revisore) */
+html.light .com-scura [class*="text-gray-300"] { color: #cbd5e1 !important; }
+html.light .com-scura [class*="text-gray-400"] { color: #94a3b8 !important; }
+html.light .com-scura [class~="text-gray-500"] { color: #8b92a5 !important; }
+html.light .com-scura [class~="text-gray-600"] { color: #7c8aa5 !important; }
+html.light .com-scura select { color: #f1f5f9; }
 html.light .com-scura [class*="bg-white/"] { background-color: rgba(255,255,255,0.07) !important; }
 html.light .com-scura [class~="bg-white/10"] { background-color: rgba(255,255,255,0.10) !important; }
 html.light .com-scura [class*="hover:bg-white/"]:hover { background-color: rgba(255,255,255,0.14) !important; }
