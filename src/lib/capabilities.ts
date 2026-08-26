@@ -534,4 +534,29 @@ export const CAP_WHATSAPP_ADMIN: CapGroupFlags = {
     caps: [CAP_WA_UTENTI, CAP_WA_NEGOZI],
 };
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN];
+// ─── PANNELLO EMAIL (Amministrazione → Email, Luca 26/08 — governance
+// caselle): come per i numeri WhatsApp, le caselle email si collegano,
+// riassegnano ed eliminano SOLO dal pannello amministrativo — i collaboratori
+// le USANO dall'Inbox (leggere, rispondere, archiviare, cestinare) ma non
+// possono più collegarle, scollegarle o eliminarle per sempre. Stesso schema
+// a due domini del WhatsApp: caselle personali / caselle dei punti vendita.
+export const CAP_EM_UTENTI: CapDef = {
+    id: "caselle_utenti",
+    label: "Gestisce le caselle personali (utenti)",
+    desc: "Collega, riassegna, riprova la connessione ed elimina le caselle email intestate alle PERSONE. Spenta = quelle caselle restano in sola consultazione. Default: admin e dev.",
+    default: (r) => ["admin", "dev"].includes(r),
+};
+export const CAP_EM_NEGOZI: CapDef = {
+    id: "caselle_negozi",
+    label: "Gestisce le caselle dei punti vendita",
+    desc: "Collega, riassegna, riprova la connessione ed elimina le caselle email dei NEGOZI, condivise per visibilità. Spenta = quelle caselle restano in sola consultazione. Default: admin e dev.",
+    default: (r) => ["admin", "dev"].includes(r),
+};
+export const CAP_EMAIL_ADMIN: CapGroupFlags = {
+    mode: "flags",
+    section: "/amministrazione?sez=email",
+    sectionLabel: "Pannello Email",
+    caps: [CAP_EM_UTENTI, CAP_EM_NEGOZI],
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN];

@@ -11,6 +11,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { seesAllStores } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
 import {
     Mail, Plus, Send, X, RefreshCw, Loader2, Paperclip, Check, PenSquare, Inbox,
     Star, Trash2, ShieldAlert, Archive, Search, CornerUpLeft, FileText, SendHorizontal,
@@ -52,6 +54,14 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     const [refreshing, setRefreshing] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const { stores: myStores } = useVisibleStores();
+    // GOVERNANCE CASELLE (Luca 26/08): collegare, scollegare ed eliminare le
+    // caselle si fa SOLO dal Pannello Email in Amministrazione — qui
+    // nell'Inbox quei bottoni li vede solo chi ha le capacità del pannello
+    // (default admin/dev). Per tutti gli altri la casella "c'è e basta":
+    // leggere, rispondere, archiviare, spam e cestino restano liberi.
+    const { perms: emPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const puoGestireCaselle = capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_UTENTI, emPerms)
+        || capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_NEGOZI, emPerms);
 
     // composizione (dock in basso a destra, stile Gmail)
     const [composeOpen, setComposeOpen] = useState(false);
@@ -329,19 +339,21 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     if (visibleAccounts.length === 0) {
         return (
             <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
-                <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} />
+                <TopBar embedded={embedded} onConnect={puoGestireCaselle ? () => setConnectModal(true) : undefined} />
                 <div className={cn("glass-card p-12 text-center text-slate-400", embedded && "flex-1 flex flex-col items-center justify-center")}>
                     <Inbox className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-                    Nessuna casella collegata. Premi <b className="text-sky-300">Collega email</b> e inserisci indirizzo e password della casella del negozio.
+                    {puoGestireCaselle
+                        ? <>Nessuna casella collegata. Premi <b className="text-sky-300">Collega email</b> e inserisci indirizzo e password della casella del negozio.</>
+                        : <>Nessuna casella email collegata per te. Le caselle le assegna l&apos;amministrazione dal pannello Email: chiedi lì se te ne serve una.</>}
                 </div>
-                {connectModal && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} />}
+                {connectModal && puoGestireCaselle && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} userId={user?.id} />}
             </div>
         );
     }
 
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
-            <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} onManage={() => setManageModal(true)} onRefresh={() => aggiorna(undefined, true)} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
+            <TopBar embedded={embedded} onConnect={puoGestireCaselle ? () => setConnectModal(true) : undefined} onManage={puoGestireCaselle ? () => setManageModal(true) : undefined} onRefresh={() => aggiorna(undefined, true)} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
             {pollErr && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5 shrink-0">{pollErr}</p>}
 
             {/* selettore casella (se piu' di una) */}
@@ -438,7 +450,8 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                                     {folder === "trash" ? (
                                         <>
                                             <IconBtn title="Ripristina" onClick={(e) => { e.stopPropagation(); doRestore(c); }}><RotateCcw className="w-3.5 h-3.5" /></IconBtn>
-                                            <IconBtn title="Elimina definitivamente" danger onClick={(e) => { e.stopPropagation(); if (confirm("Eliminare definitivamente questa conversazione?")) deleteForever(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
+                                            {/* elimina-per-sempre: solo chi governa le caselle (26/08) — il cestino basta a tutti gli altri */}
+                                            {puoGestireCaselle && <IconBtn title="Elimina definitivamente" danger onClick={(e) => { e.stopPropagation(); if (confirm("Eliminare definitivamente questa conversazione?")) deleteForever(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>}
                                         </>
                                     ) : folder === "spam" ? (
                                         <>
@@ -481,7 +494,7 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                                         {selConv.trashed ? (
                                             <>
                                                 <IconBtn title="Ripristina" onClick={() => doRestore(selConv)}><RotateCcw className="w-4 h-4" /></IconBtn>
-                                                <IconBtn title="Elimina definitivamente" danger onClick={() => { if (confirm("Eliminare definitivamente?")) deleteForever(selConv); }}><Trash2 className="w-4 h-4" /></IconBtn>
+                                                {puoGestireCaselle && <IconBtn title="Elimina definitivamente" danger onClick={() => { if (confirm("Eliminare definitivamente?")) deleteForever(selConv); }}><Trash2 className="w-4 h-4" /></IconBtn>}
                                             </>
                                         ) : (
                                             <>
@@ -576,8 +589,8 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                 </div>
             )}
 
-            {connectModal && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} />}
-            {manageModal && (
+            {connectModal && puoGestireCaselle && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} userId={user?.id} />}
+            {manageModal && puoGestireCaselle && (
                 <ManageAccountsModal accounts={visibleAccounts} coloreCasella={coloreCasella} userId={user?.id}
                     onClose={() => setManageModal(false)}
                     onDeleted={(id) => {
@@ -592,7 +605,7 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
 }
 
 // intestazione riusabile (titolo/azioni + ricerca)
-function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, setSearch, showSearch }: { embedded: boolean; onConnect: () => void; onManage?: () => void; onRefresh?: () => void; refreshing?: boolean; search?: string; setSearch?: (v: string) => void; showSearch?: boolean }) {
+function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, setSearch, showSearch }: { embedded: boolean; onConnect?: () => void; onManage?: () => void; onRefresh?: () => void; refreshing?: boolean; search?: string; setSearch?: (v: string) => void; showSearch?: boolean }) {
     return (
         <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
             {embedded ? (
@@ -619,7 +632,10 @@ function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, 
                         <Settings className="w-4 h-4" />
                     </button>
                 )}
-                <button onClick={onConnect} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega email</button>
+                {/* GOVERNANCE (26/08): il collega-casella compare solo a chi ha le
+                    capacità del Pannello Email — per gli altri le caselle arrivano
+                    assegnate dall'amministrazione */}
+                {onConnect && <button onClick={onConnect} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega email</button>}
             </div>
         </div>
     );
@@ -779,17 +795,20 @@ function ManageAccountsModal({ accounts, coloreCasella, userId, onClose, onDelet
 }
 
 // Modal: collega una casella (indirizzo + password; IMAP/SMTP auto dal dominio).
-function ConnectModal({ onClose, ownerUserId, negozio }: { onClose: () => void; ownerUserId?: string; negozio?: string }) {
-    const [email, setEmail] = useState("");
+// ESPORTATO per il Pannello Email in Amministrazione (governance 26/08):
+// presetEmail/presetDisplay precompilano il ri-collega di una casella
+// esistente (il connect su indirizzo già noto aggiorna le credenziali).
+export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, presetDisplay, userId }: { onClose: () => void; ownerUserId?: string; negozio?: string; presetEmail?: string; presetDisplay?: string; userId?: string }) {
+    const [email, setEmail] = useState(presetEmail || "");
     const [password, setPassword] = useState("");
-    const [display, setDisplay] = useState(negozio || "");
+    const [display, setDisplay] = useState(presetDisplay || negozio || "");
     const [adv, setAdv] = useState(false);
     const [imapHost, setImapHost] = useState(""); const [smtpHost, setSmtpHost] = useState("");
     const [busy, setBusy] = useState(false);
     const collega = async () => {
         if (!email.trim() || !password) return;
         setBusy(true);
-        const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined });
+        const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, userId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined });
         setBusy(false);
         if (res?.error) { alert(res.error); return; }
         if (res?.reconnected) alert("Questa casella era già collegata: l'ho ri-collegata con le credenziali appena inserite.");

@@ -13,12 +13,6 @@ export const dynamic = "force-dynamic";
 //  POST { action:"test",  ... }                     -> solo test credenziali
 //  POST { action:"delete", id, userId }             -> elimina casella + storico (cascade)
 
-// stesso confronto tollerante di sameStore (lib client, qui replicato lato server)
-const stessoNegozio = (a?: string | null, b?: string | null) => {
-    const x = String(a || "").trim().toLowerCase();
-    const y = String(b || "").trim().toLowerCase();
-    return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
-};
 
 export async function GET() {
     const { data } = await supabase.from("email_accounts")
@@ -27,12 +21,26 @@ export async function GET() {
     return NextResponse.json({ accounts: data ?? [] });
 }
 
+// GOVERNANCE (Luca 26/08): le caselle si collegano, ricollegano ed eliminano
+// SOLO dall'amministrazione (Pannello Email). Backstop server-side: chi vede
+// tutti i negozi; il gate fine per-persona (capacità CAP_EMAIL_ADMIN) sta nel
+// client come per il resto del CRM. Prima il connect era senza alcun check.
+async function eAmministrazione(userId: string): Promise<boolean> {
+    if (!userId) return false;
+    const { data: chi } = await supabase.from("app_users")
+        .select("id, role, active").eq("id", userId).maybeSingle();
+    return !!chi && chi.active !== false && seesAllStores(chi.role);
+}
+
 export async function POST(request: Request) {
     try {
         const b = await request.json();
         const action = b?.action;
 
         if (action === "connect" || action === "test") {
+            if (!(await eAmministrazione(String(b.userId || "")))) {
+                return NextResponse.json({ error: "le caselle si collegano solo dal pannello Email dell'amministrazione" }, { status: 403 });
+            }
             const email = String(b.email || "").trim().toLowerCase();
             const password = String(b.password || "");
             if (!email || !password) return NextResponse.json({ error: "email e password obbligatorie" }, { status: 400 });
@@ -90,34 +98,43 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true, account: data });
         }
 
+        if (action === "retest") {
+            // PROVA CONNESSIONE con le credenziali GIÀ salvate (pannello Email):
+            // decifra la password e ritenta login IMAP+SMTP, aggiornando lo
+            // stato — per capire al volo se una casella «in errore» è guarita.
+            if (!(await eAmministrazione(String(b.userId || "")))) {
+                return NextResponse.json({ error: "riservato al pannello Email dell'amministrazione" }, { status: 403 });
+            }
+            const id = String(b.id || "");
+            if (!id) return NextResponse.json({ error: "id obbligatorio" }, { status: 400 });
+            const { data: acc } = await supabase.from("email_accounts").select("*").eq("id", id).maybeSingle();
+            if (!acc) return NextResponse.json({ error: "casella non trovata" }, { status: 404 });
+            try {
+                await testConnessione(acc as any);
+                await supabase.from("email_accounts").update({ status: "attiva", last_error: null }).eq("id", id);
+                return NextResponse.json({ ok: true });
+            } catch (e: any) {
+                const msg = String(e?.message || e).slice(0, 300);
+                await supabase.from("email_accounts").update({ status: "errore", last_error: msg }).eq("id", id);
+                return NextResponse.json({ error: msg }, { status: 400 });
+            }
+        }
+
         if (action === "delete") {
             // ELIMINAZIONE COMPLETA (decisione Luca 04/08): via la casella dal CRM
             // con TUTTO lo storico scaricato (cascade su conversazioni, messaggi,
             // bozze). La casella reale sul server di posta NON viene toccata.
+            // GOVERNANCE 26/08: STRETTA alla sola amministrazione — prima potevano
+            // anche il proprietario della casella e lo store manager del negozio.
             const id = String(b.id || "");
             const userId = String(b.userId || "");
             if (!id || !userId) return NextResponse.json({ error: "id e userId obbligatori" }, { status: 400 });
             const { data: acc } = await supabase.from("email_accounts")
                 .select("id, owner_user_id, negozio").eq("id", id).maybeSingle();
             if (!acc) return NextResponse.json({ error: "casella non trovata" }, { status: 404 });
-
-            // AUTORIZZAZIONE: stessa regola di visibilita' della UI (EmailInbox) —
-            // proprietario della casella, store manager del negozio della casella,
-            // o ruolo che vede tutti i negozi.
-            const { data: chi } = await supabase.from("app_users")
-                .select("id, role, primary_store").eq("id", userId).maybeSingle();
-            if (!chi) return NextResponse.json({ error: "utente non riconosciuto" }, { status: 403 });
-            let autorizzato = acc.owner_user_id === userId || seesAllStores(chi.role);
-            if (!autorizzato && chi.role === "store_manager" && acc.negozio) {
-                const [us, uv] = await Promise.all([
-                    supabase.from("user_stores").select("store_name").eq("user_id", userId),
-                    supabase.from("user_store_visibility").select("store_name").eq("user_id", userId),
-                ]);
-                const stores = [chi.primary_store, ...(us.data || []).map((r: any) => r.store_name), ...(uv.data || []).map((r: any) => r.store_name)]
-                    .filter(Boolean) as string[];
-                autorizzato = stores.some(s => stessoNegozio(acc.negozio, s));
+            if (!(await eAmministrazione(userId))) {
+                return NextResponse.json({ error: "le caselle si eliminano solo dal pannello Email dell'amministrazione" }, { status: 403 });
             }
-            if (!autorizzato) return NextResponse.json({ error: "non autorizzato a eliminare questa casella" }, { status: 403 });
 
             // pulizia BEST-EFFORT del bucket allegati (path: <convId>/<file>) prima
             // della delete: dopo il cascade i file resterebbero orfani per sempre.

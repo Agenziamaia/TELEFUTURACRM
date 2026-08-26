@@ -20,7 +20,7 @@ import {
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
-    BarChart3, Receipt, User, Globe,
+    BarChart3, Receipt, User, Globe, Mail,
 } from "lucide-react";
 import { CoronaIcona } from "@/components/IconaCorona";
 
@@ -255,6 +255,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
             // Pannello WhatsApp (Luca 25/08): numeri, verifica, ricollega, intestazioni
             { name: "WhatsApp", sez: "whatsapp", icon: MessagesSquare, roles: ["admin", "dev"] },
+            // Pannello Email (Luca 26/08): governance caselle — collega/riassegna/elimina solo da qui
+            { name: "Email", sez: "email", icon: Mail, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

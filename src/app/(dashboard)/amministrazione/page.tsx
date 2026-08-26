@@ -14,6 +14,7 @@ import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
 import { TrackingEsitiView } from "./_views/tracking_esiti";
 import { WhatsAppAdminView } from "./_views/whatsapp_admin";
+import { EmailAdminView } from "./_views/email_admin";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -223,6 +224,9 @@ const SEZIONI: Sezione[] = [
     // PANNELLO WHATSAPP (Luca 25/08): numeri collegati, verifica, ricollega col QR,
     // collegamento a QUALSIASI utente o negozio — sempre da selezione, mai testo libero
     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "I numeri WhatsApp del CRM: stato e verifica live, ricollega col QR, collega numeri nuovi intestati a un utente (anche caller) o a un negozio — condivisione automatica per visibilità." },
+    // PANNELLO EMAIL (Luca 26/08): governance caselle — l'unico posto dove si
+    // collegano, riassegnano ed eliminano; nell'Inbox si usano e basta
+    { id: "email", label: "Email", icon: Mail, desc: "Le caselle email del CRM: stato e prova connessione, ricollega con la password nuova, collega caselle nuove intestate a un utente o a un negozio — nell'Inbox i collaboratori le usano e basta." },
     // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
     // nate col registratore telematico — stesso pattern del mini-hub Costi.
     { id: "fiscalita", label: "Fiscalità", icon: Receipt, desc: "Il mini-hub fiscale: Reparti & IVA, Cassa & Scontrini e Coupon — in sequenza, con le stesse regole di permesso delle singole sezioni." },
@@ -634,6 +638,8 @@ function AmministrazioneInner() {
                 <TrackingEsitiView />
             ) : sez === "whatsapp" ? (
                 <WhatsAppAdminView />
+            ) : sez === "email" ? (
+                <EmailAdminView />
             ) : (sez === "fiscalita" || FISC_IDS.includes(sez || "")) ? (
                 (() => {
                     // Il mini-hub FISCALITÀ (Luca 24/08): stessa veste del
