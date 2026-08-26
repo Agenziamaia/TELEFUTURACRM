@@ -41,6 +41,7 @@ export type CodiceDir = {
     soglie: Record<string, number[]>;     // pista → scala (per-codice W3, di rete altrove)
     piste: Record<string, PistaAvz>;      // pista → avanzamento LIVE del codice
     targets: Record<string, number>;      // pista → target della direzione
+    tiersScelti: Record<string, number | null>;   // pista → soglia cliccata (null = a mano)
     cbPunti?: number;                     // W3: punti CUSTOMER BASE (gara parallela partnership)
     businessPezzi?: number;               // W3: pezzi business del codice (paletto 6)
 };
@@ -98,7 +99,7 @@ function scaleDiRete(tab: Tabellare | null): Record<string, number[]> {
 
 export async function caricaDirezione(brand: DirBrandId, monthISO: string): Promise<Direzione> {
     const [tgtRes, sfrRes, polRes, glRes] = await Promise.all([
-        supabase.from("direzione_targets").select("cod_gara, pista, target").eq("brand", brand).eq("month", monthISO),
+        supabase.from("direzione_targets").select("cod_gara, pista, target, tier").eq("brand", brand).eq("month", monthISO),
         supabase.from("direzione_sfridi").select("pista, pct").eq("brand", brand).eq("month", monthISO),
         supabase.from("direzione_politiche").select("pista, modo, dati").eq("brand", brand).eq("month", monthISO),
         giorniLavorativiMese(monthISO).catch(() => null),
@@ -137,7 +138,7 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
                     // W3 Protetti: ALMENO UNO per non prendere il malus
                     protetti: [1],
                 },
-                piste: {}, targets: {},
+                piste: {}, targets: {}, tiersScelti: {},
             };
         });
     } else if (brand === "vodafone") {
@@ -149,8 +150,8 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
         tab = t; contratti = ctx.contratti;
         const rete = scaleDiRete(tab);
         codici = [
-            { cod_gara: "VS", negozio: "Vodafone Store (T1)", cluster: "lettera A", token: [...CTX_CODICI_T1].map(norm), soglie: rete, piste: {}, targets: {} },
-            { cod_gara: "VND", negozio: "VND (multibrand)", cluster: "lettera A", token: [], catchAll: true, soglie: rete, piste: {}, targets: {} },
+            { cod_gara: "VS", negozio: "Vodafone Store (T1)", cluster: "lettera A", token: [...CTX_CODICI_T1].map(norm), soglie: rete, piste: {}, targets: {}, tiersScelti: {} },
+            { cod_gara: "VND", negozio: "VND (multibrand)", cluster: "lettera A", token: [], catchAll: true, soglie: rete, piste: {}, targets: {}, tiersScelti: {} },
         ];
     } else if (brand === "fastweb") {
         const [t, ctx] = await Promise.all([
@@ -158,19 +159,22 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
             caricaContrattiContesto("fastweb", monthISO, "Fastweb"),
         ]);
         tab = t; contratti = ctx.contratti;
-        codici = [{ cod_gara: "T2", negozio: "Lettera Fastweb (T2)", cluster: null, token: [], catchAll: true, soglie: scaleDiRete(tab), piste: {}, targets: {} }];
+        codici = [{ cod_gara: "T2", negozio: "Lettera Fastweb (T2)", cluster: null, token: [], catchAll: true, soglie: scaleDiRete(tab), piste: {}, targets: {}, tiersScelti: {} }];
     } else {
         const [t, ctr] = await Promise.all([
             caricaTabellareAzienda("sky", monthISO).then((x) => x ?? caricaTabellare("sky", monthISO)),
             caricaContrattiMese("Sky", monthISO),
         ]);
         tab = t; contratti = ctr;
-        codici = [{ cod_gara: "SKY", negozio: "Sky", cluster: null, token: [], catchAll: true, soglie: scaleDiRete(tab), piste: {}, targets: {} }];
+        codici = [{ cod_gara: "SKY", negozio: "Sky", cluster: null, token: [], catchAll: true, soglie: scaleDiRete(tab), piste: {}, targets: {}, tiersScelti: {} }];
     }
 
     (tgtRes.data || []).forEach((t) => {
         const k = codici.find((x) => x.cod_gara === t.cod_gara);
-        if (k) k.targets[String(t.pista)] = Number(t.target) || 0;
+        if (k) {
+            k.targets[String(t.pista)] = Number(t.target) || 0;
+            k.tiersScelti[String(t.pista)] = t.tier != null ? Number(t.tier) : null;
+        }
     });
     const sfridi: Record<string, number> = {};
     (sfrRes.data || []).forEach((s) => { sfridi[String(s.pista)] = Number(s.pct) || 0; });

@@ -86,8 +86,8 @@ export function DirezioneInserimentoAdmin() {
     const [bozzeSfr, setBozzeSfr] = useState<Record<string, string>>({}); // pista → input sfrido
     const [salvate, setSalvate] = useState<Record<string, boolean>>({});
     const [erroriSalva, setErroriSalva] = useState<Record<string, boolean>>({});
-    const [gruppoAperto, setGruppoAperto] = useState(true);
-    const [recapAperto, setRecapAperto] = useState(true);
+    const [gruppoAperto, setGruppoAperto] = useState(false);
+    const [recapAperto, setRecapAperto] = useState(false);
     const [giro, setGiro] = useState(0);
 
     useEffect(() => {
@@ -103,15 +103,17 @@ export function DirezioneInserimentoAdmin() {
         setSalvate((s) => ({ ...s, [chiave]: true }));
         setTimeout(() => setSalvate((s) => ({ ...s, [chiave]: false })), 1600);
     };
-    const salva = async (cod_gara: string, pista: string, valore: number) => {
+    // tier = soglia di provenienza del target (null = scritto a mano): al
+    // cambio di sfrido i target con tier si RICALCOLANO da soli (notte-7)
+    const salva = async (cod_gara: string, pista: string, valore: number, tier: number | null = null) => {
         const chiave = `${cod_gara}|${pista}`;
         const { error } = await supabase.from("direzione_targets").upsert(
-            { brand, month: monthISO, cod_gara, pista, target: valore, updated_at: new Date().toISOString(), updated_by: user?.name || null },
+            { brand, month: monthISO, cod_gara, pista, target: valore, tier: valore > 0 ? tier : null, updated_at: new Date().toISOString(), updated_by: user?.name || null },
             { onConflict: "brand,month,cod_gara,pista" });
         if (error) { flash(chiave, false); return; }
         setDir((p) => p ? {
             ...p,
-            codici: p.codici.map((k) => k.cod_gara === cod_gara ? { ...k, targets: { ...k.targets, [pista]: valore } } : k),
+            codici: p.codici.map((k) => k.cod_gara === cod_gara ? { ...k, targets: { ...k.targets, [pista]: valore }, tiersScelti: { ...k.tiersScelti, [pista]: valore > 0 ? tier : null } } : k),
         } : p);
         flash(chiave, true);
     };
@@ -123,6 +125,18 @@ export function DirezioneInserimentoAdmin() {
         if (error) { flash(chiave, false); return; }
         setDir((p) => p ? { ...p, sfridi: { ...p.sfridi, [pista]: pct } } : p);
         flash(chiave, true);
+        // RICALCOLO AUTOMATICO (Luca notte-7): i target nati da una soglia
+        // si riallineano al nuovo sfrido — quelli a mano non si toccano
+        if (dir && pista !== SFRIDO_PALETTO) {
+            for (const k of dir.codici) {
+                const t = k.tiersScelti?.[pista];
+                const scala = k.soglie[pista] || [];
+                if ((k.targets[pista] || 0) > 0 && t != null && Number(scala[t - 1]) > 0) {
+                    const nuovo = targetConSfrido(Number(scala[t - 1]), pct);
+                    if (nuovo !== k.targets[pista]) await salva(k.cod_gara, pista, nuovo, t);
+                }
+            }
+        }
     };
     // politica di una pista di GRUPPO (proprio/bilancia) e associazioni MB
     const salvaPolitica = async (pista: string, modo: string, dati?: Record<string, unknown> | null) => {
@@ -497,7 +511,7 @@ export function DirezioneInserimentoAdmin() {
                                                                         onClick={() => {
                                                                             const nuovo = attiva ? 0 : valore;
                                                                             setBozze((b) => ({ ...b, [chiave]: nuovo ? String(nuovo) : "" }));
-                                                                            salva(k.cod_gara, p.chiave, nuovo);
+                                                                            salva(k.cod_gara, p.chiave, nuovo, nuovo ? i + 1 : null);
                                                                         }}
                                                                         title={attiva ? "Riclicca per togliere il target" : (sfrido ? `${etichettaSoglia(dir.brand, p.chiave, i)} = ${it(Number(s))} + ${sfrido}% sfrido → ${valore}` : `${etichettaSoglia(dir.brand, p.chiave, i)} = ${it(Number(s))}`)}
                                                                         className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
@@ -741,7 +755,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         {EMOJI_PISTA(p.nome)} {p.nome}
                     </button>
                 ))}
-            </div>
+            </div>}
             {/* pista di GRUPPO: risposta secca dalla politica, niente lista */}
             {pistaDiGruppo && tipGruppo && (
                 <div className="rounded-xl px-3 py-2 border" style={{ background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 9%, transparent)`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)` }}>
