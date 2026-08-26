@@ -794,6 +794,10 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         .sort((a, b) => a.fatti - b.fatti);
                     const sotto = franchising.filter((f) => f.fatti < obiettivo);
                     const scelto = sotto[0] || null;
+                    // CASCATA (Luca 27/08-2): paletti tutti salvi → si passa
+                    // all'esigenza dei PUNTI MOBILE (i target della direzione)
+                    const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio) : [];
+                    const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
                     return (<>
                         {scelto ? (
                             <div className="rounded-2xl px-4 py-4 border"
@@ -801,6 +805,16 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
                                 <div className="text-[11px] font-semibold text-slate-300 mt-1.5">è il più scoperto sul paletto business: {scelto.fatti} / {obiettivo}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, manca il cuscinetto)"}</div>
+                            </div>
+                        ) : mobScelto ? (
+                            <div className="rounded-2xl px-4 py-4 border"
+                                style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
+                                <div className="text-[10px] uppercase tracking-widest font-bold text-emerald-300">✅ paletti tutti salvi → ora contano i punti mobile</div>
+                                <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">
+                                    {mobScelto.negozio}
+                                    {mobScelto.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
+                                </div>
+                                <div className="text-[11px] font-semibold text-slate-300 mt-1">{mobScelto.mancano > 0 ? `mancano ${it(mobScelto.mancano)} punti mobile al target della direzione` : "🎯 anche il mobile è a target: carica dove preferisci"}</div>
                             </div>
                         ) : (
                             <div className="rounded-2xl px-4 py-4 border border-emerald-500/30 text-center"
