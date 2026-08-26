@@ -54,9 +54,13 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
         // ⚠️ I NEGOZI VENGONO DA `stores`, non da useVisibleStores: per chi
         // vede tutta la rete quella lista è vuota per costruzione, ed è il
         // motivo per cui nel selettore comparivano solo le persone.
-        Promise.all([elencoPersone(), elencoNegozi()])
-            .then(([p, n]) => { if (vivo) { setPersone(p); setNegozi(n); } })
-            .catch((e) => { if (vivo) setErrore(String((e as Error)?.message || e)); });
+        // allSettled e non all: se cade una delle due, l'altra deve comunque
+        // riempire il selettore (prima restavano vuote tutte e due)
+        Promise.allSettled([elencoPersone(), elencoNegozi()]).then(([p, n]) => {
+            if (!vivo) return;
+            if (p.status === "fulfilled") setPersone(p.value); else setErrore(String(p.reason?.message || p.reason));
+            if (n.status === "fulfilled") setNegozi(n.value); else setErrore(String(n.reason?.message || n.reason));
+        });
         return () => { vivo = false; };
     }, [puoImmedesimarsi]);
 
@@ -73,10 +77,10 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
             // punto vendita, le chat interne sono di ciascuno
             const membri = neg ? await membriNegozio(neg) : null;
             const chi = p
-                ? { id: p.id, role: p.role, stores: p.negozio ? [p.negozio] : [], membri: null, reale: user?.id || null }
+                ? { id: p.id, role: p.role, stores: p.negozio ? [p.negozio] : [], membri: null, reale: user?.id || null, soloNegozio: null }
                 : neg
-                    ? { id: user?.id || null, role: "store_manager", stores: [neg], membri, reale: user?.id || null }
-                    : { id: user?.id || null, role: user?.role || null, stores, membri: null, reale: user?.id || null };
+                    ? { id: user?.id || null, role: "store_manager", stores: [neg], membri, reale: user?.id || null, soloNegozio: neg }
+                    : { id: user?.id || null, role: user?.role || null, stores, membri: null, reale: user?.id || null, soloNegozio: null };
             const lista = await caricaConversazioni(chi);
             // immedesimandomi in UNA persona il proprietario è sempre lei: il
             // nome non va in lista (lo dice già la fascia gialla) ma serve

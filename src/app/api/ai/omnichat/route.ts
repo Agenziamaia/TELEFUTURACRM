@@ -79,8 +79,19 @@ export async function POST(req: Request) {
             messages: [{ role: "system", content: SISTEMA }, utente],
             model: MODEL_FAST,
             maxTokens: 700,
+            // il prompt cita JSON: con questo l'API lo garantisce, invece di
+            // sperare che il modello non incarti la risposta in un blocco
+            responseFormat: "json_object",
         });
-        const testo = String((r as { content?: string })?.content || "").trim();
+        // ⚠️ IL CONTENUTO STA IN `message.content`. Leggerlo da `r.content`
+        // (che non esiste) dava sempre stringa vuota: JSON.parse("") falliva,
+        // la route rispondeva ok con tutti i campi vuoti e il riquadro
+        // dell'assistente restava BIANCO. È il motivo per cui l'AI
+        // dell'Omnichat non ha mai detto niente (Luca 27/08).
+        const testo = String((r as { message?: { content?: string } })?.message?.content || "").trim();
+        if (!testo) {
+            return NextResponse.json({ ok: false, error: "l'AI ha risposto senza testo: riprova fra poco" }, { status: 200 });
+        }
         // il modello ogni tanto incarta il JSON in un blocco di codice
         const pulito = testo.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
         let out: { recap?: string; analisi?: string; risposte?: unknown };

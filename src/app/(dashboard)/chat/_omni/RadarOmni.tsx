@@ -67,6 +67,8 @@ export function RadarOmni({ chat, onUsaRisposta }: { chat: ChatOmni | null; onUs
                 }),
             }).then((x) => x.json());
             if (!r?.ok) throw new Error(r?.error || "l'AI non ha risposto");
+            // meglio dirlo che mostrare un riquadro bianco con scritto «rileggi»
+            if (!r.recap && !r.analisi && !(r.risposte || []).length) throw new Error("l'AI non ha prodotto niente: riprova");
             setAi({ recap: r.recap || "", analisi: r.analisi || "", risposte: r.risposte || [] });
         } catch (e) {
             setAiErrore(String((e as Error)?.message || e));

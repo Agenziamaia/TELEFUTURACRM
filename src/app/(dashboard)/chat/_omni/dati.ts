@@ -19,10 +19,23 @@ import {
 } from "@/lib/commissioning";
 import { waIstanzeVisibili } from "@/lib/waVisibilita";
 import { emailCaselleVisibili, membershipEmail } from "@/lib/emailVisibilita";
-import { sendMessage } from "@/lib/chat";
+import { matchNegozi } from "@/lib/visibleStores";
+import { sendMessage, getInbox, type InboxItem } from "@/lib/chat";
 import type { ChatOmni, MessaggioOmni, Radar, VoceTimeline, Hardware } from "./tipi";
 
 const iniziali = (s: string) => String(s || "?").trim().split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toUpperCase() || "#";
+
+/** COSA C'ERA AL POSTO DEL TESTO. Il modello che usiamo (DeepSeek) legge
+ *  testo, non immagini: di una foto sa che c'è, non cosa mostra. Meglio
+ *  dirglielo che lasciargli una riga vuota. */
+const etichettaMedia = (mime: string | null, c: boolean) => {
+    if (!c) return "";
+    const m = String(mime || "");
+    if (m.startsWith("image/")) return "[il cliente ha mandato un'immagine]";
+    if (m.startsWith("audio/")) return "[messaggio vocale]";
+    if (m.startsWith("video/")) return "[video]";
+    return "[allegato]";
+};
 
 const oraBreve = (iso: string | null) => {
     if (!iso) return "";
@@ -44,6 +57,7 @@ export async function caricaConversazioni(
         id: string | null; role: string | null; stores: string[];
         membri?: { id: string; nome: string }[] | null;
         reale?: string | null;      // chi è loggato DAVVERO, quando mi immedesimo
+        soloNegozio?: string | null; // vista negozio: numeri e caselle SOLO suoi
     },
 ): Promise<ChatOmni[]> {
     const meId = me.id;
@@ -53,7 +67,9 @@ export async function caricaConversazioni(
     // le chat interne, però a quel punto me le dai tutte di tutte le persone
     // che fanno parte di quel punto vendita»). Il numero e la casella invece
     // restano quelli del negozio: quelli il perimetro li prende già da solo.
-    const membri = me.membri && me.membri.length ? me.membri : null;
+    // ⚠️ array VUOTO ≠ assente: un negozio senza personale attivo deve dare
+    // lista vuota, non «le mie chat» spacciate per sue
+    const membri = me.membri ?? null;
     const proprietari = membri ? membri.map((m) => m.id) : meId ? [meId] : [];
     const nomeProprietario = new Map((membri || []).map((m) => [m.id, m.nome]));
     // ⛔ IL PERIMETRO, PRIMA DI TUTTO. Su wa_conversations e
@@ -67,8 +83,17 @@ export async function caricaConversazioni(
     ]);
     if (inst.error) throw new Error(`Numeri WhatsApp: ${inst.error.message}`);
     if (acc.error) throw new Error(`Caselle email: ${acc.error.message}`);
-    const idWa = waIstanzeVisibili(inst.data || [], meId, me.role, me.stores).map((i) => i.id);
-    const idEm = emailCaselleVisibili(acc.data || [], meId, me.role, me.stores, membro).map((a) => a.id);
+    // GUARDANDO UN NEGOZIO il filtro è il NEGOZIO, punto. Passare per le
+    // funzioni di visibilità sarebbe sbagliato: `waScopeDi` guarda l'ID prima
+    // del ruolo e per Luca torna «all», quindi la vista «Magliana Multi»
+    // avrebbe mostrato i numeri di TUTTA la rete sotto il cartello del
+    // negozio; e la casella personale di chi guarda sarebbe entrata lo stesso.
+    const idWa = me.soloNegozio
+        ? (inst.data || []).filter((i) => matchNegozi(i.negozio, [me.soloNegozio as string])).map((i) => i.id)
+        : waIstanzeVisibili(inst.data || [], meId, me.role, me.stores).map((i) => i.id);
+    const idEm = me.soloNegozio
+        ? (acc.data || []).filter((a) => matchNegozi(a.negozio, [me.soloNegozio as string])).map((a) => a.id)
+        : emailCaselleVisibili(acc.data || [], meId, me.role, me.stores, membro).map((a) => a.id);
     // nessun numero e nessuna casella in visibilità: resta la chat interna
     
     const [wa, em, itn] = await Promise.all([
@@ -88,10 +113,15 @@ export async function caricaConversazioni(
                 .eq("spam", false).eq("trashed", false).eq("archived", false)
                 .order("last_message_at", { ascending: false, nullsFirst: false }).limit(80)
             : Promise.resolve({ data: [], error: null }),
-        proprietari.length
-            ? supabase.from("chat_participants").select("conversation_id, user_id, last_read_at")
-                .in("user_id", proprietari).limit(120 * Math.min(6, proprietari.length))
-            : Promise.resolve({ data: [] as { conversation_id: string; user_id: string; last_read_at: string | null }[] }),
+        // CHAT INTERNA: la STESSA fonte della scheda Chat — la RPC `chat_inbox`,
+        // una chiamata per proprietario. Dà ultimo messaggio, non letti, nome
+        // del collega e tipo, senza tetti arbitrari: la versione a mano
+        // prendeva «gli ultimi 400 messaggi in tutto» e su un negozio da otto
+        // persone ne perdeva la metà per strada.
+        Promise.all(proprietari.slice(0, 15).map(async (uid) => {
+            try { return { uid, items: await getInbox(uid) }; }
+            catch { return { uid, items: [] as InboxItem[] }; }
+        })),
     ]);
 
     if (wa.error) throw new Error(`WhatsApp: ${wa.error.message}`);
@@ -125,79 +155,46 @@ export async function caricaConversazioni(
         });
     }
 
-    // CHAT INTERNA: le conversazioni dei proprietari, col nome del collega.
-    // Con un proprietario solo (io, o la persona in cui mi immedesimo) è la
-    // sua rubrica; con un negozio sono le rubriche di tutti quelli che ci
-    // lavorano, e ogni riga porta scritto DI CHI è.
-    const partecipazioni = ((itn as { data?: { conversation_id: string; user_id: string; last_read_at: string | null }[] }).data || []);
-    const convIds = [...new Set(partecipazioni.map(x => x.conversation_id))];
-    // di chi è la conversazione: se due colleghi dello stesso negozio si
-    // scrivono, la riga esce UNA volta sola, intestata al primo dei due
-    const proprietarioDi = new Map<string, string>();
-    for (const p of partecipazioni) if (!proprietarioDi.has(p.conversation_id)) proprietarioDi.set(p.conversation_id, p.user_id);
-    if (convIds.length && proprietari.length) {
-        const [parts, ultimi] = await Promise.all([
-            supabase.from("chat_participants").select("conversation_id, user_id").in("conversation_id", convIds).limit(400),
-            supabase.from("chat_messages").select("conversation_id, body, created_at, sender_id")
-                .in("conversation_id", convIds).is("deleted_at", null).order("created_at", { ascending: false }).limit(400),
-        ]);
-        const altri = new Map<string, string>();
-        for (const p of (parts.data || []) as { conversation_id: string; user_id: string }[]) {
-            const mio = proprietarioDi.get(p.conversation_id);
-            if (p.user_id !== mio && !altri.has(p.conversation_id)) altri.set(p.conversation_id, p.user_id);
-        }
-        const ids = [...new Set(altri.values())];
-        // ⚠️ la colonna è `full_name`, non `name` (che non esiste): con la
-        // colonna sbagliata la query tornava 400 e OGNI chat si chiamava
-        // «Collega» — e il confronto del CASO C cercava un venditore di nome
-        // «Collega», quindi era sempre zero a zero
-        const { data: users, error: eU } = ids.length
-            ? await supabase.from("app_users").select("id, full_name").in("id", ids).limit(200)
-            : { data: [] as { id: string; full_name: string }[], error: null };
-        if (eU) throw new Error(`Colleghi: ${eU.message}`);
-        const nomi = new Map((users || []).map(u => [u.id, u.full_name]));
-        // i GRUPPI restano fuori (il radar è un confronto a due): senza questo
-        // un gruppo da cinque compariva come chat singola con un membro a caso
-        const { data: convs } = await supabase.from("chat_conversations")
-            .select("id, type").in("id", convIds).limit(200);
-        const gruppi = new Set((convs || []).filter((c: { type?: string }) => c.type === "group").map((c: { id: string }) => c.id));
-        const letturaMia = new Map(partecipazioni.map(x => [`${x.conversation_id}|${x.user_id}`, x.last_read_at]));
-        const visti = new Set<string>();
-        for (const m of (ultimi.data || []) as Record<string, unknown>[]) {
-            const cid = String(m.conversation_id);
-            if (visti.has(cid)) continue;         // solo l'ultimo per conversazione
-            visti.add(cid);
-            if (gruppi.has(cid)) continue;
-            const altro = altri.get(cid);
-            if (!altro) continue;
-            const mio = proprietarioDi.get(cid) || "";
+    // CHAT INTERNA — arriva già pronta dalla RPC: ultimo messaggio, non
+    // letti, nome del collega. Con un proprietario solo (io, o la persona in
+    // cui mi immedesimo) è la sua rubrica; con un negozio sono le rubriche di
+    // tutti quelli che ci lavorano, e ogni riga porta scritto DI CHI è.
+    const vistaConv = new Set<string>();
+    for (const { uid, items } of (itn as { uid: string; items: InboxItem[] }[])) {
+        for (const it of items) {
+            // i GRUPPI restano fuori: il radar è un confronto a due, e un
+            // gruppo da cinque comparirebbe come chat singola con un membro a caso
+            if (it.type === "group") continue;
+            // due colleghi dello stesso negozio che si scrivono: una riga sola,
+            // intestata al primo dei due (l'ordine dei proprietari è stabile)
+            if (vistaConv.has(it.conversation_id)) continue;
+            vistaConv.add(it.conversation_id);
+            const nome = it.other_name || "Collega";
             out.push({
-                id: `in:${cid}`, canale: "interna", nome: nomi.get(altro) || "Collega",
-                sottotitolo: null, anteprima: String(m.body || ""), ora: oraBreve(m.created_at as string),
-                daLeggere: (() => {
-                    const letto = letturaMia.get(`${cid}|${mio}`);
-                    return !letto || String(m.created_at) > String(letto);
-                })(),
-                iniziali: iniziali(nomi.get(altro) || "C"),
-                clientId: null, riferimento: null, utenteId: altro,
-                aggiornata: (m.created_at as string) || null,
+                id: `in:${it.conversation_id}`, canale: "interna", nome,
+                sottotitolo: null, anteprima: it.last_body || "",
+                ora: oraBreve(it.last_message_at), daLeggere: (it.unread || 0) > 0,
+                iniziali: iniziali(nome),
+                clientId: null, riferimento: null, utenteId: it.other_id,
+                aggiornata: it.last_message_at || null,
                 // il nome del proprietario compare SOLO guardando un negozio:
                 // nella mia lista sarei sempre io, e sarebbe rumore
-                perChi: membri ? (nomeProprietario.get(mio) || null) : null,
-                proprietarioId: mio || null,
-                proprietarioNome: nomeProprietario.get(mio) || null,
-                altrui: !!mio && !!ioSono && mio !== ioSono,
+                perChi: membri ? (nomeProprietario.get(uid) || null) : null,
+                proprietarioId: uid,
+                proprietarioNome: nomeProprietario.get(uid) || null,
+                altrui: !!ioSono && uid !== ioSono,
             });
         }
     }
 
     // ORDINE UNICO: IL PIÙ RECENTE IN CIMA, e basta.
-    // ⚠️ Prima mettevo i non letti davanti, e il risultato era che una mail di
-    // ieri non letta stava sopra un WhatsApp di stamattina: l'ordine di tempo
-    // spariva (Luca 26/08: «non me le mette in ordine di tempo, cosa che
-    // chiaramente non deve accadere»). Il non letto si vede dal pallino — non
-    // deve spostare le righe: in una lista fusa di tre canali l'unica cosa che
-    // permette di orientarsi è che il tempo scenda sempre.
+    // ⚠️ Qui NON si mescola mai: la lista esce in ordine di tempo puro, perché
+    // in una lista fusa di tre canali l'unica cosa che permette di orientarsi è
+    // che il tempo scenda sempre (Luca 26/08: «non me le mette in ordine di
+    // tempo, cosa che chiaramente non deve accadere»). I «non letti davanti»
+    // sono un ORDINAMENTO DI LETTURA scelto dall'utente e vivono nella lista
+    // (ListaOmni), dove fanno risalire le righe senza rimescolarle: dentro
+    // ogni fascia il tempo continua a scendere. Dal 27/08 è il default.
     return out.sort((a, b) => String(b.aggiornata || "").localeCompare(String(a.aggiornata || "")));
 }
 
@@ -232,6 +229,9 @@ export async function membriNegozio(negozio: string): Promise<{ id: string; nome
         supabase.from("user_stores").select("user_id").eq("store_name", negozio).limit(150),
     ]);
     if (pri.error) throw new Error(`Persone del negozio: ${pri.error.message}`);
+    // anche questo va sollevato: se cade in silenzio restano i soli
+    // `primary_store` e il negozio sembra avere metà personale
+    if (agg.error) throw new Error(`Assegnazioni del negozio: ${agg.error.message}`);
     const out = new Map<string, string>();
     for (const u of (pri.data || []) as { id: string; full_name: string }[]) out.set(u.id, u.full_name || "—");
     const extra = [...new Set(((agg.data || []) as { user_id: string }[]).map(x => x.user_id))].filter(id => !out.has(id));
@@ -253,13 +253,17 @@ export async function caricaMessaggi(chat: ChatOmni, meId: string | null): Promi
     const [tipo, id] = chat.id.split(":");
     if (tipo === "wa") {
         const { data, error } = await supabase.from("wa_messages")
-            .select("id, direction, body, wa_timestamp, created_at").eq("conversation_id", id)
+            .select("id, direction, body, wa_timestamp, created_at, media_url, media_mime").eq("conversation_id", id)
             .is("deleted_at", null)
             .order("wa_timestamp", { ascending: true, nullsFirst: true }).limit(200);
         if (error) throw new Error(`Messaggi WhatsApp: ${error.message}`);
         return (data || []).map((m: Record<string, unknown>) => ({
             id: String(m.id), verso: m.direction === "out" ? "out" as const : "in" as const,
-            testo: String(m.body || ""), ora: oraBreve((m.wa_timestamp || m.created_at) as string),
+            // un allegato senza testo NON è un messaggio vuoto: se non lo si
+            // dice, l'AI legge una conversazione con dei buchi e conclude che
+            // il cliente non ha risposto
+            testo: String(m.body || "") || etichettaMedia(m.media_mime as string | null, !!m.media_url),
+            ora: oraBreve((m.wa_timestamp || m.created_at) as string),
         }));
     }
     if (tipo === "em") {

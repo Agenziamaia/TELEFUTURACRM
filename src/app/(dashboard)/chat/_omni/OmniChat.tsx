@@ -19,7 +19,7 @@
    componente, stesso stato: nessuna copia da tenere allineata.
 */
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { ListaOmni } from "./ListaOmni";
@@ -27,31 +27,29 @@ import { RadarOmni } from "./RadarOmni";
 import { ThreadAltrui } from "./ThreadAltrui";
 import type { ChatOmni } from "./tipi";
 
-export function OmniChat({ thread, apriInterna, internaAperta }: {
+export function OmniChat({ thread, apriInterna }: {
     thread?: ReactNode;                                   // il thread della chat interna, dalla pagina Chat
     apriInterna?: (id: string | null) => void;            // quale conversazione interna deve aprire
-    internaAperta?: string | null;
 }) {
     const [attiva, setAttiva] = useState<ChatOmni | null>(null);
     // la risposta suggerita dall'AI: si passa all'inbox come testo iniziale
     const [bozza, setBozza] = useState<string | null>(null);
 
+    // Scegliendo una chat interna si dice alla pagina QUALE aprire: è lei che
+    // tiene messaggi, sottoscrizioni e bozze, e va avvisata come se avessi
+    // cliccato nella sua lista. Si fa QUI, sul clic, e non in un effetto
+    // legato all'id: chiudendo il thread (il «torna indietro» del telefono)
+    // l'id non cambia, e con l'effetto la stessa riga non si riapriva più.
     const scegli = useCallback((c: ChatOmni) => {
         setAttiva(c);
         setBozza(null);
-    }, []);
-
-    // scegliendo una chat interna si dice alla pagina QUALE aprire: è lei che
-    // tiene messaggi, sottoscrizioni e bozze, e va avvisata come se avessi
-    // cliccato nella sua lista
-    useEffect(() => {
         if (!apriInterna) return;
         // le chat ALTRUI non si passano alla pagina: lei sa mostrare solo le
         // conversazioni a cui partecipo io, e resterebbe sul vuoto
-        if (attiva?.canale === "interna" && !attiva.altrui) apriInterna(attiva.id.split(":")[1]);
-        else if (attiva && internaAperta) apriInterna(null);   // altro canale, o chat di un collega
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [attiva?.id]);
+        if (c.canale === "interna" && !c.altrui) apriInterna(c.id.split(":")[1]);
+        // passando a un altro canale NON si azzera: quella conversazione resta
+        // aperta nella scheda «Chat interna», dov'era, e qui non si vede
+    }, [apriInterna]);
 
     const idNudo = attiva ? attiva.id.split(":")[1] : null;
 
