@@ -61,9 +61,12 @@ export type Direzione = {
     politiche: Record<string, PoliticaPista>;   // pista → politica (+ '__associati__')
 };
 
-// W3: cosa pesa per codice e cosa è di gruppo (dettato Luca 26/08 sera-3)
+// W3: cosa pesa per codice (dettato Luca 26/08 sera-3); TUTTO il resto del
+// tabellare (non parallelo) è di GRUPPO — così luce&gas, assicurazioni,
+// telefoni&device e le piste future ci cascano da sole (revisore: device
+// era rimasta orfana con la lista fissa)
 const W3_KPI_CODICE = ["mobile", "fisso", "cb", "protetti"];
-const W3_GRUPPO = ["lucegas", "assicurazioni"];
+const PARALLELE_DIR = new Set(["partnership", "business_piva", "smartphone_cb"]);
 /** Il PALETTO BUSINESS della lettera W3: 6 pezzi business per codice, pena
  *  il malus 30% sulla gara mobile del punto vendita. (In Gare non è ancora
  *  censito come gate — qui almeno si monitora.) */
@@ -167,15 +170,17 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
         for (const c of contratti) {
             if (!produzioneValidaGare(c)) continue;
             const k0 = codiceDi(c, codici);
-            // W3: il PALETTO BUSINESS conta i pezzi business del codice anche
-            // quando la vendita non aggancia una riga (il paletto è a pezzi)
-            if (brand === "windtre" && k0 && /business/i.test(String(c.tipo_cliente || ""))) {
-                k0.businessPezzi = (k0.businessPezzi || 0) + 1;
-            }
             const set = matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand));
             if (!set.length) continue;
             const pista = String(set[0].pista || "");
             if (!pista) continue;
+            // W3: il PALETTO BUSINESS = attivazioni P.IVA della pista MOBILE
+            // (LA definizione del malus30Mobile del motore/Calcolatore —
+            // revisore 26/08: contare i business di qualsiasi pista dava
+            // falsi verdi su una penale del 30%)
+            if (brand === "windtre" && k0 && pista === "mobile" && /business/i.test(String(c.tipo_cliente || ""))) {
+                k0.businessPezzi = (k0.businessPezzi || 0) + 1;
+            }
             const punti = puntiPerRighe(set);
             const k = k0;
             if (!k) { nonAllocati++; continue; }
@@ -197,7 +202,10 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
     const kpiCodice = brand === "windtre"
         ? W3_KPI_CODICE.filter((k) => pisteTab.some((p) => p.chiave === k))
         : pisteTab.map((p) => p.chiave);
-    const pisteGruppo = brand === "windtre" ? W3_GRUPPO.filter((k) => pisteTab.some((p) => p.chiave === k)) : [];
+    // gruppo = tutto il resto (non parallelo, non per-codice)
+    const pisteGruppo = brand === "windtre"
+        ? pisteTab.filter((p) => !W3_KPI_CODICE.includes(p.chiave) && !PARALLELE_DIR.has(p.chiave)).map((p) => p.chiave)
+        : [];
     return {
         brand, monthISO, codici, nonAllocati,
         pisteTab, tab, sfridi, gl: glv,
@@ -230,11 +238,15 @@ export async function codiceBilancia(dir: Direzione, pista: string): Promise<Cod
         const k = franchising.find((x) => x.cod_gara === dati.scelto);
         if (k) return k;
     }
-    // nuova finestra: il più scarico ADESSO, e si scrive la scelta
+    // nuova finestra: il più scarico ADESSO, e si scrive SOLO `dati` — mai il
+    // modo (revisore: una Home in cache poteva ripristinare 'bilancia' sopra
+    // un 'proprio' appena scelto dall'admin). La riga esiste per forza: siamo
+    // qui solo se modo==='bilancia' a DB.
     const scelto = [...franchising].sort((a, b) => (a.piste[pista]?.punti || 0) - (b.piste[pista]?.punti || 0))[0];
-    await supabase.from("direzione_politiche").upsert(
-        { brand: dir.brand, month: dir.monthISO, pista, modo: pol?.modo || "bilancia", dati: { finestra: fin.chiave, scelto: scelto.cod_gara }, updated_at: new Date().toISOString() },
-        { onConflict: "brand,month,pista" }).then(() => null, () => null);
+    await supabase.from("direzione_politiche")
+        .update({ dati: { finestra: fin.chiave, scelto: scelto.cod_gara }, updated_at: new Date().toISOString() })
+        .eq("brand", dir.brand).eq("month", dir.monthISO).eq("pista", pista)
+        .then(() => null, () => null);
     return scelto;
 }
 

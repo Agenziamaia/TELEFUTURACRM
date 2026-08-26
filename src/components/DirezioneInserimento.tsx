@@ -22,7 +22,7 @@ import { supabase } from "@/lib/supabaseClient";
 import {
     caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir,
     finestraBilancia, codiceBilancia, codiceAssociato, W3_PALETTO_BUSINESS,
-    DIR_BRANDS, type DirBrandId, type Direzione, type CodiceDir,
+    DIR_BRANDS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
@@ -358,7 +358,7 @@ export function DirezioneInserimentoAdmin() {
                                             return (
                                                 <div className="px-4 py-3.5">
                                                     <div className="flex items-center justify-between gap-2 mb-1.5">
-                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {W3_PALETTO_BUSINESS} pezzi o malus 30% sulla gara mobile</span></span>
+                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {W3_PALETTO_BUSINESS} attivazioni P.IVA mobile o malus 30% sul mobile (vale anche col fisso sotto S1)</span></span>
                                                         <span className={cn("text-[11px] font-black tabular-nums", okP ? "text-emerald-400" : "text-rose-300")}>{fatti} / {W3_PALETTO_BUSINESS}{okP ? " ✅" : ""}</span>
                                                     </div>
                                                     <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
