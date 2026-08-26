@@ -996,9 +996,17 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
         ? text
         : (html ? html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "");
 
+    // La carta bianca è CONTENUTA, non un lenzuolo (Luca 26/08 sera: «i
+    // contenuti compaiono disconnessi, tutto in bianco»): html trasparente
+    // (l'iframe lascia vedere il tema dietro) e il body diventa una carta
+    // centrata a larghezza email (680px, come i template veri), con angoli e
+    // ombra — lo standard delle dark-mode di Gmail/Superhuman: il bianco
+    // resta (le email HTML sono progettate su chiaro) ma diventa un elemento
+    // del design invece di spaccare l'esperienza.
     const srcDoc = useMemo(() => hasHtml
         ? `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank">`
-        + `<style>html,body{margin:0;padding:14px;background:#fff;color:#111;`
+        + `<style>html{background:transparent}body{margin:10px auto;padding:20px 22px;max-width:680px;background:#fff;color:#111;`
+        + `border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.35);`
         + `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;`
         + `word-break:break-word;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}a{color:#0b66c3}</style>`
         + `</head><body>${html}</body></html>`
@@ -1038,7 +1046,7 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
                 <iframe ref={ref} title="Contenuto email" onLoad={autosize}
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     srcDoc={srcDoc}
-                    className="w-full rounded-xl bg-white block" style={{ border: 0, minHeight: 80 }} />
+                    className="w-full block bg-transparent" style={{ border: 0, minHeight: 80 }} />
             ) : (
                 <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>
             )}

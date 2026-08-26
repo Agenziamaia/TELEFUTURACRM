@@ -40,7 +40,7 @@ import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAsset
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { waIstanzeVisibili } from "@/lib/waVisibilita";
-import { matchNegozi } from "@/lib/visibleStores";
+import { matchNegozi, sameStore } from "@/lib/visibleStores";
 import { cn } from "@/utils";
 import {
     FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
@@ -1618,6 +1618,70 @@ function WidgetWhatsApp({ ctx, size }) {
             const inRange = (t) => t >= rDa && t < rA;
             // il fetch copre comunque gli ultimi 30 giorni: servono alle liste
             const daMs = Math.min(rDa, adessoMs - 30 * 86400000);
+            // ── TEMPO LAVORATIVO per la «Risposta media» (Luca 26/08 sera):
+            // notti, pranzi e domeniche non contano — per i numeri dei NEGOZI
+            // valgono gli orari di apertura (stores.orario_* + chiusure
+            // straordinarie + domenica esclusa), per i numeri dei CALLER le
+            // TIMBRATURE vere del badge (shifts del titolare del numero)
+            const ownerCc = [...new Set(vis.filter((i) => ccIds.has(i.id) && i.owner_user_id).map((i) => i.owner_user_id))];
+            const [{ data: storesOrari }, { data: chiusureStr }, { data: turniCc }] = await Promise.all([
+                supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine"),
+                supabase.from("chiusure_negozio").select("store, dal, al"),
+                ownerCc.length
+                    ? supabase.from("shifts").select("user_id, started_at, ended_at").in("user_id", ownerCc)
+                        .gte("started_at", new Date(daMs - 86400000).toISOString()).neq("is_demo", true).limit(2000)
+                    : Promise.resolve({ data: [] }),
+            ]);
+            if (!vivo) return;
+            const minutiDi = (hhmm) => { const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+            // finestre lavorative [start,end] in ms per istanza, con cache
+            const finestreCache = new Map();
+            const finestreDi = (instId) => {
+                if (finestreCache.has(instId)) return finestreCache.get(instId);
+                const inst = (insts || []).find((i) => i.id === instId);
+                let fin = [];
+                if (inst && ccIds.has(instId) && inst.owner_user_id) {
+                    // caller: le timbrature vere (turno aperto = fino ad adesso, tetto 12h)
+                    fin = (turniCc || []).filter((s) => s.user_id === inst.owner_user_id).map((s) => {
+                        const a = new Date(s.started_at).getTime();
+                        const b = s.ended_at ? new Date(s.ended_at).getTime() : Math.min(a + 12 * 3600000, adessoMs);
+                        return [a, b];
+                    }).filter(([a, b]) => b > a);
+                } else {
+                    // negozio: orario di apertura giorno per giorno, domenica e
+                    // chiusure straordinarie escluse; fallback 09:30-19:30
+                    const nomi = String(inst?.negozio || "").split(",").map((s) => s.trim()).filter(Boolean);
+                    const st = (storesOrari || []).find((s) => nomi.some((n) => sameStore(s.name, n)));
+                    const ap = minutiDi(st?.orario_apertura) ?? 570, ch = minutiDi(st?.orario_chiusura) ?? 1170;
+                    const pi = minutiDi(st?.orario_pausa_inizio), pf = minutiDi(st?.orario_pausa_fine);
+                    const chiuso = (gMs) => (chiusureStr || []).some((c) => {
+                        if (st && !sameStore(c.store, st.name)) return false;
+                        const dal = new Date(c.dal + "T00:00:00").getTime(), al = new Date(c.al + "T23:59:59").getTime();
+                        return gMs >= dal && gMs <= al;
+                    });
+                    for (let g = new Date(daMs); g.getTime() <= adessoMs; g.setDate(g.getDate() + 1)) {
+                        if (g.getDay() === 0) continue;                       // domenica
+                        const g0 = new Date(g.getFullYear(), g.getMonth(), g.getDate()).getTime();
+                        if (chiuso(g0)) continue;
+                        if (pi != null && pf != null && pf > pi) {
+                            fin.push([g0 + ap * 60000, g0 + pi * 60000], [g0 + pf * 60000, g0 + ch * 60000]);
+                        } else fin.push([g0 + ap * 60000, g0 + ch * 60000]);
+                    }
+                }
+                fin.sort((x, y) => x[0] - y[0]);
+                finestreCache.set(instId, fin);
+                return fin;
+            };
+            const tempoUtile = (da, a, instId) => {
+                if (a <= da) return 0;
+                let s = 0;
+                for (const [x, y] of finestreDi(instId)) {
+                    if (y <= da) continue;
+                    if (x >= a) break;
+                    s += Math.min(a, y) - Math.max(da, x);
+                }
+                return Math.max(0, s);
+            };
             const da = new Date(daMs).toISOString();
             // messaggi a blocchi di 100 conversazioni (URL corti), max 3
             // pagine l'uno IN DISCESA: se una chat sfora il tetto si perde
@@ -1682,7 +1746,7 @@ function WidgetWhatsApp({ ctx, size }) {
                         attive.add(cid);
                     }
                     if (m.direction === "in") { if (inAperto == null) inAperto = m.t; }
-                    else { if (inAperto != null && inRange(m.t)) { sommaRisp += m.t - inAperto; nRisp++; } inAperto = null; }
+                    else { if (inAperto != null && inRange(m.t)) { sommaRisp += tempoUtile(inAperto, m.t, mappaConv.get(cid)?.instance_id); nRisp++; } inAperto = null; }
                 });
                 // ── CATEGORIA della chat (ragionamento Luca 25/08 sera) ──
                 const ultimo = arr[arr.length - 1];
@@ -1861,7 +1925,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500">Risposta media</div>
                     <div className="text-lg font-black text-emerald-300 leading-tight">{fmtDurataWa(dati.media)}</div>
-                    <div className="text-[10px] text-slate-600">{dati.nRisp} risposte · {dati.etichettaPeriodo}</div>
+                    <div className="text-[10px] text-slate-600" title="Conta solo il tempo lavorativo: orari di apertura per i numeri dei negozi (domeniche e chiusure escluse), timbrature del badge per i caller">{dati.nRisp} risposte · ore lavorative</div>
                 </div>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500">Chat attive</div>
