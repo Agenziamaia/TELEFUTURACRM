@@ -3302,7 +3302,7 @@ const campiDinamiciOpzioni=(opz)=>{
 // campi base + dinamici, senza doppioni (una regola a DB potrebbe già definirli)
 const campiConOpzioni=(base,opz)=>{const noti=new Set(base.map(c=>c.nome));return [...base,...campiDinamiciOpzioni(opz).filter(c=>!noti.has(c.nome))];};
 
-const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza})=>{
+const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simConvCart})=>{
   const f=sd.fields||{};
   const off=f["Offerta"]||"";
   const offerte=sub.catOfferte||[];
@@ -3448,6 +3448,11 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza})=>{
     {/* CONVERGENZA (Luca 25/08 sera): fisso + sim business nello stesso
         carrello = gettone +50 sulla sim. Si chiede qui e la conferma spunta
         l'opzione SULLA SIM (il pay sta sulla sim, non sul fisso). */}
+    {(simConv||[]).length===0&&simConvCart&&(
+      <div style={{marginTop:10,padding:"9px 12px",background:"rgba(245,158,11,0.06)",borderRadius:8,border:"1px dashed rgba(245,158,11,0.4)",fontSize:11,color:"var(--tf-fbbf24)"}}>
+        🔗 C'è una sim business già nel carrello: se questo fisso è in convergenza, riaprila e spunta «Wireline contestuale» — vale il gettone di gara.
+      </div>
+    )}
     {(simConv||[]).length>0&&(
       <div style={{marginTop:10,padding:"10px 12px",background:"rgba(245,158,11,0.08)",borderRadius:8,border:"1px dashed rgba(245,158,11,0.55)"}}>
         <div style={{fontSize:12,fontWeight:700,color:"var(--tf-fbbf24)",marginBottom:6}}>🔗 Questo fisso è in convergenza con la sim business che stai registrando?</div>
@@ -3702,7 +3707,7 @@ const subBadge=(d,dupFn,sub,missing)=>{
   return {st:"ok",label:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"var(--tf-28a745)"};
 };
 
-const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck,mobiliRate,simConv,onConvergenza}) => {
+const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck,mobiliRate,simConv,onConvergenza,simConvCart}) => {
   const _r = rawSd || {};
   const sd = {active:true,fields:_r.fields||{},contract:_r.contract||{},gnp:_r.gnp||false,gnpNum:_r.gnpNum||"",gnpOp:_r.gnpOp||"",secondaLinea:_r.secondaLinea||false,gnp2L:_r.gnp2L!=null?_r.gnp2L:null,gnp2LBrand:_r.gnp2LBrand||"",gnp2LNum:_r.gnp2LNum||"",domiciliazione:_r.domiciliazione||false,opProvenienza:_r.opProvenienza||"",codiceOverride:_r.codiceOverride||"",addons:_r.addons||{},domiciliato:_r.domiciliato!=null?_r.domiciliato:null,convergente:_r.convergente!=null?_r.convergente:null,tipMob:_r.tipMob!=null?_r.tipMob:null,mnp:_r.mnp!=null?_r.mnp:null,easyPay:_r.easyPay!=null?_r.easyPay:null,tnpGa:_r.tnpGa!=null?_r.tnpGa:null,tnpTipo:_r.tnpTipo||"",tnpModello:_r.tnpModello||"",tnpImei:_r.tnpImei||"",tnpCount:_r.tnpCount||null,tnpModelli:_r.tnpModelli||[],tnpImeis:_r.tnpImeis||[],packAccessori:_r.packAccessori!=null?_r.packAccessori:null,packAccessoriVal:_r.packAccessoriVal||"",packAccessoriQta:_r.packAccessoriQta||"",cbTnp:_r.cbTnp||false,cbTnpTipo:_r.cbTnpTipo||"",cbTnpModello:_r.cbTnpModello||"",cbTnpImei:_r.cbTnpImei||"",cbTnpCount:_r.cbTnpCount||null,cbTnpModelli:_r.cbTnpModelli||[],cbTnpImeis:_r.cbTnpImeis||[],cbPackAccessori:_r.cbPackAccessori!=null?_r.cbPackAccessori:null,cbPackAccessoriVal:_r.cbPackAccessoriVal||"",cbPackAccessoriQta:_r.cbPackAccessoriQta||"",cbTnpCell:_r.cbTnpCell||"",cbTnpCC:_r.cbTnpCC||"",cbTnpCodIns:_r.cbTnpCodIns||"",cbTnpReload:_r.cbTnpReload!=null?_r.cbTnpReload:null,cbTnpReloadSel:_r.cbTnpReloadSel||{},cbCambio:_r.cbCambio||false,cbCambioVal:_r.cbCambioVal||"",cbCambioCell:_r.cbCambioCell||"",cbCambioCC:_r.cbCambioCC||"",cbCambioCodIns:_r.cbCambioCodIns||"",cbAddon:_r.cbAddon||false,cbAddonSel:_r.cbAddonSel||{},rfModello:_r.rfModello||"",rfImei:_r.rfImei||"",cbRf:_r.cbRf||false,cbAddonCodIns:_r.cbAddonCodIns||"",cbAddonSecCell:_r.cbAddonSecCell||"",cbAddonRoCell:_r.cbAddonRoCell||"",cbAddonRoImei:_r.cbAddonRoImei||"",cbRfCodIns:_r.cbRfCodIns||"",tnpGaReload:_r.tnpGaReload!=null?_r.tnpGaReload:null,tnpGaReloadSel:_r.tnpGaReloadSel||{},reloadForever:_r.reloadForever!=null?_r.reloadForever:null,securitySel:_r.securitySel||{},voceCasaCb:_r.voceCasaCb!=null?_r.voceCasaCb:null,protectaCodIns:_r.protectaCodIns||"",vfOffers:_r.vfOffers||{},vfContratti:_r.vfContratti||{},vfOffer:_r.vfOffer||null,vfMnp:_r.vfMnp||null,vfMnpBrand:_r.vfMnpBrand||"",vfMnpNum:_r.vfMnpNum||"",vfDomicilio:_r.vfDomicilio||null,vfConvergenza:_r.vfConvergenza||null,vfNumFisso:_r.vfNumFisso||"",vfTnp:_r.vfTnp||null,vfFConvergenza:_r.vfFConvergenza||null,vfFGnp:_r.vfFGnp||null,vfFGnpBrand:_r.vfFGnpBrand||"",vfFGnpNum:_r.vfFGnpNum||"",vfFLockIn:_r.vfFLockIn||null,
     vfTnpList:_r.vfTnpList||[],cbTnpList:_r.cbTnpList||[],
@@ -3753,7 +3758,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       </div>
 
       {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color} mobili={sub.catCategoria==="Telefono a Rate"?(mobiliRate||[]):[]}
-        simConv={sub.catCategoria==="Fisso"?(simConv||[]):[]} onConvergenza={onConvergenza}/>}
+        simConv={sub.catCategoria==="Fisso"?(simConv||[]):[]} onConvergenza={onConvergenza} simConvCart={sub.catCategoria==="Fisso"?simConvCart:false}/>}
 
       {/* MOBILE flow: Tipologia → MNP → EasyPay → Dropdown */}
       {sub.isMobile&&(
@@ -4843,9 +4848,18 @@ function CRM() {
   // quando si registra un fisso (gettone +50 della gara Fastweb)
   const simConvergenza=simConvergenzaAgganciabili(cats,sales);
   const segnaConvergenza=(s)=>{
-    const cur=((((sales||{})[s.gid]||[])[s.si]||{})[s.subId]||{}).fields||{};
-    uF(s.gid,s.si,s.subId,"__opzioni",{...(cur.__opzioni||{}),[OPZ_CONVERGENZA]:true});
+    const d=(((sales||{})[s.gid]||[])[s.si]||{})[s.subId];
+    // guardia (revisore 26/08): se la sim non è più attiva, uF la
+    // RICREEREBBE con emS() rimettendola in vendita
+    if(!d||!d.active)return;
+    uF(s.gid,s.si,s.subId,"__opzioni",{...((d.fields||{}).__opzioni||{}),[OPZ_CONVERGENZA]:true});
   };
+  // sim business GIÀ NEL CARRELLO (gruppo chiuso): non si può più scrivere
+  // l'opzione, ma il silenzio farebbe perdere il gettone — si avvisa
+  const simConvCarrello=(cart||[]).some(gr=>(gr.items||[]).some(it=>
+    it.catalogo&&MOBILE_CATS_AGGANCIO.includes(it.catalogo.categoria)
+    &&String(it.catalogo.tipo||"")==="Business"
+    &&!String(it.details&&it.details["Opzioni"]||"").includes(OPZ_CONVERGENZA)));
   const podPdrMap=(()=>{const map={};const scan=(so)=>{if(!so)return;Object.keys(so).forEach(cat=>{(so[cat]||[]).forEach(row=>{if(!row||typeof row!=="object")return;Object.keys(row).forEach(sid=>{const d=row[sid];if(!d||typeof d!=="object")return;const add=(t,val)=>{if(val&&String(val).trim()){const k=t+":"+String(val).trim().toUpperCase();map[k]=(map[k]||0)+1;}};add("POD",d.fwPod);add("PDR",d.fwPdr);add("POD",d.enPod);add("PDR",d.enPdr);// Codice contratto ripetuto fra piu' prodotti dello stesso brand (segnalazione 17):
                      // prima passava senza alcun avviso.
                      if(d.contract){add("POD",d.contract.pod);add("PDR",d.contract.pdr);}// Segnalazione 28: dentro UN prodotto lo stesso codice puo' comparire piu' volte
@@ -7012,7 +7026,7 @@ select.rvIn{cursor:pointer}
               <button onClick={()=>setProdModal(null)} style={{background:"transparent",border:"none",color:"var(--tf-64748b)",fontSize:20,cursor:"pointer",lineHeight:1,padding:0}}>✕</button>
             </div>
             <div style={{padding:"16px 20px"}}>
-              <SubCard sub={sub} rawSd={d||{}} group={group} si={prodModal.si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate} simConv={simConvergenza} onConvergenza={segnaConvergenza}/>
+              <SubCard sub={sub} rawSd={d||{}} group={group} si={prodModal.si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate} simConv={simConvergenza} onConvergenza={segnaConvergenza} simConvCart={simConvCarrello}/>
             </div>
             <div style={{display:"flex",gap:10,padding:"13px 20px",borderTop:"1px solid var(--tf-w80)",position:"sticky",bottom:0,background:"var(--tf-12141f)"}}>
               <button onClick={()=>{togSub(prodModal.gid,prodModal.si,prodModal.subId,null);setProdModal(null);}} style={{padding:"11px 16px",borderRadius:10,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.08)",color:"var(--tf-f87171)",fontSize:12.5,fontWeight:800,cursor:"pointer"}}>🗑 Rimuovi</button>

@@ -520,21 +520,27 @@ export function matchExtraOpzioni(
 ): PayRiga[] {
     const scelte = String(c.opzioni || "").split(",")
         .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
-    if (!scelte.length) return [];
     const best = new Map<string, { r: PayRiga; score: number }>();
     for (const r of righe) {
         if (!r.attivo || r.componente !== EXTRA_OPZIONE) continue;
         const opz = String(r.opzione || "").trim();
-        if (!opz) continue;                                  // senza opzione non è un extra
-        const req = opz.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
-        if (!req.every(t => scelte.includes(t))) continue;
+        const req = opz ? opz.split("|").map(x => x.trim().toLowerCase()).filter(Boolean) : [];
+        if (req.length && !req.every(t => scelte.includes(t))) continue;
+        // extra SENZA opzione (Luca 25/08, boost sim business +25 mnp): valgono
+        // per condizioni, ma ne serve ALMENO UNA — una riga extra a condizioni
+        // vuote sarebbe un catch-all additivo su ogni vendita
+        const piena = (x: unknown) => x != null && String(x).trim() !== "";
+        if (!req.length && !(piena(r.tipo_cliente) || piena(r.categoria) || piena(r.prodotto) || piena(r.offerta))) continue;
         if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
         let score = 0;
         if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
         if (r.categoria != null) { if (!eq(r.categoria, c.categoria)) continue; score++; }
         if (r.prodotto != null) { if (!eq(r.prodotto, c.prodotto)) continue; score++; }
         if (r.offerta != null) { if (!eq(r.offerta, c.offerta)) continue; score += 2; }
-        const k = req.join("|");
+        // gli extra a opzione competono per NOME OPZIONE (una sola vince, così
+        // si fanno le eccezioni); quelli per condizioni sono indipendenti fra
+        // loro e si sommano tutti (ognuno è la sua voce di lettera)
+        const k = req.length ? req.join("|") : `riga:${r.id}`;
         const pre = best.get(k);
         if (!pre || score > pre.score || (score === pre.score && r.ordine < pre.r.ordine)) best.set(k, { r, score });
     }
@@ -758,6 +764,9 @@ export function matchRigaPartnership(
     let bestScore = -1;
     for (const r of righe) {
         if (!r.attivo || r.pista !== "partnership") continue;
+        // le componenti (e gli extra da opzione) non sono alternative del
+        // pick-one — stessa trappola chiusa il 14/08 su matchRigaTabellare
+        if (r.componente) continue;
         // la stringa vuota NON è una condizione (una riga svuotata dal pannello
         // tornerebbe quasi-catch-all sui contratti col campo vuoto)
         const piena = (x: unknown) => x != null && String(x).trim() !== "";

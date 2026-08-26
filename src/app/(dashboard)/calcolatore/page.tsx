@@ -313,8 +313,12 @@ export default function CalcolatorePage() {
     }, [tab, offSel, prodSel, catSel, brand, provSel, opzSel]);
     const riga: PayRiga | null = righeSet[0] ?? null;
     // nome e punti raccontano l'intero set (es. "GA base + MNP + Tied ×canone")
+    // «×canone» SOLO se il set ha davvero componenti a moltiplicatore: dal
+    // 26/08 un set può essere «offerta + extra da opzione» (Protect), che
+    // sono flat — dirlo ×canone sarebbe falso (rilievo revisore)
     const nomeRiga = righeSet.length > 1
-        ? righeSet.map(r => r.nome.replace(/\s*×\s*canone\s*$/i, "").replace(/^\+\s*/, "")).join(" + ") + " ×canone"
+        ? righeSet.map(r => r.nome.replace(/\s*×\s*canone\s*$/i, "").replace(/^\+\s*/, "")).join(" + ")
+            + (righeSet.some(r => r.moltiplicatore) ? " ×canone" : "")
         : riga?.nome || "";
     const puntiRiga = puntiPerRighe(righeSet);
 

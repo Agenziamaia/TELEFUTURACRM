@@ -46,8 +46,11 @@ const num = (v: string): number => {
 // chiave d'ANCORA di una riga pay (le stesse condizioni che guarda il motore):
 // serve ad appaiare la voce dei ragazzi con quella azienda quando i due lati
 // hanno tabellari propri (Vodafone)
+// brand_vendita e provenienza INCLUSI (revisore 26/08: senza, su Vodafone 10
+// ancore collidevano — «Mobile Start · Ric.Auto GA» e «· Wallet GA» hanno le
+// stesse condizioni e la bolla mostrava il riferimento sbagliato)
 const chiaveAncora = (r: Record<string, unknown>) =>
-    ["pista", "tipo_cliente", "categoria", "prodotto", "offerta", "opzione"]
+    ["pista", "tipo_cliente", "categoria", "prodotto", "offerta", "opzione", "brand_vendita", "provenienza"]
         .map(k => String(r[k] ?? "").trim().toLowerCase()).join("|");
 
 // formato importi dei tooltip di derivazione (it-IT, max 2 decimali)
@@ -159,8 +162,8 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     // ragazzi ha un tabellare PROPRIO (VF) — lì non c'è derivazione, quindi
     // la bolla confronta i due importi e dice la quota che ne esce
     const [azRighe, setAzRighe] = useState<Map<string, { base: number | null; tiers: number[] }> | null>(null);
-    const azDi = (r: Riga) => azRighe?.get(chiaveAncora(r as unknown as Record<string, unknown>))
-        ?? azRighe?.get(`n|${String(r.pista || "")}|${String(r.nome || "").trim().toLowerCase()}`);
+    const azDi = (r: Riga) => azRighe?.get(`n|${String(r.pista || "")}|${String(r.nome || "").trim().toLowerCase()}`)
+        ?? azRighe?.get(chiaveAncora(r as unknown as Record<string, unknown>));
     // bolla stile W3 per i gettoni del derivato (le righe hanno la loro
     // dentro RigaPayRagazzi)
     const bollaGettoni = useBolla();
@@ -281,8 +284,8 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     // righe azienda = riferimento per la BOLLA del lato ragazzi
                     // con tabellare PROPRIO (Luca 26/08: «mettila anche su
                     // Vodafone, non si sa mai cambiassimo idea sulla %»)
-                    supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, pay_base, pay_tiers")
-                        .eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).limit(1000),
+                    supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, pay_base, pay_tiers")
+                        .eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
                 ]);
                 setAziendaRef({
                     piste: ((ap2.data || []) as { chiave: string; ordine: number; soglie_pct: number | null }[]),
@@ -294,11 +297,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         base: x.pay_base == null ? null : Number(x.pay_base),
                         tiers: Array.isArray(x.pay_tiers) ? (x.pay_tiers as unknown[]).map(Number) : [],
                     };
-                    // due chiavi: l'ANCORA (che è ciò che il motore guarda) e il
-                    // NOME (i tabellari VF hanno spesso nomi identici ai due lati)
-                    mapa.set(chiaveAncora(x), v);
+                    // due chiavi: il NOME (su VF disambigua Ric.Auto/Wallet dove
+                    // le condizioni sono identiche — per questo si prova prima)
+                    // e l'ANCORA. Sempre first-wins, con le righe ordinate.
                     const kn = `n|${String(x.pista || "")}|${String(x.nome || "").trim().toLowerCase()}`;
                     if (!mapa.has(kn)) mapa.set(kn, v);
+                    const ka = chiaveAncora(x);
+                    if (!mapa.has(ka)) mapa.set(ka, v);
                 }
                 setAzRighe(mapa);
             } else { setAziendaRef(null); setAzRighe(null); }
@@ -1070,7 +1075,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} az={azDi(r)} />)}
+                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} az={azRighe ? (azDi(r) ?? null) : undefined} />)}
                                     </tbody>
                                 </table>
                             </div>
@@ -1131,7 +1136,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             </tr>
                         </thead>
                         <tbody>
-                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={gettoni.some(g => g.ricorrente != null)} az={azDi(r)} />)}
+                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={gettoni.some(g => g.ricorrente != null)} az={azRighe ? (azDi(r) ?? null) : undefined} />)}
                         </tbody>
                     </table>
                 )}
@@ -1261,6 +1266,8 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
     conRicorrente?: boolean; senzaBase?: boolean;
     // riga AZIENDA corrispondente (solo lato ragazzi con tabellare proprio):
     // alimenta la bolla «all'azienda X · qui Y · = Z%» (Luca 26/08)
+    // undefined = non siamo nel confronto (lato azienda); null = voce
+    // senza corrispondente azienda; oggetto = riferimento trovato
     az?: { base: number | null; tiers: number[] } | null;
 }) {
     const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") || "qualsiasi vendita";
@@ -1273,11 +1280,19 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
     const { mostra, nascondi, bolla } = useBolla();
     const unita = r.moltiplicatore ? "" : " €";
     const quota = (mio: number | null | undefined, loro: number | null | undefined): TipRiga[] | null => {
-        if (!az) return null;
-        if (loro == null) return [
+        if (az === undefined) return null;                    // lato azienda: nessuna bolla
+        const fine = mio == null ? [] : [{ testo: `= ${eurIt(mio)}${unita}`, stile: "tot" as const }];
+        // «la voce non esiste lato azienda» e «esiste ma non ha questa soglia»
+        // sono due cose diverse (rilievo revisore: prima dicevano lo stesso)
+        if (az === null) return [
             { testo: "Voce solo dei ragazzi", stile: "formula" },
             { testo: "· nessuna corrispondente sul lato azienda", stile: "flat" },
-            ...(mio == null ? [] : [{ testo: `= ${eurIt(mio)}${unita}`, stile: "tot" as const }]),
+            ...fine,
+        ];
+        if (loro == null) return [
+            { testo: "Soglia non prevista lato azienda", stile: "formula" },
+            { testo: "· la voce azienda si ferma prima", stile: "flat" },
+            ...fine,
         ];
         const pct = Number(loro) === 0 ? null : Math.round((Number(mio || 0) / Number(loro)) * 1000) / 10;
         return [
