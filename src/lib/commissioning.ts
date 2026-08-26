@@ -343,10 +343,12 @@ function provenienzaOk(tokens: string, vendita: unknown): boolean {
    verrebbe pagata dalla riga della gara parallela invece che dalla sua.  */
 export const PISTE_PARALLELE = new Set(["partnership", "business_piva", "smartphone_cb"]);
 /** Delle gare parallele, quelle che restano un fatto dell'AZIENDA e non si
- *  mostrano mai ai ragazzi. Non tutte lo sono: l'extra smartphone CB Luca ha
- *  chiesto esplicitamente di condividerlo («non dedicarla solamente
- *  all'azienda ma farla anche per i ragazzi»), quindi passa. */
-export const PARALLELE_SOLO_AZIENDA = new Set(["partnership", "business_piva"]);
+ *  mostrano mai ai ragazzi. È UNA SOLA: l'Extra Gara P.IVA, su cui Luca è
+ *  stato netto («i ragazzi non devono averne PER NIENTE visibilità, è un bonus
+ *  dedicato all'azienda»). La Partnership e lo Smartphone CB si mostrano: la
+ *  prima è la gara che i ragazzi alimentano ogni giorno col Customer Base, la
+ *  seconda Luca l'ha voluta condivisa. */
+export const PARALLELE_SOLO_AZIENDA = new Set(["business_piva"]);
 
 export function matchRigaTabellare(
     righe: PayRiga[],

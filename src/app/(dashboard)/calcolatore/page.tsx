@@ -88,6 +88,12 @@ export default function CalcolatorePage() {
 
     // tabellare + avanzamento live
     const [tab, setTab] = useState<Tabellare | null>(null);
+    // le gare parallele (Partnership, Extra P.IVA, Smartphone CB) vivono SOLO
+    // nel tabellare azienda: il derivato ragazzi non ha né le loro piste né le
+    // loro righe. Ma i PUNTI di una gara sono un conteggio, non soldi: valgono
+    // uguale per tutti. Quindi si leggono sempre da qui (Luca 26/08: «in CB
+    // non mi calcola i punti di partnership»).
+    const [tabGare, setTabGare] = useState<Tabellare | null>(null);
     const [contrattiCtx, setContrattiCtx] = useState<ContrattoPay[] | null>(null);
     const [caricaTab, setCaricaTab] = useState(false);
     const [nonAlloc, setNonAlloc] = useState(0);
@@ -212,6 +218,7 @@ export default function CalcolatorePage() {
                 : await caricaTabellare(ctxKey, monthISO);
             if (!vivo) return;
             setTab(t);
+            setTabGare(latoAzienda ? t : ((await caricaTabellareAzienda(ctxKey, monthISO)) ?? t));
             if (t) {
                 const bm = BRANDS.find(b => b.id === brand);
                 const { contratti, nonAllocate, escluseVodafone } = await caricaContrattiContesto(ctxKey, monthISO, bm?.prefix);
@@ -353,7 +360,7 @@ export default function CalcolatorePage() {
         // «è giusto che i ragazzi non ne abbiano PER NIENTE visibilità». Ma
         // l'extra smartphone CB l'ha voluto condiviso, quindi ai ragazzi si
         // mostra. Il filtro sta in PARALLELE_SOLO_AZIENDA.
-        if (!tabEff || !offSel) return [];
+        if (!tabGare || !offSel) return [];
         // stessa fonte del pay (prodSel), non lo stato del selettore
         const c = { tipo_cliente: prodSel?.tipo_cliente ?? tipoCli, categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome, provenienza: provSel, opzioni: opzSel.join(", ") };
         const ETICHETTE: Record<string, string> = {
@@ -362,13 +369,13 @@ export default function CalcolatorePage() {
             smartphone_cb: "📱 Extra Smartphone CB 5G (soglia di rete)",
         };
         return [...PISTE_PARALLELE].filter(p => latoAzienda || !PARALLELE_SOLO_AZIENDA.has(p)).map(pista => {
-            const set = matchRigheGaraParallela(tabEff.righe, c, pista);
+            const set = matchRigheGaraParallela(tabGare.righe, c, pista);
             if (!set.length) return null;
             const punti = Math.round(set.reduce((a, r) => a + Number(r.punti || 0), 0) * 100) / 100;
             if (!punti) return null;
             return { pista, label: ETICHETTE[pista] || pista, punti, voci: set.map(r => r.nome) };
         }).filter((x): x is { pista: string; label: string; punti: number; voci: string[] } => x != null);
-    }, [latoAzienda, tabEff, offSel, tipoCli, catSel, prodSel, provSel, opzSel]);
+    }, [latoAzienda, tabGare, offSel, tipoCli, catSel, prodSel, provSel, opzSel]);
 
     const scalaRiga = useMemo(() =>
         (tabEff && riga?.pista) ? tabEff.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
@@ -578,11 +585,21 @@ export default function CalcolatorePage() {
                                     // fuori dalle libere TUTTO ciò che sta in un gruppo
                                     // mostrato sopra (revisore 25/08: un gruppo a
                                     // obbligatorietà mista renderizzava doppio)
-                                    const libere = [
+                                    // DAL LISTINO, NON DAL RAGAZZO (Luca 26/08: «queste
+                                    // opzioni non servono a niente»): la fascia di street
+                                    // price e il 5G non si scelgono in Registra Vendita, li
+                                    // ricava il motore dal Modello Terminale. Qui servono
+                                    // eccome — senza non si può simulare il gettone di un
+                                    // telefono — ma stavano mescolate alle opzioni vere con
+                                    // l'etichetta «come in Registra Vendita», che è falsa.
+                                    const dalListino = (n: string) => /^SP\s|^Terminale 5G$/.test(n);
+                                    const tutteLibere = [
                                         ...opzCatalogo.filter(o => !(o.gruppo && grpObb.includes(o.gruppo))).map(o => o.nome),
                                         ...opzRilevanti.filter(o => !opzCatalogo.some(x => x.nome === o)),
                                     ];
-                                    if (!grpObb.length && !libere.length) return null;
+                                    const libere = tutteLibere.filter(o => !dalListino(o));
+                                    const daListino = tutteLibere.filter(dalListino);
+                                    if (!grpObb.length && !libere.length && !daListino.length) return null;
                                     return (
                                         <div className="mt-4 space-y-3">
                                             {grpObb.map(g => {
@@ -601,6 +618,16 @@ export default function CalcolatorePage() {
                                                     </div>
                                                 );
                                             })}
+                                            {daListino.length > 0 && (
+                                                <div>
+                                                    <div className="text-[11px] uppercase tracking-wider text-sky-400/80 mb-2">📱 Telefono <span className="normal-case text-slate-500">— in Registra Vendita NON si scelgono: le ricava il listino dal Modello Terminale. Qui servono per simulare</span></div>
+                                                    <div className="flex gap-2 flex-wrap">
+                                                        {daListino.map(o => (
+                                                            <Pill key={o} on={opzSel.includes(o)} onClick={() => togOpzCalc(o)} colore="#0ea5e9">{o}</Pill>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                             {libere.length > 0 && (
                                                 <div>
                                                     <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Opzioni della vendita <span className="normal-case text-slate-500">— come in Registra Vendita: alcune cambiano il pay</span></div>
