@@ -983,6 +983,96 @@ function EmptyList({ icon: Icon, label, title }: { icon: any; label: string; tit
     );
 }
 
+// ADATTAMENTO AL TEMA SCURO (Luca 26/08, terzo giro: l'inversione a filtro
+// CSS rendeva le email un NEGATIVO — il rosso Vodafone salmone, il bianco
+// nero pece). Qui si fa come i client veri (Outlook/Apple Mail): si
+// RISCRIVONO i colori nel DOM dell'iframe leggendo quelli computati —
+// gli sfondi "carta" (chiari e poco saturi) diventano le superfici scure
+// del CRM, i testi scuri diventano chiari (tinta conservata), i colori
+// BRAND (saturi: banner, bottoni) restano identici e le immagini non si
+// toccano. Il testo cambia SOLO dove lo sfondo effettivo è diventato
+// scuro: mai bianco-su-giallo. Email enormi: meglio la carta chiara che
+// una trasformazione a metà. Possibile solo grazie ad allow-same-origin
+// (lo stesso canale dell'autosize); dentro un try del chiamante.
+function adattaTema(doc: Document) {
+    const carta = doc.querySelector<HTMLElement>(".tfcarta");
+    if (!carta) return;
+    const tutti = [carta, ...Array.from(carta.querySelectorAll<HTMLElement>("*"))];
+    if (tutti.length > 4500) return;
+    const leggi = (s: string | null | undefined): [number, number, number, number] | null => {
+        if (!s) return null;
+        const m = s.match(/rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\)/);
+        return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]] : null;
+    };
+    const lum = (c: [number, number, number, number]) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+    const sat = (c: [number, number, number, number]) => { const mx = Math.max(c[0], c[1], c[2]); return mx === 0 ? 0 : (mx - Math.min(c[0], c[1], c[2])) / mx; };
+    // superfici del tema: grigio-blu freddo come le card del CRM
+    const grigioBlu = (l: number) => `hsl(226 24% ${Math.round(l * 100)}%)`;
+    const schiarisci = (c: [number, number, number, number]) => {
+        if (sat(c) < 0.15) return "#e7eaf2";      // testi grigi/neri → chiaro neutro
+        const [r, g, b] = c; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+        let h = 0;
+        if (d > 0) {
+            if (mx === r) h = 60 * (((g - b) / d) % 6);
+            else if (mx === g) h = 60 * ((b - r) / d + 2);
+            else h = 60 * ((r - g) / d + 4);
+        }
+        if (h < 0) h += 360;
+        return `hsl(${Math.round(h)} 75% 72%)`;   // stessa tinta, luminosità da tema scuro
+    };
+    // 1) SFONDI, in ordine di documento; ogni nodo toccato viene marcato per il passo 2
+    for (const el of tutti) {
+        const cs = doc.defaultView?.getComputedStyle(el); if (!cs) continue;
+        const bg = leggi(cs.backgroundColor);
+        if (!bg || bg[3] < 0.4) continue;                              // trasparente: eredita
+        if (cs.backgroundImage && cs.backgroundImage !== "none") { el.dataset.tfbg = "chiaro"; continue; }
+        const l = lum(bg);
+        if (l > 0.62 && sat(bg) < 0.28) {
+            // superficie "carta": più era chiara più diventa profonda — i
+            // grigini restano un gradino sopra, le gerarchie si conservano
+            el.style.setProperty("background-color", grigioBlu(0.10 + (1 - l) * 0.55), "important");
+            el.dataset.tfbg = "scuro";
+        } else {
+            el.dataset.tfbg = l < 0.35 ? "scuro" : "chiaro";           // brand e scuri: lasciati
+        }
+    }
+    // lo sfondo EFFETTIVO di un nodo: il primo antenato marcato (la carta lo è sempre)
+    const zona = (el: HTMLElement): string => {
+        let n: HTMLElement | null = el;
+        while (n && n !== carta.parentElement) { if (n.dataset.tfbg) return n.dataset.tfbg; n = n.parentElement; }
+        return "scuro";
+    };
+    // 2) TESTI e BORDI: solo dove lo sfondo effettivo è diventato scuro
+    for (const el of tutti) {
+        if (zona(el) !== "scuro") continue;
+        const cs = doc.defaultView?.getComputedStyle(el); if (!cs) continue;
+        const col = leggi(cs.color);
+        if (col && lum(col) < 0.55) el.style.setProperty("color", schiarisci(col), "important");
+        // bordi PER LATO (i separatori delle email sono spesso solo
+        // border-bottom) e marcati una volta sola: alla seconda passata il
+        // bianco-alpha già scritto rileggerebbe lum=1 e degraderebbe .22→.14
+        if (!el.dataset.tfbr) {
+            const lati: Array<[string, string, string]> = [
+                ["top", cs.borderTopColor, cs.borderTopWidth],
+                ["right", cs.borderRightColor, cs.borderRightWidth],
+                ["bottom", cs.borderBottomColor, cs.borderBottomWidth],
+                ["left", cs.borderLeftColor, cs.borderLeftWidth],
+            ];
+            let toccato = false;
+            for (const [lato, c, w] of lati) {
+                const bc = leggi(c);
+                if (!bc || bc[3] <= 0 || parseFloat(w || "0") <= 0) continue;
+                el.style.setProperty(`border-${lato}-color`, lum(bc) > 0.6 ? "rgba(255,255,255,.14)" : "rgba(255,255,255,.22)", "important");
+                toccato = true;
+            }
+            if (toccato) el.dataset.tfbr = "1";
+        }
+    }
+    // la carta stessa: superficie base del tema + un filo di bordo per staccare
+    carta.style.setProperty("background-color", grigioBlu(0.09), "important");
+    carta.style.setProperty("border", "1px solid rgba(255,255,255,.07)", "important");
+}
+
 // Corpo di un'email. Se c'e' l'HTML lo mostra CON la grafica (tabelle, immagini,
 // loghi) dentro un iframe ISOLATO: sandbox SENZA allow-scripts -> nessun javascript
 // dell'email viene eseguito e il suo CSS non "sporca" il tema del CRM. I link si
@@ -992,11 +1082,9 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
     const hasHtml = !!(html && html.trim() && /<[a-z!][\s\S]*>/i.test(html));
     const [showHtml, setShowHtml] = useState(hasHtml);
     // DARK MODE delle email (Luca 26/08 sera: «il CRM è tutto scuro, quando
-    // apro una mail ho tutto bianco»): di default il contenuto si ADATTA al
-    // tema con l'inversione filtrata dei client moderni — sfondi chiari →
-    // scuri, testi scuri → chiari (hue-rotate conserva le tinte dei brand),
-    // e IMMAGINI/VIDEO ri-invertiti così foto e loghi restano normali. Il
-    // bottone ☀️ mostra l'email coi colori originali quando serve.
+    // apro una mail ho tutto bianco»): di default i colori vengono RISCRITTI
+    // nel DOM da adattaTema() dopo il load — vedi il commento là. Il bottone
+    // ☀️ mostra l'email coi colori originali quando serve.
     const [scura, setScura] = useState(true);
     const ref = useRef<HTMLIFrameElement | null>(null);
     const plain = (text && text.trim())
@@ -1016,13 +1104,9 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
         + `.tfcarta{padding:20px 22px;background:#fff;color:#111;overflow-x:auto;`
         + `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;`
         + `word-break:break-word;overflow-wrap:anywhere}`
-        + (scura
-            ? `.tfcarta{filter:invert(1) hue-rotate(180deg)}`
-            + `.tfcarta img,.tfcarta svg,.tfcarta video,.tfcarta [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}`
-            : "")
         + `.tfcarta img{max-width:100%;height:auto}.tfcarta table{max-width:100%!important}a{color:#0b66c3}</style>`
         + `</head><body><div class="tfwrap"><div class="tfcarta">${html}</div></div></body></html>`
-        : "", [html, hasHtml, scura]);
+        : "", [html, hasHtml]);
 
     // sandbox senza allow-scripts, ma con allow-same-origin per poter MISURARE
     // l'altezza reale del contenuto e adattare l'iframe (niente doppio scroll).
@@ -1036,13 +1120,25 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
         } catch { if (ref.current) ref.current.style.height = "600px"; /* non misurabile */ }
     }, []);
 
+    // al load: adatta i colori al tema (se richiesto), POI mostra l'iframe —
+    // parte a opacity 0 così non c'è il lampo bianco prima della riscrittura
+    const alCarico = useCallback(() => {
+        if (scura) { try { const d = ref.current?.contentDocument; if (d) adattaTema(d); } catch { /* non accessibile */ } }
+        if (ref.current) ref.current.style.opacity = "1";
+        autosize();
+    }, [scura, autosize]);
+
     useEffect(() => {
         if (!showHtml) return;
         // ri-misura dopo il caricamento delle immagini remote (loghi, banner…)
         const t = [setTimeout(autosize, 250), setTimeout(autosize, 1000), setTimeout(autosize, 2500), setTimeout(autosize, 5000)];
+        // rete di sicurezza: l'evento load dell'iframe aspetta ANCHE le
+        // immagini remote — con un banner lento l'email resterebbe invisibile.
+        // adattaTema è idempotente, quindi qui si adatta+rivela senza rischi.
+        t.push(setTimeout(alCarico, 900));
         window.addEventListener("resize", autosize);
         return () => { t.forEach(clearTimeout); window.removeEventListener("resize", autosize); };
-    }, [showHtml, srcDoc, autosize]);
+    }, [showHtml, srcDoc, scura, autosize, alCarico]);
 
     if (!hasHtml) {
         return <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>;
@@ -1063,10 +1159,11 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
                 </button>
             </div>
             {showHtml ? (
-                <iframe ref={ref} title="Contenuto email" onLoad={autosize}
+                <iframe key={scura ? "tema" : "originale"} ref={ref} title="Contenuto email" onLoad={alCarico}
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     srcDoc={srcDoc}
-                    className="w-full max-w-[720px] mx-auto block bg-transparent" style={{ border: 0, minHeight: 80 }} />
+                    className="w-full max-w-[720px] mx-auto block bg-transparent"
+                    style={{ border: 0, minHeight: 80, opacity: 0, transition: "opacity .18s ease" }} />
             ) : (
                 <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>
             )}
