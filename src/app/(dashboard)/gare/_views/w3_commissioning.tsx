@@ -15,7 +15,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { esclusaDalleGare, matchComponenti, matchRigaTabellare, PayRiga , caricaTabellare } from "@/lib/commissioning";
+import { esclusaDalleGare, matchComponenti, matchRigaTabellare, matchRigheGaraParallela, puntiPerRighe, PayRiga , caricaTabellare } from "@/lib/commissioning";
 import { cn } from "@/utils";
 
 interface OffCanone {
@@ -221,15 +221,23 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
     // sopra) si somma al pay — qui compare nelle colonne 💼 S1-S3
     const bizRighe = useMemo(() => righe.filter(r => r.pista === "business_piva"), [righe]);
     const bizN = ragazzi ? 0 : (bizRighe.length ? Math.min(3, tierMax["business_piva"] || 3) : 0);
-    // SONDA (Luca vede le colonne 💼 vuote, la simulazione le dà piene): la
-    // cella vuota porta nel title il MOTIVO esatto — da togliere a baco chiuso
-    type BizEsito = { scale: number[]; punti: number } | { err: string };
-    const bizInfo = (c: { tipo_cliente: string; categoria?: string | null; prodotto?: string | null; offerta?: string | null }): BizEsito => {
+    // ⚠️ IL MOTORE DELLE GARE PARALLELE, NON IL PICK-ONE (baco chiuso 26/08 su
+    // rilievo del revisore): `matchRigaTabellare` SCARTA per costruzione ogni
+    // riga di una pista parallela (guardia PISTE_PARALLELE), e `bizRighe` sono
+    // tutte di `business_piva` — quindi tornava sempre null e le colonne 💼
+    // erano SEMPRE vuote (è la «sonda» che Luca aveva segnalato). Con
+    // matchRigheGaraParallela arrivano anche le componenti (FRITZ, 2ª linea),
+    // così la tabella dice lo stesso numero di Master e Calcolatore.
+    type BizEsito = { scale: number[]; punti: number; voci: string[] } | { err: string };
+    const bizInfo = (c: { tipo_cliente: string; categoria?: string | null; prodotto?: string | null; offerta?: string | null; opzioni?: string | null }): BizEsito => {
         if (!bizRighe.length) return { err: "nessuna riga business caricata" };
         if (!/business/i.test(c.tipo_cliente || "")) return { err: "tipo cliente: " + (c.tipo_cliente || "vuoto") };
-        const r = matchRigaTabellare(bizRighe, { tipo_cliente: c.tipo_cliente, categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta });
-        if (!r) return { err: `nessun match: tc=${c.tipo_cliente} · cat=${c.categoria} · prod=${c.prodotto} · off=${c.offerta} · righe business=${bizRighe.length}` };
-        return { scale: r.pay_tiers.slice(0, bizN), punti: Number(r.punti || 0) };
+        const set = matchRigheGaraParallela(righe, {
+            tipo_cliente: c.tipo_cliente, categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta,
+            opzioni: c.opzioni || null,
+        }, "business_piva");
+        if (!set.length) return { err: `nessun match: tc=${c.tipo_cliente} · cat=${c.categoria} · prod=${c.prodotto} · off=${c.offerta} · righe business=${bizRighe.length}` };
+        return { scale: set[0].pay_tiers.slice(0, bizN), punti: puntiPerRighe(set), voci: set.map(r => r.nome) };
     };
     const CellaBiz = ({ info, i }: { info: BizEsito | null; i: number }) => {
         if (!info || "err" in info || info.scale[i] == null) {
@@ -238,9 +246,10 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
         return (
             <td className="px-1.5 py-0.5 text-center font-semibold text-sky-300 tabular-nums cursor-help"
                 onMouseEnter={e => mostraTip(e, [
-                    { testo: `💼 Gara Business · soglia S${i + 1}`, stile: "formula" },
+                    { testo: `💼 Extra Gara P.IVA · soglia S${i + 1}`, stile: "formula" },
                     { testo: `· premio a evento: ${eur(info.scale[i])} €`, stile: "voce" },
-                    { testo: `· quest'attivazione vale ${it(info.punti)} punti business`, stile: "voce" },
+                    ...info.voci.map(v => ({ testo: `· ${v}`, stile: "voce" as const })),
+                    { testo: `quest'attivazione vale ${it(info.punti)} punti business`, stile: "flat" },
                     { testo: "si somma al pay dell'attivazione", stile: "flat" },
                 ])}
                 onMouseLeave={() => setTip(null)}>
@@ -635,7 +644,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                 if (sez.tipo === "canone" && sez.id === "fisso") {
                     const rr = perPista[sez.id];
                     if (!rr?.length) return null;
-                    type VarF = { o: OffCanone; set: PayRiga[]; label: string; gnp: boolean; ord: number };
+                    type VarF = { o: OffCanone; set: PayRiga[]; label: string; opz: string; gnp: boolean; ord: number };
                     const gruppiF: { tipo: string; nome: string; vars: VarF[] }[] = [];
                     const idxF = new Map<string, number>();
                     rr.forEach(({ o }) => {
@@ -664,7 +673,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                             if (!set.length || !set.some(r2 => r2.pay_tiers.length)) return;
                             const kG = `${o.tipo_cliente}|${o.nome}`;
                             if (!idxF.has(kG)) { idxF.set(kG, gruppiF.length); gruppiF.push({ tipo: o.tipo_cliente, nome: o.nome, vars: [] }); }
-                            gruppiF[idxF.get(kG)!].vars.push({ o, set, label: v.label, gnp: /gnp/i.test(v.label), ord: v.ord });
+                            gruppiF[idxF.get(kG)!].vars.push({ o, set, label: v.label, opz: v.opz, gnp: /gnp/i.test(v.label), ord: v.ord });
                         });
                     });
                     if (!gruppiF.length) return null;
@@ -720,7 +729,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                                                                     </span>
                                                                 </td>
                                                                 {conBiz && Array.from({ length: bizN }, (_, i) => (
-                                                                    <CellaBiz key={`b${i}`} info={bizInfo({ tipo_cliente: v.o.tipo_cliente, categoria: v.o.categoria, prodotto: v.o.prodotto, offerta: v.o.nome })} i={i} />
+                                                                    <CellaBiz key={`b${i}`} info={bizInfo({ tipo_cliente: v.o.tipo_cliente, categoria: v.o.categoria, prodotto: v.o.prodotto, offerta: v.o.nome, opzioni: v.opz })} i={i} />
                                                                 ))}
                                                                 <td className="px-1.5 py-0.5 text-center text-[12px] text-slate-400 tabular-nums">{eur(v.o.canone)} €</td>
                                                                 {Array.from({ length: maxT }, (_, i) => {

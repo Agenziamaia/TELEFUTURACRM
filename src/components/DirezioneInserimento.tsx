@@ -17,13 +17,19 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaDirezione, consigliaCodici, type Direzione } from "@/lib/direzioneTargets";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
+import { PISTE_PARALLELE } from "@/lib/commissioning";
 import { cn } from "@/utils";
 
 const it = (v: number) => Number(v || 0).toLocaleString("it-IT", { maximumFractionDigits: 2 });
 const mesePrimo = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
 
-// piste da NON targetizzare mai (conteggi paralleli / pay unico senza corsa)
-const PISTE_FUORI = new Set(["partnership"]);
+// piste da NON targetizzare mai (conteggi paralleli / pay unico senza corsa).
+// ⚠️ SONO TUTTE LE PARALLELE, non solo la Partnership (rilievo del revisore
+// 26/08): l'Extra Gara P.IVA è un bonus AZIENDA e Luca è stato netto — «i
+// ragazzi non devono averne PER NIENTE visibilità». Bastava che qualcuno le
+// desse un target dal pannello e il chip sarebbe comparso nella Home di tutti,
+// perché la Bussola mostra le piste con target senza guardare il ruolo.
+const PISTE_FUORI = new Set<string>([...PISTE_PARALLELE]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PANNELLO ADMIN (Gare → Direzione Inserimento)
@@ -207,7 +213,9 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         if (!dir) return [];
         const con = new Set<string>();
         dir.codici.forEach((k) => Object.entries(k.targets).forEach(([p, v]) => { if (v > 0) con.add(p); }));
-        return dir.pisteTab.filter((p) => con.has(p.chiave));
+        // doppia porta (come nel Calcolatore): il filtro sta anche qui, non
+        // solo nel pannello che assegna i target
+        return dir.pisteTab.filter((p) => con.has(p.chiave) && !PISTE_FUORI.has(p.chiave));
     }, [dir]);
     useEffect(() => { if (pisteAttive.length && !pisteAttive.some((p) => p.chiave === pista)) setPista(pisteAttive[0].chiave); }, [pisteAttive]); // eslint-disable-line
 

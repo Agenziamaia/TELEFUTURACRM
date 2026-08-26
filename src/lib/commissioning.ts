@@ -555,6 +555,10 @@ export function matchExtraOpzioni(
         .map(x => x.replace(/\s*\(.*\)\s*$/, "").trim().toLowerCase()).filter(Boolean);
     const best = new Map<string, { r: PayRiga; score: number }>();
     for (const r of righe) {
+        // le righe di una gara PARALLELA non sono extra del tabellare normale:
+        // senza questa guardia un `extra_opzione` creato sulla pista sbagliata
+        // sommerebbe punti ed euro a ogni vendita che matcha (revisore 26/08)
+        if (r.pista && PISTE_PARALLELE.has(r.pista)) continue;
         if (!r.attivo || r.componente !== EXTRA_OPZIONE) continue;
         const opz = String(r.opzione || "").trim();
         const req = opz ? opz.split("|").map(x => x.trim().toLowerCase()).filter(Boolean) : [];
@@ -820,7 +824,19 @@ export function matchRigheGaraParallela(
     const base = matchRigaGaraParallela(righe, c, pista);
     if (!base) return [];
     const flags = flagsComponenti(c);
-    const extra = righe.filter(r => r.attivo && r.pista === pista && r.componente && flags.has(String(r.componente)));
+    // la componente deve rispettare anche le SUE ancore, se le ha: il flag da
+    // solo basta finché le componenti sono generiche (oggi lo sono), ma una
+    // componente ancorata — es. un `pscu` solo business — si accenderebbe
+    // anche dove non deve (revisore 26/08)
+    const extra = righe.filter(r => {
+        if (!r.attivo || r.pista !== pista || !r.componente) return false;
+        if (!flags.has(String(r.componente))) return false;
+        if (r.tipo_cliente != null && !eq(r.tipo_cliente, c.tipo_cliente)) return false;
+        if (r.categoria != null && !eq(r.categoria, c.categoria)) return false;
+        if (r.prodotto != null && !eq(r.prodotto, c.prodotto)) return false;
+        if (r.offerta != null && !eq(r.offerta, c.offerta)) return false;
+        return true;
+    });
     return [base, ...extra];
 }
 
@@ -930,6 +946,23 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
         // GA con Ricarica automatica — la ricarica pura no
         if (tab.brand === "sky" && (/^mobile mnp$/i.test(String(c.prodotto || ""))
             || (/^mobile ga$/i.test(String(c.prodotto || "")) && /ric\.? ?auto/i.test(String(c.categoria || ""))))) simSky++;
+    }
+    // GARE PARALLELE (rilievo del revisore 26/08): non passano dal pick-one,
+    // quindi restavano a 0 pezzi/0 punti mentre il Master — che se le calcola
+    // per conto suo — dava 31,5. Due numeri opposti sulla stessa gara. Qui il
+    // conteggio si fa una volta sola, nel motore, e vale per chiunque lo legga
+    // (Calcolatore, Direzione Inserimento, Home). Stesso perimetro delle altre
+    // piste di questa funzione: chi vuole un perimetro diverso filtra prima i
+    // contratti, non ricalcola.
+    for (const pk of PISTE_PARALLELE) {
+        if (!tab.piste.some(p => p.chiave === pk)) continue;
+        for (const c of contratti) {
+            const set = matchRigheGaraParallela(tab.righe, c, pk);
+            if (!set.length) continue;
+            punti[pk] = (punti[pk] || 0) + puntiPerRighe(set);
+            pezzi[pk] = (pezzi[pk] || 0) + 1;
+        }
+        punti[pk] = Math.round((punti[pk] || 0) * 100) / 100;
     }
     // CAP 35% VF (lettera agosto, §Pista Mobile Consumer): gli smartphone
     // (0,5 rateale · 1 finanziato) valgono fino al 35% del valore delle SIM

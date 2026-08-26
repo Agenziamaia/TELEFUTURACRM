@@ -65,8 +65,13 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
             supabase.from("gare_azienda_negozi").select("gara, store_name").eq("brand", "w3").eq("month", monthISO).order("store_name"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, bonus").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
                 .in("pista", ["business_piva", "lucegas", "assicurazioni"]).order("tier"),
+            // ⚠️ SOLO le righe-premio, MAI le componenti (revisore 26/08): le
+            // componenti (FRITZ, 2ª linea) hanno pay_tiers vuoti — se una
+            // finiva prima nell'elenco il campo €/pezzo spariva, e salvando le
+            // si riscriveva sopra una scala che non devono avere (un
+            // Professional Box avrebbe pagato il premio a evento tre volte).
             supabase.from("pay_righe").select("id, pay_tiers").eq("brand", "windtre").eq("month", monthISO).eq("lato", "azienda")
-                .eq("pista", "business_piva").eq("attivo", true),
+                .eq("pista", "business_piva").eq("attivo", true).is("componente", null).order("ordine"),
         ]);
         setTargets((t.data ?? []) as TargetPdv[]);
         setNegozi((n.data ?? []) as NegozioSeg[]);

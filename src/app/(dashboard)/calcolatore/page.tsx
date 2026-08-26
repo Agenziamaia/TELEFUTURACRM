@@ -637,10 +637,20 @@ export default function CalcolatorePage() {
                                         <TriangleAlert size={20} /> Scegli qui sopra l&apos;opzione che decide il pay (es. la fascia di consumo, nella riga ✱): senza, questa offerta non si aggancia.
                                     </div>
                                 ) : (
+                                <>
                                 <div className="text-amber-300 font-semibold flex items-center gap-2">
                                     <TriangleAlert size={20} /> Questa offerta non ha una riga di commissioning: NON genera pay.
                                     <span className="text-slate-400 text-xs font-normal">Va aggiunta la riga al tabellare (regola del catalogo).</span>
                                 </div>
+                                {/* i punti delle gare parallele valgono anche senza pay:
+                                    stavano solo nel ramo «riga trovata» e sparivano
+                                    proprio dove servono di più (revisore 26/08) */}
+                                {gareParallele.map(g => (
+                                    <div key={g.pista} className="text-[12px] text-amber-300/90 mt-2" title={g.voci.join(" + ")}>
+                                        …però conta in gara — {g.label}: <b className="text-amber-200">+{g.punti}</b> {g.punti === 1 ? "punto" : "punti"}
+                                    </div>
+                                ))}
+                                </>
                                 )
                             ) : (
                                 <>
