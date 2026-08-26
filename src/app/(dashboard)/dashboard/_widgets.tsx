@@ -2491,10 +2491,17 @@ function WidgetAgenda({ ctx, size }) {
             // due query MIRATE (revisore: un limit unico su 14gg tagliava
             // proprio il debito): gli appuntamenti di oggi + gli arretrati
             // ancora senza esito
-            const [og, deb] = await Promise.all([
+            // TASK (Luca 26/08: «dedichiamo uno spazio sulla destra alle
+            // task»): stessa finestra degli appuntamenti — quelle di oggi più
+            // gli arretrati ancora da fare. Vengono da `calendar_tasks`, le
+            // stesse che si creano dal Calendario.
+            const selT = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, client_ref";
+            const [og, deb, tk] = await Promise.all([
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("date", ctx.oggiISO).order("time").limit(100),
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("status", "scheduled")
                     .gte("date", ymdLoc(da)).lt("date", ctx.oggiISO).order("date").order("time").limit(100),
+                supabase.from("calendar_tasks").select(selT).eq("status", "da_fare")
+                    .lte("date", ctx.oggiISO).gte("date", ymdLoc(da)).order("date").order("time").limit(100),
             ]);
             if (!vivo) return;
             const filtra = (arr) => (arr || []).filter((a) => {
@@ -2502,7 +2509,14 @@ function WidgetAgenda({ ctx, size }) {
                 if (vista === "negozio") return stores.some((s) => sameStoreW(a.store, s));
                 return norm(a.agente) === norm(ctx.user?.name);   // propri
             });
-            setDati({ oggi: filtra(og.data), debito: filtra(deb.data) });
+            // le task hanno campi loro: assegnatario per NOME o per id, e il
+            // negozio in `assigned_to_store` — la vista è la stessa
+            const filtraT = (arr) => (arr || []).filter((t) => {
+                if (vista === "tutti" || vista === "call_center") return true;
+                if (vista === "negozio") return stores.some((x) => sameStoreW(t.assigned_to_store, x)) || norm(t.assigned_to) === norm(ctx.user?.name);
+                return t.assigned_user_id === ctx.user?.id || norm(t.assigned_to) === norm(ctx.user?.name);
+            });
+            setDati({ oggi: filtra(og.data), debito: filtra(deb.data), task: filtraT(tk.data) });
         })();
         return () => { vivo = false; };
     }, [ctx.oggiISO, ctx.visKey, giro, vista]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -2511,6 +2525,12 @@ function WidgetAgenda({ ctx, size }) {
         const { error } = await esitaAppuntamento(a.id, chiave, a.status, ctx.user?.name || "Negozio");
         setBusy(null);
         if (error) setErrore(error); else setGiro((g) => g + 1);
+    };
+    const chiudiTask = async (t) => {
+        setBusy(`t${t.id}`); setErrore(null);
+        const { error } = await supabase.from("calendar_tasks").update({ status: "fatta" }).eq("id", t.id);
+        setBusy(null);
+        if (error) setErrore(error.message || "non sono riuscito a chiuderla"); else setGiro((g) => g + 1);
     };
     const ieriISO = ymdLoc((() => { const d = new Date(); d.setDate(d.getDate() - 1); return d; })());
     const vediStore = vista === "tutti" || vista === "call_center" || stores.length > 1;
@@ -2538,8 +2558,27 @@ function WidgetAgenda({ ctx, size }) {
             </div>
         );
     };
-    const oggi = dati?.oggi || [], debito = dati?.debito || [];
+    const oggi = dati?.oggi || [], debito = dati?.debito || [], task = dati?.task || [];
     const nOggi = size >= 4 ? 8 : 4, nDeb = size >= 4 ? 6 : 3;
+    const nTask = size >= 4 ? 8 : 5;
+    const taskScadute = task.filter((t) => t.date < ctx.oggiISO);
+    const RigaTask = ({ t }) => {
+        const scaduta = t.date < ctx.oggiISO;
+        return (
+            <div className={cn("rounded-lg border p-2 flex items-start gap-2",
+                scaduta ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-white/10 bg-white/[0.03]")}>
+                <button disabled={busy === `t${t.id}`} onClick={() => chiudiTask(t)} title="Segna come fatta"
+                    className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                        {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : "oggi")}
+                        {t.assigned_to && vista !== "propri" ? ` · ${t.assigned_to}` : ""}
+                    </div>
+                </div>
+            </div>
+        );
+    };
     return (
         <WidgetShell icon={CalendarCheck} title="Agenda del giorno" accent="var(--tf-38bdf8)"
             action={debito.length > 0
@@ -2548,14 +2587,29 @@ function WidgetAgenda({ ctx, size }) {
             {dati === null ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Carico l&apos;agenda…</div>
             ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
-                    {errore && <div className="text-[10px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-2 py-1">⚠️ {errore}</div>}
-                    {debito.slice(0, nDeb).map((a) => <Riga key={a.id} a={a} vecchio />)}
-                    {debito.length > nDeb && <div className="text-[10px] text-rose-300/80">…e altri {debito.length - nDeb} da esitare (calendario)</div>}
-                    {oggi.length > 0 && <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold pt-1">Oggi · {oggi.length} appuntament{oggi.length === 1 ? "o" : "i"}</div>}
-                    {oggi.slice(0, nOggi).map((a) => <Riga key={a.id} a={a} />)}
-                    {!oggi.length && !debito.length && <div className="text-slate-500 text-xs text-center py-4">{vista === "propri" && !stores.length ? "Nessun appuntamento assegnato a te." : "Nessun appuntamento oggi e nessun esito arretrato 🎉"}</div>}
-                    <Link href="/calendario" className="block text-[10px] text-sky-300/80 hover:text-sky-200 pt-1">Apri il calendario <ArrowRight size={10} className="inline" /></Link>
+                /* DUE COLONNE (Luca 26/08): appuntamenti a sinistra, task a
+                   destra. Sotto una certa larghezza la seconda colonna andrebbe
+                   stretta, quindi alla taglia piccola restano incolonnate. */
+                <div className={cn("flex-1 min-h-0 grid gap-3", size >= 4 ? "grid-cols-2" : "grid-cols-1")}>
+                    <div className="min-h-0 overflow-y-auto space-y-1.5">
+                        {errore && <div className="text-[10px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-2 py-1">⚠️ {errore}</div>}
+                        <div className="text-[9px] uppercase tracking-widest text-sky-300/70 font-bold">📅 Appuntamenti</div>
+                        {debito.slice(0, nDeb).map((a) => <Riga key={a.id} a={a} vecchio />)}
+                        {debito.length > nDeb && <div className="text-[10px] text-rose-300/80">…e altri {debito.length - nDeb} da esitare (calendario)</div>}
+                        {oggi.length > 0 && <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold pt-1">Oggi · {oggi.length} appuntament{oggi.length === 1 ? "o" : "i"}</div>}
+                        {oggi.slice(0, nOggi).map((a) => <Riga key={a.id} a={a} />)}
+                        {!oggi.length && !debito.length && <div className="text-slate-500 text-xs text-center py-4">{vista === "propri" && !stores.length ? "Nessun appuntamento assegnato a te." : "Nessun appuntamento oggi 🎉"}</div>}
+                        <Link href="/calendario" className="block text-[10px] text-sky-300/80 hover:text-sky-200 pt-1">Apri il calendario <ArrowRight size={10} className="inline" /></Link>
+                    </div>
+                    <div className={cn("min-h-0 overflow-y-auto space-y-1.5", size >= 4 && "border-l border-white/5 pl-3")}>
+                        <div className="text-[9px] uppercase tracking-widest text-violet-300/70 font-bold flex items-center gap-1.5">
+                            ✅ Task
+                            {taskScadute.length > 0 && <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5">{taskScadute.length} in ritardo</span>}
+                        </div>
+                        {task.slice(0, nTask).map((t) => <RigaTask key={t.id} t={t} />)}
+                        {task.length > nTask && <div className="text-[10px] text-slate-500">…e altre {task.length - nTask} nel calendario</div>}
+                        {!task.length && <div className="text-slate-500 text-xs text-center py-4">Nessuna task da fare 🎉</div>}
+                    </div>
                 </div>
             )}
         </WidgetShell>
@@ -2845,13 +2899,25 @@ function WidgetDerby({ ctx }) {
     );
 }
 
+/* ═══ A CHI SERVE UN WIDGET (Luca 26/08: «dividili per categorie, ce ne sono
+   alcuni per tutti — altrimenti rischiamo di intasare i widget quando ce ne
+   sono che non hanno senso per alcuni ruoli») ═══════════════════════════════
+   I `gruppo` dicono DI COSA parla un widget (performance, statistiche…). Qui
+   si aggiunge l'altro asse: PER CHI ha senso. Le aree sono quelle dei ruoli —
+   pv (punto vendita), cc (call center), ob (agenti), sede — più il livello di
+   chi guarda. `aree` assente = per TUTTI: è la categoria che Luca ha chiesto,
+   e resta il default perché il grosso dei widget parla a chiunque venda.
+   Un widget escluso NON compare nella galleria ➕ di quel ruolo: nessuno se lo
+   può aggiungere per sbaglio, e chi già ce l'ha in un layout salvato se lo
+   vede sparire (risolviLayout filtra su infoWidget). */
+
 const FISSI = {
-    soglia_euro: { label: "Vale X€", icon: Euro, sizes: [1, 2], def: 1, gruppo: "performance" },
-    treno19: { label: "Il Treno delle 19", icon: TrainFront, sizes: [1, 2], def: 1, gruppo: "strumenti" },
+    soglia_euro: { label: "Vale X€", icon: Euro, sizes: [1, 2], def: 1, gruppo: "performance" , aree: ["pv", "ob"] },
+    treno19: { label: "Il Treno delle 19", icon: TrainFront, sizes: [1, 2], def: 1, gruppo: "strumenti" , aree: ["pv", "ob"] },
     serie: { label: "La Serie", icon: Flame, sizes: [1], def: 1, gruppo: "performance" },
     agenda: { label: "Agenda del giorno", icon: CalendarCheck, sizes: [2, 4], def: 2, gruppo: "strumenti" },
-    scudo: { label: "Scudo Malus", icon: Shield, sizes: [1, 2], def: 1, gruppo: "performance" },
-    contatore: { label: "Contatore €", icon: Banknote, sizes: [1, 2], def: 1, gruppo: "performance" },
+    scudo: { label: "Scudo Malus", icon: Shield, sizes: [1, 2], def: 1, gruppo: "performance" , aree: ["pv", "ob", "sede"] },
+    contatore: { label: "Contatore €", icon: Banknote, sizes: [1, 2], def: 1, gruppo: "performance" , aree: ["pv", "ob"] },
     derby: { label: "Derby", icon: Swords, sizes: [1, 2], def: 1, gruppo: "confronto" },
     // marginalita e chart_brand DISMESSI 26/08 (doppioni dell'Analisi — Luca:
     // «toglierei anche la marginalità da subito» e «quello stupido widget per
@@ -2865,15 +2931,20 @@ const FISSI = {
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
     classifica: { label: "Classifica venditori", icon: Trophy, sizes: [2, 4], def: 4, gruppo: "statistiche" },
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [1, 2], def: 1, gruppo: "strumenti" },
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [1, 2], def: 1, gruppo: "strumenti" , aree: ["pv", "ob"] },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
-    accessi: { label: "Accessi collaboratori", icon: LogIn, sizes: [1, 2], def: 2, gruppo: "squadra", nonPer: ["own"] },
+    accessi: { label: "Accessi collaboratori", icon: LogIn, sizes: [1, 2], def: 2, gruppo: "squadra", nonPer: ["own"] , aree: ["pv", "cc", "sede"] },
     // i due canali col cliente stanno nel gruppo COMUNICAZIONE (Luca 26/08)
     whatsapp: { label: "WhatsApp del team", icon: MessageCircle, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
     email: { label: "Email del team", icon: Mail, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
 };
+
+/** area del ruolo, per decidere a chi mostrare un widget. Usa `areaOf`, che
+ *  conosce anche i ruoli custom creati da Luca (DYNAMIC). Sconosciuto → "pv":
+ *  meglio mostrare di più che nascondere a un ruolo nuovo non ancora mappato. */
+const areaDi = (role) => areaOf(String(role || "")) || "pv";
 
 // manager = vede la squadra: rete intera, store manager, direttore call center
 const isManagerWa = (ctx) => ctx.seesAll || ctx.level === "store" || ["direttore_cc"].includes(ctx.user?.role);
@@ -2892,7 +2963,10 @@ export function infoWidget(id, ctx) {
     if (f.soloAdmin && !ctx.seesAll) return null;
     if (f.nonPer && f.nonPer.includes(ctx.level)) return null;
     if (f.soloManager && !isManagerWa(ctx)) return null;
-    return { id, ...f };
+    // AREA DEL RUOLO: chi vede tutta la rete (admin, direzione generale,
+    // amministrativo) non si filtra — deve poter guardare qualunque cosa.
+    if (f.aree && !ctx.seesAll && !f.aree.includes(areaDi(ctx.user?.role))) return null;
+    return { id, ...f, perTutti: !f.aree };
 }
 
 export function renderWidget(id, ctx, size) {
