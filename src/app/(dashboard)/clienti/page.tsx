@@ -123,11 +123,13 @@ const CATEGORIE_DOC = [
     { id: "fattura", label: "Fatture", color: "var(--tf-fbbf24)", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
     // Dichiarazioni di vendita degli usati ritirati (Francesco 12/08)
     { id: "dichiarazione_usato", label: "Dichiarazioni usato", color: "var(--tf-34d399)", match: (t: string | null) => (t || "").toLowerCase() === "dichiarazione_usato" },
+    // Documenti della Chiusura Linea (26/08, caso Melis: cadevano in «Altro»)
+    { id: "disdetta", label: "Disdette", color: "var(--tf-f43f5e)", match: (t: string | null) => (t || "").toLowerCase() === "disdetta" },
     // MOD-14 (Luca 08/08): documenti smarriti e archiviati/scaduti — fuori dai
     // validi, visibili SOLO all'amministrazione (adminOnly) con etichetta chiara.
     { id: "smarrito", label: "🔴 Smarriti", color: "var(--tf-f87171)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_smarrito" },
     { id: "archiviato", label: "🗄️ Archiviati/scaduti", color: "var(--tf-94a3b8)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_archiviato" },
-    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "dichiarazione_usato", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
+    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "dichiarazione_usato", "disdetta", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
@@ -280,18 +282,21 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
     const nomeCompleto = cliente.tipo === "business" ? (cliente.ragioneSociale || "—") : `${cliente.nome || ""} ${cliente.cognome || ""}`.trim();
     const iniziale = (nomeCompleto || "?").charAt(0).toUpperCase();
-    // DISDETTE nella Timeline 360° (Luca 01/08): ogni transizione dei ticket
-    // Chiusura Linea scrive un evento nello storico jsonb — qui si rilegge.
-    const [eventiDisdette, setEventiDisdette] = useState<{ key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null }[]>([]);
+    // DISDETTE nella Timeline 360° (Luca 01/08, RAGGRUPPATE 26/08): il ticket
+    // Chiusura Linea è UN episodio — una voce sola per disdetta, ancorata
+    // all'inserimento; le transizioni dello storico jsonb si vedono
+    // ESPLODENDO la voce (regola dei contesti, caso Emidio Melis).
+    type DisdettaRaw = { id: string; brand: string; stato: string | null; storico: { quando?: string; testo?: string }[] };
+    const [disdetteRaw, setDisdetteRaw] = useState<DisdettaRaw[]>([]);
     useEffect(() => {
         (async () => {
-            const { data, error } = await supabase.from("richieste_disdette").select("id, brand, storico").eq("client_id", cliente.id);
-            if (error) { setEventiDisdette([]); return; }   // tabella assente pre-mig. 125: timeline invariata
-            setEventiDisdette((data ?? []).flatMap((r: { id: string; brand: string; storico: unknown }) =>
-                (Array.isArray(r.storico) ? r.storico : []).map((e: { quando?: string; testo?: string }, i: number) => ({
-                    key: `ds${r.id}_${i}`, when: String(e.quando || ""), color: "var(--tf-f43f5e)", icon: "✂️",
-                    title: String(e.testo || ""), desc: `${r.id} · ${r.brand}`, stato: null as string | null,
-                }))));
+            // la colonna è `status` (inglese) — beccato dal collaudo sul caso Melis
+            const { data, error } = await supabase.from("richieste_disdette").select("id, brand, status, storico").eq("client_id", cliente.id);
+            if (error) { setDisdetteRaw([]); return; }   // tabella assente pre-mig. 125: timeline invariata
+            setDisdetteRaw(((data ?? []) as { id: string; brand: string; status: string | null; storico: unknown }[]).map((r) => ({
+                id: r.id, brand: r.brand, stato: r.status ?? null,
+                storico: (Array.isArray(r.storico) ? r.storico : []) as { quando?: string; testo?: string }[],
+            })));
         })();
     }, [cliente.id]);
     // USATI RITIRATI dal cliente (segnalazione Francesco 12/08): l'acquisizione
@@ -366,7 +371,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
     // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
     // sullo storico chiamate della scheda).
-    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; docsLabel?: string; appuntamenti?: ApptTml[] };
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; docsLabel?: string; appuntamenti?: ApptTml[]; transizioni?: { quando?: string; testo?: string }[] };
     const isMarg = (b?: string | null) => /marginal|extra/i.test(b || "");
 
     // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
@@ -384,12 +389,33 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // I documenti del RITIRO usato (Francesco/Luca 12/08) vivono invece
     // dentro la voce «Ritirato usato»: fuori sia dalle visite sia dalle voci sciolte.
     const docDiRitiro = (d: DocRiga) => (d.file_type || "").toLowerCase() === "dichiarazione_usato" || (d.file_name || "").startsWith("Documento identità — ritiro");
+    // i documenti della CHIUSURA LINEA sono marcati (file_type='disdetta',
+    // scoperto col collaudo Melis 26/08): appartengono al ticket, mai alle
+    // visite né alle voci sciolte — si contano sulla disdetta più vicina.
+    const docDiDisdetta = (d: DocRiga) => (d.file_type || "").toLowerCase() === "disdetta";
     const giorniVisita = new Set([...gruppiContratti.keys()].map((k) => k.split("|")[0]));
+    // conteggio per QUALSIASI giorno: pescano prima le visite, poi le
+    // disdette (regola dei contesti 26/08 — caso Melis: 5 documenti della
+    // disdetta comparivano come 5 voci sciolte)
     const docsPerGiorno = new Map<string, number>();
     docs.forEach((d) => {
-        if (docDiRitiro(d)) return;
+        if (docDiRitiro(d) || docDiDisdetta(d)) return;
         const g = String(d.created_at || "").slice(0, 10);
-        if (g && giorniVisita.has(g)) docsPerGiorno.set(g, (docsPerGiorno.get(g) || 0) + 1);
+        if (g) docsPerGiorno.set(g, (docsPerGiorno.get(g) || 0) + 1);
+    });
+    // docs 'disdetta' → il ticket con l'inserimento più vicino per data
+    const docsSuDisdetta = new Map<string, number>();
+    docs.filter(docDiDisdetta).forEach((d) => {
+        const g = String(d.created_at || "").slice(0, 10);
+        if (!g) return;
+        let best: string | null = null; let dist = Infinity;
+        disdetteRaw.forEach((r) => {
+            const g0 = String(r.storico.find((e) => e.quando)?.quando || "").slice(0, 10);
+            if (!g0) return;
+            const delta = Math.abs(new Date(g).getTime() - new Date(g0).getTime());
+            if (delta < dist) { dist = delta; best = r.id; }
+        });
+        if (best) docsSuDisdetta.set(best, (docsSuDisdetta.get(best) || 0) + 1);
     });
     const giorniDocAssegnati = new Set<string>();
     const vociContratti: VoceTimeline[] = [...gruppiContratti.entries()].map(([k, cs]) => {
@@ -439,10 +465,36 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         };
     });
 
+    // DISDETTE raggruppate (26/08, caso Melis): UNA voce per ticket, ancorata
+    // all'inserimento; le transizioni si esplodono col click, i documenti del
+    // giorno (se non li ha già presi una visita) stanno DENTRO la voce col
+    // pattern della visita — «i punti vendita già lo fanno alla perfezione».
+    const vociDisdette: VoceTimeline[] = disdetteRaw.map((r) => {
+        const trans = r.storico.filter((e) => e.quando);
+        if (!trans.length) return null;
+        const prima = trans[0];
+        const giorno = String(prima.quando || "").slice(0, 10);
+        // i SUOI documenti (file_type='disdetta') + i generici del giorno
+        // rimasti liberi (se quel giorno non c'è stata una visita)
+        let docsN = docsSuDisdetta.get(r.id) || 0;
+        if (giorno && !giorniDocAssegnati.has(giorno) && !giorniVisita.has(giorno)) {
+            const generici = docsPerGiorno.get(giorno) || 0;
+            if (generici) { docsN += generici; giorniDocAssegnati.add(giorno); }
+        }
+        return {
+            key: "ds" + r.id, when: String(prima.quando), color: "var(--tf-f43f5e)", icon: "✂️",
+            title: String(prima.testo || `Richiesta disdetta ${r.brand}`),
+            desc: `${r.id} · ${r.brand}${r.stato ? ` · ${String(r.stato).replace(/_/g, " ")}` : ""}${trans.length > 1 ? ` · ${trans.length} passaggi` : ""}${docsN ? ` · 📎 ${docsN}` : ""}`,
+            stato: null, docsN: docsN || undefined, docsLabel: "per la disdetta",
+            transizioni: trans.length > 1 ? trans.slice(1) : undefined,
+        };
+    }).filter(Boolean) as VoceTimeline[];
+
     // Timeline 360°: eventi REALI (contratti + chiamate + usati + documenti + disdette), in ordine.
     const timeline: VoceTimeline[] = [
         ...vociContratti,
         ...vociChiamate,
+        ...vociDisdette,
         // ritiri usato (Francesco 12/08): l'acquisizione si vede in timeline,
         // e i suoi documenti (dichiarazione + identità) stanno DENTRO la voce
         ...usatiCliente.filter((u) => u.purchase_date).map((u) => {
@@ -460,11 +512,14 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         // la voce del negozio (esperienza unica del cliente, Luca 04/08);
         // i documenti del RITIRO usato vivono dentro la voce del ritiro (12/08)
         ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10))
+            // i giorni consumati da una disdetta non fanno più voci sciolte (26/08)
+            && !giorniDocAssegnati.has(String(d.created_at).slice(0, 10))
             && !docDiRitiro(d)
+            // i docs 'disdetta' vivono nella voce del ticket (se ne esiste uno)
+            && (disdetteRaw.length === 0 || !docDiDisdetta(d))
             // smarriti/archiviati fuori dalla timeline per i non-admin (MOD-14)
             && (isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly))
             .map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
-        ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
     // ── MASTER DASHBOARD FLUTTUANTE (Luca 26/08, scheletro Gemini innestato
@@ -477,7 +532,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const iniziali = (nomeCompleto || "?").split(/\s+/).map((w) => w.charAt(0)).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
     const pratAttive = contratti.filter((c) => c.stato === "Attivato").length;
     const nFileVisibili = new Set(docs.filter((d) => isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly).map((d) => d.file_url)).size;
-    const EMOJI_CAT: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾", dichiarazione_usato: "♻️", smarrito: "⚠️", archiviato: "🗄️", altro: "📁" };
+    const EMOJI_CAT: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾", dichiarazione_usato: "♻️", disdetta: "✂️", smarrito: "⚠️", archiviato: "🗄️", altro: "📁" };
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 lg:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
             {/* com-scura: la console resta un MONDO SCURO anche in tema chiaro
@@ -657,7 +712,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 {timeline.map(ev => {
                                     // MOD-21: espandibile anche la CHIAMATA con appuntamento dentro
                                     // e il RITIRO USATO coi suoi documenti (12/08)
-                                    const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length) || (ev.docsN || 0) > 0;
+                                    const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length) || (ev.docsN || 0) > 0 || !!(ev.transizioni && ev.transizioni.length);
                                     const cliccabile = espandibile || !!ev.apreStorico;
                                     const aperta = espandibile && !!gruppiAperti[ev.key];
                                     return (
@@ -690,6 +745,15 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 dettaglio contratto (stesso deep link della tab Contratti) */}
                                             {aperta && (
                                                 <div className="pl-3 mt-2 space-y-1.5">
+                                                    {/* PASSAGGI della disdetta (26/08): l'evoluzione del ticket
+                                                        dopo l'inserimento, esplosa solo al click */}
+                                                    {(ev.transizioni || []).map((t, ti) => (
+                                                        <div key={"tr" + ti} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5">
+                                                            <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">↪️</span>
+                                                            <span className="flex-1 text-xs text-slate-300 min-w-0 truncate">{String(t.testo || "—")}</span>
+                                                            <span className="text-[10px] text-gray-500 shrink-0">{t.quando ? new Date(String(t.quando)).toLocaleDateString("it-IT") : ""}</span>
+                                                        </div>
+                                                    ))}
                                                     {/* MOD-21: l'APPUNTAMENTO fissato dalla chiamata del call center */}
                                                     {(ev.appuntamenti || []).map((a) => {
                                                         const st = APP_STATO[a.status || ""] || { label: a.status || "—", cls: "bg-slate-500/10 border-slate-500/20 text-slate-300" };
