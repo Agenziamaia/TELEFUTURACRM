@@ -40,6 +40,52 @@ const FOLDERS: { id: FolderId; label: string; icon: any }[] = [
     { id: "nonutili", label: "Non utili", icon: Ban },
 ];
 
+// ── LINGUA VISIVA del restyle (26/08) ──────────────────────────────────────
+// Keyframes e micro-classi iniettati con <style> nel componente (stesso
+// pattern dell'header di Analisi): cascata d'ingresso delle righe, dock di
+// composizione che sale, aurore lente nell'intestazione. Un solo posto, così
+// anche la ConnectModal usata dal Pannello Email porta con sé le animazioni.
+const MAIL_CSS = `
+@keyframes mFadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes mFade { from { opacity:0; } to { opacity:1; } }
+@keyframes mSlideUp { from { opacity:0; transform:translateY(28px) scale(.98); } to { opacity:1; transform:none; } }
+@keyframes mScaleIn { from { opacity:0; transform:scale(.94) translateY(8px); } to { opacity:1; transform:none; } }
+@keyframes mAurora { 0% { transform:translate3d(-10%,-6%,0) scale(1); } 50% { transform:translate3d(8%,10%,0) scale(1.18); } 100% { transform:translate3d(-10%,-6%,0) scale(1); } }
+@keyframes mFloat { 0%,100% { transform:translateY(0) rotate(3deg); } 50% { transform:translateY(-8px) rotate(-2deg); } }
+@keyframes mPing { 0% { box-shadow:0 0 0 0 rgba(244,63,94,.45); } 70% { box-shadow:0 0 0 6px rgba(244,63,94,0); } 100% { box-shadow:0 0 0 0 rgba(244,63,94,0); } }
+.mail-in { animation: mFadeUp .45s cubic-bezier(.22,1,.36,1) both; }
+.mail-fade { animation: mFade .25s ease-out both; }
+.mail-pop { animation: mScaleIn .3s cubic-bezier(.22,1,.36,1) both; }
+.mail-dock { animation: mSlideUp .38s cubic-bezier(.22,1,.36,1) both; }
+@media (prefers-reduced-motion: reduce) { .mail-in, .mail-fade, .mail-pop, .mail-dock { animation: none; } }
+`;
+
+// avatar per MITTENTE: gradiente stabile derivato dall'indirizzo — dà un
+// volto colorato alla lista senza foto profilo. Le classi sono scritte per
+// esteso (Tailwind le vede) e il testo resta bianco anche col tema chiaro
+// (globals tiene bianco il testo sopra i bg-gradient pieni).
+const AVATAR_GRADS = [
+    "from-sky-500 to-blue-600",
+    "from-indigo-500 to-violet-600",
+    "from-violet-500 to-fuchsia-600",
+    "from-emerald-500 to-teal-600",
+    "from-amber-500 to-orange-600",
+    "from-rose-500 to-pink-600",
+    "from-cyan-500 to-sky-600",
+    "from-blue-500 to-indigo-600",
+];
+const gradFor = (seed: string) => {
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return AVATAR_GRADS[h % AVATAR_GRADS.length];
+};
+// iniziali "vere": prima lettera delle prime due parole (o dell'indirizzo)
+const iniziali = (s: string) => {
+    const parti = String(s || "").trim().split(/[\s._@-]+/).filter(Boolean);
+    const ini = ((parti[0]?.[0] || "") + (parti[1]?.[0] || parti[0]?.[1] || "")).toUpperCase();
+    return ini || "?";
+};
+
 export function EmailInbox({ embedded = false, componiA = null, apriConvId = null }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null }) {
     const { user } = useAuth();
     const [accounts, setAccounts] = useState<Account[]>([]);
@@ -442,17 +488,30 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     const trashCount = convs.filter(c => c.trashed).length;
     const counts: Record<FolderId, number> = { inbox: inboxUnread, starred: 0, sent: 0, drafts: drafts.length, spam: spamCount, trash: trashCount, nonutili: regoleCasella.filter(r => !r.annullata_il).length };
     const folderLabel = FOLDERS.find(f => f.id === folder)?.label || "";
+    // icona della cartella corrente per l'intestazione della lista (solo resa)
+    const FolderIcon = FOLDERS.find(f => f.id === folder)?.icon || Inbox;
 
     // ── stati "vuoto" ───────────────────────────────────────────────────────────
     if (visibleAccounts.length === 0) {
         return (
             <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
+                <style>{MAIL_CSS}</style>
                 <TopBar embedded={embedded} onConnect={puoGestireCaselle ? () => setConnectModal(true) : undefined} />
-                <div className={cn("glass-card p-12 text-center text-slate-400", embedded && "flex-1 flex flex-col items-center justify-center")}>
-                    <Inbox className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-                    {puoGestireCaselle
-                        ? <>Nessuna casella collegata. Premi <b className="text-sky-300">Collega email</b> e inserisci indirizzo e password della casella del negozio.</>
-                        : <>Nessuna casella email collegata per te. Le caselle le assegna l&apos;amministrazione dal pannello Email: chiedi lì se te ne serve una.</>}
+                <div className={cn("glass-panel shadow-lg mail-in relative overflow-hidden p-12 text-center", embedded && "flex-1 flex flex-col items-center justify-center")}>
+                    <div className="pointer-events-none absolute -top-24 right-8 w-80 h-80 rounded-full opacity-15 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-38bdf8), transparent 65%)", animation: "mAurora 18s ease-in-out infinite" }} />
+                    <div className="relative flex flex-col items-center gap-4">
+                        <div className="relative">
+                            <div className="absolute inset-0 rounded-full bg-sky-500/20 blur-2xl scale-150" />
+                            <div className="relative w-20 h-20 rounded-[28px] bg-gradient-to-br from-sky-500/20 to-indigo-500/10 border border-white/10 flex items-center justify-center shadow-xl" style={{ animation: "mFloat 5s ease-in-out infinite" }}>
+                                <Inbox className="w-9 h-9 text-sky-300" />
+                            </div>
+                        </div>
+                        <div className="text-sm text-slate-400 max-w-md leading-relaxed">
+                            {puoGestireCaselle
+                                ? <>Nessuna casella collegata. Premi <b className="text-sky-300">Collega email</b> e inserisci indirizzo e password della casella del negozio.</>
+                                : <>Nessuna casella email collegata per te. Le caselle le assegna l&apos;amministrazione dal pannello Email: chiedi lì se te ne serve una.</>}
+                        </div>
+                    </div>
                 </div>
                 {connectModal && puoGestireCaselle && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} userId={user?.id} />}
             </div>
@@ -461,62 +520,86 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
 
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
+            <style>{MAIL_CSS}</style>
             <TopBar embedded={embedded} onConnect={puoGestireCaselle ? () => setConnectModal(true) : undefined} onManage={puoGestireCaselle ? () => setManageModal(true) : undefined} onRefresh={() => aggiorna(undefined, true)} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
-            {pollErr && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5 shrink-0">{pollErr}</p>}
+            {pollErr && (
+                <p className="mail-in text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3.5 py-2 shrink-0 flex items-center gap-2">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" /> {pollErr}
+                </p>
+            )}
 
-            {/* selettore casella (se piu' di una) */}
+            {/* selettore casella (se piu' di una): pillole col colore della casella,
+                badge non-letti e spia rossa se la casella è in errore */}
             {visibleAccounts.length > 1 && (
-                <div className="flex gap-2 flex-wrap shrink-0">
-                    {visibleAccounts.map(a => { const col = coloreCasella(a.id); const un = unreadPerAcc[a.id] || 0; return (
+                <div className="mail-in flex gap-2 flex-wrap shrink-0">
+                    {visibleAccounts.map(a => { const col = coloreCasella(a.id); const un = unreadPerAcc[a.id] || 0; const attiva = selAcc === a.id; return (
                         <button key={a.id} onClick={() => { setSelAcc(a.id); setSelConv(null); }}
-                            className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2", selAcc === a.id ? col.chip : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                            <span className={cn("w-2 h-2 rounded-full shrink-0", col.dot)} />
+                            className={cn("px-3.5 py-2 rounded-full text-xs font-bold border flex items-center gap-2 transition-all duration-200 active:scale-95",
+                                attiva ? cn(col.chip, "shadow-lg shadow-black/20") : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:border-white/20 hover:-translate-y-0.5")}>
+                            <span className={cn("w-2 h-2 rounded-full shrink-0 transition-transform duration-200", col.dot, attiva && "scale-125")} />
                             {a.display_name || a.email_address}
                             {un > 0 && <span className={cn("min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center", col.badge)}>{un > 99 ? "99+" : un}</span>}
-                            {a.status !== "attiva" && <span className="w-2 h-2 rounded-full bg-rose-400" title={a.last_error || "errore"} />}
+                            {a.status !== "attiva" && <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" title={a.last_error || "errore"} />}
                         </button>
                     ); })}
                 </div>
             )}
 
-            <div className={cn("grid grid-cols-1 lg:grid-cols-[196px_minmax(300px,360px)_1fr] gap-3", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-230px)]")}>
+            <div className={cn("grid grid-cols-1 lg:grid-cols-[196px_minmax(300px,360px)_1fr] gap-3", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-264px)] min-h-[480px]")}>
                 {/* ── RAIL cartelle ── */}
-                <div className={cn("glass-card p-3 flex flex-col gap-2", selConv && "hidden lg:flex")}>
-                    <button onClick={openNewCompose} className="w-full mb-1 px-4 py-3 rounded-2xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-colors">
-                        <PenSquare className="w-4 h-4" /> Scrivi
+                <div className={cn("glass-panel shadow-lg p-3 flex flex-col gap-2", selConv && "hidden lg:flex")}>
+                    <button onClick={openNewCompose}
+                        className="group w-full mb-1 px-4 py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-sky-500/30 transition-all duration-200 hover:shadow-xl hover:shadow-sky-500/40 hover:-translate-y-0.5 active:scale-[0.97]">
+                        <PenSquare className="w-4 h-4 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110" /> Scrivi
                     </button>
                     <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
-                        {FOLDERS.map(f => {
+                        {FOLDERS.map((f, i) => {
                             const Icon = f.icon; const active = folder === f.id; const n = counts[f.id];
                             return (
                                 <button key={f.id} onClick={() => setFolder(f.id)}
-                                    className={cn("shrink-0 lg:w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-colors",
-                                        active ? "bg-sky-500/15 text-sky-200 border border-sky-500/30" : "text-slate-300 hover:bg-white/5 border border-transparent")}>
-                                    <Icon className={cn("w-4 h-4 shrink-0", active ? "text-sky-300" : "text-slate-400")} />
+                                    className={cn("mail-in relative shrink-0 lg:w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 group/f",
+                                        active ? "bg-sky-500/15 text-sky-200 border border-sky-500/30" : "text-slate-300 hover:bg-white/5 hover:text-white border border-transparent")}
+                                    style={{ animationDelay: `${i * 35}ms` }}>
+                                    {/* linguetta luminosa: segnaposto della cartella attiva */}
+                                    <span className={cn("hidden lg:block absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-sky-400 transition-all duration-300", active ? "h-5 opacity-100" : "h-0 opacity-0")} />
+                                    <Icon className={cn("w-4 h-4 shrink-0 transition-transform duration-200", active ? "text-sky-300" : "text-slate-400 group-hover/f:scale-110")} />
                                     <span className="truncate flex-1 text-left">{f.label}</span>
-                                    {n > 0 && <span className={cn("text-[10px] font-bold rounded-full px-1.5 py-0.5 shrink-0", f.id === "spam" ? "bg-rose-500/80 text-white" : active ? "bg-sky-400 text-slate-900" : "bg-white/10 text-slate-300")}>{n}</span>}
+                                    {n > 0 && <span className={cn("text-[10px] font-bold rounded-full px-1.5 py-0.5 shrink-0 transition-colors", f.id === "spam" ? "bg-rose-500/80 text-white" : active ? "bg-sky-400 text-slate-900" : "bg-white/10 text-slate-300")}>{n}</span>}
                                 </button>
                             );
                         })}
                     </nav>
                     {/* LEGENDA dei pallini a priorità (richiesta Luca 26/08 sera,
                         con screenshot del rail): cosa significa il colore */}
-                    <div className="hidden lg:block mt-auto mb-1 px-2 py-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1.5">
+                    <div className="hidden lg:block mt-auto mb-1 px-2.5 py-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1.5">
                         <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-0.5">I colori dei pallini</div>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" /> aspetta una risposta</div>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" /> da leggere</div>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-sky-500 shrink-0" /> non letta, senza fretta</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0 shadow-[0_0_6px_rgba(244,63,94,.6)]" /> aspetta una risposta</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 shadow-[0_0_6px_rgba(245,158,11,.5)]" /> da leggere</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-sky-500 shrink-0 shadow-[0_0_6px_rgba(14,165,233,.5)]" /> non letta, senza fretta</div>
                     </div>
-                    {selAccObj && <div className="pt-2 border-t border-white/5 text-[10px] text-slate-500 truncate px-1" title={selAccObj.email_address}>{selAccObj.email_address}</div>}
+                    {selAccObj && (
+                        <div className="pt-2 border-t border-white/5 flex items-center gap-1.5 px-1 min-w-0">
+                            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", selAccObj.status === "attiva" ? "bg-emerald-400" : "bg-rose-400")} />
+                            <span className="text-[10px] text-slate-500 truncate" title={selAccObj.email_address}>{selAccObj.email_address}</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* ── LISTA ── */}
-                <div className={cn("glass-card overflow-hidden flex flex-col min-h-0", selConv && "hidden lg:flex")}>
-                    <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between shrink-0">
-                        <span className="text-sm font-bold text-white">{folderLabel}</span>
-                        <span className="text-[11px] text-slate-500">{folder === "drafts" ? draftsShown.length : folder === "nonutili" ? regoleCasella.length : shown.length}</span>
+                <div className={cn("glass-panel shadow-lg overflow-hidden flex flex-col min-h-0", selConv && "hidden lg:flex")}>
+                    <div className="px-4 py-2.5 border-b border-white/10 bg-white/[0.02] flex items-center justify-between shrink-0">
+                        <span className="text-sm font-bold text-white flex items-center gap-2">
+                            <FolderIcon className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                            {folderLabel}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 bg-white/5 border border-white/10 rounded-full px-2 py-0.5 tabular-nums">{folder === "drafts" ? draftsShown.length : folder === "nonutili" ? regoleCasella.length : shown.length}</span>
                     </div>
-                    {selAccObj?.status !== "attiva" && <div className="p-3 text-xs text-rose-300 border-b border-rose-500/20 bg-rose-500/5 shrink-0">Casella in errore — {selAccObj?.last_error || "ricollega dalle impostazioni"}.</div>}
+                    {selAccObj?.status !== "attiva" && (
+                        <div className="mail-in px-4 py-2.5 text-xs text-rose-300 border-b border-rose-500/20 bg-rose-500/5 shrink-0 flex items-center gap-2">
+                            <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                            <span>Casella in errore — {selAccObj?.last_error || "ricollega dalle impostazioni"}.</span>
+                        </div>
+                    )}
                     {/* backfill storico in corso (EML-01): indicatore discreto, sparisce da solo a backfill_done */}
                     {selAccObj?.backfill_enabled && !selAccObj?.backfill_done && (
                         <div className="px-4 py-1.5 text-[11px] text-sky-300/80 border-b border-sky-500/15 bg-sky-500/5 shrink-0 flex items-center gap-1.5">
@@ -529,20 +612,20 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                             /* ── NON UTILI: i mittenti segnalati da questa casella —
                                l'AI cestina le loro prossime email; Annulla = ripensamento ── */
                             regoleCasella.length === 0 ? (
-                                <EmptyList icon={Ban} label="Nessun mittente segnalato. Quando segni una email come Spam, il mittente finisce qui e le sue prossime email vanno nel cestino da sole." />
+                                <EmptyList icon={Ban} title="Nessun mittente segnalato" label="Quando segni una email come Spam, il mittente finisce qui e le sue prossime email vanno nel cestino da sole." />
                             ) : (
                                 <>
-                                    <div className="px-4 py-2 text-[11px] text-slate-500 border-b border-white/5">Le prossime email di questi mittenti vengono cestinate in automatico su questa casella. Ci hai ripensato? Annulla la segnalazione.</div>
-                                    {regoleCasella.map(r => (
-                                        <div key={r.id} className={cn("px-4 py-3 border-b border-white/5 flex items-center gap-3", r.annullata_il && "opacity-50")}>
-                                            <div className={cn("w-9 h-9 rounded-full border flex items-center justify-center shrink-0", r.annullata_il ? "bg-white/5 border-white/10 text-slate-500" : "bg-rose-500/15 border-rose-500/25 text-rose-300")}><Ban className="w-4 h-4" /></div>
+                                    <div className="mail-in px-4 py-2.5 text-[11px] text-slate-400 leading-relaxed border-b border-white/5 bg-white/[0.02]">Le prossime email di questi mittenti vengono cestinate in automatico su questa casella. Ci hai ripensato? Annulla la segnalazione.</div>
+                                    {regoleCasella.map((r, i) => (
+                                        <div key={r.id} className={cn("mail-in px-4 py-3 border-b border-white/5 flex items-center gap-3 transition-colors hover:bg-white/[0.02]", r.annullata_il && "opacity-50")} style={{ animationDelay: `${Math.min(i, 12) * 26}ms` }}>
+                                            <div className={cn("w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-md", r.annullata_il ? "bg-white/5 border border-white/10 text-slate-500" : "bg-gradient-to-br from-rose-500 to-red-600 text-white")}><Ban className="w-4 h-4" /></div>
                                             <div className="min-w-0 flex-1">
                                                 <div className="text-sm font-semibold text-slate-200 truncate">{r.mittente}</div>
                                                 <div className="text-[11px] text-slate-500">{r.annullata_il ? "segnalazione annullata — torna al filtro normale" : `segnalato il ${new Date(r.creato_il).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })} · le sue email vanno nel cestino`}</div>
                                             </div>
                                             {!r.annullata_il && (
                                                 <button onClick={() => annullaRegola(r)}
-                                                    className="shrink-0 px-3 py-1.5 rounded-lg border border-white/10 text-[12px] font-bold text-slate-300 hover:bg-white/10 inline-flex items-center gap-1.5">
+                                                    className="shrink-0 px-3 py-1.5 rounded-full border border-white/10 text-[12px] font-bold text-slate-300 hover:bg-white/10 hover:text-white hover:border-white/25 inline-flex items-center gap-1.5 transition-all active:scale-95">
                                                     <RotateCcw className="w-3.5 h-3.5" /> Annulla
                                                 </button>
                                             )}
@@ -551,88 +634,125 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                                 </>
                             )
                         ) : folder === "drafts" ? (
-                            draftsShown.length === 0 ? <EmptyList icon={FileText} label="Nessuna bozza" />
-                                : draftsShown.map(d => (
-                                    <button key={d.id} onClick={() => openDraft(d)} className="w-full text-left px-4 py-3 border-b border-white/5 hover:bg-white/[0.03] flex items-center gap-3 group">
-                                        <div className="w-9 h-9 rounded-full border bg-amber-500/15 border-amber-500/25 text-amber-300 flex items-center justify-center shrink-0"><FileText className="w-4 h-4" /></div>
+                            draftsShown.length === 0 ? <EmptyList icon={FileText} title="Nessuna bozza" label="Le email lasciate a metà ti aspettano qui, al sicuro." />
+                                : draftsShown.map((d, i) => (
+                                    <button key={d.id} onClick={() => openDraft(d)}
+                                        className="mail-in w-full text-left px-4 py-2.5 border-b border-white/5 hover:bg-amber-500/[0.04] flex items-center gap-2.5 group transition-colors duration-150"
+                                        style={{ animationDelay: `${Math.min(i, 12) * 26}ms` }}>
+                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shrink-0 shadow-md"><FileText className="w-4 h-4" /></div>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="text-sm font-semibold text-amber-300/90 truncate">Bozza · {d.to_addr || "senza destinatario"}</span>
-                                                <span className="text-[10px] text-slate-500 shrink-0">{fmtOra(d.updated_at)}</span>
+                                                <span className="text-[10px] text-slate-500 shrink-0 tabular-nums">{fmtOra(d.updated_at)}</span>
                                             </div>
-                                            <div className="text-xs text-slate-400 truncate">{d.subject || "(senza oggetto)"}</div>
+                                            <div className="text-xs text-slate-300 truncate">{d.subject || "(senza oggetto)"}</div>
                                             <div className="text-xs text-slate-500 truncate">{(d.body || "").replace(/\s+/g, " ").trim() || "…"}</div>
                                         </div>
-                                        <span onClick={(e) => { e.stopPropagation(); supabase.from("email_drafts").delete().eq("id", d.id).then(() => loadDrafts()); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 shrink-0" title="Elimina bozza"><Trash2 className="w-4 h-4" /></span>
+                                        <span onClick={(e) => { e.stopPropagation(); supabase.from("email_drafts").delete().eq("id", d.id).then(() => loadDrafts()); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-full hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 shrink-0 transition-all" title="Elimina bozza"><Trash2 className="w-4 h-4" /></span>
                                     </button>
                                 ))
                         ) : shown.length === 0 ? (
-                            <EmptyList icon={folder === "trash" ? Trash2 : folder === "spam" ? ShieldAlert : folder === "starred" ? Star : Inbox} label={folder === "inbox" ? "Nessuna email. Premi ↻ per scaricare la posta." : "Niente qui"} />
-                        ) : shown.map(c => (
-                            <div key={c.id} onClick={() => setSelConv(c)}
-                                className={cn("w-full cursor-pointer px-3 py-3 border-b border-white/5 hover:bg-white/[0.03] flex items-center gap-2.5 group", selConv?.id === c.id && "bg-white/[0.05]", c.unread > 0 && "bg-sky-500/[0.04]")}>
-                                <button onClick={(e) => toggleStar(c, e)} className="p-0.5 shrink-0" title={c.starred ? "Togli speciale" : "Segna come speciale"}>
-                                    <Star className={cn("w-4 h-4 transition-colors", c.starred ? "fill-amber-400 text-amber-400" : "text-slate-600 hover:text-slate-400")} />
-                                </button>
-                                <div className={cn("w-9 h-9 rounded-full border flex items-center justify-center text-xs font-bold shrink-0", c.unread > 0 ? "bg-sky-500/25 border-sky-400/40 text-sky-200" : "bg-sky-500/10 border-sky-500/20 text-sky-300/80")}>{nomeConv(c).slice(0, 2).toUpperCase()}</div>
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className={cn("text-sm truncate", c.unread > 0 ? "font-bold text-white" : "font-semibold text-slate-200")}>{nomeConv(c)}</span>
-                                        <span className="text-[10px] text-slate-500 shrink-0">{fmtOra(c.last_message_at)}</span>
+                            folder === "inbox"
+                                ? <EmptyList icon={Inbox} title="Tutto tranquillo" label="Nessuna email qui. Premi ↻ in alto per scaricare la posta nuova." />
+                                : folder === "trash" ? <EmptyList icon={Trash2} title="Cestino vuoto" label="Quello che butti finisce qui, recuperabile finché vuoi." />
+                                : folder === "spam" ? <EmptyList icon={ShieldAlert} title="Niente spam" label="Le email sospette finiscono qui da sole. Per ora, aria pulita." />
+                                : folder === "starred" ? <EmptyList icon={Star} title="Nessuna speciale" label="Tocca la stellina su una email per ritrovarla qui al volo." />
+                                : <EmptyList icon={SendHorizontal} title="Niente qui" label="Le email che invii compaiono in questa cartella." />
+                        ) : shown.map((c, i) => {
+                            const aperta = selConv?.id === c.id;
+                            const nonLetta = c.unread > 0;
+                            return (
+                                <div key={`${folder}:${c.id}`} onClick={() => setSelConv(c)}
+                                    className={cn("mail-in relative w-full cursor-pointer pl-3.5 pr-3 py-2.5 border-b border-white/5 flex items-center gap-2.5 group transition-colors duration-150",
+                                        aperta ? "bg-sky-500/[0.08]" : nonLetta ? "bg-sky-500/[0.04] hover:bg-sky-500/[0.07]" : "hover:bg-white/[0.04]")}
+                                    style={{ animationDelay: `${Math.min(i, 12) * 26}ms` }}>
+                                    {/* filo luminoso a sinistra: acceso se non letta, pieno se aperta */}
+                                    <span className={cn("absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-300", aperta ? "h-3/4 bg-sky-400" : nonLetta ? "h-1/2 bg-sky-400/70" : "h-0 bg-transparent")} />
+                                    <button onClick={(e) => toggleStar(c, e)} className="p-0.5 shrink-0 transition-transform duration-150 hover:scale-125 active:scale-95" title={c.starred ? "Togli speciale" : "Segna come speciale"}>
+                                        <Star className={cn("w-4 h-4 transition-colors", c.starred ? "fill-amber-400 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,.5)]" : "text-slate-600 hover:text-slate-300")} />
+                                    </button>
+                                    <div className={cn("w-9 h-9 rounded-full bg-gradient-to-br flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-md transition-transform duration-200 group-hover:scale-105", gradFor(c.customer_email || c.id), nonLetta ? "ring-2 ring-sky-400/40" : "opacity-80 saturate-[.85]")}>{iniziali(nomeConv(c))}</div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className={cn("text-sm truncate", nonLetta ? "font-bold text-white" : "font-semibold text-slate-200")}>{nomeConv(c)}</span>
+                                            <span className={cn("text-[10px] shrink-0 tabular-nums", nonLetta ? "text-sky-300 font-semibold" : "text-slate-500")}>{fmtOra(c.last_message_at)}</span>
+                                        </div>
+                                        <div className={cn("text-xs truncate", nonLetta ? "text-slate-100 font-medium" : "text-slate-400")}>{c.subject || "(senza oggetto)"}</div>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-xs text-slate-500 truncate">{c.last_preview || ""}</span>
+                                            {/* pallino a PRIORITÀ del triage: rosso = cliente aspetta
+                                                noi (pulsa piano), ambra = informativa da leggere, blu = il resto */}
+                                            {nonLetta && <span className={cn("text-[10px] font-bold text-white rounded-full px-1.5 shrink-0", badgePriorita(c), triStati[c.id] === "rispondere" && "animate-[mPing_2s_ease-out_infinite]")} title={triStati[c.id] === "rispondere" ? "Il mittente aspetta una risposta" : triStati[c.id] === "da_leggere" ? "Informativa da leggere" : undefined}>{c.unread}</span>}
+                                        </div>
                                     </div>
-                                    <div className={cn("text-xs truncate", c.unread > 0 ? "text-slate-200 font-medium" : "text-slate-400")}>{c.subject || "(senza oggetto)"}</div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-xs text-slate-500 truncate">{c.last_preview || ""}</span>
-                                        {/* pallino a PRIORITÀ del triage: rosso = cliente aspetta
-                                            noi, ambra = informativa da leggere, blu = il resto */}
-                                        {c.unread > 0 && <span className={cn("text-[10px] font-bold text-white rounded-full px-1.5 shrink-0", badgePriorita(c))} title={triStati[c.id] === "rispondere" ? "Il mittente aspetta una risposta" : triStati[c.id] === "da_leggere" ? "Informativa da leggere" : undefined}>{c.unread}</span>}
+                                    {/* azioni rapide al hover: pillola sospesa sul lato destro,
+                                        stile Gmail — non ruba larghezza alla riga compatta */}
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex mail-pop items-center gap-0.5 rounded-full border border-white/10 bg-slate-900/90 backdrop-blur-md px-1 py-0.5 shadow-xl shadow-black/30">
+                                        {folder === "trash" ? (
+                                            <>
+                                                <IconBtn title="Ripristina" onClick={(e) => { e.stopPropagation(); doRestore(c); }}><RotateCcw className="w-3.5 h-3.5" /></IconBtn>
+                                                {/* elimina-per-sempre: solo chi governa le caselle (26/08) — il cestino basta a tutti gli altri */}
+                                                {puoGestireCaselle && <IconBtn title="Elimina definitivamente" danger onClick={(e) => { e.stopPropagation(); if (confirm("Eliminare definitivamente questa conversazione?")) deleteForever(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>}
+                                            </>
+                                        ) : folder === "spam" ? (
+                                            <>
+                                                <IconBtn title="Non è spam" onClick={(e) => { e.stopPropagation(); doSpam(c, false); }}><ShieldAlert className="w-3.5 h-3.5" /></IconBtn>
+                                                <IconBtn title="Cestina" danger onClick={(e) => { e.stopPropagation(); doTrash(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <IconBtn title="Archivia" onClick={(e) => { e.stopPropagation(); doArchive(c); }}><Archive className="w-3.5 h-3.5" /></IconBtn>
+                                                <IconBtn title="Segna come spam" onClick={(e) => { e.stopPropagation(); doSpam(c, true); }}><ShieldAlert className="w-3.5 h-3.5" /></IconBtn>
+                                                <IconBtn title="Cestina" danger onClick={(e) => { e.stopPropagation(); doTrash(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
-                                {/* azioni rapide al hover */}
-                                <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
-                                    {folder === "trash" ? (
-                                        <>
-                                            <IconBtn title="Ripristina" onClick={(e) => { e.stopPropagation(); doRestore(c); }}><RotateCcw className="w-3.5 h-3.5" /></IconBtn>
-                                            {/* elimina-per-sempre: solo chi governa le caselle (26/08) — il cestino basta a tutti gli altri */}
-                                            {puoGestireCaselle && <IconBtn title="Elimina definitivamente" danger onClick={(e) => { e.stopPropagation(); if (confirm("Eliminare definitivamente questa conversazione?")) deleteForever(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>}
-                                        </>
-                                    ) : folder === "spam" ? (
-                                        <>
-                                            <IconBtn title="Non è spam" onClick={(e) => { e.stopPropagation(); doSpam(c, false); }}><ShieldAlert className="w-3.5 h-3.5" /></IconBtn>
-                                            <IconBtn title="Cestina" danger onClick={(e) => { e.stopPropagation(); doTrash(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <IconBtn title="Archivia" onClick={(e) => { e.stopPropagation(); doArchive(c); }}><Archive className="w-3.5 h-3.5" /></IconBtn>
-                                            <IconBtn title="Segna come spam" onClick={(e) => { e.stopPropagation(); doSpam(c, true); }}><ShieldAlert className="w-3.5 h-3.5" /></IconBtn>
-                                            <IconBtn title="Cestina" danger onClick={(e) => { e.stopPropagation(); doTrash(c); }}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
 
                 {/* ── LETTURA thread ── */}
-                <div className={cn("glass-card flex flex-col min-h-0", !selConv && "hidden lg:flex")}>
+                <div className={cn("glass-panel shadow-lg flex flex-col min-h-0 overflow-hidden", !selConv && "hidden lg:flex")}>
                     {!selConv ? (
-                        <div className="flex-1 flex flex-col items-center justify-center text-slate-600 gap-3">
-                            <MailOpen className="w-14 h-14" />
-                            <span className="text-sm text-slate-500">Seleziona una email da leggere</span>
+                        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                            <div className="relative mail-pop">
+                                <div className="absolute inset-0 rounded-full bg-sky-500/15 blur-3xl scale-[2]" />
+                                <div className="relative w-20 h-20 rounded-[28px] bg-gradient-to-br from-sky-500/15 to-indigo-500/10 border border-white/10 flex items-center justify-center shadow-xl" style={{ animation: "mFloat 5s ease-in-out infinite" }}>
+                                    <MailOpen className="w-9 h-9 text-sky-300" />
+                                </div>
+                            </div>
+                            <div className="mail-in" style={{ animationDelay: "80ms" }}>
+                                <p className="text-sm font-bold text-slate-300">La tua posta, con calma</p>
+                                <p className="text-xs text-slate-500 mt-1 max-w-[250px] leading-relaxed">Scegli una conversazione dalla lista, oppure inizia tu il discorso.</p>
+                            </div>
+                            <button onClick={openNewCompose}
+                                className="mail-in mt-1 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sky-300 text-xs font-bold hover:bg-sky-500/10 hover:border-sky-500/30 transition-all duration-200 flex items-center gap-2 active:scale-95"
+                                style={{ animationDelay: "150ms" }}>
+                                <PenSquare className="w-3.5 h-3.5" /> Scrivi una email
+                            </button>
                         </div>
                     ) : (
                         <>
-                            <div className="px-4 py-3 border-b border-white/10 shrink-0">
+                            <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] shrink-0">
                                 <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0 flex items-center gap-2">
-                                        <button onClick={() => setSelConv(null)} className="lg:hidden p-1 -ml-1 text-slate-400 hover:text-white"><ChevronLeft className="w-5 h-5" /></button>
+                                    <div className="min-w-0 flex items-center gap-2.5">
+                                        <button onClick={() => setSelConv(null)} className="lg:hidden p-1.5 -ml-1 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><ChevronLeft className="w-5 h-5" /></button>
+                                        <div className={cn("hidden sm:flex w-10 h-10 rounded-full bg-gradient-to-br items-center justify-center text-xs font-bold text-white shrink-0 shadow-md", gradFor(selConv.customer_email || selConv.id))}>{iniziali(nomeConv(selConv))}</div>
                                         <div className="min-w-0">
-                                            <div className="text-base font-bold text-white truncate">{selConv.subject || "(senza oggetto)"}</div>
-                                            <div className="text-[11px] text-slate-500 truncate">{nomeConv(selConv)} · {selConv.customer_email}{selConv.client_id ? " · cliente collegato" : ""}</div>
+                                            <div className="text-base font-bold text-white truncate leading-tight">{selConv.subject || "(senza oggetto)"}</div>
+                                            <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
+                                                <span className="truncate">{nomeConv(selConv)} · {selConv.customer_email}</span>
+                                                {selConv.client_id && <span className="shrink-0 px-1.5 py-px rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[9px] font-bold uppercase tracking-wide">cliente collegato</span>}
+                                                {/* la PRIORITÀ del triage anche a thread aperto: stesso
+                                                    linguaggio dei pallini della lista, qui a parole */}
+                                                {triStati[selConv.id] === "rispondere" && <span className="shrink-0 px-1.5 py-px rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[9px] font-bold uppercase tracking-wide">aspetta risposta</span>}
+                                                {triStati[selConv.id] === "da_leggere" && <span className="shrink-0 px-1.5 py-px rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[9px] font-bold uppercase tracking-wide">da leggere</span>}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-0.5 shrink-0">
+                                    <div className="flex items-center gap-0.5 shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-1 py-0.5">
                                         <IconBtn title={selConv.starred ? "Togli speciale" : "Speciale"} onClick={() => toggleStar(selConv)}><Star className={cn("w-4 h-4", selConv.starred && "fill-amber-400 text-amber-400")} /></IconBtn>
                                         {selConv.trashed ? (
                                             <>
@@ -656,22 +776,24 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
                                 {msgsTotali > msgs.length && (
                                     <div className="text-center text-[11px] text-slate-500 py-1">
-                                        Conversazione lunga: mostrati gli ultimi {msgs.length} messaggi di {msgsTotali}.
+                                        <span className="inline-block px-3 py-1 rounded-full bg-white/[0.04] border border-white/10">Conversazione lunga: mostrati gli ultimi {msgs.length} messaggi di {msgsTotali}.</span>
                                     </div>
                                 )}
                                 {msgs.map(m => {
                                     const mine = m.direction === "out";
                                     return (
-                                        <div key={m.id} className={cn("rounded-2xl border p-3.5", mine ? "bg-sky-500/[0.08] border-sky-500/20" : "bg-white/[0.03] border-white/10")}>
+                                        /* carte-messaggio sfalsate: le mie rientrano da destra,
+                                           quelle in arrivo da sinistra — il thread respira */
+                                        <div key={m.id} className={cn("mail-in rounded-2xl border p-3.5", mine ? "bg-sky-500/[0.08] border-sky-500/25 lg:ml-10" : "bg-white/[0.03] border-white/10 lg:mr-10")}>
                                             <div className="flex items-center gap-2.5 mb-2">
-                                                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0", mine ? "bg-sky-500/25 text-sky-200" : "bg-slate-500/20 text-slate-300")}>
-                                                    {(mine ? (selAccObj?.display_name || "Tu") : (m.from_name || m.from_addr || "?")).slice(0, 2).toUpperCase()}
+                                                <div className={cn("w-8 h-8 rounded-full bg-gradient-to-br flex items-center justify-center text-[10px] font-bold text-white shrink-0 shadow-md", mine ? "from-sky-500 to-indigo-600" : gradFor(m.from_addr || selConv.customer_email || ""))}>
+                                                    {iniziali(mine ? (selAccObj?.display_name || "Tu") : (m.from_name || m.from_addr || "?"))}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
                                                     <div className="text-sm font-semibold text-white truncate">{mine ? "Tu" : (m.from_name || m.from_addr)}</div>
                                                     <div className="text-[10px] text-slate-500 truncate">{mine ? `a ${m.to_addrs || selConv.customer_email}` : (m.from_addr || "")}</div>
                                                 </div>
-                                                <div className="text-[10px] text-slate-500 shrink-0 flex items-center gap-1">
+                                                <div className="text-[10px] text-slate-500 shrink-0 flex items-center gap-1 tabular-nums">
                                                     {fmtOra(m.email_date || m.created_at)}
                                                     {mine && (m.status === "failed" ? <span className="text-rose-300" title="invio fallito">✕</span> : <Check className="w-3.5 h-3.5 text-sky-300" />)}
                                                 </div>
@@ -681,7 +803,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                                             {(m.attachments || []).length > 0 && (
                                                 <div className="mt-2.5 flex flex-wrap gap-1.5">
                                                     {(m.attachments || []).map((a: any, i: number) => (
-                                                        <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/25 hover:bg-black/40 text-xs text-slate-200 border border-white/5"><Paperclip className="w-3 h-3" /><span className="truncate max-w-[180px]">{a.name}</span></a>
+                                                        <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/25 hover:bg-black/40 text-xs text-slate-200 border border-white/10 transition-all duration-150 hover:border-sky-500/30 hover:-translate-y-0.5"><Paperclip className="w-3 h-3 text-sky-300" /><span className="truncate max-w-[180px]">{a.name}</span></a>
                                                     ))}
                                                 </div>
                                             )}
@@ -693,11 +815,17 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
 
                             {!selConv.trashed && !selConv.spam && (
                                 <div className="p-3 border-t border-white/10 shrink-0">
-                                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1.5 px-1"><CornerUpLeft className="w-3.5 h-3.5" /> Rispondi a {nomeConv(selConv)}</div>
-                                    <div className="flex gap-2 items-end">
-                                        <textarea value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) rispondi(); }}
-                                            rows={2} placeholder="Scrivi la risposta…  (Ctrl+Invio per inviare)" className="glass-input flex-1 text-sm resize-none max-h-40" />
-                                        <button onClick={rispondi} disabled={sending || !text.trim()} className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white shrink-0">{sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
+                                    {/* risposta rapida: una carta che si accende quando ci scrivi dentro */}
+                                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 transition-all duration-200 focus-within:border-sky-400/40 focus-within:bg-white/[0.05] focus-within:shadow-lg focus-within:shadow-sky-500/10">
+                                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1 px-1"><CornerUpLeft className="w-3.5 h-3.5 text-sky-400" /> Rispondi a <span className="text-slate-300 font-semibold truncate">{nomeConv(selConv)}</span></div>
+                                        <div className="flex gap-2 items-end">
+                                            <textarea value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) rispondi(); }}
+                                                rows={2} placeholder="Scrivi la risposta…  (Ctrl+Invio per inviare)" className="flex-1 bg-transparent border-0 outline-none text-sm text-slate-100 placeholder:text-slate-500 resize-none max-h-40 px-1 py-1" />
+                                            <button onClick={rispondi} disabled={sending || !text.trim()} title="Invia la risposta"
+                                                className={cn("p-2.5 rounded-full text-white shrink-0 transition-all duration-200", sending || !text.trim() ? "bg-white/10 text-slate-500" : "bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/30 hover:scale-105 active:scale-95")}>
+                                                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -706,26 +834,39 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                 </div>
             </div>
 
-            {/* ── COMPOSE dock (stile Gmail) ── */}
+            {/* ── COMPOSE dock (stile Gmail): la "carta luminosa" che sale da
+                destra — filo di luce sky sul bordo alto, campi a filo, Invia
+                col gradiente di sezione ── */}
             {composeOpen && selAcc && (
-                <div className="fixed z-[1000] bottom-0 right-0 sm:right-6 w-full sm:w-[512px] max-w-full">
-                    <div className="glass-card m-0 sm:mb-0 rounded-b-none sm:rounded-b-none rounded-t-2xl border border-white/10 shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[560px]">
-                        <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.04] rounded-t-2xl border-b border-white/10">
-                            <span className="text-sm font-bold text-white">{cDraftId ? "Bozza" : "Nuovo messaggio"}</span>
+                <div className="fixed z-[1000] bottom-0 right-0 sm:right-6 w-full sm:w-[520px] max-w-full">
+                    <div className="mail-dock glass-panel rounded-b-none rounded-t-3xl border border-white/15 shadow-2xl shadow-black/50 flex flex-col max-h-[85vh] sm:max-h-[560px] overflow-hidden">
+                        <div className="h-[3px] shrink-0 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500" />
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.04] border-b border-white/10">
+                            <span className="text-sm font-bold text-white flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/30"><PenSquare className="w-3.5 h-3.5 text-white" /></span>
+                                {cDraftId ? "Bozza" : "Nuovo messaggio"}
+                            </span>
                             <div className="flex items-center gap-1">
                                 <IconBtn title="Elimina bozza" danger onClick={discardCompose}><Trash2 className="w-4 h-4" /></IconBtn>
                                 <IconBtn title="Chiudi (salva bozza)" onClick={closeCompose}><X className="w-4 h-4" /></IconBtn>
                             </div>
                         </div>
-                        <div className="px-4 pt-3 flex flex-col gap-2 overflow-y-auto">
-                            <div className="text-[11px] text-slate-500 flex items-center gap-2 pb-1 border-b border-white/5">Da <span className="text-slate-300 font-medium">{selAccObj?.email_address}</span></div>
-                            <input value={cTo} onChange={e => setCTo(e.target.value)} className="bg-transparent border-b border-white/5 focus:border-sky-500/40 outline-none py-1.5 text-sm text-white placeholder:text-slate-500" placeholder="A (email del destinatario)" autoFocus />
-                            <input value={cSubject} onChange={e => setCSubject(e.target.value)} className="bg-transparent border-b border-white/5 focus:border-sky-500/40 outline-none py-1.5 text-sm text-white placeholder:text-slate-500" placeholder="Oggetto" />
-                            <textarea value={cBody} onChange={e => setCBody(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendCompose(); }} rows={9} className="bg-transparent outline-none py-2 text-sm text-slate-100 resize-none min-h-[140px] placeholder:text-slate-500" placeholder="Scrivi il messaggio…" />
+                        <div className="px-4 pt-3 flex flex-col gap-1.5 overflow-y-auto">
+                            <div className="text-[11px] text-slate-500 flex items-center gap-2 pb-2 border-b border-white/5">Da
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-300 font-medium">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />{selAccObj?.email_address}
+                                </span>
+                            </div>
+                            <input value={cTo} onChange={e => setCTo(e.target.value)} className="bg-transparent border-b border-white/5 focus:border-sky-400/50 outline-none py-2 text-sm text-white placeholder:text-slate-500 transition-colors" placeholder="A (email del destinatario)" autoFocus />
+                            <input value={cSubject} onChange={e => setCSubject(e.target.value)} className="bg-transparent border-b border-white/5 focus:border-sky-400/50 outline-none py-2 text-sm font-medium text-white placeholder:text-slate-500 transition-colors" placeholder="Oggetto" />
+                            <textarea value={cBody} onChange={e => setCBody(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendCompose(); }} rows={9} className="bg-transparent outline-none py-2.5 text-sm text-slate-100 leading-relaxed resize-none min-h-[150px] placeholder:text-slate-500" placeholder="Scrivi il messaggio…" />
                         </div>
-                        <div className="px-4 py-3 border-t border-white/10 flex items-center gap-2">
-                            <button onClick={sendCompose} disabled={sending || !cTo.trim() || !cBody.trim()} className="px-5 py-2 rounded-full bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white text-sm font-bold flex items-center gap-2">{sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Invia</button>
-                            <button onClick={() => saveDraft(false)} className="px-3 py-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold">Salva bozza</button>
+                        <div className="px-4 py-3 border-t border-white/10 bg-white/[0.02] flex items-center gap-2">
+                            <button onClick={sendCompose} disabled={sending || !cTo.trim() || !cBody.trim()}
+                                className={cn("px-5 py-2 rounded-full text-white text-sm font-bold flex items-center gap-2 transition-all duration-200", sending || !cTo.trim() || !cBody.trim() ? "bg-white/10 text-slate-500" : "bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/30 hover:-translate-y-0.5 active:scale-95")}>
+                                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Invia
+                            </button>
+                            <button onClick={() => saveDraft(false)} className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-semibold transition-colors">Salva bozza</button>
                             <span className="ml-auto text-[10px] text-slate-600">Ctrl+Invio per inviare</span>
                         </div>
                     </div>
@@ -747,38 +888,66 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     );
 }
 
-// intestazione riusabile (titolo/azioni + ricerca)
+// intestazione riusabile (titolo/azioni + ricerca) — due vesti: dentro la
+// chat una riga compatta con la ricerca in primo piano; da pagina intera un
+// banner con le aurore azzurre in movimento lento (pattern dell'hub Analisi)
 function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, setSearch, showSearch }: { embedded: boolean; onConnect?: () => void; onManage?: () => void; onRefresh?: () => void; refreshing?: boolean; search?: string; setSearch?: (v: string) => void; showSearch?: boolean }) {
-    return (
-        <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
-            {embedded ? (
-                showSearch ? (
-                    <div className="relative flex-1 min-w-[180px] max-w-md">
-                        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input value={search} onChange={e => setSearch?.(e.target.value)} placeholder="Cerca nelle email…" className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 focus:border-sky-500/40 outline-none" />
-                    </div>
-                ) : <p className="text-sm font-semibold text-slate-400">Le tue caselle email</p>
-            ) : (
-                <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-sky-500/15 border border-sky-500/30"><Mail className="w-6 h-6 text-sky-400" /></div>
-                    <div><h1 className="text-2xl font-black text-white tracking-tight">Email</h1><p className="text-slate-500 text-sm">Scrivi e rispondi ai clienti dal CRM</p></div>
-                </div>
+    const cerca = showSearch ? (
+        <div className="relative flex-1 min-w-[180px] max-w-md group">
+            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors group-focus-within:text-sky-300" />
+            <input value={search} onChange={e => setSearch?.(e.target.value)} placeholder="Cerca nelle email…"
+                className="w-full pl-10 pr-3 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 outline-none transition-all duration-200 focus:border-sky-400/50 focus:bg-white/[0.07] focus:ring-4 focus:ring-sky-500/10" />
+        </div>
+    ) : null;
+    const azioni = (
+        <div className="flex items-center gap-2 shrink-0">
+            {onRefresh && (
+                <button onClick={onRefresh} disabled={refreshing} title="Scarica la posta nuova"
+                    className="group p-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white disabled:opacity-40 transition-all duration-200 active:scale-90">
+                    {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 transition-transform duration-500 group-hover:rotate-180" />}
+                </button>
             )}
-            <div className="flex items-center gap-2 shrink-0">
-                {onRefresh && (
-                    <button onClick={onRefresh} disabled={refreshing} title="Scarica la posta nuova" className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 disabled:opacity-40">
-                        {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    </button>
-                )}
-                {onManage && (
-                    <button onClick={onManage} title="Gestisci caselle (elimina dal CRM)" className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300">
-                        <Settings className="w-4 h-4" />
-                    </button>
-                )}
-                {/* GOVERNANCE (26/08): il collega-casella compare solo a chi ha le
-                    capacità del Pannello Email — per gli altri le caselle arrivano
-                    assegnate dall'amministrazione */}
-                {onConnect && <button onClick={onConnect} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega email</button>}
+            {onManage && (
+                <button onClick={onManage} title="Gestisci caselle (elimina dal CRM)"
+                    className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all duration-200 active:scale-90">
+                    <Settings className="w-4 h-4" />
+                </button>
+            )}
+            {/* GOVERNANCE (26/08): il collega-casella compare solo a chi ha le
+                capacità del Pannello Email — per gli altri le caselle arrivano
+                assegnate dall'amministrazione */}
+            {onConnect && (
+                <button onClick={onConnect}
+                    className="px-4 py-2 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white text-sm font-bold flex items-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:-translate-y-0.5 active:scale-95">
+                    <Plus className="w-4 h-4" /> Collega email
+                </button>
+            )}
+        </div>
+    );
+    if (embedded) {
+        return (
+            <div className="mail-in flex items-center justify-between gap-3 flex-wrap shrink-0">
+                {cerca || <p className="text-sm font-semibold text-slate-400">Le tue caselle email</p>}
+                {azioni}
+            </div>
+        );
+    }
+    return (
+        <div className="mail-in relative overflow-hidden glass-panel shadow-lg px-5 py-4 shrink-0">
+            <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 rounded-full opacity-20 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-38bdf8), transparent 65%)", animation: "mAurora 18s ease-in-out infinite" }} />
+            <div className="pointer-events-none absolute -bottom-28 -right-16 w-96 h-96 rounded-full opacity-[0.15] blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-818cf8), transparent 65%)", animation: "mAurora 22s ease-in-out infinite reverse" }} />
+            <div className="relative flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="p-2.5 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg shadow-sky-500/30"><Mail className="w-6 h-6 text-white" /></div>
+                    <div className="min-w-0">
+                        <h1 className="text-2xl font-black text-white tracking-tight">Email</h1>
+                        <p className="text-slate-400 text-xs">Scrivi e rispondi ai clienti senza uscire dal CRM</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap flex-1 justify-end min-w-0">
+                    {cerca}
+                    {azioni}
+                </div>
             </div>
         </div>
     );
@@ -787,15 +956,23 @@ function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, 
 // piccolo bottone-icona riusabile
 function IconBtn({ children, title, onClick, danger }: { children: React.ReactNode; title: string; onClick: (e: React.MouseEvent) => void; danger?: boolean }) {
     return (
-        <button title={title} onClick={onClick} className={cn("p-1.5 rounded-lg transition-colors text-slate-400", danger ? "hover:bg-rose-500/20 hover:text-rose-300" : "hover:bg-white/10 hover:text-white")}>{children}</button>
+        <button title={title} onClick={onClick} className={cn("p-1.5 rounded-full transition-all duration-150 text-slate-400 active:scale-90", danger ? "hover:bg-rose-500/20 hover:text-rose-300" : "hover:bg-white/10 hover:text-white")}>{children}</button>
     );
 }
 
-function EmptyList({ icon: Icon, label }: { icon: any; label: string }) {
+// stato vuoto "caldo": icona su tessera in gradiente con alone morbido,
+// titolo e riga di spiegazione — mai un elenco muto
+function EmptyList({ icon: Icon, label, title }: { icon: any; label: string; title?: string }) {
     return (
-        <div className="flex flex-col items-center justify-center gap-2 py-14 text-slate-600">
-            <Icon className="w-10 h-10" />
-            <span className="text-sm text-slate-500 text-center px-6">{label}</span>
+        <div className="mail-in flex flex-col items-center justify-center gap-3 py-14 px-6 text-center">
+            <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-sky-500/15 blur-2xl scale-150" />
+                <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500/15 to-indigo-500/10 border border-white/10 flex items-center justify-center rotate-3 shadow-lg">
+                    <Icon className="w-6 h-6 text-sky-300" />
+                </div>
+            </div>
+            {title && <div className="text-sm font-bold text-slate-300">{title}</div>}
+            <span className="text-xs text-slate-500 max-w-xs leading-relaxed">{label}</span>
         </div>
     );
 }
@@ -847,7 +1024,7 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
     return (
         <div>
             <div className="flex justify-end -mt-1 mb-1.5">
-                <button onClick={() => setShowHtml(v => !v)} className="text-[11px] text-slate-500 hover:text-slate-300 flex items-center gap-1" title={showHtml ? "Mostra solo il testo" : "Mostra la versione con grafica"}>
+                <button onClick={() => setShowHtml(v => !v)} className="text-[10px] font-semibold text-slate-500 hover:text-sky-300 flex items-center gap-1 px-2 py-0.5 rounded-full hover:bg-white/5 transition-colors" title={showHtml ? "Mostra solo il testo" : "Mostra la versione con grafica"}>
                     <Code className="w-3 h-3" /> {showHtml ? "Testo semplice" : "Versione grafica"}
                 </button>
             </div>
@@ -899,36 +1076,39 @@ function ManageAccountsModal({ accounts, coloreCasella, userId, onClose, onDelet
         } finally { setBusyId(null); }
     };
     return (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div className="glass-card w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="mail-fade fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="mail-pop glass-panel shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-white/5">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-sky-300" /> Gestisci caselle</h3>
-                    <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                        <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/30"><Settings className="w-4 h-4 text-white" /></span>
+                        Gestisci caselle
+                    </h3>
+                    <button onClick={onClose} className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                     {accounts.length === 0 && <p className="text-sm text-slate-500 text-center py-8">Nessuna casella collegata.</p>}
-                    {accounts.map(a => {
+                    {accounts.map((a, i) => {
                         const col = coloreCasella(a.id);
                         return (
-                            <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03]">
+                            <div key={a.id} className="mail-in flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.05] hover:border-white/20" style={{ animationDelay: `${i * 40}ms` }}>
                                 <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", col.dot)} />
                                 <div className="min-w-0 flex-1">
                                     <p className="text-sm font-semibold text-white truncate">{a.display_name || a.email_address}</p>
                                     <p className="text-[11px] text-slate-500 truncate">{a.email_address}{a.negozio ? ` · ${a.negozio}` : ""}</p>
                                     {a.status !== "attiva"
                                         ? <p className="text-[11px] text-rose-300 truncate" title={a.last_error || ""}>In errore{a.last_error ? ` — ${a.last_error}` : ""}</p>
-                                        : <p className="text-[11px] text-emerald-300">Attiva</p>}
+                                        : <p className="text-[11px] text-emerald-300 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Attiva</p>}
                                 </div>
                                 <button onClick={() => elimina(a)} disabled={!!busyId}
                                     title="Elimina la casella dal CRM con tutto lo storico scaricato (la casella sul server non viene toccata)"
-                                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1.5 hover:bg-rose-500/25 disabled:opacity-40 shrink-0">
+                                    className="px-3 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1.5 hover:bg-rose-500/25 disabled:opacity-40 shrink-0 transition-all active:scale-95">
                                     {busyId === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Elimina
                                 </button>
                             </div>
                         );
                     })}
                 </div>
-                <div className="px-4 py-3 border-t border-white/10 text-[11px] text-slate-500">
+                <div className="px-4 py-3 border-t border-white/10 bg-white/[0.02] text-[11px] text-slate-500 leading-relaxed">
                     L'eliminazione toglie la casella dal CRM con tutto lo storico scaricato (conversazioni, messaggi, bozze, allegati).
                     La casella reale sul server di posta non viene toccata.
                 </div>
@@ -958,20 +1138,35 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
         onClose();
     };
     return (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div className="glass-card w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-white">Collega una casella email</h3><button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div>
-                <div className="space-y-3">
-                    <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nome (es. negozio)</label><input value={display} onChange={e => setDisplay(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="Magliana W3" /></div>
-                    <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Indirizzo email</label><input value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="magliana@telefuturasrl.com" autoFocus /></div>
-                    <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Password casella</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="password della casella" /></div>
-                    <button onClick={() => setAdv(v => !v)} className="text-xs text-slate-500 hover:text-slate-300">{adv ? "− " : "+ "}Impostazioni avanzate (server)</button>
-                    {adv && (<div className="grid grid-cols-1 gap-2">
-                        <input value={imapHost} onChange={e => setImapHost(e.target.value)} className="glass-input w-full text-sm" placeholder="IMAP host (auto: mail.tuodominio)" />
-                        <input value={smtpHost} onChange={e => setSmtpHost(e.target.value)} className="glass-input w-full text-sm" placeholder="SMTP host (auto: mail.tuodominio)" />
-                    </div>)}
-                    <div className="text-[11px] text-slate-500">Verifichiamo lettura e invio prima di salvare. IMAP/SMTP vengono rilevati dal dominio (Gmail, Aruba, o mail.tuodominio).</div>
-                    <button onClick={collega} disabled={busy || !email.trim() || !password} className="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white font-bold flex items-center justify-center gap-2">{busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifico…</> : "Collega casella"}</button>
+        <div className="mail-fade fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            {/* la modal vive anche da sola nel Pannello Email: le animazioni
+                viaggiano con lei (keyframes duplicati = innocui) */}
+            <style>{MAIL_CSS}</style>
+            <div className="mail-pop glass-panel shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="h-[3px] bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500" />
+                <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                            <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/30"><Mail className="w-4 h-4 text-white" /></span>
+                            Collega una casella email
+                        </h3>
+                        <button onClick={onClose} className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
+                    </div>
+                    <div className="space-y-3">
+                        <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nome (es. negozio)</label><input value={display} onChange={e => setDisplay(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="Magliana W3" /></div>
+                        <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Indirizzo email</label><input value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="magliana@telefuturasrl.com" autoFocus /></div>
+                        <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Password casella</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="password della casella" /></div>
+                        <button onClick={() => setAdv(v => !v)} className="text-xs text-slate-500 hover:text-sky-300 transition-colors">{adv ? "− " : "+ "}Impostazioni avanzate (server)</button>
+                        {adv && (<div className="mail-in grid grid-cols-1 gap-2">
+                            <input value={imapHost} onChange={e => setImapHost(e.target.value)} className="glass-input w-full text-sm" placeholder="IMAP host (auto: mail.tuodominio)" />
+                            <input value={smtpHost} onChange={e => setSmtpHost(e.target.value)} className="glass-input w-full text-sm" placeholder="SMTP host (auto: mail.tuodominio)" />
+                        </div>)}
+                        <div className="text-[11px] text-slate-500 leading-relaxed">Verifichiamo lettura e invio prima di salvare. IMAP/SMTP vengono rilevati dal dominio (Gmail, Aruba, o mail.tuodominio).</div>
+                        <button onClick={collega} disabled={busy || !email.trim() || !password}
+                            className={cn("w-full py-2.5 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-all duration-200", busy || !email.trim() || !password ? "bg-white/10 text-slate-500" : "bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/30 hover:-translate-y-0.5 active:scale-[0.98]")}>
+                            {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifico…</> : "Collega casella"}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
