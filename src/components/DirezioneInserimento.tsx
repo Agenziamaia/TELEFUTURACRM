@@ -26,6 +26,7 @@ import {
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
 import { PISTE_PARALLELE } from "@/lib/commissioning";
+import { TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { cn } from "@/utils";
 
 const SogliaBar = SogliaBarRaw as unknown as (p: {
@@ -141,16 +142,27 @@ export function DirezioneInserimentoAdmin() {
                         <button onClick={() => setGiro((g) => g + 1)} title="Ricarica l'avanzamento" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
                     </div>
                 </div>
-                {/* selettore BRAND: ogni operatore con le sue realtà */}
-                <div className="flex flex-wrap gap-2">
-                    {DIR_BRANDS.map((b) => (
-                        <button key={b.id} onClick={() => setBrand(b.id)}
-                            className={cn("px-4 py-2 rounded-xl text-sm font-bold border transition-all",
-                                brand === b.id ? "text-white border-transparent shadow-lg" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}
-                            style={brand === b.id ? { background: b.color } : undefined}>
-                            {b.label}
-                        </button>
-                    ))}
+                {/* selettore BRAND: parlano i LOGHI, non le scritte (Luca 26/08) —
+                    la card attiva si accende col glow del suo colore */}
+                <div className="flex flex-wrap gap-2.5">
+                    {DIR_BRANDS.map((b) => {
+                        const logo = TRK_BRAND_LOGOS[b.id];
+                        const attivo = brand === b.id;
+                        return (
+                            <button key={b.id} onClick={() => setBrand(b.id)} title={b.label}
+                                className={cn("group relative px-5 py-2.5 rounded-2xl border transition-all duration-200 flex items-center justify-center min-w-[104px]",
+                                    attivo ? "scale-105 border-transparent" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:scale-[1.03]")}
+                                style={attivo ? {
+                                    background: `linear-gradient(160deg, color-mix(in srgb, ${b.color} 26%, #0c0d14), color-mix(in srgb, ${b.color} 10%, #0c0d14))`,
+                                    boxShadow: `0 0 26px color-mix(in srgb, ${b.color} 45%, transparent), inset 0 0 14px color-mix(in srgb, ${b.color} 18%, transparent)`,
+                                    border: `1px solid color-mix(in srgb, ${b.color} 55%, transparent)`,
+                                } : undefined}>
+                                {logo
+                                    ? <img src={logo} alt={b.label} className={cn("h-6 w-auto max-w-[86px] object-contain transition-transform", attivo ? "drop-shadow-[0_0_8px_rgba(255,255,255,0.25)]" : "opacity-80 group-hover:opacity-100")} />
+                                    : <span className="text-sm font-bold text-white">{b.label}</span>}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -161,19 +173,37 @@ export function DirezioneInserimentoAdmin() {
             ) : !dir.codici.length ? (
                 <div className="glass-card p-8 text-center text-sm text-slate-400">Nessun codice {bMeta.label} per questo mese{brand === "windtre" ? <> — carica prima il <b>Target PDV</b> della lettera (Gare → WindTre, vista azienda)</> : null}.</div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                     {dir.nonAllocati > 0 && (
                         <div className="text-[11px] text-amber-400/80 px-1">⚠ {dir.nonAllocati} vendite valide del mese hanno un Cod.Ins. non riconducibile a una realtà: non compaiono qui sotto.</div>
                     )}
-                    {dir.codici.map((k) => {
+                    {/* W3 diviso nelle sue DUE anime (Luca 26/08): franchising e
+                        multibrand non si mischiano — sezioni dichiarate */}
+                    {(brand === "windtre"
+                        ? [
+                            { label: "🏪 Franchising", items: dir.codici.filter((x) => !x.cod_gara.startsWith("MB-")) },
+                            { label: "🔀 Multibrand", items: dir.codici.filter((x) => x.cod_gara.startsWith("MB-")) },
+                        ].filter((s) => s.items.length)
+                        : [{ label: null as string | null, items: dir.codici }]
+                    ).map((sez) => (
+                    <div key={sez.label || "tutti"} className="space-y-3">
+                    {sez.label && (
+                        <div className="flex items-center gap-2 px-1">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">{sez.label}</span>
+                            <span className="text-[10px] text-slate-600">{sez.items.length}</span>
+                            <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
+                        </div>
+                    )}
+                    {sez.items.map((k) => {
                         const on = aperto === k.cod_gara;
                         const pisteMostrate = dir.pisteTab.filter((p) => !PISTE_FUORI.has(p.chiave));
                         const nTarget = Object.entries(k.targets).filter(([p, v]) => v > 0 && !PISTE_FUORI.has(p)).length;
                         return (
-                            <div key={k.cod_gara} className="glass-card overflow-hidden">
+                            <div key={k.cod_gara} className="glass-card overflow-hidden transition-shadow"
+                                style={{ borderLeft: `3px solid ${on ? bMeta.color : `color-mix(in srgb, ${bMeta.color} 35%, transparent)`}`, boxShadow: on ? `0 0 22px color-mix(in srgb, ${bMeta.color} 22%, transparent)` : undefined }}>
                                 <button onClick={() => setAperto(on ? null : k.cod_gara)} className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors">
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: bMeta.color }} />
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: bMeta.color, boxShadow: `0 0 8px ${bMeta.color}` }} />
                                         <span className="text-sm font-black text-white truncate">{k.negozio}</span>
                                         <span className="text-[10px] font-mono text-slate-500">{k.cod_gara}</span>
                                         {k.cluster && <span className="text-[10px] text-slate-500 truncate hidden sm:inline">· {k.cluster}</span>}
@@ -226,9 +256,12 @@ export function DirezioneInserimentoAdmin() {
                                                                             salva(k.cod_gara, p.chiave, nuovo);
                                                                         }}
                                                                         title={attiva ? "Riclicca per togliere il target" : (sfrido ? `S${i + 1} = ${it(Number(s))} + ${sfrido}% sfrido → ${valore}` : `S${i + 1} = ${it(Number(s))}`)}
-                                                                        className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors",
-                                                                            attiva ? "text-white border-transparent" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
-                                                                        style={attiva ? { background: bMeta.color } : undefined}>
+                                                                        className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                                                                            attiva ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10 hover:scale-[1.03]")}
+                                                                        style={attiva ? {
+                                                                            background: `linear-gradient(160deg, ${bMeta.color}, color-mix(in srgb, ${bMeta.color} 62%, #000))`,
+                                                                            boxShadow: `0 0 14px color-mix(in srgb, ${bMeta.color} 55%, transparent)`,
+                                                                        } : undefined}>
                                                                         S{i + 1} · {valore}{attiva ? " ✕" : ""}
                                                                     </button>
                                                                 );
@@ -287,6 +320,8 @@ export function DirezioneInserimentoAdmin() {
                             </div>
                         );
                     })}
+                    </div>
+                    ))}
                     <div className="text-[10px] text-slate-600 px-1">Punti dal motore gare (tabellare azienda) · produzione allocata per Cod.Ins. · proiezione a strisce sul ritmo dei giorni lavorativi · l&apos;ora di scatto vale anche qui.</div>
                 </div>
             )}
@@ -350,12 +385,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                 <div className="flex flex-wrap gap-1.5">
                     {conTarget.map((d) => {
                         const m = DIR_BRANDS.find((b) => b.id === d.brand)!;
+                        const logo = TRK_BRAND_LOGOS[m.id];
+                        const attivo = brandSel === d.brand;
                         return (
-                            <button key={d.brand} onClick={() => { setBrandSel(d.brand); setPista(""); }}
-                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors",
-                                    brandSel === d.brand ? "text-white border-transparent" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
-                                style={brandSel === d.brand ? { background: m.color } : undefined}>
-                                {m.label}
+                            <button key={d.brand} onClick={() => { setBrandSel(d.brand); setPista(""); }} title={m.label}
+                                className={cn("px-3 py-1.5 rounded-lg border transition-all flex items-center justify-center",
+                                    attivo ? "border-transparent scale-105" : "bg-white/[0.04] border-white/10 hover:bg-white/10")}
+                                style={attivo ? { background: `color-mix(in srgb, ${m.color} 22%, #0c0d14)`, boxShadow: `0 0 12px color-mix(in srgb, ${m.color} 40%, transparent)`, border: `1px solid color-mix(in srgb, ${m.color} 50%, transparent)` } : undefined}>
+                                {logo ? <img src={logo} alt={m.label} className={cn("h-4 w-auto max-w-[64px] object-contain", attivo ? "" : "opacity-75")} /> : <span className="text-[11px] font-bold text-slate-200">{m.label}</span>}
                             </button>
                         );
                     })}
