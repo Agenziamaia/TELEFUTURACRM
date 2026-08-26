@@ -3320,7 +3320,13 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
       // Bundle e Accessori hanno SEMPRE la quantità (Luca 07/08, Regola 1):
       // il contatore appare anche se l'opzione a catalogo non è tipo "numero"
       next[o.nome]=(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))?1:true;}
-    setF("__opzioni",next);};
+    setF("__opzioni",next);
+    // RATA MENSILE (Luca 26/08): scelta la casella «0 €», il campo numerico si
+    // riempie da solo con 0 e si blocca — le due etichette si somigliano
+    // troppo, e con la rata scritta a mano si rischiava di dire «zero» sopra e
+    // «24,90» sotto, cioè di pagare 10 € una vendita che ne vale 15.
+    if(/^rata mensile 0/i.test(o.nome)&&!cur)setF("Rata mensile","0");
+    if(/^rata mensile oltre/i.test(o.nome)&&!cur&&String(f["Rata mensile"]||"")==="0")setF("Rata mensile","");};
   const _vinc=contaVincolate(opz);
   const _haVincolabili=(offSel?offSel.opzioni:[]).some(o=>_opzBundle(o.nome)||_opzAccessorio(o.nome));
   const campi=campiConOpzioni(risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,off,attive),opz);
@@ -3494,6 +3500,12 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
                 else _fasciaGaraFW(v).then(fx=>{const next=senzaFascia();if(fx)next[fx]=true;setF("__opzioni",next);});
               }
             }} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
+            if(/^rata mensile$/i.test(cmp.nome)){
+              const zero=Object.keys(opz).some(k=>opz[k]&&/^rata mensile 0/i.test(k));
+              return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={zero?"0":(f[cmp.nome]||"")}
+                o={v=>{if(!zero)setF(cmp.nome,v);}} dis={zero} p={zero?"telefono incluso, nessuna rata":"in euro"}
+                nt={zero?"bloccato a 0 dalla scelta qui sopra: se il cliente paga una rata, cambia la casella «Rata mensile oltre 0 €»":(cmp.nota||undefined)}/>;
+            }
             if(/mobile di convergenza/i.test(cmp.nome))return (
               <div key={cmp.nome}>
                 <TF l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p="3XXXXXXXXX" nt={cmp.nota||undefined}/>
