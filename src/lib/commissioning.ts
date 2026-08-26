@@ -445,7 +445,14 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // con modem FRITZ!Box: punteggio extra +1 (totale 4 punti: 1,5 1ª linea +
     // 1,5 2ª linea + 1 extra)». A catalogo l'opzione «2°Linea» non esiste su
     // queste offerte (solo su Super Fibra e Super Fibra Conv) proprio perché
-    // è compresa — quindi il flag non si accendeva mai e il Box valeva 2,75.
+    // è compresa (l'opzione c'è sui fratelli NON-Box: Super Fibra, Super Fibra
+    // Conv, Super Internet Professional 5G e 5G Conv) — quindi il flag non si
+    // accendeva mai e il Box valeva 2,75 invece di 4,25.
+    // ⚠️ APERTO: anche «Super Internet Professional 5G Box» e la Conv hanno lo
+    // stesso canone (51,99/44,99) e nessuna opzione 2°Linea a catalogo — cioè
+    // la stessa firma delle fibra Box — ma la regex non le prende e la lettera
+    // nomina solo la Super Fibra Professional Box. Zero vendite finora:
+    // allargare la regola solo dopo conferma di Luca/W3.
     // ⚠️ SOLO PUNTI, NIENTE EURO: il Box costa 51,99 contro i 31,99 della
     // Super Fibra, e il pay è canone × moltiplicatore — la seconda linea è
     // già pagata dentro il canone maggiorato. Sommarci anche il tier della
@@ -460,7 +467,10 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // Wind3 è UN ALTRO FISSO con canone 10 € → paga il moltiplicatore base
     // della soglia sul SUO canone (riga a € per soglia 20/30/35/40/50) più il
     // contrattuale dedicato 10 €, e conta 1,5 in soglia — pescata dall'opzione
-    if (ha("2°linea", "2° linea")) { f.add("seconda_linea"); f.add("contrattuale_2linea"); }
+    // se la 2ª linea è già INCLUSA nell'offerta, l'opzione non aggiunge nulla:
+    // senza questa guardia una Box con «2°Linea» spuntata (oggi impossibile a
+    // catalogo, domani chissà) varrebbe 5,5 punti invece di 4 e +30 € a S1
+    if (ha("2°linea", "2° linea") && !f.has("seconda_linea_inclusa")) { f.add("seconda_linea"); f.add("contrattuale_2linea"); }
     // Luce&Gas (scorporo Luca 14/08: il delta 35 della slide = 25 convergenza
     // già dentro le offerte Multiservice + 10 pronto assistenza): modificatori
     // additivi dalle opzioni — Pronto +10, Bollettino −15 (no SDD)

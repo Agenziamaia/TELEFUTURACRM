@@ -68,10 +68,24 @@ Per OGNI vendita valida (`produzioneValidaGare`, sostituzioni escluse):
 | cloud | fisso | opzione Cloud | +8 € (0 punti) |
 | fritz | fisso | offerta ~Professional Box | +40 € · punti +1 |
 | seconda_linea | fisso | opzione 2°Linea | tiers € 20/30/35/40/50 · punti 1,5 |
+| seconda_linea_inclusa | fisso | offerta ~Professional Box | **punti 1,5 · ZERO €** |
 | contrattuale/_conv/_voce/_2linea | fisso | offerta/opzione | 23/19/17/10 € |
 | base ×4 | lucegas | offerta (Multiservice = conv +25 inclusa) | tiers € 70-155 · punti 1 |
 | lg_pronto | lucegas | opzione Pronto Intervento | +10 € |
 | lg_bollettino | lucegas | opzione Bollettino | −15 € |
+
+> **2ª linea del Professional Box (Luca 26/08).** La lettera conta il Box
+> «4 punti: 1,5 1ª linea + 1,5 2ª linea + 1 extra»: la 2ª linea è COMPRESA
+> nell'offerta (a catalogo l'opzione «2°Linea» non c'è sulle Box) e va in
+> soglia, ma NON paga a parte — il canone del Box (51,99 contro 31,99) la
+> include già e il pay è canone × moltiplicatore. Il contrattuale da 10 € è
+> dell'OFFERTA «2ª linea Professional» venduta a sé, non di una linea
+> inclusa. L'opzione e l'inclusa sono mutuamente esclusive.
+> APERTI: ① «Super Internet Professional 5G Box» e Conv hanno la stessa
+> firma (canone +20 €, niente opzione 2°Linea) ma la regex non le prende e
+> la lettera non le nomina — decisione di Luca; ② Extra Gara P.IVA, colonna
+> Punti Soglia Fisso: «FRITZ!Box 1,5 PER LINEA» — oggi la riga business_piva
+> dà 1 punto secco al Box: da rivedere (muove la soglia di Ragione Sociale).
 
 Assicurazioni: pick-one per polizza (canone × molt, punti propri; Protecta
 via opzioni Kit+Pagamento obbligatorie → 18 righe kit). Customer Base:

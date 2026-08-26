@@ -49,7 +49,7 @@ const COMP_LABEL: Record<string, string> = {
     contrattuale: "contrattuale", contrattuale_conv: "contrattuale conv.", contrattuale_voce: "contrattuale Voce Casa",
     contrattuale_untied: "contrattuale Untied", contrattuale_tied: "contrattuale Tied", contrattuale_2linea: "contrattuale 2ª linea",
     netflix: "Netflix", pscu: "Più Sicuri", cloud: "Cloud", fritz: "FRITZ!Box",
-    seconda_linea: "2ª linea", lg_pronto: "Pronto assistenza", lg_bollettino: "Bollettino",
+    seconda_linea: "2ª linea", seconda_linea_inclusa: "2ª linea inclusa (Professional Box)", lg_pronto: "Pronto assistenza", lg_bollettino: "Bollettino",
 };
 // componenti che il pannello non può accendere da solo: dipendono dalla
 // vendita (le applica l'analisi leggendo campi e opzioni)
