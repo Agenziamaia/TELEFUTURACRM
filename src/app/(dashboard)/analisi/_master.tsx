@@ -23,7 +23,7 @@
 
 import { useMemo, useState } from "react";
 import { SelectMulti } from "@/components/SelectPersona";
-import { contestoVfFw, calcolaAvanzamento, matchRigaPartnership, matchRigheGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
+import { contestoVfFw, calcolaAvanzamento, matchRigheGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
 import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
@@ -188,10 +188,14 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         const eventi = [];
         let puntiPr = 0;
         for (const c of rawFr) {
-            const r = matchRigaPartnership(tab.righe, c);
-            if (!r) continue;
-            puntiPr += Number(r.punti || 0);
-            eventi.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: Number(r.punti || 0), g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
+            // stesso motore del Calcolatore (revisore 26/08: usavano due
+            // strade diverse — il giorno che la partnership avesse una
+            // componente, i due numeri sarebbero divergiti in silenzio)
+            const setPr = matchRigheGaraParallela(tab.righe, c, "partnership");
+            if (!setPr.length) continue;
+            const ptPr = Math.round(setPr.reduce((a, x) => a + Number(x.punti || 0), 0) * 100) / 100;
+            puntiPr += ptPr;
+            eventi.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: ptPr, g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
         }
         // EXTRA GARA P.IVA (Luca 26/08: «non esiste nemmeno nel master»): è una
         // gara PARALLELA come la Partnership — ogni attivazione business vale

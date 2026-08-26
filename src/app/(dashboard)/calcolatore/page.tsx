@@ -356,7 +356,8 @@ export default function CalcolatorePage() {
         // derivato ragazzi non abbia quelle piste: qui è una porta chiusa.
         if (!latoAzienda) return [];
         if (!tabEff || !offSel) return [];
-        const c = { tipo_cliente: tipoCli, categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome, provenienza: provSel, opzioni: opzSel.join(", ") };
+        // stessa fonte del pay (prodSel), non lo stato del selettore
+        const c = { tipo_cliente: prodSel?.tipo_cliente ?? tipoCli, categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome, provenienza: provSel, opzioni: opzSel.join(", ") };
         const ETICHETTE: Record<string, string> = { partnership: "🏅 Partnership Reward (eventi Customer Base)", business_piva: "💼 Extra Gara P.IVA (soglia di Ragione Sociale)" };
         return [...PISTE_PARALLELE].map(pista => {
             const set = matchRigheGaraParallela(tabEff.righe, c, pista);
