@@ -456,7 +456,15 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                             );
                         })}
                     </nav>
-                    {selAccObj && <div className="mt-auto pt-2 border-t border-white/5 text-[10px] text-slate-500 truncate px-1" title={selAccObj.email_address}>{selAccObj.email_address}</div>}
+                    {/* LEGENDA dei pallini a priorità (richiesta Luca 26/08 sera,
+                        con screenshot del rail): cosa significa il colore */}
+                    <div className="hidden lg:block mt-auto mb-1 px-2 py-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1.5">
+                        <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-0.5">I colori dei pallini</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" /> aspetta una risposta</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" /> da leggere</div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400"><span className="w-2.5 h-2.5 rounded-full bg-sky-500 shrink-0" /> non letta, senza fretta</div>
+                    </div>
+                    {selAccObj && <div className="pt-2 border-t border-white/5 text-[10px] text-slate-500 truncate px-1" title={selAccObj.email_address}>{selAccObj.email_address}</div>}
                 </div>
 
                 {/* ── LISTA ── */}
