@@ -25,6 +25,8 @@ import { ScreenshotEditor } from "./_components/ScreenshotEditor";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare, Sparkles } from "lucide-react";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_CHAT_OMNI } from "@/lib/capabilities";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { OmniChat } from "./_omni/OmniChat";
@@ -306,6 +308,11 @@ function ChatPageInner() {
   // La scelta resta memorizzata tra una visita e l'altra.
   // deep-link: /chat?wa=<numero> apre direttamente WhatsApp sul cliente;
   // /chat?mail=<indirizzo> apre la webmail già in composizione (Luca 28/07).
+  // OMNICHAT: la quarta scheda si vede solo a chi Luca l'ha accesa dalla
+  // rotellina dei permessi (Chat → Omnichat). Default: admin e dev.
+  const { perms: chatPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
+  const vedeOmni = capAllowed(user?.role, "/chat", CAP_CHAT_OMNI, chatPerms);
+
   const searchParams = useSearchParams();
   const waParam = searchParams.get("wa");
   // /chat?conv=<id> (25/08): apre LA conversazione esatta (dalla scheda cliente)
@@ -759,15 +766,16 @@ function ChatPageInner() {
         {/* OMNICHAT (Luca 26/08): la quarta scheda UNISCE le altre tre e ci
             mette accanto l'AI — recap, analisi e risposte pronte — più i dati
             del cliente. Le tre inbox non vengono riscritte: vengono RIUSATE
-            senza la loro lista, così restano tutte le loro funzioni. */}
-        <button onClick={() => setMode("omni")}
+            senza la loro lista, così restano tutte le loro funzioni.
+            Compare solo a chi ha il permesso: è ancora in lavorazione. */}
+        {vedeOmni && <button onClick={() => setMode("omni")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
             mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
           <Sparkles className="w-4 h-4" /> Omnichat
-        </button>
+        </button>}
       </div>
 
-      {mode === "omni" ? (
+      {mode === "omni" && vedeOmni ? (
         <OmniChat />
       ) : mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>

@@ -559,4 +559,27 @@ export const CAP_EMAIL_ADMIN: CapGroupFlags = {
     caps: [CAP_EM_UTENTI, CAP_EM_NEGOZI],
 };
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN];
+// ─── CHAT: chi vede la scheda OMNICHAT (Luca 26/08 sera) ────────────────────
+// «Dammi la possibilità di dedicare la visibilità dell'Omnichat solo a chi
+// dico io, e per ora lasciala aperta solo a me e a Francesco Latina, che
+// continuiamo a lavorarci sopra.»
+// È una scheda in costruzione dentro una pagina che i negozi usano tutto il
+// giorno: finché non è finita, si accende persona per persona dalla rotellina
+// invece di uscire per ruolo. Il default vale SOLO per admin e dev — chiunque
+// altro la vede se e solo se Luca gliela accende (riga `user:<id>`).
+// Le altre tre schede — chat interna, WhatsApp, email — non si toccano: questa
+// capacità governa l'Omnichat e basta.
+export const CAP_CHAT_OMNI: CapDef = {
+    id: "omnichat",
+    label: "Omnichat (in costruzione)",
+    desc: "Nella Chat vede la quarta scheda «Omnichat»: la lista unificata dei tre canali, l'assistente AI che riassume la conversazione e suggerisce le risposte, e la scheda del contatto (valore generato, telefono a rate, cronologia). Spenta = restano le tre schede di sempre. Default: solo admin e dev, perché la sezione è ancora in lavorazione.",
+    default: (r) => ["admin", "dev"].includes(r),
+};
+export const CAP_CHAT: CapGroupFlags = {
+    mode: "flags",
+    section: "/chat",
+    sectionLabel: "Chat",
+    caps: [CAP_CHAT_OMNI],
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT];
