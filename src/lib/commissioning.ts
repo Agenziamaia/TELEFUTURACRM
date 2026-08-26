@@ -341,7 +341,7 @@ function provenienzaOk(tokens: string, vendita: unknown): boolean {
    matchRigaGaraParallela. Senza questo, una vendita fuori dal modello a
    componenti (es. Protezione Pro Negozi business, categoria Multi-Servizi)
    verrebbe pagata dalla riga della gara parallela invece che dalla sua.  */
-export const PISTE_PARALLELE = new Set(["partnership", "business_piva"]);
+export const PISTE_PARALLELE = new Set(["partnership", "business_piva", "smartphone_cb"]);
 
 export function matchRigaTabellare(
     righe: PayRiga[],
@@ -692,6 +692,78 @@ export async function cutoffProduzione(monthISO: string): Promise<string | null>
 
 /** Contratti del brand nel mese (demo escluse in query, tetto 1000 superato).
  *  Le vendite di oggi entrano solo dopo l'ora di scatto (cutoffProduzione). */
+/* ═══ FASCIA DI PREZZO DEL TERMINALE (Luca 26/08) ══════════════════════
+   La lettera W3 paga il telefono per FASCIA DI STREET PRICE (<200 · 200-600
+   · ≥600) e la gara smartphone CB vuole «5G con SP ≥ 200 €». Il prezzo non
+   sta nell'offerta ma nel LISTINO, e la vendita porta solo il «Modello
+   Terminale» scritto a mano dal ragazzo. Qui il modello si aggancia al
+   listino e la fascia diventa un'OPZIONE della vendita: da lì in poi è il
+   normale matching per opzione, senza casi speciali nel motore.
+   Aggiungere opzioni non può rompere match esistenti (una riga matcha se le
+   opzioni che RICHIEDE sono tutte presenti), accende solo le righe nuove. */
+export const FASCIA_SP = { basso: "SP <200€", medio: "SP 200-600€", alto: "SP ≥600€" } as const;
+export const TOKEN_5G = "Terminale 5G";
+
+/** Finanziaria e importo aggiuntivo: la lettera divide il gettone del telefono
+ *  per finanziaria (VAR/Findomestic/Compass) e, sul Customer Base, per importo
+ *  aggiuntivo (= 0 oppure > 0). Il catalogo li dice già nel NOME OFFERTA
+ *  («Findomestic 0», «Compass > 600€», «Rata 0», «Rata > 0»), ma il nome ha
+ *  troppe varianti per ancorarci una riga: qui diventano due token puliti. */
+export function tokenTelefono(offerta: unknown, prodotto: unknown): string[] {
+    const off = String(offerta || ""), prod = String(prodotto || "");
+    if (!/telefon|rata|finanziato/i.test(off + " " + prod)) return [];
+    const t: string[] = [];
+    t.push(/compass/i.test(off) ? "Fin. Compass" : (/findomestic/i.test(off) ? "Fin. Findomestic" : "Fin. VAR"));
+    // «> 0» / «< 600€» / «> 600€» = c'è un importo aggiuntivo; «0» secco = no
+    const zero = /(^|\s)0(\s|$)/.test(off.replace(/>\s*0/g, "")) && !/>\s*0/.test(off);
+    t.push(zero ? "Imp.agg. 0" : "Imp.agg. >0");
+    return t;
+}
+
+const _listini = new Map<string, Map<string, number>>();
+
+/** normalizzazione tollerante: i modelli si scrivono a mano, con tagli e colori */
+function chiaveModello(x: unknown): string {
+    return String(x || "").toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\b(gb|tb|5g|4g|dual sim|ds)\b/g, "")
+        .replace(/\s+/g, " ").trim();
+}
+
+async function listinoDi(brandListino: string): Promise<Map<string, number>> {
+    const k = brandListino.toLowerCase();
+    const gia = _listini.get(k);
+    if (gia) return gia;
+    const m = new Map<string, number>();
+    const { data } = await supabase.from("listini_terminali").select("modello, prezzo").ilike("brand", brandListino).limit(3000);
+    for (const r of (data || []) as { modello: string; prezzo: number | null }[]) {
+        if (r.prezzo == null) continue;
+        const c = chiaveModello(r.modello);
+        if (c && !m.has(c)) m.set(c, Number(r.prezzo));
+    }
+    _listini.set(k, m);
+    return m;
+}
+
+/** prezzo del modello: esatto, poi sottostringa se e solo se è UNIVOCA
+ *  (due candidati = non si sa quale, meglio nessuna fascia che una sbagliata) */
+export function prezzoTerminale(listino: Map<string, number>, modello: unknown): number | null {
+    const c = chiaveModello(modello);
+    if (!c) return null;
+    const esatto = listino.get(c);
+    if (esatto != null) return esatto;
+    let trovato: number | null = null, n = 0;
+    for (const [k, v] of listino) {
+        if (k.includes(c) || c.includes(k)) { trovato = v; n++; if (n > 1) return null; }
+    }
+    return n === 1 ? trovato : null;
+}
+
+export function fasciaDaPrezzo(p: number | null): string | null {
+    if (p == null) return null;
+    return p < 200 ? FASCIA_SP.basso : (p < 600 ? FASCIA_SP.medio : FASCIA_SP.alto);
+}
+
 export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: string): Promise<ContrattoPay[]> {
     const { primo, ultimo } = estremiMese(monthISO);
     const escludiOggi = await cutoffProduzione(monthISO);
@@ -703,6 +775,9 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
             .gte("data", primo).lte("data", ultimo)
             .or("is_demo.is.null,is_demo.eq.false")
             .order("id").range(from, to) as unknown as PromiseLike<{ data: Raw[] | null; error: { message?: string } | null }>);
+    // il listino serve solo se nel mese c'è almeno un telefono
+    const conTerminale = (data || []).some(r => (r.dettagli as Record<string, unknown> | null)?.["Modello Terminale"]);
+    const listino = conTerminale ? await listinoDi(brandLabelPrefix) : new Map<string, number>();
     return (data || []).map(r => {
         const d = (r.dettagli || {}) as Record<string, unknown>;
         const cod = d["Cod.Ins."] ?? d["Codice Inserimento"] ?? null;
@@ -713,12 +788,24 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
         const { dettagli: _d, ...resto } = r;
         const prov = d["Operatore di Provenienza"];
         const opz = d["Opzioni"];
+        // TOKEN DEL TERMINALE: fascia di street price e 5G, aggiunti alle
+        // opzioni così le righe del gettone device li possono ancorare
+        const modello = d["Modello Terminale"];
+        const token: string[] = [];
+        if (modello) {
+            const f = fasciaDaPrezzo(prezzoTerminale(listino, modello));
+            if (f) token.push(f);
+            if (/5g/i.test(String(modello)) || /5g/i.test(String(r.offerta || ""))) token.push(TOKEN_5G);
+            token.push(...tokenTelefono(r.offerta, r.prodotto));
+        }
+        const opzBase = opz == null ? "" : String(opz);
+        const opzTot = [opzBase, ...token].filter(Boolean).join(", ");
         return {
             ...resto,
             categoria: catCat ? String(catCat) : r.categoria,
             cod_ins: cod == null ? null : String(cod),
             provenienza: prov == null ? null : String(prov),
-            opzioni: opz == null ? null : String(opz),
+            opzioni: opzTot || null,
         };
     }).filter(c => produzioneValidaGare(c) && (!escludiOggi || String(c.data || "").slice(0, 10) !== escludiOggi));
 }

@@ -684,6 +684,39 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
         }
         return [...m.entries()].sort((a, b) => (aPunti ? b[1].pt - a[1].pt : b[1].pz - a[1].pz));
     };
+    /* ANELLO PICCOLO DEL BOOST MNP (Luca 26/08: «un anello più piccolino
+       sotto a quello Wallet e uno sotto a quello Ricarica automatica, che
+       gli dice che ci sono anche questi extra punti dovuti alle MNP da
+       operatori speciali»). La lettera franchising: «le attivazioni W3 in
+       MNP provenienti da Iliad, Coop, Poste, Tiscali avranno punteggio
+       extra 1,0». I punti NON si ricalcolano qui: si leggono da boostProv,
+       che l'analisi prende dal set del motore — così se domani la regola
+       cambia, l'anello cambia con lei. */
+    const COLORI_PROV = { iliad: "#f97316", poste: "#facc15", coop: "#ef4444", tiscali: "#38bdf8" };
+    const famigliaProv = (p) => {
+        const x = String(p || "").trim().toLowerCase();
+        if (x.startsWith("iliad")) return "iliad";
+        if (x.startsWith("poste")) return "poste";
+        if (x.startsWith("coop")) return "coop";
+        if (x.startsWith("tiscali")) return "tiscali";
+        return null;
+    };
+    const ETICHETTA_PROV = { iliad: "Iliad", poste: "PosteMobile", coop: "CoopVoce", tiscali: "Tiscali" };
+    const boostDi = (items) => {
+        const m = new Map();
+        let pt = 0, pz = 0;
+        for (const it of items) {
+            const b = Number(it.boostProv || 0);
+            if (!b) continue;
+            const f = famigliaProv(it.provenienza) || "altri";
+            const r = m.get(f) || { pt: 0, pz: 0 };
+            r.pt = Math.round((r.pt + b) * 100) / 100; r.pz++;
+            m.set(f, r);
+            pt = Math.round((pt + b) * 100) / 100; pz++;
+        }
+        return { pt, pz, per: [...m.entries()].sort((a, b) => b[1].pt - a[1].pt) };
+    };
+
     // c'è almeno un'offerta MISTA nel tab attivo? → si accende la legenda
     const conMix = useMemo(() => gruppi.some((g) => {
         const m = new Map();
@@ -750,9 +783,24 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                                         </div>
                                     </div>
                                     <div className="flex gap-4 items-center">
-                                        <div className="shrink-0">
+                                        <div className="shrink-0 flex flex-col items-center gap-1.5">
                                             <Donut size={118} spessore={13} unit={aPunti ? "punti" : "pezzi"} slices={slices.length ? slices : [{ label: g.nome, colore: "rgba(255,255,255,.12)", val: 1, det: [] }]}
                                                 centro={<><span className="text-base font-black text-white tabular-nums leading-none">{aPunti ? fmtPt(g.val) : fmtN(g.val)}</span><span className="text-[8px] text-slate-500 uppercase mt-0.5">{aPunti ? "pt" : "pz"}</span></>} />
+                                            {(() => {
+                                                const b = boostDi(g.items);
+                                                if (!b.pz) return null;
+                                                return (
+                                                    <div className="flex flex-col items-center" title={`Boost MNP: ${b.per.map(([f, r]) => `${ETICHETTA_PROV[f] || "altri"} ${fmtN(r.pz)} pz = +${fmtPt(r.pt)} pt`).join(" · ")}`}>
+                                                        <Donut size={62} spessore={8} unit="punti"
+                                                            slices={b.per.map(([f, r]) => ({ label: ETICHETTA_PROV[f] || "Altri", colore: COLORI_PROV[f] || "#94a3b8", val: r.pt, det: [{ l: "pezzi", r: fmtN(r.pz) }, { l: "extra", r: `+${fmtPt(r.pt)} pt` }] }))}
+                                                            centro={<span className="text-[11px] font-black tabular-nums leading-none" style={{ color: "#f97316" }}>+{fmtPt(b.pt)}</span>} />
+                                                        <p className="text-[8px] uppercase tracking-wider text-slate-500 mt-0.5">boost MNP</p>
+                                                        <p className="text-[8px] text-slate-600 leading-tight text-center max-w-[92px]">
+                                                            {b.per.map(([f, r]) => `${ETICHETTA_PROV[f] || "altri"} ${fmtN(r.pz)}`).join(" · ")}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                         <div className="flex-1 min-w-0 space-y-1">
                                             {offerte.map(([off, r]) => (
@@ -787,6 +835,11 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                             );
                         })}
                     </div>
+                )}
+                {gruppi.some((g) => boostDi(g.items).pz > 0) && (
+                    <p className="text-[10px] text-slate-500 mt-3 flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: "#f97316" }} /> l&apos;anello piccolo è il <b className="text-slate-400">punteggio extra +1</b> che la lettera dà alle MNP da <b className="text-slate-400">Iliad, CoopVoce, PosteMobile, Tiscali</b> — è già dentro i punti dell&apos;anello grande</span>
+                    </p>
                 )}
                 {conMix && (
                     <p className="text-[10px] text-slate-500 mt-3 flex items-center gap-2">

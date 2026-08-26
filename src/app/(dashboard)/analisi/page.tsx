@@ -91,7 +91,13 @@ function arricchisci(rw3, rvf, rfw, rsky, tw3, tvf, tsky, prw3, assw3, idxDi) {
             id: c.id, brandGara,
             negozio: c.negozio || "—", venditore: c.venditore || "—", cod_ins: c.cod_ins || "—", g,
             categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta,
-            opzioni: c.opzioni, tipo: c.tipo_cliente,
+            opzioni: c.opzioni, tipo: c.tipo_cliente, provenienza: c.provenienza || null,
+            // BOOST MNP (Luca 26/08: «dove verifico che stiamo considerando il
+            // boost delle MNP da quegli operatori?»): i punti che arrivano
+            // dalla componente di conteggio, portati a video nel pannello
+            // pista. Si legge dal SET vero, non si riapplica la regola.
+            boostProv: Math.round(set.filter((r) => r.componente === "punti_mnp_prov")
+                .reduce((a, r) => a + Number(r.punti || 0), 0) * 100) / 100,
             pista: set[0]?.pista || null, punti: set.length ? puntiPerRighe(set) : 0,
             ...flags,
         });
