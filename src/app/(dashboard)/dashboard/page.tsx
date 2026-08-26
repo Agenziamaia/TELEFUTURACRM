@@ -76,12 +76,15 @@ const decodeCoord = (arr) => {
 };
 // v9 = stessa codifica su griglia a 8: identiche proporzioni, colonna doppia
 const daV9 = (arr) => decodeCoord(arr).map((w) => ({ ...w, x: w.x * 2, s: Math.min(16, w.s * 2) }));
-const daLegacy = (lista) => {
+const daLegacy = (lista, minHDi = () => 0) => {
     const out = [];
     let x = 0, y = 0, rigaH = 0;
     for (const w of lista) {
         const cols = COLS_DA_TAGLIA[w.s] || 4;
-        const h = H_DA_TAGLIA[w.s] || 4;
+        // i minimi del registry valgono anche nel packing del default: senza,
+        // la bussola nasceva h4, il clamp a 7 la faceva risalire nel buco
+        // sbagliato e il «quartetto» si sfalsava (revisore 27/08)
+        const h = Math.max(H_DA_TAGLIA[w.s] || 4, minHDi(w.k) || 0);
         if (x + cols > 16) { x = 0; y += rigaH; rigaH = 0; }
         out.push({ k: w.k, x, y, s: cols, h });
         x += cols; rigaH = Math.max(rigaH, h);
@@ -536,8 +539,8 @@ export default function Dashboard() {
         // oggetto → Home bianca)
         const lista = (raw && !Array.isArray(raw) && Number(raw.__v) >= 9)
             ? (Number(raw.__v) >= 10 ? decodeCoord(raw.lista) : daV9(raw.lista)).filter((w) => infoWidget(w.k, ctx))
-            : daLegacy(risolviLayout(Array.isArray(raw) ? raw : [], ctx));
-        setLayout(lista.length ? lista : daLegacy(layoutDefault(ctx)));
+            : daLegacy(risolviLayout(Array.isArray(raw) ? raw : [], ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0);
+        setLayout(lista.length ? lista : daLegacy(layoutDefault(ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0));
     }, [loading, savedLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const salvaLayout = async (next) => {
@@ -603,7 +606,7 @@ export default function Dashboard() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:text-white hover:bg-white/10 transition-colors">
                         <Plus className="w-3.5 h-3.5" /> Aggiungi
                     </button>
-                    <button onClick={() => salvaLayout(daLegacy(layoutDefault(ctx)))} title="Torna al layout consigliato"
+                    <button onClick={() => salvaLayout(daLegacy(layoutDefault(ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0))} title="Torna al layout consigliato"
                         className="px-2.5 py-1.5 rounded-lg border bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10 transition-colors">
                         <RotateCcw className="w-3.5 h-3.5" />
                     </button>
@@ -719,7 +722,7 @@ export default function Dashboard() {
                                 <span className="font-bold text-slate-400 uppercase tracking-wider">A chi è dedicato</span> — <b className="text-slate-300">TUTTI</b>: ogni ruolo ·
                                 <b className="text-sky-300"> PV</b>: punto vendita · <b className="text-sky-300">CC</b>: call center · <b className="text-sky-300">AG</b>: agenti ·
                                 <b className="text-sky-300"> SEDE</b>: sede · <b className="text-amber-300">MGR</b>: solo manager (rete, store manager, dir. call center) ·
-                                <b className="text-purple-300"> AMM</b>: amministrativo. Chi non è nel ruolo non lo vede proprio, in galleria come in Home.
+                                <b className="text-purple-300"> AMM</b>: amministrativo. Chi non è nel ruolo non lo vede proprio, in galleria come in Home (i ruoli di direzione vedono tutto).
                             </div>
                         </div>
                     </div>

@@ -5909,6 +5909,7 @@ function CRM() {
           notes: promDesc || nota || null,
           client_ref: clientId,
           created_by: user?.name || selVend || "—",
+          created_by_user_id: user?.id || null,
           assigned_to: selVend || user?.name || "—",
           assigned_to_store: promNeg || selNeg || null,
           is_demo: false,

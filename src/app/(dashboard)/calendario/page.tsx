@@ -75,6 +75,7 @@ interface CalendarTask {
     outcomeNote?: string; // Final note when closing/updating task
     clientRef?: string; // CF or Name + Phone
     createdBy: string;
+    createdByUserId?: string;
     assignedTo: string; // User name, or empty when assignedToStore is set
     assignedToStore?: string; // When set, task is for entire store
 }
@@ -278,6 +279,7 @@ function mapTaskRow(r: Record<string, unknown>): CalendarTask {
         outcomeNote: r.outcome_note as string | undefined,
         clientRef: r.client_ref as string | undefined,
         createdBy: r.created_by as string,
+        createdByUserId: (r.created_by_user_id as string | null) ?? undefined,
         assignedTo: (r.assigned_to as string) ?? "",
         assignedToStore: r.assigned_to_store as string | undefined,
     };
@@ -992,7 +994,6 @@ export default function Calendario() {
             notes: newAppt.notes || "",
             status: "scheduled",
             created_by: user?.name || "Sconosciuto",
-            created_by_user_id: user?.id || null,
         };
         let { data, error } = await supabase.from("appointments").insert(payload).select().single();
         if (error && /referente/.test(error.message)) {
@@ -1030,6 +1031,7 @@ export default function Calendario() {
             notes: newTask.notes || null,
             client_ref: newTask.clientRef || null,
             created_by: user?.name || "Sconosciuto",
+            created_by_user_id: user?.id || null,
             // esplicito: il default DB storico era TRUE e lo script di pulizia
             // demo cancellerebbe task vere (sanato con la mig. 160)
             is_demo: false,
@@ -1962,6 +1964,7 @@ export default function Calendario() {
                         <TaskDettaglioModal
                             t={taskDettaglio}
                             puoGestire={canAssignOthers || taskDettaglio.createdBy === user?.name}
+                            mioNome={user?.name || ""}
                             persone={[...(user?.name ? [user.name] : []), ...assignableAgents.filter(a => a !== user?.name)]}
                             negozi={storeNames}
                             esiti={esitiPer("task")}
@@ -2232,7 +2235,7 @@ export default function Calendario() {
                                                         const idx = order.indexOf(t.status);
                                                         const nextStatus = order[(idx + 1) % order.length];
                                                         const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
-                                                        await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                        await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false, outcome_note: null } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
                                                         setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus } : task));
                                                     }}
                                                     className={cn(
@@ -2273,7 +2276,7 @@ export default function Calendario() {
                                                             onChange={async e => {
                                                                 const s = e.target.value as TaskStatus;
                                                                 const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
-                                                                await supabase.from("calendar_tasks").update({ status: s, ...(s === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                                await supabase.from("calendar_tasks").update({ status: s, ...(s === "da_fare" ? { esito_at: null, esito_visto: false, outcome_note: null } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
                                                                 setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: s } : task));
                                                             }}
                                                         >
@@ -3352,9 +3355,10 @@ export default function Calendario() {
 // Cliccando una task nel calendario centrale o nel pannello a destra si apre
 // questo modale: campi modificabili (per chi la gestisce), stato, e AGGIUNTA
 // di nuovi assegnatari — persone o punti vendita — che genera task gemelle.
-function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, onAggiornata, onCopie, onElimina }: {
+function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, onClose, onAggiornata, onCopie, onElimina }: {
     t: CalendarTask;
     puoGestire: boolean;
+    mioNome?: string;
     persone: string[];
     negozi: string[];
     esiti: { chiave: string; etichetta: string; colore: string; attiva: boolean }[];
@@ -3381,6 +3385,16 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
         if (busy) return;
         setBusy(true);
         const patch: Record<string, unknown> = { status: stato };
+        // il GIRO DEGLI ESITI passa anche da qui (revisore 27/08: il modale
+        // era il terzo punto di cambio stato, dimenticato): chiusa da un
+        // altro → ritorno al creatore; riaperta → esito azzerato
+        if (stato !== t.status) {
+            if (stato === "da_fare") { patch.esito_at = null; patch.esito_visto = false; patch.outcome_note = null; }
+            else {
+                patch.esito_at = new Date().toISOString();
+                patch.esito_visto = String(t.createdBy || "").trim().toLowerCase() === String(mioNome || "").trim().toLowerCase();
+            }
+        }
         if (puoGestire) {
             patch.title = titolo.trim() || t.title;
             patch.date = data;
@@ -3395,6 +3409,7 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
             const base = {
                 title: (patch.title as string) || t.title, date: data, time: ora || null, status: "da_fare",
                 notes: note || null, client_ref: clienteRef.trim() || t.clientRef || null, created_by: t.createdBy || "—",
+                created_by_user_id: t.createdByUserId ?? null,
                 is_demo: false, // il default DB storico era TRUE (mig. 160)
             };
             const rows = [

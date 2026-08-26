@@ -2476,6 +2476,45 @@ function WidgetSerie({ ctx }) {
 // calendario (CAP_CALENDARIO_VISTA): tutti/call_center → rete · negozio →
 // i propri PV · propri → solo i propri appuntamenti (campo agente).
 const ymdLoc = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/* Riga task con CHIUSURA + NOTA di ritorno — TOP-LEVEL, non dentro i widget:
+   definita nel padre veniva rimontata a ogni tasto e il cursore della nota
+   saltava in coda (revisore 27/08). Usata da Agenda e Regia Task. */
+function RigaTaskNota({ t, oggiISO, extraSotto, diAltri, busy, nota, setNota, chiudi, tonoScaduta = "amber" }) {
+    const scaduta = t.date < oggiISO;
+    const aprendo = nota?.id === t.id;
+    return (
+        <div className={cn("rounded-lg border p-2",
+            scaduta ? (tonoScaduta === "rose" ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-amber-500/40 bg-amber-500/[0.07]") : "border-white/10 bg-white/[0.03]")}>
+            <div className="flex items-start gap-2">
+                <button disabled={busy === `t${t.id}`}
+                    onClick={() => { if (diAltri) setNota(aprendo ? null : { id: t.id, testo: "" }); else chiudi(t, ""); }}
+                    title={diAltri ? `Chiudi con una nota per ${t.created_by}` : "Segna come fatta"}
+                    className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                        {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : fmtGiornoIT(t.date))}
+                        {extraSotto || ""}
+                        {diAltri && t.created_by ? ` · da ${t.created_by}` : ""}
+                    </div>
+                    {t.notes && <div className="text-[10px] text-slate-400/80 truncate" title={t.notes}>{t.notes}</div>}
+                </div>
+            </div>
+            {aprendo && (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                    <input autoFocus value={nota.testo} onChange={(e) => setNota({ id: t.id, testo: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === "Enter") chiudi(t, nota.testo); }}
+                        placeholder={`Nota per ${t.created_by || "chi l'ha assegnata"}…`}
+                        className="glass-input !h-7 flex-1 min-w-0 text-[11px]" />
+                    <button disabled={busy === `t${t.id}`} onClick={() => chiudi(t, nota.testo)}
+                        className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15">✓ chiudi</button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function WidgetAgenda({ ctx, size }) {
     const [dati, setDati] = useState(null);   // { oggi: [], debito: [] }
     const [busy, setBusy] = useState(null);
@@ -2583,40 +2622,7 @@ function WidgetAgenda({ ctx, size }) {
     const nOggi = size >= 4 ? 8 : 4, nDeb = size >= 4 ? 6 : 3;
     const nTask = size >= 4 ? 10 : 6;
     const taskScadute = task.filter((t) => t.date < ctx.oggiISO);
-    const RigaTask = ({ t }) => {
-        const scaduta = t.date < ctx.oggiISO;
-        const diAltri = t.created_by && !creataDaMe(t);
-        const aprendo = notaTask?.id === t.id;
-        return (
-            <div className={cn("rounded-lg border p-2",
-                scaduta ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-white/10 bg-white/[0.03]")}>
-                <div className="flex items-start gap-2">
-                    <button disabled={busy === `t${t.id}`}
-                        onClick={() => { if (diAltri) setNotaTask(aprendo ? null : { id: t.id, testo: "" }); else chiudiTask(t, ""); }}
-                        title={diAltri ? `Chiudi con una nota per ${t.created_by}` : "Segna come fatta"}
-                        className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
-                    <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
-                        <div className="text-[10px] text-slate-500 truncate">
-                            {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : "oggi")}
-                            {t.assigned_to && vista !== "propri" ? ` · ${t.assigned_to}` : ""}
-                            {diAltri ? ` · da ${t.created_by}` : ""}
-                        </div>
-                    </div>
-                </div>
-                {aprendo && (
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                        <input autoFocus value={notaTask.testo} onChange={(e) => setNotaTask({ id: t.id, testo: e.target.value })}
-                            onKeyDown={(e) => { if (e.key === "Enter") chiudiTask(t, notaTask.testo); }}
-                            placeholder={`Nota per ${t.created_by}…`}
-                            className="glass-input !h-7 flex-1 min-w-0 text-[11px]" />
-                        <button disabled={busy === `t${t.id}`} onClick={() => chiudiTask(t, notaTask.testo)}
-                            className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15">✓ chiudi</button>
-                    </div>
-                )}
-            </div>
-        );
-    };
+
     return (
         <WidgetShell icon={CalendarCheck} title="Agenda del giorno" accent="var(--tf-38bdf8)"
             action={puoStringere ? (
@@ -2665,7 +2671,11 @@ function WidgetAgenda({ ctx, size }) {
                             ✅ Task
                             {taskScadute.length > 0 && <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5">{taskScadute.length} in ritardo</span>}
                         </div>
-                        {task.slice(0, nTask).map((t) => <RigaTask key={t.id} t={t} />)}
+                        {task.slice(0, nTask).map((t) => (
+                                    <RigaTaskNota key={t.id} t={t} oggiISO={ctx.oggiISO} busy={busy} nota={notaTask} setNota={setNotaTask} chiudi={chiudiTask}
+                                        diAltri={!!t.created_by && !creataDaMe(t)}
+                                        extraSotto={t.assigned_to && vista !== "propri" ? ` · ${t.assigned_to}` : ""} />
+                                ))}
                         {task.length > nTask && <div className="text-[10px] text-slate-500">…e altre {task.length - nTask} nel calendario</div>}
                         {!task.length && <div className="text-slate-500 text-xs text-center py-4">Nessuna task da fare 🎉</div>}
                     </div>
@@ -2981,9 +2991,10 @@ function WidgetRegiaTask({ ctx, size }) {
             const sel = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, created_by, created_by_user_id, outcome_note, esito_at, esito_visto";
             const [ap, rt] = await Promise.all([
                 supabase.from("calendar_tasks").select(sel).eq("status", "da_fare").order("date").order("time").limit(300),
-                supabase.from("calendar_tasks").select(sel).neq("status", "da_fare").eq("esito_visto", false).order("esito_at", { ascending: false }).limit(60),
+                supabase.from("calendar_tasks").select(sel).neq("status", "da_fare").eq("esito_visto", false).order("esito_at", { ascending: false, nullsFirst: false }).limit(60),
             ]);
             if (!vivo) return;
+            if (ap.error || rt.error) { setErrore((ap.error || rt.error)?.message || "errore di caricamento"); setDati({ mie: [], date: [], ritorni: [] }); return; }
             const aperte = ap.data || [];
             setDati({
                 mie: aperte.filter(èMia),
@@ -2994,7 +3005,7 @@ function WidgetRegiaTask({ ctx, size }) {
         return () => { vivo = false; };
     }, [ctx.visKey, giro]);   // eslint-disable-line react-hooks/exhaustive-deps
     const chiudi = async (t, nota) => {
-        setBusy(`c${t.id}`); setErrore(null);
+        setBusy(`t${t.id}`); setErrore(null);
         // se la chiudo io che l'ho creata non deve «tornare» a me stesso
         const { error } = await supabase.from("calendar_tasks").update({
             status: "fatta", outcome_note: (nota || "").trim() || null,
@@ -3019,40 +3030,7 @@ function WidgetRegiaTask({ ctx, size }) {
             {children}
         </div>
     );
-    const RigaMia = ({ t }) => {
-        const scaduta = t.date < oggiISO;
-        const diAltri = !creataDaMe(t);
-        const aprendo = notaPer?.id === t.id;
-        return (
-            <div className={cn("rounded-lg border p-2",
-                scaduta ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-white/10 bg-white/[0.03]")}>
-                <div className="flex items-start gap-2">
-                    <button disabled={busy === `c${t.id}`}
-                        onClick={() => { if (diAltri) setNotaPer(aprendo ? null : { id: t.id, testo: "" }); else chiudi(t, ""); }}
-                        title={diAltri ? "Chiudi (con una nota per chi te l'ha assegnata)" : "Segna come fatta"}
-                        className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
-                    <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
-                        <div className="text-[10px] text-slate-500 truncate">
-                            {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : fmtGiornoIT(t.date))}
-                            {t.created_by && diAltri ? ` · da ${t.created_by}` : ""}
-                        </div>
-                        {t.notes && <div className="text-[10px] text-slate-400/80 truncate" title={t.notes}>{t.notes}</div>}
-                    </div>
-                </div>
-                {aprendo && (
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                        <input autoFocus value={notaPer.testo} onChange={(e) => setNotaPer({ id: t.id, testo: e.target.value })}
-                            onKeyDown={(e) => { if (e.key === "Enter") chiudi(t, notaPer.testo); }}
-                            placeholder={`Nota per ${t.created_by || "chi l'ha assegnata"}…`}
-                            className="glass-input !h-7 flex-1 min-w-0 text-[11px]" />
-                        <button disabled={busy === `c${t.id}`} onClick={() => chiudi(t, notaPer.testo)}
-                            className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15">✓ chiudi</button>
-                    </div>
-                )}
-            </div>
-        );
-    };
+
     const RigaData = ({ t }) => {
         const scaduta = t.date < oggiISO;
         return (
@@ -3088,7 +3066,10 @@ function WidgetRegiaTask({ ctx, size }) {
             ) : (
                 <div className={cn("flex-1 min-h-0 overflow-y-auto flex gap-3", size >= 4 ? "flex-row" : "flex-col")}>
                     <Colonna titolo="📥 Le tue" badge={mie.length}>
-                        {mie.length ? mie.slice(0, nMax).map((t) => <RigaMia key={t.id} t={t} />)
+                        {mie.length ? mie.slice(0, nMax).map((t) => (
+                            <RigaTaskNota key={t.id} t={t} oggiISO={oggiISO} busy={busy} nota={notaPer} setNota={setNotaPer} chiudi={chiudi}
+                                diAltri={!creataDaMe(t)} tonoScaduta="rose" />
+                        ))
                             : <div className="text-[11px] text-slate-500 py-2">Nessuna task aperta. 🎉</div>}
                         {mie.length > nMax && <div className="text-[10px] text-slate-500">+{mie.length - nMax} nel <Link href="/calendario" className="text-indigo-300 font-bold">calendario</Link></div>}
                     </Colonna>
