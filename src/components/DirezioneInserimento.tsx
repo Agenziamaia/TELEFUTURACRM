@@ -180,6 +180,27 @@ export function DirezioneInserimentoAdmin() {
                 </div>
             </div>
 
+            {/* 🕊️ INSERIMENTO LIBERO (Luca 26/08 notte-5): il brand si può
+                «spegnere» — es. Sky, dove la regia non serve: la Bussola dei
+                ragazzi mostrerà «inserimento libero» invece dei consigli */}
+            {dir && (() => {
+                const libero = dir.politiche["__libero__"]?.modo === "libero";
+                const lKey = "pol|__libero__";
+                return (
+                    <div className={cn("glass-card p-3.5 flex flex-wrap items-center gap-3", libero && "border-emerald-500/30")}>
+                        <button type="button" onClick={() => salvaPolitica("__libero__", libero ? "guidato" : "libero")}
+                            className={cn("relative w-11 h-6 rounded-full transition-colors shrink-0", libero ? "bg-emerald-500" : "bg-white/15")}
+                            title={libero ? "Riattiva la regia degli inserimenti" : "Spegni la regia: inserimento libero"}>
+                            <span className={cn("absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all", libero ? "left-[22px]" : "left-0.5")} />
+                        </button>
+                        <span className="text-sm font-bold text-slate-100">🕊️ Inserimento libero per {bMeta.label}</span>
+                        <span className="text-[11px] text-slate-500">{libero ? "la Bussola dice ai ragazzi: «carica dove preferisci» — niente target né consigli" : "spento: vale la regia (target, politiche e consigli della Bussola)"}</span>
+                        {salvate[lKey] && <Check className="w-4 h-4 text-emerald-400" />}
+                        {erroriSalva[lKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                    </div>
+                );
+            })()}
+
             {/* SFRIDO GENERALE per categoria (Luca 26/08 sera-2): si imposta QUI,
                 una volta per pista, e vale per TUTTI i codici del brand — le
                 pillole soglia di ogni codice escono già maggiorate e intere */}
@@ -574,27 +595,54 @@ export function DirezioneInserimentoAdmin() {
 // ─────────────────────────────────────────────────────────────────────────────
 export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const [dirs, setDirs] = useState<Direzione[] | null>(null);
+    const [liberi, setLiberi] = useState<Set<string>>(new Set());
     const [brandSel, setBrandSel] = useState<DirBrandId | "">("");
     const [pista, setPista] = useState<string>("");
+    // 🔔 notifica cambi (Luca 26/08 notte-5): l'ultimo updated_at della
+    // direzione confrontato con l'ultima visita (localStorage per dispositivo)
+    const [novita, setNovita] = useState<string | null>(null);
 
     useEffect(() => {
         let vivo = true;
         (async () => {
             const mese = mesePrimo();
-            // solo i brand con ALMENO un target del mese: di solito 1-2 fetch
-            const { data } = await supabase.from("direzione_targets").select("brand").eq("month", mese).gt("target", 0);
-            const brands = [...new Set((data || []).map((r) => String(r.brand)))].filter((b) => DIR_BRANDS.some((x) => x.id === b)) as DirBrandId[];
+            // i brand con ALMENO un target + quelli in INSERIMENTO LIBERO
+            const [tgt, pol] = await Promise.all([
+                supabase.from("direzione_targets").select("brand, updated_at").eq("month", mese).gt("target", 0),
+                supabase.from("direzione_politiche").select("brand, pista, modo, updated_at").eq("month", mese),
+            ]);
+            const lib = new Set((pol.data || []).filter((r) => r.pista === "__libero__" && r.modo === "libero").map((r) => String(r.brand)));
+            const brands = [...new Set((tgt.data || []).map((r) => String(r.brand)))].filter((b) => DIR_BRANDS.some((x) => x.id === b) && !lib.has(b)) as DirBrandId[];
             const out = await Promise.all(brands.map((b) => caricaDirezione(b, mese).catch(() => null)));
-            if (vivo) setDirs(out.filter(Boolean) as Direzione[]);
+            if (!vivo) return;
+            setLiberi(lib);
+            setDirs(out.filter(Boolean) as Direzione[]);
+            // ultimo cambio della direzione (targets + politiche del mese)
+            const ts = [...(tgt.data || []), ...(pol.data || [])].map((r) => String(r.updated_at || "")).filter(Boolean).sort().pop() || null;
+            if (ts) {
+                let visto = "";
+                try { visto = localStorage.getItem("tf_direzione_visto") || ""; } catch { /* storage negato */ }
+                if (ts > visto) setNovita(ts);
+            }
         })();
         return () => { vivo = false; };
     }, []);
+    const segnaVisto = () => {
+        try { if (novita) localStorage.setItem("tf_direzione_visto", novita); } catch { /* storage negato */ }
+        setNovita(null);
+    };
 
     // doppia porta (come nel Calcolatore): le piste parallele non compaiono
     // MAI qui, qualunque cosa dica il pannello
     const conTarget = useMemo(() => (dirs || []).filter((d) =>
         d.codici.some((k) => Object.entries(k.targets).some(([p, v]) => v > 0 && !PISTE_FUORI.has(p)))), [dirs]);
-    useEffect(() => { if (conTarget.length && !conTarget.some((d) => d.brand === brandSel)) setBrandSel(conTarget[0].brand); }, [conTarget]); // eslint-disable-line
+    const brandsLiberi = useMemo(() => DIR_BRANDS.filter((b) => liberi.has(b.id)), [liberi]);
+    const tuttiBrand = useMemo(() => [
+        ...conTarget.map((d) => ({ id: d.brand as DirBrandId, libero: false })),
+        ...brandsLiberi.map((b) => ({ id: b.id as DirBrandId, libero: true })),
+    ], [conTarget, brandsLiberi]);
+    useEffect(() => { if (tuttiBrand.length && !tuttiBrand.some((d) => d.id === brandSel)) setBrandSel(tuttiBrand[0].id); }, [tuttiBrand]); // eslint-disable-line
+    const brandLibero = liberi.has(brandSel);
     const dir = conTarget.find((d) => d.brand === brandSel) || null;
     const pisteAttive = useMemo(() => {
         if (!dir) return [];
@@ -637,7 +685,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     }, [dir, pista, pistaDiGruppo, negozio]);
 
     if (!dirs) return <div className="p-5 flex items-center justify-center h-full min-h-[160px] text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /></div>;
-    if (!conTarget.length) {
+    if (!tuttiBrand.length) {
         return (
             <div className="p-5 text-center flex flex-col items-center justify-center gap-2 h-full min-h-[160px]">
                 <Compass className="w-8 h-8 text-slate-600" />
@@ -651,15 +699,24 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
     return (
         <div className="flex flex-col p-3 gap-2">
+            {/* 🔔 la direzione ha CAMBIATO gli inserimenti: avviso acceso finché
+                non lo si spegne — così si sa di dover riconsultare la Bussola */}
+            {novita && (
+                <div className="rounded-xl bg-amber-500/[0.12] border border-amber-500/40 px-3 py-2 flex items-center gap-2 animate-pulse">
+                    <span className="flex-1 text-[11px] font-bold text-amber-200">🔔 La direzione ha aggiornato gli inserimenti: controlla dove caricare!</span>
+                    <button onClick={segnaVisto} title="Ho visto le novità"
+                        className="shrink-0 px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-[11px] font-bold text-amber-100 hover:bg-amber-500/30">✓ visto</button>
+                </div>
+            )}
             <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa stai vendendo?</div>
-            {conTarget.length > 1 && (
+            {tuttiBrand.length > 1 && (
                 <div className="flex flex-wrap gap-1.5">
-                    {conTarget.map((d) => {
-                        const m = DIR_BRANDS.find((b) => b.id === d.brand)!;
+                    {tuttiBrand.map((d) => {
+                        const m = DIR_BRANDS.find((b) => b.id === d.id)!;
                         const logo = TRK_BRAND_LOGOS[m.id];
-                        const attivo = brandSel === d.brand;
+                        const attivo = brandSel === d.id;
                         return (
-                            <button key={d.brand} onClick={() => { setBrandSel(d.brand); setPista(""); }} title={m.label}
+                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); }} title={m.label}
                                 className={cn("px-3 py-1.5 rounded-lg border transition-all flex items-center justify-center",
                                     attivo ? "border-transparent scale-105" : "bg-white/[0.04] border-white/10 hover:bg-white/10")}
                                 style={attivo ? { background: `color-mix(in srgb, ${m.color} 22%, #0c0d14)`, boxShadow: `0 0 12px color-mix(in srgb, ${m.color} 40%, transparent)`, border: `1px solid color-mix(in srgb, ${m.color} 50%, transparent)` } : undefined}>
@@ -669,7 +726,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     })}
                 </div>
             )}
-            <div className="flex flex-wrap gap-1.5">
+            {/* brand in INSERIMENTO LIBERO: nessuna regia, si carica dove si vuole */}
+            {brandLibero && (
+                <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/25 px-3 py-3 text-center">
+                    <div className="text-sm font-black text-emerald-300">🕊️ Inserimento libero</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
+                </div>
+            )}
+            {!brandLibero && <div className="flex flex-wrap gap-1.5">
                 {pisteAttive.map((p) => (
                     <button key={p.chiave} onClick={() => setPista(p.chiave)}
                         className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors",

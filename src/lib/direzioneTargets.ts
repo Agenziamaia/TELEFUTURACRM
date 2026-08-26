@@ -212,9 +212,14 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
     const kpiCodice = brand === "windtre"
         ? W3_KPI_CODICE.filter((k) => pisteTab.some((p) => p.chiave === k))
         : pisteTab.map((p) => p.chiave);
-    // gruppo = tutto il resto (non parallelo, non per-codice)
+    // gruppo = tutto il resto (non parallelo, non per-codice) che abbia una
+    // CORSA — le piste senza soglie (es. «Telefoni & device», vive in
+    // pay_piste dal seed lettera per il conteggio TNP) sono dismesse: il
+    // Master le nasconde con la stessa regola («via la barra senza corsa»)
+    // e qui non sono un target (Luca 26/08 notte-6: «non esiste, toglilo»)
+    const conCorsa = new Set((tab?.soglie || []).map((s) => s.pista));
     const pisteGruppo = brand === "windtre"
-        ? pisteTab.filter((p) => !W3_KPI_CODICE.includes(p.chiave) && !PARALLELE_DIR.has(p.chiave)).map((p) => p.chiave)
+        ? pisteTab.filter((p) => !W3_KPI_CODICE.includes(p.chiave) && !PARALLELE_DIR.has(p.chiave) && conCorsa.has(p.chiave)).map((p) => p.chiave)
         : [];
     return {
         brand, monthISO, codici, nonAllocati,
