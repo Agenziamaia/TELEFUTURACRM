@@ -97,6 +97,7 @@ export function DirezioneInserimentoAdmin() {
     const [erroriSalva, setErroriSalva] = useState<Record<string, boolean>>({});
     const [gruppoAperto, setGruppoAperto] = useState(false);
     const [recapAperto, setRecapAperto] = useState(false);
+    const [legendaAperta, setLegendaAperta] = useState(false);
     const [giro, setGiro] = useState(0);
 
     useEffect(() => {
@@ -496,6 +497,30 @@ export function DirezioneInserimentoAdmin() {
                                             {salvate[polKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
                                             {erroriSalva[polKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
                                             <span className="text-[10px] text-slate-600">{pol === "proprio" ? "ogni negozio carica sul suo codice (i multibrand sull'associato)" : "la Bussola indirizza sul codice più scarico, stabile nella finestra"}</span>
+                                            {/* ⭐ PRIORITÀ anche sul gruppo (Luca 27/08-7): se
+                                                impostata, la Bussola manda TUTTI lì — vince
+                                                su bilancia e associati finché non la togli */}
+                                            <span className="text-[9px] font-bold text-slate-600 uppercase ml-1">priorità</span>
+                                            <div className="flex gap-1 flex-wrap">
+                                                {dir.codici.filter((x) => !x.multibrand && !x.catchAll).map((x) => {
+                                                    const prioG = ((dir.politiche[pg]?.dati as { priorita?: string[] } | null)?.priorita) || [];
+                                                    const idxG = prioG.indexOf(x.cod_gara);
+                                                    const onG = idxG >= 0;
+                                                    return (
+                                                        <button key={x.cod_gara}
+                                                            onClick={() => {
+                                                                const nuova = onG ? prioG.filter((c) => c !== x.cod_gara) : [...prioG, x.cod_gara];
+                                                                salvaPolitica(pg, dir.politiche[pg]?.modo || "proprio", { ...((dir.politiche[pg]?.dati as Record<string, unknown>) || {}), priorita: nuova });
+                                                            }}
+                                                            title={onG ? `Togli ${x.negozio} dalle priorità` : `Manda tutta la rete su ${x.negozio}`}
+                                                            className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold border transition-all",
+                                                                onG ? "text-white border-transparent" : "bg-white/[0.03] text-slate-500 border-white/10 hover:bg-white/10")}
+                                                            style={onG ? { background: bMeta.color } : undefined}>
+                                                            {onG ? `${["①", "②", "③", "④", "⑤", "⑥", "⑦"][idxG] || idxG + 1} ` : ""}{nomeBreve(x.negozio)}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -553,18 +578,26 @@ export function DirezioneInserimentoAdmin() {
                                 // è 0, non «assente»: il pallino è ROSSO (bug visto
                                 // da Luca: il grigio spettava solo a inizio mese)
                                 const pj = proiezioneDir(dir, f) ?? (projAttiva ? f : null);
-                                const stato = t <= 0 ? "vuoto" : f >= t ? "verde" : pj == null ? "grigio" : pj >= t ? "giallo" : "rosso";
-                                return { chiave: p.chiave, nome: p.nome, t, f, stato };
+                                // VIOLA (Luca 27/08-8, poi 15% «lo sfrido è già nelle
+                                // soglie»): proiezione oltre il target di +15% =
+                                // margine da SPOSTARE sui pallini rossi
+                                const stato = t <= 0 ? "vuoto" : f >= t ? "verde" : pj == null ? "grigio" : pj >= t * 1.15 ? "viola" : pj >= t ? "giallo" : "rosso";
+                                // la SIGLA della soglia impostata (S1..S4; CB 80%/100%):
+                                // da fuori si vede subito che soglia sto provando a prendere
+                                const tierScelto = k.tiersScelti?.[p.chiave] || null;
+                                const sigla = t <= 0 ? "" : tierScelto == null ? "✎" : (cbSem ? (tierScelto === 1 ? "80%" : "100%") : `S${tierScelto}`);
+                                return { chiave: p.chiave, nome: p.nome, t, f, stato, sigla };
                             });
                         const semCompatti = semafori.filter((x) => x.stato !== "vuoto");
                         const stilePallino = (stato: string) => stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
-                            : stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
-                                : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
-                                    : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
-                                        : { background: "transparent", border: "1px solid rgba(148,163,184,.3)" };
-                        const tipPallino = (x: { nome: string; f: number; t: number; stato: string }) =>
+                            : stato === "viola" ? { background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }
+                                : stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
+                                    : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
+                                        : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
+                                            : { background: "transparent", border: "1px solid rgba(148,163,184,.3)" };
+                        const tipPallino = (x: { nome: string; f: number; t: number; stato: string; sigla?: string }) =>
                             x.stato === "vuoto" ? `${x.nome}: nessun target dato` :
-                                `${x.nome}: ${it(x.f)} / ${it(x.t)} — ${x.stato === "verde" ? "🎯 target preso" : x.stato === "giallo" ? "in proiezione lo prende" : x.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione: serve una spinta"}`;
+                                `${x.nome}${x.sigla ? ` (${x.sigla === "✎" ? "target a mano" : "soglia " + x.sigla})` : ""}: ${it(x.f)} / ${it(x.t)} — ${x.stato === "verde" ? "🎯 target preso" : x.stato === "viola" ? "in proiezione lo SUPERA di oltre il 15%: margine da spostare sui rossi" : x.stato === "giallo" ? "in proiezione lo prende" : x.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione: serve una spinta"}`;
                         return (
                             <div key={k.cod_gara} className="glass-card overflow-hidden transition-shadow"
                                 style={{ borderLeft: `3px solid ${on ? bMeta.color : `color-mix(in srgb, ${bMeta.color} 35%, transparent)`}`, boxShadow: on ? `0 0 22px color-mix(in srgb, ${bMeta.color} 22%, transparent)` : undefined }}>
@@ -578,11 +611,12 @@ export function DirezioneInserimentoAdmin() {
                                     {/* la FILA incolonnata (Luca 27/08-2): stessa cella,
                                         stessa colonna su ogni riga → colpo d'occhio verticale */}
                                     {semafori.length > 0 && (
-                                        <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "112px" }}>
+                                        <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "128px" }}>
                                             {semafori.map((sm) => (
                                                 <span key={sm.chiave} title={tipPallino(sm)}
-                                                    className="flex items-center justify-between gap-1.5 rounded-md bg-white/[0.03] border border-white/[0.06] px-2 py-1">
-                                                    <span className="text-[10px] font-semibold text-slate-400 truncate">{EMOJI_PISTA(sm.nome)} {sm.nome}</span>
+                                                    className="flex items-center gap-1.5 rounded-md bg-white/[0.03] border border-white/[0.06] px-2 py-1">
+                                                    <span className="text-[10px] font-semibold text-slate-400 truncate flex-1">{EMOJI_PISTA(sm.nome)} {sm.nome}</span>
+                                                    {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
                                                     <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
                                                 </span>
                                             ))}
@@ -729,6 +763,38 @@ export function DirezioneInserimentoAdmin() {
                     })}
                     </div>
                     ))}
+                    {/* 📖 LEGENDA (Luca 27/08-9): le regole non scritte e i colori,
+                        così i dubbi si risolvono qui e non in chat */}
+                    <div className="glass-card p-4 space-y-3">
+                        <button type="button" onClick={() => setLegendaAperta((v) => !v)} className="w-full flex items-center gap-2 text-left">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">📖 Legenda — come decide la Bussola</span>
+                            <span className={cn("ml-auto text-slate-500 transition-transform text-xs", legendaAperta && "rotate-180")}>▾</span>
+                        </button>
+                        {legendaAperta && (
+                            <div className="grid gap-4 lg:grid-cols-2 text-[11px] leading-relaxed text-slate-300">
+                                <div className="space-y-1.5">
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase">L&apos;ordine delle decisioni</div>
+                                    <div><b className="text-white">⓪ Prima esigenza — i Target 1</b> (mobile, fisso e CB): finché un codice è sotto la sua <b>S1 nuda</b> (senza sfrido; per la CB l&apos;<b>80%</b> del target Partnership) si carica lì. Prima il negozio del venditore se è lui sotto, poi le priorità ①②③, poi la S1 più vicina a chiudersi. Lo sfrido lo colma il negozio con le attivazioni sue.</div>
+                                    <div><b className="text-white">① Le priorità ①②③</b> cliccate qui nel pannello: vincono su tutto finché il codice non chiude il suo target.</div>
+                                    <div><b className="text-white">② La strategia</b>: 🎯 <i>Chiudi il più vicino</i> scavalca il negozio del venditore; ⚖️ <i>Riempi il più scoperto</i> manda prima sul negozio del venditore finché ha capienza, poi sul più scoperto.</div>
+                                    <div><b className="text-white">③ A parità</b>: il negozio di chi sta caricando.</div>
+                                    <div><b className="text-white">💼 Business mobile</b>: prima TUTTI i codici al paletto della lettera, poi il pezzo di sfrido, e a paletti salvi si riversa sui punti mobile (con le regole qui sopra).</div>
+                                    <div><b className="text-white">🌍 Categorie di gruppo</b> (luce&amp;gas, assicurazioni…): ⭐ priorità se impostata → ⚖️ bilancia (il più scarico, stabile fino alla data) → 🏠 ognuno sul suo (i multibrand sull&apos;associato).</div>
+                                    <div><b className="text-white">🔒 Riservatezza</b>: il widget dei ragazzi dà SOLO il codice — mai target, avanzamenti o mancanti.</div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase">I pallini dei codici</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#34d399", boxShadow: "0 0 7px #34d399" }} /> <b className="text-white">Verde</b> — target preso.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }} /> <b className="text-white">Viola</b> — in proiezione lo SUPERA di oltre il 15%: c&apos;è margine da spostare sui rossi.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }} /> <b className="text-white">Giallo</b> — non ancora preso, ma in proiezione ci arriva.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse" style={{ background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} /> <b className="text-white">Rosso</b> (pulsante) — nemmeno in proiezione: serve una spinta.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "rgba(148,163,184,.45)" }} /> <b className="text-white">Grigio</b> — proiezione non ancora attiva (primi giorni del mese).</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ border: "1px solid rgba(148,163,184,.3)" }} /> <b className="text-white">Vuoto</b> — nessun target dato su quella pista.</div>
+                                    <div className="pt-1 text-slate-400">La sigla accanto al nome (S1…S4 · 80%/100% per la CB · ✎ = scritto a mano) è la <b className="text-white">soglia che hai impostato</b> come target del mese. Sulle barre: tacca <span className="text-emerald-300 font-bold">smeraldo</span> = il tuo target (sfrido incluso), coda <span className="text-rose-300 font-bold">rossa</span> = punti bruciati oltre il target, strisce = proiezione.</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div className="text-[10px] text-slate-600 px-1">Punti dal motore gare (tabellare azienda) · produzione allocata per Cod.Ins. · proiezione a strisce sul ritmo dei giorni lavorativi · l&apos;ora di scatto vale anche qui.</div>
                 </div>
             )}
@@ -828,6 +894,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         const nu = normS(negozio);
         const modo = dir.politiche[pista]?.modo || "proprio";
         (async () => {
+            // ⭐ PRIORITÀ esplicita della direzione (Luca 27/08): se impostata,
+            // vince su bilancia, associato e «ognuno sul suo»
+            const prioG = prioritaDi(dir, pista);
+            const kPrio = prioG.map((cod) => dir.codici.find((x) => x.cod_gara === cod)).find(Boolean);
+            if (kPrio) {
+                if (vivo) setTipGruppo({ testo: `📍 Caricala su ${kPrio.negozio}`, sub: "⭐ priorità della direzione" });
+                return;
+            }
             if (modo === "bilancia") {
                 const r = await codiceBilancia(dir, pista);
                 if (vivo && r) setTipGruppo({ testo: `📍 Caricala su ${r.codice.negozio}`, sub: `⚖️ ${finestraBilancia(r.fino).label}` });
