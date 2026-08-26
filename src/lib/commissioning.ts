@@ -299,7 +299,7 @@ async function caricaSoglieLato(brand: string, monthISO: string, lato: string): 
 /** Righe ragazzi senza pista madre (gettoni orfani, normalizzate). */
 async function caricaRigheOrfane(brand: string, monthISO: string): Promise<PayRiga[]> {
     const { data } = await supabase.from("pay_righe")
-        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente")
+        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers")
         .eq("brand", brand).eq("month", monthISO).eq("lato", "ragazzi").eq("attivo", true).order("ordine").limit(1000);
     return ((data || []) as Record<string, unknown>[]).map(r => ({
         ...(r as unknown as PayRiga),
@@ -515,7 +515,7 @@ export const EXTRA_OPZIONE = "extra_opzione";
 
 export function matchExtraOpzioni(
     righe: PayRiga[],
-    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; opzioni?: string | null },
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; opzioni?: string | null; provenienza?: string | null },
     brandVendita?: string | null,
 ): PayRiga[] {
     const scelte = String(c.opzioni || "").split(",")
@@ -537,6 +537,13 @@ export function matchExtraOpzioni(
         if (r.categoria != null) { if (!eq(r.categoria, c.categoria)) continue; score++; }
         if (r.prodotto != null) { if (!eq(r.prodotto, c.prodotto)) continue; score++; }
         if (r.offerta != null) { if (!eq(r.offerta, c.offerta)) continue; score += 2; }
+        // PROVENIENZA come negli altri matcher (revisore 26/08: era l'unico a
+        // ignorarla — un extra «solo da questi operatori» sarebbe stato dato
+        // a tutti nelle viste che non applicano il filtro di perimetro)
+        if (r.provenienza != null && r.provenienza.trim() !== "") {
+            if (!provenienzaOk(r.provenienza, (c as { provenienza?: string | null }).provenienza)) continue;
+            score += 2;
+        }
         // gli extra a opzione competono per NOME OPZIONE (una sola vince, così
         // si fanno le eccezioni); quelli per condizioni sono indipendenti fra
         // loro e si sommano tutti (ognuno è la sua voce di lettera)

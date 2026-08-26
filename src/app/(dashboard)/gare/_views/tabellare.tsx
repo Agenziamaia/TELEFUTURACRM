@@ -20,9 +20,9 @@ type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; sog
 type Riga = {
     id: string; pista: string | null; nome: string;
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null; offerta: string | null;
-    // condizione a OPZIONE (es. le combo «+ Protect», i telefoni fascia|modalità):
-    // solo lettura qui — si vede nel tooltip-ancora, si edita da DB/runner
-    opzione?: string | null;
+    // condizione a OPZIONE (es. le combo «+ Protect», i telefoni fascia|modalità)
+    // e PROVENIENZA (Kena/TIM): sola lettura qui — si vedono nel tooltip-ancora
+    opzione?: string | null; provenienza?: string | null;
     brand_vendita: string | null; moltiplicatore?: boolean; componente?: string | null; punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
     // S4 (Luca 25/08): ricorrente €/pezzo/mese informativo (dall'8° mese dal
@@ -60,7 +60,7 @@ const chiaveAncora = (r: Record<string, unknown>) =>
    pillola: si legge a colpo d'occhio come cambia il pay al variare di GA/MNP,
    ricarica pura/automatica, FTTC/FTTH… Ambra per le acquisizioni da altro
    operatore (MNP/GNP/Tied), grigia per le altre. */
-type Gruppo<T> = { titolo: string | null; righe: { r: T; variante: string | null }[] };
+type Gruppo<T> = { titolo: string | null; ambigue?: boolean; righe: { r: T; variante: string | null }[] };
 function raggruppaPerOfferta<T extends { id: string; nome: string; offerta: string | null; categoria: string | null; prodotto: string | null; opzione?: string | null; ordine: number }>(righe: T[]): Gruppo<T>[] {
     const out: Gruppo<T>[] = [];
     const idx = new Map<string, Gruppo<T>>();
@@ -94,11 +94,15 @@ function raggruppaPerOfferta<T extends { id: string; nome: string; offerta: stri
         // tornare ai nomi interi che mostrare due pillole identiche
         if (new Set(g.righe.map(v => v.variante)).size < g.righe.length) {
             for (const v of g.righe) v.variante = v.r.nome;
+            // etichette identiche = righe con le STESSE condizioni: per il
+            // motore sono indistinguibili e ne paga sempre una sola (l'altra
+            // è morta). Il titolo lo segnala (revisore 26/08).
+            g.ambigue = true;
         }
     }
     return out;
 }
-const pillolaVariante = (label: string) => /\b(mnp|gnp|tied)\b/i.test(label) && !/untied/i.test(label)
+const pillolaVariante = (label: string) => /\b(mnp|gnp|tied)\b/i.test(label.replace(/untied/ig, ""))
     ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
     : "border-white/10 bg-white/[0.04] text-slate-300";
 
@@ -222,7 +226,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const [p, s, r, az] = await Promise.all([
             supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
             supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
-            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
+            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
         setAziendaEsiste((az.count || 0) > 0);
@@ -239,7 +243,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             const [ap, as, ar, am] = await Promise.all([
                 supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct, soglie_max").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
                 supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
-                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
+                supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, componente, punti, pay_base, pay_tiers, gettone, attivo, note, ordine, ricorrente, pay_ragazzi_tiers").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
                 supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc").eq("brand", ctx).eq("month", monthISO),
             ]);
             // mappa % per soglia (pay girato): dove esiste SOSTITUISCE la % di
@@ -341,6 +345,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     soglie: ((as2.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })),
                 });
                 const mapa = new Map<string, { base: number | null; tiers: number[] }>();
+                const conta = new Map<string, number>();
+                for (const x of (ar2.data || []) as Record<string, unknown>[]) {
+                    const k = `n|${String(x.pista || "")}|${String(x.nome || "").trim().toLowerCase()}`;
+                    conta.set(k, (conta.get(k) || 0) + 1);
+                }
+                const nomiUnici = new Set([...conta.entries()].filter(([, c]) => c === 1).map(([k]) => k));
                 for (const x of (ar2.data || []) as Record<string, unknown>[]) {
                     const v = {
                         base: x.pay_base == null ? null : Number(x.pay_base),
@@ -348,9 +358,12 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     };
                     // due chiavi: il NOME (su VF disambigua Ric.Auto/Wallet dove
                     // le condizioni sono identiche — per questo si prova prima)
-                    // e l'ANCORA. Sempre first-wins, con le righe ordinate.
+                    // e l'ANCORA. Il nome vale SOLO se è unico nella pista:
+                    // «Mobile Start · Ric.Auto MNP» esiste su tre offerte
+                    // diverse, appaiare per nome darebbe un riferimento a caso
+                    // (revisore 26/08). Sempre first-wins, righe ordinate.
                     const kn = `n|${String(x.pista || "")}|${String(x.nome || "").trim().toLowerCase()}`;
-                    if (!mapa.has(kn)) mapa.set(kn, v);
+                    if (nomiUnici.has(kn) && !mapa.has(kn)) mapa.set(kn, v);
                     const ka = chiaveAncora(x);
                     if (!mapa.has(ka)) mapa.set(ka, v);
                 }
@@ -854,7 +867,8 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                     <Fragment key={g.titolo ? `g${gi}` : g.righe[0].r.id}>
                                                         {g.titolo && (
                                                             <tr className="border-t border-white/[0.06]">
-                                                                <td colSpan={2 + (ctx === "s4" ? 0 : 1) + nT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.titolo}</td>
+                                                                <td colSpan={3 + (ctx === "s4" ? 0 : 1) + nT} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.titolo}
+                                                        {g.ambigue && <span className="ml-2 text-[10px] font-bold text-amber-300/90" title="Due o più righe di questa offerta hanno le stesse condizioni: il motore non sa distinguerle e ne paga sempre una sola. Vanno differenziate (o rimossa quella di troppo).">⚠ righe indistinguibili</span>}</td>
                                                             </tr>
                                                         )}
                                                         {g.righe.map(({ r, variante }) => <RigaPayRagazzi key={r.id} r={r} nT={nT} senzaBase={ctx === "s4"} dopo={load} variante={variante} />)}
@@ -1102,7 +1116,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             {lato === "ragazzi" && aziendaEsiste && (() => {
                                 const conf = rr.map(x => ({ mio: x.pay_tiers, loro: azDi(x)?.tiers })).filter(x => x.loro?.length);
                                 if (!conf.length) return <span className="text-[10px] font-bold text-slate-400 bg-white/[0.06] border border-white/10 rounded-full px-2 py-0.5">voci proprie dei ragazzi</span>;
-                                const pcts = conf.flatMap(x => (x.loro || []).map((v, i) => v ? Math.round(Number(x.mio[i] ?? 0) / Number(v) * 1000) / 10 : null).filter((v): v is number => v != null));
+                                const pcts = conf.flatMap(x => (x.loro || []).map((v, i) => v && x.mio[i] != null ? Math.round(Number(x.mio[i]) / Number(v) * 1000) / 10 : null).filter((v): v is number => v != null));
                                 const uniche = [...new Set(pcts)];
                                 const testo = uniche.length === 1 ? `= ${eurIt(uniche[0])}% dell'azienda` : "✍️ importi a mano (quota non uniforme)";
                                 return <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${uniche.length === 1 ? "text-emerald-300/90 bg-emerald-500/10 border-emerald-500/30" : "text-amber-300/90 bg-amber-500/10 border-amber-500/30"}`}
@@ -1150,7 +1164,8 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                             <Fragment key={g.titolo ? `g${gi}` : g.righe[0].r.id}>
                                                 {g.titolo && (
                                                     <tr className="border-t border-white/[0.06]">
-                                                        <td colSpan={2 + (mostraRic ? 1 : 0) + (ctx === "s4" ? 0 : 1) + nTiers} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.titolo}</td>
+                                                        <td colSpan={3 + (mostraRic ? 1 : 0) + (ctx === "s4" ? 0 : 1) + nTiers} className="px-3 pt-2 pb-0.5 font-semibold text-white">{g.titolo}
+                                                        {g.ambigue && <span className="ml-2 text-[10px] font-bold text-amber-300/90" title="Due o più righe di questa offerta hanno le stesse condizioni: il motore non sa distinguerle e ne paga sempre una sola. Vanno differenziate (o rimossa quella di troppo).">⚠ righe indistinguibili</span>}</td>
                                                     </tr>
                                                 )}
                                                 {g.righe.map(({ r, variante }) => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} conRicorrente={mostraRic} senzaBase={ctx === "s4"} az={azRighe ? (azDi(r) ?? null) : undefined} variante={variante} />)}
@@ -1356,7 +1371,9 @@ function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina, conRicorrente, 
     variante?: string | null;
 }) {
     const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta, r.opzione && `opzione: ${r.opzione}`].filter(Boolean).join(" · ") || "qualsiasi vendita";
-    const tip = anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.moltiplicatore ? " · i valori sono MOLTIPLICATORI del canone mensile" : "") + (r.note ? ` — ${r.note}` : "");
+    // il NOME in testa: con la pillola-variante non si vede da nessun'altra
+    // parte, e il nome è portante (appaiamenti, conferme) — revisore 26/08
+    const tip = `«${r.nome}» · ` + anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.moltiplicatore ? " · i valori sono MOLTIPLICATORI del canone mensile" : "") + (r.note ? ` — ${r.note}` : "");
     const cell = "w-full bg-transparent text-center text-sm text-white border-b border-transparent focus:border-indigo-400 outline-none py-0.5";
     const [rinomina, setRinomina] = useState(false);   // pillola → input col ✎
     // BOLLA di confronto (Luca 26/08): sul lato ragazzi con tabellare PROPRIO
