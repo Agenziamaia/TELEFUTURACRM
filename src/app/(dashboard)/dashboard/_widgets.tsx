@@ -48,6 +48,7 @@ import {
     Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, CalendarClock,
     LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords, MessageCircle,
     Euro, Flame, TrainFront, CalendarCheck, Shield, Banknote, Mail,
+    ClipboardList,
 } from "lucide-react";
 import { CoronaOro } from "@/components/IconaCorona";
 
@@ -2508,7 +2509,7 @@ function WidgetAgenda({ ctx, size }) {
             // task»): stessa finestra degli appuntamenti — quelle di oggi più
             // gli arretrati ancora da fare. Vengono da `calendar_tasks`, le
             // stesse che si creano dal Calendario.
-            const selT = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, client_ref";
+            const selT = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, client_ref, created_by, created_by_user_id";
             const [og, deb, tk] = await Promise.all([
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("date", ctx.oggiISO).order("time").limit(100),
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("status", "scheduled")
@@ -2539,10 +2540,17 @@ function WidgetAgenda({ ctx, size }) {
         setBusy(null);
         if (error) setErrore(error); else setGiro((g) => g + 1);
     };
-    const chiudiTask = async (t) => {
+    // task assegnata DA UN ALTRO → alla chiusura si chiede una nota che
+    // TORNA a chi l'ha assegnata (Luca 27/08: «con eventuali note che mi mette»)
+    const [notaTask, setNotaTask] = useState(null);   // { id, testo }
+    const creataDaMe = (t) => (t.created_by_user_id && t.created_by_user_id === ctx.user?.id) || (t.created_by && norm(t.created_by) === norm(ctx.user?.name));
+    const chiudiTask = async (t, nota) => {
         setBusy(`t${t.id}`); setErrore(null);
-        const { error } = await supabase.from("calendar_tasks").update({ status: "fatta" }).eq("id", t.id);
-        setBusy(null);
+        const { error } = await supabase.from("calendar_tasks").update({
+            status: "fatta", outcome_note: (nota || "").trim() || null,
+            esito_at: new Date().toISOString(), esito_visto: creataDaMe(t),
+        }).eq("id", t.id);
+        setBusy(null); setNotaTask(null);
         if (error) setErrore(error.message || "non sono riuscito a chiuderla"); else setGiro((g) => g + 1);
     };
     const ieriISO = ymdLoc((() => { const d = new Date(); d.setDate(d.getDate() - 1); return d; })());
@@ -2577,18 +2585,35 @@ function WidgetAgenda({ ctx, size }) {
     const taskScadute = task.filter((t) => t.date < ctx.oggiISO);
     const RigaTask = ({ t }) => {
         const scaduta = t.date < ctx.oggiISO;
+        const diAltri = t.created_by && !creataDaMe(t);
+        const aprendo = notaTask?.id === t.id;
         return (
-            <div className={cn("rounded-lg border p-2 flex items-start gap-2",
+            <div className={cn("rounded-lg border p-2",
                 scaduta ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-white/10 bg-white/[0.03]")}>
-                <button disabled={busy === `t${t.id}`} onClick={() => chiudiTask(t)} title="Segna come fatta"
-                    className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
-                <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
-                    <div className="text-[10px] text-slate-500 truncate">
-                        {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : "oggi")}
-                        {t.assigned_to && vista !== "propri" ? ` · ${t.assigned_to}` : ""}
+                <div className="flex items-start gap-2">
+                    <button disabled={busy === `t${t.id}`}
+                        onClick={() => { if (diAltri) setNotaTask(aprendo ? null : { id: t.id, testo: "" }); else chiudiTask(t, ""); }}
+                        title={diAltri ? `Chiudi con una nota per ${t.created_by}` : "Segna come fatta"}
+                        className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                            {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : "oggi")}
+                            {t.assigned_to && vista !== "propri" ? ` · ${t.assigned_to}` : ""}
+                            {diAltri ? ` · da ${t.created_by}` : ""}
+                        </div>
                     </div>
                 </div>
+                {aprendo && (
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                        <input autoFocus value={notaTask.testo} onChange={(e) => setNotaTask({ id: t.id, testo: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === "Enter") chiudiTask(t, notaTask.testo); }}
+                            placeholder={`Nota per ${t.created_by}…`}
+                            className="glass-input !h-7 flex-1 min-w-0 text-[11px]" />
+                        <button disabled={busy === `t${t.id}`} onClick={() => chiudiTask(t, notaTask.testo)}
+                            className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15">✓ chiudi</button>
+                    </div>
+                )}
             </div>
         );
     };
@@ -2933,6 +2958,152 @@ function WidgetDerby({ ctx }) {
     );
 }
 
+
+/* ═══ REGIA TASK (Luca 27/08 notte): il widget dell'AMMINISTRATIVO — due
+   colonne: le task assegnate A te e quelle assegnate DA te. Quando chi le
+   riceve le chiude, TORNANO indietro con le sue note (📬 ritorni) finché
+   chi le ha assegnate non le marca «vista». Le task nascono dal Calendario
+   (multi-assegnazione già esistente); qui si governa il giro. ═══ */
+function WidgetRegiaTask({ ctx, size }) {
+    const [dati, setDati] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const [errore, setErrore] = useState(null);
+    const [giro, setGiro] = useState(0);
+    const [notaPer, setNotaPer] = useState(null);   // { id, testo } — nota di chiusura
+    const io = ctx.user || {};
+    const mioNome = norm(io.name);
+    const èMia = (t) => (t.assigned_user_id && t.assigned_user_id === io.id) || (t.assigned_to && norm(t.assigned_to) === mioNome);
+    const creataDaMe = (t) => (t.created_by_user_id && t.created_by_user_id === io.id) || (t.created_by && norm(t.created_by) === mioNome);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            // poche centinaia di righe in tutto: due query larghe, filtro in JS
+            const sel = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, created_by, created_by_user_id, outcome_note, esito_at, esito_visto";
+            const [ap, rt] = await Promise.all([
+                supabase.from("calendar_tasks").select(sel).eq("status", "da_fare").order("date").order("time").limit(300),
+                supabase.from("calendar_tasks").select(sel).neq("status", "da_fare").eq("esito_visto", false).order("esito_at", { ascending: false }).limit(60),
+            ]);
+            if (!vivo) return;
+            const aperte = ap.data || [];
+            setDati({
+                mie: aperte.filter(èMia),
+                date: aperte.filter((t) => creataDaMe(t) && !èMia(t)),
+                ritorni: (rt.data || []).filter((t) => creataDaMe(t) && !èMia(t)),
+            });
+        })();
+        return () => { vivo = false; };
+    }, [ctx.visKey, giro]);   // eslint-disable-line react-hooks/exhaustive-deps
+    const chiudi = async (t, nota) => {
+        setBusy(`c${t.id}`); setErrore(null);
+        // se la chiudo io che l'ho creata non deve «tornare» a me stesso
+        const { error } = await supabase.from("calendar_tasks").update({
+            status: "fatta", outcome_note: (nota || "").trim() || null,
+            esito_at: new Date().toISOString(), esito_visto: creataDaMe(t),
+        }).eq("id", t.id);
+        setBusy(null); setNotaPer(null);
+        if (error) setErrore(error.message || "non sono riuscito a chiuderla"); else setGiro((g) => g + 1);
+    };
+    const segnaVista = async (t) => {
+        setBusy(`v${t.id}`); setErrore(null);
+        const { error } = await supabase.from("calendar_tasks").update({ esito_visto: true }).eq("id", t.id);
+        setBusy(null);
+        if (error) setErrore(error.message || "errore"); else setGiro((g) => g + 1);
+    };
+    const oggiISO = ctx.oggiISO;
+    const Colonna = ({ titolo, badge, children }) => (
+        <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">{titolo}</span>
+                {badge != null && badge > 0 && <span className="text-[9px] font-black text-white bg-indigo-500/70 rounded-full px-1.5 py-0.5 tabular-nums">{badge}</span>}
+            </div>
+            {children}
+        </div>
+    );
+    const RigaMia = ({ t }) => {
+        const scaduta = t.date < oggiISO;
+        const diAltri = !creataDaMe(t);
+        const aprendo = notaPer?.id === t.id;
+        return (
+            <div className={cn("rounded-lg border p-2",
+                scaduta ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-white/10 bg-white/[0.03]")}>
+                <div className="flex items-start gap-2">
+                    <button disabled={busy === `c${t.id}`}
+                        onClick={() => { if (diAltri) setNotaPer(aprendo ? null : { id: t.id, testo: "" }); else chiudi(t, ""); }}
+                        title={diAltri ? "Chiudi (con una nota per chi te l'ha assegnata)" : "Segna come fatta"}
+                        className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                            {scaduta ? `${fmtGiornoIT(t.date)} · in ritardo` : (t.time ? String(t.time).slice(0, 5) : fmtGiornoIT(t.date))}
+                            {t.created_by && diAltri ? ` · da ${t.created_by}` : ""}
+                        </div>
+                        {t.notes && <div className="text-[10px] text-slate-400/80 truncate" title={t.notes}>{t.notes}</div>}
+                    </div>
+                </div>
+                {aprendo && (
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                        <input autoFocus value={notaPer.testo} onChange={(e) => setNotaPer({ id: t.id, testo: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === "Enter") chiudi(t, notaPer.testo); }}
+                            placeholder={`Nota per ${t.created_by || "chi l'ha assegnata"}…`}
+                            className="glass-input !h-7 flex-1 min-w-0 text-[11px]" />
+                        <button disabled={busy === `c${t.id}`} onClick={() => chiudi(t, notaPer.testo)}
+                            className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15">✓ chiudi</button>
+                    </div>
+                )}
+            </div>
+        );
+    };
+    const RigaData = ({ t }) => {
+        const scaduta = t.date < oggiISO;
+        return (
+            <div className={cn("rounded-lg border p-2",
+                scaduta ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-white/10 bg-white/[0.03]")}>
+                <div className="text-[11px] font-bold text-slate-200 truncate" title={t.title}>{t.title || "Task"}</div>
+                <div className="text-[10px] text-slate-500 truncate">
+                    👤 {t.assigned_to || t.assigned_to_store || "—"} · {scaduta ? `${fmtGiornoIT(t.date)} · IN RITARDO` : (t.time ? `${fmtGiornoIT(t.date)} ${String(t.time).slice(0, 5)}` : fmtGiornoIT(t.date))}
+                </div>
+            </div>
+        );
+    };
+    const RigaRitorno = ({ t }) => (
+        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/[0.08] p-2">
+            <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-emerald-200 truncate" title={t.title}>📬 {t.title || "Task"}</div>
+                    <div className="text-[10px] text-slate-400 truncate">chiusa da {t.assigned_to || t.assigned_to_store || "?"}{t.esito_at ? ` · ${fmtGiornoIT(String(t.esito_at).slice(0, 10))}` : ""}</div>
+                    {t.outcome_note && <div className="text-[10px] text-emerald-100/90 mt-0.5">💬 {t.outcome_note}</div>}
+                </div>
+                <button disabled={busy === `v${t.id}`} onClick={() => segnaVista(t)} title="Ho visto l'esito: archivia il ritorno"
+                    className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20">✓ vista</button>
+            </div>
+        </div>
+    );
+    const mie = dati?.mie || [], assegnate = dati?.date || [], ritorni = dati?.ritorni || [];
+    const nMax = size >= 4 ? 8 : 5;
+    return (
+        <WidgetShell icon={ClipboardList} title="Regia Task" accent="var(--tf-a855f7)"
+            action={<Link href="/calendario" className="text-[10px] font-bold text-indigo-300 hover:text-indigo-200">+ assegna</Link>}>
+            {!dati ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs py-8">Carico le task…</div>
+            ) : (
+                <div className={cn("flex-1 min-h-0 overflow-y-auto flex gap-3", size >= 4 ? "flex-row" : "flex-col")}>
+                    <Colonna titolo="📥 Le tue" badge={mie.length}>
+                        {mie.length ? mie.slice(0, nMax).map((t) => <RigaMia key={t.id} t={t} />)
+                            : <div className="text-[11px] text-slate-500 py-2">Nessuna task aperta. 🎉</div>}
+                        {mie.length > nMax && <div className="text-[10px] text-slate-500">+{mie.length - nMax} nel <Link href="/calendario" className="text-indigo-300 font-bold">calendario</Link></div>}
+                    </Colonna>
+                    <Colonna titolo="📤 Assegnate da te" badge={ritorni.length + assegnate.length}>
+                        {ritorni.slice(0, nMax).map((t) => <RigaRitorno key={`r${t.id}`} t={t} />)}
+                        {assegnate.length ? assegnate.slice(0, nMax).map((t) => <RigaData key={t.id} t={t} />)
+                            : (!ritorni.length && <div className="text-[11px] text-slate-500 py-2">Niente in giro: assegna dal <Link href="/calendario" className="text-indigo-300 font-bold">calendario</Link>.</div>)}
+                    </Colonna>
+                </div>
+            )}
+            {errore && <div className="text-[10px] font-bold text-rose-300 mt-1">✗ {errore}</div>}
+        </WidgetShell>
+    );
+}
+
 /* ═══ A CHI SERVE UN WIDGET (Luca 26/08: «dividili per categorie, ce ne sono
    alcuni per tutti — altrimenti rischiamo di intasare i widget quando ce ne
    sono che non hanno senso per alcuni ruoli») ═══════════════════════════════
@@ -2965,13 +3136,15 @@ const FISSI = {
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
     classifica: { label: "Classifica venditori", icon: Trophy, sizes: [2, 4], def: 4, gruppo: "statistiche" },
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv", "ob"], minW: 2, minH: 7 },
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv", "ob"], minW: 8, minH: 7 },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
     accessi: { label: "Accessi collaboratori", icon: LogIn, sizes: [1, 2], def: 2, gruppo: "squadra", nonPer: ["own"] , aree: ["pv", "cc", "sede"] },
     // i due canali col cliente stanno nel gruppo COMUNICAZIONE (Luca 26/08)
     whatsapp: { label: "WhatsApp del team", icon: MessageCircle, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
+    // la REGIA TASK è dell'amministrativo (Luca 27/08): due colonne, a te/da te
+    task_regia: { label: "Regia Task", icon: ClipboardList, sizes: [2, 4], def: 4, gruppo: "strumenti", ruoli: ["amministrativo"], minW: 8, minH: 4 },
     email: { label: "Email del team", icon: Mail, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
 };
 
@@ -2997,6 +3170,9 @@ export function infoWidget(id, ctx) {
     if (f.soloAdmin && !ctx.seesAll) return null;
     if (f.nonPer && f.nonPer.includes(ctx.level)) return null;
     if (f.soloManager && !isManagerWa(ctx)) return null;
+    // widget legati a RUOLI precisi (es. Regia Task → amministrativo); chi
+    // vede tutta la rete li vede comunque, per governarli
+    if (f.ruoli && !ctx.seesAll && !f.ruoli.includes(ctx.user?.role)) return null;
     // AREA DEL RUOLO: chi vede tutta la rete (admin, direzione generale,
     // amministrativo) non si filtra — deve poter guardare qualunque cosa.
     if (f.aree && !ctx.seesAll && !f.aree.includes(areaDi(ctx.user?.role))) return null;
@@ -3037,6 +3213,7 @@ export function renderWidget(id, ctx, size) {
         case "azioni": return <WidgetAzioni ctx={ctx} />;
         case "bacheca": return <WidgetBacheca ctx={ctx} size={size} />;
         case "accessi": return (ctx.seesAll || ctx.level === "store" || ["direttore_cc", "direttore_ob"].includes(ctx.user?.role)) ? <WidgetAccessi ctx={ctx} /> : null;
+        case "task_regia": return <WidgetRegiaTask ctx={ctx} size={size} />;
         case "whatsapp": return isManagerWa(ctx) ? <WidgetWhatsApp ctx={ctx} size={size} /> : null;
         case "email": return isManagerWa(ctx) ? <WidgetEmail ctx={ctx} size={size} /> : null;
         default: return null;
@@ -3080,34 +3257,40 @@ export function perfDefaults(ctx) {
 }
 
 export function layoutDefault(ctx) {
-    const perf = perfDefaults(ctx);
-    // HOME v2 (26/08): l'agenda con gli esiti e la soglia in € aprono la
-    // Home di default — i numeri di consultazione vivono in Analisi
+    // HOME STANDARD (Luca 27/08 notte, applicata a TUTTI): in testa la fila
+    // dei KPI piccoli, poi il quartetto operativo — Direzione inserimento,
+    // Agenda (calendario), WhatsApp ed Email (i canali restano solo a chi li
+    // può vedere: risolviLayout filtra da solo su infoWidget) — poi il resto.
+    // L'AMMINISTRATIVO apre con la Regia Task subito dopo i KPI.
+    const amministrativo = ctx.user?.role === "amministrativo";
     if (ctx.level === "global") {
         return decodeLayout([
-            "agenda@2", "soglia_euro@2",
-            "scudo@1", "derby@1", "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
-            ...perf,
-            "chart_stato@2", "chart_top@2", "bacheca@2",
-            "bussola@2", "obiettivo@1", "azioni@1", "accessi@2", "classifica@4",
+            "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s", "obiettivo@1", "azioni@1",
+            ...(amministrativo ? ["task_regia@4"] : []),
+            "bussola@2", "agenda@2",
+            "whatsapp@2", "email@2",
+            "soglia_euro@1", "scudo@1", "derby@1", "chart_stato@1",
+            "bacheca@2", "chart_top@2",
+            "accessi@2", "classifica@4",
         ]);
     }
     if (ctx.level === "store") {
         return decodeLayout([
-            "agenda@2", "soglia_euro@1", "treno19@1",
-            "scudo@1", "contatore@1", "derby@1",
-            ...perf, "confronto@2",
-            "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s",
-            "chart_top@2", "bacheca@2", "obiettivo@1", "azioni@1", "bussola@2", "chart_stato@1",
+            "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s", "obiettivo@1", "azioni@1",
+            "bussola@2", "agenda@2",
+            "whatsapp@2", "email@2",
+            "soglia_euro@1", "treno19@1", "scudo@1", "contatore@1",
+            "derby@1", "confronto@2", "chart_stato@1",
+            "bacheca@2", "chart_top@2",
             "classifica@4",
         ]);
     }
     return decodeLayout([
-        "agenda@2", "soglia_euro@1", "serie@1", "treno19@1",
-        "contatore@1", "scudo@1", "derby@1",
-        ...perf, "confronto@2",
-        "kpi_contratti@s", "kpi_attivi@s", "obiettivo@1", "azioni@1",
-        "bacheca@2", "classifica@2", "bussola@2",
+        "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s", "obiettivo@1", "azioni@1",
+        "bussola@2", "agenda@2",
+        "soglia_euro@1", "serie@1", "treno19@1", "contatore@1",
+        "scudo@1", "derby@1", "confronto@2",
+        "bacheca@2", "classifica@2",
     ]);
 }
 

@@ -992,6 +992,7 @@ export default function Calendario() {
             notes: newAppt.notes || "",
             status: "scheduled",
             created_by: user?.name || "Sconosciuto",
+            created_by_user_id: user?.id || null,
         };
         let { data, error } = await supabase.from("appointments").insert(payload).select().single();
         if (error && /referente/.test(error.message)) {
@@ -2230,7 +2231,8 @@ export default function Calendario() {
                                                         const order = esitiPer("task").map((x) => x.chiave) as TaskStatus[];
                                                         const idx = order.indexOf(t.status);
                                                         const nextStatus = order[(idx + 1) % order.length];
-                                                        await supabase.from("calendar_tasks").update({ status: nextStatus }).eq("id", t.id);
+                                                        const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
+                                                        await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
                                                         setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus } : task));
                                                     }}
                                                     className={cn(
@@ -2270,7 +2272,8 @@ export default function Calendario() {
                                                             value={t.status}
                                                             onChange={async e => {
                                                                 const s = e.target.value as TaskStatus;
-                                                                await supabase.from("calendar_tasks").update({ status: s }).eq("id", t.id);
+                                                                const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
+                                                                await supabase.from("calendar_tasks").update({ status: s, ...(s === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
                                                                 setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: s } : task));
                                                             }}
                                                         >
