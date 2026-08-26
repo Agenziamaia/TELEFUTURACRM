@@ -539,41 +539,61 @@ export function DirezioneInserimentoAdmin() {
                         // mobile, fisso, CB a punti, protetti — Luca 26/08):
                         // le categorie di gruppo vivono nella card sotto
                         const pisteMostrate = dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && !PISTE_FUORI.has(p.chiave));
-                        // SEMAFORO (Luca 27/08): un pallino per target — verde
-                        // preso, giallo lo prende in proiezione, rosso nemmeno lì
+                        // SEMAFORO (Luca 27/08): un pallino per pista — verde
+                        // preso, giallo lo prende in proiezione, rosso nemmeno lì.
+                        // TUTTE le piste (anche senza target, cella vuota): così
+                        // le colonne restano INCOLONNATE tra le righe (Luca 27/08-2)
+                        const projAttiva = !!(dir.gl && dir.gl.mostraProiezione && dir.gl.trascorsi > 0 && dir.gl.totali);
                         const semafori = pisteMostrate
-                            .filter((p) => (k.targets[p.chiave] || 0) > 0)
                             .map((p) => {
                                 const t = k.targets[p.chiave] || 0;
                                 const cbSem = dir.brand === "windtre" && p.chiave === "cb";
                                 const f = cbSem ? (k.cbPunti || 0) : (k.piste[p.chiave]?.punti || 0);
-                                const pj = proiezioneDir(dir, f);
-                                // proiezione SPENTA (inizio mese) → grigio neutro,
-                                // niente falsi rossi lampeggianti (revisore 27/08)
-                                const stato = f >= t ? "verde" : pj == null ? "grigio" : pj >= t ? "giallo" : "rosso";
+                                // con la proiezione ATTIVA e 0 fatti la proiezione
+                                // è 0, non «assente»: il pallino è ROSSO (bug visto
+                                // da Luca: il grigio spettava solo a inizio mese)
+                                const pj = proiezioneDir(dir, f) ?? (projAttiva ? f : null);
+                                const stato = t <= 0 ? "vuoto" : f >= t ? "verde" : pj == null ? "grigio" : pj >= t ? "giallo" : "rosso";
                                 return { chiave: p.chiave, nome: p.nome, t, f, stato };
                             });
+                        const semCompatti = semafori.filter((x) => x.stato !== "vuoto");
+                        const stilePallino = (stato: string) => stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
+                            : stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
+                                : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
+                                    : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
+                                        : { background: "transparent", border: "1px solid rgba(148,163,184,.3)" };
+                        const tipPallino = (x: { nome: string; f: number; t: number; stato: string }) =>
+                            x.stato === "vuoto" ? `${x.nome}: nessun target dato` :
+                                `${x.nome}: ${it(x.f)} / ${it(x.t)} — ${x.stato === "verde" ? "🎯 target preso" : x.stato === "giallo" ? "in proiezione lo prende" : x.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione: serve una spinta"}`;
                         return (
                             <div key={k.cod_gara} className="glass-card overflow-hidden transition-shadow"
                                 style={{ borderLeft: `3px solid ${on ? bMeta.color : `color-mix(in srgb, ${bMeta.color} 35%, transparent)`}`, boxShadow: on ? `0 0 22px color-mix(in srgb, ${bMeta.color} 22%, transparent)` : undefined }}>
-                                <button onClick={() => setAperto(on ? null : k.cod_gara)} className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors">
-                                    <div className="flex items-center gap-3 min-w-0">
+                                <button onClick={() => setAperto(on ? null : k.cod_gara)} className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/[0.03] transition-colors">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
                                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: bMeta.color, boxShadow: `0 0 8px ${bMeta.color}` }} />
                                         <span className="text-sm font-black text-white truncate">{k.negozio}</span>
                                         <span className="text-[10px] font-mono text-slate-500">{k.cod_gara}</span>
                                         {k.cluster && <span className="text-[10px] text-slate-500 truncate hidden sm:inline">· {k.cluster}</span>}
                                     </div>
+                                    {/* la FILA incolonnata (Luca 27/08-2): stessa cella,
+                                        stessa colonna su ogni riga → colpo d'occhio verticale */}
+                                    {semafori.length > 0 && (
+                                        <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "112px" }}>
+                                            {semafori.map((sm) => (
+                                                <span key={sm.chiave} title={tipPallino(sm)}
+                                                    className="flex items-center justify-between gap-1.5 rounded-md bg-white/[0.03] border border-white/[0.06] px-2 py-1">
+                                                    <span className="text-[10px] font-semibold text-slate-400 truncate">{EMOJI_PISTA(sm.nome)} {sm.nome}</span>
+                                                    <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-2 shrink-0">
-                                        {semafori.length > 0 && (
-                                            <span className="flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5">
-                                                {semafori.map((sm) => (
-                                                    <span key={sm.chiave}
-                                                        title={`${sm.nome}: ${it(sm.f)} / ${it(sm.t)} — ${sm.stato === "verde" ? "🎯 target preso" : sm.stato === "giallo" ? "in proiezione lo prende" : sm.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione: serve una spinta"}`}
-                                                        className={cn("w-2.5 h-2.5 rounded-full", sm.stato === "rosso" && "animate-pulse")}
-                                                        style={sm.stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
-                                                            : sm.stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
-                                                                : sm.stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
-                                                                    : { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} />
+                                        {semCompatti.length > 0 && (
+                                            <span className="lg:hidden flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5">
+                                                {semCompatti.map((sm) => (
+                                                    <span key={sm.chiave} title={tipPallino(sm)}
+                                                        className={cn("w-2.5 h-2.5 rounded-full", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
                                                 ))}
                                             </span>
                                         )}
