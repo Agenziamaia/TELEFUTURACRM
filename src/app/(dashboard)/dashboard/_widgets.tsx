@@ -2481,7 +2481,20 @@ function WidgetAgenda({ ctx, size }) {
     const [errore, setErrore] = useState(null);
     const [giro, setGiro] = useState(0);
     const { perms: calPerms } = useRolePermissions(ctx.user?.role, ctx.user?.grade, ctx.user?.id);
-    const vista = capChoice(ctx.user?.role, CAP_CALENDARIO_VISTA, calPerms);
+    const vistaCap = capChoice(ctx.user?.role, CAP_CALENDARIO_VISTA, calPerms);
+    // SWITCH NEGOZIO ↔ MIE (Luca 26/08: «per gli store manager mettigli un
+    // pulsante sopra per switchare dal negozio al personale»). Compare solo a
+    // chi ha davvero una vista più larga della propria: un consulente vede
+    // già solo i suoi e il bottone sarebbe finto. Non tocca i permessi —
+    // stringe e basta, non può mai allargare oltre quello che il ruolo dà.
+    // ⚠️ NON SI RICORDA, ED È VOLUTO (Luca 26/08): «di default devono avere
+    // quello del negozio ogni volta che riaprono la home». Niente
+    // localStorage — chi apre la Home vede sempre prima il negozio, e la
+    // vista personale è una cosa che si chiede apposta. Se un domani qualcuno
+    // pensa di «migliorarlo» salvando la scelta, sta cambiando la regola.
+    const [soloMie, setSoloMie] = useState(false);
+    const puoStringere = vistaCap !== "propri";
+    const vista = soloMie && puoStringere ? "propri" : vistaCap;
     const stores = ctx.myStores.length ? ctx.myStores : (ctx.user?.negozio ? [ctx.user.negozio] : []);
     useEffect(() => {
         let vivo = true;
@@ -2581,9 +2594,20 @@ function WidgetAgenda({ ctx, size }) {
     };
     return (
         <WidgetShell icon={CalendarCheck} title="Agenda del giorno" accent="var(--tf-38bdf8)"
-            action={debito.length > 0
-                ? <span className="text-[10px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/40 rounded-full px-2 py-0.5">🔥 {debito.length} senza esito</span>
-                : <span className="text-[10px] font-bold text-emerald-300">✨ esiti a zero</span>}>
+            action={puoStringere ? (
+                /* lo switch prende il posto del badge in testata: il conto degli
+                   esiti arretrati sta ora sopra la sua colonna, dove si legge
+                   insieme a quello che conta (Luca 26/08) */
+                <div className="flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/[0.04] p-0.5">
+                    {[["Negozio", false], ["Solo mie", true]].map(([lab, val]) => (
+                        <button key={lab} onClick={() => setSoloMie(val)}
+                            className={cn("px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors",
+                                soloMie === val ? "bg-sky-500 text-white" : "text-slate-400 hover:text-slate-200")}>
+                            {lab}
+                        </button>
+                    ))}
+                </div>
+            ) : null}>
             {dati === null ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Carico l&apos;agenda…</div>
             ) : (
@@ -2598,7 +2622,12 @@ function WidgetAgenda({ ctx, size }) {
                 <div className="flex-1 min-h-0 grid gap-3 grid-cols-1 [@container(min-width:520px)]:grid-cols-2">
                     <div className="min-h-0 overflow-y-auto space-y-1.5">
                         {errore && <div className="text-[10px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-2 py-1">⚠️ {errore}</div>}
-                        <div className="text-[9px] uppercase tracking-widest text-sky-300/70 font-bold">📅 Appuntamenti</div>
+                        <div className="text-[9px] uppercase tracking-widest text-sky-300/70 font-bold flex items-center gap-1.5">
+                            📅 Appuntamenti
+                            {debito.length > 0
+                                ? <span className="text-[9px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/40 rounded-full px-1.5">🔥 {debito.length} senza esito</span>
+                                : <span className="text-[9px] font-bold text-emerald-300/80">✨ esiti a zero</span>}
+                        </div>
                         {debito.slice(0, nDeb).map((a) => <Riga key={a.id} a={a} vecchio />)}
                         {debito.length > nDeb && <div className="text-[10px] text-rose-300/80">…e altri {debito.length - nDeb} da esitare (calendario)</div>}
                         {oggi.length > 0 && <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold pt-1">Oggi · {oggi.length} appuntament{oggi.length === 1 ? "o" : "i"}</div>}
