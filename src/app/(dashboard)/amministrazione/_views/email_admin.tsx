@@ -392,8 +392,8 @@ export function EmailAdminView() {
             {/* 🚫 MITTENTI BLOCCATI — cestino d'ufficio, governabile da qui */}
             {(puoUtenti || puoNegozi) && (
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: "4px solid var(--tf-f43f5e, #f43f5e)" }}>
-                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">🚫 Mittenti bloccati — le loro email finiscono nel cestino da sole, senza passare dall&apos;AI</div>
-                <p className="text-[11px] text-slate-500 mb-3">Il pattern è un pezzo dell&apos;indirizzo del mittente (es. «verisure» blocca tutto ciò che arriva da Verisure). Valgono comunque i paracadute: mai cestinata una conversazione con nostre risposte, di un cliente censito, stellata o ripristinata.</p>
+                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">🚫 Regole di cestinazione — dicono all&apos;AI cosa cestinare con certezza</div>
+                <p className="text-[11px] text-slate-500 mb-3">Il pattern è un pezzo dell&apos;indirizzo del mittente (es. «verisure»), con filtro facoltativo sull&apos;oggetto. L&apos;AI le tratta come certezze ma resta il giudice: se in mezzo arriva qualcosa di davvero importante (una disdetta, un problema di pagamento) la salva e spiega perché. Valgono sempre i paracadute: mai cestinata una conversazione con nostre risposte, di un cliente censito, stellata o ripristinata.</p>
                 <div className="flex items-center gap-2 flex-wrap mb-3">
                     <input value={nuovoPattern} onChange={e => setNuovoPattern(e.target.value)} placeholder="pezzo dell'indirizzo (es. verisure)"
                         className="glass-input text-sm px-3 py-2 w-56" />

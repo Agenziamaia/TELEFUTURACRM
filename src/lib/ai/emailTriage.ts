@@ -42,6 +42,8 @@ I quattro stati:
 
 4. "spazzatura" — spam e phishing: finti corrieri che chiedono pagamenti per «sbloccare il pacco», finte banche/poste che chiedono credenziali, finte bollette o rimborsi con link sospetti, sedicenti eredità/lotterie/investimenti, mittenti camuffati (dominio che imita un marchio vero), estorsioni. Verrà eliminata in automatico.
 
+REGOLE DEL TITOLARE: se il messaggio segnala che la conversazione corrisponde a una regola del titolare («da cestinare sempre»), quell'indicazione vale come CERTEZZA: classifica "spazzatura" senza esitare. Fa eccezione SOLO un contenuto chiaramente fuori dall'ordinario e importante per l'azienda (una disdetta, un problema di pagamento, una comunicazione legale o contrattuale): in quel caso scegli lo stato giusto e spiega nell'azione perché hai fatto eccezione.
+
 Regole d'oro:
 - IL MITTENTE PESA PIÙ DEL TONO. Un dominio ufficiale vero (windtre.it, vodafone.it, fastweb.it, sky.it, brt.it, gls-italy.com, poste.it, aruba.it, pec.it…) non è mai "spazzatura". Un dominio che IMITA (windtre-promo.xyz, poste-verifica.net) è il segnale principe del phishing.
 - SPAZZATURA = SOLO CERTEZZA. La cancellazione è automatica: se un'email potrebbe anche essere legittima (un fornitore vero che scrive male, una promo aggressiva ma reale), scegli "niente", MAI "spazzatura". Nel dubbio tra spazzatura e niente vince SEMPRE niente.
@@ -79,7 +81,7 @@ function corpoCompatto(m: RigaMsg): string {
     return (testo || "(senza testo)") + (nAll ? ` [${nAll} allegati]` : "");
 }
 
-async function classificaUna(conv: Conv, casellaNome: string) {
+async function classificaUna(conv: Conv, casellaNome: string, regolaTitolare?: string | null) {
     const { data: msgs } = await supabase.from("email_messages")
         .select("direction, from_addr, from_name, subject, body_text, attachments, email_date, created_at")
         .eq("conversation_id", conv.id)
@@ -118,6 +120,7 @@ async function classificaUna(conv: Conv, casellaNome: string) {
         `Casella ricevente: ${casellaNome}`,
         `Mittente della conversazione: ${conv.customer_name || "?"} <${conv.customer_email}>`,
         conv.client_id ? "Il mittente è un CLIENTE CENSITO nell'anagrafica del CRM." : "",
+        regolaTitolare ? `⚠️ REGOLA DEL TITOLARE: questa conversazione corrisponde alla regola «${regolaTitolare}» — da cestinare sempre, salvo eccezioni davvero importanti.` : "",
         `Oggetto: ${conv.subject || "(senza oggetto)"}`,
         `Messaggi (dal più vecchio):`,
         trascr,
@@ -195,22 +198,26 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                 .select("conversation_id, ultimo_msg_ts, versione, ripristinata_il").in("conversation_id", blocco);
             (rows || []).forEach((r) => triMap.set(r.conversation_id, r));
         }
-        // MITTENTI BLOCCATI (Luca 26/08, «Verisure cancellale sempre» + i
-        // sistemi d'allarme): pattern governati dal Pannello Email — il match
-        // sull'indirizzo cestina d'ufficio SENZA interpellare l'AI (costo
-        // zero), stesse guardie dure. Vale anche per conversazioni GIÀ
-        // classificate ma mai agite (il pattern può nascere dopo). Col campo
-        // OGGETTO valorizzato il blocco è chirurgico: caso suitemobile, dove
-        // i «trasferimento merce» si cestinano e le Chiusure Fiscali restano.
-        const { data: blk } = await supabase.from("email_mittenti_bloccati").select("pattern, oggetto");
+        // REGOLE DEL TITOLARE (Luca 26/08, precisate la sera: «regole UTILI
+        // all'AI per capire cosa cestinare sicuramente» — non un bypass): i
+        // pattern della card del Pannello Email vengono passati AL MODELLO
+        // come certezza («da cestinare sempre»), ma l'AI resta il giudice e
+        // può salvare l'eccezione davvero importante (una disdetta, un
+        // problema di pagamento) motivandola. Col campo OGGETTO la regola è
+        // chirurgica: caso suitemobile, dove i «trasferimento merce» cadono
+        // e le Chiusure Fiscali restano. Il match riprende anche conv già
+        // classificate ma mai agite (la regola può nascere dopo).
+        const { data: blk } = await supabase.from("email_mittenti_bloccati").select("pattern, oggetto, note");
         const bloccati = (blk || [])
-            .map((r) => ({ pattern: String(r.pattern || "").toLowerCase(), oggetto: String(r.oggetto || "").toLowerCase() }))
+            .map((r) => ({ pattern: String(r.pattern || "").toLowerCase(), oggetto: String(r.oggetto || "").toLowerCase(), note: String(r.note || "") }))
             .filter((r) => r.pattern);
-        const matchBloccato = (c: Conv): string | null => {
+        const matchBloccato = (c: Conv): { etichetta: string; testo: string } | null => {
             const em = String(c.customer_email || "").toLowerCase();
             const sub = String(c.subject || "").toLowerCase();
             const hit = bloccati.find((b) => em.includes(b.pattern) && (!b.oggetto || sub.includes(b.oggetto)));
-            return hit ? (hit.oggetto ? `${hit.pattern} · ${hit.oggetto}` : hit.pattern) : null;
+            if (!hit) return null;
+            const etichetta = hit.oggetto ? `${hit.pattern} · ${hit.oggetto}` : hit.pattern;
+            return { etichetta, testo: etichetta + (hit.note ? ` (${hit.note})` : "") };
         };
         const daFare = tutte.filter((c) => {
             // caselle ESCLUSE dall'AI (ai_protetta — direttiva Luca 26/08
@@ -235,38 +242,16 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                 const conv = lotto[idx++];
                 try {
                     const acc = caselle.get(conv.account_id);
-                    // ── ramo MITTENTE BLOCCATO: niente AI, cestino diretto ──
-                    const patBloccato = matchBloccato(conv);
-                    if (patBloccato) {
-                        const { count: nOut } = await supabase.from("email_messages")
-                            .select("id", { count: "exact", head: true })
-                            .eq("conversation_id", conv.id).eq("direction", "out");
-                        const rigaB: any = {
-                            conversation_id: conv.id, versione: EMAIL_TRIAGE_VERSIONE, modello: "regola",
-                            stato: "spazzatura", azione: `mittente bloccato: ${patBloccato}`,
-                            ultimo_msg_ts: new Date(Math.min(Date.now(), new Date(conv.last_message_at).getTime())).toISOString(),
-                            errore: null, classificato_il: new Date().toISOString(),
-                        };
-                        const ripr = !!triMap.get(conv.id)?.ripristinata_il;
-                        if ((nOut ?? 0) === 0 && !conv.client_id && !conv.starred && !conv.spam && !ripr) {
-                            const { data: agite } = await supabase.from("email_conversations")
-                                .update({ trashed: true })
-                                .eq("id", conv.id).eq("starred", false).is("client_id", null)
-                                .select("id");
-                            if ((agite || []).length > 0) {
-                                rigaB.azione_auto = "cestinata";
-                                rigaB.azione_auto_il = new Date().toISOString();
-                                cestinate++;
-                            }
-                        }
-                        if (ripr) rigaB.ripristinata_il = triMap.get(conv.id)?.ripristinata_il;
-                        const { error: eB } = await supabase.from("email_triage").upsert(rigaB, { onConflict: "conversation_id" });
-                        if (eB) { errori++; if (!primoErrore) primoErrore = eB.message; } else dirette++;
-                        continue;
-                    }
-                    const { riga, usage, abbiamoRisposto } = await classificaUna(conv, acc?.display_name || acc?.email_address || "negozio");
+                    // la regola del titolare (se matcha) entra nel prompt come
+                    // certezza — l'AI classifica comunque, con diritto di
+                    // eccezione motivata sui contenuti davvero importanti
+                    const regola = matchBloccato(conv);
+                    const { riga, usage, abbiamoRisposto } = await classificaUna(conv, acc?.display_name || acc?.email_address || "negozio", regola?.testo || null);
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
+                    // nel registro si vede che la regola ha pesato (o che l'AI
+                    // ha fatto eccezione: stato ≠ spazzatura nonostante la regola)
+                    if (regola) (riga as any).azione = `[regola ${regola.etichetta}] ${riga.azione || ""}`.slice(0, 140);
 
                     // ── AZIONE AUTOMATICA sulla spazzatura, con le GUARDIE DURE:
                     // mai su conversazioni con nostre risposte, cliente censito,
