@@ -28,6 +28,16 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
     const { user } = useAuth();
     const { stores } = useVisibleStores();
     const [filtro, setFiltro] = useState<TabOmni>("tutti");
+    // COME ORDINARE (Luca 26/08: «che tu metta i non letti davanti ha senso,
+    // però dammi la possibilità di decidere»). Due modi soli, perché sono i
+    // due modi in cui si guarda davvero una lista: «cosa è successo adesso»
+    // e «cosa devo ancora sbrigare». La scelta si ricorda: è il modo di
+    // leggere di quella persona, non un filtro di perimetro.
+    const [ordine, setOrdine] = useState<"recenti" | "nonletti">(() => {
+        if (typeof window === "undefined") return "recenti";
+        return (localStorage.getItem("crm_omni_ordine") as "recenti" | "nonletti") || "recenti";
+    });
+    useEffect(() => { try { localStorage.setItem("crm_omni_ordine", ordine); } catch { } }, [ordine]);
     const [cerca, setCerca] = useState("");
     const [chats, setChats] = useState<ChatOmni[] | null>(null);
     const [errore, setErrore] = useState<string | null>(null);
@@ -44,10 +54,16 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
 
     const lista = useMemo(() => {
         const q = cerca.trim().toLowerCase();
-        return (chats || [])
+        const out = (chats || [])
             .filter((c) => filtro === "tutti" || c.canale === filtro)
             .filter((c) => !q || `${c.nome} ${c.anteprima} ${c.sottotitolo || ""} ${c.numero || ""}`.toLowerCase().includes(q));
-    }, [chats, filtro, cerca]);
+        // arriva già in ordine di tempo: «non letti prima» li fa risalire
+        // SENZA mescolarli — dentro ogni fascia il tempo continua a scendere
+        if (ordine === "nonletti") {
+            return [...out].sort((a, b) => (a.daLeggere === b.daLeggere ? 0 : a.daLeggere ? -1 : 1));
+        }
+        return out;
+    }, [chats, filtro, cerca, ordine]);
 
     const nonLetti = useMemo(() => (chats || []).filter((c) => c.daLeggere).length, [chats]);
 
@@ -66,6 +82,18 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
                 </div>
                 <input value={cerca} onChange={(e) => setCerca(e.target.value)} placeholder="Cerca in tutti i canali…"
                     className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-600 outline-none focus:border-indigo-500/50" />
+                <div className="flex items-center justify-between gap-2">
+                    <span className="text-[9px] uppercase tracking-widest text-slate-600 font-bold">Ordina</span>
+                    <div className="flex bg-white/[0.04] p-0.5 rounded-lg border border-white/5">
+                        {([["recenti", "Recenti"], ["nonletti", "Non letti prima"]] as const).map(([id, lab]) => (
+                            <button key={id} onClick={() => setOrdine(id)}
+                                className={cn("px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors",
+                                    ordine === id ? "bg-white/[0.08] text-white" : "text-slate-500 hover:text-slate-300")}>
+                                {lab}
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <div className="flex bg-white/[0.04] p-0.5 rounded-xl border border-white/5">
                     {FILTRI.map((f) => (
                         <button key={f.id} onClick={() => setFiltro(f.id)}
