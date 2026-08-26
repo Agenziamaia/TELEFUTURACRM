@@ -27,7 +27,7 @@ import {
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
 import { PISTE_PARALLELE } from "@/lib/commissioning";
-import { TRK_BRAND_LOGOS } from "@/lib/brandAssets";
+import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { cn } from "@/utils";
 
 const SogliaBar = SogliaBarRaw as unknown as (p: {
@@ -133,36 +133,34 @@ export function DirezioneInserimentoAdmin() {
 
     return (
         <div className="space-y-4">
-            {/* SOLO I BRAND (Luca 26/08 sera-4: «lasciami solo i brand» — via la
-                descrizione, loghi GRANDI e visibili; mese e refresh a destra) */}
-            <div className="glass-card p-4">
-                <div className="flex flex-wrap items-center gap-3 justify-between">
-                    <div className="flex flex-wrap gap-3">
-                        {DIR_BRANDS.map((b) => {
-                            const logo = TRK_BRAND_LOGOS[b.id];
-                            const attivo = brand === b.id;
-                            return (
-                                <button key={b.id} onClick={() => setBrand(b.id)} title={b.label}
-                                    className={cn("group relative px-7 py-4 rounded-2xl border transition-all duration-200 flex items-center justify-center min-w-[160px]",
-                                        attivo ? "scale-105 border-transparent" : "border-white/10 bg-white/[0.07] hover:bg-white/[0.12] hover:scale-[1.03]")}
-                                    style={attivo ? {
-                                        background: `linear-gradient(160deg, color-mix(in srgb, ${b.color} 30%, #0c0d14), color-mix(in srgb, ${b.color} 12%, #0c0d14))`,
-                                        boxShadow: `0 0 30px color-mix(in srgb, ${b.color} 50%, transparent), inset 0 0 16px color-mix(in srgb, ${b.color} 20%, transparent)`,
-                                        border: `1px solid color-mix(in srgb, ${b.color} 60%, transparent)`,
-                                    } : undefined}>
-                                    {logo
-                                        ? <img src={logo} alt={b.label} className={cn("h-11 w-auto max-w-[140px] object-contain transition-transform", attivo ? "drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]" : "opacity-90 group-hover:opacity-100")} />
-                                        : <span className="text-lg font-black text-white">{b.label}</span>}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[170px]">
-                            {mesi.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
-                        </select>
-                        <button onClick={() => setGiro((g) => g + 1)} title="Ricarica l'avanzamento" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
-                    </div>
+            {/* SOLO I BRAND, tessere come nella sezione CALLER (Luca 26/08 sera-5):
+                logo grande, attivo acceso, inattivo in grayscale — niente
+                riquadri colorati né descrizioni */}
+            <div className="flex items-center gap-3">
+                {DIR_BRANDS.map((b) => {
+                    const logo = TRK_BRAND_LOGOS[b.id];
+                    const scala = TRK_LOGO_SCALE[b.id] || 1;
+                    const attivo = brand === b.id;
+                    return (
+                        <button key={b.id} onClick={() => setBrand(b.id)} title={b.label} aria-label={b.label}
+                            className={cn("flex-1 min-w-0 h-[84px] flex items-center justify-center rounded-2xl border px-3 transition-all",
+                                attivo
+                                    ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
+                                    : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
+                            {logo ? (
+                                <img src={logo} alt={b.label} className="block object-contain max-w-full"
+                                    style={{ maxHeight: 56, transform: scala !== 1 ? `scale(${scala})` : undefined }} />
+                            ) : (
+                                <span className="block text-base font-bold text-slate-200 px-1">{b.label}</span>
+                            )}
+                        </button>
+                    );
+                })}
+                <div className="flex items-center gap-2 shrink-0">
+                    <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[150px]">
+                        {mesi.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
+                    </select>
+                    <button onClick={() => setGiro((g) => g + 1)} title="Ricarica l'avanzamento" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
                 </div>
             </div>
 
