@@ -291,10 +291,19 @@ export function proiezioneDir(dir: Direzione, punti: number): number | null {
     return Math.max(Math.round(punti), Math.round((punti / gl.trascorsi) * gl.totali));
 }
 
-/** Consigli per una pista: i codici ordinati col favore al negozio di chi
- *  chiede (Luca: «se lavora a Magliana, priorità a Magliana»), poi dove
- *  manca DI PIÙ al target della direzione. Solo codici con un target. */
-export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null) {
+export type Strategia = "vicino" | "scoperto";
+/** La strategia di riempimento di un KPI (Luca 27/08-5, impostabile nel
+ *  pannello): 'vicino' = si CHIUDE prima il codice più vicino al target
+ *  (default — Libia a 5/6 prima di Collatina a 0/6); 'scoperto' = si
+ *  riempie il più lontano (livella). */
+export function strategiaDi(dir: Direzione, pista: string): Strategia {
+    return dir.politiche[pista]?.modo === "scoperto" ? "scoperto" : "vicino";
+}
+
+/** Consigli per una pista: i codici sotto target ordinati per STRATEGIA
+ *  (vicino/scoperto), col negozio di chi chiede come spareggio; i
+ *  completati in coda. Solo codici con un target. */
+export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null, strategia: Strategia = "vicino") {
     const nu = norm(negozioUtente);
     // la CB W3 «va a punti»: i fatti sono i punti PARTNERSHIP, non la
     // pista a pezzi (bug visto da Luca in prova: barre a zero)
@@ -310,5 +319,10 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
                 mio: !!nu && k.token.some((t) => nu.startsWith(t) || t.startsWith(nu)),
             };
         })
-        .sort((a, b) => (Number(b.mio) - Number(a.mio)) || (b.mancano - a.mancano));
+        .sort((a, b) => {
+            const aFatto = a.mancano <= 0, bFatto = b.mancano <= 0;
+            if (aFatto !== bFatto) return aFatto ? 1 : -1;              // i completati in coda
+            const diff = strategia === "vicino" ? (a.mancano - b.mancano) : (b.mancano - a.mancano);
+            return diff || (Number(b.mio) - Number(a.mio));
+        });
 }

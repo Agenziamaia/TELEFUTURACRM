@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
-    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir,
+    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi,
     finestraBilancia, codiceBilancia, codiceAssociato, W3_PALETTO_BUSINESS,
     DIR_BRANDS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
@@ -276,6 +276,44 @@ export function DirezioneInserimentoAdmin() {
                                 </div>
                             );
                         })()}
+                    </div>
+                </div>
+            )}
+
+            {/* 🧭 STRATEGIA DI RIEMPIMENTO per KPI (Luca 27/08-5): vale per il
+                KPI intero, non per codice — 'vicino' CHIUDE prima chi è quasi
+                a target, 'scoperto' livella dal basso */}
+            {dir && dir.tab && dir.codici.length > 0 && (
+                <div className="glass-card p-4">
+                    <div className="flex items-center gap-2 mb-2.5">
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">🧭 Strategia di riempimento</span>
+                        <span className="text-[10px] text-slate-600">per KPI: la Bussola indirizza di conseguenza</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2.5">
+                        {[...dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && p.chiave !== "protetti").map((p) => ({ chiave: p.chiave, nome: `${EMOJI_PISTA(p.nome)} ${p.nome}` })),
+                          ...(brand === "windtre" ? [{ chiave: "__bizmob__", nome: "💼 Business mobile (paletto)" }] : [])].map((p) => {
+                            const strat = dir.politiche[p.chiave]?.modo === "scoperto" ? "scoperto" : "vicino";
+                            const sKey = `pol|${p.chiave}`;
+                            return (
+                                <div key={p.chiave} className="flex items-center gap-1.5">
+                                    <span className="text-xs text-slate-300 font-semibold">{p.nome}</span>
+                                    <button onClick={() => salvaPolitica(p.chiave, "vicino")}
+                                        title="Si chiude prima il codice più VICINO al target"
+                                        className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
+                                            strat === "vicino" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}>
+                                        🎯 Chiudi il più vicino
+                                    </button>
+                                    <button onClick={() => salvaPolitica(p.chiave, "scoperto")}
+                                        title="Si riempie prima il codice più LONTANO dal target (livella)"
+                                        className={cn("px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
+                                            strat === "scoperto" ? "bg-sky-500/15 text-sky-300 border-sky-500/40" : "bg-white/[0.04] text-slate-400 border-white/10 hover:bg-white/10")}>
+                                        ⚖️ Riempi il più scoperto
+                                    </button>
+                                    {salvate[sKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                    {erroriSalva[sKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -738,7 +776,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             </div>
         );
     }
-    const lista = dir && !pistaDiGruppo ? consigliaCodici(dir, pista, negozio).slice(0, 5) : [];
+    const lista = dir && !pistaDiGruppo ? consigliaCodici(dir, pista, negozio, strategiaDi(dir, pista)).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
     const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
@@ -819,11 +857,19 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll)
                         .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0 }))
                         .sort((a, b) => a.fatti - b.fatti);
-                    const sotto = franchising.filter((f) => f.fatti < obiettivo);
-                    const scelto = sotto[0] || null;
+                    // DUE FASI (Luca 27/08-5): prima TUTTI al paletto (6),
+                    // POI il pezzo di sfrido su chi manca; dentro la fase
+                    // vale la strategia (default: si CHIUDE il più vicino)
+                    const strat = strategiaDi(dir, BIZMOB);
+                    const sottoPaletto = franchising.filter((f) => f.fatti < W3_PALETTO_BUSINESS);
+                    const sottoObiettivo = franchising.filter((f) => f.fatti < obiettivo);
+                    const fase = sottoPaletto.length ? sottoPaletto : sottoObiettivo;
+                    const ordinati = [...fase].sort((a, b) => strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti));
+                    const scelto = ordinati[0] || null;
+                    const faseLabel = sottoPaletto.length ? W3_PALETTO_BUSINESS : obiettivo;
                     // CASCATA (Luca 27/08-2): paletti tutti salvi → si passa
                     // all'esigenza dei PUNTI MOBILE (i target della direzione)
-                    const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio) : [];
+                    const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio, strategiaDi(dir, "mobile")) : [];
                     const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
                     return (<>
                         {scelto ? (
@@ -831,7 +877,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
-                                <div className="text-[11px] font-semibold text-slate-300 mt-1.5">è il più scoperto sul paletto business: {scelto.fatti} / {obiettivo}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, manca il cuscinetto)"}</div>
+                                <div className="text-[11px] font-semibold text-slate-300 mt-1.5">{strat === "vicino" ? "è il più vicino a chiudere" : "è il più scoperto"}: {scelto.fatti} / {faseLabel}{scelto.fatti < W3_PALETTO_BUSINESS ? " — sotto i " + W3_PALETTO_BUSINESS + " scatta il −30% sul mobile" : " (paletto salvo, ora il pezzo di sfrido)"}</div>
                             </div>
                         ) : mobScelto ? (
                             <div className="rounded-2xl px-4 py-4 border"
