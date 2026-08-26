@@ -20,7 +20,7 @@ import { SogliaBar as SogliaBarRaw } from "../analisi/_charts";
 import { useAuth } from "@/context/AuthContext";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, matchRigheGaraParallela, PISTE_PARALLELE, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -343,6 +343,23 @@ export default function CalcolatorePage() {
             + (righeSet.some(r => r.moltiplicatore) ? " ×canone" : "")
         : riga?.nome || "";
     const puntiRiga = puntiPerRighe(righeSet);
+    // GARE PARALLELE (Luca 26/08: «sul calcolatore mancano i conteggi della
+    // Customer Base W3»): la CB paga a gettone ma CONTA nella Partnership
+    // Reward, e le attivazioni business contano nell'Extra Gara P.IVA. Sono
+    // conteggi a parte — la vendita ha già il suo pay — quindi si mostrano
+    // come righe dedicate, con lo stesso motore del Master.
+    const gareParallele = useMemo(() => {
+        if (!tabEff || !offSel) return [];
+        const c = { tipo_cliente: tipoCli, categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome, provenienza: provSel, opzioni: opzSel.join(", ") };
+        const ETICHETTE: Record<string, string> = { partnership: "🏅 Partnership Reward (eventi Customer Base)", business_piva: "💼 Extra Gara P.IVA (soglia di Ragione Sociale)" };
+        return [...PISTE_PARALLELE].map(pista => {
+            const set = matchRigheGaraParallela(tabEff.righe, c, pista);
+            if (!set.length) return null;
+            const punti = Math.round(set.reduce((a, r) => a + Number(r.punti || 0), 0) * 100) / 100;
+            if (!punti) return null;
+            return { pista, label: ETICHETTE[pista] || pista, punti, voci: set.map(r => r.nome) };
+        }).filter((x): x is { pista: string; label: string; punti: number; voci: string[] } => x != null);
+    }, [tabEff, offSel, tipoCli, catSel, prodSel, provSel, opzSel]);
 
     const scalaRiga = useMemo(() =>
         (tabEff && riga?.pista) ? tabEff.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
@@ -638,6 +655,11 @@ export default function CalcolatorePage() {
                                         <div className="text-right">
                                             {riga.pista && <div className="text-slate-300 text-sm font-semibold">{tab.piste.find(p => p.chiave === riga.pista)?.nome || riga.pista}</div>}
                                             {puntiRiga > 0 && <div className="text-slate-400 text-sm mt-1">vale <b className="text-white">{puntiRiga}</b> in soglia</div>}
+                                            {gareParallele.map(g => (
+                                                <div key={g.pista} className="text-[12px] text-amber-300/90 mt-1" title={g.voci.join(" + ")}>
+                                                    {g.label}: <b className="text-amber-200">+{g.punti}</b> {g.punti === 1 ? "punto" : "punti"}
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                     {/* RICORRENTE (S4 25/08): informativo, fuori dal one-shot */}

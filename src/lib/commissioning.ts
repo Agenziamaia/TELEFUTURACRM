@@ -804,6 +804,27 @@ export function matchRigaPartnership(
 }
 
 /**
+ * SET DI UNA GARA PARALLELA (26/08 sera): la riga base (pick-one) PIÙ le
+ * componenti della stessa pista accese dai flag della vendita. Serve perché
+ * anche le gare parallele hanno voci che si sommano: nell'Extra Gara P.IVA
+ * (slide 6) «Fisso/FWA: 1 PER LINEA» e «FRITZ!Box: 1,5» — un Professional
+ * Box porta 1 (prima linea) + 1 (seconda, inclusa) + 1,5 (FRITZ) = 3,5.
+ * Le componenti si riconoscono con gli STESSI flag del modello a componenti
+ * (flagsComponenti), così una regola nuova vale ovunque senza duplicare.
+ */
+export function matchRigheGaraParallela(
+    righe: PayRiga[],
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
+    pista: string,
+): PayRiga[] {
+    const base = matchRigaGaraParallela(righe, c, pista);
+    if (!base) return [];
+    const flags = flagsComponenti(c);
+    const extra = righe.filter(r => r.attivo && r.pista === pista && r.componente && flags.has(String(r.componente)));
+    return [base, ...extra];
+}
+
+/**
  * PICK-ONE DI UNA GARA PARALLELA (generalizzazione, 26/08). Alcune gare
  * contano gli STESSI contratti di un'altra pista con un punteggio proprio:
  * la Partnership (eventi CB) e l'Extra Gara P.IVA (ogni attivazione business

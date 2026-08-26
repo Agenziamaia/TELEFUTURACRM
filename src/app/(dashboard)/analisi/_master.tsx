@@ -23,7 +23,7 @@
 
 import { useMemo, useState } from "react";
 import { SelectMulti } from "@/components/SelectPersona";
-import { contestoVfFw, calcolaAvanzamento, matchRigaPartnership, matchRigaGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
+import { contestoVfFw, calcolaAvanzamento, matchRigaPartnership, matchRigheGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
 import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
@@ -202,10 +202,12 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         const eventiBiz = [];
         let puntiBiz = 0;
         for (const c of rawFr) {
-            const r = matchRigaGaraParallela(tab.righe, c, "business_piva");
-            if (!r) continue;
-            puntiBiz += Number(r.punti || 0);
-            eventiBiz.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: Number(r.punti || 0), g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
+            // set completo: riga base + componenti (2ª linea, FRITZ) — slide 6
+            const set = matchRigheGaraParallela(tab.righe, c, "business_piva");
+            if (!set.length) continue;
+            const pt = Math.round(set.reduce((a, x) => a + Number(x.punti || 0), 0) * 100) / 100;
+            puntiBiz += pt;
+            eventiBiz.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: pt, g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
         }
         // target/premi Partnership SOLO sul singolo PDV (le soglie sono sue)
         const rowPdv = modo === "pdv" ? frSel[0] : null;
