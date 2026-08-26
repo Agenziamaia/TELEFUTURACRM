@@ -1223,24 +1223,24 @@ function ChatPageInner() {
             Compare solo a chi ha il permesso: è ancora in lavorazione. */}
         {vedeOmni && <button onClick={() => setMode("omni")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "omni" ? "bg-violet-500/15 text-violet-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+            mode === "omni" ? "bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/30" : "text-slate-500 hover:text-slate-200")}>
           <Sparkles className="w-4 h-4" /> Omnichat
         </button>}
         <button onClick={() => setMode("chat")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "chat" ? "bg-indigo-500/15 text-indigo-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+            mode === "chat" ? "bg-indigo-500/15 text-indigo-200 ring-1 ring-indigo-400/30" : "text-slate-500 hover:text-slate-200")}>
           <MessageSquare className="w-4 h-4" /> Chat interna
           {chatUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
         </button>
         <button onClick={() => setMode("whatsapp")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+            mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/30" : "text-slate-500 hover:text-slate-200")}>
           <MessageCircle className="w-4 h-4" /> WhatsApp
           {waUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{waUnread > 99 ? "99+" : waUnread}</span>}
         </button>
         <button onClick={() => setMode("email")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-            mode === "email" ? "bg-sky-500/15 text-sky-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+            mode === "email" ? "bg-sky-500/15 text-sky-200 ring-1 ring-sky-400/30" : "text-slate-500 hover:text-slate-200")}>
           <Mail className="w-4 h-4" /> Email
           {mailUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
         </button>
