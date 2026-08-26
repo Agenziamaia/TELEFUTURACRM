@@ -23,7 +23,7 @@
 
 import { useMemo, useState } from "react";
 import { SelectMulti } from "@/components/SelectPersona";
-import { contestoVfFw, calcolaAvanzamento, matchRigheGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel } from "@/lib/commissioning";
+import { contestoVfFw, calcolaAvanzamento, matchRigheGaraParallela, matchRigheAttivazione, puntiPerRighe, brandIdDaLabel, PISTE_PARALLELE } from "@/lib/commissioning";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
 import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
@@ -240,9 +240,15 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         // stesse righe raw): così i conteggi combaciano sempre
         const base = raw || [];
         const lista = [];
+        // le GARE PARALLELE non passano dal pick-one: chiedendo a
+        // matchRigheAttivazione la lista tornava vuota e il click sulla barra
+        // non apriva niente (Luca 26/08 sullo Smartphone CB)
+        const parallela = PISTE_PARALLELE.has(chiave);
         for (const c of base) {
-            const set = matchRigheAttivazione(tab?.righe || [], c, brandIdDaLabel(c.brand) || G.chiave);
-            if (!set.length || set[0].pista !== chiave) continue;
+            const set = parallela
+                ? matchRigheGaraParallela(tab?.righe || [], c, chiave)
+                : matchRigheAttivazione(tab?.righe || [], c, brandIdDaLabel(c.brand) || G.chiave);
+            if (!set.length || (!parallela && set[0].pista !== chiave)) continue;
             lista.push({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: puntiPerRighe(set), g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 });
         }
         apri({ titolo: `${G.label} · ${nome} — contratti nel filtro`, sub: filtroLabel, items: lista });
@@ -259,6 +265,12 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         const st = av?.piste?.[p.chiave];
         if (!st || (!st.punti && !st.pezzi)) return null;
         if (b === "w3" && (p.chiave === "cb" || p.chiave === "partnership")) return null;   // la CB vive nella barra Partnership
+        // PISTE SENZA CORSA (Luca 26/08: «non abbiamo nessun target su quella
+        // questione, non capisco perché sta lì»): i gettoni puri — Telefoni &
+        // device — non hanno né soglie né punti, quindi una barra di
+        // avanzamento su di loro non dice niente. I pezzi restano nel pannello
+        // 📊 della pista, dove servono davvero.
+        if (!st.punti && !(tab?.soglie || []).some((s2) => s2.pista === p.chiave)) return null;
         let scala = (tab?.soglie || []).filter((s) => s.pista === p.chiave).sort((x, y) => x.tier - y.tier);
         let nota = null;
         const modo = w3?.modo;
