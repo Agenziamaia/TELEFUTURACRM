@@ -334,6 +334,15 @@ function provenienzaOk(tokens: string, vendita: unknown): boolean {
     return tokens.split(",").map(normProv).filter(Boolean).some(t => pv.startsWith(t));
 }
 
+/* GARE PARALLELE: contano gli STESSI contratti di un'altra pista con un
+   punteggio proprio (Partnership eventi CB, Extra Gara P.IVA di Ragione
+   Sociale). Non sono alternative del pick-one — quella vendita paga già
+   sulla sua pista — quindi vanno saltate qui e contate a parte con
+   matchRigaGaraParallela. Senza questo, una vendita fuori dal modello a
+   componenti (es. Protezione Pro Negozi business, categoria Multi-Servizi)
+   verrebbe pagata dalla riga della gara parallela invece che dalla sua.  */
+export const PISTE_PARALLELE = new Set(["partnership", "business_piva"]);
+
 export function matchRigaTabellare(
     righe: PayRiga[],
     c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null; opzioni?: string | null },
@@ -351,7 +360,7 @@ export function matchRigaTabellare(
         // (fase analisi dedicata), non alternative del pick-one — a condizioni
         // vuote facevano da catch-all: un telefono finanziato prendeva i 2
         // punti di «Cambio offerta MIA» (caso del direttore, 20/08)
-        if (r.pista === "partnership") continue;
+        if (r.pista && PISTE_PARALLELE.has(r.pista)) continue;
         if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
         let score = 0;
         if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }

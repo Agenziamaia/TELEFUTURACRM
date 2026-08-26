@@ -25,7 +25,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { giorniLavorativiMese, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
+import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
@@ -222,7 +222,7 @@ function AnalisiInner() {
                     .select("id, negozio, venditore, data, stato, nascosta_gestione, prodotto, qty:dettagli->>qty, prezzo:dettagli->>price")
                     .like("id", "EXT-%").gte("data", da).lte("data", a).order("id").range(from, to);
                 const selAltri = (from, to) => supabase.from("contracts")
-                    .select('id, brand, negozio, venditore, data, categoria, prodotto, offerta, tipo_cliente, stato, nascosta_gestione, cod_ins:dettagli->>"Cod.Ins."')
+                    .select('id, brand, negozio, venditore, data, categoria, prodotto, offerta, tipo_cliente, stato, nascosta_gestione, is_demo, cod_ins:dettagli->>"Cod.Ins."')
                     .like("id", "CTR-%").gte("data", daISO).lte("data", aISO).order("id").range(from, to);
                 // un pacchetto per OGNI mese del periodo: le gare sono mensili,
                 // ogni mese matcha col suo tabellare
@@ -273,12 +273,20 @@ function AnalisiInner() {
                 // (un negozio con 32 vendite ne vedeva 3, le sole S4, che
                 // arrivano da questa query senza cutoff). Qui si tengono da
                 // parte SOLO per la barra del giorno.
-                const oggiISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+                // il giorno da recuperare è ESATTAMENTE quello che il cutoff ha
+                // tagliato: dopo l'ora di scatto `items` le contiene già e
+                // sommarle ancora le conterebbe DUE volte (revisore 26/08).
+                // cutoffProduzione torna null se il mese non è quello corrente
+                // o se l'ora è passata: lì `oggiGara` resta vuoto.
+                const tagliato = (await Promise.all(mesiISO.map(cutoffProduzione))).find(Boolean) || null;
                 const mapAltro = (r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 });
-                const oggiGara = (altRes?.data || [])
+                const oggiGara = !tagliato ? [] : (altRes?.data || [])
+                    // stesso PERIMETRO di items: sostituzioni, Easy Control e
+                    // Smart Security fuori dalle gare, niente demo
                     .filter((r) => validaExt(r) && gare4.has(brandIdDaLabel(r.brand) || "")
-                        && !/sostituzione/i.test(String(r.prodotto || ""))
-                        && String(r.data || "").slice(0, 10) === oggiISO)
+                        && !esclusaDalleGare({ categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta })
+                        && r.is_demo !== true
+                        && String(r.data || "").slice(0, 10) === tagliato)
                     .map(mapAltro).filter((r) => r.g >= 1);
                 const altri = (altRes?.data || [])
                     .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || "") && !/sostituzione/i.test(String(r.prodotto || "")))
@@ -449,6 +457,7 @@ function AnalisiInner() {
         ext: (dati?.ext || []).filter((r) => norm(r.venditore) === norm(persona)),
         extPrev: (dati?.extPrev || []).filter((r) => norm(r.venditore) === norm(persona)),
         altri: (dati?.altri || []).filter((r) => norm(r.venditore) === norm(persona)),
+        oggiGara: (dati?.oggiGara || []).filter((r) => norm(r.venditore) === norm(persona)),
         persona, negozio: negozioCasa, negozioCasa,
     }), [items, itemsPrev, mieiItems, persona, negozioCasa, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
     const ctxNegozio = useMemo(() => {
@@ -778,16 +787,22 @@ function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, 
         return v.map((g) => ({ n: g.n, label: g.label, tot: g.tot, parti: [...g._p.values()].sort((a, b) => b.val - a.val) }));
     }, [items, altri, oggiGara, nG, labels]);
     const mediaRete = useMemo(() => {
-        const tot = giorniRete.reduce((s, g) => s + g.tot, 0);
+        // la media è per GIORNO LAVORATO: oggi entra nel grafico ma non è
+        // ancora un giorno contato (lo diventa allo scatto), quindi i suoi
+        // pezzi non devono gonfiare il numeratore (revisore 26/08)
+        const tot = giorniRete.reduce((s, g, i) => s + (oggiGara?.length && i === (oggi > 0 ? oggi - 1 : -1) ? 0 : g.tot), 0);
         return tot > 0 ? Math.round((tot / Math.max(1, gLav || 1)) * 10) / 10 : null;
-    }, [giorniRete, gLav]);
+    }, [giorniRete, gLav, oggiGara, oggi]);
 
     const negoziPezzi = useMemo(() => {
         const per = new Map();
         for (const it of items) { if (it.negozio === "—") continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
         for (const it of (altri || [])) { if (it.negozio === "—" || !trkBrandKey(it.brand)) continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
+        // anche oggi (revisore 26/08): senza, la somma delle barre e la corsa
+        // dei negozi dicevano numeri diversi nella stessa schermata
+        for (const it of (oggiGara || [])) { if (it.negozio === "—") continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
         return [...per.entries()].map(([k, its]) => ({ k, its })).sort((a, b) => b.its.length - a.its.length);
-    }, [items, altri]);
+    }, [items, altri, oggiGara]);
 
     const soglieBrand = useMemo(() => {
         if (!righeGara) return [];

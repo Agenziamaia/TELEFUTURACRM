@@ -324,12 +324,14 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                                         onClick={() => apri({ titolo: "Partnership Reward — eventi Customer Base", sub: filtroLabel, items: w3.eventi })}
                                     />
                                 )}
-                                {b === "w3" && w3 && w3.puntiBiz > 0 && (
+                                {b === "w3" && w3 && (w3.puntiBiz > 0 || w3.modo === "t1" || w3.modo === "t2") && (
                                     <SogliaBar emoji="💼" label="Extra Gara P.IVA (soglia di Ragione Sociale)"
                                         punti={w3.puntiBiz} pezzi={w3.eventiBiz.length}
                                         soglie={w3.modo === "gruppoFr" ? (tab?.soglie || []).filter((s) => s.pista === "business_piva").sort((x, y) => x.tier - y.tier) : []}
                                         colore={G.colore} proiezione={prj(w3.puntiBiz)}
-                                        nota={w3.modo === "gruppoFr" ? null : "🌍 la soglia è di Ragione Sociale: seleziona «Franchising» per vederla"}
+                                        nota={w3.modo === "gruppoFr" ? null
+                                            : (w3.modo === "t1" || w3.modo === "t2") ? "🌍 gara del franchising: i multibrand non ci rientrano"
+                                                : "🌍 la soglia è di Ragione Sociale: seleziona «Franchising» per vederla"}
                                         onClick={() => apri({ titolo: "Extra Gara P.IVA — attivazioni business", sub: filtroLabel, items: w3.eventiBiz })}
                                     />
                                 )}

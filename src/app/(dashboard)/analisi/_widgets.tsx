@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets";
+import { brandIdDaLabel } from "@/lib/commissioning";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Num, Tip, TipRiga, TipTitolo, BarStack, RaceBars, HeatCal, Donut, Delta, fmtPt, fmtN, fmtEuro } from "./_charts";
@@ -319,6 +320,19 @@ export function TimelineHero({ ctx, tecnico = false }) {
             const k = trkBrandKey(r.brand);
             if (!k) continue;
             add(`alt:${k}`, r.brand, HEX_BRAND[k] || "#64748b", k, r.g, r.offerta || r.prodotto, 1, k === "s4" ? pistaTimelineDi("s4", r) : null);
+        }
+        // VENDITE DI OGGI DEI BRAND IN GARA (Luca 26/08: «il negozio con 32
+        // vendite ne vede 3»): il cutoff dell'ora di scatto le tiene fuori da
+        // ctx.items — giusto per soglie e proiezioni, ma qui il negozio deve
+        // vedere subito quello che ha fatto. Vanno nella serie del LORO brand
+        // (chiave GARA, non alt:) altrimenti nascono due pill dello stesso
+        // operatore.
+        for (const r of (ctx.oggiGara || [])) {
+            const kb = brandIdDaLabel(r.brand);
+            const bg = kb === "windtre" ? "w3" : kb === "vodafone" ? "vf" : kb === "fastweb" ? "fw" : kb === "sky" ? "sky" : null;
+            const G = bg ? GARA[bg] : null;
+            if (!G) continue;
+            add(bg, G.label, G.colore, G.chiave, r.g, r.offerta || r.prodotto, 1, pistaTimelineDi(bg, r));
         }
         if (tecnico) {
             // …e SOLO il tecnico ha in più la Marginalità, in FATTURATO €:
