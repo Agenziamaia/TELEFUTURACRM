@@ -1003,13 +1003,20 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
     // ombra — lo standard delle dark-mode di Gmail/Superhuman: il bianco
     // resta (le email HTML sono progettate su chiaro) ma diventa un elemento
     // del design invece di spaccare l'esperienza.
+    // il contenuto vive dentro una NOSTRA carta (.tfcarta), non nel body: le
+    // email portano i loro stili di body (margin, sfondo) che scavalcavano i
+    // nostri — la carta restava a sinistra con un lenzuolo bianco a destra
+    // (caso Fastweb Energia: table a larghezza fissa che sbordava). Gli
+    // !important su html/body e l'overflow della carta chiudono la partita.
     const srcDoc = useMemo(() => hasHtml
         ? `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank">`
-        + `<style>html{background:transparent}body{margin:10px auto;padding:20px 22px;max-width:680px;background:#fff;color:#111;`
-        + `border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.35);`
+        + `<style>html,body{margin:0!important;padding:0!important;background:transparent!important}`
+        + `.tfcarta{margin:10px auto;padding:20px 22px;max-width:680px;background:#fff;color:#111;`
+        + `border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.35);overflow-x:auto;`
         + `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;`
-        + `word-break:break-word;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}a{color:#0b66c3}</style>`
-        + `</head><body>${html}</body></html>`
+        + `word-break:break-word;overflow-wrap:anywhere}`
+        + `.tfcarta img{max-width:100%;height:auto}.tfcarta table{max-width:100%!important}a{color:#0b66c3}</style>`
+        + `</head><body><div class="tfcarta">${html}</div></body></html>`
         : "", [html, hasHtml]);
 
     // sandbox senza allow-scripts, ma con allow-same-origin per poter MISURARE
