@@ -1814,7 +1814,7 @@ function WidgetWhatsApp({ ctx, size }) {
     const rigaChat = (a, tinta) => (
         <div key={a.id} className="flex items-center gap-1">
             <a href={`/chat?conv=${a.id}`}
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/chat?conv=${a.id}`); }}
+                onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return; e.preventDefault(); e.stopPropagation(); router.push(`/chat?conv=${a.id}`); }}
                 className="flex-1 min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors cursor-pointer">
                 <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="font-semibold text-slate-200 truncate">{a.ripresa ? "🗓 " : ""}{a.nome}</span>
@@ -1970,11 +1970,11 @@ function WidgetEmail({ ctx, size }) {
             let attive = 0, cestinateAI = 0, triFresche = 0;
             convs.forEach((c) => {
                 const t = new Date(c.last_message_at).getTime();
-                if (inRange(t)) attive++;
                 const tri = triMap.get(c.id);
-                if (!tri) return;
-                if (tri.azione_auto === "cestinata" && !tri.ripristinata_il && inRange(t)) cestinateAI++;
+                if (tri && tri.azione_auto === "cestinata" && !tri.ripristinata_il && inRange(t)) cestinateAI++;
                 if (c.trashed || c.spam || c.archived) return;
+                if (inRange(t)) attive++;   // dopo il filtro: lo spam cestinato non gonfia le «attive»
+                if (!tri) return;
                 // il giudizio vale solo se copre l'ultimo messaggio (pattern WA)
                 if (new Date(tri.ultimo_msg_ts).getTime() < t - 2500) return;
                 triFresche++;
@@ -2017,7 +2017,7 @@ function WidgetEmail({ ctx, size }) {
     const adesso = Date.now();
     const rigaMail = (a, tinta) => (
         <a key={a.id} href={`/chat?mconv=${a.id}`}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/chat?mconv=${a.id}`); }}
+            onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return; e.preventDefault(); e.stopPropagation(); router.push(`/chat?mconv=${a.id}`); }}
             className="block min-w-0 hover:bg-white/[0.05] rounded-lg px-1.5 py-0.5 -mx-1.5 transition-colors cursor-pointer">
             <div className="flex items-center justify-between gap-2 text-[11px]">
                 <span className="font-semibold text-slate-200 truncate">{a.nome}{a.oggetto ? <span className="text-slate-500 font-normal"> · {a.oggetto}</span> : null}</span>

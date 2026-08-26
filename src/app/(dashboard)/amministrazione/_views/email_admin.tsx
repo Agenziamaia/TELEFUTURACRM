@@ -54,8 +54,11 @@ export function EmailAdminView() {
 
     const { user } = useAuth();
     const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
-    const puoUtenti = capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_UTENTI, perms);
-    const puoNegozi = capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_NEGOZI, perms);
+    // i controlli compaiono solo a permessi CARICATI (rilievo revisore: nel
+    // pre-load capAllowed risponde col default del ruolo — un revocato per
+    // persona vedeva i bottoni per un attimo)
+    const puoUtenti = permsLoaded && capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_UTENTI, perms);
+    const puoNegozi = permsLoaded && capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_NEGOZI, perms);
     const puoGestire = (c: Casella) => c.owner_user_id ? puoUtenti : puoNegozi;
     const inElenco = (c: Casella) =>
         (puoUtenti && puoNegozi) || (!puoUtenti && !puoNegozi) || puoGestire(c);

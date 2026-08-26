@@ -64,9 +64,16 @@ export function AttivitaAI({ canale }: { canale: Canale }) {
             }));
             setConteggi(cnt);
         } else {
+            // «solo cancellate» = query DEDICATA per azione_auto_il (rilievo
+            // revisore: filtrare le ultime 40 classificazioni faceva sparire
+            // le cestinate in pochi giri, proprio quando il controllo serve)
+            const qTri = soloAuto
+                ? supabase.from("email_triage").select("conversation_id, stato, azione, azione_auto, azione_auto_il, ripristinata_il, classificato_il")
+                    .not("azione_auto", "is", null).order("azione_auto_il", { ascending: false }).limit(40)
+                : supabase.from("email_triage").select("conversation_id, stato, azione, azione_auto, azione_auto_il, ripristinata_il, classificato_il")
+                    .order("classificato_il", { ascending: false }).limit(40);
             const [{ data: tri }, { data: st }] = await Promise.all([
-                supabase.from("email_triage").select("conversation_id, stato, azione, azione_auto, azione_auto_il, ripristinata_il, classificato_il")
-                    .order("classificato_il", { ascending: false }).limit(40),
+                qTri,
                 supabase.from("email_triage_stato").select("ultimo_esito").eq("id", 1).maybeSingle(),
             ]);
             setEsito(st?.ultimo_esito || null);
@@ -91,7 +98,7 @@ export function AttivitaAI({ canale }: { canale: Canale }) {
         const { data: usi } = await supabase.from("ai_usage").select("cost_usd")
             .is("user_id", null).gte("created_at", oggi.toISOString());
         setCostoOggi((usi || []).reduce((s: number, r: any) => s + Number(r.cost_usd || 0), 0));
-    }, [canale]);
+    }, [canale, soloAuto]);
     useEffect(() => { carica(); const t = setInterval(carica, 30000); return () => clearInterval(t); }, [carica]);
 
     // Ripristina una email cestinata/quarantenata dall'AI: torna in inbox e

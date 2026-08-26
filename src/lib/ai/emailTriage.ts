@@ -87,17 +87,28 @@ async function classificaUna(conv: Conv, casellaNome: string) {
         .map((m) => ({ ...m, t: new Date(m.email_date || m.created_at).getTime() }))
         .filter((m) => !isNaN(m.t))
         .sort((a, b) => a.t - b.t);
-    const fingerprint = new Date(Math.max(
+    // CLAMP a adesso (rilievo M3): email_date è l'header del MITTENTE — uno
+    // spam con Date 2030 produrrebbe un fingerprint futuro che congela la
+    // conversazione per sempre (i messaggi veri non lo superano più)
+    const fingerprint = new Date(Math.min(Date.now(), Math.max(
         righe.length ? righe[righe.length - 1].t : 0,
         new Date(conv.last_message_at).getTime()
-    )).toISOString();
+    ))).toISOString();
     const base = {
         conversation_id: conv.id, versione: EMAIL_TRIAGE_VERSIONE, modello: MODEL_FAST,
         ultimo_msg_ts: fingerprint, errore: null as string | null, classificato_il: new Date().toISOString(),
     };
     if (!righe.length) return { riga: { ...base, stato: "niente" as StatoEmail, azione: "conversazione senza messaggi" }, usage: null, abbiamoRisposto: false };
 
-    const abbiamoRisposto = righe.some((m) => m.direction === "out");
+    // guardia sull'INTERA conversazione, non sulle ultime 6 righe (rilievo
+    // M1): una nostra risposta oltre la finestra bucava la protezione
+    let abbiamoRisposto = righe.some((m) => m.direction === "out");
+    if (!abbiamoRisposto) {
+        const { count } = await supabase.from("email_messages")
+            .select("id", { count: "exact", head: true })
+            .eq("conversation_id", conv.id).eq("direction", "out");
+        abbiamoRisposto = (count ?? 0) > 0;
+    }
     const trascr = righe.map((m) =>
         `[${quandoRoma(m.email_date || m.created_at)}] ${m.direction === "in" ? `DA ${m.from_name || ""} <${m.from_addr || "?"}>` : "NOI (risposta)"}: ${corpoCompatto(m)}`
     ).join("\n");
@@ -176,11 +187,11 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
             if (!pag || pag.length < 1000) break;
         }
 
-        const triMap = new Map<string, { ultimo_msg_ts: string; versione: number }>();
+        const triMap = new Map<string, { ultimo_msg_ts: string; versione: number; ripristinata_il: string | null }>();
         for (let i = 0; i < tutte.length; i += 100) {
             const blocco = tutte.slice(i, i + 100).map((c) => c.id);
             const { data: rows } = await supabase.from("email_triage")
-                .select("conversation_id, ultimo_msg_ts, versione").in("conversation_id", blocco);
+                .select("conversation_id, ultimo_msg_ts, versione, ripristinata_il").in("conversation_id", blocco);
             (rows || []).forEach((r) => triMap.set(r.conversation_id, r));
         }
         const daFare = tutte.filter((c) => {
@@ -203,18 +214,30 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
 
                     // ── AZIONE AUTOMATICA sulla spazzatura, con le GUARDIE DURE:
-                    // mai su conversazioni con nostre risposte, cliente censito
-                    // o stella; caselle protette → quarantena Spam, non cestino
-                    if (riga.stato === "spazzatura" && !abbiamoRisposto && !conv.client_id && !conv.starred) {
+                    // mai su conversazioni con nostre risposte, cliente censito,
+                    // stella, GIÀ marcate spam a mano (rilievo B3: il primo giro
+                    // le traslocava di cartella) o RIPRISTINATE da un admin
+                    // (rilievo alto A1: il giudizio umano non si scavalca mai —
+                    // la classificazione resta, la mano no). Le guardie su
+                    // stella/cliente sono ANCHE nel WHERE (rilievo M2: tra
+                    // fetch e azione passano fino a 150s, i flag possono essere
+                    // cambiati nel frattempo); protette → quarantena Spam.
+                    const ripristinata = !!triMap.get(conv.id)?.ripristinata_il;
+                    if (riga.stato === "spazzatura" && !abbiamoRisposto && !conv.client_id && !conv.starred && !conv.spam && !ripristinata) {
                         const protetta = !!acc?.ai_protetta;
-                        const { error: e2 } = await supabase.from("email_conversations")
-                            .update(protetta ? { spam: true } : { trashed: true }).eq("id", conv.id);
-                        if (!e2) {
+                        const { data: agite, error: e2 } = await supabase.from("email_conversations")
+                            .update(protetta ? { spam: true } : { trashed: true })
+                            .eq("id", conv.id).eq("starred", false).is("client_id", null)
+                            .select("id");
+                        if (!e2 && (agite || []).length > 0) {
                             (riga as any).azione_auto = protetta ? "quarantena" : "cestinata";
                             (riga as any).azione_auto_il = new Date().toISOString();
                             if (protetta) quarantene++; else cestinate++;
                         }
                     }
+                    // il ripristino dell'admin sopravvive all'upsert (l'upsert
+                    // rimpiazza la riga intera: senza questo il campo si perdeva)
+                    if (ripristinata) (riga as any).ripristinata_il = triMap.get(conv.id)?.ripristinata_il;
                     const { error } = await supabase.from("email_triage").upsert(riga, { onConflict: "conversation_id" });
                     if (error) { errori++; if (!primoErrore) primoErrore = error.message; continue; }
                     if (usage) classificate++; else dirette++;

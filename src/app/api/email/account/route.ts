@@ -109,7 +109,10 @@ export async function POST(request: Request) {
                     .update(upd).eq("id", existing.id)
                     .select("id, email_address, negozio, display_name, status").single();
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-                await syncMembri(existing.id);
+                // membri sincronizzati SOLO se il chiamante li dichiara (rilievo
+                // M6: il «Collega» dall'Inbox non li passa — un ricollega da lì
+                // azzerava i membri di una casella condivisa)
+                if (Array.isArray(b.extraUserIds)) await syncMembri(existing.id);
                 return NextResponse.json({ ok: true, account: data, reconnected: true });
             }
 
@@ -117,7 +120,7 @@ export async function POST(request: Request) {
                 ...acc, negozio, owner_user_id: b.ownerUserId || null, status: "attiva",
             }).select("id, email_address, negozio, display_name, status").single();
             if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-            await syncMembri(data.id);
+            if (Array.isArray(b.extraUserIds)) await syncMembri(data.id);
             return NextResponse.json({ ok: true, account: data });
         }
 

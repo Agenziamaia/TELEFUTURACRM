@@ -91,22 +91,6 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         return PALETTE_CASELLE[(i >= 0 ? i : 0) % PALETTE_CASELLE.length];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [accounts]);
-    // DEEP-LINK /chat?mconv=<id> (26/08, widget Email del team): apre LA
-    // conversazione esatta — si seleziona la casella e la conversazione
-    // appena il fetch risponde; il ref si brucia solo ad apertura riuscita
-    const _mconvFatto = useRef<string | null>(null);
-    useEffect(() => {
-        if (!apriConvId || _mconvFatto.current === apriConvId) return;
-        (async () => {
-            const { data: c } = await supabase.from("email_conversations").select("*").eq("id", apriConvId).maybeSingle();
-            if (!c) { _mconvFatto.current = apriConvId; return; }
-            _mconvFatto.current = apriConvId;
-            setSelAcc(c.account_id);
-            setFolder(c.trashed ? "trash" : c.spam ? "spam" : "inbox");
-            setSelConv(c as Conv);
-        })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [apriConvId]);
     // casella MULTI-UTENTE (26/08): oltre al titolare (owner_user_id) la
     // vedono i MEMBRI in email_account_users — set dei miei account condivisi
     const [membroDi, setMembroDi] = useState<Set<string>>(new Set());
@@ -124,6 +108,32 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         accounts.filter(a => a.owner_user_id === user?.id || membroDi.has(a.id)
             || (!a.owner_user_id && matchNegozi(a.negozio, myStores))),
     [accounts, user?.id, myStores, membroDi]);
+
+    // DEEP-LINK /chat?mconv=<id> (26/08, widget Email del team): apre LA
+    // conversazione esatta. Tre lezioni del revisore (rilievi A2+M5): ① si
+    // apre SOLO quando visibleAccounts contiene la casella (mai side-effect
+    // su posta non apribile: l'admin dal widget vede tutte, la sua Inbox no);
+    // ② l'effect «cambio cartella/casella → chiudi thread» va scavalcato UNA
+    // volta col ref, sennò richiude il thread appena aperto (e l'apertura
+    // fantasma bruciava pure l'unread per tutti); ③ il ref si brucia solo ad
+    // apertura riuscita o id inesistente — mai su visibilità in ritardo.
+    const _mconvFatto = useRef<string | null>(null);
+    const _skipChiusura = useRef(false);
+    useEffect(() => {
+        if (!apriConvId || _mconvFatto.current === apriConvId) return;
+        if (!visibleAccounts.length) return;               // visibilità non pronta
+        (async () => {
+            const { data: c } = await supabase.from("email_conversations").select("*").eq("id", apriConvId).maybeSingle();
+            if (!c) { _mconvFatto.current = apriConvId; return; }
+            if (!visibleAccounts.some(a => a.id === c.account_id)) return;   // non mia (o non ancora): niente apertura cieca
+            _mconvFatto.current = apriConvId;
+            _skipChiusura.current = true;
+            setSelAcc(c.account_id);
+            setFolder(c.trashed ? "trash" : c.spam ? "spam" : "inbox");
+            setSelConv(c as Conv);
+        })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apriConvId, visibleAccounts.map(a => a.id).join("|")]);
 
     // non letti PER CASELLA (per i badge colorati sulle chip)
     const [unreadPerAcc, setUnreadPerAcc] = useState<Record<string, number>>({});
@@ -277,7 +287,12 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     }, [msgs, selConv?.id]);
 
     // se cambio cartella/casella, chiudo il thread aperto
-    useEffect(() => { setSelConv(null); }, [folder, selAcc]);
+    useEffect(() => {
+        // il deep-link imposta cartella+casella+thread nello stesso batch:
+        // senza questo skip l'effect richiudeva il thread appena aperto
+        if (_skipChiusura.current) { _skipChiusura.current = false; return; }
+        setSelConv(null);
+    }, [folder, selAcc]);
 
     // ── azioni sulle conversazioni (aggiornamento ottimistico + DB) ────────────
     const patchConv = async (id: string, patch: Partial<Conv>) => {
