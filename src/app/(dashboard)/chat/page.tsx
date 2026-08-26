@@ -463,7 +463,11 @@ function ChatPageInner() {
     } catch { /* ignora */ }
     try {
       const { data: accs } = await supabase.from("email_accounts").select("id, owner_user_id, negozio");
-      const mine = (accs || []).filter((a: any) => seesAllStores(user?.role) || a.owner_user_id === meId || (a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
+      // stessa regola di visibilità dell'Inbox (modello WhatsApp, 26/08):
+      // personale = solo il titolare, di negozio = chi ha il negozio; niente
+      // bypass admin — il pallino deve contare SOLO caselle apribili, sennò
+      // resta acceso su posta che qui non si può leggere (rilievo revisore)
+      const mine = (accs || []).filter((a: any) => a.owner_user_id === meId || (!a.owner_user_id && a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
       if (mine.length) {
         const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine);
         setMailUnread((data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0));

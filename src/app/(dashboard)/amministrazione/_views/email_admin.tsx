@@ -38,7 +38,7 @@ export function EmailAdminView() {
     // capacità: cosa può GESTIRE chi vede il pannello (pattern WhatsApp) —
     // caselle personali, caselle dei punti vendita, o entrambe
     const { user } = useAuth();
-    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoUtenti = capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_UTENTI, perms);
     const puoNegozi = capAllowed(user?.role, CAP_EMAIL_ADMIN.section, CAP_EM_NEGOZI, perms);
     const puoGestire = (c: Casella) => c.owner_user_id ? puoUtenti : puoNegozi;
@@ -130,18 +130,23 @@ export function EmailAdminView() {
         if (!window.confirm(`Eliminare la casella «${nome}» dal CRM?\n\nVia ${msg.count ?? 0} messaggi di ${conv.count ?? 0} conversazioni (bozze comprese). Non si può annullare.\n\nLa casella reale sul server di posta NON viene toccata.`)) return;
         if (!window.confirm(`Ultima conferma: eliminare «${nome}» con tutto lo storico scaricato?`)) return;
         setDeleting(c.id);
-        const res = await api({ action: "delete", id: c.id, userId: user?.id });
-        setDeleting(null);
-        if (res?.error) { alert("Eliminazione non riuscita: " + res.error); return; }
+        try {
+            const res = await api({ action: "delete", id: c.id, userId: user?.id });
+            if (res?.error) { alert("Eliminazione non riuscita: " + res.error); return; }
+        } catch { alert("Eliminazione non riuscita: errore di rete"); }
+        finally { setDeleting(null); }
         carica();
     };
 
-    // riassegnazione dalla riga: SEMPRE dalle tendine
+    // riassegnazione dalla riga: SEMPRE dalle tendine. La casella PERSONALE
+    // resta senza negozio (parità col gemello WhatsApp, rilievo 25/08 là e
+    // 26/08 qui): col negozio scritto il pallino Email della Chat contava la
+    // sua posta anche ai colleghi del negozio, che però non possono aprirla
     const assegnaUtente = async (c: Casella, nome: string) => {
         const u = utenti.find(x => x.full_name === nome);
         if (!u) return;
         const { error } = await supabase.from("email_accounts")
-            .update({ owner_user_id: u.id, display_name: u.full_name, negozio: u.primary_store || null }).eq("id", c.id);
+            .update({ owner_user_id: u.id, display_name: u.full_name, negozio: null }).eq("id", c.id);
         if (error) { alert("Assegnazione non riuscita: " + error.message); return; }
         carica();
     };
@@ -190,7 +195,7 @@ export function EmailAdminView() {
                 </p>
             </div>
             )}
-            {!puoUtenti && !puoNegozi && (
+            {permsLoaded && !puoUtenti && !puoNegozi && (
                 <p className="text-[12px] text-slate-500">Sei in sola consultazione: la gestione delle caselle si concede dalla rotellina Permessi → «Pannello Email».</p>
             )}
 
@@ -257,10 +262,14 @@ export function EmailAdminView() {
                                                 ) : <span className="text-slate-600 text-[12px]">—</span>}
                                             </td>
                                             <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                {/* la route del retest è gated come il resto: senza capacità
+                                                    il bottone darebbe sempre 403 — meglio non mostrarlo */}
+                                                {puoGestire(c) && (
                                                 <button onClick={() => riprova(c)} disabled={provando === c.id}
                                                     className="px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/10 text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1">
                                                     {provando === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Prova
                                                 </button>
+                                                )}
                                                 {puoGestire(c) && (
                                                     <button onClick={() => setModal({ presetEmail: c.email_address, presetDisplay: c.display_name || "", ownerUserId: c.owner_user_id || undefined, negozio: !c.owner_user_id ? (c.negozio || undefined) : undefined })}
                                                         title="Ri-collega con la password nuova (es. credenziali cambiate): la posta già scaricata resta"

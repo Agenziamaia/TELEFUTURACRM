@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { impostazioniPer, cifra, testConnessione } from "@/lib/email";
 import { seesAllStores } from "@/lib/roles";
+import { capKey, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,14 +23,24 @@ export async function GET() {
 }
 
 // GOVERNANCE (Luca 26/08): le caselle si collegano, ricollegano ed eliminano
-// SOLO dall'amministrazione (Pannello Email). Backstop server-side: chi vede
-// tutti i negozi; il gate fine per-persona (capacità CAP_EMAIL_ADMIN) sta nel
-// client come per il resto del CRM. Prima il connect era senza alcun check.
+// SOLO dal Pannello Email. Il gate server onora le STESSE capacità della
+// rotellina (CAP_EMAIL_ADMIN, righe role_permissions ruolo → grado → persona,
+// l'ultimo strato vince — replica di capAllowed/useRolePermissions): un ruolo
+// a cui Luca concede la gestione dal pannello non deve prendersi 403 dalla
+// route (rilievo revisore). Amministrazione e admin/dev passano per default.
 async function eAmministrazione(userId: string): Promise<boolean> {
     if (!userId) return false;
     const { data: chi } = await supabase.from("app_users")
-        .select("id, role, active").eq("id", userId).maybeSingle();
-    return !!chi && chi.active !== false && seesAllStores(chi.role);
+        .select("id, role, grade, active").eq("id", userId).maybeSingle();
+    if (!chi || chi.active === false || !chi.role) return false;
+    if (chi.role === "admin" || chi.role === "dev" || seesAllStores(chi.role)) return true;
+    const chiavi = [chi.role, ...(chi.grade ? [`${chi.role}@${chi.grade}`] : []), `user:${chi.id}`];
+    const permKeys = [capKey(CAP_EMAIL_ADMIN.section, CAP_EM_UTENTI.id), capKey(CAP_EMAIL_ADMIN.section, CAP_EM_NEGOZI.id)];
+    const { data: rows } = await supabase.from("role_permissions")
+        .select("role, perm_key, allowed").in("role", chiavi).in("perm_key", permKeys);
+    const fuse = new Map<string, boolean>();
+    for (const strato of chiavi) (rows || []).filter(r => r.role === strato).forEach(r => fuse.set(r.perm_key, r.allowed));
+    return permKeys.some(k => fuse.get(k) === true);
 }
 
 export async function POST(request: Request) {
@@ -62,12 +73,10 @@ export async function POST(request: Request) {
 
             if (action === "test") return NextResponse.json({ ok: true, settings: auto });
 
-            // negozio del proprietario (per la visibilita', come WhatsApp)
-            let negozio: string | null = b.negozio || null;
-            if (!negozio && b.ownerUserId) {
-                const { data: ow } = await supabase.from("app_users").select("primary_store").eq("id", b.ownerUserId).maybeSingle();
-                negozio = ow?.primary_store || null;
-            }
+            // casella PERSONALE = SENZA negozio (26/08, parità col gemello
+            // WhatsApp): il vecchio backfill del primary_store faceva contare
+            // la posta personale nel pallino dei colleghi del negozio
+            const negozio: string | null = b.ownerUserId ? null : (b.negozio || null);
 
             // Se la casella e' GIA' collegata (stesso indirizzo), la RI-collego invece
             // di fallire con "duplicate key ...email_address_key": aggiorno credenziali
@@ -115,7 +124,13 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: true });
             } catch (e: any) {
                 const msg = String(e?.message || e).slice(0, 300);
-                await supabase.from("email_accounts").update({ status: "errore", last_error: msg }).eq("id", id);
+                // ANTI-FLAP come il poll (regola Luca 08/08): lo status si
+                // ribalta SOLO su credenziali rifiutate — un transitorio
+                // (limite connessioni IMAP mentre l'Inbox polla, timeout)
+                // marcherebbe in rosso per tutti una casella sana
+                if (/credenziali rifiutate/i.test(msg)) {
+                    await supabase.from("email_accounts").update({ status: "errore", last_error: msg }).eq("id", id);
+                }
                 return NextResponse.json({ error: msg }, { status: 400 });
             }
         }

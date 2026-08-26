@@ -10,7 +10,6 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { seesAllStores } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
 import {
@@ -68,16 +67,14 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     const [cTo, setCTo] = useState(""); const [cSubject, setCSubject] = useState(""); const [cBody, setCBody] = useState("");
     const [cDraftId, setCDraftId] = useState<string | null>(null);
 
-    // VISIBILITÀ (Luca 28/07): NESSUNA vista "tutte le caselle" — nemmeno per
-    // amministrazione o admin. Ognuno vede le PROPRIE; lo store manager anche
-    // quella del suo negozio (la casella è del punto vendita). L'admin ispeziona
-    // le altrui SOLO impersonando la persona dal "Vedi come" in alto: lì lo
-    // user effettivo diventa il suo, e questa regola fa il resto da sola.
-    const scope: "store" | "own" = useMemo(() => {
-        const role = user?.role || "";
-        if (role === "store_manager") return "store";
-        return "own";
-    }, [user?.role]);
+    // VISIBILITÀ — MODELLO WHATSAPP (direttiva Luca 26/08, governance): la
+    // casella PERSONALE la vede solo il titolare; la casella di NEGOZIO
+    // (senza titolare) la vedono in automatico tutte le persone col negozio
+    // in visibilità — esattamente come promette il Pannello Email (prima solo
+    // lo store manager la vedeva: il pannello disinformava, rilievo alto del
+    // revisore). Resta la decisione Luca 03/08: NIENTE bypass "tutte le
+    // caselle" per l'amministrazione — l'admin ispeziona col «Vedi come»
+    // o governa dal pannello, la sua Inbox resta pulita.
     // palette per CASELLA: stabile (indice nell'elenco ordinato per created_at)
     const PALETTE_CASELLE = [
         { chip: "bg-sky-500/15 border-sky-500/40 text-sky-200", dot: "bg-sky-400", badge: "bg-sky-500" },
@@ -94,14 +91,10 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
         return PALETTE_CASELLE[(i >= 0 ? i : 0) % PALETTE_CASELLE.length];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [accounts]);
-    const visibleAccounts = useMemo(() => {
-        if (scope === "own") return accounts.filter(a => a.owner_user_id === user?.id);
-        // AMMINISTRAZIONE = tutte le caselle (Luca 02/08: le caselle erano
-        // "sparite" perche' ricollegate sotto un altro negozio/owner e la
-        // vista non aveva un bypass per chi vede tutto)
-        if (seesAllStores(user?.role)) return accounts;
-        return accounts.filter(a => a.owner_user_id === user?.id || (a.negozio && myStores.some(s => sameStore(a.negozio, s))));
-    }, [accounts, scope, user?.id, user?.role, myStores]);
+    const visibleAccounts = useMemo(() =>
+        accounts.filter(a => a.owner_user_id === user?.id
+            || (!a.owner_user_id && a.negozio && myStores.some(s => sameStore(a.negozio, s)))),
+    [accounts, user?.id, myStores]);
 
     // non letti PER CASELLA (per i badge colorati sulle chip)
     const [unreadPerAcc, setUnreadPerAcc] = useState<Record<string, number>>({});
@@ -614,7 +607,7 @@ function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, 
                         <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input value={search} onChange={e => setSearch?.(e.target.value)} placeholder="Cerca nelle email…" className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 focus:border-sky-500/40 outline-none" />
                     </div>
-                ) : <p className="text-sm font-semibold text-slate-400">Le caselle che gestisci</p>
+                ) : <p className="text-sm font-semibold text-slate-400">Le tue caselle email</p>
             ) : (
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-2xl bg-sky-500/15 border border-sky-500/30"><Mail className="w-6 h-6 text-sky-400" /></div>

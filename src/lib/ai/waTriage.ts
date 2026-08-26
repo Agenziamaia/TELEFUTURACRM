@@ -153,7 +153,11 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
     const user = `${oggiRoma()}\nCliente: ${conv.customer_name || "(senza nome)"}\nConversazione (dal più vecchio):\n${tr.testo}`;
     const res = await chat({
         messages: [{ role: "system", content: PROMPT_TRIAGE }, { role: "user", content: user }],
-        model: MODEL_FAST, maxTokens: 220, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
+        // 500 token: col tetto a 220 la PRIMA corsa vera (26/08) ha troncato
+        // 26 risposte su 49 («risposta non JSON», finish_reason length —
+        // esattamente il caso previsto dal revisore). Il JSON pieno sta in
+        // ~60 token, il margine assorbe le divagazioni del modello.
+        model: MODEL_FAST, maxTokens: 500, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
     });
     const out = estraiJson(res.message.content || "");
     // risposta rotta o stato sconosciuto → NIENTE upsert: la chat resta alle
