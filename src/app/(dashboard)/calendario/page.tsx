@@ -16,6 +16,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
+import { sincronizzaEsitoSuPratica as sincronizzaEsitoSuPraticaLib } from "@/lib/esitoAppuntamento";
 import { fasciaLabel, fasciaStart, eFascia } from "@/lib/fasce";
 import { RicercaCliente } from "@/components/RicercaCliente";
 
@@ -1372,35 +1373,10 @@ export default function Calendario() {
     // Ora: SEMPRE una voce di storico sulla pratica collegata; per gli esiti
     // definitivi si aggiorna anche calls.stato (mappa condivisa). Best-effort:
     // il calendario resta comunque la fonte dell'esito.
-    const STATO_CALL_DA_ESITO: Record<string, string> = {
-        attivato: "Attivato",
-        attivato_diverso_negozio: "Attivato Altro Negozio",
-        // FLUSSO A DUE STEP (Luca 11/08): il negozio esita "Venuto Non
-        // Interessato" → la pratica caller prende lo STESSO stato (lavorabile,
-        // ⚡ dal giorno dopo: il caller richiama e verifica). "Andato Non
-        // Interessato" è lo step SUCCESSIVO, definitivo, che mette SOLO il
-        // caller dopo la verifica telefonica — e archivia la pratica.
-        ko: "Venuto Non Interessato",
-        no_show: "Non andato",
-        annullato: "Annullato",
-    };
-    const sincronizzaEsitoSuPratica = async (apptId: number | string, daLabel: string, aLabel: string, chiaveEsito: string) => {
-        try {
-            const { data: pratiche } = await supabase.from("calls").select("id, stato, storico").eq("appointment_id", apptId);
-            for (const p of (pratiche || []) as { id: string; stato: string | null; storico: unknown[] | null }[]) {
-                const storico = Array.isArray(p.storico) ? [...p.storico] : [];
-                storico.push({
-                    data: new Date().toISOString(), caller: user?.name || "Negozio",
-                    campo: "Esito negozio", da: daLabel, a: aLabel,
-                    dettagli: { origine: "calendario", esito: chiaveEsito },
-                });
-                const nuovo = STATO_CALL_DA_ESITO[chiaveEsito];
-                const upd: Record<string, unknown> = { storico };
-                if (nuovo && p.stato !== nuovo) upd.stato = nuovo;
-                await supabase.from("calls").update(upd).eq("id", p.id);
-            }
-        } catch { /* best-effort */ }
-    };
+    // ESITO → PRATICA CALLER: logica CONDIVISA in src/lib/esitoAppuntamento
+    // (estratta il 26/08 per il widget Agenda della Home — una sola copia)
+    const sincronizzaEsitoSuPratica = (apptId: number | string, daLabel: string, aLabel: string, chiaveEsito: string) =>
+        sincronizzaEsitoSuPraticaLib(apptId, daLabel, aLabel, chiaveEsito, user?.name || "Negozio");
     const notaNegozioSuPratica = async (apptId: number | string, testo: string) => {
         try {
             const { data: pratiche } = await supabase.from("calls").select("id, storico").eq("appointment_id", apptId);

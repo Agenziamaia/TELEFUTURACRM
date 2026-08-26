@@ -31,6 +31,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS , areaOf } from "@/lib/roles";
 import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel, caricaTabellare, calcolaAvanzamento, payEuroAttivazione, esclusaDalleGare } from "@/lib/commissioning";
 import { esitaAppuntamento } from "@/lib/esitoAppuntamento";
+import { capChoice, CAP_CALENDARIO_VISTA } from "@/lib/capabilities";
+import { useRolePermissions } from "@/lib/usePermissions";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -1804,6 +1806,7 @@ function WidgetSogliaEuro({ ctx, size }) {
     const [tabs, setTabs] = useState(null);        // { w3, sky } tabellari ragazzi
     const [canoni, setCanoni] = useState(null);    // "brand|offerta|prodotto" → canone
     const ym = ctx.w3?.ym || ctx.sky?.ym || null;
+    const multiMese = !!(ctx.w3 && !ctx.w3.ym && (ctx.w3.packs || []).length > 1);
     useEffect(() => {
         if (!ym) { setTabs(null); return; }
         let vivo = true;
@@ -1814,7 +1817,7 @@ function WidgetSogliaEuro({ ctx, size }) {
                 caricaTabellare("sky", iso).catch(() => null),
                 supabase.from("catalog_offerte")
                     .select("nome, canone_mensile, catalog_prodotti!inner(nome, brand_id)")
-                    .in("catalog_prodotti.brand_id", ["windtre", "sky"]).not("canone_mensile", "is", null).limit(2000),
+                    .in("catalog_prodotti.brand_id", ["windtre", "sky"]).eq("attivo", true).not("canone_mensile", "is", null).limit(2000),
             ]);
             if (!vivo) return;
             const m = new Map();
@@ -1851,7 +1854,7 @@ function WidgetSogliaEuro({ ctx, size }) {
                     const poi = payEuroAttivazione(set, p.tier + 1, canone);
                     if (ora != null && poi != null && poi > ora) delta += poi - ora;
                 }
-                if (delta <= 0) continue;
+                if (delta <= 0 || p.mancano == null) continue;   // i gate (mancano null) non sono un'occasione
                 out.push({
                     brand: b.label, brandKey: b.key, pista: p.nome, punti: p.punti,
                     mancano: p.mancano, prossima: p.prossima.tier, pezzi: p.pezzi,
@@ -1866,8 +1869,10 @@ function WidgetSogliaEuro({ ctx, size }) {
     const top = occasioni?.slice(0, size >= 2 ? 3 : 1) || [];
     return (
         <WidgetShell icon={Euro} title="Vale X€" accent="var(--tf-34d399)"
-            action={<span className="text-[10px] text-slate-500">pay ragazzi · retroattivo</span>}>
-            {!occasioni ? (
+            action={<span className="text-[10px] text-slate-500">rete · pay ragazzi · retroattivo</span>}>
+            {multiMese ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Le gare sono mensili: scegli un mese per vedere le soglie in €.</div>
+            ) : !occasioni ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Calcolo dal motore…</div>
             ) : !top.length ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Nessuna soglia a portata con pay in crescita: guarda le Gare per il quadro completo.</div>
@@ -1905,7 +1910,7 @@ function WidgetTreno19({ ctx, size }) {
     const oggi = ctx.oggiISO;
     const festivo = ora.getDay() === 0 || (ctx.gl?.festivi || []).includes(oggi) || (ctx.gl?.congelati || []).includes(ora.getDate());
     const diOggi = useMemo(() => (ctx.scoped || []).filter((c) =>
-        isCtr(c) && validaProduzione(c) && giornoDi(c) === oggi && ctx.scopeVendita(c)), [ctx.scoped, oggi, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+        isCtr(c) && validaProduzione(c) && !esclusaDalleGare(c) && giornoDi(c) === oggi && ctx.scopeVendita(c)), [ctx.scoped, oggi, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
     const partito = ora.getHours() >= scatto;
     const mancaMin = Math.max(0, (scatto * 60) - (ora.getHours() * 60 + ora.getMinutes()));
     const hh = Math.floor(mancaMin / 60), mm = mancaMin % 60;
@@ -1941,13 +1946,18 @@ function WidgetSerie({ ctx }) {
         const miei = (ctx.scoped || []).filter((c) => isCtr(c) && validaProduzione(c) && ctx.scopeVendita(c));
         const giorni = new Set(miei.map(giornoDi).filter(Boolean));
         const festivi = new Set(ctx.gl?.festivi || []);
-        const lavorativo = (d) => d.getDay() !== 0 && !festivi.has(d.toISOString().slice(0, 10));
+        const congelati = new Set(ctx.gl?.congelati || []);
+        const meseCorr = ctx.oggiISO.slice(0, 7);
+        // date LOCALI (regola della page: mai toISOString, dopo mezzanotte
+        // l'UTC è ancora ieri); congelati neutri come nel Treno
+        const lavorativo = (d) => d.getDay() !== 0 && !festivi.has(ymdLoc(d))
+            && !(ymdLoc(d).slice(0, 7) === meseCorr && congelati.has(d.getDate()));
         // streak corrente: da oggi (o da ieri se oggi è ancora vuoto) a ritroso
         const conta = (start) => {
             let n = 0; const d = new Date(start);
             for (let i = 0; i < 90; i++) {
                 if (lavorativo(d)) {
-                    if (giorni.has(d.toISOString().slice(0, 10))) n++;
+                    if (giorni.has(ymdLoc(d))) n++;
                     else break;
                 }
                 d.setDate(d.getDate() - 1);
@@ -1965,7 +1975,7 @@ function WidgetSerie({ ctx }) {
                 const d = new Date(prev); let salto = false;
                 for (;;) {
                     d.setDate(d.getDate() + 1);
-                    const isoD = d.toISOString().slice(0, 10);
+                    const isoD = ymdLoc(d);
                     if (isoD >= g) break;
                     if (d.getDay() !== 0 && !festivi.has(isoD)) { salto = true; break; }
                 }
@@ -1995,36 +2005,53 @@ function WidgetSerie({ ctx }) {
 }
 
 // ── 📅 AGENDA DEL GIORNO — esiti a 1 tap, escalation sul debito ────────────
+// SOLO appuntamenti FISICI di negozio (type incoming): i richiami telefonici
+// (store null) restano al caller. NIENTE filtro is_demo: su appointments il
+// default DB è TRUE e il caller inserisce senza campo (revisore 26/08: il
+// filtro copiato dai contracts azzerava 211 appuntamenti veri) — il
+// calendario infatti non lo usa. Visibilità = la STESSA rotellina del
+// calendario (CAP_CALENDARIO_VISTA): tutti/call_center → rete · negozio →
+// i propri PV · propri → solo i propri appuntamenti (campo agente).
+const ymdLoc = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 function WidgetAgenda({ ctx, size }) {
-    const [rows, setRows] = useState(null);
+    const [dati, setDati] = useState(null);   // { oggi: [], debito: [] }
     const [busy, setBusy] = useState(null);
+    const [errore, setErrore] = useState(null);
     const [giro, setGiro] = useState(0);
-    const stores = ctx.seesAll ? null : (ctx.myStores.length ? ctx.myStores : (ctx.user?.negozio ? [ctx.user.negozio] : []));
+    const { perms: calPerms } = useRolePermissions(ctx.user?.role, ctx.user?.grade, ctx.user?.id);
+    const vista = capChoice(ctx.user?.role, CAP_CALENDARIO_VISTA, calPerms);
+    const stores = ctx.myStores.length ? ctx.myStores : (ctx.user?.negozio ? [ctx.user.negozio] : []);
     useEffect(() => {
         let vivo = true;
         (async () => {
             const da = new Date(); da.setDate(da.getDate() - 14);
-            let q = supabase.from("appointments")
-                .select("id, date, time, type, store, customer_name, customer_phone, status, notes, created_by")
-                .gte("date", da.toISOString().slice(0, 10)).lte("date", ctx.oggiISO)
-                .or("is_demo.is.null,is_demo.eq.false")
-                .order("date", { ascending: false }).order("time").limit(200);
-            const { data } = await q;
+            const sel = "id, date, time, type, store, agente, customer_name, customer_phone, status, notes";
+            // due query MIRATE (revisore: un limit unico su 14gg tagliava
+            // proprio il debito): gli appuntamenti di oggi + gli arretrati
+            // ancora senza esito
+            const [og, deb] = await Promise.all([
+                supabase.from("appointments").select(sel).eq("type", "incoming").eq("date", ctx.oggiISO).order("time").limit(100),
+                supabase.from("appointments").select(sel).eq("type", "incoming").eq("status", "scheduled")
+                    .gte("date", ymdLoc(da)).lt("date", ctx.oggiISO).order("date").order("time").limit(100),
+            ]);
             if (!vivo) return;
-            const mie = ((data || [])).filter((a) => !stores || stores.some((s) => sameStoreW(a.store, s)));
-            setRows(mie);
+            const filtra = (arr) => (arr || []).filter((a) => {
+                if (vista === "tutti" || vista === "call_center") return true;
+                if (vista === "negozio") return stores.some((s) => sameStoreW(a.store, s));
+                return norm(a.agente) === norm(ctx.user?.name);   // propri
+            });
+            setDati({ oggi: filtra(og.data), debito: filtra(deb.data) });
         })();
         return () => { vivo = false; };
-    }, [ctx.oggiISO, ctx.visKey, giro]);   // eslint-disable-line react-hooks/exhaustive-deps
-    const oggi = (rows || []).filter((a) => a.date === ctx.oggiISO);
-    const debito = (rows || []).filter((a) => a.date < ctx.oggiISO && a.status === "scheduled");
+    }, [ctx.oggiISO, ctx.visKey, giro, vista]);   // eslint-disable-line react-hooks/exhaustive-deps
     const esita = async (a, chiave) => {
-        setBusy(a.id);
+        setBusy(a.id); setErrore(null);
         const { error } = await esitaAppuntamento(a.id, chiave, a.status, ctx.user?.name || "Negozio");
         setBusy(null);
-        if (!error) setGiro((g) => g + 1);
+        if (error) setErrore(error); else setGiro((g) => g + 1);
     };
-    const ieriISO = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+    const ieriISO = ymdLoc((() => { const d = new Date(); d.setDate(d.getDate() - 1); return d; })());
+    const vediStore = vista === "tutti" || vista === "call_center" || stores.length > 1;
     const Riga = ({ a, vecchio }) => {
         const rosso = vecchio && a.date < ieriISO;
         return (
@@ -2032,7 +2059,7 @@ function WidgetAgenda({ ctx, size }) {
                 rosso ? "border-rose-500/60 bg-rose-500/10 animate-pulse" : vecchio ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-white/10 bg-white/[0.03]")}>
                 <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-bold text-slate-200 truncate">{a.customer_name || "Cliente"} {a.time ? <span className="text-slate-500 font-normal">· {String(a.time).slice(0, 5)}</span> : null}</div>
-                    <div className="text-[10px] text-slate-500 truncate">{vecchio ? `${fmtGiornoIT(a.date)} · SENZA ESITO` : (a.store || "")}{ctx.seesAll && !vecchio ? ` · ${a.store}` : ""}{ctx.seesAll && vecchio ? ` · ${a.store}` : ""}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{vecchio ? `${fmtGiornoIT(a.date)} · SENZA ESITO` : ""}{vediStore ? `${vecchio ? " · " : ""}${a.store || ""}` : ""}</div>
                 </div>
                 {a.status === "scheduled" ? (
                     <div className="flex items-center gap-1 shrink-0">
@@ -2049,21 +2076,23 @@ function WidgetAgenda({ ctx, size }) {
             </div>
         );
     };
+    const oggi = dati?.oggi || [], debito = dati?.debito || [];
     const nOggi = size >= 4 ? 8 : 4, nDeb = size >= 4 ? 6 : 3;
     return (
         <WidgetShell icon={CalendarCheck} title="Agenda del giorno" accent="var(--tf-38bdf8)"
             action={debito.length > 0
                 ? <span className="text-[10px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/40 rounded-full px-2 py-0.5">🔥 {debito.length} senza esito</span>
                 : <span className="text-[10px] font-bold text-emerald-300">✨ esiti a zero</span>}>
-            {rows === null ? (
+            {dati === null ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Carico l&apos;agenda…</div>
             ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+                    {errore && <div className="text-[10px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-2 py-1">⚠️ {errore}</div>}
                     {debito.slice(0, nDeb).map((a) => <Riga key={a.id} a={a} vecchio />)}
                     {debito.length > nDeb && <div className="text-[10px] text-rose-300/80">…e altri {debito.length - nDeb} da esitare (calendario)</div>}
                     {oggi.length > 0 && <div className="text-[9px] uppercase tracking-widest text-slate-500 font-bold pt-1">Oggi · {oggi.length} appuntament{oggi.length === 1 ? "o" : "i"}</div>}
                     {oggi.slice(0, nOggi).map((a) => <Riga key={a.id} a={a} />)}
-                    {!oggi.length && !debito.length && <div className="text-slate-500 text-xs text-center py-4">Nessun appuntamento oggi e nessun esito arretrato 🎉</div>}
+                    {!oggi.length && !debito.length && <div className="text-slate-500 text-xs text-center py-4">{vista === "propri" && !stores.length ? "Nessun appuntamento assegnato a te." : "Nessun appuntamento oggi e nessun esito arretrato 🎉"}</div>}
                     <Link href="/calendario" className="block text-[10px] text-sky-300/80 hover:text-sky-200 pt-1">Apri il calendario <ArrowRight size={10} className="inline" /></Link>
                 </div>
             )}
