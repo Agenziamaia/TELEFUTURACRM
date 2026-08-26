@@ -154,9 +154,6 @@ export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
-    // Chat Omnicanale (beta): affiancata alla Chat, non al posto suo — si
-    // sostituiranno quando avrà anche ricerca, allegati e tempo reale
-    { type: "link", name: "Omnicanale", href: "/chat/omni", icon: MessagesSquare, roles: EVERYONE },
     { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },
     // Conto economico per PV: sezione RIMOSSA su direttiva Luca 07/08 — si
     // rifà da capo (grafica CRM) DOPO che avrà dato compensi/soglie/target/
