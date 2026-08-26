@@ -11,6 +11,8 @@
 // l'allocazione per codice di inserimento (quella è roba azienda, vive in
 // Gare/Calcolatore). Store manager → tutto il punto vendita; consulente →
 // solo il suo individuale (colonna `venditore`).
+// ECCEZIONE DICHIARATA (26/08): la Bussola «Direzione inserimento» ragiona
+// PER CODICE di proposito — è la direzione che indirizza dove caricare.
 //
 // COME SI AGGIUNGE UN WIDGET (struttura voluta da Luca, tenerla pulita):
 // 1. scrivi il componente qui sotto (riceve { ctx, size } — size 1|2|4);
@@ -2201,6 +2203,7 @@ const fmtGiornoIT = (iso) => { const d = String(iso || ""); return d ? `${d.slic
 // (ctx.scopeVendita su negozio/venditore della riga).
 function WidgetScudoMalus({ ctx, size }) {
     const [righe, setRighe] = useState(null);
+    const [errore, setErrore] = useState(false);
     const [usato, setUsato] = useState(0);
     const meseIni = ctx.oggiISO.slice(0, 7) + "-01";
     useEffect(() => {
@@ -2210,17 +2213,20 @@ function WidgetScudoMalus({ ctx, size }) {
                 .select("contract_id, categoria, brand, negozio, venditore, nominativo, data_inizio, data_fine, giorni, malus_euro, importo, stato")
                 .or("eliminato.is.null,eliminato.eq.false")
                 .or(`data_fine.is.null,data_inizio.gte.${meseIni}`)
+                .order("data_inizio", { ascending: false })
                 .limit(500);
-            const { data } = await q;
+            const { data, error } = await q;
             if (!vivo) return;
-            setRighe(data || []);
+            // su errore NIENTE scudo verde: un guasto non è igiene (revisore)
+            if (error) { setErrore(true); setRighe([]); }
+            else { setErrore(false); setRighe(data || []); }
             if (ctx.seesAll) {
                 const { data: u } = await supabase.from("usati_malus").select("importo, data_inizio").gte("data_inizio", meseIni).limit(300);
                 if (vivo) setUsato((u || []).reduce((s, r) => s + (Number(r.importo) || 0), 0));
             }
         })();
         return () => { vivo = false; };
-    }, [meseIni, ctx.visKey, ctx.user?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+    }, [meseIni, ctx.visKey, ctx.negoziKey, ctx.user?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
     const dati = useMemo(() => {
         if (!righe) return null;
         const mie = righe.filter((r) => ctx.scopeVendita({ negozio: r.negozio, venditore: r.venditore }));
@@ -2230,13 +2236,17 @@ function WidgetScudoMalus({ ctx, size }) {
         const aperti = mie.filter((r) => r.data_fine == null);
         const alGiorno = aperti.reduce((s, r) => s + (Number(r.malus_euro) || 0), 0);
         return { generato: Math.round(generato), compensato: Math.round(compensato), aperti, alGiorno: Math.round(alGiorno * 100) / 100 };
-    }, [righe, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+    // negoziKey: il filtro negozi della Home cambia il perimetro di
+    // scopeVendita senza toccare visKey (bloccante revisore 26/08)
+    }, [righe, ctx.visKey, ctx.negoziKey]);   // eslint-disable-line react-hooks/exhaustive-deps
     const mese = new Date().toLocaleDateString("it-IT", { month: "long" });
     return (
         <WidgetShell icon={Shield} title="Scudo Malus" accent="var(--tf-ef4444)"
             action={<span className="text-[10px] text-slate-500">PDA · {mese}</span>}>
             {!dati ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Controllo il tracking…</div>
+            ) : errore ? (
+                <div className="flex-1 flex items-center justify-center text-amber-300/90 text-xs text-center px-3">⚠ Tracking non raggiungibile in questo momento: niente scudo finché non rivedo i dati.</div>
             ) : dati.generato <= 0 && !dati.aperti.length ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-1 text-center px-3">
                     <div className="text-4xl" aria-hidden>🛡️</div>
@@ -2274,9 +2284,14 @@ function WidgetScudoMalus({ ctx, size }) {
 // ── 💶 CONTATORE € — il tuo mese in euro, dal motore (pay ragazzi) ──────────
 // Somma payEuroAttivazione delle vendite DEL PERIMETRO al tier LIVE della
 // RETE (le gare sono di rete: il tier è quello). Brand col derivato pieno:
-// W3, Sky, Vodafone (pezzi VF della lettera A; i Fastweb hanno le loro
-// lettere e arrivano col contesto FW). Onestà: dichiarati esclusi e senza
-// canone. Sale da solo quando scatta una soglia (retroattivo compreso).
+// W3, Sky, Vodafone. La gara VF applica le regole della LETTERA A come
+// kpiVF/Calcolatore (revisore 26/08): dentro anche i Fastweb sui codici T1
+// (contestoVfFw), fuori le MNP di provenienza Vodafone/Fastweb/Ho.
+// Onestà: dichiarati esclusi e senza canone. Sale da solo quando scatta
+// una soglia (retroattivo compreso).
+const esclusaLetteraA = (c) => /^mobile /i.test(String(c.categoria || ""))
+    && /mnp/i.test(String(c.prodotto || ""))
+    && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || ""));
 function WidgetContatoreEuro({ ctx, size }) {
     const [tabs, setTabs] = useState(null);
     const [canoni, setCanoni] = useState(null);
@@ -2293,7 +2308,7 @@ function WidgetContatoreEuro({ ctx, size }) {
                 caricaTabellare("vodafone", iso).catch(() => null),
                 supabase.from("catalog_offerte")
                     .select("nome, canone_mensile, catalog_prodotti!inner(nome, brand_id)")
-                    .in("catalog_prodotti.brand_id", ["windtre", "sky", "vodafone"]).eq("attivo", true).not("canone_mensile", "is", null).limit(3000),
+                    .in("catalog_prodotti.brand_id", ["windtre", "sky", "vodafone", "fastweb"]).eq("attivo", true).not("canone_mensile", "is", null).limit(3000),
             ]);
             if (!vivo) return;
             const m = new Map();
@@ -2308,25 +2323,32 @@ function WidgetContatoreEuro({ ctx, size }) {
     }, [ym]);
     const conto = useMemo(() => {
         if (!tabs || !canoni) return null;
+        // FW T1 nella gara Vodafone: stessa selezione di kpiVF (contestoVfFw)
+        const fwA = (ctx.vf?.packs?.[0]?.rowsFw || []).filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone");
         const brands = [
-            { key: "windtre", label: "W3", tab: tabs.w3, rows: ctx.w3?.packs?.[0]?.rows || [] },
-            { key: "sky", label: "Sky", tab: tabs.sky, rows: ctx.sky?.packs?.[0]?.rows || [] },
-            { key: "vodafone", label: "VF", tab: tabs.vf, rows: ctx.vf?.packs?.[0]?.rows || [] },
+            { key: "windtre", label: "W3", tab: tabs.w3, rows: ctx.w3?.packs?.[0]?.rows || [], regoleA: false },
+            { key: "sky", label: "Sky", tab: tabs.sky, rows: ctx.sky?.packs?.[0]?.rows || [], regoleA: false },
+            { key: "vodafone", label: "VF", tab: tabs.vf, rows: [...(ctx.vf?.packs?.[0]?.rows || []), ...fwA], regoleA: true },
         ];
-        let tot = 0, pezziPagati = 0, senzaRiga = 0, senzaCanone = 0;
+        let tot = 0, pezziPagati = 0, senzaRiga = 0, senzaCanone = 0, esclA = 0;
         const perBrand = [];
         for (const b of brands) {
             if (!b.tab || !b.rows.length) continue;
-            const rete = b.rows.filter((c) => !esclusaDalleGare(c));
+            let rete = b.rows.filter((c) => !esclusaDalleGare(c));
+            if (b.regoleA) {
+                esclA += rete.filter((c) => esclusaLetteraA(c) && ctx.scopeVendita(c)).length;
+                rete = rete.filter((c) => !esclusaLetteraA(c));
+            }
             const avz = calcolaAvanzamento(b.tab, rete);            // tier di RETE
             const mie = rete.filter((c) => ctx.scopeVendita(c));
             let eb = 0;
             for (const c of mie) {
+                // brand della VENDITA al matcher: le FW T1 prendono le righe «FW»
                 const set = matchRigheAttivazione(b.tab.righe, c, brandIdDaLabel(c.brand));
                 if (!set.length) { senzaRiga++; continue; }
                 const pista = set[0].pista;
                 const tier = set[0].gettone ? 0 : (avz.piste[pista]?.tier ?? 0);
-                const canone = canoni.get(`${b.key}|${norm(c.offerta)}|${norm(c.prodotto)}`) ?? null;
+                const canone = canoni.get(`${brandIdDaLabel(c.brand) || b.key}|${norm(c.offerta)}|${norm(c.prodotto)}`) ?? null;
                 const v = payEuroAttivazione(set, tier, canone);
                 if (v == null) { senzaCanone++; continue; }
                 eb += v; pezziPagati++;
@@ -2334,8 +2356,9 @@ function WidgetContatoreEuro({ ctx, size }) {
             if (mie.length) perBrand.push({ label: b.label, euro: Math.round(eb) });
             tot += eb;
         }
-        return { tot: Math.round(tot), pezziPagati, senzaRiga, senzaCanone, perBrand };
-    }, [tabs, canoni, ctx.w3, ctx.sky, ctx.vf, ctx.visKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+        return { tot: Math.round(tot), pezziPagati, senzaRiga, senzaCanone, esclA, perBrand };
+    // negoziKey: il filtro negozi cambia scopeVendita senza toccare visKey
+    }, [tabs, canoni, ctx.w3, ctx.sky, ctx.vf, ctx.visKey, ctx.negoziKey]);   // eslint-disable-line react-hooks/exhaustive-deps
     const chi = ctx.level === "own" ? "il tuo mese" : ctx.level === "store" ? "il negozio" : "la rete";
     return (
         <WidgetShell icon={Banknote} title="Contatore €" accent="var(--tf-22c55e)"
@@ -2353,7 +2376,7 @@ function WidgetContatoreEuro({ ctx, size }) {
                             {conto.perBrand.map((b) => <span key={b.label} className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10 text-[10px] text-slate-300">{b.label} <b className="text-emerald-300">{it2(b.euro)} €</b></span>)}
                         </div>
                     )}
-                    <div className="text-[10px] text-slate-500">Sale da solo quando scatta una soglia (retroattivo compreso). W3 + Sky + Vodafone{conto.senzaRiga ? ` · ${conto.senzaRiga} senza riga pay` : ""}{conto.senzaCanone ? ` · ${conto.senzaCanone} senza canone a catalogo` : ""}.</div>
+                    <div className="text-[10px] text-slate-500">Sale da solo quando scatta una soglia (retroattivo compreso). W3 + Sky + gara Vodafone (FW T1 compresi){conto.esclA ? ` · ${conto.esclA} MNP escluse da lettera` : ""}{conto.senzaRiga ? ` · ${conto.senzaRiga} senza riga pay` : ""}{conto.senzaCanone ? ` · ${conto.senzaCanone} senza canone a catalogo` : ""}.</div>
                     {size >= 2 && <Link href="/calcolatore" className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-300 hover:text-sky-200">Apri il Calcolatore <ArrowRight className="w-3 h-3" /></Link>}
                 </div>
             )}
@@ -2367,7 +2390,11 @@ function WidgetContatoreEuro({ ctx, size }) {
 // settimana (lun→oggi), negozio che REGISTRA. Admin: il derby più caldo
 // della rete (i due negozi appaiati più vicini in testa).
 function WidgetDerby({ ctx }) {
+    // la sede fisica è la prima parola: «Magliana Multi» e «Magliana W3»
+    // sono gemelli di sede, NON rivali (rilievo revisore 26/08)
+    const sede = (n) => norm(String(n || "").trim().split(/\s+/)[0]);
     const dati = useMemo(() => {
+        if (!ctx.periodoEMeseCorrente) return { fuoriMese: true };
         const valida = (c) => isCtr(c) && validaProduzione(c) && !esclusaDalleGare(c);
         const rows = (ctx.allPeriod || []).filter(valida);
         const perNeg = new Map();
@@ -2381,23 +2408,31 @@ function WidgetDerby({ ctx }) {
             const mioPeso = perNeg.get([...perNeg.keys()].find((n) => sameStoreW(n, mio))) || 0;
             let gemello = null, dist = Infinity;
             for (const [n, peso] of perNeg) {
-                if (sameStoreW(n, mio)) continue;
+                if (sameStoreW(n, mio) || sede(n) === sede(mio)) continue;   // mai il banco a fianco
                 const d = Math.abs(peso - mioPeso);
                 if (d < dist) { dist = d; gemello = n; }
             }
             if (!gemello) return null;
             return { a: { nome: mio, pz: sett(mio) }, b: { nome: gemello, pz: sett(gemello) }, tipo: "mio" };
         }
-        // admin: i due negozi di testa più vicini tra loro
+        // admin: i due negozi di testa più vicini tra loro (sedi diverse)
         const top = [...perNeg.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6);
         let best = null, bd = Infinity;
         for (let i = 0; i < top.length - 1; i++) {
-            const d = Math.abs(top[i][1] - top[i + 1][1]);
-            if (d < bd) { bd = d; best = [top[i][0], top[i + 1][0]]; }
+            for (let j = i + 1; j < top.length; j++) {
+                if (sede(top[i][0]) === sede(top[j][0])) continue;
+                const d = Math.abs(top[i][1] - top[j][1]);
+                if (d < bd) { bd = d; best = [top[i][0], top[j][0]]; }
+            }
         }
         if (!best) return null;
         return { a: { nome: best[0], pz: sett(best[0]) }, b: { nome: best[1], pz: sett(best[1]) }, tipo: "rete" };
-    }, [ctx.allPeriod, ctx.visKey, ctx.seesAll]);   // eslint-disable-line react-hooks/exhaustive-deps
+    }, [ctx.allPeriod, ctx.visKey, ctx.seesAll, ctx.periodoEMeseCorrente]);   // eslint-disable-line react-hooks/exhaustive-deps
+    if (dati?.fuoriMese) return (
+        <WidgetShell icon={Swords} title="Derby" accent="var(--tf-f59e0b)">
+            <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Il derby vive nel mese corrente: torna su «Questo mese» per vederlo.</div>
+        </WidgetShell>
+    );
     if (!dati) return (
         <WidgetShell icon={Swords} title="Derby" accent="var(--tf-f59e0b)">
             <div className="flex-1 flex items-center justify-center text-slate-500 text-xs text-center px-3">Serve un negozio (e un rivale) per accendere il derby.</div>

@@ -44,11 +44,15 @@ export function DirezioneInserimentoAdmin() {
         return () => { vivo = false; };
     }, [monthISO, giro]);
 
+    const [erroriSalva, setErroriSalva] = useState<Record<string, boolean>>({});
     const salva = async (cod_gara: string, pista: string, valore: number) => {
         const chiave = `${cod_gara}|${pista}`;
-        await supabase.from("direzione_targets").upsert(
+        const { error } = await supabase.from("direzione_targets").upsert(
             { brand: "windtre", month: monthISO, cod_gara, pista, target: valore, updated_at: new Date().toISOString(), updated_by: user?.name || null },
             { onConflict: "brand,month,cod_gara,pista" });
+        // niente ✓ su scrittura fallita (rilievo revisore): rosso e si riprova
+        if (error) { setErroriSalva((s) => ({ ...s, [chiave]: true })); return; }
+        setErroriSalva((s) => ({ ...s, [chiave]: false }));
         setDir((p) => p ? {
             ...p,
             codici: p.codici.map((k) => k.cod_gara === cod_gara ? { ...k, targets: { ...k.targets, [pista]: valore } } : k),
@@ -101,7 +105,10 @@ export function DirezioneInserimentoAdmin() {
                     )}
                     {dir.codici.map((k) => {
                         const on = aperto === k.cod_gara;
-                        const pisteMostrate = dir.pisteTab.filter((p) => !PISTE_FUORI.has(p.chiave) && (k.soglie[p.chiave] || k.piste[p.chiave] || k.targets[p.chiave] != null));
+                        // TUTTE le piste, sempre (rilievo revisore: a inizio mese
+                        // cb/lucegas non avevano produzione né scala → sparivano
+                        // e il primo target era impossibile da dare)
+                        const pisteMostrate = dir.pisteTab.filter((p) => !PISTE_FUORI.has(p.chiave));
                         const nTarget = Object.values(k.targets).filter((v) => v > 0).length;
                         return (
                             <div key={k.cod_gara} className="glass-card overflow-hidden">
@@ -144,10 +151,17 @@ export function DirezioneInserimentoAdmin() {
                                                         </div>
                                                         <div className="flex items-center gap-1.5 shrink-0">
                                                             <input value={bozza} onChange={(e) => setBozze((b) => ({ ...b, [chiave]: e.target.value }))}
-                                                                onBlur={() => { const v = Number(String(bozza).replace(",", ".")); if (Number.isFinite(v) && v !== target) salva(k.cod_gara, p.chiave, Math.max(0, v)); }}
+                                                                onBlur={() => {
+                                                                    // input svuotato ≠ «metti 0»: per azzerare si scrive 0
+                                                                    // (rilievo revisore: Number("")===0 sovrascriveva)
+                                                                    if (String(bozza).trim() === "") { setBozze((b) => ({ ...b, [chiave]: target ? String(target) : "" })); return; }
+                                                                    const v = Number(String(bozza).replace(",", "."));
+                                                                    if (Number.isFinite(v) && v !== target) salva(k.cod_gara, p.chiave, Math.max(0, v));
+                                                                }}
                                                                 placeholder="target" inputMode="decimal"
                                                                 className="glass-input !h-8 w-20 text-xs text-right" />
                                                             {salvate[chiave] && <Check className="w-4 h-4 text-emerald-400" />}
+                                                            {erroriSalva[chiave] && <span className="text-[10px] font-bold text-rose-300" title="Scrittura fallita: riprova">✗</span>}
                                                         </div>
                                                     </div>
                                                     {target > 0 && (
