@@ -2560,7 +2560,7 @@ function WidgetAgenda({ ctx, size }) {
     };
     const oggi = dati?.oggi || [], debito = dati?.debito || [], task = dati?.task || [];
     const nOggi = size >= 4 ? 8 : 4, nDeb = size >= 4 ? 6 : 3;
-    const nTask = size >= 4 ? 8 : 5;
+    const nTask = size >= 4 ? 10 : 6;
     const taskScadute = task.filter((t) => t.date < ctx.oggiISO);
     const RigaTask = ({ t }) => {
         const scaduta = t.date < ctx.oggiISO;
@@ -2588,9 +2588,14 @@ function WidgetAgenda({ ctx, size }) {
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs"><Loader2 className="animate-spin mr-2" size={14} /> Carico l&apos;agenda…</div>
             ) : (
                 /* DUE COLONNE (Luca 26/08): appuntamenti a sinistra, task a
-                   destra. Sotto una certa larghezza la seconda colonna andrebbe
-                   stretta, quindi alla taglia piccola restano incolonnate. */
-                <div className={cn("flex-1 min-h-0 grid gap-3", size >= 4 ? "grid-cols-2" : "grid-cols-1")}>
+                   destra. ⚠️ Il taglio si decide dalla LARGHEZZA VERA, non dalla
+                   taglia nominale: la taglia 2 in un layout largo occupa tutto
+                   lo schermo, e con `size >= 4` le task finivano sotto invece
+                   che a fianco (Luca: «ti dicevo di usare lo spazio in
+                   larghezza»). La card è già un container, quindi basta
+                   chiederglielo. Sotto i 520px restano incolonnate, che a
+                   quel punto due colonne sarebbero illeggibili. */
+                <div className="flex-1 min-h-0 grid gap-3 grid-cols-1 [@container(min-width:520px)]:grid-cols-2">
                     <div className="min-h-0 overflow-y-auto space-y-1.5">
                         {errore && <div className="text-[10px] text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-2 py-1">⚠️ {errore}</div>}
                         <div className="text-[9px] uppercase tracking-widest text-sky-300/70 font-bold">📅 Appuntamenti</div>
@@ -2601,7 +2606,7 @@ function WidgetAgenda({ ctx, size }) {
                         {!oggi.length && !debito.length && <div className="text-slate-500 text-xs text-center py-4">{vista === "propri" && !stores.length ? "Nessun appuntamento assegnato a te." : "Nessun appuntamento oggi 🎉"}</div>}
                         <Link href="/calendario" className="block text-[10px] text-sky-300/80 hover:text-sky-200 pt-1">Apri il calendario <ArrowRight size={10} className="inline" /></Link>
                     </div>
-                    <div className={cn("min-h-0 overflow-y-auto space-y-1.5", size >= 4 && "border-l border-white/5 pl-3")}>
+                    <div className="min-h-0 overflow-y-auto space-y-1.5 [@container(min-width:520px)]:border-l [@container(min-width:520px)]:border-white/5 [@container(min-width:520px)]:pl-3">
                         <div className="text-[9px] uppercase tracking-widest text-violet-300/70 font-bold flex items-center gap-1.5">
                             ✅ Task
                             {taskScadute.length > 0 && <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5">{taskScadute.length} in ritardo</span>}
