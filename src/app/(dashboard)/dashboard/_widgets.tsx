@@ -26,7 +26,7 @@
 // I widget futuri già immaginati: business Vodafone, badge/presenze per i
 // caller, qualità (KO/annullati), storico personale.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1511,6 +1511,25 @@ function AnelloTeamWa({ fette, uid, grande, titolo }) {
     );
 }
 
+// misura VIVA dell'altezza della card (Luca 26/08 sera: «se gli do più spazio
+// deve prenderselo… dovrebbe scoppiarmi tutti gli utenti»): callback-ref +
+// ResizeObserver — MAI un ref passivo su un nodo che al primo mount può non
+// esserci (lezione della Home a Tetris del 25/08: width inchiodata per
+// sempre). I widget la usano per sciogliere i tetti delle liste quando la
+// card è alta: media ≈ mezza colonna, espansa ≈ card a tutta pagina.
+function useMisuraCard() {
+    const [h, setH] = useState(0);
+    const obs = useRef(null);
+    const refCb = useCallback((node) => {
+        if (obs.current) { obs.current.disconnect(); obs.current = null; }
+        if (!node) return;
+        const o = new ResizeObserver((e) => { const r = e[0]?.contentRect; if (r) setH(r.height); });
+        o.observe(node); obs.current = o;
+        setH(node.getBoundingClientRect().height);
+    }, []);
+    return [refCb, h];
+}
+
 // parsimonia CLIENT sul risveglio del triage (una per pagina, non per widget:
 // i remount del drag/resize non devono richiamare l'API) — il vero anti-doppione
 // è il lock server in wa_triage_stato
@@ -1519,6 +1538,7 @@ const corsaTriageClient = { t: 0 };
 function WidgetWhatsApp({ ctx, size }) {
     const uid = ctx.user?.id;
     const router = useRouter();
+    const [refMisura, hCard] = useMisuraCard();
     const [dati, setDati] = useState(null);
     const [giro, setGiro] = useState(0);
     // filtro per negozio/persona (Luca 25/08 notte: chi gestisce più punti
@@ -1804,8 +1824,12 @@ function WidgetWhatsApp({ ctx, size }) {
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
     if (dati.vuoto) return shell(<div className="p-3 space-y-3">{filtroRow}<p className="text-xs text-slate-500 py-2">{dati.vuoto}</p></div>);
     const totFette = dati.fette.reduce((s, f) => s + f.v, 0);
-    const nAlert = size >= 4 ? 8 : 3;
-    const nAttesa = size >= 4 ? 5 : 2;
+    // tetti VIVI sull'altezza reale (misura col ResizeObserver): card alta =
+    // liste scoppiate per intero, niente più «…e altre 7» con lo spazio vuoto
+    const espansa = hCard > 900;
+    const media = hCard > 620;
+    const nAlert = espansa ? 999 : (media || size >= 4) ? 8 : 3;
+    const nAttesa = espansa ? 999 : (media || size >= 4) ? 5 : 2;
     const adesso = Date.now();
     // navigazione PROGRAMMATICA, non <Link> (Luca 26/08: «clicco e non
     // reindirizza da nessuna parte»): dentro la griglia drag della Home un
@@ -1830,7 +1854,7 @@ function WidgetWhatsApp({ ctx, size }) {
         </div>
     );
     return shell(
-        <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
+        <div ref={refMisura} className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
             {filtroRow}
             {/* KPI del periodo */}
             <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
@@ -1882,7 +1906,7 @@ function WidgetWhatsApp({ ctx, size }) {
                 </div>
             )}
             {/* anello: chi scrive quanto (stile Analisi, cliccabile) */}
-            {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4} titolo={`Messaggi scritti · ${dati.etichettaPeriodo}`} />}
+            {totFette > 0 && <AnelloTeamWa fette={dati.fette} uid={uid} grande={size >= 4 || media} titolo={`Messaggi scritti · ${dati.etichettaPeriodo}`} />}
             <div className="text-[10px] text-slate-600">Solo chat coi clienti (niente gruppi) · {dati.nNumeri === 1 ? "1 numero connesso" : `${dati.nNumeri} numeri connessi`} · finestra ultimi 30 giorni{dati.concluse ? ` · ${dati.concluse} concluse fuori elenco` : ""}{dati.aiFresche ? ` · 🧠 triage AI su ${dati.aiFresche} chat` : ""}{dati.agendate ? ` · 🗓 ${dati.agendate} in agenda` : ""}{dati.tetto ? " · controllo sulle ultime 400 chat" : ""}</div>
         </div>
     );
@@ -1897,6 +1921,7 @@ const corsaTriageEmailClient = { t: 0 };
 function WidgetEmail({ ctx, size }) {
     const uid = ctx.user?.id;
     const router = useRouter();
+    const [refMisura, hCard] = useMisuraCard();
     const [dati, setDati] = useState(null);
     const [giro, setGiro] = useState(0);
     const [filtro, setFiltro] = useState("");
@@ -2014,8 +2039,11 @@ function WidgetEmail({ ctx, size }) {
     );
     if (!dati) return shell(<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>);
     if (dati.vuoto) return shell(<div className="p-3 space-y-3">{filtroRow}<p className="text-xs text-slate-500 py-2">{dati.vuoto}</p></div>);
-    const nRosse = size >= 4 ? 8 : 3;
-    const nArancio = size >= 4 ? 5 : 2;
+    // tetti vivi sull'altezza reale, come il gemello WhatsApp
+    const espansaEm = hCard > 900;
+    const mediaEm = hCard > 620;
+    const nRosse = espansaEm ? 999 : (mediaEm || size >= 4) ? 8 : 3;
+    const nArancio = espansaEm ? 999 : (mediaEm || size >= 4) ? 5 : 2;
     const adesso = Date.now();
     // ✓ come sul widget WhatsApp (Luca 26/08 sera): «a posto così» —
     // l'email si ARCHIVIA (esce dalla Posta in arrivo e dalle liste; se il
@@ -2051,7 +2079,7 @@ function WidgetEmail({ ctx, size }) {
         </div>
     );
     return shell(
-        <div className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
+        <div ref={refMisura} className="space-y-3 p-3 flex-1 min-h-0 overflow-y-auto">
             {filtroRow}
             <div className={cn("grid gap-2", size >= 4 ? "grid-cols-4" : "grid-cols-2")}>
                 <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
