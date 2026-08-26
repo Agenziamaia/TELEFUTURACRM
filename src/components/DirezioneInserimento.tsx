@@ -166,6 +166,41 @@ export function DirezioneInserimentoAdmin() {
                 </div>
             </div>
 
+            {/* SFRIDO GENERALE per categoria (Luca 26/08 sera-2): si imposta QUI,
+                una volta per pista, e vale per TUTTI i codici del brand — le
+                pillole soglia di ogni codice escono già maggiorate e intere */}
+            {dir && dir.tab && dir.codici.length > 0 && (
+                <div className="glass-card p-4">
+                    <div className="flex items-center gap-2 mb-2.5">
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">⚙️ Sfrido per categoria</span>
+                        <span className="text-[10px] text-slate-600">vale su tutti i codici {bMeta.label} · % intera, il target esce già maggiorato per eccesso</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2.5">
+                        {dir.pisteTab.filter((p) => !PISTE_FUORI.has(p.chiave)).map((p) => {
+                            const sfrido = Math.round(Number(dir.sfridi[p.chiave]) || 0);
+                            const sfrKey = `sfr|${p.chiave}`;
+                            const bozzaSfr = bozzeSfr[p.chiave] ?? (sfrido ? String(sfrido) : "");
+                            return (
+                                <div key={p.chiave} className="flex items-center gap-1.5">
+                                    <span className="text-xs text-slate-300 font-semibold">{EMOJI_PISTA(p.nome)} {p.nome}</span>
+                                    <input value={bozzaSfr} onChange={(e) => setBozzeSfr((b) => ({ ...b, [p.chiave]: e.target.value }))}
+                                        onBlur={() => {
+                                            if (String(bozzaSfr).trim() === "") { setBozzeSfr((b) => ({ ...b, [p.chiave]: sfrido ? String(sfrido) : "" })); return; }
+                                            const v = Math.max(0, Math.round(Number(String(bozzaSfr).replace(",", "."))));
+                                            if (Number.isFinite(v) && v !== sfrido) salvaSfrido(p.chiave, v);
+                                        }}
+                                        placeholder="0" inputMode="numeric"
+                                        className="glass-input !h-8 w-14 text-xs text-right" />
+                                    <span className="text-[10px] text-slate-500">%</span>
+                                    {salvate[sfrKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                    {erroriSalva[sfrKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {!dir ? (
                 <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Carico realtà, tabellare e produzione…</div>
             ) : !dir.tab ? (
@@ -224,8 +259,6 @@ export function DirezioneInserimentoAdmin() {
                                             const bozza = bozze[chiave] ?? (target ? String(target) : "");
                                             const proj = proiezioneDir(dir, avz.punti);
                                             const perc = target > 0 ? Math.min(100, Math.round((avz.punti / target) * 100)) : 0;
-                                            const sfrKey = `sfr|${p.chiave}`;
-                                            const bozzaSfr = bozzeSfr[p.chiave] ?? (sfrido ? String(sfrido) : "");
                                             return (
                                                 <div key={p.chiave} className="px-4 py-3.5 space-y-2.5">
                                                     {/* LA BARRA come in Analisi → Rete: produzione piena,
@@ -267,21 +300,13 @@ export function DirezioneInserimentoAdmin() {
                                                                 );
                                                             }) : <span className="text-[10px] text-slate-600">nessuna scala per questa pista: target a mano qui a destra</span>}
                                                         </div>
-                                                        {/* SFRIDO della pista (vale per tutte le realtà del brand) */}
-                                                        <div className="flex items-center gap-1 shrink-0" title="Sfrido: extra % d'errore della pista — si somma alla soglia cliccata, arrotondato per eccesso all'intero">
-                                                            <span className="text-[10px] font-bold text-slate-500">sfrido</span>
-                                                            <input value={bozzaSfr} onChange={(e) => setBozzeSfr((b) => ({ ...b, [p.chiave]: e.target.value }))}
-                                                                onBlur={() => {
-                                                                    if (String(bozzaSfr).trim() === "") { setBozzeSfr((b) => ({ ...b, [p.chiave]: sfrido ? String(sfrido) : "" })); return; }
-                                                                    const v = Math.max(0, Math.round(Number(String(bozzaSfr).replace(",", "."))));
-                                                                    if (Number.isFinite(v) && v !== sfrido) salvaSfrido(p.chiave, v);
-                                                                }}
-                                                                placeholder="0" inputMode="numeric"
-                                                                className="glass-input !h-8 w-14 text-xs text-right" />
-                                                            <span className="text-[10px] text-slate-500">%</span>
-                                                            {salvate[sfrKey] && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                                                            {erroriSalva[sfrKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
-                                                        </div>
+                                                        {/* lo sfrido si imposta SOPRA, una volta per categoria:
+                                                            qui solo il promemoria che le pillole sono maggiorate */}
+                                                        {sfrido > 0 && (
+                                                            <span className="shrink-0 text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-md px-2 py-0.5" title="Le soglie qui sopra sono già maggiorate dello sfrido di categoria">
+                                                                +{sfrido}% sfrido
+                                                            </span>
+                                                        )}
                                                         {/* target a mano (sempre intero; vuoto = resta com'era) */}
                                                         <div className="flex items-center gap-1.5 shrink-0">
                                                             <input value={bozza} onChange={(e) => setBozze((b) => ({ ...b, [chiave]: e.target.value }))}
