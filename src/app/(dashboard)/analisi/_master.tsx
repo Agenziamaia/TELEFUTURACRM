@@ -265,6 +265,31 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         const st = av?.piste?.[p.chiave];
         if (!st || (!st.punti && !st.pezzi)) return null;
         if (b === "w3" && (p.chiave === "cb" || p.chiave === "partnership")) return null;   // la CB vive nella barra Partnership
+        // ⚠️ AL POSTO DELL'EXTRA GARA P.IVA, QUI CI VA IL PALETTO (Luca 26/08:
+        // «questa riga dovrebbe contare I PEZZI MOBILI, per quel famoso target
+        // mensile che evita il 30% di malus sul mobile»).
+        // Due motivi: ① l'Extra Gara P.IVA ha già la SUA barra più in basso, e
+        // da stanotte — da quando il motore conta anche le piste parallele —
+        // compariva due volte con lo stesso numero; ② il paletto non si vedeva
+        // da nessuna parte se non come avviso rosso dentro la barra Mobile,
+        // che è il posto sbagliato per un obiettivo da rincorrere.
+        // Non è lo stesso numero della riga «Business» a destra: quella conta
+        // TUTTO il business fatto (mobile + fisso, coi punti della sua gara),
+        // questa conta solo le attivazioni P.IVA mobile che aprono il premio.
+        if (b === "w3" && p.chiave === "business_piva") {
+            const fatte = av?.pivaMobile ?? 0;
+            const SERVONO = 6;
+            const items = (raw || []).filter((c) => /^mobile/i.test(String(c.categoria || "")) && /business/i.test(String(c.tipo_cliente || "")));
+            return (
+                <SogliaBar key="paletto_biz" emoji="💼" label={`Paletto Business — P.IVA mobile (${fatte}/${SERVONO})`}
+                    punti={fatte} pezzi={fatte} soglie={[{ tier: 1, soglia_da: SERVONO }]} colore={G.colore}
+                    nota={fatte >= SERVONO
+                        ? "✅ paletto preso: il premio della gara mobile è al sicuro"
+                        : `⚠️ ne ${SERVONO - fatte === 1 ? "manca 1" : `mancano ${SERVONO - fatte}`}: sotto le ${SERVONO} il premio della gara mobile viene decurtato del 30%`}
+                    onClick={() => apri({ titolo: "Paletto Business — attivazioni P.IVA mobile", sub: filtroLabel, items: items.map((c) => ({ id: c.id, venditore: c.venditore || "—", negozio: c.negozio || "—", cod_ins: c.cod_ins || "—", categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, punti: 1, g: idxDi?.get(String(c.data || "").slice(0, 10)) || 0 })) })}
+                />
+            );
+        }
         // PISTE SENZA CORSA (Luca 26/08: «non abbiamo nessun target su quella
         // questione, non capisco perché sta lì»): i gettoni puri — Telefoni &
         // device — non hanno né soglie né punti, quindi una barra di
