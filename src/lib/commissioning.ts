@@ -440,7 +440,22 @@ export function flagsComponenti(c: { tipo_cliente?: string | null; categoria?: s
     // Home Protect di agosto non prendevano lo 0,25 (segnalazione Luca 19/08)
     if (ha("più sicuri ufficio") || ha("home protect")) f.add("pscu");   // 2 € + 0,25 punti
     if (ha("cloud")) f.add("cloud");                           // 8 €, non conta in soglia
-    if (/professional box/i.test(off)) f.add("fritz");         // +40 € e +1 punto (FRITZ!Box)
+    // PROFESSIONAL BOX (Luca 26/08): l'offerta include il FRITZ!Box E la
+    // SECONDA LINEA. La lettera è esplicita: «Super Fibra Professional Box
+    // con modem FRITZ!Box: punteggio extra +1 (totale 4 punti: 1,5 1ª linea +
+    // 1,5 2ª linea + 1 extra)». A catalogo l'opzione «2°Linea» non esiste su
+    // queste offerte (solo su Super Fibra e Super Fibra Conv) proprio perché
+    // è compresa — quindi il flag non si accendeva mai e il Box valeva 2,75.
+    // ⚠️ SOLO PUNTI, NIENTE EURO: il Box costa 51,99 contro i 31,99 della
+    // Super Fibra, e il pay è canone × moltiplicatore — la seconda linea è
+    // già pagata dentro il canone maggiorato. Sommarci anche il tier della
+    // riga «seconda linea» (20-50 €) la pagherebbe due volte. Stessa cosa per
+    // il contrattuale: la lettera dà 10 € all'OFFERTA «2ª linea Professional»
+    // venduta a sé, non a una seconda linea inclusa in un altro contratto.
+    if (/professional box/i.test(off)) {
+        f.add("fritz");                     // +40 € e +1 punto (FRITZ!Box)
+        f.add("seconda_linea_inclusa");     // +1,5 punti, nessun € (già nel canone)
+    }
     // 2ª linea Professional (opzione a canone, chiarimento Luca 14/08): per
     // Wind3 è UN ALTRO FISSO con canone 10 € → paga il moltiplicatore base
     // della soglia sul SUO canone (riga a € per soglia 20/30/35/40/50) più il
