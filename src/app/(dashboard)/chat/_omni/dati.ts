@@ -40,9 +40,14 @@ const oraBreve = (iso: string | null) => {
    recente in cima, i non letti sempre davanti. È questa fusione che rende
    il tab «Tutti» una cosa sola invece di tre liste appiccicate.          */
 export async function caricaConversazioni(
-    me: { id: string | null; role: string | null; stores: string[]; membri?: { id: string; nome: string }[] | null },
+    me: {
+        id: string | null; role: string | null; stores: string[];
+        membri?: { id: string; nome: string }[] | null;
+        reale?: string | null;      // chi è loggato DAVVERO, quando mi immedesimo
+    },
 ): Promise<ChatOmni[]> {
     const meId = me.id;
+    const ioSono = me.reale ?? me.id;
     // QUANDO GUARDO UN NEGOZIO le chat interne non sono di «uno»: sono di
     // tutti quelli che ci lavorano (Luca 27/08: «l'unica cosa che cambia sono
     // le chat interne, però a quel punto me le dai tutte di tutte le persone
@@ -179,6 +184,9 @@ export async function caricaConversazioni(
                 // il nome del proprietario compare SOLO guardando un negozio:
                 // nella mia lista sarei sempre io, e sarebbe rumore
                 perChi: membri ? (nomeProprietario.get(mio) || null) : null,
+                proprietarioId: mio || null,
+                proprietarioNome: nomeProprietario.get(mio) || null,
+                altrui: !!mio && !!ioSono && mio !== ioSono,
             });
         }
     }

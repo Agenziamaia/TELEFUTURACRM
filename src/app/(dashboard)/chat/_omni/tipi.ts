@@ -42,6 +42,12 @@ export type ChatOmni = {
     // sono di ciascuno, e senza il nome non si capisce di chi si sta leggendo
     // la conversazione (Luca 27/08).
     perChi?: string | null;
+    // la chat interna è di un ALTRO (mi sto immedesimando): si legge e basta,
+    // il thread della pagina Chat non può nemmeno mostrarla perché è costruito
+    // sulle conversazioni a cui partecipo io
+    altrui?: boolean;
+    proprietarioId?: string | null;
+    proprietarioNome?: string | null;   // per la testata della sola lettura
 };
 
 /* ── LE TRE FORME DEL RADAR ────────────────────────────────────────────── */

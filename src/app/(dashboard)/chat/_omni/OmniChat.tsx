@@ -24,6 +24,7 @@ import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { ListaOmni } from "./ListaOmni";
 import { RadarOmni } from "./RadarOmni";
+import { ThreadAltrui } from "./ThreadAltrui";
 import type { ChatOmni } from "./tipi";
 
 export function OmniChat({ thread, apriInterna, internaAperta }: {
@@ -45,8 +46,10 @@ export function OmniChat({ thread, apriInterna, internaAperta }: {
     // cliccato nella sua lista
     useEffect(() => {
         if (!apriInterna) return;
-        if (attiva?.canale === "interna") apriInterna(attiva.id.split(":")[1]);
-        else if (attiva && internaAperta) apriInterna(null);   // passato a un altro canale
+        // le chat ALTRUI non si passano alla pagina: lei sa mostrare solo le
+        // conversazioni a cui partecipo io, e resterebbe sul vuoto
+        if (attiva?.canale === "interna" && !attiva.altrui) apriInterna(attiva.id.split(":")[1]);
+        else if (attiva && internaAperta) apriInterna(null);   // altro canale, o chat di un collega
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [attiva?.id]);
 
@@ -79,7 +82,11 @@ export function OmniChat({ thread, apriInterna, internaAperta }: {
                 {attiva?.canale === "email" && (
                     <EmailInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} />
                 )}
-                {attiva?.canale === "interna" && (
+                {attiva?.canale === "interna" && attiva.altrui && (
+                    // chat di un collega: si legge, non si risponde
+                    <ThreadAltrui chat={attiva} diChi={attiva.proprietarioNome || attiva.perChi || null} />
+                )}
+                {attiva?.canale === "interna" && !attiva.altrui && (
                     // il thread VERO della chat interna, montato qui dentro
                     <div className="h-full flex overflow-hidden">
                         {thread || (
