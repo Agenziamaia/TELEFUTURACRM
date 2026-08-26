@@ -710,19 +710,20 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         (async () => {
             if (modo === "bilancia") {
                 const r = await codiceBilancia(dir, pista);
-                if (vivo && r) setTipGruppo({ testo: `⚖️ ${finestraBilancia(r.fino).label.charAt(0).toUpperCase() + finestraBilancia(r.fino).label.slice(1)}: caricala su ${r.codice.negozio}`, sub: "vale per tutti — così i codici restano bilanciati e non devi ricontrollare ogni volta" });
+                if (vivo && r) setTipGruppo({ testo: `📍 Caricala su ${r.codice.negozio}`, sub: `⚖️ ${finestraBilancia(r.fino).label}` });
                 return;
             }
             // «ognuno sul suo»: il multibrand carica sul codice ASSOCIATO
             const mioMb = nu ? dir.codici.find((k) => k.multibrand && k.token.some((t) => nu.startsWith(t) || t.startsWith(nu))) : null;
             if (mioMb) {
                 const ass = codiceAssociato(dir, mioMb.cod_gara);
+                // senza tante storie (Luca 27/08-4): solo il nome del codice
                 if (vivo) setTipGruppo(ass
-                    ? { testo: `🏠 Caricala su ${ass.negozio} (il codice associato al tuo negozio)`, sub: "il codice del multibrand resta a zero: per queste categorie usa sempre l'associato" }
-                    : { testo: "🏠 Chiedi alla direzione il codice associato del tuo negozio", sub: "il codice del multibrand resta a zero — l'associazione si imposta in Gare → Direzione" });
+                    ? { testo: `📍 Caricala su ${ass.negozio}`, sub: "" }
+                    : { testo: "🏠 Chiedi alla direzione il tuo codice", sub: "" });
                 return;
             }
-            if (vivo) setTipGruppo({ testo: "🏠 Caricala sul codice del tuo negozio", sub: "per questa categoria non serve la regia: ognuno il suo, senza pensieri" });
+            if (vivo) setTipGruppo({ testo: "🏠 Caricala sul codice del tuo negozio", sub: "" });
         })();
         return () => { vivo = false; };
     }, [dir, pista, pistaDiGruppo, negozio]);
@@ -867,8 +868,8 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
                     <div className="rounded-2xl px-4 py-4 border text-center"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 16%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 35%, transparent)`, boxShadow: `0 0 22px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 22%, transparent)` }}>
-                        <div className="text-base font-black text-white leading-snug">{tipGruppo.testo}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div>
+                        <div className="text-xl font-black text-white leading-snug">{tipGruppo.testo}</div>
+                        {tipGruppo.sub ? <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div> : null}
                     </div>
                 )}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato && (

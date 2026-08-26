@@ -296,10 +296,13 @@ export function proiezioneDir(dir: Direzione, punti: number): number | null {
  *  manca DI PIÙ al target della direzione. Solo codici con un target. */
 export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null) {
     const nu = norm(negozioUtente);
+    // la CB W3 «va a punti»: i fatti sono i punti PARTNERSHIP, non la
+    // pista a pezzi (bug visto da Luca in prova: barre a zero)
+    const cbW3 = dir.brand === "windtre" && pista === "cb";
     return dir.codici
         .filter((k) => (k.targets[pista] || 0) > 0)
         .map((k) => {
-            const fatti = k.piste[pista]?.punti || 0;
+            const fatti = cbW3 ? (k.cbPunti || 0) : (k.piste[pista]?.punti || 0);
             const target = k.targets[pista] || 0;
             return {
                 ...k, fatti, target,
