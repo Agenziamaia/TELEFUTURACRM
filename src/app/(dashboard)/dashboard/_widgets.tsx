@@ -2324,8 +2324,24 @@ function WidgetTreno19({ ctx, size }) {
         <WidgetShell icon={TrainFront} title="Il Treno delle 19" accent="var(--tf-f59e0b)"
             action={<span className="text-[10px] text-slate-500">ora di scatto h{scatto}</span>}>
             <div className="flex-1 flex flex-col justify-center gap-1.5">
+                {/* ⚠️ COSA FA DAVVERO L'ORA DI SCATTO (Luca 26/08: «alle 19 si
+                    sblocca la giornata, ma le attivazioni devono comunque
+                    andare al giorno in corso»): NON è un termine di consegna.
+                    Prima delle 19 la produzione di oggi non è ancora contata
+                    nelle gare — i numeri fermi a ieri; alle 19 la giornata
+                    entra tutta insieme. Quello che si registra DOPO le 19
+                    resta di oggi e conta subito: nessun pezzo slitta a domani.
+                    Il testo di prima diceva il contrario e faceva paura per
+                    niente. Vale anche di festivo: il pezzo conta nel mese, è
+                    solo la giornata che non fa media. */}
                 {festivo ? (
-                    <div className="text-slate-500 text-xs text-center">Oggi il treno non parte (festivo) — i pezzi salgono sul prossimo giorno lavorativo.</div>
+                    <>
+                        <div className="text-2xl leading-none tracking-tight" aria-hidden>
+                            {"🚂" + "🚃".repeat(vagoni)}{diOggi.length > 8 ? "…" : ""}
+                        </div>
+                        <div className="text-3xl font-black text-white leading-none">{diOggi.length}<span className="text-sm font-bold text-slate-400 ml-1.5">pezzi a bordo oggi</span></div>
+                        <div className="text-[11px] text-slate-400 font-semibold">Oggi è festivo: i pezzi contano lo stesso nel mese, è la giornata che non fa media.</div>
+                    </>
                 ) : (
                     <>
                         <div className="text-2xl leading-none tracking-tight" aria-hidden>
@@ -2333,11 +2349,11 @@ function WidgetTreno19({ ctx, size }) {
                         </div>
                         <div className="text-3xl font-black text-white leading-none">{diOggi.length}<span className="text-sm font-bold text-slate-400 ml-1.5">pezzi a bordo oggi</span></div>
                         {partito ? (
-                            <div className="text-[11px] text-emerald-300 font-semibold">🎉 Partito! Da adesso ogni pezzo sale sul treno di domani.</div>
+                            <div className="text-[11px] text-emerald-300 font-semibold">🎉 Partito! Il carico di oggi è entrato in gara. Quello che registri adesso resta di oggi e conta subito.</div>
                         ) : (
-                            <div className="text-[11px] text-amber-300 font-semibold">Parte tra {hh > 0 ? `${hh}h ` : ""}{mm}m — ogni pezzo registrato entro le {scatto}:00 conta in gara OGGI.</div>
+                            <div className="text-[11px] text-amber-300 font-semibold">Parte tra {hh > 0 ? `${hh}h ` : ""}{mm}m — alle {scatto}:00 tutta la giornata entra in gara in un colpo solo.</div>
                         )}
-                        {size >= 2 && <div className="text-[10px] text-slate-500">Il carico di oggi entra nei punti gara all&apos;ora di scatto: registra adesso, non domani.</div>}
+                        {size >= 2 && <div className="text-[10px] text-slate-500">L&apos;ora di scatto non è una scadenza: dice solo QUANDO i punti di oggi diventano visibili. Un pezzo registrato alle {scatto + 1}:00 è di oggi come quello delle 10.</div>}
                     </>
                 )}
             </div>
