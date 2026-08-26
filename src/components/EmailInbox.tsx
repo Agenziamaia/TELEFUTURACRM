@@ -412,7 +412,13 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         if (val) {
             supabase.from("email_regole_utente")
                 .upsert({ account_id: c.account_id, mittente, creato_da: user?.id || null, annullata_il: null, annullata_da: null }, { onConflict: "account_id,mittente" })
-                .then(() => caricaRegoleCasella());
+                .then(() => {
+                    caricaRegoleCasella();
+                    // effetto RAPIDO (Luca 26/08 sera): la segnalazione sveglia
+                    // subito il motore, che ripassa le altre email dello stesso
+                    // mittente su questa casella (anche vecchie) e le cestina
+                    fetch("/api/email/triage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => { });
+                });
         } else {
             supabase.from("email_regole_utente")
                 .update({ annullata_il: new Date().toISOString(), annullata_da: user?.id || null })

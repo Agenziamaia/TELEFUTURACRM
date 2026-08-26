@@ -244,6 +244,49 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
             return !t || t.versione !== EMAIL_TRIAGE_VERSIONE
                 || new Date(t.ultimo_msg_ts).getTime() < new Date(c.last_message_at).getTime() - TOLLERANZA_MS;
         });
+
+        // ── RECUPERO FUORI FINESTRA (caso Magliana Multi, 26/08 sera): le
+        // REGOLE valgono su TUTTO lo storico in inbox, non solo sugli ultimi
+        // 35 giorni — i trasferimenti di luglio restavano lì per sempre
+        // perché il motore non li vedeva proprio. Query mirate per pattern
+        // (poche e indicizzabili), messi IN TESTA al lotto: sono la volontà
+        // esplicita del titolare o del negozio, cadono per primi.
+        {
+            const visti = new Set(tutte.map((c) => c.id));
+            const extra = new Map<string, Conv>();
+            const raccogli = (rows: Conv[] | null) => (rows || []).forEach((c) => {
+                if (!visti.has(c.id) && !extra.has(c.id) && !caselle.get(c.account_id)?.ai_protetta) extra.set(c.id, c);
+            });
+            for (const b of bloccati) {
+                let qb: any = supabase.from("email_conversations")
+                    .select("id, account_id, customer_email, customer_name, client_id, subject, last_message_at, starred, spam, trashed")
+                    .ilike("customer_email", `%${b.pattern}%`).neq("trashed", true).limit(150);
+                if (b.oggetto) qb = qb.ilike("subject", `%${b.oggetto}%`);
+                const { data } = await qb;
+                raccogli(data as Conv[]);
+            }
+            for (const chiave of regoleUtente) {
+                const [accId, mit] = String(chiave).split("|");
+                if (!accId || !mit) continue;
+                const { data } = await supabase.from("email_conversations")
+                    .select("id, account_id, customer_email, customer_name, client_id, subject, last_message_at, starred, spam, trashed")
+                    .eq("account_id", accId).ilike("customer_email", mit).neq("trashed", true).limit(150);
+                raccogli(data as Conv[]);
+            }
+            if (extra.size) {
+                const ids = [...extra.keys()];
+                for (let i = 0; i < ids.length; i += 100) {
+                    const { data: rows } = await supabase.from("email_triage")
+                        .select("conversation_id, ultimo_msg_ts, versione, ripristinata_il").in("conversation_id", ids.slice(i, i + 100));
+                    (rows || []).forEach((r) => triMap.set(r.conversation_id, r as any));
+                }
+                const extraDaFare = [...extra.values()].filter((c) => {
+                    const t = triMap.get(c.id) as any;
+                    return matchBloccato(c) && (!t || (!t.azione_auto && !t.ripristinata_il));
+                });
+                daFare.unshift(...extraDaFare);
+            }
+        }
         const max = Math.min(Math.max(1, opts?.max || MAX_PER_CORSA), MAX_PER_CORSA);
         const lotto = daFare.slice(0, max);
 
