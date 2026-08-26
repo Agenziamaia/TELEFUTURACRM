@@ -349,6 +349,12 @@ export default function CalcolatorePage() {
     // conteggi a parte — la vendita ha già il suo pay — quindi si mostrano
     // come righe dedicate, con lo stesso motore del Master.
     const gareParallele = useMemo(() => {
+        // SOLO LATO AZIENDA (Luca 26/08, netto): «è giusto che i ragazzi non
+        // abbiano PER NIENTE visibilità di questi punti — è un bonus dedicato
+        // all'azienda, visibile solo internamente e sul calcolatore solo
+        // quando si switcha a lato azienda». Non ci si affida al fatto che il
+        // derivato ragazzi non abbia quelle piste: qui è una porta chiusa.
+        if (!latoAzienda) return [];
         if (!tabEff || !offSel) return [];
         const c = { tipo_cliente: tipoCli, categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome, provenienza: provSel, opzioni: opzSel.join(", ") };
         const ETICHETTE: Record<string, string> = { partnership: "🏅 Partnership Reward (eventi Customer Base)", business_piva: "💼 Extra Gara P.IVA (soglia di Ragione Sociale)" };
@@ -359,7 +365,7 @@ export default function CalcolatorePage() {
             if (!punti) return null;
             return { pista, label: ETICHETTE[pista] || pista, punti, voci: set.map(r => r.nome) };
         }).filter((x): x is { pista: string; label: string; punti: number; voci: string[] } => x != null);
-    }, [tabEff, offSel, tipoCli, catSel, prodSel, provSel, opzSel]);
+    }, [latoAzienda, tabEff, offSel, tipoCli, catSel, prodSel, provSel, opzSel]);
 
     const scalaRiga = useMemo(() =>
         (tabEff && riga?.pista) ? tabEff.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
