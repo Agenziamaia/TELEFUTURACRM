@@ -111,25 +111,35 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
     if (brand === "windtre") {
         const [pdvRes, t, ctr] = await Promise.all([
             supabase.from("pay_target_pdv")
-                .select("cod_gara, negozio, cluster_mobile, soglie_mobile, soglie_fisso, soglie_piva")
+                .select("cod_gara, negozio, cluster_mobile, soglie_mobile, soglie_fisso, soglie_piva, extra")
                 .eq("brand", "windtre").eq("month", monthISO).order("negozio"),
             caricaTabellareAzienda("windtre", monthISO),
             caricaContrattiMese("WindTre", monthISO),
         ]);
         tab = t; contratti = ctr;
-        codici = (pdvRes.data || []).map((r) => ({
-            cod_gara: String(r.cod_gara || ""),
-            negozio: String(r.negozio || ""),
-            cluster: r.cluster_mobile || null,
-            multibrand: String(r.cod_gara || "").startsWith("MB-"),
-            token: String(r.negozio || "").split("+").map(norm).filter(Boolean),
-            soglie: {
-                ...(Array.isArray(r.soglie_mobile) && r.soglie_mobile.length ? { mobile: r.soglie_mobile.map(Number) } : {}),
-                ...(Array.isArray(r.soglie_fisso) && r.soglie_fisso.length ? { fisso: r.soglie_fisso.map(Number) } : {}),
-                ...(Array.isArray(r.soglie_piva) && r.soglie_piva.length ? { business_piva: r.soglie_piva.map(Number) } : {}),
-            },
-            piste: {}, targets: {},
-        }));
+        codici = (pdvRes.data || []).map((r) => {
+            // il TARGET PARTNERSHIP del codice vive in extra.pr (pannello 🏅):
+            // premio pieno al 100%, ridotto tra 80 e 99% → la scala CB vera è
+            // [80% del target, target] (Luca 26/08 notte: «è inutile che mi
+            // fai scrivere a mano un target che esiste già»)
+            const prTarget = Number((r.extra as { pr?: { target?: number | null } } | null)?.pr?.target) || 0;
+            return {
+                cod_gara: String(r.cod_gara || ""),
+                negozio: String(r.negozio || ""),
+                cluster: r.cluster_mobile || null,
+                multibrand: String(r.cod_gara || "").startsWith("MB-"),
+                token: String(r.negozio || "").split("+").map(norm).filter(Boolean),
+                soglie: {
+                    ...(Array.isArray(r.soglie_mobile) && r.soglie_mobile.length ? { mobile: r.soglie_mobile.map(Number) } : {}),
+                    ...(Array.isArray(r.soglie_fisso) && r.soglie_fisso.length ? { fisso: r.soglie_fisso.map(Number) } : {}),
+                    ...(Array.isArray(r.soglie_piva) && r.soglie_piva.length ? { business_piva: r.soglie_piva.map(Number) } : {}),
+                    ...(prTarget > 0 ? { cb: [Math.ceil(prTarget * 0.8), prTarget] } : {}),
+                    // W3 Protetti: ALMENO UNO per non prendere il malus
+                    protetti: [1],
+                },
+                piste: {}, targets: {},
+            };
+        });
     } else if (brand === "vodafone") {
         // le DUE realtà della lettera A: Vodafone Store (codici T1) e VND
         const [t, ctx] = await Promise.all([

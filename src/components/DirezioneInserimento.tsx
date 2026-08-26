@@ -47,6 +47,15 @@ const mesePrimo = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 // perché la Bussola mostra le piste con target senza guardare il ruolo.
 const PISTE_FUORI = new Set<string>([...PISTE_PARALLELE]);
 
+// etichette parlanti per le scale «di regola» (Luca 26/08 notte): la CB ha
+// il target Partnership (80% = premio ridotto, 100% = pieno), i Protetti
+// hanno la soglia-malus «almeno 1»
+const etichettaSoglia = (brand: string, pista: string, i: number) => {
+    if (brand === "windtre" && pista === "cb") return i === 0 ? "80%" : "Target";
+    if (brand === "windtre" && pista === "protetti") return "Almeno";
+    return `S${i + 1}`;
+};
+
 const EMOJI_PISTA = (nome: string) => {
     const n = nome.toLowerCase();
     if (n.includes("mobile")) return "📱";
@@ -199,6 +208,48 @@ export function DirezioneInserimentoAdmin() {
                 </div>
             )}
 
+            {/* 📊 IL TOTALE DI QUELLO CHE STO CHIEDENDO (Luca 26/08 notte):
+                per ogni pista, Σ dei target dati ai codici (sfrido già dentro)
+                contro produzione ATTUALE di rete e PROIEZIONE — il termometro
+                che dice se i target sono veri o campati in aria */}
+            {dir && dir.tab && dir.codici.length > 0 && (() => {
+                const righe = dir.kpiCodice.map((pk) => {
+                    const meta = dir.pisteTab.find((p) => p.chiave === pk);
+                    if (!meta) return null;
+                    const richiesto = dir.codici.reduce((s, k) => s + (k.targets[pk] || 0), 0);
+                    if (richiesto <= 0) return null;
+                    const cbW3 = dir.brand === "windtre" && pk === "cb";
+                    const fatto = Math.round(dir.codici.reduce((s, k) => s + (cbW3 ? (k.cbPunti || 0) : (k.piste[pk]?.punti || 0)), 0) * 100) / 100;
+                    const proj = proiezioneDir(dir, fatto);
+                    const rif = proj ?? fatto;
+                    const ratio = richiesto > 0 ? rif / richiesto : 1;
+                    const verdetto = ratio >= 1
+                        ? { txt: "✅ in linea: la proiezione copre la richiesta", cls: "text-emerald-300" }
+                        : ratio >= 0.85
+                            ? { txt: `🟡 quasi: la proiezione arriva a ${it(rif)} su ${it(richiesto)}`, cls: "text-amber-300" }
+                            : { txt: `🔴 sopra la proiezione di ${it(Math.max(0, Math.ceil(richiesto - rif)))}: o si spinge o si ridimensiona`, cls: "text-rose-300" };
+                    return { pk, meta, richiesto, fatto, proj, verdetto };
+                }).filter(Boolean) as { pk: string; meta: { chiave: string; nome: string; um: string }; richiesto: number; fatto: number; proj: number | null; verdetto: { txt: string; cls: string } }[];
+                if (!righe.length) return null;
+                return (
+                    <div className="glass-card p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">📊 Totale richiesto vs rete</span>
+                            <span className="text-[10px] text-slate-600">somma dei target dati ai codici (sfrido incluso) contro fatto e proiezione</span>
+                        </div>
+                        {righe.map((r) => (
+                            <div key={r.pk} className="space-y-1">
+                                <SogliaBar emoji={EMOJI_PISTA(r.meta.nome)} label={`${r.meta.nome} · richiesti ${it(r.richiesto)}`}
+                                    punti={r.fatto} soglie={[{ tier: 1, soglia_da: r.richiesto }]}
+                                    colore={bMeta.color} proiezione={r.proj}
+                                    unit={r.meta.um === "pezzi" && !(dir.brand === "windtre" && r.pk === "cb") ? "pz" : "pt"} nota={null} />
+                                <div className={cn("text-[11px] font-semibold", r.verdetto.cls)}>{r.verdetto.txt}</div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            })()}
+
             {!dir ? (
                 <div className="glass-card p-10 flex items-center justify-center gap-2 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /> Carico realtà, tabellare e produzione…</div>
             ) : !dir.tab ? (
@@ -294,14 +345,14 @@ export function DirezioneInserimentoAdmin() {
                                                                             setBozze((b) => ({ ...b, [chiave]: nuovo ? String(nuovo) : "" }));
                                                                             salva(k.cod_gara, p.chiave, nuovo);
                                                                         }}
-                                                                        title={attiva ? "Riclicca per togliere il target" : (sfrido ? `S${i + 1} = ${it(Number(s))} + ${sfrido}% sfrido → ${valore}` : `S${i + 1} = ${it(Number(s))}`)}
+                                                                        title={attiva ? "Riclicca per togliere il target" : (sfrido ? `${etichettaSoglia(dir.brand, p.chiave, i)} = ${it(Number(s))} + ${sfrido}% sfrido → ${valore}` : `${etichettaSoglia(dir.brand, p.chiave, i)} = ${it(Number(s))}`)}
                                                                         className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
                                                                             attiva ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10 hover:scale-[1.03]")}
                                                                         style={attiva ? {
                                                                             background: `linear-gradient(160deg, ${bMeta.color}, color-mix(in srgb, ${bMeta.color} 62%, #000))`,
                                                                             boxShadow: `0 0 14px color-mix(in srgb, ${bMeta.color} 55%, transparent)`,
                                                                         } : undefined}>
-                                                                        S{i + 1} · {valore}{attiva ? " ✕" : ""}
+                                                                        {etichettaSoglia(dir.brand, p.chiave, i)} · {valore}{attiva ? " ✕" : ""}
                                                                     </button>
                                                                 );
                                                             }) : <span className="text-[10px] text-slate-600">nessuna scala per questa pista: target a mano qui a destra</span>}
