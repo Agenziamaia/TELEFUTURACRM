@@ -16,7 +16,7 @@ import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib
 import {
     Mail, Plus, Send, X, RefreshCw, Loader2, Paperclip, Check, PenSquare, Inbox,
     Star, Trash2, ShieldAlert, Archive, Search, CornerUpLeft, FileText, SendHorizontal,
-    RotateCcw, ChevronLeft, MailOpen, Code, Settings, Ban,
+    RotateCcw, ChevronLeft, MailOpen, Code, Settings, Ban, Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -991,33 +991,38 @@ function EmptyList({ icon: Icon, label, title }: { icon: any; label: string; tit
 function EmailBody({ html, text }: { html: string | null; text: string | null }) {
     const hasHtml = !!(html && html.trim() && /<[a-z!][\s\S]*>/i.test(html));
     const [showHtml, setShowHtml] = useState(hasHtml);
+    // DARK MODE delle email (Luca 26/08 sera: «il CRM è tutto scuro, quando
+    // apro una mail ho tutto bianco»): di default il contenuto si ADATTA al
+    // tema con l'inversione filtrata dei client moderni — sfondi chiari →
+    // scuri, testi scuri → chiari (hue-rotate conserva le tinte dei brand),
+    // e IMMAGINI/VIDEO ri-invertiti così foto e loghi restano normali. Il
+    // bottone ☀️ mostra l'email coi colori originali quando serve.
+    const [scura, setScura] = useState(true);
     const ref = useRef<HTMLIFrameElement | null>(null);
     const plain = (text && text.trim())
         ? text
         : (html ? html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "");
 
-    // La carta bianca è CONTENUTA, non un lenzuolo (Luca 26/08 sera: «i
-    // contenuti compaiono disconnessi, tutto in bianco»): html trasparente
-    // (l'iframe lascia vedere il tema dietro) e il body diventa una carta
-    // centrata a larghezza email (680px, come i template veri), con angoli e
-    // ombra — lo standard delle dark-mode di Gmail/Superhuman: il bianco
-    // resta (le email HTML sono progettate su chiaro) ma diventa un elemento
-    // del design invece di spaccare l'esperienza.
-    // il contenuto vive dentro una NOSTRA carta (.tfcarta), non nel body: le
-    // email portano i loro stili di body (margin, sfondo) che scavalcavano i
-    // nostri — la carta restava a sinistra con un lenzuolo bianco a destra
-    // (caso Fastweb Energia: table a larghezza fissa che sbordava). Gli
-    // !important su html/body e l'overflow della carta chiudono la partita.
+    // Il contenuto vive in una NOSTRA carta (.tfcarta) dentro un wrapper con
+    // l'ombra (fuori dal filtro, sennò si inverte pure lei): le email portano
+    // stili di body propri che scavalcavano i nostri (carta a sinistra +
+    // lenzuolo bianco, caso Fastweb) — html/body azzerati a !important,
+    // tabelle a max-width e overflow contenuto.
     const srcDoc = useMemo(() => hasHtml
         ? `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank">`
         + `<style>html,body{margin:0!important;padding:0!important;background:transparent!important}`
-        + `.tfcarta{margin:10px auto;padding:20px 22px;max-width:680px;background:#fff;color:#111;`
-        + `border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.35);overflow-x:auto;`
+        + `.tfwrap{margin:10px auto;max-width:680px;border-radius:16px;overflow:hidden;`
+        + `box-shadow:0 10px 34px rgba(0,0,0,.35)}`
+        + `.tfcarta{padding:20px 22px;background:#fff;color:#111;overflow-x:auto;`
         + `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;`
         + `word-break:break-word;overflow-wrap:anywhere}`
+        + (scura
+            ? `.tfcarta{filter:invert(1) hue-rotate(180deg)}`
+            + `.tfcarta img,.tfcarta svg,.tfcarta video,.tfcarta [style*="background-image"]{filter:invert(1) hue-rotate(180deg)}`
+            : "")
         + `.tfcarta img{max-width:100%;height:auto}.tfcarta table{max-width:100%!important}a{color:#0b66c3}</style>`
-        + `</head><body><div class="tfcarta">${html}</div></body></html>`
-        : "", [html, hasHtml]);
+        + `</head><body><div class="tfwrap"><div class="tfcarta">${html}</div></div></body></html>`
+        : "", [html, hasHtml, scura]);
 
     // sandbox senza allow-scripts, ma con allow-same-origin per poter MISURARE
     // l'altezza reale del contenuto e adattare l'iframe (niente doppio scroll).
@@ -1042,9 +1047,17 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
     if (!hasHtml) {
         return <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>;
     }
+    // L'iframe è LARGO QUANTO LA CARTA e centrato (Luca 26/08: «un corpo
+    // esterno») — a piena larghezza restava un mare scuro ai lati; così
+    // l'email vive dentro la card del thread come una foto in una chat.
     return (
         <div>
-            <div className="flex justify-end -mt-1 mb-1.5">
+            <div className="flex justify-end items-center gap-1 -mt-1 mb-1.5">
+                {showHtml && (
+                    <button onClick={() => setScura(v => !v)} className="text-[10px] font-semibold text-slate-500 hover:text-amber-300 flex items-center gap-1 px-2 py-0.5 rounded-full hover:bg-white/5 transition-colors" title={scura ? "Mostra i colori originali dell'email" : "Adatta i colori al tema scuro"}>
+                        {scura ? <><Sun className="w-3 h-3" /> Colori originali</> : <><Moon className="w-3 h-3" /> Adatta al tema</>}
+                    </button>
+                )}
                 <button onClick={() => setShowHtml(v => !v)} className="text-[10px] font-semibold text-slate-500 hover:text-sky-300 flex items-center gap-1 px-2 py-0.5 rounded-full hover:bg-white/5 transition-colors" title={showHtml ? "Mostra solo il testo" : "Mostra la versione con grafica"}>
                     <Code className="w-3 h-3" /> {showHtml ? "Testo semplice" : "Versione grafica"}
                 </button>
@@ -1053,7 +1066,7 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
                 <iframe ref={ref} title="Contenuto email" onLoad={autosize}
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     srcDoc={srcDoc}
-                    className="w-full block bg-transparent" style={{ border: 0, minHeight: 80 }} />
+                    className="w-full max-w-[720px] mx-auto block bg-transparent" style={{ border: 0, minHeight: 80 }} />
             ) : (
                 <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>
             )}
