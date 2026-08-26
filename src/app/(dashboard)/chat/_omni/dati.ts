@@ -17,6 +17,9 @@ import {
     contestoVfFw, esclusaDalleGare, matchRigheAttivazione, payEuroAttivazione,
     type ContrattoPay, type Tabellare,
 } from "@/lib/commissioning";
+import { waIstanzeVisibili } from "@/lib/waVisibilita";
+import { emailCaselleVisibili, membershipEmail } from "@/lib/emailVisibilita";
+import { sendMessage } from "@/lib/chat";
 import type { ChatOmni, MessaggioOmni, Radar, VoceTimeline, Hardware } from "./tipi";
 
 const iniziali = (s: string) => String(s || "?").trim().split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toUpperCase() || "#";
@@ -36,18 +39,42 @@ const oraBreve = (iso: string | null) => {
    Le tre code arrivano in parallelo e si fondono in un ordine solo: il più
    recente in cima, i non letti sempre davanti. È questa fusione che rende
    il tab «Tutti» una cosa sola invece di tre liste appiccicate.          */
-export async function caricaConversazioni(meId: string | null): Promise<ChatOmni[]> {
+export async function caricaConversazioni(
+    me: { id: string | null; role: string | null; stores: string[] },
+): Promise<ChatOmni[]> {
+    const meId = me.id;
+    // ⛔ IL PERIMETRO, PRIMA DI TUTTO. Su wa_conversations e
+    // email_conversations non c'è RLS: se non si filtra qui, si legge tutto —
+    // compresi i numeri e le caselle PERSONALI dei colleghi. Le due funzioni
+    // sono LE STESSE che usano le inbox vere, non una copia.
+    const [inst, acc, membro] = await Promise.all([
+        supabase.from("wa_instances").select("id, owner_user_id, negozio, display_name, status").limit(100),
+        supabase.from("email_accounts").select("id, owner_user_id, negozio").limit(100),
+        membershipEmail(supabase as never, meId),
+    ]);
+    if (inst.error) throw new Error(`Numeri WhatsApp: ${inst.error.message}`);
+    if (acc.error) throw new Error(`Caselle email: ${acc.error.message}`);
+    const idWa = waIstanzeVisibili(inst.data || [], meId, me.role, me.stores).map((i) => i.id);
+    const idEm = emailCaselleVisibili(acc.data || [], meId, me.role, me.stores, membro).map((a) => a.id);
+    // nessun numero e nessuna casella in visibilità: resta la chat interna
+    
     const [wa, em, itn] = await Promise.all([
         // ⚠️ nullsFirst: false — in ORDER BY … DESC Postgres mette i NULL PER
         // PRIMI: senza questo il limite si riempiva di conversazioni senza
         // data (47 su WhatsApp, 29 sulla mail) e quelle vere restavano fuori
-        supabase.from("wa_conversations")
-            .select("id, customer_name, customer_number, client_id, last_preview, last_message_at, unread, chiusa_il")
-            .is("chiusa_il", null).order("last_message_at", { ascending: false, nullsFirst: false }).limit(80),
-        supabase.from("email_conversations")
-            .select("id, customer_name, customer_email, client_id, subject, last_preview, last_message_at, unread, spam, trashed, archived")
-            .eq("spam", false).eq("trashed", false).eq("archived", false)
-            .order("last_message_at", { ascending: false, nullsFirst: false }).limit(80),
+        idWa.length
+            ? supabase.from("wa_conversations")
+                .select("id, customer_name, customer_number, client_id, last_preview, last_message_at, unread, chiusa_il")
+                .in("instance_id", idWa)
+                .is("chiusa_il", null).order("last_message_at", { ascending: false, nullsFirst: false }).limit(80)
+            : Promise.resolve({ data: [], error: null }),
+        idEm.length
+            ? supabase.from("email_conversations")
+                .select("id, customer_name, customer_email, client_id, subject, last_preview, last_message_at, unread, spam, trashed, archived")
+                .in("account_id", idEm)
+                .eq("spam", false).eq("trashed", false).eq("archived", false)
+                .order("last_message_at", { ascending: false, nullsFirst: false }).limit(80)
+            : Promise.resolve({ data: [], error: null }),
         meId
             ? supabase.from("chat_participants").select("conversation_id, last_read_at").eq("user_id", meId).limit(120)
             : Promise.resolve({ data: [] as { conversation_id: string; last_read_at: string | null }[] }),
@@ -459,4 +486,27 @@ async function radarStaff(chat: ChatOmni, me: { id: string | null; nome: string 
             maxPezzi: Math.max(1, loroC.pezzi, tuoC.pezzi),
         },
     };
+}
+
+
+/* ── INVIO ────────────────────────────────────────────────────────────────
+   Nessuna strada nuova: si usano le tre che il CRM ha già e che funzionano
+   da mesi — /api/whatsapp/send, /api/email/send e `sendMessage` della chat
+   interna. Inventarne una quarta avrebbe voluto dire rifare da capo anche
+   la coda, i tentativi e la scrittura in `wa_messages`.                   */
+export async function inviaMessaggio(chat: ChatOmni, testo: string, meId: string | null): Promise<void> {
+    const [tipo, id] = chat.id.split(":");
+    const corpo = testo.trim();
+    if (!corpo) return;
+    if (tipo === "in") {
+        if (!meId) throw new Error("Non riesco a capire chi sei: ricarica la pagina.");
+        await sendMessage(id, meId, corpo);
+        return;
+    }
+    const url = tipo === "wa" ? "/api/whatsapp/send" : "/api/email/send";
+    const res = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: id, text: corpo, userId: meId }),
+    }).then((r) => r.json()).catch(() => ({ ok: false, error: "rete non raggiungibile" }));
+    if (res?.ok === false || res?.error) throw new Error(String(res.error || "invio non riuscito"));
 }

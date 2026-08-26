@@ -1,39 +1,22 @@
 "use client";
 
-// CHAT OMNICANALE (beta) — la nuova sezione a tre colonne: lista fusa dei
-// canali, conversazione, radar del contatto.
+// CHAT OMNICANALE — la sezione a tre colonne: lista fusa dei canali (WhatsApp,
+// email, chat interna), conversazione, e il radar che dice chi hai davanti.
 //
-// ⛔ CHIUSA A TUTTI TRANNE ADMIN/DEV, E NON PER PRUDENZA GENERICA.
-// Il modulo legge `wa_conversations` e `email_conversations` SENZA il
-// perimetro che le due inbox vere applicano da sempre: WhatsAppInbox filtra
-// le istanze per titolare/negozio (i numeri PERSONALI li vede solo chi li ha)
-// e EmailInbox fa lo stesso con le caselle. Su quelle tabelle non c'è RLS.
-// Finché quel perimetro non è condiviso — estratto in un helper e usato da
-// tutti e due, non copiato — aprire questa rotta significherebbe far leggere
-// a un consulente le chat del cellulare personale di un collega e la posta
-// di amministrazione@. È la stessa falla chiusa il 25/08: non la riapro.
+// ✅ APERTA A TUTTI dal 26/08/2026 (Luca: «non possiamo mandarla online
+// direttamente?»). Prima era chiusa perché leggeva le conversazioni SENZA
+// perimetro: adesso `caricaConversazioni` filtra numeri e caselle con
+// `waIstanzeVisibili` e `emailCaselleVisibili` — LE STESSE funzioni che usano
+// le due inbox vere, non copie. Su quelle tabelle non c'è RLS, quindi il
+// filtro applicativo è l'unica cosa che separa un consulente dalla posta di
+// amministrazione@: chi tocca quelle due funzioni tocca tutte le schermate.
 //
-// Vive su una rotta sua e non dentro /chat apposta: la chat esistente è
-// quella che il negozio usa tutto il giorno, questa è ancora in costruzione.
+// Vive su una rotta sua e non al posto di /chat: quella è la schermata che i
+// negozi usano tutto il giorno, e si sostituisce quando questa avrà anche
+// ricerca, allegati e tempo reale — non prima.
 
-import { useAuth } from "@/context/AuthContext";
 import { ModuloChatOmni } from "../_omni/ModuloChatOmni";
 
 export default function PaginaChatOmni() {
-    const { user } = useAuth();
-    const puo = user?.role === "admin" || user?.role === "dev";
-    if (!puo) {
-        return (
-            <div className="p-10 max-w-xl mx-auto text-center">
-                <div className="text-4xl mb-3">🚧</div>
-                <h1 className="text-lg font-bold text-white mb-2">Chat Omnicanale — in costruzione</h1>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                    La sezione è aperta solo a chi sviluppa finché non è agganciato il perimetro
-                    di visibilità dei numeri e delle caselle. Nel frattempo usa <b>Chat</b>, che
-                    è completa: chat interna, WhatsApp ed email.
-                </p>
-            </div>
-        );
-    }
     return <ModuloChatOmni />;
 }

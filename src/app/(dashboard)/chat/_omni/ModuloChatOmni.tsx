@@ -17,8 +17,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useVisibleStores } from "@/lib/visibleStores";
 import { cn } from "@/utils";
-import { caricaConversazioni, caricaMessaggi, caricaRadar } from "./dati";
+import { caricaConversazioni, caricaMessaggi, caricaRadar, inviaMessaggio } from "./dati";
 import type { ChatOmni, MessaggioOmni, Radar, TabOmni } from "./tipi";
 
 const euro = (v: number) => v.toLocaleString("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 2 });
@@ -32,6 +33,7 @@ const TABS: { id: TabOmni; label: string; colore: string }[] = [
 
 export function ModuloChatOmni() {
     const { user } = useAuth();
+    const { stores } = useVisibleStores();
     const [tab, setTab] = useState<TabOmni>("tutti");
     const [chats, setChats] = useState<ChatOmni[] | null>(null);
     const [attivaId, setAttivaId] = useState<string | null>(null);
@@ -41,19 +43,20 @@ export function ModuloChatOmni() {
     const [apertoId, setApertoId] = useState<string | null>(null);
     const [valoreStaff, setValoreStaff] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
+    const [invio, setInvio] = useState(false);
     const fondo = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         let vivo = true;
         setErrore(null);
-        caricaConversazioni(user?.id || null)
+        caricaConversazioni({ id: user?.id || null, role: user?.role || null, stores })
             .then((c) => { if (vivo) setChats(c); })
             // ⚠️ senza questo, al primo errore lo stato restava null e la
             // schermata diceva «Carico…» per sempre, con l'errore solo in
             // console: un guasto che sembra lentezza
             .catch((e) => { if (vivo) { setChats([]); setErrore(String(e?.message || e)); } });
         return () => { vivo = false; };
-    }, [user?.id]);
+    }, [user?.id, user?.role, stores.join("|")]);   // eslint-disable-line react-hooks/exhaustive-deps
 
     // la lista del tab: «Tutti» fonde i canali, gli altri filtrano
     const lista = useMemo(
@@ -83,6 +86,24 @@ export function ModuloChatOmni() {
     useEffect(() => { if (messaggi?.length) fondo.current?.scrollIntoView({ behavior: "smooth" }); }, [messaggi]);
 
     const cambiaTab = useCallback((t: TabOmni) => { setTab(t); setAttivaId(null); }, []);
+
+    // INVIO: passa dalle stesse API della Chat vera. Dopo l'invio si
+    // ricaricano i messaggi invece di aggiungere una bolla ottimista: su
+    // WhatsApp il messaggio nasce lato server e la bolla finta resterebbe lì
+    // anche se l'invio fallisse a metà strada.
+    const manda = useCallback(async () => {
+        if (!attiva || !testo.trim() || invio) return;
+        setInvio(true); setErrore(null);
+        try {
+            await inviaMessaggio(attiva, testo, user?.id || null);
+            setTesto("");
+            setMessaggi(await caricaMessaggi(attiva, user?.id || null));
+        } catch (e) {
+            setErrore(`Non sono riuscito a inviare: ${String((e as Error)?.message || e)}`);
+        } finally {
+            setInvio(false);
+        }
+    }, [attiva, testo, invio, user?.id]);
 
     const accento = attiva?.canale === "wa" ? "emerald" : attiva?.canale === "email" ? "sky" : "indigo";
 
@@ -202,12 +223,15 @@ export function ModuloChatOmni() {
                             <div className={cn("flex items-center gap-3 bg-white/[0.04] border border-white/10 rounded-2xl p-2 transition-colors",
                                 accento === "emerald" ? "focus-within:border-emerald-500/50" : accento === "sky" ? "focus-within:border-sky-500/50" : "focus-within:border-indigo-500/50")}>
                                 <input value={testo} onChange={(e) => setTesto(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); manda(); } }}
+                                    disabled={invio}
                                     placeholder={attiva.canale === "email" ? "Scrivi la risposta…" : "Scrivi un messaggio…"}
                                     className="flex-1 bg-transparent border-none outline-none text-sm text-white px-4 placeholder-slate-600" />
-                                <button disabled title="L'invio arriva col prossimo passo: qui si aggancia quello che già funziona in /chat"
-                                    className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 opacity-40 cursor-not-allowed",
+                                <button disabled={invio || !testo.trim()} onClick={manda} title="Invia"
+                                    className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 transition-opacity",
+                                        (invio || !testo.trim()) && "opacity-40 cursor-not-allowed",
                                         accento === "emerald" ? "bg-emerald-500" : accento === "sky" ? "bg-sky-500" : "bg-indigo-600")}>
-                                    ➤
+                                    {invio ? "…" : "➤"}
                                 </button>
                             </div>
                         </div>

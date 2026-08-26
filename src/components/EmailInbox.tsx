@@ -9,7 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { useVisibleStores, matchNegozi } from "@/lib/visibleStores";
+import { useVisibleStores } from "@/lib/visibleStores";
+import { emailCaselleVisibili } from "@/lib/emailVisibilita";
 import { seesAllStores } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_EMAIL_ADMIN, CAP_EM_UTENTI, CAP_EM_NEGOZI } from "@/lib/capabilities";
@@ -158,10 +159,11 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     // L'AMMINISTRAZIONE vede TUTTE le caselle (direttiva Luca 26/08 sera,
     // «come vedo tutti i numeri WhatsApp» — supera la scelta del 03/08: da
     // oggi le email si lavorano SOLO nel CRM, la regia serve completa)
+    // la regola vive in lib/emailVisibilita: la Chat Omnicanale usa LA STESSA
+    // funzione, non una copia (26/08 — su queste tabelle non c'è RLS, e due
+    // copie della regola sono il modo in cui una delle due torna a perdere)
     const visibleAccounts = useMemo(() =>
-        seesAllStores(user?.role) ? accounts
-        : accounts.filter(a => a.owner_user_id === user?.id || membroDi.has(a.id)
-            || (!a.owner_user_id && matchNegozi(a.negozio, myStores))),
+        emailCaselleVisibili(accounts, user?.id, user?.role, myStores, membroDi),
     [accounts, user?.id, user?.role, myStores, membroDi]);
 
     // DEEP-LINK /chat?mconv=<id> (26/08, widget Email del team): apre LA
