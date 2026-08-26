@@ -133,18 +133,29 @@ export function DirezioneInserimentoAdmin() {
 
     return (
         <div className="space-y-4">
-            <div className="glass-card p-4 space-y-3">
+            {/* SOLO I BRAND (Luca 26/08 sera-4: «lasciami solo i brand» — via la
+                descrizione, loghi GRANDI e visibili; mese e refresh a destra) */}
+            <div className="glass-card p-4">
                 <div className="flex flex-wrap items-center gap-3 justify-between">
-                    <div className="flex items-center gap-3">
-                        <Compass className="w-5 h-5 text-sky-400" />
-                        <div>
-                            <div className="text-sm font-bold text-white">Direzione Inserimento — target per codice</div>
-                            <div className="text-xs text-slate-500 max-w-[560px]">
-                                Scegli l&apos;operatore, apri la realtà (codice/canale), guarda la barra come in Analisi → Rete e
-                                clicca la soglia da atterrare: il target si calcola da solo, INTERO, con lo sfrido della pista.
-                                Riclicca la soglia per toglierla.
-                            </div>
-                        </div>
+                    <div className="flex flex-wrap gap-3">
+                        {DIR_BRANDS.map((b) => {
+                            const logo = TRK_BRAND_LOGOS[b.id];
+                            const attivo = brand === b.id;
+                            return (
+                                <button key={b.id} onClick={() => setBrand(b.id)} title={b.label}
+                                    className={cn("group relative px-7 py-4 rounded-2xl border transition-all duration-200 flex items-center justify-center min-w-[160px]",
+                                        attivo ? "scale-105 border-transparent" : "border-white/10 bg-white/[0.07] hover:bg-white/[0.12] hover:scale-[1.03]")}
+                                    style={attivo ? {
+                                        background: `linear-gradient(160deg, color-mix(in srgb, ${b.color} 30%, #0c0d14), color-mix(in srgb, ${b.color} 12%, #0c0d14))`,
+                                        boxShadow: `0 0 30px color-mix(in srgb, ${b.color} 50%, transparent), inset 0 0 16px color-mix(in srgb, ${b.color} 20%, transparent)`,
+                                        border: `1px solid color-mix(in srgb, ${b.color} 60%, transparent)`,
+                                    } : undefined}>
+                                    {logo
+                                        ? <img src={logo} alt={b.label} className={cn("h-11 w-auto max-w-[140px] object-contain transition-transform", attivo ? "drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]" : "opacity-90 group-hover:opacity-100")} />
+                                        : <span className="text-lg font-black text-white">{b.label}</span>}
+                                </button>
+                            );
+                        })}
                     </div>
                     <div className="flex items-center gap-2">
                         <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[170px]">
@@ -152,28 +163,6 @@ export function DirezioneInserimentoAdmin() {
                         </select>
                         <button onClick={() => setGiro((g) => g + 1)} title="Ricarica l'avanzamento" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
                     </div>
-                </div>
-                {/* selettore BRAND: parlano i LOGHI, non le scritte (Luca 26/08) —
-                    la card attiva si accende col glow del suo colore */}
-                <div className="flex flex-wrap gap-2.5">
-                    {DIR_BRANDS.map((b) => {
-                        const logo = TRK_BRAND_LOGOS[b.id];
-                        const attivo = brand === b.id;
-                        return (
-                            <button key={b.id} onClick={() => setBrand(b.id)} title={b.label}
-                                className={cn("group relative px-5 py-2.5 rounded-2xl border transition-all duration-200 flex items-center justify-center min-w-[104px]",
-                                    attivo ? "scale-105 border-transparent" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:scale-[1.03]")}
-                                style={attivo ? {
-                                    background: `linear-gradient(160deg, color-mix(in srgb, ${b.color} 26%, #0c0d14), color-mix(in srgb, ${b.color} 10%, #0c0d14))`,
-                                    boxShadow: `0 0 26px color-mix(in srgb, ${b.color} 45%, transparent), inset 0 0 14px color-mix(in srgb, ${b.color} 18%, transparent)`,
-                                    border: `1px solid color-mix(in srgb, ${b.color} 55%, transparent)`,
-                                } : undefined}>
-                                {logo
-                                    ? <img src={logo} alt={b.label} className={cn("h-6 w-auto max-w-[86px] object-contain transition-transform", attivo ? "drop-shadow-[0_0_8px_rgba(255,255,255,0.25)]" : "opacity-80 group-hover:opacity-100")} />
-                                    : <span className="text-sm font-bold text-white">{b.label}</span>}
-                            </button>
-                        );
-                    })}
                 </div>
             </div>
 
