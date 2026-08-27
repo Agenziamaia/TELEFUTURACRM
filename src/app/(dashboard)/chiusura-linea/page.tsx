@@ -140,11 +140,40 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
     const [dataProg, setDataProg] = useState("");
     const [note, setNote] = useState("");
     const [busy, setBusy] = useState(false);
+    /* ── PAGAMENTO DELLA CHIUSURA (Luca 27/08) ────────────────────────────
+       Tre strade, e vanno dichiarate PRIMA di inviare:
+         · pagata               → si sceglie lo scontrino di marginalità
+         · gratis giustificata  → gratis, ma c'è una vendita che la spiega
+         · gratis               → gratis e basta, e si deve vedere
+       Le vendite del cliente si caricano appena il cliente è scelto: il
+       CRM le ha già, chiederle a mano sarebbe farle ribattere. */
+    const [pag, setPag] = useState<"" | "pagata" | "no">("");
+    const [conVendita, setConVendita] = useState<"" | "si" | "no">("");
+    const [vendSel, setVendSel] = useState<string>("");
+    const [vendite, setVendite] = useState<Record<string, unknown>[] | null>(null);
+    useEffect(() => {
+        const cid = cliSel?.id;
+        setPag(""); setConVendita(""); setVendSel(""); setVendite(null);
+        if (!cid) return;
+        let vivo = true;
+        supabase.from("contracts")
+            .select("id, data, brand, categoria, prodotto, offerta, negozio, venditore")
+            .eq("client_id", cid).order("data", { ascending: false }).limit(60)
+            .then(({ data }) => { if (vivo) setVendite((data ?? []) as Record<string, unknown>[]); });
+        return () => { vivo = false; };
+    }, [cliSel?.id]);
+    /** la marginalità è lo scontrinato: pratiche EXT- (brand Marginalità/Extra) */
+    const eMarginalita = (v: Record<string, unknown>) =>
+        !String(v.id || "").startsWith("CTR-") || /marginalit|extra/i.test(String(v.brand || ""));
+    const vendMarg = (vendite || []).filter(eMarginalita);
+    const vendTutte = vendite || [];
+    const etichettaVendita = (v: Record<string, unknown>) =>
+        `${String(v.id)} · ${String(v.brand || "")}${v.prodotto ? ` · ${String(v.prodotto)}` : ""}${v.data ? ` · ${String(v.data).split("-").reverse().join("/")}` : ""}`;
     // carica dal telefono via QR (CHL-02): i File ricevuti si accodano e
     // seguono l'identico flusso di upload del submit
     const qr = useQrUpload((ricevuti) => setFiles(p => [...p, ...ricevuti]));
 
-    const reset = () => { setCliSel(null); setCreaNuovo(false); setAna({ ...ANA_VUOTA }); setBrand(""); setFiles([]); setIsProg(false); setDataProg(""); setNote(""); };
+    const reset = () => { setCliSel(null); setCreaNuovo(false); setAna({ ...ANA_VUOTA }); setBrand(""); setFiles([]); setIsProg(false); setDataProg(""); setNote(""); setPag(""); setConVendita(""); setVendSel(""); setVendite(null); };
 
     // creazione anagrafica al volo: stesse regole di Registra Vendita
     // (match per CF, univocita' cellulare PER TIPO, referente obbligatorio
@@ -199,6 +228,11 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
         if (!brand) { msg("⚠️ Seleziona il brand da disdire"); return; }
         if (files.length === 0) { msg("⚠️ Allega almeno un PDF (modulo + documento d'identità)"); return; }
         if (isProg && !dataProg) { msg("⚠️ Seleziona la data della disdetta programmata"); return; }
+        // IL PAGAMENTO È OBBLIGATORIO (Luca 27/08): senza, non si parte
+        if (!pag) { msg("⚠️ Dichiara se la chiusura è stata pagata"); return; }
+        if (pag === "pagata" && !vendSel) { msg("⚠️ Seleziona la vendita di marginalità che copre la chiusura"); return; }
+        if (pag === "no" && !conVendita) { msg("⚠️ Dì se c'è una vendita che giustifica la chiusura gratis"); return; }
+        if (pag === "no" && conVendita === "si" && !vendSel) { msg("⚠️ Seleziona la vendita collegata"); return; }
         setBusy(true);
         try {
             const clientId = await risolviCliente();
@@ -219,6 +253,11 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
                 client_id: clientId, consulente: user?.name || "", negozio: user?.negozio || "",
                 brand, files: caricati, note_consulente: note.trim(),
                 is_programmata: isProg, data_programmata: isProg ? dataProg : null,
+                // il pagamento: 'pagata' e 'gratis_giustificata' viaggiano con
+                // la vendita che le regge, 'gratis' senza niente (e a database
+                // c'è un vincolo che non lascia scappatoie)
+                pagamento: pag === "pagata" ? "pagata" : conVendita === "si" ? "gratis_giustificata" : "gratis",
+                pagamento_contract_id: pag === "pagata" || conVendita === "si" ? vendSel : null,
                 storico: [evento],
             }).select("id").single();
             if (error) { msg("⚠️ Invio non riuscito: " + error.message); return; }
@@ -310,7 +349,93 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
                     </div>
                 )}
 
-                {/* 3. PROGRAMMATA */}
+                {/* 3. PAGAMENTO DELLA CHIUSURA (Luca 27/08) ─────────────────
+                    Obbligatorio: o è stata pagata (e allora c'è lo scontrino
+                    di marginalità, che il CRM già conosce e fa scegliere), o
+                    è gratis — e allora si dice se c'è una vendita che la
+                    giustifica. Gratis e basta è una scelta legittima, ma deve
+                    restare scritta a lettere grandi. */}
+                <div className="p-3 rounded-xl border border-white/10 bg-white/[0.02] space-y-2.5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">3. La chiusura è stata pagata? <span className="text-rose-400">*</span></p>
+                    <div className="flex gap-2">
+                        {([["pagata", "💶 Sì, pagata"], ["no", "🚫 No"]] as [("pagata" | "no"), string][]).map(([id, lab]) => (
+                            <button key={id} type="button"
+                                onClick={() => { setPag(id); setConVendita(""); setVendSel(""); }}
+                                className={cn("flex-1 px-3 py-2 rounded-xl text-xs font-bold border transition-colors",
+                                    pag === id ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100" : "border-white/10 text-slate-400 hover:bg-white/5")}>
+                                {lab}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* PAGATA: si sceglie lo scontrino di marginalità del cliente */}
+                    {pag === "pagata" && (
+                        <div className="space-y-1.5">
+                            <p className="text-[11px] text-slate-400">Quale vendita di marginalità copre questa chiusura?</p>
+                            {vendite === null ? (
+                                <p className="text-[11px] text-slate-500">Cerco le vendite del cliente…</p>
+                            ) : vendMarg.length === 0 ? (
+                                <p className="text-[11px] text-amber-200 bg-amber-400/10 border border-amber-400/30 rounded-lg px-2.5 py-2">
+                                    Su questo cliente non risulta nessuna vendita di marginalità. Registra prima
+                                    lo scontrino in Registra Vendita: senza, la chiusura non può risultare pagata.
+                                </p>
+                            ) : (
+                                <div className="max-h-40 overflow-y-auto space-y-1">
+                                    {vendMarg.map((v) => (
+                                        <button key={String(v.id)} type="button" onClick={() => setVendSel(String(v.id))}
+                                            className={cn("w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] border transition-colors",
+                                                vendSel === String(v.id) ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100" : "border-white/10 text-slate-300 hover:bg-white/5")}>
+                                            {etichettaVendita(v)}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* NON PAGATA: c'è una vendita che la giustifica? */}
+                    {pag === "no" && (
+                        <div className="space-y-1.5">
+                            <p className="text-[11px] text-slate-400">C&apos;è una vendita collegata che giustifica la chiusura gratis?</p>
+                            <div className="flex gap-2">
+                                {([["si", "Sì, collegata"], ["no", "No, gratis"]] as [("si" | "no"), string][]).map(([id, lab]) => (
+                                    <button key={id} type="button" onClick={() => { setConVendita(id); setVendSel(""); }}
+                                        className={cn("flex-1 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors",
+                                            conVendita === id
+                                                ? (id === "no" ? "border-orange-400/60 bg-orange-500/15 text-orange-100" : "border-indigo-400/60 bg-indigo-500/15 text-indigo-100")
+                                                : "border-white/10 text-slate-400 hover:bg-white/5")}>
+                                        {lab}
+                                    </button>
+                                ))}
+                            </div>
+                            {conVendita === "si" && (
+                                vendite === null ? <p className="text-[11px] text-slate-500">Cerco le vendite del cliente…</p>
+                                    : vendTutte.length === 0 ? (
+                                        <p className="text-[11px] text-amber-200 bg-amber-400/10 border border-amber-400/30 rounded-lg px-2.5 py-2">
+                                            Su questo cliente non risulta nessuna vendita. Se non c&apos;è niente da collegare, la chiusura è gratis.
+                                        </p>
+                                    ) : (
+                                        <div className="max-h-40 overflow-y-auto space-y-1">
+                                            {vendTutte.map((v) => (
+                                                <button key={String(v.id)} type="button" onClick={() => setVendSel(String(v.id))}
+                                                    className={cn("w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] border transition-colors",
+                                                        vendSel === String(v.id) ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-100" : "border-white/10 text-slate-300 hover:bg-white/5")}>
+                                                    {etichettaVendita(v)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )
+                            )}
+                            {conVendita === "no" && (
+                                <p className="text-[11px] font-bold text-orange-200 bg-orange-500/15 border border-orange-400/40 rounded-lg px-2.5 py-2">
+                                    🎁 Questa chiusura risulterà GRATIS, senza vendite a giustificarla.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* 4. PROGRAMMATA */}
                 <div className="p-3 rounded-xl border border-white/10 bg-white/[0.02]">
                     <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer font-medium">
                         <input type="checkbox" checked={isProg} onChange={e => setIsProg(e.target.checked)} className="w-4 h-4 cursor-pointer" />
@@ -838,6 +963,7 @@ export default function ChiusuraLineaPage() {
                                             <th className="px-4 py-3">Cliente</th>
                                             <th className="px-4 py-3">Tipo invio</th>
                                             <th className="px-4 py-3 text-center">Stato</th>
+                                            <th className="px-4 py-3 text-center">Pagamento</th>
                                             <th className="px-4 py-3 text-right">Azioni</th>
                                         </tr>
                                     </thead>
@@ -848,13 +974,14 @@ export default function ChiusuraLineaPage() {
                                                 <td className="px-4 py-3"><div className="font-semibold text-slate-200">{nomeCliente(t)}</div><div className="text-[10px] text-slate-500">{t.brand} • {t.negozio || "—"} • {t.consulente}</div></td>
                                                 <td className="px-4 py-3"><TipoInvio t={t} /></td>
                                                 <td className="px-4 py-3 text-center"><StatusBadge status={t.status} />{malusDisdetta(t) > 0 && <div className="text-[10px] font-extrabold text-orange-400 mt-1">💸 malus {malusDisdetta(t)} €</div>}</td>
+                                                <td className="px-4 py-3 text-center"><Pagamento t={t} /></td>
                                                 <td className="px-4 py-3 text-right">
                                                     <button onClick={() => setSel(t)} className="px-3 py-1.5 rounded-lg border border-indigo-400/60 text-indigo-300 text-[11px] font-bold hover:bg-indigo-500/10">Apri Ticket</button>
                                                 </td>
                                             </tr>
                                         ))}
                                         {ordinatiDirezione.length === 0 && (
-                                            <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500 text-sm">Nessuna richiesta di disdetta con questi filtri.</td></tr>
+                                            <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500 text-sm">Nessuna richiesta di disdetta con questi filtri.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -879,6 +1006,7 @@ export default function ChiusuraLineaPage() {
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0">
                                         {malusDisdetta(t) > 0 && <span className="text-[10px] font-extrabold text-orange-400">💸 {malusDisdetta(t)} €</span>}
+                                        <Pagamento t={t} />
                                         <StatusBadge status={t.status} />
                                         <button onClick={() => setSel(t)} className="px-3 py-1.5 rounded-lg border border-white/20 text-slate-300 text-[11px] font-bold hover:bg-white/5">Dettagli</button>
                                     </div>
@@ -892,5 +1020,40 @@ export default function ChiusuraLineaPage() {
 
             {sel && <DettaglioTicket t={sel} direzione={direzione} puoInviare={puoInviare} onClose={() => setSel(null)} onAggiornata={load} msg={msg} />}
         </div>
+    );
+}
+
+
+/* ═══ PAGAMENTO DELLA CHIUSURA ════════════════════════════════════════════
+   Tre stati e basta (Luca 27/08):
+     · PAGATA               — c'è lo scontrino di marginalità che la copre
+     · GRATIS (giustificata) — niente soldi, ma una vendita che la spiega
+     · GRATIS               — niente soldi e niente vendita: si deve VEDERE
+   Le disdette vecchie non hanno il dato e restano vuote: nessuno può sapere
+   oggi se una di luglio fu pagata, e inventarlo sarebbe peggio del vuoto. */
+function Pagamento({ t }: { t: Record<string, unknown> }) {
+    const p = String(t.pagamento || "");
+    const rif = String(t.pagamento_contract_id || "");
+    if (!p) return <span className="text-slate-600 text-xs">—</span>;
+    if (p === "pagata") {
+        return (
+            <span className="inline-flex flex-col items-center gap-0.5">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">💶 PAGATA</span>
+                {rif && <span className="text-[9px] font-mono text-slate-500">{rif}</span>}
+            </span>
+        );
+    }
+    if (p === "gratis_giustificata") {
+        return (
+            <span className="inline-flex flex-col items-center gap-0.5">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-500/15 text-sky-300 border border-sky-500/30">GRATIS · con vendita</span>
+                {rif && <span className="text-[9px] font-mono text-slate-500">{rif}</span>}
+            </span>
+        );
+    }
+    return (
+        <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-orange-500/20 text-orange-200 border border-orange-400/50 whitespace-nowrap">
+            🎁 GRATIS
+        </span>
     );
 }
