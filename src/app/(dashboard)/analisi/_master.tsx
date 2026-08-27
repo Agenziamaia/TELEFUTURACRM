@@ -86,6 +86,12 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
                 </div>
             </div>
 
+            {/* PRATICHE NON VALIDE (Luca 27/08): quante ne sono state tolte dal
+                conto, e perché. Sta qui perché è la plancia di chi controlla i
+                numeri: una pratica sparita dal commissioning deve avere un
+                nome, una data e una motivazione, non essere solo un'assenza. */}
+            <NonValide mese={meseCorrente} />
+
             {!righeGara && (
                 <p className="an-in text-[11px] text-amber-200/90 bg-amber-400/10 border border-amber-400/20 rounded-xl px-3 py-2">📅 Le gare sono mensili: con un periodo su più mesi le soglie si spengono — resta la produzione. Scegli un periodo dentro un solo mese per vederle.</p>
             )}
@@ -502,6 +508,75 @@ function CartaMargMaster({ dati, negSel, delay }) {
                     ))}
                 </div>
             </div>
+        </div>
+    );
+}
+
+
+/* ═══ PRATICHE NON VALIDE ═════════════════════════════════════════════════
+   Dichiarate da Ricerca Vendite con la ✗ viola: non contano per commissioning
+   né per gare (il motore le salta al caricamento). Qui si vede quante sono e
+   si apre il dettaglio — chi, quando, perché.
+   Se non ce ne sono, il riquadro non si disegna: uno zero non è una notizia. */
+function NonValide({ mese }) {
+    const [righe, setRighe] = useState(null);
+    const [aperto, setAperto] = useState(false);
+
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            let q = supabase.from("contracts")
+                .select("id, data, brand, negozio, venditore, prodotto, offerta, non_valida_nota, non_valida_da, non_valida_il")
+                .eq("non_valida", true).order("non_valida_il", { ascending: false }).limit(300);
+            // stesso mese della plancia, quando c'è: fuori dal periodo non
+            // interessa (e senza filtro il conto direbbe «tutte quelle di sempre»)
+            if (mese) {
+                const primo = `${mese}-01`;
+                const d = new Date(primo);
+                const ultimo = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+                q = q.gte("data", primo).lte("data", ultimo);
+            }
+            const { data } = await q;
+            if (vivo) setRighe(data || []);
+        })();
+        return () => { vivo = false; };
+    }, [mese]);
+
+    if (!righe || !righe.length) return null;
+
+    return (
+        <div className="an-in rounded-2xl border border-violet-400/30 bg-violet-500/[0.06] overflow-hidden">
+            <button onClick={() => setAperto((v) => !v)} className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.03]">
+                <span className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-400/30 flex items-center justify-center text-violet-200 font-black">✗</span>
+                    <span className="text-left min-w-0">
+                        <span className="block text-sm font-bold text-white">
+                            {righe.length} {righe.length === 1 ? "pratica non valida" : "pratiche non valide"}
+                        </span>
+                        <span className="block text-[11px] text-violet-200/70">fuori da commissioning e gare — clicca per il dettaglio</span>
+                    </span>
+                </span>
+                <span className="text-slate-400 text-xs shrink-0">{aperto ? "▲" : "▼"}</span>
+            </button>
+            {aperto && (
+                <div className="border-t border-violet-400/20 divide-y divide-white/5 max-h-80 overflow-y-auto">
+                    {righe.map((r) => (
+                        <div key={r.id} className="px-4 py-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <span className="font-mono text-[11px] text-indigo-300">{r.id}</span>
+                            <span className="text-xs font-semibold text-white">{r.brand}</span>
+                            <span className="text-[11px] text-slate-400">{[r.prodotto, r.offerta].filter(Boolean).join(" — ")}</span>
+                            <span className="text-[11px] text-slate-500">· {r.negozio || "—"} · {r.venditore || "—"}</span>
+                            <span className="basis-full text-[11px] text-violet-200/90">
+                                {r.non_valida_nota || "senza nota"}
+                                <span className="text-slate-500">
+                                    {" — "}{r.non_valida_da || "—"}
+                                    {r.non_valida_il ? ` il ${new Date(r.non_valida_il).toLocaleDateString("it-IT")}` : ""}
+                                </span>
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

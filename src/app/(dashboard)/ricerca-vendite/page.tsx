@@ -21,7 +21,7 @@ import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStore
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { capChoice, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
+import { capChoice, capAllowed, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_RICERCA_NON_VALIDA } from "@/lib/capabilities";
 import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento } from "@/lib/matchAppuntamento";
 
 interface ContrattoRow {
@@ -547,6 +547,53 @@ export default function RicercaContratto() {
     const canApprove = modificaDiretta;
     const canDeleteDirect = modificaDiretta;
     const canDeleteButton = modRicerca !== "nessuna";
+    /* ── PRATICA NON VALIDA (Luca 27/08) ──────────────────────────────────
+       «Non valida ai fini del commissioning e delle gare», con nota
+       OBBLIGATORIA che resta nello storico e si legge dall'occhiolino.
+       Non è un'eliminazione: la pratica resta al suo posto, con scritto
+       perché non vale e chi l'ha deciso. Il motore la salta al caricamento,
+       quindi sparisce insieme da pay e da gare. */
+    const puoNonValida = capAllowed(user?.role, CAP_RICERCA_EXTRA.section, CAP_RICERCA_NON_VALIDA, capPerms);
+    const [nvTarget, setNvTarget] = useState<any>(null);
+    const [nvNota, setNvNota] = useState("");
+    const [nvBusy, setNvBusy] = useState(false);
+    const [nvMsg, setNvMsg] = useState("");
+    /** lo storico delle dichiarazioni, dentro `dettagli` della pratica */
+    const storicoNonValida = (raw: any): { quando: string; chi: string; azione: string; nota: string }[] => {
+        const d = (raw?.dettagli || {}) as Record<string, unknown>;
+        const st = d["storico_non_valida"];
+        return Array.isArray(st) ? st as { quando: string; chi: string; azione: string; nota: string }[] : [];
+    };
+    const salvaNonValida = async () => {
+        if (!nvTarget || nvBusy) return;
+        const nota = nvNota.trim();
+        const ripristino = !!nvTarget.raw?.non_valida;
+        if (nota.length < 3) { setNvMsg("La nota è obbligatoria: scrivi perché."); return; }
+        setNvBusy(true); setNvMsg("");
+        try {
+            const raw = nvTarget.raw || {};
+            const dett = { ...((raw.dettagli || {}) as Record<string, unknown>) };
+            const voce = {
+                quando: new Date().toISOString(),
+                chi: user?.name || "—",
+                azione: ripristino ? "ripristinata" : "non_valida",
+                nota,
+            };
+            dett["storico_non_valida"] = [...storicoNonValida(raw), voce];
+            const { error } = await supabase.from("contracts").update({
+                non_valida: !ripristino,
+                non_valida_nota: ripristino ? null : nota,
+                non_valida_da: ripristino ? null : (user?.name || "—"),
+                non_valida_il: ripristino ? null : new Date().toISOString(),
+                dettagli: dett,
+            }).eq("id", nvTarget.id);
+            if (error) { setNvMsg("Non salvato: " + error.message); return; }
+            setNvTarget(null); setNvNota("");
+            fetchData();
+        } finally {
+            setNvBusy(false);
+        }
+    };
     const [delTarget, setDelTarget] = useState<any>(null);
     const [delMotivo, setDelMotivo] = useState("");
     const [delBusy, setDelBusy] = useState(false);
@@ -1713,6 +1760,46 @@ export default function RicercaContratto() {
                 </div>
             )}
 
+            {/* PRATICA NON VALIDA: la nota è obbligatoria e resta per sempre */}
+            {nvTarget && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md shadow-2xl">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <X className="w-5 h-5 text-violet-300" />
+                                {nvTarget.raw?.non_valida ? "Riporta la pratica valida" : "Pratica NON VALIDA"}
+                            </h3>
+                            <button onClick={() => setNvTarget(null)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <div className="text-sm text-slate-300">
+                                <span className="font-mono text-indigo-300">{nvTarget.id}</span> · <b className="text-white">{nvTarget.brand}</b> · {nvTarget.prodotto} · {nvTarget.cliente || "—"}
+                            </div>
+                            <p className="text-sm text-violet-200 bg-violet-500/10 border border-violet-500/30 rounded-lg px-3 py-2">
+                                {nvTarget.raw?.non_valida
+                                    ? "Torna a contare per il commissioning e per le gare. La dichiarazione precedente resta nello storico."
+                                    : "Smette di contare per il commissioning e per le gare. La pratica NON viene eliminata né nascosta: resta qui, con scritto perché non vale."}
+                            </p>
+                            <label className="block text-sm font-medium text-slate-300">
+                                {nvTarget.raw?.non_valida ? "Perché torna valida" : "Perché non è valida"} <span className="text-violet-300">*</span>
+                            </label>
+                            <textarea className="glass-input w-full min-h-[90px] resize-y text-sm" autoFocus
+                                placeholder="Es. cliente mai attivato / doppione della pratica CTR-… / errore di inserimento"
+                                value={nvNota} onChange={e => { setNvNota(e.target.value); setNvMsg(""); }} />
+                            <p className="text-xs text-slate-500">La nota resta nello storico della pratica e la vedono tutti dal dettaglio (l&apos;occhiolino).</p>
+                            {nvMsg && <p className="text-xs text-rose-300 font-semibold">{nvMsg}</p>}
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex justify-end gap-2">
+                            <button onClick={() => setNvTarget(null)} className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-300 hover:bg-white/5">Annulla</button>
+                            <button onClick={salvaNonValida} disabled={nvBusy || nvNota.trim().length < 3}
+                                className="px-4 py-2 rounded-xl text-sm font-bold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40">
+                                {nvBusy ? "…" : nvTarget.raw?.non_valida ? "Riporta valida" : "Dichiara non valida"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Cestino contratto: conferma (diretta) o richiesta (store manager) */}
             {delTarget && (
                 <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -2172,6 +2259,20 @@ export default function RicercaContratto() {
                                                 {canEditContract && (
                                                     <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title={modificaDiretta ? "Modifica contratto (si applica subito)" : "Modifica (richiede approvazione amministrazione)"}><Edit className="w-4 h-4" /></button>
                                                 )}
+                                                {/* ✗ VIOLA: non valida per commissioning e gare
+                                                    (Luca 27/08). Sta a SINISTRA del cestino, e non
+                                                    è rossa apposta: non sta eliminando niente. */}
+                                                {puoNonValida && (
+                                                    <button onClick={() => { setNvTarget(row); setNvNota(""); setNvMsg(""); }}
+                                                        className={"p-1.5 rounded transition-colors " + (row.raw?.non_valida
+                                                            ? "bg-violet-500/30 text-violet-200 hover:bg-violet-500/40"
+                                                            : "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25")}
+                                                        title={row.raw?.non_valida
+                                                            ? "Pratica NON VALIDA — clicca per riportarla valida"
+                                                            : "Dichiara NON VALIDA per commissioning e gare"}>
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 {canDeleteButton && (
                                                     <button onClick={() => { setDelTarget(row); setDelMotivo(""); setDelMsg(""); }}
                                                         className="p-1.5 rounded bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors"
@@ -2589,6 +2690,38 @@ export default function RicercaContratto() {
                             </div>
 
                             <div className="p-6 overflow-y-auto space-y-6">
+                                {/* NON VALIDA: la vedono TUTTI, anche chi non può dichiararla
+                                    (Luca 27/08: «sempre visibile da tutti se clicco
+                                    sull'occhiolino»), con lo storico delle decisioni */}
+                                {(row.raw?.non_valida || storicoNonValida(row.raw).length > 0) && (
+                                    <div className={"rounded-xl border p-4 space-y-2 " + (row.raw?.non_valida
+                                        ? "border-violet-400/40 bg-violet-500/[0.08]"
+                                        : "border-white/10 bg-white/[0.03]")}>
+                                        <div className="text-sm font-bold text-violet-200 flex items-center gap-2">
+                                            {row.raw?.non_valida
+                                                ? <>✗ Pratica NON VALIDA per commissioning e gare</>
+                                                : <>Storico validità</>}
+                                        </div>
+                                        {!!row.raw?.non_valida && (
+                                            <p className="text-xs text-slate-300">
+                                                Dichiarata da <b className="text-white">{String(row.raw?.non_valida_da || "—")}</b>
+                                                {row.raw?.non_valida_il ? ` il ${new Date(String(row.raw.non_valida_il)).toLocaleDateString("it-IT")}` : ""}
+                                                {row.raw?.non_valida_nota ? ` — ${String(row.raw.non_valida_nota)}` : ""}
+                                            </p>
+                                        )}
+                                        {storicoNonValida(row.raw).length > 0 && (
+                                            <div className="space-y-1 pt-1 border-t border-white/10">
+                                                {storicoNonValida(row.raw).slice().reverse().map((v, i) => (
+                                                    <p key={i} className="text-[11px] text-slate-400">
+                                                        <span className="tabular-nums text-slate-500">{new Date(v.quando).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                                        {" · "}<b className={v.azione === "non_valida" ? "text-violet-300" : "text-emerald-300"}>{v.azione === "non_valida" ? "dichiarata non valida" : "riportata valida"}</b>
+                                                        {" · "}{v.chi}{v.nota ? ` — ${v.nota}` : ""}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 {/* SPOSTA CONTRATTO AD ALTRO CLIENTE (Luca 08/08) */}
                                 {spostaOpen && detailMode === "edit" && modificaDiretta && (
                                     <div className="rounded-xl border border-amber-400/40 bg-amber-400/[0.06] p-4 space-y-3">

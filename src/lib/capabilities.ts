@@ -397,6 +397,23 @@ export const CAP_TRACKING: CapGroupFlags = {
 // "diretta" = salva subito e approva le richieste altrui; "richiesta" =
 // comportamento storico (le modifiche passano dall'approvazione);
 // "nessuna" = sola consultazione (niente modifica né eliminazione).
+// ─── PRATICA NON VALIDA (Luca 27/08) ───────────────────────────────────────
+// Dichiarare che una pratica non conta per commissioning e gare è un gesto
+// che sposta soldi: lo fa chi ha il quadro completo. Per ora l'amministrazione
+// e basta — ma è una spia, non una riga di codice: si sposta da qui.
+export const CAP_RICERCA_NON_VALIDA: CapDef = {
+    id: "non_valida",
+    label: "Può dichiarare una pratica NON VALIDA",
+    desc: "In Ricerca Vendite compare la ✗ viola accanto al cestino: dichiara che quella pratica non conta per il commissioning né per le gare, con una nota OBBLIGATORIA che resta nello storico e si legge da tutti nel dettaglio. Non elimina e non nasconde niente: la pratica resta, con scritto perché non vale e chi l'ha deciso. Default: amministrativo.",
+    default: (r) => r === "amministrativo",
+};
+export const CAP_RICERCA_EXTRA: CapGroupFlags = {
+    mode: "flags",
+    section: "/ricerca-vendite",
+    sectionLabel: "Ricerca Vendite",
+    caps: [CAP_RICERCA_NON_VALIDA],
+};
+
 export const CAP_RICERCA_MODIFICA: CapGroupChoice = {
     mode: "choice",
     section: "/ricerca-vendite",
@@ -600,4 +617,4 @@ export const CAP_CHAT: CapGroupFlags = {
 
 
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT];

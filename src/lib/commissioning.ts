@@ -836,6 +836,11 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
             .ilike("brand", `${brandLabelPrefix}%`)
             .gte("data", primo).lte("data", ultimo)
             .or("is_demo.is.null,is_demo.eq.false")
+            // PRATICHE DICHIARATE NON VALIDE (Luca 27/08): fuori dal motore, e
+            // fuori QUI — cioè in un punto solo. Escluderle al caricamento vale
+            // insieme per il commissioning e per le gare, senza dover ricordarsi
+            // di ripetere il filtro in ogni conto che verrà scritto domani.
+            .or("non_valida.is.null,non_valida.eq.false")
             .order("id").range(from, to) as unknown as PromiseLike<{ data: Raw[] | null; error: { message?: string } | null }>);
     // il listino serve solo se nel mese c'è almeno un telefono
     const conTerminale = (data || []).some(r => (r.dettagli as Record<string, unknown> | null)?.["Modello Terminale"]);
