@@ -188,7 +188,7 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
 }
 
 export default function Dashboard() {
-    const { user } = useAuth();
+    const { user, viewAs, viewAsUser } = useAuth();
     const { seesAll, stores: myStores, loaded: visLoaded } = useVisibleStores();
     const visKey = myStores.join("|");
 
@@ -225,6 +225,21 @@ export default function Dashboard() {
     // true se a DB c'è un formato layout più nuovo di questa build: si
     // mostra ma non si risalva (guardia rolling deploy, revisore 26/08)
     const layoutSoloVista = useRef(false);
+    /* ── QUANDO GUARDO CON GLI OCCHI DI UN ALTRO ──────────────────────────
+       Entrando in un altro profilo dalla tendina, la Home continuava a
+       mostrare il MIO layout — e al primo assestamento della griglia lo
+       salvava sulla riga di QUELLA persona: il mio menù finiva addosso a
+       tutti quelli in cui entravo (Luca 27/08).
+
+       Due cose, e sono separate:
+       · il layout va RIRISOLTO quando cambia la persona, così vedo il suo;
+       · e NON si scrive mai niente mentre sto guardando: impersonare serve
+         a vedere quello che vede lui, non a decidere com'è fatta casa sua. */
+    const guardoUnAltro = !!viewAsUser || !!viewAs;
+    useEffect(() => {
+        layoutPronto.current = false;
+        layoutSoloVista.current = false;
+    }, [user?.id]);
     // niente più editMode: come nell'Analisi la griglia è SEMPRE viva — drag
     // dalla pillola in testa alla card, resize dall'angolo, X su hover.
     // La MISURA della larghezza vive dentro GrigliaHome (componente a parte):
@@ -545,6 +560,9 @@ export default function Dashboard() {
 
     const salvaLayout = async (next) => {
         setLayout(next);
+        // sto guardando il profilo di un altro: sposto pure i riquadri sullo
+        // schermo, ma non tocco le sue impostazioni
+        if (guardoUnAltro) return;
         if (layoutSoloVista.current) return;   // formato più nuovo del mio: non lo tocco
         const payload = { __v: 10, lista: next.map((w) => `${w.k}@${Number.isFinite(w.x) ? w.x : 0},${Number.isFinite(w.y) ? w.y : 0},${w.s},${w.h || 4}`) };
         try { await supabase.from("app_users").update({ dashboard_layout: payload }).eq("id", user.id); } catch { /* offline: resta locale */ }

@@ -156,7 +156,7 @@ export default function Analisi() {
 }
 
 function AnalisiInner() {
-    const { user } = useAuth();
+    const { user, viewAs, viewAsUser } = useAuth();
     // VISIBILITÀ DAI PERMESSI: sezione + aree concedibili (hub /analisi)
     const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     const hubAnalisi = hubByHref("/analisi");
@@ -492,6 +492,11 @@ function AnalisiInner() {
 
     const [layoutIo, setLayoutIo] = useState(null);
     const [layoutNeg, setLayoutNeg] = useState(null);
+    // stesso problema della Home (Luca 27/08): entrando nel profilo di un
+    // altro, il layout restava il mio e al primo assestamento glielo scrivevo
+    // addosso. Si azzera al cambio persona, e mentre guardo non si salva.
+    const guardoUnAltro = !!viewAsUser || !!viewAs;
+    useEffect(() => { setLayoutIo(null); setLayoutNeg(null); }, [user?.id]);
     useEffect(() => {
         if (loading) return;
         const ver = Number(layoutSalvato?.__v || 0);
@@ -501,6 +506,7 @@ function AnalisiInner() {
     const salva = async (areaKey, lista) => {
         const next = { ...(layoutSalvato || {}), __v: 9, [areaKey]: lista.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || hDef(w.k)}`) };
         setLayoutSalvato(next);
+        if (guardoUnAltro) return;      // le impostazioni sue restano sue
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }
     };
 
