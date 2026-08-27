@@ -1871,9 +1871,9 @@ export default function Calendario() {
                             onClick={() => setShowArretrate(v => !v)}
                             title="Task con data passata non ancora chiuse (fatta/abbandonata)"
                             className={cn(
-                                "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
+                                "h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border",
                                 showArretrate
-                                    ? "bg-amber-500/25 text-amber-200 border-amber-500/60 shadow-amber-500/20"
+                                    ? "bg-amber-500/25 text-amber-200 border-amber-500/60"
                                     : "bg-amber-500/10 text-amber-300 border-amber-500/40 hover:bg-amber-500/20"
                             )}
                         >

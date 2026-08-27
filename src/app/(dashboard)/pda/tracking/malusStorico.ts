@@ -188,12 +188,26 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     malus_euro: euro,
   };
 
-  const eventi = (row.storia || [])
+  // TUTTI gli eventi datati: serve all'ancora del malus amministrativo, che
+  // deve restare attaccata all'esito che lo genera
+  const eventiTutti = (row.storia || [])
     .map((ev) => ({ ev, d: parseData(ev.data) }))
     .filter((x): x is { ev: StoriaEvent; d: Date } => !!x.d)
     .sort((x, y) => x.d.getTime() - y.d.getTime());
+  const eventi = (row.storia || [])
+    .map((ev) => ({ ev, d: parseData(ev.data) }))
+    .filter((x): x is { ev: StoriaEvent; d: Date } => !!x.d)
+    // GUARDIA 1 (27/08): gli eventi dell'AMMINISTRAZIONE non spezzano il
+    // segmento del negozio. Il cronometro del venditore misura il SUO
+    // ritardo: la verifica dell'amministrazione non lo apre e non lo chiude.
+    // Prima bastava un «Confermato» del back office per congelare tutto il
+    // passato di una pratica già chiusa e trasformarlo in malus. Se l'esito
+    // admin ha un malus suo (Non Conforme) lo calcola `calcolaMalus`: è
+    // l'unica strada per cui un esito admin genera soldi.
+    .filter((x) => x.ev.tipo !== "stato_admin" && x.ev.tipo !== "nota_admin")
+    .sort((x, y) => x.d.getTime() - y.d.getTime());
 
-  type Seg = { start: Date; soglia: number | null; completato: boolean };
+  type Seg = { start: Date; soglia: number | null; completato: boolean; tipoApertura?: string };
   const segs: Seg[] = [];
   const t0 = parseData(row.dataInserimento);
   if (t0) segs.push({ start: t0, soglia: r.senza_malus, completato: false });
@@ -213,7 +227,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       ? Math.max(1, r.succ_malus - (Number(r.succ_warning) || 0))
       : r.succ_malus;
     if (ev.tipo === "riassegnazione") delegaD = d;
-    segs.push({ start: d, soglia: sogliaSeg, completato: flagCompletato });
+    segs.push({ start: d, soglia: sogliaSeg, completato: flagCompletato, tipoApertura: ev.tipo });
   }
 
   const out: EpisodioDerivato[] = [];
@@ -222,9 +236,39 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   // come il calcolo live: coi lavorativi di calendario, al primo tocco della
   // pratica il congelamento evaporava retroattivamente e nascevano malus per
   // i giorni di negozio chiuso (bug riaperture, Luca 19/08).
+  /* ⚠️ DUE GUARDIE, dall'incidente del 27/08 (Luca: «l'admin mette un esito
+     e la pratica va in malus anche quando non ci deve andare»).
+
+     COSA SUCCEDEVA. Il ritardo del negozio viene congelato in episodi
+     quando un evento CHIUDE il segmento aperto. Ma qui dentro «evento» era
+     qualunque evento, compreso l'esito dell'AMMINISTRAZIONE. Così una
+     pratica ferma da settimane ma già ATTIVATA — che dal vivo non genera
+     nulla, perché `fermaMalus` la esclude — al primo «Confermato» del back
+     office si vedeva materializzare tutto il passato come malus del
+     venditore. Misurato: 9 pratiche, 485 €, tutte con esito admin
+     «Confermato» messo lo stesso pomeriggio.
+
+     GUARDIA 1 — un evento AMMINISTRATIVO non congela il ritardo del
+     negozio. La verifica dell'amministrazione non è il negozio che si
+     muove: non apre e non chiude la partita del venditore. Se l'esito
+     admin ha un malus suo (Non Conforme), quello lo calcola `calcolaMalus`
+     per la sua strada — è l'unica via per cui un esito admin genera soldi,
+     ed è la regola che Luca ha definito.
+
+     GUARDIA 2 — se la pratica OGGI è in uno stato che ferma il malus
+     (attivata, KO, annullata…) e nella storia non c'è nessun evento di
+     negozio che dati quel passaggio, non si materializza niente: non
+     possiamo provare che fosse aperta in quei giorni, e nel dubbio un
+     malus non si inventa. È la stessa lezione dell'incidente sky del
+     25/08: il passato non si riscrive. */
+  const fermoOra = fermaMalus(row.statoNegozio || "", row.categoria, row.brand);
+  const haEventiNegozio = eventi.some((x) => x.ev.tipo === "stato_negozio");
+  const passatoIndimostrabile = fermoOra && !haEventiNegozio;
+
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i];
     if (seg.completato || seg.soglia == null) continue;
+    if (passatoIndimostrabile) continue;                       // guardia 2
     const fine = segs[i + 1].start;
     // decorrenza: il segmento interamente nel passato non esiste; quello a
     // cavallo parte dal giorno di vigore (il contatore riparte da lì)
@@ -257,7 +301,11 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       const admin = malusAdminGiorno(row.statoAdmin || "", row.categoria, row.brand) > 0
         || malusAdminFisso(row.statoAdmin || "", row.categoria, row.brand) > 0;
       if (admin) {
-        const ancora = eventi.length ? eventi[eventi.length - 1].d : (t0 || oggi);
+        // ⚠️ eventiTutti, non `eventi`: da oggi la lista dei segmenti esclude
+        // gli eventi admin, ma la una tantum del Non Conforme si ancora
+        // proprio a quello — con la lista filtrata sarebbe scivolata indietro
+        // all'ultimo movimento del negozio, gonfiando i giorni
+        const ancora = eventiTutti.length ? eventiTutti[eventiTutti.length - 1].d : (t0 || oggi);
         // giorni allineati al conteggio PAGATO: aperti dall'ancora, clampati
         // alla decorrenza dei € dell'esito (revisore 25/08 — coi lavorativi
         // di calendario giorni × € non tornava con l'importo)
