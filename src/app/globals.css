@@ -977,3 +977,38 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 /* l'aura è il DROP-SHADOW del tratto stesso (segue la silhouette
    dell'anello: mai nel centro, mai rettangolare) — applicato nei
    componenti, niente pseudo-elementi geometrici */
+
+/* ═══ ANIMAZIONI DI COMPARSA ══════════════════════════════════════════════
+   `animate-in`, `fade-in`, `slide-in-from-*`, `zoom-in-*` sono usate in 12
+   file di questo CRM (54 volte solo `animate-in`) ma NON SONO MAI STATE
+   DEFINITE: non c'è il plugin `tailwindcss-animate` in package.json e non
+   c'erano keyframes qui. Erano classi morte — ogni «apertura animata» del
+   CRM, dai modali ai toast, compariva di scatto (trovato il 27/08).
+
+   Un keyframe solo, pilotato da variabili: le classi di modificatore non
+   animano, impostano il punto di partenza. Così restano compatibili con la
+   sintassi Tailwind già scritta nel codice, senza toccare 12 file.        */
+@keyframes tfEntra {
+    from {
+        opacity: var(--tf-in-op, 1);
+        transform: translate3d(var(--tf-in-x, 0), var(--tf-in-y, 0), 0) scale(var(--tf-in-sc, 1));
+    }
+    to { opacity: 1; transform: none; }
+}
+.animate-in {
+    animation: tfEntra 200ms cubic-bezier(.22, .61, .36, 1) both;
+    will-change: opacity, transform;
+}
+.fade-in, .fade-in-0 { --tf-in-op: 0; }
+.zoom-in-95 { --tf-in-sc: .95; }
+.slide-in-from-top-2 { --tf-in-y: -.5rem; }
+.slide-in-from-top-4 { --tf-in-y: -1rem; }
+.slide-in-from-bottom-2 { --tf-in-y: .5rem; }
+.slide-in-from-bottom-4 { --tf-in-y: 1rem; }
+.slide-in-from-left-4 { --tf-in-x: -1rem; }
+.slide-in-from-right-full { --tf-in-x: 100%; }
+
+/* chi ha chiesto meno movimento non lo deve subire */
+@media (prefers-reduced-motion: reduce) {
+    .animate-in { animation-duration: 1ms; }
+}

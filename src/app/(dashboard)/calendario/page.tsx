@@ -408,6 +408,12 @@ export default function Calendario() {
     // dato io piuttosto che task che sono assegnate a me». Tre vie invece di
     // un interruttore solo: tutte · a me · date da me.
     const [taskScope, setTaskScope] = useState<"tutte" | "a_me" | "da_me">("tutte");
+    /* I FILTRI NON DEVONO STARE FRA L'UTENTE E IL CALENDARIO (disegno 27/08):
+       erano quattro righe fisse che spingevano la griglia — cioè la ragione
+       per cui si apre questa pagina — sotto la piega. Ora stanno dietro un
+       pulsante che DICE QUANTI sono accesi, e chi non li usa non li vede.
+       Si aprono da soli se arrivi con un filtro già attivo. */
+    const [filtriAperti, setFiltriAperti] = useState(false);
     const soloAssegnateDaMe = taskScope === "da_me";
     const puoVedereAssegnate = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     // filtri del MODALE arretrate (Luca 05/08): solo per chi vede task altrui
@@ -625,6 +631,12 @@ export default function Calendario() {
     // Outcome filters
     const [appointmentOutcomeFilter, setAppointmentOutcomeFilter] = useState<AppointmentStatus | "">("");
     const [taskOutcomeFilter, setTaskOutcomeFilter] = useState<TaskStatus | "">("");
+    // arrivando da un chip della barra priorità i filtri si accendono da soli:
+    // il pannello si apre, altrimenti il conteggio direbbe «2» e non si
+    // vedrebbe quali sono
+    useEffect(() => {
+        if (appointmentOutcomeFilter || taskOutcomeFilter || taskScope !== "tutte") setFiltriAperti(true);
+    }, [appointmentOutcomeFilter, taskOutcomeFilter, taskScope]);
 
     // ── ESITI AMMINISTRABILI (mig. 106, Luca 30/07): etichette, colori e
     // scelte per TIPO (negozio/domicilio/task) arrivano da calendario_esiti
@@ -1612,10 +1624,12 @@ export default function Calendario() {
 
     return (
         <div className="w-full">
-            <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">Calendario Appuntamenti</h2>
-                    <p className="text-slate-400">
+            <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="min-w-0">
+                    {/* titolo più basso e onesto: qui dentro non ci sono solo
+                        appuntamenti — ci sono task, riunioni e blocchi agenda */}
+                    <h2 className="text-xl font-bold text-white">Calendario</h2>
+                    <p className="text-[11px] text-slate-500 truncate">
                         {(() => {
                             // riepilogo filtri multi: null = tutto (nessun filtro attivo)
                             const riass = (v: string[] | null, vuoto: string) => v === null ? null : (v.length === 0 ? vuoto : v.join(" + "));
@@ -1725,19 +1739,51 @@ export default function Calendario() {
             {/* ── FILTRI UNIFICATI (MOD-26, Luca 10/08): ricerca cliente, periodo,
                 esiti, punti vendita/consulenti e categorie raccolti in UN
                 pannello compatto — via il vecchio pannello "Cerca appuntamenti". ── */}
-            <div className="mb-6 p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
-                {/* riga 1: ricerca + periodo + esiti + pulisci */}
-                <div className="flex flex-wrap items-center gap-2.5">
-                    <div className="relative flex-1 min-w-[220px] max-w-md">
+            <div className="mb-4 rounded-xl bg-white/[0.02] border border-white/5">
+                {/* SEMPRE VISIBILE: la ricerca, le categorie e il pulsante che
+                    apre il resto. Tutto il resto sta dietro, perché quattro
+                    righe di filtri fissi spingevano la griglia sotto la piega. */}
+                <div className="p-2.5 flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[200px] max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                        <input
-                            type="text"
-                            placeholder="Cerca cliente: nome, CF/P.IVA o cellulare…"
+                        <input type="text" placeholder="Cerca cliente: nome, CF/P.IVA o cellulare…"
                             className="glass-input w-full text-sm h-9 pl-9"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
+                            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                     </div>
+                    {/* le categorie restano fuori: sono il gesto più frequente */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        {([
+                            ["incoming", "↙ Inbound", "bg-blue-400"],
+                            ["outgoing", "↗ Outbound", "bg-amber-400"],
+                            ["self_generated", "Auto", "bg-purple-400"],
+                            ["richiamo", "☎ Richiami", "bg-pink-400"],
+                            ["task", "Task", "bg-emerald-500"],
+                            ["meeting", "Riunioni", "bg-sky-400"],
+                        ] as [string, string, string][]).map(([id, label, dot]) => (
+                            <button key={id} type="button" onClick={() => toggleCat(id)}
+                                className={cn("flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors",
+                                    catFilter.includes(id) ? "border-white/25 bg-white/[0.08] text-white" : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-slate-200")}>
+                                <span className={cn("w-1.5 h-1.5 rounded-full", dot)} />
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <button type="button" onClick={() => setFiltriAperti((v) => !v)}
+                        className={cn("ml-auto h-9 px-3 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5",
+                            filtriAperti ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]")}>
+                        ⚙︎ Filtri {(() => {
+                            const n = [searchDateFrom, searchDateTo, appointmentOutcomeFilter, taskOutcomeFilter].filter(Boolean).length
+                                + (filterStores !== null ? 1 : 0) + (filterAgents !== null ? 1 : 0) + (filterCreatedBys !== null ? 1 : 0)
+                                + (taskScope !== "tutte" ? 1 : 0);
+                            return n ? <span className="px-1.5 rounded-full bg-indigo-500 text-white text-[10px]">{n}</span> : null;
+                        })()}
+                        <span className="text-slate-500">{filtriAperti ? "▲" : "▼"}</span>
+                    </button>
+                </div>
+
+                {filtriAperti && <div className="px-3.5 pb-3.5 pt-1 space-y-3 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
+                {/* riga 1: periodo + esiti + azzera */}
+                <div className="flex flex-wrap items-center gap-2.5">
                     <div className="flex items-center gap-1.5">
                         <span className="text-[10px] uppercase font-bold text-slate-500">dal</span>
                         <DatePickerInput id="da_data_appuntamento" value={searchDateFrom} onChange={setSearchDateFrom} placeholder="—" />
@@ -1852,47 +1898,12 @@ export default function Calendario() {
                         </div>}
                     </div>
                 )}
-                {/* riga 3: categorie (i "pallini" cliccabili) */}
-                <div className="flex flex-wrap items-center gap-2">
-                {([
-                    ["incoming", "Inbound", "bg-blue-400", "border-blue-500/40 bg-blue-500/15 text-blue-200"],
-                    ["outgoing", "Outbound", "bg-amber-400", "border-amber-500/40 bg-amber-500/15 text-amber-200"],
-                    ["self_generated", "Auto-Generato", "bg-purple-400", "border-purple-500/40 bg-purple-500/15 text-purple-200"],
-                    ["richiamo", "Richiami CC", "bg-pink-400", "border-pink-500/40 bg-pink-500/15 text-pink-200"],
-                    ["task", "Task", "bg-emerald-500", "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"],
-                    ["meeting", "Riunioni", "bg-sky-400", "border-sky-500/40 bg-sky-500/15 text-sky-200"],
-                ] as [string, string, string, string][]).map(([id, label, dot, activeCls]) => {
-                    const active = catFilter.includes(id);
-                    return (
-                        <button
-                            key={id}
-                            type="button"
-                            onClick={() => toggleCat(id)}
-                            className={cn(
-                                "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors",
-                                active ? activeCls : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]",
-                            )}
-                        >
-                            <span className={cn("w-2 h-2 rounded-full", dot)} />
-                            {label}
-                        </button>
-                    );
-                })}
-                {catFilter.length > 0 && (
-                    <button
-                        type="button"
-                        onClick={() => setCatFilter([])}
-                        className="text-xs px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
-                    >
-                        ✕ Mostra tutto
-                    </button>
-                )}
                 {agendaBlocks.length > 0 && (
-                    <span className="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
-                        <Lock className="w-3 h-3 text-amber-400" /> Giorno bloccato
-                    </span>
+                    <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <Lock className="w-3 h-3 text-amber-400" /> Le celle ambra sono giorni bloccati in agenda
+                    </p>
                 )}
-                </div>
+                </div>}
             </div>
 
             {/* MOD-26: RISULTATI di ricerca — compaiono da soli quando la
