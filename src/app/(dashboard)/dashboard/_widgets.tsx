@@ -3012,18 +3012,21 @@ function WidgetCoperture({ ctx }) {
                         <div className="text-[10px] text-rose-200/80">assenze senza copertura né conferma «coperta così»</div>
                     </div>
                     {rosse.slice(0, 8).map((sc) => (
-                        <div key={`${sc.sede}|${sc.data}`} className={cn("rounded-lg border p-2",
-                            sc.data === oggiISO ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-white/10 bg-white/[0.03]")}>
+                        // CLICCABILE (Luca 27/08): dritto sui Turni, sul giorno giusto
+                        <Link key={`${sc.sede}|${sc.data}`} href={`/collaboratori?tab=turni&data=${sc.data}`}
+                            title={`Apri i Turni del ${fmtGiornoIT(sc.data)} per coprire ${sc.sede}`}
+                            className={cn("block rounded-lg border p-2 transition-colors",
+                                sc.data === oggiISO ? "border-rose-500/50 bg-rose-500/[0.08] hover:bg-rose-500/[0.15]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20")}>
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[11px] font-bold text-slate-200 truncate">🏬 {sc.sede}</span>
                                 <span className={cn("text-[10px] font-bold shrink-0 tabular-nums", sc.data === oggiISO ? "text-rose-300" : "text-slate-500")}>
-                                    {sc.data === oggiISO ? "OGGI" : fmtGiornoIT(sc.data)}
+                                    {sc.data === oggiISO ? "OGGI" : fmtGiornoIT(sc.data)} ›
                                 </span>
                             </div>
                             <div className="text-[10px] text-slate-400 truncate">
                                 {sc.assenti.map((a) => `${a.tipo === "malattia" ? "🤒" : "🏖"} ${a.persona}`).join(" · ")}
                             </div>
-                        </div>
+                        </Link>
                     ))}
                     {rosse.length > 8 && <div className="text-[10px] text-slate-500">+{rosse.length - 8} nel dettaglio Turni</div>}
                 </div>

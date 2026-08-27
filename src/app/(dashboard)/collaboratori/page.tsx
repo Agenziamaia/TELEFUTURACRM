@@ -70,7 +70,7 @@ function CollaboratoriPageContent() {
                     </div>
                 )}
                 {tab === "ritardi" && <RitardiSection />}
-                {tab === "turni" && <TurniSection />}
+                {tab === "turni" && <TurniSection dataIniziale={searchParams.get("data") || undefined} />}
             </div>
         </div>
     );
@@ -1882,7 +1882,7 @@ type StoreRow = { name: string; orario_apertura: string | null; orario_chiusura:
 // (globals.css). Brand NULL → icona generica 🏬.
 const LOGO_BRAND: Record<string, string> = { windtre: "/windtre.png", vodafone: "/vodaphone - Copy.png", multibrand: "/logo-crm.png" };
 
-function TurniSection() {
+function TurniSection({ dataIniziale }: { dataIniziale?: string }) {
     const { user } = useAuth();
     const gestisce = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const [negozi, setNegozi] = useState<StoreRow[]>([]);
@@ -1896,7 +1896,8 @@ function TurniSection() {
     const [assenze, setAssenze] = useState<AssenzaGiorno[]>([]);
     const [coperteOk, setCoperteOk] = useState<Set<string>>(new Set());
     const oggiYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-    const [dataSel, setDataSel] = useState(oggiYmd());
+    // arrivo dal widget Coperture: ?data=YYYY-MM-DD apre il giorno giusto
+    const [dataSel, setDataSel] = useState(dataIniziale && /^\d{4}-\d{2}-\d{2}$/.test(dataIniziale) ? dataIniziale : oggiYmd());
     const [nuovo, setNuovo] = useState<Record<string, { persona: string; inizio: string; fine: string; conOrario?: boolean }>>({});
 
     const hhmm = (t: string | null | undefined, fallback: string) => (t || fallback).slice(0, 5);
