@@ -9,7 +9,7 @@
 // · i numeri grossi salgono con un conteggio animato (rAF, ease-out);
 // · niente Date.now nei render: le animazioni partono dal mount.
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 
@@ -52,8 +52,21 @@ export function Num({ v, dec = 0, punti = false, euro = false, className }) {
 /* ── tooltip a portale (hover/tap istantaneo) ──────────────────────────── */
 export function Tip({ children, tip, block = false, className, style }) {
     const [pos, setPos] = useState(null);
+    // FLIP (Luca 27/08: il tooltip del day-by-day usciva dallo schermo in
+    // alto): se sopra al cursore non c'è spazio per tutto il tip, si apre
+    // SOTTO; e il centro resta dentro i bordi laterali
+    const boxTip = useRef(null);
+    const [flip, setFlip] = useState(false);
+    useLayoutEffect(() => {
+        if (!pos) { if (flip) setFlip(false); return; }
+        const h = boxTip.current?.offsetHeight || 0;
+        const vuole = pos.y - 14 - h < 8;
+        if (vuole !== flip) setFlip(vuole);
+    });
     const move = (e) => setPos({ x: e.clientX, y: e.clientY });
     const off = () => setPos(null);
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1600;
+    const cx = pos ? Math.min(Math.max(pos.x, 165), vw - 165) : 0;
     return (
         <span
             className={cn(block ? "block" : "inline-flex", "cursor-default", className)} style={style}
@@ -62,8 +75,9 @@ export function Tip({ children, tip, block = false, className, style }) {
         >
             {children}
             {pos && typeof document !== "undefined" && createPortal(
-                <div className="fixed z-[9999] pointer-events-none an-scuro" style={{ left: pos.x, top: pos.y - 14, transform: "translate(-50%,-100%)" }}>
-                    <div className="rounded-xl border border-white/15 bg-[#111527]/95 backdrop-blur-md px-3 py-2 shadow-2xl shadow-black/50 max-w-[300px]">
+                <div ref={boxTip} className="fixed z-[9999] pointer-events-none an-scuro"
+                    style={{ left: cx, top: flip ? pos.y + 18 : pos.y - 14, transform: flip ? "translate(-50%,0)" : "translate(-50%,-100%)" }}>
+                    <div className="rounded-xl border border-white/15 bg-[#111527]/95 backdrop-blur-md px-3 py-2 shadow-2xl shadow-black/50 max-w-[300px] max-h-[calc(100vh-28px)] overflow-hidden">
                         {tip}
                     </div>
                 </div>, document.body)}

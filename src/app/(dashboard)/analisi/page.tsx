@@ -637,7 +637,7 @@ function AnalisiInner() {
                     {area === "negozio" && (
                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                             <span>Negozi:</span>
-                            <SelectMulti values={negoziSelN.length ? negoziSelN : negozi} onChange={setNegoziSelN} opzioni={negoziVisibili} placeholder="i tuoi negozi…" maxVoci={100} className="min-w-[200px]" />
+                            <SelectMulti values={negoziSelN.length ? negoziSelN : negozi} onChange={setNegoziSelN} opzioni={negoziVisibili} placeholder="i tuoi negozi…" maxVoci={100} className="min-w-[200px]" tuttiLabel="👥 Tutti i negozi" />
                             <span className="pl-1">Collaboratore:</span>
                             <SelectOpzioni value={collab || TUTTI} onChange={(v) => setCollabSel(v)} opzioni={[TUTTI, ...squadraNegozio]} placeholder="tutti…" className="min-w-[180px]" />
                         </div>

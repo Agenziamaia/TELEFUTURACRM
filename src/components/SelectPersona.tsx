@@ -177,7 +177,7 @@ export function SelectPersona({
  *  Nessuna selezione = nessun filtro. */
 export function SelectMulti({
     values, onChange, opzioni, placeholder = "Tutti — scrivi per filtrare", className = "",
-    vuotoMsg = "Nessuna voce corrispondente", disabled = false, maxVoci = 12,
+    vuotoMsg = "Nessuna voce corrispondente", disabled = false, maxVoci = 12, tuttiLabel,
 }: {
     values: string[];
     onChange: (v: string[]) => void;
@@ -187,6 +187,9 @@ export function SelectMulti({
     vuotoMsg?: string;
     disabled?: boolean;
     maxVoci?: number;
+    /** voce «Tutti» in capo alla tendina (Luca 27/08): un click e azzera la
+     *  selezione — che per i chiamanti significa «tutto quello che vedi» */
+    tuttiLabel?: string;
 }) {
     const [testo, setTesto] = useState("");
     const [aperta, setAperta] = useState(false);
@@ -235,6 +238,14 @@ export function SelectMulti({
         <div ref={menu}
             className="select-persona-menu fixed z-[4000] max-h-72 overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5"
             style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            {tuttiLabel && !q && (
+                <button type="button"
+                    onMouseDown={(e) => { e.preventDefault(); onChange([]); setTesto(""); setAperta(false); }}
+                    className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors hover:bg-indigo-500/20 flex items-center gap-2 font-bold ${values.length === 0 ? "text-indigo-300" : "text-slate-100"}`}>
+                    <span className={`w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center text-[9px] ${values.length === 0 ? "border-indigo-400 bg-indigo-500/40" : "border-slate-600"}`}>{values.length === 0 ? "✓" : ""}</span>
+                    {tuttiLabel}
+                </button>
+            )}
             {filtrate.length > 0 ? filtrate.map((n) => {
                 const sel = values.includes(n);
                 return (
