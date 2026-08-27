@@ -18,7 +18,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
 import { sincronizzaEsitoSuPratica as sincronizzaEsitoSuPraticaLib } from "@/lib/esitoAppuntamento";
 import { fasciaLabel, fasciaStart, eFascia } from "@/lib/fasce";
-import { RicercaCliente } from "@/components/RicercaCliente";
+import { RicercaCliente, etichettaCliente } from "@/components/RicercaCliente";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
 // "richiamo" = richiamo telefonico fissato dal call center (Luca 31/07): nasce
@@ -2751,7 +2751,13 @@ export default function Calendario() {
 
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Riferimento Cliente</label>
-                                <input type="text" className="glass-input w-full" placeholder="Nome, CF o Cellulare" value={newTask.clientRef || ""} onChange={e => setNewTask(p => ({ ...p, clientRef: e.target.value }))} />
+                                {/* la ricerca STANDARD del CRM (Luca 27/08: «il solito campo
+                                    che adottiamo dappertutto»): col cognome lo trova, se non
+                                    esiste resta quello che scrivi */}
+                                <RicercaCliente tipo="" tieniScelto placeholder="Cognome, CF o cellulare: se esiste lo trova"
+                                    testoIniziale={newTask.clientRef || ""}
+                                    onTesto={(t) => setNewTask(p => ({ ...p, clientRef: t }))}
+                                    onScelto={(c) => setNewTask(p => ({ ...p, clientRef: etichettaCliente(c) }))} />
                             </div>
 
                             <div>
@@ -3441,7 +3447,11 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
                     {/* CLIENTE (Luca 11/08): prima si salvava ma qui non compariva */}
                     <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1.5">👤 Cliente <span className="normal-case text-slate-500">(nome, CF o cellulare)</span></label>
-                        <input className="glass-input w-full" placeholder="—" value={clienteRef} onChange={(e) => setClienteRef(e.target.value)} disabled={!puoGestire} />
+                        {puoGestire
+                            ? <RicercaCliente tipo="" tieniScelto placeholder="Cognome, CF o cellulare: se esiste lo trova"
+                                testoIniziale={clienteRef} onTesto={setClienteRef}
+                                onScelto={(c) => setClienteRef(etichettaCliente(c))} />
+                            : <input className="glass-input w-full" placeholder="—" value={clienteRef} disabled />}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>

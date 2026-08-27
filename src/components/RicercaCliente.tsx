@@ -4,7 +4,7 @@
 // identico OVUNQUE nel CRM — si scrive codice fiscale, cellulare, nome e
 // cognome (in entrambi gli ordini) o ragione sociale e le anagrafiche
 // compaiono sotto; un click e i dati sono selezionati. Debounce 300ms.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export type ClienteTrovato = {
@@ -19,18 +19,25 @@ export function etichettaCliente(c: ClienteTrovato): string {
     return c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`.trim() || c.cf_piva || c.id;
 }
 
-export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellulare, nome e cognome o ragione sociale…", className = "" }: {
+export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellulare, nome e cognome o ragione sociale…", className = "", testoIniziale = "", onTesto, tieniScelto = false }: {
     /** consumer | business per filtrare; vuoto/assente = tutti */
     tipo?: "consumer" | "business" | "";
     onScelto: (c: ClienteTrovato) => void;
     placeholder?: string;
     className?: string;
+    /** modalità «campo con memoria» (task, Luca 27/08): il testo libero
+     *  risale al padre e la scelta resta scritta nel campo */
+    testoIniziale?: string;
+    onTesto?: (t: string) => void;
+    tieniScelto?: boolean;
 }) {
-    const [testo, setTesto] = useState("");
+    const [testo, setTesto] = useState(testoIniziale || "");
     const [hits, setHits] = useState<ClienteTrovato[]>([]);
     const [cercando, setCercando] = useState(false);
+    const sceltoRef = useRef<string | null>(null);   // l'etichetta appena scelta: non si ri-cerca
 
     useEffect(() => {
+        if (sceltoRef.current && testo === sceltoRef.current) { setHits([]); return; }
         const v = testo.trim().replace(/[(),]/g, " ").replace(/\s+/g, " ");
         if (v.length < 3) { setHits([]); return; }
         let vivo = true;
@@ -58,7 +65,7 @@ export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellu
 
     return (
         <div className={className}>
-            <input value={testo} onChange={(e) => setTesto(e.target.value)}
+            <input value={testo} onChange={(e) => { sceltoRef.current = null; setTesto(e.target.value); onTesto?.(e.target.value); }}
                 placeholder={placeholder}
                 className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 outline-none focus:border-indigo-500/50 transition-colors" />
             {testo.trim().length >= 3 && (
@@ -66,7 +73,12 @@ export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellu
                     <div className="mt-1.5 rounded-xl border border-white/10 overflow-hidden bg-[#12141f]">
                         {hits.map((c) => (
                             <button key={c.id} type="button"
-                                onClick={() => { onScelto(c); setTesto(""); setHits([]); }}
+                                onClick={() => {
+                                    onScelto(c);
+                                    if (tieniScelto) { const et = etichettaCliente(c); sceltoRef.current = et; setTesto(et); onTesto?.(et); }
+                                    else setTesto("");
+                                    setHits([]);
+                                }}
                                 className="block w-full text-left px-3.5 py-2.5 border-b border-white/5 last:border-0 hover:bg-white/[0.06] transition-colors">
                                 <span className="text-sm font-semibold text-slate-100">{etichettaCliente(c)}</span>
                                 <span className="text-xs text-slate-500 ml-2">{[c.cf_piva, c.cellulare, c.telefono_fisso ? `fisso ${c.telefono_fisso}` : null].filter(Boolean).join(" · ")}</span>
