@@ -46,7 +46,7 @@ function toIsoMs(v: unknown): string | null {
 }
 
 async function trovaIstanza(instanceName: string) {
-    const { data } = await supabase.from("wa_instances").select("id, owner_user_id").eq("instance_name", instanceName).maybeSingle();
+    const { data } = await supabase.from("wa_instances").select("id, owner_user_id, status").eq("instance_name", instanceName).maybeSingle();
     return data;
 }
 
@@ -122,9 +122,39 @@ export async function POST(request: Request) {
         // ── aggiornamento stato connessione / QR ──
         if (event.includes("connection.update") && inst) {
             const state = data?.state || data?.connection || null;
-            const nuovo = state === "open" ? "connessa" : state === "close" ? "disconnessa" : "qr";
-            await supabase.from("wa_instances").update({ status: nuovo }).eq("id", inst.id);
-            return NextResponse.json({ ok: true, event, state });
+            // ⚠️ NON OGNI «close» È UNA DISCONNESSIONE (Luca 27/08, numero di
+            // Claudia: «appena dopo che inquadra il QR e fa la connessione, gli
+            // salta tra il connesso e il non collegato»).
+            //
+            // Subito dopo l'accoppiamento WhatsApp CHIUDE il socket e lo
+            // riapre: è la procedura normale (codice 515, «restart required»).
+            // Scrivendo «disconnessa» a ogni close, il pannello faceva
+            // avanti-indietro sotto gli occhi di chi stava collegando il
+            // numero — e se l'ultimo «open» si perdeva per strada, restava
+            // fermo su «qr» col numero vuoto, che è come l'abbiamo trovato.
+            //
+            // Quindi: solo un'USCITA VERA (sessione chiusa dal telefono o
+            // credenziali rifiutate) declassa; il resto lo conferma il prossimo
+            // «open», o il tasto Verifica del pannello, che chiede la verità a
+            // Evolution.
+            const codice = Number(
+                data?.statusCode ?? data?.lastDisconnect?.error?.output?.statusCode
+                ?? data?.lastDisconnect?.statusCode ?? 0);
+            const motivo = String(data?.reason || data?.lastDisconnect?.error?.message || "");
+            let nuovo: string | null = null;
+            if (state === "open") {
+                nuovo = "connessa";
+            } else if (state === "close") {
+                const uscitaVera = [401, 403, 440].includes(codice) || /logged.?out|unauthorized/i.test(motivo);
+                nuovo = uscitaVera ? "disconnessa" : null;
+            } else if (inst.status !== "connessa") {
+                // «connecting» e «qr» non devono MAI declassare una connessa
+                nuovo = "qr";
+            }
+            if (nuovo && nuovo !== inst.status) {
+                await supabase.from("wa_instances").update({ status: nuovo }).eq("id", inst.id);
+            }
+            return NextResponse.json({ ok: true, event, state, codice, applicato: nuovo });
         }
 
         // ── nuovo messaggio ──

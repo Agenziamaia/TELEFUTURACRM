@@ -102,6 +102,25 @@ export function WhatsAppAdminView() {
         // BACKFILL numeri all'apertura (Luca 25/08 notte: «in arrivo…» ovunque):
         // il server chiede a Evolution l'ownerJid di ogni istanza → wa_number
         api({ action: "refresh-numbers" }).then(() => carica()).catch(() => {});
+        // AUTO-VERIFICA dei numeri NON connessi (Luca 27/08): un numero può
+        // restare fermo su «qr» perché l'ultimo «open» non è arrivato — e
+        // nessuno lo saprebbe mai finché qualcuno non preme Verifica a mano.
+        // All'apertura del pannello lo chiediamo a Evolution, solo per quelli
+        // che risultano non collegati: i connessi non si toccano.
+        (async () => {
+            const { data } = await supabase.from("wa_instances").select("id, instance_name, status").neq("status", "connessa");
+            for (const i of (data ?? []) as { id: string; instance_name: string; status: string }[]) {
+                try {
+                    const res = await api({ action: "state", instanceName: i.instance_name });
+                    // «state» promuove da solo open→connessa; qui resta da
+                    // sistemare il caso opposto, che la action non tocca
+                    if (res?.state && res.state !== "open" && i.status === "connessa") {
+                        await supabase.from("wa_instances").update({ status: "disconnessa" }).eq("id", i.id);
+                    }
+                } catch { /* il numero resta com'è: lo dirà il prossimo giro */ }
+            }
+            carica();
+        })();
         const t = setInterval(carica, 5000);
         supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name")
             .then(({ data }) => setUtenti((data ?? []) as Utente[]));
