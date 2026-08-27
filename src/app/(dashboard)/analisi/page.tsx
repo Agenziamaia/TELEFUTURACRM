@@ -602,9 +602,19 @@ function AnalisiInner() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2 justify-end">
                         <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
-                            {[["mese", "Mese"], ["range", "Periodo"]].map(([t, l]) => (
-                                <button key={t} onClick={() => setTipoP(t)} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", tipoP === t ? "bg-indigo-500/80 text-white shadow" : "text-slate-400 hover:text-white")}>{l}</button>
-                            ))}
+                            {(() => {
+                                // «Oggi» è un TASTO RAPIDO (Luca 27/08): periodo secco
+                                // di un giorno — la produzione di oggi in un click
+                                const èOggiSecco = tipoP === "range" && range.da === oggiISO() && range.a === oggiISO();
+                                const voci = [
+                                    { id: "mese", label: "Mese", attivo: tipoP === "mese", vai: () => setTipoP("mese") },
+                                    { id: "range", label: "Periodo", attivo: tipoP === "range" && !èOggiSecco, vai: () => setTipoP("range") },
+                                    { id: "oggi", label: "Oggi", attivo: èOggiSecco, vai: () => { setTipoP("range"); setRange({ da: oggiISO(), a: oggiISO() }); } },
+                                ];
+                                return voci.map((v) => (
+                                    <button key={v.id} onClick={v.vai} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", v.attivo ? "bg-indigo-500/80 text-white shadow" : "text-slate-400 hover:text-white")}>{v.label}</button>
+                                ));
+                            })()}
                         </div>
                         {inMese ? (
                             <div className="flex items-center gap-2">
