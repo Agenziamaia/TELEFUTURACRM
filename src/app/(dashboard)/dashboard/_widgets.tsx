@@ -2555,7 +2555,9 @@ function WidgetAgenda({ ctx, size }) {
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("date", ctx.oggiISO).order("time").limit(100),
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("status", "scheduled")
                     .gte("date", ymdLoc(da)).lt("date", ctx.oggiISO).order("date").order("time").limit(100),
-                supabase.from("calendar_tasks").select(selT).eq("status", "da_fare")
+                // ⚠️ non solo «da_fare» (27/08): con «in corso» e «problema» una
+                // task presa in mano o tornata indietro spariva dall'agenda
+                supabase.from("calendar_tasks").select(selT).in("status", ["da_fare", "in_corso", "problema"])
                     .lte("date", ctx.oggiISO).gte("date", ymdLoc(da)).order("date").order("time").limit(100),
             ]);
             if (!vivo) return;
@@ -3063,8 +3065,10 @@ function WidgetRegiaTask({ ctx, size }) {
             // poche centinaia di righe in tutto: due query larghe, filtro in JS
             const sel = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, created_by, created_by_user_id, outcome_note, esito_at, esito_visto";
             const [ap, rt] = await Promise.all([
-                supabase.from("calendar_tasks").select(sel).eq("status", "da_fare").order("date").order("time").limit(300),
-                supabase.from("calendar_tasks").select(sel).neq("status", "da_fare").eq("esito_visto", false).order("esito_at", { ascending: false, nullsFirst: false }).limit(60),
+                // aperte = tutto ciò che non è chiuso (27/08: in corso e problema
+                // sono lavoro ancora sul tavolo, non roba archiviata)
+                supabase.from("calendar_tasks").select(sel).in("status", ["da_fare", "in_corso", "problema"]).order("date").order("time").limit(300),
+                supabase.from("calendar_tasks").select(sel).not("status", "in", "(da_fare,in_corso)").eq("esito_visto", false).order("esito_at", { ascending: false, nullsFirst: false }).limit(60),
             ]);
             if (!vivo) return;
             if (ap.error || rt.error) { setErrore((ap.error || rt.error)?.message || "errore di caricamento"); setDati({ mie: [], date: [], ritorni: [] }); return; }
@@ -3121,7 +3125,12 @@ function WidgetRegiaTask({ ctx, size }) {
             <div className="flex items-start gap-2">
                 <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-bold text-emerald-200 truncate" title={t.title}>📬 {t.title || "Task"}</div>
-                    <div className="text-[10px] text-slate-400 truncate">chiusa da {t.assigned_to || t.assigned_to_store || "?"}{t.esito_at ? ` · ${fmtGiornoIT(String(t.esito_at).slice(0, 10))}` : ""}</div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                        {/* una task tornata indietro NON è «chiusa»: dirlo era la
+                            bugia più costosa del riquadro (revisore 27/08) */}
+                        {t.status === "problema" ? "⚠️ problema segnalato da " : "chiusa da "}
+                        {t.assigned_to || t.assigned_to_store || "?"}{t.esito_at ? ` · ${fmtGiornoIT(String(t.esito_at).slice(0, 10))}` : ""}
+                    </div>
                     {t.outcome_note && <div className="text-[10px] text-emerald-100/90 mt-0.5">💬 {t.outcome_note}</div>}
                 </div>
                 <button disabled={busy === `v${t.id}`} onClick={() => segnaVista(t)} title="Ho visto l'esito: archivia il ritorno"

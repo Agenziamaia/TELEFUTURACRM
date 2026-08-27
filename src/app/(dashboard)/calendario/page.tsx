@@ -4,12 +4,13 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete, civicoMancante, sembraVia } from "@/components/IndirizzoAutocomplete";
-import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video, AlertTriangle } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { numeroNazionale } from "@/lib/telefono";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
@@ -413,6 +414,11 @@ export default function Calendario() {
     // — stessa convenzione FiltroMulti (null = tutto / array = scelti)
     const [arrFiltroNegozi, setArrFiltroNegozi] = useState<string[] | null>(null);
     const [arrFiltroPersone, setArrFiltroPersone] = useState<string[] | null>(null);
+    /* CARICAMENTO ONESTO (revisore UX 27/08): finché i dati non ci sono, la
+       pagina diceva con sicurezza «Niente di urgente» e «Nessun impegno» — e
+       un errore di rete si presentava come un calendario vuoto e credibile. */
+    const [datiPronti, setDatiPronti] = useState(false);
+    const [erroreCarico, setErroreCarico] = useState<string | null>(null);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
 
     // Deep link dai tag in chat: /calendario?appuntamento=<id> apre l'appuntamento
@@ -554,10 +560,17 @@ export default function Calendario() {
         let cancelled = false;
         (async () => {
             const [apptRes, taskRes, blockRes, meetRes, storesRes, operatorsRes, brandsRes] = await Promise.all([
-                supabase.from("appointments").select("*").order("date"),
-                supabase.from("calendar_tasks").select("*").order("date"),
+                // ⚠️ caricaTutte, non select diretta (revisore 27/08): il
+                // server tronca a 1000 righe IN SILENZIO, e con l'ordine per
+                // data crescente i primi a sparire sarebbero stati gli
+                // appuntamenti FUTURI — cioè gli unici che servono davvero.
+                caricaTutte((da, a) => supabase.from("appointments").select("*").order("date").order("id").range(da, a))
+                    .then((r) => ({ data: r.data, error: r.error })),
+                caricaTutte((da, a) => supabase.from("calendar_tasks").select("*").order("date").order("id").range(da, a))
+                    .then((r) => ({ data: r.data, error: r.error })),
                 supabase.from("agenda_blocks").select("*"),
-                supabase.from("calendar_meetings").select("*").order("date"),
+                caricaTutte((da, a) => supabase.from("calendar_meetings").select("*").order("date").order("id").range(da, a))
+                    .then((r) => ({ data: r.data, error: r.error })),
                 // Negozi e collaboratori REALI (le tabelle calendar_stores/calendar_operators
                 // contenevano ancora dati di esempio: Marco Bianchi, "Roma Centro (RM001)", ecc.)
                 supabase.from("stores").select("id, name").order("name"),
@@ -565,6 +578,8 @@ export default function Calendario() {
                 supabase.from("user_brands").select("user_id, brand"),
             ]);
             if (cancelled) return;
+            const primoErrore = apptRes.error || taskRes.error || meetRes.error;
+            setErroreCarico(primoErrore ? String(primoErrore.message || primoErrore) : null);
             if (!apptRes.error) setAppointments((apptRes.data ?? []).map(mapAppointmentRow));
             if (!taskRes.error) setTasks((taskRes.data ?? []).map(mapTaskRow));
             if (!blockRes.error) setAgendaBlocks((blockRes.data ?? []).map(mapAgendaBlockRow));
@@ -583,6 +598,7 @@ export default function Calendario() {
                     brands: bmap.get(String(r.id)) ?? [],
                 })));
             }
+            setDatiPronti(true);
         })();
         return () => { cancelled = true; };
     }, []);
@@ -832,6 +848,19 @@ export default function Calendario() {
         return `${a.getDate()}${sameM ? "" : " " + MONTHS_IT[a.getMonth()]} – ${b.getDate()} ${MONTHS_IT[b.getMonth()]} ${b.getFullYear()}`;
     })();
     // selezione giorno per data (usata dalla vista settimanale e dal pannello)
+    /** VAI DAVVERO A QUEL GIORNO (revisori 27/08): `selectDate` cambiava solo
+     *  il pannello di destra, quindi i richiami della barra priorità, i
+     *  risultati di ricerca e i link dalla chat sembravano rotti — la griglia
+     *  restava dov'era. Questa porta anche la vista. */
+    const vaiAlGiorno = (dateStr: string) => {
+        const d = new Date(dateStr + "T00:00:00");
+        if (isNaN(d.getTime())) return;
+        setView((v) => ({ ...v, viewYear: d.getFullYear(), viewMonth: d.getMonth() }));
+        setWeekStart(mondayOf(dateStr));
+        setDayDate(dateStr);
+        selectDate(dateStr);
+    };
+
     const selectDate = (dateStr: string) => {
         setSelectedDate(dateStr);
         setShowCreateModal(false);
@@ -884,7 +913,11 @@ export default function Calendario() {
     // visibilità PURA (senza i filtri): serve anche a costruire le opzioni
     // delle tendine, che altrimenti si auto-svuoterebbero filtrando
     const visibileBase = (a: (typeof appointments)[number]) => {
-        if (!catOn(a.type)) return false;
+        // ⚠️ NIENTE catOn QUI (revisore UX 27/08): la categoria è un filtro di
+        // schermo, non un perimetro. Mettendola qui, spegnere «Inbound»
+        // svuotava la platea → la tendina dei punti vendita SPARIVA mentre il
+        // filtro restava attivo e continuava a nascondere roba, senza che
+        // nessuno potesse più toglierlo.
         if (isCallCenter) return true;
         // Chi l'ha creato lo vede (il caller vede i SUOI appuntamenti fissati).
         if (a.createdBy && a.createdBy === user?.name) return true;
@@ -900,6 +933,7 @@ export default function Calendario() {
     };
     const visibleAppointments = appointments.filter(a => {
         if (!visibileBase(a)) return false;
+        if (!catOn(a.type)) return false;          // il filtro di schermo, qui
         if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
         // filtri multi (null = tutto): possono essere valorizzati solo da chi
         // vede le tendine. sameStore: i gemelli ("Magliana" / "Magliana W3") contano
@@ -934,7 +968,13 @@ export default function Calendario() {
     // altri dalla platea REALE dei visibili (+ i propri negozi, coi gemelli)
     const negoziOpzioni = isCallCenter ? storeNames : Array.from(new Set([...negoziMiei, ...mieiNegozi])).sort();
     const consulentiOpzioni = isCallCenter ? agents : agentiMiei;
-    const fissatoDaOpzioni = Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort() as string[];
+    // ⚠️ dalla platea VISIBILE, non da tutti gli appuntamenti (revisore
+    // 27/08): altrimenti un capo negozio vedeva l'elenco di tutti i caller
+    // aziendali e sceglierne uno gli dava un calendario vuoto
+    const fissatoDaOpzioni = useMemo(() =>
+        Array.from(new Set(appointments.filter(visibileBase).map((a) => a.createdBy).filter(Boolean))).sort() as string[],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [appointments, mieiNegozi.join("|"), user?.name, vistaCal, ccStaff.length]);
 
     // ORARIO → MINUTI ("9:30"→570). Il vecchio ordinamento era ALFABETICO
     // sulle stringhe: "7:00" finiva dopo "15:00" (Luca 29/07). Senza orario
@@ -1316,68 +1356,92 @@ export default function Calendario() {
        Se non c'è niente di urgente, la barra lo dice — ed è un'informazione
        anche quella. */
     const prioritaOggi = useMemo(() => {
+        /* ⚠️ LE PRIORITÀ NON SI FILTRANO (revisori 27/08). Prima leggevano
+           `visibleAppointments` e `tasksArretrate`, che passano dai filtri di
+           schermo: bastava spegnere una categoria o scegliere un negozio e la
+           barra dichiarava «niente di urgente» mentre il debito era lì. Qui si
+           parte dal PERIMETRO (chi ha diritto di vedere cosa) e basta. */
+        const apptPerimetro = appointments.filter(visibileBase);
+        const taskPerimetro = tasks.filter((t) => {
+            if (t.assignedToStore) {
+                const creataDaMe = (t.createdByUserId && t.createdByUserId === user?.id) || t.createdBy === user?.name;
+                return creataDaMe || (isTaskTutte || vistaTask === "task_negozio") && mieiNegozi.some((m) => sameStore(t.assignedToStore, m));
+            }
+            if (isTaskTutte) return true;
+            return t.assignedTo === user?.name || t.createdBy === user?.name;
+        });
         const oggi = todayStr;
         const ora = new Date().toTimeString().slice(0, 5);
         const mio = String(user?.name || "").trim().toLowerCase();
         const out: { id: string; icona: string; testo: string; tono: "rosso" | "ambra" | "blu" | "verde"; peso: number; vai?: () => void }[] = [];
 
         // 1. riunioni di oggi — la cosa che non si può perdere
-        for (const m of meetings.filter((x) => x.date === oggi)) {
+        // riunioni: quelle che mi riguardano davvero — invitato o creatore.
+        // Chi vede tutta la rete le vede tutte, come nel resto della pagina.
+        const mieRiunioni = meetings.filter((m) => m.date === oggi && (isTaskTutte
+            || String(m.createdBy || "").trim().toLowerCase() === mio
+            || (m.recipients || []).some((r) => r.id === user?.id || String(r.name || "").trim().toLowerCase() === mio)));
+        for (const m of mieRiunioni) {
             const passata = m.endTime && m.endTime < ora;
             if (passata) continue;
             out.push({
                 id: `m-${m.id}`, icona: "👥", tono: "blu", peso: 100,
                 testo: `Riunione ${m.startTime} · ${m.title}${m.location ? ` · ${m.location}` : m.type === "video_call" ? " · in video" : ""}`,
-                vai: () => { selectDate(oggi); setSelectedMeeting(m); setShowMeetingDetailModal(true); },
+                vai: () => { vaiAlGiorno(oggi); setSelectedMeeting(m); setShowMeetingDetailModal(true); },
             });
         }
 
         // 2. task tornate indietro con un problema (le ho date io)
-        const tornate = tasks.filter((t) => t.status === "problema"
+        const tornate = taskPerimetro.filter((t) => t.status === "problema"
             && ((t.createdByUserId && t.createdByUserId === user?.id) || String(t.createdBy || "").trim().toLowerCase() === mio));
         if (tornate.length) out.push({
             id: "tornate", icona: "⚠️", tono: "rosso", peso: 95,
             testo: `${tornate.length} ${tornate.length === 1 ? "task che hai assegnato è tornata" : "task che hai assegnato sono tornate"} con un problema`,
-            vai: () => { setTaskScope("da_me"); setTaskOutcomeFilter("problema" as TaskStatus); },
+            // porta anche al giorno della prima: le task tornate hanno la loro
+            // data, che può essere di un altro mese — senza questo si finiva
+            // su un calendario vuoto con due filtri accesi
+            vai: () => { setTaskScope("da_me"); setTaskOutcomeFilter("problema" as TaskStatus); if (tornate[0]) vaiAlGiorno(tornate[0].date); },
         });
 
         // 3. task arretrate: scadute e ancora aperte
-        if (tasksArretrate.length) out.push({
+        const arretratePerimetro = taskPerimetro.filter((t) => t.date < oggi && !CHIUSE_TASK.includes(t.status));
+        if (arretratePerimetro.length) out.push({
             id: "arretrate", icona: "⏰", tono: "rosso", peso: 90,
-            testo: `${tasksArretrate.length} task arretrate da chiudere`,
+            testo: `${arretratePerimetro.length} task arretrate da chiudere`,
             vai: () => setShowArretrate(true),
         });
 
         // 4. appuntamenti di oggi ancora senza esito
-        const daEsitare = visibleAppointments.filter((a) => a.date === oggi && a.status === "scheduled");
+        const daEsitare = apptPerimetro.filter((a) => a.date === oggi && a.status === "scheduled");
         if (daEsitare.length) out.push({
             id: "esitare", icona: "📞", tono: "ambra", peso: 80,
             testo: `${daEsitare.length} ${daEsitare.length === 1 ? "appuntamento di oggi" : "appuntamenti di oggi"} ancora da esitare`,
-            vai: () => { selectDate(oggi); setAppointmentOutcomeFilter("scheduled" as AppointmentStatus); },
+            vai: () => { vaiAlGiorno(oggi); setAppointmentOutcomeFilter("scheduled" as AppointmentStatus); },
         });
 
         // 5. le mie task di oggi
-        const mieOggi = tasks.filter((t) => t.date === oggi && t.status !== "fatta" && t.status !== "abbandonata"
+        const mieOggi = taskPerimetro.filter((t) => t.date === oggi && t.status !== "fatta" && t.status !== "abbandonata"
             && !t.assignedToStore && String(t.assignedTo || "").trim().toLowerCase() === mio);
         if (mieOggi.length) out.push({
             id: "mie", icona: "✅", tono: "verde", peso: 70,
             testo: `${mieOggi.length} ${mieOggi.length === 1 ? "task tua per oggi" : "task tue per oggi"}`,
-            vai: () => { setTaskScope("a_me"); selectDate(oggi); },
+            vai: () => { setTaskScope("a_me"); vaiAlGiorno(oggi); },
         });
 
         // 6. appuntamenti di IERI rimasti senza esito: la coda che nessuno guarda
         const ieriD = new Date(today); ieriD.setDate(ieriD.getDate() - 1);
         const ieri = `${ieriD.getFullYear()}-${String(ieriD.getMonth() + 1).padStart(2, "0")}-${String(ieriD.getDate()).padStart(2, "0")}`;
-        const ieriAperti = visibleAppointments.filter((a) => a.date === ieri && a.status === "scheduled");
+        const ieriAperti = apptPerimetro.filter((a) => a.date === ieri && a.status === "scheduled");
         if (ieriAperti.length) out.push({
             id: "ieri", icona: "🕗", tono: "ambra", peso: 60,
             testo: `${ieriAperti.length} di ieri ${ieriAperti.length === 1 ? "è rimasto" : "sono rimasti"} senza esito`,
-            vai: () => { selectDate(ieri); setAppointmentOutcomeFilter("scheduled" as AppointmentStatus); },
+            vai: () => { vaiAlGiorno(ieri); setAppointmentOutcomeFilter("scheduled" as AppointmentStatus); },
         });
 
         return out.sort((a, b) => b.peso - a.peso);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [meetings, tasks, visibleAppointments, tasksArretrate, user?.id, user?.name, todayStr]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [meetings, tasks, appointments, user?.id, user?.name, todayStr, isTaskTutte, vistaTask, mieiNegozi.join("|")]);
 
     const arretrateInColonna = isTaskTutte
         ? tasksArretrate.filter(t => t.assignedTo === user?.name || t.createdBy === user?.name)
@@ -1631,12 +1695,16 @@ export default function Calendario() {
                         <span className="text-lg leading-none">🎯</span>
                         <span className="text-[11px] font-black uppercase tracking-widest text-slate-300 hidden sm:block">Oggi conta</span>
                     </div>
-                    {prioritaOggi.length === 0 ? (
+                    {!datiPronti ? (
+                        <div className="flex-1 px-4 py-3 text-xs text-slate-500 flex items-center animate-pulse">
+                            Leggo la giornata…
+                        </div>
+                    ) : prioritaOggi.length === 0 ? (
                         <div className="flex-1 px-4 py-3 text-xs text-slate-500 flex items-center">
                             Niente di urgente: nessuna riunione, nessuna task scaduta, nessun appuntamento senza esito.
                         </div>
                     ) : (
-                        <div className="flex-1 min-w-0 px-3 py-2.5 flex gap-2 overflow-x-auto cal-priorita">
+                        <div className="flex-1 min-w-0 px-3 py-2.5 flex gap-2 overflow-x-auto custom-scrollbar">
                             {prioritaOggi.map((v) => (
                                 <button key={v.id} type="button" onClick={v.vai}
                                     className={cn(
@@ -1698,15 +1766,31 @@ export default function Calendario() {
                             <option key={s.chiave} value={s.chiave}>{s.etichetta}</option>
                         ))}
                     </select>
-                    {(searchQuery || searchDateFrom || searchDateTo || appointmentOutcomeFilter || taskOutcomeFilter) && (
-                        <button
-                            type="button"
-                            onClick={() => { setSearchQuery(""); setSearchDateFrom(""); setSearchDateTo(""); setAppointmentOutcomeFilter("" as AppointmentStatus | ""); setTaskOutcomeFilter("" as TaskStatus | ""); }}
-                            className="h-9 text-xs px-3 rounded-lg text-slate-400 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
-                        >
-                            ✕ Pulisci
-                        </button>
-                    )}
+                    {/* AZZERA TUTTO, davvero (revisore UX 27/08): prima c'erano due
+                        pulsanti parziali con nomi diversi e cinque filtri su nove
+                        restavano accesi — compresi quelli la cui tendina nel
+                        frattempo era sparita dallo schermo. */}
+                    {(() => {
+                        const attivi = [searchQuery, searchDateFrom, searchDateTo, appointmentOutcomeFilter, taskOutcomeFilter].filter(Boolean).length
+                            + (filterStores !== null ? 1 : 0) + (filterAgents !== null ? 1 : 0) + (filterCreatedBys !== null ? 1 : 0)
+                            + (catFilter.length ? 1 : 0) + (taskScope !== "tutte" ? 1 : 0);
+                        if (!attivi) return null;
+                        return (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchQuery(""); setSearchDateFrom(""); setSearchDateTo("");
+                                    setAppointmentOutcomeFilter("" as AppointmentStatus | ""); setTaskOutcomeFilter("" as TaskStatus | "");
+                                    setFilterStores(null); setFilterAgents(null); setFilterCreatedBys(null);
+                                    setCatFilter([]); setTaskScope("tutte");
+                                }}
+                                title="Rimette tutto come all'apertura: ricerca, periodo, esiti, negozi, consulenti, operatore, categorie e ambito task"
+                                className="h-9 text-xs font-semibold px-3 rounded-lg text-amber-200 border border-amber-400/40 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
+                            >
+                                ✕ Azzera tutto ({attivi})
+                            </button>
+                        );
+                    })()}
                 </div>
                 {/* riga 1-bis: DI CHI SONO LE TASK (Luca 27/08) — tre vie, e si
                     legge senza spiegazioni: tutte, quelle che devo fare io,
@@ -1819,7 +1903,12 @@ export default function Calendario() {
                         <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca ({searchResults.length})</h4>
                         <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
                             {searchResults.map(appt => (
-                                <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors gap-4">
+                                // cliccabile (revisore UX 27/08): trovavo il cliente e
+                                // non potevo aprirlo — il risultato era un vicolo cieco
+                                <div key={appt.id} role="button" tabIndex={0}
+                                    onClick={() => { vaiAlGiorno(appt.date); setSelectedAppointment(appt); setShowModal(true); }}
+                                    onKeyDown={(e) => { if (e.key === "Enter") { vaiAlGiorno(appt.date); setSelectedAppointment(appt); setShowModal(true); } }}
+                                    className="cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-400/30 transition-colors gap-4">
                                     <div className="flex gap-4 items-center">
                                         <div className="flex flex-col items-center justify-center bg-indigo-500/10 text-indigo-400 w-12 h-12 rounded-lg shrink-0">
                                             <span className="text-lg font-bold leading-none">{appt.date.split('-')[2]}</span>
@@ -1842,7 +1931,9 @@ export default function Calendario() {
                                                     appt.type === "richiamo" ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
                                                         "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                         )}>
-                                            {appt.type === "richiamo" ? "richiamo ☎" : appt.type}
+                                            {/* prima usciva la chiave grezza: «incoming», «self_generated» */}
+                                            {appt.type === "incoming" ? "Inbound" : appt.type === "outgoing" ? "Outbound"
+                                                : appt.type === "self_generated" ? "Auto-generato" : "Richiamo ☎"}
                                         </span>
                                         <span className={cn(
                                             "text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border",
@@ -2054,9 +2145,16 @@ export default function Calendario() {
                                             {dayAppts.length > 3 && (
                                                 <span className="text-[9px] text-slate-400 pr-0.5">+{dayAppts.length - 3}</span>
                                             )}
-                                            {dayTasks.length > 0 && (
-                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5" />
-                                            )}
+                                            {/* un pallino per STATO, non uno verde per tutto
+                                                (revisore 27/08): nella vista di default una task
+                                                chiusa e una in ritardo erano identiche. Si mostra
+                                                lo stato più urgente presente quel giorno. */}
+                                            {dayTasks.length > 0 && (() => {
+                                                const PRIO: string[] = ["problema", "da_fare", "in_corso", "sospesa", "fatta", "abbandonata"];
+                                                const peggiore = PRIO.find((st) => dayTasks.some((t) => t.status === st)) || "da_fare";
+                                                return <div className={cn("w-1.5 h-1.5 rounded-full ml-0.5", COLORE_TASK[peggiore].banda)}
+                                                    title={`${dayTasks.length} task · ${COLORE_TASK[peggiore].etichetta.toLowerCase()}`} />;
+                                            })()}
                                             {dayMeetings.length > 0 && (
                                                 <div className="w-1.5 h-1.5 rounded-full bg-sky-400 ml-0.5" />
                                             )}
@@ -2422,21 +2520,23 @@ export default function Calendario() {
 
                             {dateTasks.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center text-slate-500 gap-2 mb-4">
-                                    <p className="text-sm">Nessuna task per oggi</p>
+                                    <p className="text-sm">Nessuna task in questo giorno</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3 overflow-y-auto custom-scrollbar pr-1 mb-4 max-h-64">
                                     {dateTasks.map(t => (
                                     <div key={t.id} className={cn(
-                                        "w-full text-left p-3 rounded-xl border transition-all",
-                                        t.status === "fatta" ? "bg-emerald-500/5 border-emerald-500/10 opacity-70" :
-                                            t.status === "sospesa" ? "bg-amber-500/5 border-amber-500/10" :
-                                                t.status === "abbandonata" ? "bg-rose-500/5 border-rose-500/10 opacity-80" :
-                                                    "bg-white/[0.03] border-white/8"
+                                        // stessi colori della griglia (revisore 27/08): qui
+                                        // «in corso» e «problema» finivano nel ramo neutro,
+                                        // e il pallino era verde per tutti
+                                        "w-full text-left p-3 rounded-xl border transition-all relative overflow-hidden pl-4",
+                                        coloreTask(t).bordo, coloreTask(t).fondo,
+                                        t.status === "fatta" && "opacity-70",
+                                        t.status === "abbandonata" && "opacity-80",
                                     )}>
+                                            <span className={cn("absolute left-0 top-0 bottom-0 w-1", coloreTask(t).banda)} />
                                             <div className="flex justify-between items-start mb-2 gap-2">
                                                 <div className="flex items-start gap-2 max-w-[70%]">
-                                                    <div className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                                                     <button
                                                         onClick={() => setTaskDettaglio(t)}
                                                         title="Apri la task (dettaglio e modifica)"
@@ -2459,22 +2559,35 @@ export default function Calendario() {
                                                 <button
                                                     onClick={async (e) => {
                                                         e.stopPropagation();
-                                                        const order = esitiPer("task").map((x) => x.chiave) as TaskStatus[];
-                                                        const idx = order.indexOf(t.status);
-                                                        const nextStatus = order[(idx + 1) % order.length];
+                                                        // ⚠️ IL GIRO VELOCE RESTA CORTO (revisore 27/08): il
+                                                        // gesto più usato del calendario è «un clic = fatta».
+                                                        // Prendendo l'ordine dagli esiti amministrabili, con
+                                                        // «in corso» e «problema» in mezzo, il clic non
+                                                        // chiudeva più niente. Quelli due si scelgono dal
+                                                        // dettaglio, dove c'è anche la nota da scrivere.
+                                                        const CICLO: TaskStatus[] = ["da_fare", "fatta", "sospesa", "abbandonata"];
+                                                        const idx = CICLO.indexOf(t.status);
+                                                        // da uno stato fuori ciclo (in corso / problema) si chiude
+                                                        const nextStatus = idx < 0 ? "fatta" : CICLO[(idx + 1) % CICLO.length];
                                                         const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
-                                                        await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false, outcome_note: null } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                        const { error } = await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false, outcome_note: null } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                        // niente bugie: se il database rifiuta, lo schermo non cambia
+                                                        if (error) { alert("Non sono riuscito a cambiare lo stato: " + error.message); return; }
                                                         setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus } : task));
                                                     }}
                                                     className={cn(
                                                         "text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-full border transition-colors flex items-center gap-1 shrink-0",
+                                                        // ogni stato il suo colore: «in corso» e «problema»
+                                                        // finivano nel ramo rosso, identici ad «abbandonata»
                                                         t.status === "da_fare" ? "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10" :
-                                                            t.status === "fatta" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20" :
-                                                                t.status === "sospesa" ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20" :
-                                                                    "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"
+                                                            t.status === "in_corso" ? "bg-blue-500/10 text-blue-300 border-blue-400/25 hover:bg-blue-500/20" :
+                                                                t.status === "fatta" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20" :
+                                                                    t.status === "sospesa" ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20" :
+                                                                        t.status === "problema" ? "bg-orange-500/15 text-orange-200 border-orange-400/40 hover:bg-orange-500/25" :
+                                                                            "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"
                                                     )}
                                                 >
-                                                    {t.status === "da_fare" ? <Circle className="w-3 h-3" /> : t.status === "fatta" ? <CheckCircle2 className="w-3 h-3" /> : t.status === "sospesa" ? <PauseCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                                    {t.status === "da_fare" ? <Circle className="w-3 h-3" /> : t.status === "in_corso" ? <Clock className="w-3 h-3" /> : t.status === "fatta" ? <CheckCircle2 className="w-3 h-3" /> : t.status === "sospesa" ? <PauseCircle className="w-3 h-3" /> : t.status === "problema" ? <AlertTriangle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                                                     {esitoLabel(t.status, "task")}
                                                 </button>
                                             </div>
@@ -3620,7 +3733,10 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
        assegna (e chi esegue non la può cambiare), `outcomeNote` è la
        risposta di chi esegue. Il ritorno al mittente non è un campo nuovo:
        è `esito_visto = false`, che già accende il richiamo a chi l'ha data. */
-    const [rispostaEsito, setRispostaEsito] = useState(t.outcomeNote || "");
+    // la casella parte VUOTA per chi ha assegnato: la nota dell'altro si legge
+    // sopra, e precaricarla qui significava riscriverci sopra per sbaglio
+    const [rispostaEsito, setRispostaEsito] = useState(
+        String(t.createdBy || "").trim().toLowerCase() === String(mioNome || "").trim().toLowerCase() ? "" : (t.outcomeNote || ""));
     const nomeNorm = (x?: string) => String(x || "").trim().toLowerCase();
     const soLaMia = nomeNorm(t.createdBy) === nomeNorm(mioNome);
     const laDevoFareIo = !t.assignedToStore && nomeNorm(t.assignedTo) === nomeNorm(mioNome);
@@ -3637,12 +3753,19 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
         // la risposta di chi esegue si salva sempre: è la traccia del giro
         if (rispostaEsito.trim() !== String(t.outcomeNote || "").trim()) {
             patch.outcome_note = rispostaEsito.trim() || null;
+            // e se a scriverla è chi ESEGUE, chi ha assegnato deve rivederla
+            // accesa anche se lo stato non cambia (revisore 27/08: il giro di
+            // ritorno funzionava una volta sola)
+            if (!soLaMia) { patch.esito_visto = false; patch.esito_at = new Date().toISOString(); }
         }
         // il GIRO DEGLI ESITI passa anche da qui (revisore 27/08: il modale
         // era il terzo punto di cambio stato, dimenticato): chiusa da un
         // altro → ritorno al creatore; riaperta → esito azzerato
         if (stato !== t.status) {
-            if (stato === "da_fare") { patch.esito_at = null; patch.esito_visto = false; patch.outcome_note = null; }
+            // ⚠️ la nota di chi ha eseguito NON si cancella riaprendo la task
+            // (revisore 27/08): era l'unica traccia del perché era tornata
+            // indietro, e spariva proprio quando la si rilanciava
+            if (stato === "da_fare") { patch.esito_at = null; patch.esito_visto = false; }
             else {
                 patch.esito_at = new Date().toISOString();
                 patch.esito_visto = String(t.createdBy || "").trim().toLowerCase() === String(mioNome || "").trim().toLowerCase();
