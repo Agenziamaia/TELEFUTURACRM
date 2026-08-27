@@ -954,7 +954,6 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             )}
             {/* ① OPERATORE — tessere logo, come nel caller */}
             <div className="space-y-1.5">
-                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">① Operatore</div>
                 <div className="flex gap-2">
                     {tuttiBrand.map((d) => {
                         const m = DIR_BRANDS.find((b) => b.id === d.id)!;
@@ -963,13 +962,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         const attivo = brandSel === d.id;
                         return (
                             <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); }} title={m.label} aria-label={m.label}
-                                className={cn("flex-1 min-w-0 h-12 flex items-center justify-center rounded-xl border px-2 transition-all",
+                                className={cn("flex-1 min-w-0 h-14 flex items-center justify-center rounded-xl border px-2 transition-all",
                                     attivo
                                         ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
                                         : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
                                 {logo ? (
                                     <img src={logo} alt={m.label} className="block object-contain max-w-full"
-                                        style={{ maxHeight: 30, transform: scala !== 1 ? `scale(${Math.min(scala, 1.3)})` : undefined }} />
+                                        style={{ maxHeight: 38, transform: scala !== 1 ? `scale(${Math.min(scala, 1.3)})` : undefined }} />
                                 ) : <span className="text-xs font-bold text-slate-200">{m.label}</span>}
                             </button>
                         );
@@ -986,21 +985,21 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             ) : (<>
                 {/* ② TIPO CLIENTE — preselezione anti-errore */}
                 <div className="space-y-1.5">
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">② Cliente</div>
+                    {/* solo le ICONE (Luca 27/08: «più figo, più spazio al resto») */}
                     <div className="flex gap-2">
-                        {([["consumer", "👤 Consumer"], ["business", "💼 Business"]] as const).map(([v, l]) => (
-                            <button key={v} onClick={() => { setTipoCli(v); setPista(""); }}
-                                className={cn("flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
-                                    tipoCli === v ? "text-white border-transparent scale-[1.02]" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
-                                style={tipoCli === v ? { background: bMeta?.color || "#38bdf8", boxShadow: `0 0 12px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 50%, transparent)` } : undefined}>
-                                {l}
+                        {([["consumer", "👤", "Consumer"], ["business", "💼", "Business"]] as const).map(([v, icona, titolo]) => (
+                            <button key={v} onClick={() => { setTipoCli(v); setPista(""); }} title={titolo} aria-label={titolo}
+                                className={cn("flex-1 h-11 flex items-center justify-center rounded-xl text-2xl border transition-all",
+                                    tipoCli === v ? "border-transparent scale-[1.04]" : "bg-white/[0.04] border-white/10 hover:bg-white/10 grayscale-[40%] opacity-80 hover:opacity-100 hover:grayscale-0")}
+                                style={tipoCli === v ? { background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)`, boxShadow: `0 0 14px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 55%, transparent)`, border: `1px solid color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 70%, transparent)` } : undefined}>
+                                {icona}
                             </button>
                         ))}
                     </div>
                 </div>
                 {/* ③ COSA STAI VENDENDO — le variabili dell'operatore */}
                 {tipoCli !== "" && <div className="space-y-1.5">
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">③ Cosa stai vendendo?</div>
+                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa stai vendendo?</div>
                     <div className="flex flex-wrap gap-1.5">
                         {pisteBussola.map((p) => (
                             <button key={p.chiave} onClick={() => setPista(p.chiave)}
