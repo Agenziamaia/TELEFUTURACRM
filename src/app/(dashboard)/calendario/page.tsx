@@ -360,6 +360,10 @@ export default function Calendario() {
     // MOD-26: il pannello ricerca dedicato non esiste più — i filtri sono unificati
     // pannello elenco TASK ARRETRATE (Luca 04/08, riporto stile Google)
     const [showArretrate, setShowArretrate] = useState(false);
+    // 📤 SOLO PER L'AMMINISTRAZIONE (Luca 27/08): un click e il calendario
+    // mostra solo le task che HO ASSEGNATO IO ad altri — per governare il giro
+    const [soloAssegnateDaMe, setSoloAssegnateDaMe] = useState(false);
+    const puoVedereAssegnate = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     // filtri del MODALE arretrate (Luca 05/08): solo per chi vede task altrui
     // — stessa convenzione FiltroMulti (null = tutto / array = scelti)
     const [arrFiltroNegozi, setArrFiltroNegozi] = useState<string[] | null>(null);
@@ -908,6 +912,11 @@ export default function Calendario() {
     //    codice storico); task_proprie = solo assegnate a lui / create da lui.
     const taskVisibile = (t: CalendarTask): boolean => {
         if (!catOn("task")) return false;
+        if (soloAssegnateDaMe) {
+            const creataDaMe = (t.createdByUserId && t.createdByUserId === user?.id) || t.createdBy === user?.name;
+            const aMe = !t.assignedToStore && t.assignedTo === user?.name;
+            if (!creataDaMe || aMe) return false;
+        }
         if (!isTaskTutte) {
             if (t.assignedToStore) {
                 // task di punto vendita: solo con ambito "negozio", su
@@ -1413,6 +1422,20 @@ export default function Calendario() {
                 <div className="flex gap-3">
                     {/* MOD-26: via il bottone "Cerca appuntamenti" — la ricerca
                         vive nei filtri unificati qui sotto */}
+                    {puoVedereAssegnate && (
+                        <button
+                            onClick={() => setSoloAssegnateDaMe(v => !v)}
+                            title="Mostra solo le task che hai assegnato tu ad altri (persone o negozi)"
+                            className={cn(
+                                "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
+                                soloAssegnateDaMe
+                                    ? "bg-violet-500/25 text-violet-200 border-violet-500/60 shadow-violet-500/20"
+                                    : "bg-violet-500/10 text-violet-300 border-violet-500/40 hover:bg-violet-500/20"
+                            )}
+                        >
+                            📤 Assegnate da me{soloAssegnateDaMe ? " ✓" : ""}
+                        </button>
+                    )}
                     {tasksArretrate.length > 0 && (
                         <button
                             onClick={() => setShowArretrate(v => !v)}
