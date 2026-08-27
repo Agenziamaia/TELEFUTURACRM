@@ -1897,7 +1897,7 @@ function TurniSection() {
     const [coperteOk, setCoperteOk] = useState<Set<string>>(new Set());
     const oggiYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
     const [dataSel, setDataSel] = useState(oggiYmd());
-    const [nuovo, setNuovo] = useState<Record<string, { persona: string; inizio: string; fine: string }>>({});
+    const [nuovo, setNuovo] = useState<Record<string, { persona: string; inizio: string; fine: string; conOrario?: boolean }>>({});
 
     const hhmm = (t: string | null | undefined, fallback: string) => (t || fallback).slice(0, 5);
 
@@ -2054,8 +2054,8 @@ function TurniSection() {
                                         </span>
                                     ))}
                                     {/* ASSENTI dalla sezione ferie/malattia: fuori dal turno da soli */}
-                                    {assentiSede.map(a => (
-                                        <span key={`${a.persona}-${a.tipo}`} title={a.tipo === "malattia" ? "In malattia (dalla sezione Malattia)" : "In ferie (dalla sezione Ferie)"}
+                                    {assentiSede.map((a, ai) => (
+                                        <span key={`${a.persona}-${a.tipo}-${ai}`} title={a.tipo === "malattia" ? "In malattia (dalla sezione Malattia)" : "In ferie (dalla sezione Ferie)"}
                                             className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold border",
                                                 a.tipo === "malattia" ? "bg-rose-500/10 text-rose-300 border-rose-500/40" : "bg-amber-500/10 text-amber-300 border-amber-500/40")}>
                                             {a.tipo === "malattia" ? "🤒" : "🏖"} {a.persona}
@@ -2084,7 +2084,7 @@ function TurniSection() {
                                             {gestisce && <button onClick={() => eliminaTurno(t)} title="Togli il turno" className="opacity-60 hover:opacity-100">✕</button>}
                                         </span>
                                     ))}
-                                    {presenti.length === 0 && assentiSede.length === 0 && manuali.length === 0 && <span className="text-xs text-slate-600 italic">Nessuno assegnato.</span>}
+                                    {presenti.length === 0 && assentiSede.length === 0 && manuali.length === 0 && esclusi.size === 0 && <span className="text-xs text-slate-600 italic">Nessuno assegnato.</span>}
                                     {/* FLAG «coperto così» (Luca 27/08): la squadra ha retto senza aggiunte */}
                                     {assentiSede.length > 0 && (
                                         okFlag ? (
@@ -2109,9 +2109,15 @@ function TurniSection() {
                                     <button onClick={() => aggiungiTurno(primo.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} title="Giornata intera" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">G</button>
                                     <button onClick={() => aggiungiTurno(primo.name, nv.persona, ap, pi || "14:00", "mattina")} disabled={!nv.persona} title={`Mattina (${ap} → ${pi || "14:00"})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">M</button>
                                     <button onClick={() => aggiungiTurno(primo.name, nv.persona, pf || "14:00", ch, "pomeriggio")} disabled={!nv.persona} title={`Pomeriggio (${pf || "14:00"} → ${ch})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">P</button>
-                                    <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
-                                    <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
-                                    <button onClick={() => aggiungiTurno(primo.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Orario personalizzato" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40">＋</button>
+                                    {/* l'ORARIO LIBERO sta dietro il 🕐 (Luca 27/08: «quegli
+                                        orari a destra a cosa servono?» — sempre visibili
+                                        erano solo rumore): si apre solo se serve */}
+                                    <button onClick={() => setNv({ conOrario: !nv.conOrario })} title="Copertura con orario personalizzato" className={cn("px-2 py-1.5 rounded-lg text-[10px] font-bold border", nv.conOrario ? "bg-violet-500/20 border-violet-500/50 text-violet-200" : "bg-violet-500/15 border-violet-500/40 text-violet-300")}>🕐</button>
+                                    {nv.conOrario && (<>
+                                        <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
+                                        <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
+                                        <button onClick={() => aggiungiTurno(primo.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Aggiungi con questo orario" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40">＋</button>
+                                    </>)}
                                 </div>
                             )}
                         </div>

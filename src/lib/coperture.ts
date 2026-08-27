@@ -45,7 +45,7 @@ export async function assenzeDelGiorno(ymd: string): Promise<AssenzaGiorno[]> {
         supabase.from("vacation_requests").select("employee_name, store, date_from, date_to, status")
             .eq("status", "approved").lte("date_from", ymd).gte("date_to", ymd),
         supabase.from("sickness_absences").select("employee_name, store, date_from, date_to")
-            .lte("date_from", ymd),
+            .lte("date_from", ymd).or(`date_to.is.null,date_to.gte.${ymd}`),
     ]);
     const out: AssenzaGiorno[] = [];
     (fer.data || []).forEach((r) => out.push({ persona: String(r.employee_name || ""), store: r.store, tipo: "ferie" }));
@@ -72,13 +72,32 @@ export async function sediScoperte(giorni: string[]): Promise<SedeScoperta[]> {
     const sedi = gruppaSedi(((st.data || []) as { name: string; is_ufficio?: boolean | null }[]).filter((n) => !n.is_ufficio));
     const da = [...giorni].sort()[0];
     const a = [...giorni].sort().slice(-1)[0];
-    const [turniR, okR, ferR, malR] = await Promise.all([
+    const [turniR, okR, ferR, malR, chR, usR, linkR] = await Promise.all([
         supabase.from("turni_negozio").select("store, data, tipo").gte("data", da).lte("data", a),
         supabase.from("coperture_ok").select("store, data").gte("data", da).lte("data", a),
         supabase.from("vacation_requests").select("employee_name, store, date_from, date_to")
             .eq("status", "approved").lte("date_from", a).gte("date_to", da),
-        supabase.from("sickness_absences").select("employee_name, store, date_from, date_to").lte("date_from", a),
+        // confine anche in basso (revisore: senza, lo storico malattie si
+        // carica intero per sempre): aperte O chiuse dentro la finestra
+        supabase.from("sickness_absences").select("employee_name, store, date_from, date_to")
+            .lte("date_from", a).or(`date_to.is.null,date_to.gte.${da}`),
+        supabase.from("chiusure_negozio").select("store, dal, al"),
+        supabase.from("app_users").select("full_name, primary_store").eq("active", true),
+        supabase.from("user_stores").select("store_name, app_users!inner(full_name, active)"),
     ]);
+    // dove è in squadra ogni persona: serve alle assenze salvate SENZA
+    // negozio (revisore: «store=\"\"» le rendeva invisibili al semaforo)
+    const sediDiPersona = new Map<string, Set<string>>();
+    const aggiungiP = (nome: string | null | undefined, store: string | null | undefined) => {
+        const n = String(nome || "").trim(); const st2 = String(store || "").trim();
+        if (!n || !st2) return;
+        const sede = sedeDiStore(st2, sedi);
+        const set = sediDiPersona.get(n) || new Set<string>();
+        set.add(sede); sediDiPersona.set(n, set);
+    };
+    ((usR.data || []) as { full_name: string; primary_store: string | null }[]).forEach((u) => aggiungiP(u.full_name, u.primary_store));
+    ((linkR.data || []) as unknown as { store_name: string; app_users: { full_name: string; active: boolean } }[])
+        .forEach((l) => { if (l.app_users?.active) aggiungiP(l.app_users.full_name, l.store_name); });
     const out: SedeScoperta[] = [];
     for (const ymd of giorni) {
         if (festivi.has(ymd)) continue;
@@ -93,14 +112,21 @@ export async function sediScoperte(giorni: string[]): Promise<SedeScoperta[]> {
         if (!assenze.length) continue;
         const perSede = new Map<string, AssenzaGiorno[]>();
         assenze.forEach((asn) => {
-            if (!asn.store) return;   // senza negozio non c'è vetrina da coprire
-            const sede = sedeDiStore(asn.store, sedi);
-            const arr = perSede.get(sede) || [];
-            arr.push(asn);
-            perSede.set(sede, arr);
+            // assenza senza negozio → le sedi dove la persona è in squadra
+            const sediAsn = asn.store ? [sedeDiStore(asn.store, sedi)] : [...(sediDiPersona.get(asn.persona) || [])];
+            sediAsn.forEach((sede) => {
+                const arr = perSede.get(sede) || [];
+                arr.push(asn);
+                perSede.set(sede, arr);
+            });
         });
         for (const [sede, assenti] of perSede) {
             const gruppo = sedi.find((s) => s.sede === sede)?.negozi.map((n) => n.name) || [sede];
+            // sede CHIUSA da calendario (tutte le insegne): niente vetrina,
+            // niente rosso (revisore: falso allarme con le chiusure estive)
+            const tuttaChiusa = gruppo.length > 0 && gruppo.every((nome) =>
+                (chR.data || []).some((cc) => cc.store === nome && String(cc.dal) <= ymd && String(cc.al) >= ymd));
+            if (tuttaChiusa) continue;
             const coperta = (turniR.data || []).some((t) => t.data === ymd && t.tipo !== "escluso" && gruppo.includes(String(t.store)))
                 || (okR.data || []).some((o) => o.data === ymd && (gruppo.includes(String(o.store)) || o.store === sede));
             if (!coperta) out.push({ sede, data: ymd, assenti });

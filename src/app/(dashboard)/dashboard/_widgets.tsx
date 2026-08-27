@@ -34,7 +34,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS , areaOf } from "@/lib/roles";
 import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel, caricaTabellare, calcolaAvanzamento, payEuroAttivazione, esclusaDalleGare } from "@/lib/commissioning";
 import { esitaAppuntamento } from "@/lib/esitoAppuntamento";
-import { sediScoperte, type SedeScoperta } from "@/lib/coperture";
+import { sediScoperte } from "@/lib/coperture";
 import { capChoice, CAP_CALENDARIO_VISTA } from "@/lib/capabilities";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
@@ -2982,20 +2982,29 @@ function WidgetCoperture({ ctx }) {
         (async () => {
             const giorni = [];
             for (let i = 7; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); giorni.push(ymdLoc(d)); }
-            const out = await sediScoperte(giorni).catch(() => []);
+            // MAI verde su errore (revisore: un allarme cieco che rassicura
+            // è il fallimento peggiore): lo stato "errore" esce grigio
+            const out = await sediScoperte(giorni).catch(() => "errore");
             if (vivo) setScoperte(out);
         })();
         return () => { vivo = false; };
     }, [ctx.visKey]);
-    const lista = (scoperte || []);
+    const inErrore = scoperte === "errore";
+    const lista = (Array.isArray(scoperte) ? scoperte : []);
     const oggiISO = ctx.oggiISO;
     const rosse = [...lista].sort((a, b) => b.data.localeCompare(a.data));
     const allarme = lista.length > 0;
     return (
-        <WidgetShell icon={LifeBuoy} title="Coperture negozi" accent={allarme ? "var(--tf-ef4444)" : "var(--tf-22c55e)"}
+        <WidgetShell icon={LifeBuoy} title="Coperture negozi" accent={allarme ? "var(--tf-ef4444)" : inErrore ? "var(--tf-94a3b8)" : "var(--tf-22c55e)"}
             action={<Link href="/collaboratori" className="text-[10px] font-bold text-indigo-300 hover:text-indigo-200">Turni →</Link>}>
             {scoperte === null ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500 text-xs py-6">Controllo le coperture…</div>
+            ) : inErrore ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-1.5 py-6 text-center">
+                    <div className="text-2xl">⚠️</div>
+                    <div className="text-xs font-bold text-slate-300">Verifica non riuscita</div>
+                    <div className="text-[10px] text-slate-500">riapri la Home o controlla dai <Link href="/collaboratori" className="text-indigo-300 font-bold">Turni</Link></div>
+                </div>
             ) : allarme ? (
                 <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
                     <div className="rounded-xl border border-rose-500/60 bg-rose-500/[0.12] px-3 py-2 animate-pulse">
