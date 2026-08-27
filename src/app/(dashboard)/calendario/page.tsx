@@ -63,7 +63,11 @@ interface AgendaBlock {
 }
 
 // --- TASKS MODULE ---
-type TaskStatus = "da_fare" | "fatta" | "sospesa" | "abbandonata";
+// «in_corso» e «problema» aggiunti il 27/08: la prima serve a dire che una
+// task è stata presa in mano, la seconda a RIMANDARLA A CHI L'HA DATA con una
+// nota (Luca: «Francesco deve poterla esitare come ho riscontrato un problema
+// e aggiungere una nota, rimandandomela indietro»).
+type TaskStatus = "da_fare" | "in_corso" | "fatta" | "sospesa" | "problema" | "abbandonata";
 
 interface CalendarTask {
     id: number;
@@ -399,7 +403,11 @@ export default function Calendario() {
     const [showArretrate, setShowArretrate] = useState(false);
     // 📤 SOLO PER L'AMMINISTRAZIONE (Luca 27/08): un click e il calendario
     // mostra solo le task che HO ASSEGNATO IO ad altri — per governare il giro
-    const [soloAssegnateDaMe, setSoloAssegnateDaMe] = useState(false);
+    // AMBITO DELLE TASK (Luca 27/08): «voglio poter filtrare per task che ho
+    // dato io piuttosto che task che sono assegnate a me». Tre vie invece di
+    // un interruttore solo: tutte · a me · date da me.
+    const [taskScope, setTaskScope] = useState<"tutte" | "a_me" | "da_me">("tutte");
+    const soloAssegnateDaMe = taskScope === "da_me";
     const puoVedereAssegnate = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     // filtri del MODALE arretrate (Luca 05/08): solo per chi vede task altrui
     // — stessa convenzione FiltroMulti (null = tutto / array = scelti)
@@ -949,6 +957,11 @@ export default function Calendario() {
     //    codice storico); task_proprie = solo assegnate a lui / create da lui.
     const taskVisibile = (t: CalendarTask): boolean => {
         if (!catOn("task")) return false;
+        if (taskScope === "a_me") {
+            // «assegnate A ME»: quelle sulla mia persona, non quelle di negozio
+            if (t.assignedToStore) return false;
+            if (String(t.assignedTo || "").trim().toLowerCase() !== String(user?.name || "").trim().toLowerCase()) return false;
+        }
         if (soloAssegnateDaMe) {
             const creataDaMe = (t.createdByUserId && t.createdByUserId === user?.id) || t.createdBy === user?.name;
             const aMe = !t.assignedToStore && t.assignedTo === user?.name;
@@ -975,6 +988,21 @@ export default function Calendario() {
         if (filterStores !== null && t.assignedToStore && !filterStores.some((s) => sameStore(t.assignedToStore, s))) return false;
         return true;
     };
+    /* ── I COLORI DELLE TASK (Luca 27/08: «dobbiamo colorare le task in virtù
+       dello stato d'avanzamento») ─────────────────────────────────────────
+       Erano tutte verdi, quindi da fuori una task chiusa e una da fare
+       erano la stessa cosa. I colori seguono quelli già amministrabili in
+       calendario_esiti, così cambiando lì cambia anche il calendario. */
+    const COLORE_TASK: Record<string, { bordo: string; fondo: string; testo: string; banda: string; etichetta: string }> = {
+        da_fare: { bordo: "border-slate-400/40", fondo: "bg-slate-400/10", testo: "text-slate-200", banda: "bg-slate-400", etichetta: "Da fare" },
+        in_corso: { bordo: "border-blue-400/40", fondo: "bg-blue-500/10", testo: "text-blue-200", banda: "bg-blue-400", etichetta: "In corso" },
+        fatta: { bordo: "border-emerald-500/40", fondo: "bg-emerald-500/10", testo: "text-emerald-200", banda: "bg-emerald-500", etichetta: "Fatta" },
+        sospesa: { bordo: "border-amber-400/40", fondo: "bg-amber-500/10", testo: "text-amber-200", banda: "bg-amber-400", etichetta: "Sospesa" },
+        problema: { bordo: "border-orange-400/60", fondo: "bg-orange-500/15", testo: "text-orange-100", banda: "bg-orange-400", etichetta: "Problema" },
+        abbandonata: { bordo: "border-rose-500/40", fondo: "bg-rose-500/10", testo: "text-rose-200/70", banda: "bg-rose-500", etichetta: "Abbandonata" },
+    };
+    const coloreTask = (t: CalendarTask) => COLORE_TASK[t.status] || COLORE_TASK.da_fare;
+
     const tasksByDate = (dateStr: string) =>
         tasks.filter(t => t.date === dateStr && taskVisibile(t) && (!taskOutcomeFilter || t.status === taskOutcomeFilter));
 
@@ -1276,6 +1304,81 @@ export default function Calendario() {
     // (assegnate o create da lui): l'elenco di tutta la rete sta dietro il
     // bottone ⏰ — altrimenti le arretrate altrui coprirebbero gli impegni del
     // giorno. Ora la soglia è la capability task (prima: vista appuntamenti).
+
+    /* ══ LE PRIORITÀ DI OGGI ═══════════════════════════════════════════════
+       «Mi aspetto che possa esserci una barra sopra che mi racconta quelle
+       che sono le priorità: se oggi c'è una riunione deve dirmelo da qualche
+       parte» (Luca 27/08).
+
+       Non è un pannello di statistiche: è la riga che dice COSA FARE ADESSO.
+       Ogni voce nasce da un dato vero, ha un peso (le cose che scadono oggi
+       battono quelle che possono aspettare) e porta dove serve con un clic.
+       Se non c'è niente di urgente, la barra lo dice — ed è un'informazione
+       anche quella. */
+    const prioritaOggi = useMemo(() => {
+        const oggi = todayStr;
+        const ora = new Date().toTimeString().slice(0, 5);
+        const mio = String(user?.name || "").trim().toLowerCase();
+        const out: { id: string; icona: string; testo: string; tono: "rosso" | "ambra" | "blu" | "verde"; peso: number; vai?: () => void }[] = [];
+
+        // 1. riunioni di oggi — la cosa che non si può perdere
+        for (const m of meetings.filter((x) => x.date === oggi)) {
+            const passata = m.endTime && m.endTime < ora;
+            if (passata) continue;
+            out.push({
+                id: `m-${m.id}`, icona: "👥", tono: "blu", peso: 100,
+                testo: `Riunione ${m.startTime} · ${m.title}${m.location ? ` · ${m.location}` : m.type === "video_call" ? " · in video" : ""}`,
+                vai: () => { selectDate(oggi); setSelectedMeeting(m); setShowMeetingDetailModal(true); },
+            });
+        }
+
+        // 2. task tornate indietro con un problema (le ho date io)
+        const tornate = tasks.filter((t) => t.status === "problema"
+            && ((t.createdByUserId && t.createdByUserId === user?.id) || String(t.createdBy || "").trim().toLowerCase() === mio));
+        if (tornate.length) out.push({
+            id: "tornate", icona: "⚠️", tono: "rosso", peso: 95,
+            testo: `${tornate.length} ${tornate.length === 1 ? "task che hai assegnato è tornata" : "task che hai assegnato sono tornate"} con un problema`,
+            vai: () => { setTaskScope("da_me"); setTaskOutcomeFilter("problema" as TaskStatus); },
+        });
+
+        // 3. task arretrate: scadute e ancora aperte
+        if (tasksArretrate.length) out.push({
+            id: "arretrate", icona: "⏰", tono: "rosso", peso: 90,
+            testo: `${tasksArretrate.length} task arretrate da chiudere`,
+            vai: () => setShowArretrate(true),
+        });
+
+        // 4. appuntamenti di oggi ancora senza esito
+        const daEsitare = visibleAppointments.filter((a) => a.date === oggi && a.status === "scheduled");
+        if (daEsitare.length) out.push({
+            id: "esitare", icona: "📞", tono: "ambra", peso: 80,
+            testo: `${daEsitare.length} ${daEsitare.length === 1 ? "appuntamento di oggi" : "appuntamenti di oggi"} ancora da esitare`,
+            vai: () => { selectDate(oggi); setAppointmentOutcomeFilter("scheduled" as AppointmentStatus); },
+        });
+
+        // 5. le mie task di oggi
+        const mieOggi = tasks.filter((t) => t.date === oggi && t.status !== "fatta" && t.status !== "abbandonata"
+            && !t.assignedToStore && String(t.assignedTo || "").trim().toLowerCase() === mio);
+        if (mieOggi.length) out.push({
+            id: "mie", icona: "✅", tono: "verde", peso: 70,
+            testo: `${mieOggi.length} ${mieOggi.length === 1 ? "task tua per oggi" : "task tue per oggi"}`,
+            vai: () => { setTaskScope("a_me"); selectDate(oggi); },
+        });
+
+        // 6. appuntamenti di IERI rimasti senza esito: la coda che nessuno guarda
+        const ieriD = new Date(today); ieriD.setDate(ieriD.getDate() - 1);
+        const ieri = `${ieriD.getFullYear()}-${String(ieriD.getMonth() + 1).padStart(2, "0")}-${String(ieriD.getDate()).padStart(2, "0")}`;
+        const ieriAperti = visibleAppointments.filter((a) => a.date === ieri && a.status === "scheduled");
+        if (ieriAperti.length) out.push({
+            id: "ieri", icona: "🕗", tono: "ambra", peso: 60,
+            testo: `${ieriAperti.length} di ieri ${ieriAperti.length === 1 ? "è rimasto" : "sono rimasti"} senza esito`,
+            vai: () => { selectDate(ieri); setAppointmentOutcomeFilter("scheduled" as AppointmentStatus); },
+        });
+
+        return out.sort((a, b) => b.peso - a.peso);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [meetings, tasks, visibleAppointments, tasksArretrate, user?.id, user?.name, todayStr]);
+
     const arretrateInColonna = isTaskTutte
         ? tasksArretrate.filter(t => t.assignedTo === user?.name || t.createdBy === user?.name)
         : tasksArretrate;
@@ -1465,20 +1568,6 @@ export default function Calendario() {
                 <div className="flex gap-3">
                     {/* MOD-26: via il bottone "Cerca appuntamenti" — la ricerca
                         vive nei filtri unificati qui sotto */}
-                    {puoVedereAssegnate && (
-                        <button
-                            onClick={() => setSoloAssegnateDaMe(v => !v)}
-                            title="Mostra solo le task che hai assegnato tu ad altri (persone o negozi)"
-                            className={cn(
-                                "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
-                                soloAssegnateDaMe
-                                    ? "bg-violet-500/25 text-violet-200 border-violet-500/60 shadow-violet-500/20"
-                                    : "bg-violet-500/10 text-violet-300 border-violet-500/40 hover:bg-violet-500/20"
-                            )}
-                        >
-                            📤 Assegnate da me{soloAssegnateDaMe ? " ✓" : ""}
-                        </button>
-                    )}
                     {tasksArretrate.length > 0 && (
                         <button
                             onClick={() => setShowArretrate(v => !v)}
@@ -1527,6 +1616,40 @@ export default function Calendario() {
                             <Lock className="w-4 h-4" />
                             Blocca agenda
                         </button>
+                    )}
+                </div>
+            </div>
+
+            {/* ══ PRIORITÀ DI OGGI (Luca 27/08) ═══════════════════════════════
+                La prima cosa che si legge aprendo il calendario: non quanti
+                appuntamenti ci sono, ma COSA va fatto adesso. Le voci sono
+                cliccabili — portano dove serve, filtro già impostato — e sono
+                ordinate per peso, non per tipo. */}
+            <div className="mb-4 rounded-2xl border border-white/10 bg-gradient-to-r from-indigo-500/[0.07] via-white/[0.02] to-transparent overflow-hidden">
+                <div className="flex items-stretch">
+                    <div className="shrink-0 px-4 py-3 flex items-center gap-2 border-r border-white/10 bg-white/[0.03]">
+                        <span className="text-lg leading-none">🎯</span>
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-300 hidden sm:block">Oggi conta</span>
+                    </div>
+                    {prioritaOggi.length === 0 ? (
+                        <div className="flex-1 px-4 py-3 text-xs text-slate-500 flex items-center">
+                            Niente di urgente: nessuna riunione, nessuna task scaduta, nessun appuntamento senza esito.
+                        </div>
+                    ) : (
+                        <div className="flex-1 min-w-0 px-3 py-2.5 flex gap-2 overflow-x-auto cal-priorita">
+                            {prioritaOggi.map((v) => (
+                                <button key={v.id} type="button" onClick={v.vai}
+                                    className={cn(
+                                        "shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[11px] font-semibold transition-all hover:-translate-y-0.5",
+                                        v.tono === "rosso" ? "border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                                            : v.tono === "ambra" ? "border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                                                : v.tono === "blu" ? "border-sky-400/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                                                    : "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20")}>
+                                    <span className="leading-none">{v.icona}</span>
+                                    <span className="whitespace-nowrap">{v.testo}</span>
+                                </button>
+                            ))}
+                        </div>
                     )}
                 </div>
             </div>
@@ -1585,8 +1708,34 @@ export default function Calendario() {
                         </button>
                     )}
                 </div>
+                {/* riga 1-bis: DI CHI SONO LE TASK (Luca 27/08) — tre vie, e si
+                    legge senza spiegazioni: tutte, quelle che devo fare io,
+                    quelle che ho dato io a qualcun altro. */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">Task</span>
+                    <div className="flex bg-white/[0.03] p-0.5 rounded-xl border border-white/10">
+                        {([["tutte", "Tutte"], ["a_me", "👤 Assegnate a me"], ["da_me", "📤 Assegnate da me"]] as [typeof taskScope, string][]).map(([id, lab]) => (
+                            <button key={id} type="button" onClick={() => setTaskScope(id)}
+                                className={cn("px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors",
+                                    taskScope === id ? "bg-white/[0.09] text-white shadow-sm" : "text-slate-400 hover:text-slate-200")}>
+                                {lab}
+                            </button>
+                        ))}
+                    </div>
+                    {/* LEGENDA DEI COLORI: le task ora si distinguono a colpo
+                        d'occhio, e il colore va spiegato una volta sola */}
+                    <span className="hidden lg:flex items-center gap-2 ml-auto text-[10px] text-slate-500">
+                        {["da_fare", "in_corso", "fatta", "sospesa", "problema"].map((k) => (
+                            <span key={k} className="flex items-center gap-1">
+                                <span className={cn("w-2 h-2 rounded-full", COLORE_TASK[k].banda)} />
+                                {COLORE_TASK[k].etichetta}
+                            </span>
+                        ))}
+                    </span>
+                </div>
+
                 {/* riga 2: punti vendita / consulenti / fissato da (solo platee plurali) */}
-                {puoFiltrareCal && (mostraFiltroNegozio || mostraFiltroConsulente || isCallCenter) && (
+                {puoFiltrareCal && (mostraFiltroNegozio || mostraFiltroConsulente || fissatoDaOpzioni.length > 1) && (
                     <div className="flex flex-wrap gap-2.5">
                         {mostraFiltroNegozio && <div className="flex-1 min-w-[200px] max-w-sm" title="Punti vendita">
                             <FiltroMulti
@@ -1604,12 +1753,17 @@ export default function Calendario() {
                                 etichettaTutti="Tutti i consulenti"
                             />
                         </div>}
-                        {isCallCenter && <div className="flex-1 min-w-[200px] max-w-sm" title="Chi ha fissato l'appuntamento">
+                        {/* CHI L'HA FISSATO (Luca 27/08: «non abbiamo dei filtri
+                            per operatore telefonico»): c'era, ma solo per il call
+                            center — cioè non lo vedeva chi guarda tutta la rete.
+                            Ora c'è per chiunque possa filtrare, se le persone da
+                            filtrare sono più di una. */}
+                        {fissatoDaOpzioni.length > 1 && <div className="flex-1 min-w-[200px] max-w-sm" title="Operatore che ha fissato l'appuntamento">
                             <FiltroMulti
                                 values={filterCreatedBys}
                                 onChange={setFilterCreatedBys}
                                 opzioni={fissatoDaOpzioni}
-                                etichettaTutti="Fissato da: chiunque"
+                                etichettaTutti="Operatore: chiunque"
                             />
                         </div>}
                     </div>
@@ -1993,17 +2147,22 @@ export default function Calendario() {
                                                         <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : a.type === "richiamo" ? `☎ ${a.createdBy || "richiamo"}` : (a.agente || "—")}</div>
                                                     </button>
                                                 ) })),
-                                                ...dayTasks.map((t) => ({ min: t.time ? minutiDi(t.time) : -1, jsx: (
+                                                ...dayTasks.map((t) => { const ct = coloreTask(t); return { min: t.time ? minutiDi(t.time) : -1, jsx: (
                                                     <button
                                                         key={`t-${t.id}`}
                                                         onClick={() => { selectDate(dateStr); setTaskDettaglio(t); }}
-                                                        title="Apri la task (dettaglio e modifica)"
-                                                        className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                        title={`Task ${ct.etichetta.toLowerCase()} — apri per il dettaglio`}
+                                                        className={cn("w-full text-left pl-2 pr-1.5 py-1 rounded-lg border text-[10px] leading-tight hover:bg-white/[0.08] transition-colors relative overflow-hidden",
+                                                            ct.bordo, ct.fondo, t.status === "fatta" && "opacity-70")}
                                                     >
-                                                        <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
+                                                        {/* la banda di colore: lo stato si legge senza aprire niente */}
+                                                        <span className={cn("absolute left-0 top-0 bottom-0 w-1", ct.banda)} />
+                                                        <div className={cn("font-semibold truncate", ct.testo, t.status === "fatta" && "line-through")}>
+                                                            {t.time ? `${t.time} ` : ""}{t.title}
+                                                        </div>
                                                         <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
                                                     </button>
-                                                ) })),
+                                                ) }; }),
                                                 ...dayMeetings.map((m) => ({ min: minutiDi(m.startTime), jsx: (
                                                     <button
                                                         key={`m-${m.id}`}
@@ -2100,12 +2259,15 @@ export default function Calendario() {
                                                 ⏰ {ggMm(t.date)} · {t.title}
                                             </button>
                                         ))}
-                                        {senzaOra.map(t => (
-                                            <button key={`sg-${t.id}`} onClick={() => selectDate(dayDate)}
-                                                className="px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-[11px] text-emerald-200 hover:bg-emerald-500/25">
+                                        {senzaOra.map(t => { const ct = coloreTask(t); return (
+                                            <button key={`sg-${t.id}`} onClick={() => { selectDate(dayDate); setTaskDettaglio(t); }}
+                                                title={`Task ${ct.etichetta.toLowerCase()}`}
+                                                className={cn("relative overflow-hidden pl-2.5 pr-2 py-1 rounded-lg border text-[11px] hover:bg-white/[0.08] transition-colors",
+                                                    ct.bordo, ct.fondo, ct.testo, t.status === "fatta" && "opacity-70 line-through")}>
+                                                <span className={cn("absolute left-0 top-0 bottom-0 w-1", ct.banda)} />
                                                 {t.title}
                                             </button>
-                                        ))}
+                                        ); })}
                                     </div>
                                 )}
                                 <div className="relative rounded-xl border border-white/8 bg-white/[0.02] overflow-hidden" style={{ height: (H1 - H0) * PX }}>
@@ -3449,6 +3611,21 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
     // scriveva nel titolo. Ora si vede e si modifica come gli altri campi.
     const [clienteRef, setClienteRef] = useState(t.clientRef || "");
     const [stato, setStato] = useState<TaskStatus>(t.status);
+    /* ── IL GIRO DI RITORNO (Luca 27/08) ─────────────────────────────────
+       «Se io do una task a Francesco, Francesco deve poterla esitare come
+       ho riscontrato un problema e aggiungere una nota RISPETTO alla nota
+       che gli avevo messo io, rimandandomela indietro.»
+
+       Sono due note diverse e restano separate: `notes` è la consegna di chi
+       assegna (e chi esegue non la può cambiare), `outcomeNote` è la
+       risposta di chi esegue. Il ritorno al mittente non è un campo nuovo:
+       è `esito_visto = false`, che già accende il richiamo a chi l'ha data. */
+    const [rispostaEsito, setRispostaEsito] = useState(t.outcomeNote || "");
+    const nomeNorm = (x?: string) => String(x || "").trim().toLowerCase();
+    const soLaMia = nomeNorm(t.createdBy) === nomeNorm(mioNome);
+    const laDevoFareIo = !t.assignedToStore && nomeNorm(t.assignedTo) === nomeNorm(mioNome);
+    /** l'ha data qualcun altro a me: qui il giro di ritorno ha senso */
+    const assegnataDaAltri = !soLaMia && (laDevoFareIo || !!t.assignedToStore);
     const [addPersone, setAddPersone] = useState<string[]>([]);
     const [addNegozi, setAddNegozi] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
@@ -3457,6 +3634,10 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
         if (busy) return;
         setBusy(true);
         const patch: Record<string, unknown> = { status: stato };
+        // la risposta di chi esegue si salva sempre: è la traccia del giro
+        if (rispostaEsito.trim() !== String(t.outcomeNote || "").trim()) {
+            patch.outcome_note = rispostaEsito.trim() || null;
+        }
         // il GIRO DEGLI ESITI passa anche da qui (revisore 27/08: il modale
         // era il terzo punto di cambio stato, dimenticato): chiusa da un
         // altro → ritorno al creatore; riaperta → esito azzerato
@@ -3542,8 +3723,41 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Note</label>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                            {assegnataDaAltri ? <>📥 La consegna di <b className="text-slate-300">{t.createdBy || "chi te l'ha data"}</b></> : "Note"}
+                        </label>
                         <textarea className="glass-input w-full resize-none" rows={2} value={note} onChange={(e) => setNote(e.target.value)} disabled={!puoGestire} />
+
+                        {/* ── LA RISPOSTA DI CHI ESEGUE (Luca 27/08) ──────────
+                            Due note distinte: sopra c'è quella di chi ha dato la
+                            task, qui quella di chi la sta facendo. Scegliendo
+                            «Problema» la task torna a chi l'ha assegnata con
+                            questa nota attaccata — è il giro di ritorno. */}
+                        <div className={cn("mt-3 rounded-xl border p-3 space-y-2",
+                            stato === "problema" ? "border-orange-400/50 bg-orange-500/10" : "border-white/10 bg-white/[0.02]")}>
+                            <label className="block text-xs font-medium text-slate-300">
+                                {stato === "problema"
+                                    ? <>⚠️ Cosa non va — lo legge <b>{t.createdBy || "chi te l'ha data"}</b></>
+                                    : <>💬 La tua risposta {assegnataDaAltri ? <>a <b className="text-slate-300">{t.createdBy || "chi te l'ha data"}</b></> : "sull'esito"}</>}
+                            </label>
+                            <textarea
+                                className="glass-input w-full resize-none text-sm" rows={2}
+                                placeholder={stato === "problema"
+                                    ? "Es. il cliente non risponde da tre giorni / mi manca il documento / il numero è sbagliato"
+                                    : "Com'è andata, cosa hai fatto, cosa serve…"}
+                                value={rispostaEsito} onChange={(e) => setRispostaEsito(e.target.value)} />
+                            {stato === "problema" && (
+                                <p className="text-[11px] text-orange-200/90">
+                                    Salvando, la task torna a <b>{t.createdBy || "chi l'ha assegnata"}</b> segnata come da rivedere:
+                                    la trova evidenziata nel suo calendario, con questa nota.
+                                </p>
+                            )}
+                            {t.outcomeNote && t.status === "problema" && soLaMia && (
+                                <p className="text-[11px] text-orange-200 bg-orange-500/10 border border-orange-400/30 rounded-lg px-2.5 py-1.5">
+                                    ⚠️ Ti è tornata indietro: <b>{t.assignedTo || t.assignedToStore}</b> ha scritto «{t.outcomeNote}»
+                                </p>
+                            )}
+                        </div>
                     </div>
                     {puoGestire && (
                         <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 space-y-3">
