@@ -36,6 +36,8 @@ import {
   esitoCompletato,
   getStatiAdminPerCategoria,
   esitoAdminDefinitivo,
+  inFiltroNonConformi,
+  èMarchiataNonConforme,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
 import { VoceAnnidata } from "@/components/VoceAnnidata";
@@ -265,7 +267,7 @@ function KpiBar({
   const nuovi = data.filter((r) => r.statoNegozio === "nuovo").length;
   const daLavorare = data.filter((r) => isDaLavorareRow(r) && !isMalusRow(r)).length;
   const problema = data.filter((r) => isAttenzioneRow(r) && !isMalusRow(r)).length;
-  const nonConformi = data.filter((r) => r.statoAdmin === "non_conforme").length;
+  const nonConformi = data.filter((r) => inFiltroNonConformi(r)).length;
   const malusCount = data.filter((r) => isMalusRow(r)).length;
   const malusTotale = data.reduce((acc, r) => acc + calcolaMalus(r), 0);
 
@@ -337,7 +339,7 @@ function KpiBar({
               if (activeFilter === "__attenzione__") return isAttenzioneRow(r) && !isMalusRow(r);
               if (activeFilter === "__da_lavorare__") return isDaLavorareRow(r) && !isMalusRow(r);
               if (activeFilter === "__malus__") return isMalusRow(r);
-              if (activeFilter === "__non_conforme__") return r.statoAdmin === "non_conforme";
+              if (activeFilter === "__non_conforme__") return inFiltroNonConformi(r);
               return r.statoNegozio === activeFilter;
             };
             const nBrand = dataBrand.filter((r) => r.brand === b && contaKpi(r)).length;
@@ -889,6 +891,7 @@ function Drawer({
   useEffect(() => { if (row.storia.length > storiaRef.current.length) storiaRef.current = row.storia; }, [row.storia]);
 
   const commit = (origine?: "negozio" | "admin") => {
+    const oraDiOra = new Date().toTimeString().slice(0, 5);
     const s = staged.current;
     const oggi = new Date().toLocaleDateString("it-IT");
     const eventi: StoriaEvent[] = [];
@@ -901,10 +904,20 @@ function Drawer({
       const fuJson = JSON.stringify(s.fu);
       const cambioFu = row.categoria === "piva" && fuJson !== baseFu.current;
       if (s.statoN !== baseN.current) {
-        eventi.push({ data: oggi, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN, row.categoria, row.brand).label, utente: nomeUtente, ruolo: "negozio" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN, row.categoria, row.brand).label, utente: nomeUtente, ruolo: "negozio" });
+        // EX NON CONFORME (Luca 27/08): il negozio ha RILAVORATO una pratica
+        // Non Conforme → il marchio scatta da solo, il malus giornaliero si
+        // ferma qui (l'episodio si chiude a questa data) e la pratica rivive
+        // il ciclo normale restando nel filtro non conformi
+        if (baseA.current === "non_conforme") {
+          eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_admin", testo: "Esito admin aggiornato: EX Non Conforme — automatico: il negozio ha rilavorato la pratica", utente: "Sistema", ruolo: "admin" });
+          s.statoA = "ex_non_conforme";
+          baseA.current = "ex_non_conforme";
+          setEditStatoA("ex_non_conforme");
+        }
       }
       if (nota) {
-        eventi.push({ data: oggi, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" });
       }
       if (s.statoN !== baseN.current || nota || cambioFu) {
         dirty = true;
@@ -918,10 +931,10 @@ function Drawer({
     if (origine !== "negozio") {
       const nota = s.notaA.trim();
       if (s.statoA !== baseA.current) {
-        eventi.push({ data: oggi, tipo: "stato_admin", testo: "Esito admin aggiornato: " + getStatoA(s.statoA).label, utente: nomeUtente, ruolo: "admin" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_admin", testo: "Esito admin aggiornato: " + getStatoA(s.statoA).label, utente: nomeUtente, ruolo: "admin" });
       }
       if (nota) {
-        eventi.push({ data: oggi, tipo: "nota_admin", testo: nota, utente: nomeUtente, ruolo: "admin" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "nota_admin", testo: nota, utente: nomeUtente, ruolo: "admin" });
       }
       if (s.statoA !== baseA.current || nota) {
         dirty = true;
@@ -998,6 +1011,10 @@ function Drawer({
           <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
           <span className="text-[11px] text-slate-500 mx-1">| Admin:</span>
           <StatoBadge id={row.statoAdmin} set="admin" />
+          {èMarchiataNonConforme({ statoAdmin: baseA.current, storia: storiaRef.current }) && baseA.current !== "non_conforme" && baseA.current !== "ex_non_conforme" && (
+            <span title="È passata per Non Conforme: resta nel filtro finché non arriva a uno stato definitivo"
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">🔥 ex NC</span>
+          )}
         </div>
         {/* Delega verifica: NON fa parte della sezione admin — e' una funzione
             dallo store manager in su, quindi sta fuori dai tab. */}
@@ -1346,21 +1363,44 @@ function Drawer({
                 const chi = ev.utente || mc.user || "—";
                 const dotColor = isModifica ? "var(--tf-38bdf8)" : tipoColor(ev.tipo);
                 const isAdmin = ev.ruolo === "admin";
+                // L'ESITO per primo (Luca 27/08): dalle voci «Esito … aggiornato:»
+                // si estrae l'esito e si mostra col SUO colore, in evidenza;
+                // il resto (chi, quando, a che ora) viene sotto
+                const mEsito = !isModifica ? /^Esito (negozio|admin) aggiornato: (.+)$/.exec(ev.testo || "") : null;
+                const [esitoLabel, notaAuto] = mEsito ? (() => {
+                  const parti = mEsito[2].split(" — ");
+                  return [parti[0], parti.slice(1).join(" — ") || null];
+                })() : [null, null];
+                const stileEsito = (() => {
+                  if (!esitoLabel) return null;
+                  const liste = mEsito![1] === "admin"
+                    ? getStatiAdminPerCategoria(row.categoria, row.brand)
+                    : getStatiNegozioTutte(row.categoria);
+                  const hit = liste.find((x) => x.label.toLowerCase() === esitoLabel.toLowerCase());
+                  return hit ? { color: hit.color, background: hit.bg } : { color: dotColor, background: "var(--tf-1e293b)" };
+                })();
                 return (
-                  <div key={i} className="flex gap-3.5 mb-4 relative">
-                    <div className="w-4 h-4 rounded-full flex-shrink-0 mt-0.5 z-[1]" style={{ background: dotColor }} />
-                    <div className="flex-1">
-                      <div
-                        className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 uppercase tracking-wider"
-                        style={{
-                          color: isModifica ? "var(--tf-38bdf8)" : isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
-                          background: isModifica ? "var(--tf-0c2a3f)" : isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
-                        }}
-                      >
-                        {isModifica ? "Modifica" : tipoLabel(ev.tipo)}
+                  <div key={i} className="flex gap-3.5 mb-3 relative">
+                    <div className="w-4 h-4 rounded-full flex-shrink-0 mt-1.5 z-[1]" style={{ background: dotColor }} />
+                    <div className="flex-1 min-w-0 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0"
+                          style={{
+                            color: isModifica ? "var(--tf-38bdf8)" : isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
+                            background: isModifica ? "var(--tf-0c2a3f)" : isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
+                          }}
+                        >
+                          {isModifica ? "Modifica" : tipoLabel(ev.tipo)}
+                        </span>
+                        {esitoLabel ? (
+                          <span className="text-[13px] font-black px-2.5 py-1 rounded-lg" style={stileEsito!}>{esitoLabel}</span>
+                        ) : (
+                          <span className="text-[13px] text-slate-200 min-w-0">{testo}</span>
+                        )}
                       </div>
-                      <div className="text-[13px] text-slate-200">{testo}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{quando} — {chi}</div>
+                      {esitoLabel && notaAuto && <div className="text-[11px] text-slate-400 italic mt-1">{notaAuto}</div>}
+                      <div className="text-[11px] text-slate-500 mt-1.5">👤 <span className="text-slate-400 font-semibold">{chi}</span> · {quando}{ev.ora ? <span className="tabular-nums"> · {ev.ora}</span> : null}</div>
                     </div>
                   </div>
                 );
@@ -1883,7 +1923,7 @@ export default function TrackingPdaPage() {
     if (soloDaLavorare) {
       if (!esitoCompletato(row.statoNegozio, row.categoria, row.brand)) return false;
       if (esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand) || row.statoAdmin === "non_conforme") return false;
-    } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
+    } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && !inFiltroNonConformi(row)) return false;
     if (onlyMine && row.delegated_to !== user?.id) return false;
     if (onlyDelegate && row.delegated_by !== user?.id) return false;
     return true;
@@ -1965,7 +2005,7 @@ export default function TrackingPdaPage() {
       if (soloDaLavorare) {
         if (!esitoCompletato(row.statoNegozio, row.categoria, row.brand)) return false;
         if (esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand) || row.statoAdmin === "non_conforme") return false;
-      } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
+      } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && !inFiltroNonConformi(row)) return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (onlyDelegate && row.delegated_by !== user?.id) return false; // "delegate DA me"
       if (kpiFilter !== null) {
@@ -1976,7 +2016,7 @@ export default function TrackingPdaPage() {
         } else if (kpiFilter === "__malus__") {
           if (!isMalusRow(row)) return false;
         } else if (kpiFilter === "__non_conforme__") {
-          if (row.statoAdmin !== "non_conforme") return false;
+          if (!inFiltroNonConformi(row)) return false;
         } else {
           if (row.statoNegozio !== kpiFilter) return false;
         }
@@ -2024,7 +2064,7 @@ export default function TrackingPdaPage() {
       if (row.tracking_nascosto) return false;
       // Esito definitivo del negozio = pratica completata = sparisce da sola.
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
-      if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
+      if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && !inFiltroNonConformi(row)) return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (utentiSel.length > 0 && !respRigaTutti(row).some((n) => utentiSel.includes(n))) return false;
       if (venditoreSel && !respRigaTutti(row).includes(venditoreSel)) return false;

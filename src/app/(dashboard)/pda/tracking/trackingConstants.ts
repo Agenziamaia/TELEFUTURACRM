@@ -112,6 +112,9 @@ export const STATI_ADMIN = [
   { id: "da_verificare", label: "Da Verificare", color: "var(--tf-64748b)", bg: "var(--tf-1e293b)" },
   { id: "in_lavorazione", label: "In Lavorazione", color: "var(--tf-3b82f6)", bg: "var(--tf-172554)" },
   { id: "non_conforme", label: "Non Conforme", color: "var(--tf-f97316)", bg: "var(--tf-431407)" },
+  // MARCHIO (Luca 27/08): la pratica è stata Non Conforme, il negozio l'ha
+  // rilavorata — rivive il ciclo normale ma resta nel filtro non conformi
+  { id: "ex_non_conforme", label: "EX Non Conforme", color: "var(--tf-fbbf24)", bg: "var(--tf-451a03)" },
   { id: "confermato", label: "Confermato", color: "var(--tf-22c55e)", bg: "var(--tf-052e16)" },
   { id: "pagato", label: "Pagato", color: "var(--tf-a78bfa)", bg: "var(--tf-2e1065)" },
   { id: "stornato", label: "Stornato", color: "var(--tf-ef4444)", bg: "var(--tf-450a0a)" },
@@ -155,6 +158,9 @@ export type StoriaEvent = {
   testo: string;
   utente: string;
   ruolo: string;
+  // ORARIO dell'azione (Luca 27/08) — campo a parte: `data` resta il formato
+  // storico su cui lavora la ricostruzione del malus
+  ora?: string;
 };
 
 export type FollowUpItem = { label: string; data: string; esito: string; note: string };

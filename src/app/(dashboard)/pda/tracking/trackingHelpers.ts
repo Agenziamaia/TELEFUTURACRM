@@ -434,6 +434,21 @@ export function esitoAdminDefinitivo(statoAdmin: string, categoria: string, bran
   return ["confermato", "pagato", "stornato", "ripagato"].includes(statoAdmin);
 }
 
+/** MARCHIATA (Luca 27/08): è passata per Non Conforme almeno una volta —
+ *  lo stato corrente o un evento admin nella storia (l'EX incluso). */
+export function èMarchiataNonConforme(row: { statoAdmin: string; storia?: TrackingRow["storia"] }): boolean {
+  if (row.statoAdmin === "non_conforme" || row.statoAdmin === "ex_non_conforme") return true;
+  return (row.storia || []).some((ev) => ev.tipo === "stato_admin" && /non conforme/i.test(ev.testo || ""));
+}
+
+/** Il filtro «Non Conforme» mostra le NC vive E le marchiate (EX) finché
+ *  non tornano in uno stato definitivo (Luca 27/08: «come se oramai è
+ *  MARCHIATA... sempre visibile fino a uno stato definitivo»). */
+export function inFiltroNonConformi(row: { statoAdmin: string; categoria: string; brand?: string | null; storia?: TrackingRow["storia"] }): boolean {
+  if (row.statoAdmin === "non_conforme") return true;
+  return èMarchiataNonConforme(row) && !esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand);
+}
+
 export function getCat(id: string) {
   const c = CATEGORIE.find((x) => x.id === id);
   if (c) return c;
