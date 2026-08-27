@@ -978,7 +978,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             </div>
             {/* brand LIBERO: risposta immediata, niente step 2 */}
             {brandLibero ? (
-                <div className="rounded-2xl px-4 py-6 text-center border border-emerald-500/30 flex-1 flex flex-col justify-center min-h-0"
+                <div className="rounded-2xl px-4 py-6 text-center border border-emerald-500/30 flex-1 flex flex-col justify-center items-center min-h-0"
                     style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))", boxShadow: "0 0 24px rgba(16,185,129,0.18)" }}>
                     <div className="text-2xl font-black text-emerald-300 drop-shadow">🕊️ Inserimento libero</div>
                     <div className="text-[11px] text-slate-400 mt-1">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
@@ -1047,22 +1047,22 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
                     return (<>
                         {scelto ? (
-                            <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center min-h-0"
+                            <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
-                                <div className="text-2xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
+                                <div className="text-3xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
                             </div>
                         ) : mobScelto ? (
-                            <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center min-h-0"
+                            <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
-                                <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">
+                                <div className="text-3xl font-black text-white leading-tight drop-shadow flex items-center justify-center gap-2 flex-wrap">
                                     {mobScelto.negozio}
                                     {mobScelto.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
                                 </div>
                             </div>
                         ) : (
-                            <div className="rounded-2xl px-4 py-5 border border-emerald-500/30 text-center flex-1 flex flex-col justify-center min-h-0"
+                            <div className="rounded-2xl px-4 py-5 border border-emerald-500/30 text-center flex-1 flex flex-col justify-center items-center min-h-0"
                                 style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))" }}>
                                 <div className="text-lg font-black text-emerald-300">🏠 Caricala sul codice del tuo negozio</div>
                             </div>
@@ -1070,17 +1070,17 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </>);
                 })()}
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
-                    <div className="rounded-2xl px-4 py-5 border text-center flex-1 flex flex-col justify-center min-h-0"
+                    <div className="rounded-2xl px-4 py-5 border text-center flex-1 flex flex-col justify-center items-center min-h-0"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 16%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 35%, transparent)`, boxShadow: `0 0 22px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 22%, transparent)` }}>
                         <div className="text-xl font-black text-white leading-snug">{tipGruppo.testo}</div>
                         {tipGruppo.sub ? <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div> : null}
                     </div>
                 )}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
-                    <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center min-h-0"
+                    <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                         <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
-                        <div className="text-2xl font-black text-white leading-tight drop-shadow flex items-center gap-2 flex-wrap">
+                        <div className="text-3xl font-black text-white leading-tight drop-shadow flex items-center justify-center gap-2 flex-wrap">
                             {consigliato.negozio}
                             {consigliato.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
                         </div>
