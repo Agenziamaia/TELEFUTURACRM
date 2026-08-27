@@ -59,6 +59,9 @@ Write-Host ""
 # Driver Custom (registratori Vodafone via OPOS locale): sta accanto all'agente.
 $scriptDir = Split-Path -Parent $PSCommandPath
 $custFp = Join-Path $scriptDir "cust-fp.ps1"
+# AUTO-AGGIORNAMENTO del driver Custom a ogni avvio dell'agente: gli aggiornamenti
+# (es. il percorso FISCALE) arrivano da soli, senza tornare sul PC del negozio.
+try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 30 | Out-Null } catch { }
 
 # ── Stampante fiscale Epson (ePOS/fpMate) ────────────────────────────────────
 function Invoke-Epson {
@@ -80,27 +83,18 @@ function Invoke-CustomOpos {
   $oposName = "CUSTOM"
   if ($DeviceUrl -match '^custom://(.+)$') { $oposName = $Matches[1] }
 
-  $job = $null
-  if ($RequestXml -match '<printerFiscalReceipt') {
-    $job = @{ kind = "fiscal_receipt" }
-  } else {
-    $lines = @()
-    foreach ($m in [regex]::Matches($RequestXml, 'data="([^"]*)"')) {
-      $lines += [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)
-    }
-    $job = @{ kind = "non_fiscal"; lines = $lines }
-  }
-
   if (-not (Test-Path $custFp)) {
     try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 30 } catch { }
   }
-  $jf = Join-Path $env:TEMP ("custjob_" + [guid]::NewGuid().ToString("N") + ".json")
-  ($job | ConvertTo-Json -Compress) | Set-Content -LiteralPath $jf -Encoding UTF8
+  # Passa l'ePOS XML GREZZO al driver: tutta la logica (non_fiscal/fiscal) vive in
+  # cust-fp.ps1, cosi' i futuri aggiornamenti NON richiedono di ritoccare l'agente.
+  $xf = Join-Path $env:TEMP ("custxml_" + [guid]::NewGuid().ToString("N") + ".xml")
+  $RequestXml | Set-Content -LiteralPath $xf -Encoding UTF8
   try {
     $ps32 = Join-Path $env:WINDIR "SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
-    $out = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $custFp -JobFile $jf -OposName $oposName 2>&1
+    $out = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $custFp -XmlFile $xf -OposName $oposName 2>&1
     return (($out | Where-Object { $_ -match '"ok"\s*:' } | Select-Object -Last 1))
-  } finally { try { Remove-Item -LiteralPath $jf -Force } catch { } }
+  } finally { try { Remove-Item -LiteralPath $xf -Force } catch { } }
 }
 
 # ── Cassa pagAmico (TCP 9100) — protocollo ricostruito e validato live ───────
