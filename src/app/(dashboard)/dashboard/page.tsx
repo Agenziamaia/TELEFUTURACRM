@@ -26,7 +26,7 @@ import {
     Loader2, GripVertical, Plus, X, RotateCcw, Store as StoreIcon, Users,
 } from "lucide-react";
 import {
-    renderWidget, infoWidget, widgetsDisponibili, risolviLayout, layoutDefault,
+    renderWidget, infoWidget, widgetsDisponibili, risolviLayout, layoutDefault, widgetObbligatorio,
     isCtr, validaProduzione, giornoDi,
 } from "./_widgets";
 import { GridLayout, useContainerWidth } from "react-grid-layout";
@@ -76,15 +76,16 @@ const decodeCoord = (arr) => {
 };
 // v9 = stessa codifica su griglia a 8: identiche proporzioni, colonna doppia
 const daV9 = (arr) => decodeCoord(arr).map((w) => ({ ...w, x: w.x * 2, s: Math.min(16, w.s * 2) }));
-const daLegacy = (lista, minHDi = () => 0) => {
+const daLegacy = (lista, minHDi = () => 0, defDi = () => null) => {
     const out = [];
     let x = 0, y = 0, rigaH = 0;
     for (const w of lista) {
-        const cols = COLS_DA_TAGLIA[w.s] || 4;
+        const dd = defDi(w.k);
+        const cols = Number(dd?.defW) || COLS_DA_TAGLIA[w.s] || 4;
         // i minimi del registry valgono anche nel packing del default: senza,
         // la bussola nasceva h4, il clamp a 7 la faceva risalire nel buco
         // sbagliato e il «quartetto» si sfalsava (revisore 27/08)
-        const h = Math.max(H_DA_TAGLIA[w.s] || 4, minHDi(w.k) || 0);
+        const h = Number(dd?.defH) || Math.max(H_DA_TAGLIA[w.s] || 4, minHDi(w.k) || 0);
         if (x + cols > 16) { x = 0; y += rigaH; rigaH = 0; }
         out.push({ k: w.k, x, y, s: cols, h });
         x += cols; rigaH = Math.max(rigaH, h);
@@ -133,8 +134,8 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                                 if (!info) return null;
                                 return (
                                     <div key={w.k} className="relative group/pw">
-                                        <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
-                                            className="absolute top-2 right-2 z-10 p-1 rounded-full bg-slate-900/80 border border-white/10 text-rose-300 opacity-60 active:opacity-100"><X className="w-3 h-3" /></button>
+                                        {!widgetObbligatorio(w.k, ctx) && <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
+                                            className="absolute top-2 right-2 z-10 p-1 rounded-full bg-slate-900/80 border border-white/10 text-rose-300 opacity-60 active:opacity-100"><X className="w-3 h-3" /></button>}
                                         {/* tetto: senza altezza di cella gli scroll interni sono
                                             inerti e le liste lunghe (Accessi) sarebbero infinite */}
                                         <div className="max-h-[70vh] overflow-y-auto rounded-2xl">{renderWidget(w.k, ctx, 2)}</div>
@@ -165,8 +166,8 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                                                 className="tf-drag flex items-center gap-1 bg-indigo-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg cursor-grab active:cursor-grabbing select-none touch-none max-w-[70%]">
                                                 <GripVertical className="w-3 h-3 shrink-0" /> <span className="truncate">{info.label}</span>
                                             </span>
-                                            <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
-                                                className="ml-auto p-1 rounded-full bg-slate-900/90 border border-white/10 text-rose-300 hover:bg-rose-500/30 shadow-lg"><X className="w-3 h-3" /></button>
+                                            {!widgetObbligatorio(w.k, ctx) && <button onClick={() => rimuovi(w.k)} title="Togli dalla Home"
+                                                className="ml-auto p-1 rounded-full bg-slate-900/90 border border-white/10 text-rose-300 hover:bg-rose-500/30 shadow-lg"><X className="w-3 h-3" /></button>}
                                         </div>
                                         {/* il contenuto riempie la card e scorre se più alto: la
                                             taglia 1·2·4 dei widget deriva dalla larghezza corrente */}
@@ -557,8 +558,15 @@ export default function Dashboard() {
         // oggetto → Home bianca)
         const lista = (raw && !Array.isArray(raw) && Number(raw.__v) >= 9)
             ? (Number(raw.__v) >= 10 ? decodeCoord(raw.lista) : daV9(raw.lista)).filter((w) => infoWidget(w.k, ctx))
-            : daLegacy(risolviLayout(Array.isArray(raw) ? raw : [], ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0);
-        setLayout(lista.length ? lista : daLegacy(layoutDefault(ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0));
+            : daLegacy(risolviLayout(Array.isArray(raw) ? raw : [], ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0, (k) => infoWidget(k, ctx));
+        // la BUSSOLA obbligatoria (Luca 27/08): se il layout salvato non
+        // ce l'ha, rientra da sola in coda — inchiodata per i negozi
+        const conObbligatori = (l) => {
+            if (!widgetObbligatorio("bussola", ctx) || l.some((w) => w.k === "bussola")) return l;
+            const coda = l.reduce((m, w) => Math.max(m, (w.y || 0) + (w.h || 4)), 0);
+            return [...l, { k: "bussola", x: 0, y: coda, s: 6, h: 4 }];
+        };
+        setLayout(conObbligatori(lista.length ? lista : daLegacy(layoutDefault(ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0, (k) => infoWidget(k, ctx))));
     }, [loading, savedLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const salvaLayout = async (next) => {
@@ -577,7 +585,7 @@ export default function Dashboard() {
         const uguale = next.length === layout.length && next.every((w, i2) => { const pr = layout[i2]; return pr.k === w.k && pr.x === w.x && pr.y === w.y && pr.s === w.s && pr.h === w.h; });
         if (!uguale) salvaLayout(next);
     };
-    const rimuovi = (k) => salvaLayout(layout.filter((w) => w.k !== k));
+    const rimuovi = (k) => { if (widgetObbligatorio(k, ctx)) return; salvaLayout(layout.filter((w) => w.k !== k)); };
     const aggiungi = (id) => {
         const info = infoWidget(id, ctx);
         if (!info || layout.some((w) => w.k === id)) return;
@@ -627,7 +635,7 @@ export default function Dashboard() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white/5 text-slate-300 border-white/10 hover:text-white hover:bg-white/10 transition-colors">
                         <Plus className="w-3.5 h-3.5" /> Aggiungi
                     </button>
-                    <button onClick={() => salvaLayout(daLegacy(layoutDefault(ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0))} title="Torna al layout consigliato"
+                    <button onClick={() => salvaLayout(daLegacy(layoutDefault(ctx), (k) => Number(infoWidget(k, ctx)?.minH) || 0, (k) => infoWidget(k, ctx)))} title="Torna al layout consigliato"
                         className="px-2.5 py-1.5 rounded-lg border bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10 transition-colors">
                         <RotateCcw className="w-3.5 h-3.5" />
                     </button>

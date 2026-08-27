@@ -3189,7 +3189,7 @@ const FISSI = {
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
     classifica: { label: "Classifica venditori", icon: Trophy, sizes: [2, 4], def: 4, gruppo: "statistiche" },
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv", "ob"], minW: 8, minH: 6 },
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], minW: 6, minH: 4, defW: 6, defH: 4 },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
@@ -3364,6 +3364,16 @@ export function risolviLayout(salvato, ctx) {
 /** Voci per il pannello "Aggiungi widget", raggruppate per categoria.
  *  I gruppi futuri (badge/presenze, qualità, storico…) si aggiungono qui e
  *  compaiono da soli quando hanno almeno una voce. */
+/** WIDGET INCHIODATI (Luca 27/08): la Bussola è OBBLIGATORIA per chi lavora
+ *  nei negozi — niente ✕, e se manca dal layout viene rimessa da sola.
+ *  Esclusi: call center, amministrativo/backoffice, agenti e i loro capi
+ *  (e chi vede tutta la rete, che decide per sé). */
+export function widgetObbligatorio(id, ctx) {
+    if (id !== "bussola") return false;
+    if (ctx.seesAll) return false;
+    return areaDi(ctx.user?.role) === "pv";
+}
+
 export function widgetsDisponibili(ctx, giaPresenti) {
     const presenti = new Set(giaPresenti);
     // niente più brand:* in galleria (dismessi 26/08 — i numeri stanno in Analisi)
