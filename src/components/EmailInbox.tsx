@@ -89,7 +89,7 @@ const iniziali = (s: string) => {
 
 // `senzaLista` (26/08): come su WhatsApp — solo il thread, la lista la porta
 // l'Omnichat. Cartelle e caselle restano, che sono funzioni vere.
-export function EmailInbox({ embedded = false, componiA = null, apriConvId = null, senzaLista = false }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null; senzaLista?: boolean }) {
+export function EmailInbox({ embedded = false, componiA = null, apriConvId = null, senzaLista = false, apriComponi = false }: { embedded?: boolean; componiA?: string | null; apriConvId?: string | null; senzaLista?: boolean; apriComponi?: boolean }) {
     const { user } = useAuth();
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [selAcc, setSelAcc] = useState<string | null>(null);
@@ -118,6 +118,9 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
 
     // composizione (dock in basso a destra, stile Gmail)
     const [composeOpen, setComposeOpen] = useState(false);
+    // «Nuova conversazione» → Email dall'Omnichat (Luca 27/08): si apre il
+    // compose appena la casella è pronta (il render è già gated su selAcc)
+    useEffect(() => { if (apriComponi) setComposeOpen(true); }, [apriComponi]);
     const [cTo, setCTo] = useState(""); const [cSubject, setCSubject] = useState(""); const [cBody, setCBody] = useState("");
     const [cDraftId, setCDraftId] = useState<string | null>(null);
 

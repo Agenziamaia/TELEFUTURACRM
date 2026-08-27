@@ -18,7 +18,7 @@ import { seesAllStores } from "@/lib/roles";
 import { caricaConversazioni, elencoNegozi, elencoPersone, membriNegozio } from "./dati";
 import type { ChatOmni } from "./tipi";
 
-export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onScegli: (c: ChatOmni) => void }) {
+export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | null; onScegli: (c: ChatOmni) => void; onNuova?: () => void }) {
     const { user } = useAuth();
     const { stores } = useVisibleStores();
     // COME ORDINARE (Luca 26/08: «che tu metta i non letti davanti ha senso,
@@ -140,6 +140,12 @@ export function ListaOmni({ attivaId, onScegli }: { attivaId: string | null; onS
                             </span>
                         )}
                     </h2>
+                    {onNuova && (
+                        <button type="button" onClick={onNuova} title="Nuova conversazione: chat interna, WhatsApp o email"
+                            className="shrink-0 flex items-center gap-1 rounded-lg bg-sky-500/15 border border-sky-500/40 px-2 py-1 text-[11px] font-bold text-sky-300 hover:bg-sky-500/25 transition-colors">
+                            ➕ Nuova
+                        </button>
+                    )}
                 </div>
                 {puoImmedesimarsi && (
                     <div className="relative">

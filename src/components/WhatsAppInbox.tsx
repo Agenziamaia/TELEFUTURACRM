@@ -32,7 +32,7 @@ const FIN_CANCELLA_WA_MS = 48 * 60 * 60 * 1000;
 // gliela dà qualcun altro — è così che l'Omnichat riusa questa schermata con
 // TUTTE le sue funzioni (modifica, elimina, allegati, nuova chat, chip dei
 // numeri) invece di riscriverne una copia povera.
-export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null, apriConvId = null, senzaLista = false }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null; apriConvId?: string | null; senzaLista?: boolean }) {
+export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null, apriConvId = null, senzaLista = false, apriNuovaChat = false }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null; apriConvId?: string | null; senzaLista?: boolean; apriNuovaChat?: boolean }) {
     const { user } = useAuth();
     const [instances, setInstances] = useState<Instance[]>([]);
     const [selInst, setSelInst] = useState<string | null>(null);
@@ -45,6 +45,9 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const [editMsg, setEditMsg] = useState<Msg | null>(null);
     const [linkModal, setLinkModal] = useState(false);
     const [nuovaChat, setNuovaChat] = useState(false);   // modale «Nuova chat a un numero»
+    // l'Omnichat può chiedere di partire già col modale aperto («Nuova
+    // conversazione» → WhatsApp, Luca 27/08)
+    useEffect(() => { if (apriNuovaChat) setNuovaChat(true); }, [apriNuovaChat]);
     const [emojiOpen, setEmojiOpen] = useState(false);   // picker emoji del composer (25/08)
     const [relinkName, setRelinkName] = useState<string | null>(null);   // ri-scansione di un numero disconnesso
     const [syncing, setSyncing] = useState(false);
