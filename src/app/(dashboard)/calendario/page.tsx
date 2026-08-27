@@ -12,7 +12,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { numeroNazionale } from "@/lib/telefono";
-import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { seesAllStores, seesWholeStore, areaOf } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -78,6 +78,9 @@ interface CalendarTask {
     status: TaskStatus;
     notes?: string;
     outcomeNote?: string; // Final note when closing/updating task
+    /** quando è stata assegnata: da qui partono i due giorni (Luca 28/08) */
+    creataIl?: string;
+    esitoAt?: string;
     clientRef?: string; // CF or Name + Phone
     createdBy: string;
     createdByUserId?: string;
@@ -285,6 +288,8 @@ function mapTaskRow(r: Record<string, unknown>): CalendarTask {
         clientRef: r.client_ref as string | undefined,
         createdBy: r.created_by as string,
         createdByUserId: (r.created_by_user_id as string | null) ?? undefined,
+        creataIl: (r.created_at as string | null) ?? undefined,
+        esitoAt: (r.esito_at as string | null) ?? undefined,
         assignedTo: (r.assigned_to as string) ?? "",
         assignedToStore: r.assigned_to_store as string | undefined,
     };
@@ -810,7 +815,13 @@ export default function Calendario() {
     // ── Vista MESE / SETTIMANA ────────────────────────────────────────────────
     // La settimanale parte sempre dalla settimana in corso (lunedi'); i giorni
     // mostrano gli impegni gia' espansi e cliccabili, il pannello a destra resta.
-    const [calView, setCalView] = useState<"month" | "week" | "day">("month");
+    /* «Imposta su TUTTI i calendari la visualizzazione settimanale, e anche
+       se qualcuno la porta su altre visualizzazioni, ogni volta che esci e
+       rientri la predefinita deve essere quella settimanale» (Luca 28/08).
+       È la vista che regge il lavoro di qui: la settimana mostra i nomi, il
+       mese mostra pallini. Quindi si apre SEMPRE così — la scelta diversa
+       vale per la sessione, non si eredita al rientro. */
+    const [calView, setCalView] = useState<"month" | "week" | "day">("week");
     // domenica a scomparsa nella vista settimana (Luca 31/07): nascosta, gli
     // altri giorni respirano di piu'
     // Domenica NASCOSTA di default (Luca 05/08): il tasto la rimostra e la
@@ -827,7 +838,9 @@ export default function Calendario() {
             const raw = localStorage.getItem(`calendario_vista_${user.id}`);
             if (raw) {
                 const p = JSON.parse(raw) as { calView?: string; mostraDomenica?: boolean };
-                if (p.calView === "month" || p.calView === "week" || p.calView === "day") setCalView(p.calView);
+                // ⚠️ la VISTA non si ripristina più (Luca 28/08): si riapre
+                // sempre sulla settimana. Resta invece la domenica nascosta,
+                // che è una preferenza di ingombro, non di lavoro.
                 if (typeof p.mostraDomenica === "boolean") setMostraDomenica(p.mostraDomenica);
             }
         } catch { /* preferenza corrotta: si riparte dal default */ }
@@ -908,6 +921,14 @@ export default function Calendario() {
     // dallo store manager in su si assegna, ma solo dentro il proprio team.
     const canAssignOthers = seesAllStores(user?.role) || seesWholeStore(user?.role);
     const isAgent = !isCallCenter;
+    /* CHI VEDE QUALE CATEGORIA (Luca 28/08) — i richiami sono roba del call
+       center; l'outbound è degli AGENTI (che li fanno) e del call center (che
+       glieli fissa). Un negozio non ha né gli uni né gli altri: mostrargli i
+       filtri è mostrargli due bottoni che non trovano mai niente. */
+    const ruolo = String(user?.role || "");
+    const areaMia = areaOf(ruolo);
+    const vedeRichiami = isCallCenter || areaMia === "cc" || seesAllStores(ruolo);
+    const vedeOutbound = isCallCenter || areaMia === "cc" || areaMia === "ob" || seesAllStores(ruolo);
     const canCreateMeeting = seesAllStores(user?.role) || seesWholeStore(user?.role);
 
     const isDateBlocked = (dateStr: string) =>
@@ -1054,6 +1075,90 @@ export default function Calendario() {
         abbandonata: { bordo: "border-rose-500/40", fondo: "bg-rose-500/10", testo: "text-rose-200/70", banda: "bg-rose-500", etichetta: "Abbandonata" },
     };
     const coloreTask = (t: CalendarTask) => COLORE_TASK[t.status] || COLORE_TASK.da_fare;
+
+    /* ══ IL PATTO DEI DUE GIORNI ═══════════════════════════════════════════
+       «Le task ASSEGNATE — quelle che ti dà qualcun altro, non quelle che ti
+       dai da solo — devono essere lavorate entro 2 giorni, altrimenti vanno
+       in malus» (Luca 28/08).
+
+       Tre scelte che ho preso, e le scrivo perché sono discutibili:
+
+       · IL CRONOMETRO PARTE DALL'ASSEGNAZIONE (created_at), non dalla data
+         della task: una task per venerdì assegnata lunedì non può stare in
+         malus da martedì. È il tempo di RISPOSTA che si misura, non la
+         puntualità.
+       · LA DOMENICA NON CONTA. I negozi lavorano sei giorni: far scadere di
+         domenica una task data venerdì sera sarebbe una tagliola, non una
+         regola.
+       · «LAVORATA» VUOL DIRE CHIUSA O RIMANDATA INDIETRO con un motivo
+         (fatta, abbandonata, problema). «In corso» NON ferma il cronometro:
+         altrimenti basterebbe aprirla e lasciarla lì per sempre.
+
+       Chi se la autoassegna non ha nessun patto da rispettare: è roba sua. */
+    const ORE_PATTO = 48;
+    const LAVORATE = ["fatta", "abbandonata", "problema"];
+    /** giorni pieni fra due date, saltando le domeniche */
+    const giorniUtili = (da: Date, a: Date) => {
+        let n = 0;
+        const cur = new Date(da);
+        while (cur < a) {
+            cur.setTime(cur.getTime() + 86400000);
+            if (cur.getDay() !== 0) n++;
+        }
+        return n;
+    };
+    /** la scadenza: assegnazione + 2 giorni utili, a fine giornata */
+    const scadenzaDi = (t: CalendarTask): Date | null => {
+        if (!t.creataIl) return null;
+        const d = new Date(t.creataIl);
+        if (isNaN(d.getTime())) return null;
+        let restanti = 2;
+        while (restanti > 0) {
+            d.setDate(d.getDate() + 1);
+            if (d.getDay() !== 0) restanti--;
+        }
+        d.setHours(23, 59, 59, 999);
+        return d;
+    };
+    /** una task «assegnata»: me l'ha data qualcun altro (o è del mio negozio) */
+    const eAssegnata = (t: CalendarTask) => {
+        const chiDa = String(t.createdBy || "").trim().toLowerCase();
+        const chiA = String(t.assignedTo || "").trim().toLowerCase();
+        if (t.assignedToStore) return true;              // a un negozio: sempre assegnata
+        return !!chiDa && !!chiA && chiDa !== chiA;
+    };
+
+    type Patto = { stato: "in_tempo" | "oggi" | "malus"; giorni: number; scadenza: Date; percentuale: number; testo: string };
+    const pattoDi = (t: CalendarTask): Patto | null => {
+        if (!eAssegnata(t)) return null;
+        if (LAVORATE.includes(t.status)) return null;    // patto rispettato: niente conto
+        const scad = scadenzaDi(t);
+        if (!scad) return null;
+        const ora = new Date();
+        const nato = new Date(t.creataIl as string);
+        const totale = scad.getTime() - nato.getTime();
+        const passato = ora.getTime() - nato.getTime();
+        const percentuale = Math.max(0, Math.min(100, Math.round((passato / Math.max(1, totale)) * 100)));
+        if (ora > scad) {
+            const g = Math.max(1, giorniUtili(scad, ora));
+            return { stato: "malus", giorni: g, scadenza: scad, percentuale: 100,
+                testo: g === 1 ? "in malus da 1 giorno" : `in malus da ${g} giorni` };
+        }
+        const stessoGiorno = scad.toDateString() === ora.toDateString();
+        if (stessoGiorno) {
+            const oreRimaste = Math.max(1, Math.round((scad.getTime() - ora.getTime()) / 3600000));
+            return { stato: "oggi", giorni: 0, scadenza: scad, percentuale,
+                testo: oreRimaste <= 12 ? `scade fra ${oreRimaste} ore` : "scade oggi" };
+        }
+        const g = Math.max(1, giorniUtili(ora, scad));
+        return { stato: "in_tempo", giorni: g, scadenza: scad, percentuale,
+            testo: g === 1 ? "resta 1 giorno" : `restano ${g} giorni` };
+    };
+    const COLORE_PATTO = {
+        in_tempo: { testo: "text-slate-400", fondo: "bg-slate-400/10", bordo: "border-white/10", barra: "bg-slate-400", icona: "⏳" },
+        oggi: { testo: "text-amber-200", fondo: "bg-amber-500/15", bordo: "border-amber-400/40", barra: "bg-amber-400", icona: "⚠️" },
+        malus: { testo: "text-rose-100", fondo: "bg-rose-500/20", bordo: "border-rose-400/50", barra: "bg-rose-500", icona: "🔥" },
+    } as const;
 
     const tasksByDate = (dateStr: string) =>
         tasks.filter(t => t.date === dateStr && taskVisibile(t) && (!taskOutcomeFilter || t.status === taskOutcomeFilter));
@@ -1403,6 +1508,23 @@ export default function Calendario() {
             });
         }
 
+        // 1-bis. IL PATTO DEI DUE GIORNI: chi è in malus viene prima di tutto.
+        // Non è un promemoria, è un debito — e i debiti si mettono in cima.
+        const mie = taskPerimetro.filter((t) => !t.assignedToStore
+            && String(t.assignedTo || "").trim().toLowerCase() === mio);
+        const inMalus = mie.map((t) => ({ t, p: pattoDi(t) })).filter((x) => x.p?.stato === "malus");
+        const scadonoOggi = mie.map((t) => ({ t, p: pattoDi(t) })).filter((x) => x.p?.stato === "oggi");
+        if (inMalus.length) out.push({
+            id: "malus", icona: "🔥", tono: "rosso", peso: 120,
+            testo: `${inMalus.length} ${inMalus.length === 1 ? "task assegnata è in MALUS" : "task assegnate sono in MALUS"}`,
+            vai: () => { setTaskScope("a_me"); if (inMalus[0]) vaiAlGiorno(inMalus[0].t.date); },
+        });
+        if (scadonoOggi.length) out.push({
+            id: "scadono", icona: "⚠️", tono: "ambra", peso: 110,
+            testo: `${scadonoOggi.length} ${scadonoOggi.length === 1 ? "task assegnata scade" : "task assegnate scadono"} oggi`,
+            vai: () => { setTaskScope("a_me"); if (scadonoOggi[0]) vaiAlGiorno(scadonoOggi[0].t.date); },
+        });
+
         // 2. task tornate indietro con un problema (le ho date io)
         const tornate = taskPerimetro.filter((t) => t.status === "problema"
             && ((t.createdByUserId && t.createdByUserId === user?.id) || String(t.createdBy || "").trim().toLowerCase() === mio));
@@ -1454,6 +1576,28 @@ export default function Calendario() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [meetings, tasks, appointments, user?.id, user?.name, todayStr, isTaskTutte, vistaTask, mieiNegozi.join("|")]);
+
+    /* ══ IL NASTRO DELLA GIORNATA ══════════════════════════════════════════
+       Luca: «più gaming che ministeriale». La versione sobria di quella cosa:
+       una barra che dice quanta parte della giornata è chiusa — appuntamenti
+       esitati più task lavorate, su quello che c'era da fare oggi.
+
+       Niente punti, niente classifiche, niente medaglie: è il MIO lavoro di
+       oggi, e l'unica ricompensa è vederlo arrivare in fondo. Quando è pieno
+       diventa smeraldo e lo dice; se non c'è niente da fare, non compare. */
+    const nastroOggi = useMemo(() => {
+        const mio = String(user?.name || "").trim().toLowerCase();
+        const apptOggi = appointments.filter((a) => a.date === todayStr && visibileBase(a)
+            && (isCallCenter || a.agente === user?.name || a.createdBy === user?.name));
+        const taskOggi = tasks.filter((t) => t.date === todayStr && !t.assignedToStore
+            && String(t.assignedTo || "").trim().toLowerCase() === mio);
+        const totale = apptOggi.length + taskOggi.length;
+        if (!totale) return null;
+        const chiusi = apptOggi.filter((a) => a.status !== "scheduled").length
+            + taskOggi.filter((t) => LAVORATE.includes(t.status)).length;
+        return { totale, chiusi, pct: Math.round((chiusi / totale) * 100) };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [appointments, tasks, todayStr, user?.name, isCallCenter]);
 
     const arretrateInColonna = isTaskTutte
         ? tasksArretrate.filter(t => t.assignedTo === user?.name || t.createdBy === user?.name)
@@ -1734,6 +1878,24 @@ export default function Calendario() {
                         </div>
                     )}
                 </div>
+                {nastroOggi && (
+                    <div className="px-3 pb-2.5 -mt-0.5">
+                        <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                                <div className={cn("h-full rounded-full transition-all duration-700",
+                                    nastroOggi.pct === 100 ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
+                                        : "bg-gradient-to-r from-indigo-500 to-violet-400")}
+                                    style={{ width: `${Math.max(2, nastroOggi.pct)}%` }} />
+                            </div>
+                            <span className={cn("text-[10px] font-bold tabular-nums shrink-0",
+                                nastroOggi.pct === 100 ? "text-emerald-300" : "text-slate-400")}>
+                                {nastroOggi.pct === 100
+                                    ? `✓ giornata chiusa · ${nastroOggi.totale}/${nastroOggi.totale}`
+                                    : `${nastroOggi.chiusi}/${nastroOggi.totale} chiusi oggi`}
+                            </span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── FILTRI UNIFICATI (MOD-26, Luca 10/08): ricerca cliente, periodo,
@@ -1750,16 +1912,23 @@ export default function Calendario() {
                             className="glass-input w-full text-sm h-9 pl-9"
                             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                     </div>
-                    {/* le categorie restano fuori: sono il gesto più frequente */}
+                    {/* CATEGORIE PER CHI LE USA (Luca 28/08): «i richiami sono
+                        del call center, l'outbound degli agenti e del call
+                        center, che glieli fissa». Un filtro che nel proprio
+                        calendario non trova mai niente è solo rumore. */}
                     <div className="flex flex-wrap items-center gap-1.5">
-                        {([
+                        {(([
                             ["incoming", "↙ Inbound", "bg-blue-400"],
                             ["outgoing", "↗ Outbound", "bg-amber-400"],
                             ["self_generated", "Auto", "bg-purple-400"],
                             ["richiamo", "☎ Richiami", "bg-pink-400"],
                             ["task", "Task", "bg-emerald-500"],
                             ["meeting", "Riunioni", "bg-sky-400"],
-                        ] as [string, string, string][]).map(([id, label, dot]) => (
+                        ] as [string, string, string][]).filter(([id]) => {
+                            if (id === "richiamo") return vedeRichiami;
+                            if (id === "outgoing") return vedeOutbound;
+                            return true;
+                        })).map(([id, label, dot]) => (
                             <button key={id} type="button" onClick={() => toggleCat(id)}
                                 className={cn("flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors",
                                     catFilter.includes(id) ? "border-white/25 bg-white/[0.08] text-white" : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-slate-200")}>
@@ -1779,6 +1948,30 @@ export default function Calendario() {
                         })()}
                         <span className="text-slate-500">{filtriAperti ? "▲" : "▼"}</span>
                     </button>
+                </div>
+
+                {/* AMBITO TASK SEMPRE VISIBILE (Luca 28/08): «è un pulsante
+                    interessante e veloce da utilizzare» — dentro la tendina lo
+                    si usava solo per caso. */}
+                <div className="px-2.5 pb-2.5 -mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">Task</span>
+                    <div className="flex bg-white/[0.03] p-0.5 rounded-xl border border-white/10">
+                        {([["tutte", "Tutte"], ["a_me", "👤 Assegnate a me"], ["da_me", "📤 Assegnate da me"]] as [typeof taskScope, string][]).map(([id, lab]) => (
+                            <button key={id} type="button" onClick={() => setTaskScope(id)}
+                                className={cn("px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors",
+                                    taskScope === id ? "bg-white/[0.09] text-white shadow-sm" : "text-slate-400 hover:text-slate-200")}>
+                                {lab}
+                            </button>
+                        ))}
+                    </div>
+                    <span className="hidden lg:flex items-center gap-2 ml-auto text-[10px] text-slate-500">
+                        {["da_fare", "in_corso", "fatta", "sospesa", "problema"].map((k) => (
+                            <span key={k} className="flex items-center gap-1">
+                                <span className={cn("w-2 h-2 rounded-full", COLORE_TASK[k].banda)} />
+                                {COLORE_TASK[k].etichetta}
+                            </span>
+                        ))}
+                    </span>
                 </div>
 
                 {filtriAperti && <div className="px-3.5 pb-3.5 pt-1 space-y-3 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
@@ -1838,32 +2031,6 @@ export default function Calendario() {
                         );
                     })()}
                 </div>
-                {/* riga 1-bis: DI CHI SONO LE TASK (Luca 27/08) — tre vie, e si
-                    legge senza spiegazioni: tutte, quelle che devo fare io,
-                    quelle che ho dato io a qualcun altro. */}
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-slate-500">Task</span>
-                    <div className="flex bg-white/[0.03] p-0.5 rounded-xl border border-white/10">
-                        {([["tutte", "Tutte"], ["a_me", "👤 Assegnate a me"], ["da_me", "📤 Assegnate da me"]] as [typeof taskScope, string][]).map(([id, lab]) => (
-                            <button key={id} type="button" onClick={() => setTaskScope(id)}
-                                className={cn("px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors",
-                                    taskScope === id ? "bg-white/[0.09] text-white shadow-sm" : "text-slate-400 hover:text-slate-200")}>
-                                {lab}
-                            </button>
-                        ))}
-                    </div>
-                    {/* LEGENDA DEI COLORI: le task ora si distinguono a colpo
-                        d'occhio, e il colore va spiegato una volta sola */}
-                    <span className="hidden lg:flex items-center gap-2 ml-auto text-[10px] text-slate-500">
-                        {["da_fare", "in_corso", "fatta", "sospesa", "problema"].map((k) => (
-                            <span key={k} className="flex items-center gap-1">
-                                <span className={cn("w-2 h-2 rounded-full", COLORE_TASK[k].banda)} />
-                                {COLORE_TASK[k].etichetta}
-                            </span>
-                        ))}
-                    </span>
-                </div>
-
                 {/* riga 2: punti vendita / consulenti / fissato da (solo platee plurali) */}
                 {puoFiltrareCal && (mostraFiltroNegozio || mostraFiltroConsulente || fissatoDaOpzioni.length > 1) && (
                     <div className="flex flex-wrap gap-2.5">
@@ -2269,7 +2436,14 @@ export default function Calendario() {
                                                         <div className={cn("font-semibold truncate", ct.testo, t.status === "fatta" && "line-through")}>
                                                             {t.time ? `${t.time} ` : ""}{t.title}
                                                         </div>
-                                                        <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
+                                                        <div className="flex items-center gap-1 min-w-0">
+                                                            <span className="text-slate-400 truncate flex-1">{t.assignedToStore || t.assignedTo}</span>
+                                                            {(() => { const pt = pattoDi(t); if (!pt) return null; const cp = COLORE_PATTO[pt.stato];
+                                                                return <span className={cn("shrink-0 px-1 rounded text-[9px] font-black leading-4", cp.fondo, cp.testo)}
+                                                                    title={`Assegnata: ${pt.testo}`}>
+                                                                    {cp.icona}{pt.stato === "malus" ? `+${pt.giorni}` : pt.stato === "oggi" ? "oggi" : `${pt.giorni}g`}
+                                                                </span>; })()}
+                                                        </div>
                                                     </button>
                                                 ) }; }),
                                                 ...dayMeetings.map((m) => ({ min: minutiDi(m.startTime), jsx: (
@@ -2297,6 +2471,7 @@ export default function Calendario() {
                     {taskDettaglio && (
                         <TaskDettaglioModal
                             t={taskDettaglio}
+                            patto={pattoDi(taskDettaglio)}
                             puoGestire={canAssignOthers || taskDettaglio.createdBy === user?.name}
                             mioNome={user?.name || ""}
                             persone={[...(user?.name ? [user.name] : []), ...assignableAgents.filter(a => a !== user?.name)]}
@@ -2546,6 +2721,26 @@ export default function Calendario() {
                                         t.status === "abbandonata" && "opacity-80",
                                     )}>
                                             <span className={cn("absolute left-0 top-0 bottom-0 w-1", coloreTask(t).banda)} />
+                                            {/* IL CRONOMETRO DEL PATTO (Luca 28/08): una riga sola,
+                                                che dice quanto manca e quanto è già passato. La barra
+                                                è il tempo consumato: quando è piena, si è in malus. */}
+                                            {(() => { const pt = pattoDi(t); if (!pt) return null; const cp = COLORE_PATTO[pt.stato];
+                                                return (
+                                                    <div className={cn("mb-2 -mt-0.5 rounded-lg border px-2 py-1.5", cp.fondo, cp.bordo)}>
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className={cn("text-[10px] font-black uppercase tracking-wider flex items-center gap-1", cp.testo)}>
+                                                                {cp.icona} {pt.testo}
+                                                            </span>
+                                                            <span className="text-[9px] text-slate-500 tabular-nums">
+                                                                entro {pt.scadenza.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                                                            </span>
+                                                        </div>
+                                                        <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                                                            <div className={cn("h-full rounded-full transition-all duration-500", cp.barra)}
+                                                                style={{ width: `${pt.percentuale}%` }} />
+                                                        </div>
+                                                    </div>
+                                                ); })()}
                                             <div className="flex justify-between items-start mb-2 gap-2">
                                                 <div className="flex items-start gap-2 max-w-[70%]">
                                                     <button
@@ -3713,8 +3908,10 @@ export default function Calendario() {
 // Cliccando una task nel calendario centrale o nel pannello a destra si apre
 // questo modale: campi modificabili (per chi la gestisce), stato, e AGGIUNTA
 // di nuovi assegnatari — persone o punti vendita — che genera task gemelle.
-function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, onClose, onAggiornata, onCopie, onElimina }: {
+function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, esiti, onClose, onAggiornata, onCopie, onElimina }: {
     t: CalendarTask;
+    /** il patto dei due giorni, calcolato dalla pagina (null = non si applica) */
+    patto: { stato: "in_tempo" | "oggi" | "malus"; giorni: number; scadenza: Date; percentuale: number; testo: string } | null;
     puoGestire: boolean;
     mioNome?: string;
     persone: string[];
@@ -3856,6 +4053,33 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
                             </select>
                         </div>
                     </div>
+                    {/* IL PATTO, DETTO UNA VOLTA E BENE (Luca 28/08): chi apre
+                        una task assegnata deve sapere entro quando va lavorata,
+                        e cosa succede se non lo fa. Niente asterischi. */}
+                    {patto && (
+                        <div className={cn("rounded-xl border p-3 flex items-center gap-3",
+                            patto.stato === "malus" ? "border-rose-400/50 bg-rose-500/15"
+                                : patto.stato === "oggi" ? "border-amber-400/40 bg-amber-500/10"
+                                    : "border-white/10 bg-white/[0.02]")}>
+                            <span className="text-2xl leading-none">{patto.stato === "malus" ? "🔥" : patto.stato === "oggi" ? "⚠️" : "⏳"}</span>
+                            <div className="min-w-0 flex-1">
+                                <p className={cn("text-sm font-bold",
+                                    patto.stato === "malus" ? "text-rose-100" : patto.stato === "oggi" ? "text-amber-100" : "text-slate-200")}>
+                                    {patto.stato === "malus" ? `In malus da ${patto.giorni} ${patto.giorni === 1 ? "giorno" : "giorni"}` : patto.testo.charAt(0).toUpperCase() + patto.testo.slice(1)}
+                                </p>
+                                <p className="text-[11px] text-slate-400 leading-snug mt-0.5">
+                                    Le task che ti vengono assegnate vanno lavorate entro <b>2 giorni</b> (la domenica non conta).
+                                    Chiuderla, abbandonarla o rimandarla indietro con un motivo ferma il tempo — prenderla «in corso» no.
+                                </p>
+                                <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                                    <div className={cn("h-full rounded-full",
+                                        patto.stato === "malus" ? "bg-rose-500" : patto.stato === "oggi" ? "bg-amber-400" : "bg-slate-400")}
+                                        style={{ width: `${patto.percentuale}%` }} />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1.5">
                             {assegnataDaAltri ? <>📥 La consegna di <b className="text-slate-300">{t.createdBy || "chi te l'ha data"}</b></> : "Note"}
