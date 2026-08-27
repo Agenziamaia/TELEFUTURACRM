@@ -27,6 +27,8 @@ if ($Install) {
   $dest = Join-Path $env:LOCALAPPDATA "TelefuturaPosAgent\agent.ps1"
   New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
   Copy-Item -Path $MyInvocation.MyCommand.Path -Destination $dest -Force
+  # Scarica anche il driver Custom (registratori Vodafone via OPOS locale).
+  try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile (Join-Path (Split-Path $dest) "cust-fp.ps1") -TimeoutSec 30 } catch { }
   $argLine = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dest`" -Crm `"$Crm`" -Token `"$Token`" -Negozio `"$Negozio`" -FiscalUrl `"$FiscalUrl`" -CashIp `"$CashIp`""
   # Avvio automatico a ogni ACCESSO — chiave Run dell'UTENTE: nessun permesso admin.
   Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TelefuturaPosAgent" -Value ("powershell " + $argLine) -Force
@@ -54,6 +56,10 @@ Write-Host "  Telefutura POS Agent AVVIATO" -ForegroundColor Cyan
 Write-Host "  CRM=$Crm  negozio='$Negozio'  stampante='$FiscalUrl'  cassa='$CashIp'  ogni ${IntervalSec}s"
 Write-Host ""
 
+# Driver Custom (registratori Vodafone via OPOS locale): sta accanto all'agente.
+$scriptDir = Split-Path -Parent $PSCommandPath
+$custFp = Join-Path $scriptDir "cust-fp.ps1"
+
 # ── Stampante fiscale Epson (ePOS/fpMate) ────────────────────────────────────
 function Invoke-Epson {
   param([string]$BaseUrl, [string]$RequestXml)
@@ -64,6 +70,37 @@ function Invoke-Epson {
   $pr = Invoke-WebRequest -UseBasicParsing -Uri $printerUrl -Method Post -Body $soap `
         -ContentType "text/xml; charset=UTF-8" -Headers @{ SOAPAction = '""' } -TimeoutSec 40
   return $pr.Content
+}
+
+# ── Registratore Custom (Vodafone) — OPOS locale via MiraOposDll ─────────────
+# Nessun HTTP: il device_url non-http (es. "custom" o "custom://<nomeOPOS>") indica
+# un registratore Custom. Estrae il testo dall'ePOS XML e delega a cust-fp.ps1 (32b).
+function Invoke-CustomOpos {
+  param([string]$DeviceUrl, [string]$RequestXml)
+  $oposName = "CUSTOM"
+  if ($DeviceUrl -match '^custom://(.+)$') { $oposName = $Matches[1] }
+
+  $job = $null
+  if ($RequestXml -match '<printerFiscalReceipt') {
+    $job = @{ kind = "fiscal_receipt" }
+  } else {
+    $lines = @()
+    foreach ($m in [regex]::Matches($RequestXml, 'data="([^"]*)"')) {
+      $lines += [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)
+    }
+    $job = @{ kind = "non_fiscal"; lines = $lines }
+  }
+
+  if (-not (Test-Path $custFp)) {
+    try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 30 } catch { }
+  }
+  $jf = Join-Path $env:TEMP ("custjob_" + [guid]::NewGuid().ToString("N") + ".json")
+  ($job | ConvertTo-Json -Compress) | Set-Content -LiteralPath $jf -Encoding UTF8
+  try {
+    $ps32 = Join-Path $env:WINDIR "SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+    $out = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $custFp -JobFile $jf -OposName $oposName 2>&1
+    return (($out | Where-Object { $_ -match '"ok"\s*:' } | Select-Object -Last 1))
+  } finally { try { Remove-Item -LiteralPath $jf -Force } catch { } }
 }
 
 # ── Cassa pagAmico (TCP 9100) — protocollo ricostruito e validato live ───────
@@ -129,11 +166,18 @@ while ($true) {
           # Multi-societario: usa il RT indicato dal CRM per QUESTO job (azienda giusta);
           # -FiscalUrl resta solo come fallback se il job non specifica il device.
           $base = if ($job.device_url) { $job.device_url } else { $FiscalUrl }
-          $resp = Invoke-Epson -BaseUrl $base -RequestXml $job.request_xml
-          # la stampante risponde 200 anche sugli errori: l'esito VERO e' success="true|false"
-          if ($resp -match 'success="true"')      { $ok = $true }
-          elseif ($resp -match 'success="false"') { $ok = $false }
-          else                                    { $ok = $true }   # comandi senza success esplicito
+          if ($base -match '^https?://') {
+            # Epson RT via fpMate (HTTP)
+            $resp = Invoke-Epson -BaseUrl $base -RequestXml $job.request_xml
+            # la stampante risponde 200 anche sugli errori: l'esito VERO e' success="true|false"
+            if ($resp -match 'success="true"')      { $ok = $true }
+            elseif ($resp -match 'success="false"') { $ok = $false }
+            else                                    { $ok = $true }   # comandi senza success esplicito
+          } else {
+            # Registratore Custom (Vodafone): OPOS locale, nessun HTTP.
+            $resp = Invoke-CustomOpos -DeviceUrl $base -RequestXml $job.request_xml
+            try { $ok = [bool]((($resp | ConvertFrom-Json)).ok) } catch { $ok = $false }
+          }
         }
       } catch { $ok = $false; $resp = $_.Exception.Message }
 

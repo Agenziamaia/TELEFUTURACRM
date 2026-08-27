@@ -1,68 +1,89 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# SONDA Custom (SOLA LETTURA) — apre il driver OPOS "Custom Fiscal Printer" che
-# usa gia' SuiteMobile e ne legge lo stato. NON stampa e NON tocca il fiscale.
-# Serve a provare che possiamo pilotare la cassa Custom con lo stesso driver.
+# DRIVER Custom FP90X — pilota il registratore telematico Custom (corner Vodafone)
+# tramite il driver OPOS gia' installato da SuiteMobile (MiraOposDll), SENZA
+# password/fpMate. Invocato dall'agente POS per i negozi con registratore Custom.
 #
-# IMPORTANTE:
-#  - va eseguita in PowerShell a 32 bit (il driver OPOS Custom e' a 32 bit);
-#  - il server fiscale di SuiteMobile (MIRA_FP_SERVER) deve essere CHIUSO
-#    (una sola connessione alla volta verso la cassa).
+# Sequenza ricavata dai sorgenti SuiteMobile (MIRA_FP_SERVER -> avvia_stampante_fiscale):
+#   tipo_stampante='CUSTOM' + custom_kube=true -> apri_stampante('CUSTOM','',false)
+#   -> OPOS Open/ClaimDevice(100)/DeviceEnabled ; non fiscale = comincia_scontrino_nonfiscale
+#   -> stampa_testo_semplice_nonfiscale (PrintNormal) -> chiudi_scontrino_nonfiscale.
+#
+# VINCOLI:
+#   - gira a 32 bit (MiraOposDll e' x86): si rilancia da solo in SysWOW64;
+#   - il registratore deve essere LIBERO: MIRA_FP_SERVER di SuiteMobile CHIUSO
+#     (una sola connessione alla volta verso la cassa) -> l'agente lo gestisce.
+#
+# USO:  powershell -File cust-fp.ps1 -JobFile <job.json> [-OposName CUSTOM]
+#   job.json = { "kind":"non_fiscal", "lines":["riga1","riga2", ...] }
+# Stampa su stdout, ULTIMA riga = esito JSON: {"ok":true,"msg":"...","matricola":"..."}
 # ─────────────────────────────────────────────────────────────────────────────
-$fpnet = "C:\mirasolutions\SuiteMobile\PDV\fpnet"
-$ref = Join-Path $fpnet "Microsoft.PointOfService.dll"
-Write-Host ""
-Write-Host ("PowerShell a {0} bit  (serve 32)" -f ([IntPtr]::Size * 8)) -ForegroundColor Cyan
-if ([IntPtr]::Size -ne 4) {
-  Write-Host "Sei a 64 bit. Riesegui con la PowerShell a 32 bit:" -ForegroundColor Yellow
-  Write-Host '  C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File ' + $PSCommandPath -ForegroundColor Yellow
-  exit 1
-}
-if (-not (Test-Path $ref)) { Write-Host "Non trovo $ref" -ForegroundColor Red; exit 1 }
+param(
+  [string]$JobFile,
+  [string]$Fpnet = "C:\mirasolutions\SuiteMobile\PDV\fpnet",
+  [string]$OposName = "CUSTOM"
+)
+$ErrorActionPreference = "Stop"
 
-$code = @"
-using System;
-using System.IO;
-using System.Reflection;
-using Microsoft.PointOfService;
-public class CustProbe {
-  public static void Run() {
-    // le dipendenze del driver stanno nella cartella fpnet: risolvile da li'.
-    string dir = @"C:\mirasolutions\SuiteMobile\PDV\fpnet\";
-    AppDomain.CurrentDomain.AssemblyResolve += delegate(object s, ResolveEventArgs a) {
-      string f = dir + new AssemblyName(a.Name).Name + ".dll";
-      return File.Exists(f) ? Assembly.LoadFrom(f) : null;
-    };
-    PosExplorer ex = new PosExplorer();
-    Console.WriteLine("== dispositivi visti da POS for .NET ==");
-    foreach (DeviceInfo di in ex.GetDevices()) {
-      Console.WriteLine("  type=" + di.Type + " so=" + di.ServiceObjectName + " nomi=" + string.Join("|", di.LogicalNames));
-    }
-    DeviceInfo target = null;
-    foreach (DeviceInfo di in ex.GetDevices(DeviceType.FiscalPrinter)) {
-      if (target == null) target = di;
-      foreach (string ln in di.LogicalNames)
-        if (ln.IndexOf("Custom", StringComparison.OrdinalIgnoreCase) >= 0) target = di;
-    }
-    if (target == null) { Console.WriteLine(">> NESSUN FiscalPrinter registrato in POS for .NET"); return; }
-    Console.WriteLine(">> Apro: " + string.Join("|", target.LogicalNames));
-    FiscalPrinter fp = (FiscalPrinter)ex.CreateInstance(target);
-    fp.Open();
-    fp.Claim(4000);
-    fp.DeviceEnabled = true;
-    Console.WriteLine(">> APERTO. Enabled=" + fp.DeviceEnabled + " State=" + fp.State);
-    try { Console.WriteLine(">> PrinterState=" + fp.PrinterState); } catch (Exception e1) { Console.WriteLine("   (PrinterState n/d: " + e1.Message + ")"); }
-    try { string h = fp.CheckHealth(HealthCheckLevel.Internal); Console.WriteLine(">> Health=" + h); } catch (Exception e2) { Console.WriteLine("   (CheckHealth: " + e2.Message + ")"); }
-    fp.DeviceEnabled = false; fp.Release(); fp.Close();
-    Console.WriteLine(">> FATTO OK — il driver Custom risponde.");
-  }
+# ── rilancio a 32 bit se necessario ──────────────────────────────────────────
+if ([IntPtr]::Size -ne 4) {
+  $ps32 = Join-Path $env:WINDIR "SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+  & $ps32 -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath -JobFile $JobFile -Fpnet $Fpnet -OposName $OposName
+  exit $LASTEXITCODE
 }
-"@
+
+function Esito([bool]$ok, [string]$msg, [string]$mat) {
+  (@{ ok = $ok; msg = $msg; matricola = $mat } | ConvertTo-Json -Compress)
+}
+
+try { $job = Get-Content -Raw -LiteralPath $JobFile | ConvertFrom-Json }
+catch { Esito $false "job illeggibile: $($_.Exception.Message)" ""; exit 1 }
 
 try {
-  Add-Type -TypeDefinition $code -ReferencedAssemblies $ref -ErrorAction Stop
-  [CustProbe]::Run()
+  Set-Location $Fpnet
+  [Reflection.Assembly]::LoadFrom((Join-Path $Fpnet "MiraOposDll.dll")) | Out-Null
+} catch { Esito $false "MiraOposDll non caricata: $($_.Exception.Message)" ""; exit 1 }
+
+$fp = $null
+try {
+  $fp = New-Object MiraOposDll.FiscalPrinter('', 0, '', $true)
+  $fp.tipo_stampante = 'CUSTOM'
+  $fp.custom_kube = $true
+  $fp.apri_stampante($OposName, '', $false)
+  if (-not $fp.stampante_abilitata) { Esito $false "registratore non abilitato (OPOS '$OposName')" ""; exit 1 }
 } catch {
-  Write-Host ("ERRORE: " + $_.Exception.Message) -ForegroundColor Red
-  $inner = $_.Exception.InnerException
-  while ($inner) { Write-Host ("  causa: " + $inner.Message) -ForegroundColor Red; $inner = $inner.InnerException }
+  $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+  Esito $false "apertura fallita: $($ex.Message)" ""
+  try { if ($fp) { $fp.chiudi_stampante() } } catch { }
+  exit 1
+}
+
+$mat = ""
+try { $mat = [string]$fp.matricola_fiscale } catch { }
+
+try {
+  switch ("$($job.kind)") {
+    "non_fiscal" {
+      $fp.comincia_scontrino_nonfiscale()
+      foreach ($l in @($job.lines)) {
+        $fp.stampa_testo_semplice_nonfiscale([string]$l, $false, $false, $false)
+      }
+      $fp.chiudi_scontrino_nonfiscale()
+      Esito $true "non_fiscal stampato" $mat
+    }
+    "fiscal_receipt" {
+      # Percorso FISCALE Custom: da implementare e collaudare PRIMA del go-live
+      # fiscale (comincia_scontrino_fiscale / scrivi_riga_scontrino /
+      # stampa_riga_pagamenti / chiudi_scontrino_fiscale). Finche' i negozi
+      # Custom restano in TEST mode, il CRM invia solo non_fiscal.
+      Esito $false "fiscal Custom non ancora abilitato (tenere il negozio in test mode)" $mat
+    }
+    default { Esito $false "kind non gestito: $($job.kind)" $mat }
+  }
+} catch {
+  $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+  try { $fp.chiudi_scontrino_nonfiscale() } catch { }
+  try { $fp.resetta_stampante() } catch { }
+  Esito $false "stampa fallita: $($ex.Message)" $mat
+} finally {
+  try { $fp.chiudi_stampante() } catch { }
 }
