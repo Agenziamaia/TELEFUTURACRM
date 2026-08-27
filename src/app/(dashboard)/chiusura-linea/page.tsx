@@ -785,29 +785,34 @@ export default function ChiusuraLineaPage() {
     );
 
     return (
-        <div className="p-6">
-            <div className="max-w-7xl mx-auto space-y-6">
+        // ⚠️ NIENTE max-w qui (Luca 27/08: «questa pagina non è responsive»):
+        // la tabella delle disdette ha sette colonne e con il tetto a 1280px
+        // su uno schermo grande restavano due fasce vuote ai lati mentre il
+        // testo dentro le celle andava a capo. Le altre sezioni operative
+        // riempiono la larghezza: questa faceva eccezione senza motivo.
+        <div className="p-4 sm:p-6">
+            <div className="w-full space-y-6">
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                     <div>
                         <h1 className="text-2xl font-black text-white flex items-center gap-2.5"><Scissors className="w-6 h-6 text-indigo-400" /> Chiusura Linea</h1>
                         <p className="text-sm text-slate-500 mt-0.5">{direzione ? "Gestione globale delle richieste di disdetta" : puoInviare ? "Invio e monitoraggio delle tue richieste di disdetta" : "Consultazione delle richieste di disdetta"}</p>
                     </div>
-                    <div className="flex items-start gap-2 flex-wrap">
-                        <div className="relative">
+                    <div className="flex items-start gap-2 flex-wrap w-full sm:w-auto">
+                        <div className="relative flex-1 min-w-[10rem] sm:flex-none">
                             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cerca cliente…" className="glass-input !pl-8 text-xs w-44" />
+                            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cerca cliente…" className="glass-input !pl-8 text-xs w-full sm:w-44" />
                         </div>
                         {direzione && (
                             <>
-                                <div className="w-40"><SelectMulti values={fBrands} onChange={setFBrands} opzioni={BRANDS} placeholder="Brand: tutti" className="glass-input w-full text-xs" /></div>
-                                <div className="w-44"><SelectMulti values={fNegozi} onChange={setFNegozi} opzioni={negozi} placeholder="Negozio: tutti" className="glass-input w-full text-xs" /></div>
+                                <div className="flex-1 min-w-[9rem] sm:flex-none sm:w-40"><SelectMulti values={fBrands} onChange={setFBrands} opzioni={BRANDS} placeholder="Brand: tutti" className="glass-input w-full text-xs" /></div>
+                                <div className="flex-1 min-w-[9rem] sm:flex-none sm:w-44"><SelectMulti values={fNegozi} onChange={setFNegozi} opzioni={negozi} placeholder="Negozio: tutti" className="glass-input w-full text-xs" /></div>
                             </>
                         )}
                         {consulentiVisibili.length > 1 && (
-                            <div className="w-44"><SelectMulti values={fUtenti} onChange={setFUtenti} opzioni={consulentiVisibili} placeholder="Utente: tutti" className="glass-input w-full text-xs" /></div>
+                            <div className="flex-1 min-w-[9rem] sm:flex-none sm:w-44"><SelectMulti values={fUtenti} onChange={setFUtenti} opzioni={consulentiVisibili} placeholder="Utente: tutti" className="glass-input w-full text-xs" /></div>
                         )}
-                        <div className="w-36"><DatePickerInput value={fDal} onChange={setFDal} placeholder="Dal gg/mm/aaaa" /></div>
-                        <div className="w-36"><DatePickerInput value={fAl} onChange={setFAl} placeholder="Al gg/mm/aaaa" /></div>
+                        <div className="flex-1 min-w-[8.5rem] sm:flex-none sm:w-36"><DatePickerInput value={fDal} onChange={setFDal} placeholder="Dal gg/mm/aaaa" /></div>
+                        <div className="flex-1 min-w-[8.5rem] sm:flex-none sm:w-36"><DatePickerInput value={fAl} onChange={setFAl} placeholder="Al gg/mm/aaaa" /></div>
                     </div>
                 </div>
 
