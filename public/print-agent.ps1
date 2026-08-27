@@ -63,6 +63,23 @@ $custFp = Join-Path $scriptDir "cust-fp.ps1"
 # (es. il percorso FISCALE) arrivano da soli, senza tornare sul PC del negozio.
 try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 30 | Out-Null } catch { }
 
+# AUTO-AGGIORNAMENTO dell'AGENTE STESSO: scarica l'ultima versione e aggiorna la copia
+# installata (LOCALAPPDATA). Ha effetto al PROSSIMO avvio del PC → i fix (es. il calcolo
+# del resto cassa) arrivano da soli, SENZA reinstallare sul PC del negozio. Guardato:
+# sostituisce solo se il download e' un agente COMPLETO e valido (mai file corrotto/parziale).
+try {
+  $installed = Join-Path $env:LOCALAPPDATA "TelefuturaPosAgent\agent.ps1"
+  if (Test-Path $installed) {
+    $tmpA = Join-Path $env:TEMP "pa_update.ps1"
+    Invoke-WebRequest -UseBasicParsing -Uri "$Crm/print-agent.ps1" -OutFile $tmpA -TimeoutSec 30
+    $new = Get-Content -Raw -LiteralPath $tmpA -ErrorAction Stop
+    if ($new.Length -gt 3000 -and $new -match 'Telefutura POS Agent' -and $new -match 'function Invoke-Pagamico') {
+      $cur = ""; try { $cur = Get-Content -Raw -LiteralPath $installed } catch { }
+      if ($new -ne $cur) { Copy-Item -LiteralPath $tmpA -Destination $installed -Force; Write-Host "  (agente aggiornato: attivo al prossimo avvio)" -ForegroundColor DarkCyan }
+    }
+  }
+} catch { }
+
 # ── Stampante fiscale Epson (ePOS/fpMate) ────────────────────────────────────
 function Invoke-Epson {
   param([string]$BaseUrl, [string]$RequestXml)
@@ -122,7 +139,12 @@ function Invoke-Pagamico {
             $inc = [double]$o.collectedAmount
             if ($req -gt 0 -and $inc -ge $req) {
               $res.ok = $true; $res.incassato = $inc
-              $res.resto = [double]$o.changeCoins + [double]$o.changeBanknotes
+              # RESTO = incassato - richiesto. NON usare changeCoins/changeBanknotes:
+              # vengono letti troppo presto (prima che la macchina finisca di erogare
+              # il resto) → davano 0 anche pagando 50 su 10. inc/req sono nella STESSA
+              # unita' di 'incassato' (che si vede giusto), quindi il resto si visualizza
+              # corretto. La macchina (recycler) eroga comunque fisicamente inc-req.
+              $res.resto = [math]::Round($inc - $req, 2)
               $done = $true
             }
           } catch { }
