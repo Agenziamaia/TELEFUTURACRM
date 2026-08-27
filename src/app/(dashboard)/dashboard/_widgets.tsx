@@ -40,7 +40,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
-import { waIstanzeVisibili } from "@/lib/waVisibilita";
+import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa, vedeProtettiWa } from "@/lib/waVisibilita";
 import { matchNegozi, sameStore } from "@/lib/visibleStores";
 import { cn } from "@/utils";
 import {
@@ -1576,7 +1576,8 @@ function WidgetWhatsApp({ ctx, size }) {
             const utenti = new Map((users || []).map((u) => [u.id, u]));
             // solo le CONNESSE: le stesse chat che l'Inbox mostra (un alert su
             // un numero disconnesso sarebbe un click a vuoto)
-            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores, { soloConnesse: true });
+            const [scopeWa, protWa] = await Promise.all([waScopeRisolto(uid, ctx.user?.role), titolariProtettiWa()]);
+            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores, { soloConnesse: true, scope: scopeWa, protetti: protWa, vedeProtetti: vedeProtettiWa(uid, ctx.user?.role) });
             // stessa estensione dell'Inbox: il direttore cc vede i numeri dei suoi operatori
             if (ctx.user?.role === "direttore_cc") {
                 const gia = new Set(vis.map((i) => i.id));

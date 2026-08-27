@@ -6,6 +6,9 @@
 // l'inbox mostra: stesse utenze, e solo quelle CONNESSE (l'inbox nasconde
 // le chat delle disconnesse).
 import { sameStore } from "@/lib/visibleStores";
+import { capChoice, capKey, CAP_WA_VISTA, CAP_WA_CODICE, WA_SECTION } from "@/lib/capabilities";
+import type { PermMap } from "@/lib/nav";
+import { supabase } from "@/lib/supabaseClient";
 
 export const WA_LUCA_ID = "0355d28b-968f-4089-93b7-b8b5eeeda40c";
 
@@ -15,6 +18,61 @@ export function waScopeDi(userId?: string | null, role?: string | null): WaScope
     if (userId === WA_LUCA_ID) return "all";
     if (role === "store_manager") return "store";
     return "own";
+}
+
+/** Chi vede ANCHE i numeri personali protetti da codice: solo l'admin
+ *  vero (e il titolare, che è gestito a parte nel filtro). */
+export function vedeProtettiWa(userId?: string | null, role?: string | null): boolean {
+    return userId === WA_LUCA_ID || role === "admin" || role === "dev";
+}
+
+/** Scope coi PERMESSI in mano (rotellina «Chat — WhatsApp», Luca 27/08):
+ *  la spia «Tutti i numeri» apre la vista completa a prescindere dai
+ *  negozi; per il resto vale la regola storica. */
+export function waScopeConPerms(userId: string | null | undefined, role: string | null | undefined, perms: PermMap | null): WaScope {
+    if (userId === WA_LUCA_ID || role === "admin" || role === "dev") return "all";
+    if (capChoice(role, CAP_WA_VISTA, perms) === "wa_tutti") return "all";
+    if (role === "store_manager") return "store";
+    return "own";
+}
+
+/** Come sopra ma SENZA hook: risolve i permessi con una query (per i punti
+ *  async — omni, widget, clienti). Precedenza: override utente > ruolo. */
+export async function waScopeRisolto(userId?: string | null, role?: string | null): Promise<WaScope> {
+    if (userId === WA_LUCA_ID || role === "admin" || role === "dev") return "all";
+    try {
+        const chiavi = [capKey(WA_SECTION, "wa_tutti"), capKey(WA_SECTION, "wa_negozi")];
+        const soggetti = [role || "", userId ? `user:${userId}` : ""].filter(Boolean);
+        const { data } = await supabase.from("role_permissions").select("role, perm_key, allowed")
+            .in("role", soggetti).in("perm_key", chiavi);
+        const m: PermMap = new Map();
+        // prima il ruolo, poi l'utente che lo SCAVALCA
+        (data || []).filter((r) => r.role === role).forEach((r) => m.set(String(r.perm_key), !!r.allowed));
+        (data || []).filter((r) => r.role !== role).forEach((r) => m.set(String(r.perm_key), !!r.allowed));
+        return waScopeConPerms(userId, role, m);
+    } catch { return waScopeDi(userId, role); }
+}
+
+/** I TITOLARI dei numeri sotto codice (cap «codice» accesa): i loro numeri
+ *  personali non li vede nessuno oltre a loro e all'admin — nemmeno chi ha
+ *  «Tutti i numeri» (Luca 27/08). */
+export async function titolariProtettiWa(): Promise<Set<string>> {
+    try {
+        const { data } = await supabase.from("role_permissions").select("role, allowed")
+            .eq("perm_key", capKey(WA_SECTION, CAP_WA_CODICE.id)).eq("allowed", true);
+        const ids = new Set<string>();
+        const ruoli: string[] = [];
+        (data || []).forEach((r) => {
+            const k = String(r.role || "");
+            if (k.startsWith("user:")) ids.add(k.slice(5));
+            else if (k) ruoli.push(k.split("§")[0]);
+        });
+        if (ruoli.length) {
+            const { data: us } = await supabase.from("app_users").select("id").in("role", ruoli).eq("active", true);
+            (us || []).forEach((u) => ids.add(String(u.id)));
+        }
+        return ids;
+    } catch { return new Set(); }
 }
 
 /** BADGE della voce Chat (Luca 11/08, round 3): il pallino conta SOLO il
@@ -34,9 +92,9 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
     userId: string | null | undefined,
     role: string | null | undefined,
     myStores: string[],
-    opts: { soloConnesse?: boolean } = {},
+    opts: { soloConnesse?: boolean; scope?: WaScope; protetti?: Set<string> | null; vedeProtetti?: boolean } = {},
 ): T[] {
-    const scope = waScopeDi(userId, role);
+    const scope = opts.scope || waScopeDi(userId, role);
     // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08): SOLO i numeri SENZA titolare
     // si condividono per nome/negozio (rilievo alto del revisore: i personali
     // hanno negozio = primary_store dal create → i colleghi si vedevano le
@@ -50,6 +108,10 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
             || (!!i.display_name && myStores.some((s) => sameStore(i.display_name as string, s))));
     return instances.filter((i) => {
         if (opts.soloConnesse && i.status !== "connessa") return false;
+        // i numeri PERSONALI PROTETTI da codice: solo titolare e admin,
+        // qualunque sia lo scope (Luca 27/08)
+        if (opts.protetti && i.owner_user_id && opts.protetti.has(String(i.owner_user_id))
+            && !opts.vedeProtetti && i.owner_user_id !== userId) return false;
         if (scope === "all") return true;
         if (scope === "store") return negoziDi(i).some((n) => myStores.some((s) => sameStore(n, s)))
             || condiviso(i) || (!!userId && i.owner_user_id === userId);

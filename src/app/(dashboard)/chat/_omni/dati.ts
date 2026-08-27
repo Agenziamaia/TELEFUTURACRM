@@ -17,7 +17,7 @@ import {
     contestoVfFw, esclusaDalleGare, matchRigheAttivazione, payEuroAttivazione,
     type ContrattoPay, type Tabellare,
 } from "@/lib/commissioning";
-import { waIstanzeVisibili } from "@/lib/waVisibilita";
+import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa, vedeProtettiWa } from "@/lib/waVisibilita";
 import { emailCaselleVisibili, membershipEmail } from "@/lib/emailVisibilita";
 import { matchNegozi } from "@/lib/visibleStores";
 import { sendMessage, getInbox, type InboxItem } from "@/lib/chat";
@@ -88,9 +88,14 @@ export async function caricaConversazioni(
     // del ruolo e per Luca torna «all», quindi la vista «Magliana Multi»
     // avrebbe mostrato i numeri di TUTTA la rete sotto il cartello del
     // negozio; e la casella personale di chi guarda sarebbe entrata lo stesso.
+    // scope dalla rotellina + numeri protetti fuori (Luca 27/08)
+    const [scopeWa, protWa] = await Promise.all([waScopeRisolto(meId, me.role), titolariProtettiWa()]);
+    const vedeProt = vedeProtettiWa(meId, me.role);
+    const senzaProtetti = <T2 extends { owner_user_id?: string | null }>(l: T2[]) =>
+        vedeProt ? l : l.filter((i) => !(i.owner_user_id && protWa.has(String(i.owner_user_id)) && i.owner_user_id !== meId));
     const idWa = me.soloNegozio
-        ? (inst.data || []).filter((i) => matchNegozi(i.negozio, [me.soloNegozio as string])).map((i) => i.id)
-        : waIstanzeVisibili(inst.data || [], meId, me.role, me.stores).map((i) => i.id);
+        ? senzaProtetti((inst.data || []).filter((i) => matchNegozi(i.negozio, [me.soloNegozio as string]))).map((i) => i.id)
+        : waIstanzeVisibili(inst.data || [], meId, me.role, me.stores, { scope: scopeWa, protetti: protWa, vedeProtetti: vedeProt }).map((i) => i.id);
     const idEm = me.soloNegozio
         ? (acc.data || []).filter((a) => matchNegozi(a.negozio, [me.soloNegozio as string])).map((a) => a.id)
         : emailCaselleVisibili(acc.data || [], meId, me.role, me.stores, membro).map((a) => a.id);

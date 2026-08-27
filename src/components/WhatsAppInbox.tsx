@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_WA_CODICE, WA_SECTION } from "@/lib/capabilities";
+import { waScopeConPerms, vedeProtettiWa, titolariProtettiWa } from "@/lib/waVisibilita";
 import { waScopeDi } from "@/lib/waVisibilita";
 import { areaOf } from "@/lib/roles";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -106,7 +107,13 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // "guarda come" Luca vede comunque la vista ristretta dell'utente simulato.
     // regola estratta in lib condivisa (Sheekel 11/08): inbox e BADGE della
     // voce Chat devono usare la stessa identica visibilità
-    const waScope: "all" | "store" | "own" = useMemo(() => waScopeDi(user?.id, user?.role), [user?.id, user?.role]);
+    // lo scope passa dalla ROTELLINA «Chat — WhatsApp» (Luca 27/08): la
+    // spia «Tutti i numeri» apre la vista completa — ma i numeri protetti
+    // da codice restano di titolare e admin, sempre
+    const { perms: permessiWa } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const waScope: "all" | "store" | "own" = useMemo(() => waScopeConPerms(user?.id, user?.role, permessiWa), [user?.id, user?.role, permessiWa]);
+    const [protettiSet, setProtettiSet] = useState<Set<string>>(new Set());
+    useEffect(() => { titolariProtettiWa().then(setProtettiSet).catch(() => { }); }, []);
     // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08 sera): un numero NOMINATO col
     // nome del punto vendita (o con la colonna negozio valorizzata) è a
     // disposizione di CHIUNQUE abbia quel negozio in visibilità — nessuna
@@ -134,15 +141,19 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         user?.role === "direttore_cc" && !!i.owner_user_id
         && areaOf((ruoliTitolari[i.owner_user_id] || "") as never) === "cc";
     const visibleInstances = useMemo(() => {
-        if (waScope === "all") return instances;
-        if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i) || supervisioneCC(i));
+        // i PROTETTI da codice prima di tutto: li vedono solo il titolare e
+        // l'admin, qualunque sia lo scope (Luca 27/08)
+        const base = vedeProtettiWa(user?.id, user?.role) ? instances
+            : instances.filter(i => !(i.owner_user_id && protettiSet.has(String(i.owner_user_id)) && i.owner_user_id !== user?.id));
+        if (waScope === "all") return base;
+        if (waScope === "own") return base.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i) || supervisioneCC(i));
         // store manager: come da sempre TUTTI i numeri del suo negozio (anche
         // personali dei suoi), più i condivisi per nome e il suo personale
-        return instances.filter(i =>
+        return base.filter(i =>
             negoziIstanza(i).some(n => myStores.some(s => sameStore(n, s)))
             || condivisoNegozio(i) || i.owner_user_id === user?.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [instances, waScope, user?.id, myStores, ruoliTitolari]);
+    }, [instances, waScope, user?.id, myStores, ruoliTitolari, protettiSet]);
 
     // FILTRO PER PERSONA/NUMERO (Luca 25/08 notte-6): con tanti numeri in
     // visibilità i chip esplodono — la tendina restringe a un solo titolare
@@ -269,7 +280,6 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
        Il pulsante lo vede SOLO chi ha il codice di accesso (richiesta di
        Luca): sono le persone con un numero personale protetto, le uniche a
        cui ha senso far portare dentro la propria rubrica. */
-    const { perms: permessiWa } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoRubrica = capAllowed(user?.role, WA_SECTION, CAP_WA_CODICE, permessiWa);
     const [rubricaBusy, setRubricaBusy] = useState(false);
     const caricaRubrica = async () => {

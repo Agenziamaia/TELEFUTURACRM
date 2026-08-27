@@ -619,13 +619,50 @@ export const CAP_CHAT_OMNI: CapDef = {
     desc: "Nella Chat vede la quarta scheda «Omnichat»: la lista unificata dei tre canali, l'assistente AI che riassume la conversazione e suggerisce le risposte, e la scheda del contatto (valore generato, telefono a rate, cronologia). Spenta = restano le tre schede di sempre. Default: solo admin e dev, perché la sezione è ancora in lavorazione.",
     default: (r) => ["admin", "dev"].includes(r),
 };
+// ─── L'HUB CHAT nei permessi (Luca 27/08 sera): la Chat non è una voce
+// sola — si governa PER SEZIONE: Omnichat, WhatsApp (visibilità numeri +
+// codice), e domani chat interna ed email quando avranno leve loro. ───────
 export const CAP_CHAT: CapGroupFlags = {
     mode: "flags",
     section: "/chat",
-    sectionLabel: "Chat",
-    caps: [CAP_CHAT_OMNI, CAP_WA_CODICE],
+    sectionLabel: "Chat — Omnichat",
+    caps: [CAP_CHAT_OMNI],
+};
+
+// QUALI NUMERI WHATSAPP VEDE (Luca 27/08 sera): di default ognuno vede i
+// numeri dei negozi che ha in visibilità (e il suo); la vista completa si
+// accende a mano — e comunque NON scavalca i numeri personali protetti da
+// codice, che restano dell'admin e del titolare e basta.
+export const CAP_WA_TUTTI: CapDef = {
+    id: "wa_tutti",
+    label: "Tutti i numeri",
+    desc: "Vede tutti i numeri WhatsApp collegati, a prescindere dai negozi in visibilità. Restano comunque esclusi i numeri personali protetti da codice: quelli li vedono solo l'admin e il titolare. Default: spenta per tutti.",
+    default: () => false,
+};
+export const CAP_WA_NEGOZI_VISTA: CapDef = {
+    id: "wa_negozi",
+    label: "Solo i suoi negozi",
+    desc: "Vede il suo numero personale e i numeri dei punti vendita che ha in visibilità. Default per tutti.",
+    default: () => true,
+};
+export const CAP_WA_VISTA: CapGroupChoice = {
+    mode: "choice",
+    section: WA_SECTION,
+    sectionLabel: "Chat — WhatsApp",
+    caps: [CAP_WA_TUTTI, CAP_WA_NEGOZI_VISTA],
+    fallback: {
+        id: "wa_negozi",
+        label: "Solo i suoi negozi",
+        desc: "Vede il suo numero personale e i numeri dei punti vendita che ha in visibilità. Default per tutti.",
+    },
+};
+export const CAP_CHAT_WA: CapGroupFlags = {
+    mode: "flags",
+    section: WA_SECTION,
+    sectionLabel: "Chat — WhatsApp",
+    caps: [CAP_WA_CODICE],
 };
 
 
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT, CAP_WA_VISTA, CAP_CHAT_WA];

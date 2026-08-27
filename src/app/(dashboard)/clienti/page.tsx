@@ -5,7 +5,7 @@ import Link from "next/link";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, ChevronDown, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
 import { seesWholeStore, seesAllStores, areaOf } from "@/lib/roles";
-import { waIstanzeVisibili } from "@/lib/waVisibilita";
+import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa, vedeProtettiWa } from "@/lib/waVisibilita";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -2666,7 +2666,8 @@ function WhatsAppStoricoCliente({ clientId }: { clientId: string }) {
             ]);
             if (!vivo) return;
             const utenti = new Map<string, Ute>(((us ?? []) as Ute[]).map((u) => [u.id, u]));
-            let vis = waIstanzeVisibili((insts ?? []) as Ist[], user?.id, user?.role, negoziMiei);
+            const [scopeWa, protWa] = await Promise.all([waScopeRisolto(user?.id, user?.role), titolariProtettiWa()]);
+            let vis = waIstanzeVisibili((insts ?? []) as Ist[], user?.id, user?.role, negoziMiei, { scope: scopeWa, protetti: protWa, vedeProtetti: vedeProtettiWa(user?.id, user?.role) });
             if (user?.role === "direttore_cc") {
                 const gia = new Set(vis.map((i) => i.id));
                 vis = [...vis, ...((insts ?? []) as Ist[]).filter((i) => !gia.has(i.id) && i.owner_user_id && areaOf(String(utenti.get(i.owner_user_id)?.role || "")) === "cc")];
