@@ -11,7 +11,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_WA_CODICE, WA_SECTION } from "@/lib/capabilities";
-import { waScopeConPerms, vedeProtettiWa, titolariProtettiWa } from "@/lib/waVisibilita";
+import { waScopeConPerms, vedeProtettiWa, titolariProtettiWa } from "@/lib/waVisibilita";   // waScopeDi non serve più qui
 import { waScopeDi } from "@/lib/waVisibilita";
 import { areaOf } from "@/lib/roles";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -112,7 +112,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // da codice restano di titolare e admin, sempre
     const { perms: permessiWa } = useRolePermissions(user?.role, user?.grade, user?.id);
     const waScope: "all" | "store" | "own" = useMemo(() => waScopeConPerms(user?.id, user?.role, permessiWa), [user?.id, user?.role, permessiWa]);
-    const [protettiSet, setProtettiSet] = useState<Set<string>>(new Set());
+    const [protettiSet, setProtettiSet] = useState<Set<string> | null>(null);   // null = non ancora noto → fail-closed
     useEffect(() => { titolariProtettiWa().then(setProtettiSet).catch(() => { }); }, []);
     // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08 sera): un numero NOMINATO col
     // nome del punto vendita (o con la colonna negozio valorizzata) è a
@@ -143,8 +143,12 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     const visibleInstances = useMemo(() => {
         // i PROTETTI da codice prima di tutto: li vedono solo il titolare e
         // l'admin, qualunque sia lo scope (Luca 27/08)
+        // FAIL-CLOSED (revisore 27/08): finché non sappiamo CHI è protetto,
+        // i personali degli altri non si mostrano proprio — mai un flash
         const base = vedeProtettiWa(user?.id, user?.role) ? instances
-            : instances.filter(i => !(i.owner_user_id && protettiSet.has(String(i.owner_user_id)) && i.owner_user_id !== user?.id));
+            : protettiSet === null
+                ? instances.filter(i => !i.owner_user_id || i.owner_user_id === user?.id)
+                : instances.filter(i => !(i.owner_user_id && protettiSet.has(String(i.owner_user_id)) && i.owner_user_id !== user?.id));
         if (waScope === "all") return base;
         if (waScope === "own") return base.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i) || supervisioneCC(i));
         // store manager: come da sempre TUTTI i numeri del suo negozio (anche

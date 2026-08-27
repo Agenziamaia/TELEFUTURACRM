@@ -56,7 +56,8 @@ export async function caricaConversazioni(
     me: {
         id: string | null; role: string | null; stores: string[];
         membri?: { id: string; nome: string }[] | null;
-        reale?: string | null;      // chi è loggato DAVVERO, quando mi immedesimo
+        reale?: string | null;
+    ruoloReale?: string | null;      // chi è loggato DAVVERO, quando mi immedesimo
         soloNegozio?: string | null; // vista negozio: numeri e caselle SOLO suoi
     },
 ): Promise<ChatOmni[]> {
@@ -90,12 +91,15 @@ export async function caricaConversazioni(
     // negozio; e la casella personale di chi guarda sarebbe entrata lo stesso.
     // scope dalla rotellina + numeri protetti fuori (Luca 27/08)
     const [scopeWa, protWa] = await Promise.all([waScopeRisolto(meId, me.role), titolariProtettiWa()]);
-    const vedeProt = vedeProtettiWa(meId, me.role);
+    // il giudizio sui PROTETTI si fa sull'utente REALE (revisore 27/08):
+    // immedesimarsi nel titolare non apre il suo numero sotto codice
+    const idReale = me.reale || meId;
+    const vedeProt = vedeProtettiWa(idReale, me.ruoloReale ?? me.role);
     const senzaProtetti = <T2 extends { owner_user_id?: string | null }>(l: T2[]) =>
-        vedeProt ? l : l.filter((i) => !(i.owner_user_id && protWa.has(String(i.owner_user_id)) && i.owner_user_id !== meId));
+        vedeProt ? l : l.filter((i) => !(i.owner_user_id && protWa.has(String(i.owner_user_id)) && i.owner_user_id !== idReale));
     const idWa = me.soloNegozio
         ? senzaProtetti((inst.data || []).filter((i) => matchNegozi(i.negozio, [me.soloNegozio as string]))).map((i) => i.id)
-        : waIstanzeVisibili(inst.data || [], meId, me.role, me.stores, { scope: scopeWa, protetti: protWa, vedeProtetti: vedeProt }).map((i) => i.id);
+        : senzaProtetti(waIstanzeVisibili(inst.data || [], meId, me.role, me.stores, { scope: scopeWa })).map((i) => i.id);
     const idEm = me.soloNegozio
         ? (acc.data || []).filter((a) => matchNegozi(a.negozio, [me.soloNegozio as string])).map((a) => a.id)
         : emailCaselleVisibili(acc.data || [], meId, me.role, me.stores, membro).map((a) => a.id);

@@ -65,7 +65,7 @@ export async function titolariProtettiWa(): Promise<Set<string>> {
         (data || []).forEach((r) => {
             const k = String(r.role || "");
             if (k.startsWith("user:")) ids.add(k.slice(5));
-            else if (k) ruoli.push(k.split("§")[0]);
+            else if (k) ruoli.push(k.split("@")[0]);   // role@grade → protegge l'intero ruolo
         });
         if (ruoli.length) {
             const { data: us } = await supabase.from("app_users").select("id").in("role", ruoli).eq("active", true);

@@ -90,9 +90,9 @@ export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | 
             // punto vendita, le chat interne sono di ciascuno
             const membri = neg ? await membriNegozio(neg) : null;
             const chi = p
-                ? { id: p.id, role: p.role, stores: p.negozio ? [p.negozio] : [], membri: null, reale: user?.id || null, soloNegozio: null }
+                ? { id: p.id, role: p.role, stores: p.negozio ? [p.negozio] : [], membri: null, reale: user?.id || null, ruoloReale: user?.role || null, soloNegozio: null }
                 : neg
-                    ? { id: user?.id || null, role: "store_manager", stores: [neg], membri, reale: user?.id || null, soloNegozio: neg }
+                    ? { id: user?.id || null, role: "store_manager", stores: [neg], membri, reale: user?.id || null, ruoloReale: user?.role || null, soloNegozio: neg }
                     : { id: user?.id || null, role: user?.role || null, stores, membri: null, reale: user?.id || null, soloNegozio: null };
             const lista = await caricaConversazioni(chi);
             // immedesimandomi in UNA persona il proprietario è sempre lei: il

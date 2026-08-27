@@ -1581,7 +1581,9 @@ function WidgetWhatsApp({ ctx, size }) {
             // stessa estensione dell'Inbox: il direttore cc vede i numeri dei suoi operatori
             if (ctx.user?.role === "direttore_cc") {
                 const gia = new Set(vis.map((i) => i.id));
-                vis = [...vis, ...(insts || []).filter((i) => !gia.has(i.id) && i.status === "connessa" && i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc")];
+                // i PROTETTI da codice non rientrano dalla porta di servizio
+                // (revisore 27/08): la supervisione cc non li scavalca
+                vis = [...vis, ...(insts || []).filter((i) => !gia.has(i.id) && i.status === "connessa" && i.owner_user_id && areaOf(utenti.get(i.owner_user_id)?.role) === "cc" && !protWa.has(String(i.owner_user_id)))];
             }
             if (!vis.length) { setDati({ vuoto: "Nessun numero WhatsApp collegato per il tuo negozio." }); return; }
             // numeri del CALL CENTER (titolare con ruolo area cc): i caller

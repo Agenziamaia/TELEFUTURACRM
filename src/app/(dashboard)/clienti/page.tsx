@@ -2670,7 +2670,8 @@ function WhatsAppStoricoCliente({ clientId }: { clientId: string }) {
             let vis = waIstanzeVisibili((insts ?? []) as Ist[], user?.id, user?.role, negoziMiei, { scope: scopeWa, protetti: protWa, vedeProtetti: vedeProtettiWa(user?.id, user?.role) });
             if (user?.role === "direttore_cc") {
                 const gia = new Set(vis.map((i) => i.id));
-                vis = [...vis, ...((insts ?? []) as Ist[]).filter((i) => !gia.has(i.id) && i.owner_user_id && areaOf(String(utenti.get(i.owner_user_id)?.role || "")) === "cc")];
+                // i protetti da codice restano fuori anche qui (revisore 27/08)
+                vis = [...vis, ...((insts ?? []) as Ist[]).filter((i) => !gia.has(i.id) && i.owner_user_id && areaOf(String(utenti.get(i.owner_user_id)?.role || "")) === "cc" && !protWa.has(String(i.owner_user_id)))];
             }
             const visibili = new Map<string, Ist>(vis.map((i) => [i.id, i]));
             const etich = (iid: string) => {
