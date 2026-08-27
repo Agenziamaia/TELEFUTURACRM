@@ -28,6 +28,14 @@ import { capAllowed, CAP_WA_CODICE, WA_SECTION } from "@/lib/capabilities";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { cn } from "@/utils";
 
+/** «a questa persona il CRM chiede il codice per WhatsApp?» — serve anche
+ *  all'Omnichat, che monta l'inbox per conto suo */
+export function useCodiceWhatsApp() {
+    const { user } = useAuth();
+    const { perms, loaded } = useRolePermissions(user?.role, user?.grade, user?.id);
+    return { serve: capAllowed(user?.role, WA_SECTION, CAP_WA_CODICE, perms), loaded, userId: user?.id || null };
+}
+
 type Props = React.ComponentProps<typeof WhatsAppInbox>;
 
 export function WhatsAppProtetta(props: Props) {
@@ -47,7 +55,7 @@ export function WhatsAppProtetta(props: Props) {
     return <WhatsAppInbox {...props} />;
 }
 
-function Lucchetto({ userId, onApri }: { userId: string | null; onApri: () => void }) {
+export function Lucchetto({ userId, onApri }: { userId: string | null; onApri: () => void }) {
     const [stato, setStato] = useState<{ impostato: boolean; bloccatoFino: string | null } | null>(null);
     const [codice, setCodice] = useState("");
     const [conferma, setConferma] = useState("");

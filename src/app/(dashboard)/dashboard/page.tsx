@@ -271,7 +271,10 @@ export default function Dashboard() {
                 // caricaTutte supera il tetto server 1000; qty è dettagli->>qty
                 // (pezzi marginalità) senza scaricare l'intero jsonb dettagli
                 caricaTutte((from, to) =>
-                    supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data, data_registrazione, nascosta_gestione, qty:dettagli->>qty, prezzo:dettagli->>price").order("data_registrazione", { ascending: false }).order("id").range(from, to)),
+                    // le pratiche dichiarate NON VALIDE non contano nemmeno qui
+                    // (27/08): il motore gare/pay le salta, e una pratica esclusa
+                    // che fa ancora vincere la classifica sarebbe una beffa
+                    supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data, data_registrazione, nascosta_gestione, qty:dettagli->>qty, prezzo:dettagli->>price").or("non_valida.is.null,non_valida.eq.false").order("data_registrazione", { ascending: false }).order("id").range(from, to)),
                 caricaComms(),
                 supabase.from("dashboard_targets").select("*"),
                 supabase.from("calendar_tasks").select("id, date, status").or(`assigned_user_id.eq.${user.id},created_by_user_id.eq.${user.id}`).limit(500),

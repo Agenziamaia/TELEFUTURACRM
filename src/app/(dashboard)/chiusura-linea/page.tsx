@@ -372,7 +372,18 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
                     {pag === "pagata" && (
                         <div className="space-y-1.5">
                             <p className="text-[11px] text-slate-400">Quale vendita di marginalità copre questa chiusura?</p>
-                            {vendite === null ? (
+                            {!cliSel ? (
+                                // CLIENTE NUOVO (rilievo del revisore 27/08): senza scheda
+                                // non ci sono vendite da mostrare, e restava un «Cerco le
+                                // vendite…» eterno con l'invio bloccato — l'unica uscita era
+                                // dichiarare «gratis» una chiusura pagata, cioè scrivere il
+                                // falso in un campo obbligatorio. Meglio dirlo.
+                                <p className="text-[11px] text-amber-200 bg-amber-400/10 border border-amber-400/30 rounded-lg px-2.5 py-2">
+                                    Questo cliente non è ancora in anagrafica, quindi non ha vendite da collegare.
+                                    Se la chiusura è stata pagata, cercalo con la ricerca qui sopra (se c&apos;è già)
+                                    oppure registra prima lo scontrino in Registra Vendita.
+                                </p>
+                            ) : vendite === null ? (
                                 <p className="text-[11px] text-slate-500">Cerco le vendite del cliente…</p>
                             ) : vendMarg.length === 0 ? (
                                 <p className="text-[11px] text-amber-200 bg-amber-400/10 border border-amber-400/30 rounded-lg px-2.5 py-2">
@@ -409,7 +420,11 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
                                 ))}
                             </div>
                             {conVendita === "si" && (
-                                vendite === null ? <p className="text-[11px] text-slate-500">Cerco le vendite del cliente…</p>
+                                !cliSel ? (
+                                    <p className="text-[11px] text-amber-200 bg-amber-400/10 border border-amber-400/30 rounded-lg px-2.5 py-2">
+                                        Cliente nuovo: non ha vendite in anagrafica da collegare.
+                                    </p>
+                                ) : vendite === null ? <p className="text-[11px] text-slate-500">Cerco le vendite del cliente…</p>
                                     : vendTutte.length === 0 ? (
                                         <p className="text-[11px] text-amber-200 bg-amber-400/10 border border-amber-400/30 rounded-lg px-2.5 py-2">
                                             Su questo cliente non risulta nessuna vendita. Se non c&apos;è niente da collegare, la chiusura è gratis.

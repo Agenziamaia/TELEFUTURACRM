@@ -405,7 +405,9 @@ export const CAP_RICERCA_NON_VALIDA: CapDef = {
     id: "non_valida",
     label: "Può dichiarare una pratica NON VALIDA",
     desc: "In Ricerca Vendite compare la ✗ viola accanto al cestino: dichiara che quella pratica non conta per il commissioning né per le gare, con una nota OBBLIGATORIA che resta nello storico e si legge da tutti nel dettaglio. Non elimina e non nasconde niente: la pratica resta, con scritto perché non vale e chi l'ha deciso. Default: amministrativo.",
-    default: (r) => r === "amministrativo",
+    // come tutte le capacità sorelle: l'amministrazione la usa, ma admin,
+    // dev e direzione generale non devono restarne fuori per una svista
+    default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
 };
 export const CAP_RICERCA_EXTRA: CapGroupFlags = {
     mode: "flags",

@@ -111,7 +111,10 @@ export function WhatsAppAdminView() {
         // All'apertura del pannello lo chiediamo a Evolution, solo per quelli
         // che risultano non collegati: i connessi non si toccano.
         (async () => {
-            const { data } = await supabase.from("wa_instances").select("id, instance_name, status").neq("status", "connessa");
+            // TUTTE, non solo le non connesse (rilievo del revisore 27/08: col
+            // filtro .neq il controllo del caso opposto era codice morto — ed è
+            // proprio quello che serve, «risulta connessa ma è caduta»)
+            const { data } = await supabase.from("wa_instances").select("id, instance_name, status");
             for (const i of (data ?? []) as { id: string; instance_name: string; status: string }[]) {
                 try {
                     const res = await api({ action: "state", instanceName: i.instance_name });

@@ -31,7 +31,10 @@ export async function POST(request: Request) {
         const { data: insts } = await supabase.from("wa_instances")
             .select("id, instance_name, status, mittente_notifiche, display_name")
             .order("created_at", { ascending: false });
-        const connessa = (i: { status?: string | null }) => String(i.status || "").toLowerCase().includes("conness");
+        // ⚠️ NON `includes("conness")`: «disconnessa» lo contiene, quindi un
+        // numero caduto risultava collegato e il ripiego non scattava mai
+        // (rilievo del revisore, 27/08). Confronto esatto, come in send-template.
+        const connessa = (i: { status?: string | null }) => String(i.status || "").toLowerCase() === "connessa";
         const designato = (insts ?? []).find((i) => i.mittente_notifiche);
         const ripiego = (insts ?? []).find(connessa) || null;
         const inst = designato && connessa(designato) ? designato : ripiego;

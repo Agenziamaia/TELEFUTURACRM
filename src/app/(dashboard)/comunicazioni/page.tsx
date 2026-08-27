@@ -410,6 +410,13 @@ function ComunicazioniInner() {
         // cintura: "Tutti" non deve MAI partire da chi non ha il permesso
         // (il chip è già nascosto: questa è la doppia sicurezza sul submit)
         if (fTutti && !puoTutti) { setError("Non hai il permesso di inviare a tutta l'azienda: scegli i destinatari."); return; }
+        // ⚠️ CINTURA sugli esclusi: togliendoli TUTTI la lista resterebbe
+        // vuota, e una lista vuota per il CRM vuol dire «nessun filtro» —
+        // cioè la comunicazione partirebbe a TUTTA l'azienda. Meglio fermarsi.
+        if (esclusi.length && destinatariFinali.length === 0) {
+            setError("Hai tolto tutti i destinatari: rimettine almeno uno, oppure cambia i filtri.");
+            return;
+        }
         const idsPersone = fPersone
             .map((nome) => utentiAttivi.find((u) => u.full_name === nome)?.id)
             .filter(Boolean) as string[];
@@ -485,10 +492,20 @@ function ComunicazioniInner() {
             size: fSize,   // mig. 147
             allegati: fAllegati,
             kind: fKind,
-            target_roles: fTutti || !ruoliTarget.length ? null : ruoliTarget,
-            target_stores: fTutti || !fNegozi.length ? null : fNegozi,
-            target_users: fTutti || !idsTarget.length ? null : idsTarget,
-            target_brands: fTutti || !fBrand.length ? null : fBrand,
+            // ESCLUSIONI (Luca 27/08): se ho tolto qualcuno, la comunicazione
+            // smette di essere «per ruolo/negozio/brand» e diventa la LISTA
+            // esatta delle persone rimaste. È l'unico modo per cui l'escluso
+            // non la riceva: le regole per ruolo lo riprenderebbero dentro.
+            // Conseguenza da sapere: chi viene assunto domani NON la riceve.
+            ...(esclusi.length ? {
+                target_roles: null, target_stores: null, target_brands: null,
+                target_users: destinatariFinali.map((u) => u.id),
+            } : {
+                target_roles: fTutti || !ruoliTarget.length ? null : ruoliTarget,
+                target_stores: fTutti || !fNegozi.length ? null : fNegozi,
+                target_users: fTutti || !idsTarget.length ? null : idsTarget,
+                target_brands: fTutti || !fBrand.length ? null : fBrand,
+            }),
             esiti: esitiEffettivi().length ? esitiEffettivi() : null,
             created_by: user?.id || null,
             created_by_name: user?.name || null,
@@ -549,6 +566,14 @@ function ComunicazioniInner() {
     // screenshot dello store manager, Luca 04/08). L'invio a vuoto era già
     // bloccato: era solo l'anteprima a ingannare.
     const selezioneVuota = !fTutti && !fRuoli.length && !fPersone.length && !fNegozi.length && !fBrand.length;
+    /* ── TOGLIERE QUALCUNO DALLA LISTA (Luca 27/08) ───────────────────────
+       I filtri fanno la platea, ma quasi sempre c'è l'eccezione: «tutti i
+       consulenti tranne due». Prima l'unica strada era rinunciare al filtro
+       e selezionare 28 persone a mano. Qui si toglie con una ✕ sul nome.
+       Gli esclusi si azzerano se cambio i filtri: la lista è un'altra, e
+       tenere esclusioni vecchie su una platea nuova sarebbe un trabocchetto. */
+    const [esclusi, setEsclusi] = useState<string[]>([]);
+    useEffect(() => { setEsclusi([]); }, [fTutti, fRuoli, fPersone, fNegozi, fBrand]);
     const anteprimaDestinatari = useMemo(() => {
         if (!formOpen || !platea) return null;
         if (selezioneVuota) return [];
@@ -573,6 +598,11 @@ function ComunicazioniInner() {
             .filter((u) => comunicazionePerMe(pseudo, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands }))
             .sort((a, b) => a.nome.localeCompare(b.nome));
     }, [formOpen, platea, selezioneVuota, fTutti, fRuoli, fPersone, fNegozi, fBrand, role, perms, ambitoMittente, user?.negozio]);
+    /** chi la riceve davvero: l'anteprima meno chi ho tolto a mano */
+    const destinatariFinali = useMemo(
+        () => (anteprimaDestinatari || []).filter((u) => !esclusi.includes(u.id)),
+        [anteprimaDestinatari, esclusi]);
+
     const destinatariSet = useCallback((c: Comunicazione): Set<string> | null => {
         if (!platea) return null;
         return new Set(platea.filter((u) => comunicazionePerMe(c, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands })).map((u) => u.id));
@@ -1364,24 +1394,48 @@ function ComunicazioniInner() {
                             </div>}
                             {/* CHI LA RICEVE, prima di pubblicare (Luca 04/08) */}
                             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                    👥 Riceveranno questa comunicazione{anteprimaDestinatari ? ` — ${anteprimaDestinatari.length}` : ""}
-                                </p>
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                        👥 Riceveranno questa comunicazione{anteprimaDestinatari ? ` — ${destinatariFinali.length}` : ""}
+                                        {esclusi.length > 0 && <span className="text-amber-300 normal-case font-semibold"> · {esclusi.length} {esclusi.length === 1 ? "tolto" : "tolti"}</span>}
+                                    </p>
+                                    {esclusi.length > 0 && (
+                                        <button type="button" onClick={() => setEsclusi([])}
+                                            className="text-[11px] font-semibold text-slate-400 hover:text-white underline underline-offset-2">
+                                            rimetti tutti
+                                        </button>
+                                    )}
+                                </div>
                                 {!anteprimaDestinatari ? (
                                     <p className="text-[11px] text-slate-500 mt-1.5">Calcolo i destinatari…</p>
                                 ) : selezioneVuota ? (
                                     <p className="text-[11px] text-slate-500 mt-1.5">Scegli i destinatari qui sopra: l&apos;elenco dei nomi apparirà qui prima di pubblicare.</p>
-                                ) : anteprimaDestinatari.length === 0 ? (
-                                    <p className="text-xs text-amber-300 mt-1.5">⚠️ Con questa selezione nessuno la riceverebbe: controlla ruoli/negozi/persone.</p>
+                                ) : destinatariFinali.length === 0 ? (
+                                    <p className="text-xs text-amber-300 mt-1.5">⚠️ Nessun destinatario: {anteprimaDestinatari.length ? "li hai tolti tutti a mano — rimettine almeno uno." : "controlla ruoli/negozi/persone."}</p>
                                 ) : (
                                     // TUTTI i nomi, sempre (Luca 04/08): niente tetto né scroll
                                     // interno — il form ha spazio, i chip si distendono tutti
+                                    // ✕ SU OGNI NOME (Luca 27/08): i filtri fanno la platea,
+                                    // la ✕ toglie l'eccezione. Chi è tolto resta in elenco
+                                    // barrato e spento: si vede che l'ho tolto io, e si
+                                    // rimette con un clic invece di rifare i filtri.
                                     <div className="flex gap-1.5 mt-2 flex-wrap">
-                                        {anteprimaDestinatari.map((u) => (
-                                            <span key={u.id} className="px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[11px] text-slate-300">
-                                                {u.nome}{u.id === user?.id ? " (tu)" : ""}
-                                            </span>
-                                        ))}
+                                        {anteprimaDestinatari.map((u) => {
+                                            const fuori = esclusi.includes(u.id);
+                                            return (
+                                                <span key={u.id}
+                                                    className={cn("px-2.5 py-1 rounded-full border text-[11px] flex items-center gap-1.5 transition-colors",
+                                                        fuori ? "border-white/5 bg-transparent text-slate-600 line-through" : "border-white/10 bg-white/5 text-slate-300")}>
+                                                    {u.nome}{u.id === user?.id ? " (tu)" : ""}
+                                                    <button type="button"
+                                                        onClick={() => setEsclusi((p) => fuori ? p.filter((x) => x !== u.id) : [...p, u.id])}
+                                                        title={fuori ? "Rimettilo tra i destinatari" : "Togli questa persona"}
+                                                        className={cn("leading-none text-[13px] transition-colors", fuori ? "text-emerald-400 hover:text-emerald-300" : "text-slate-500 hover:text-rose-400")}>
+                                                        {fuori ? "↺" : "✕"}
+                                                    </button>
+                                                </span>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>

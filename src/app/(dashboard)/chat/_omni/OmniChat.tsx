@@ -21,6 +21,7 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
+import { Lucchetto, useCodiceWhatsApp } from "@/components/WhatsAppProtetta";
 import { EmailInbox } from "@/components/EmailInbox";
 import { NewChatModal } from "../_components/NewChatModal";
 import { ListaOmni } from "./ListaOmni";
@@ -35,6 +36,13 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
     ricaricaInterna?: () => void;                         // ricarica l'inbox della pagina (nuova chat creata qui)
 }) {
     const [attiva, setAttiva] = useState<ChatOmni | null>(null);
+    /* IL CODICE VALE ANCHE QUI (rilievo del revisore 27/08): l'Omnichat
+       montava l'inbox WhatsApp diretta, quindi chi deve digitare il codice
+       leggeva le stesse conversazioni passando da qui. Lo sblocco sta a
+       livello di Omnichat e non della singola conversazione: cambiando chat
+       il codice non si richiede ogni volta, ma uscendo dalla scheda sì. */
+    const codiceWa = useCodiceWhatsApp();
+    const [waAperto, setWaAperto] = useState(false);
     // la risposta suggerita dall'AI: si passa all'inbox come testo iniziale
     const [bozza, setBozza] = useState<string | null>(null);
     // «➕ NUOVA CONVERSAZIONE» (Luca 27/08): scegli il canale e parti da qui —
@@ -93,7 +101,9 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
                     </div>
                 )}
                 {attiva?.canale === "wa" && (
-                    <WhatsAppInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} testoIniziale={bozza} />
+                    codiceWa.loaded && codiceWa.serve && !waAperto
+                        ? <Lucchetto userId={codiceWa.userId} onApri={() => setWaAperto(true)} />
+                        : <WhatsAppInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} testoIniziale={bozza} />
                 )}
                 {attiva?.canale === "email" && (
                     <EmailInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} />
