@@ -2,8 +2,10 @@
 
 // La UI WhatsApp vive ora in un componente riusabile: qui e' a pagina intera
 // (accesso diretto via URL), dentro la Chat e' incorporata con un interruttore.
-import { WhatsAppInbox } from "@/components/WhatsAppInbox";
+// il lucchetto (chi ha la capability accesa deve digitare il suo codice)
+// sta nel wrapper: cosi' vale ovunque si apra WhatsApp, non solo qui
+import { WhatsAppProtetta } from "@/components/WhatsAppProtetta";
 
 export default function WhatsAppPage() {
-    return <WhatsAppInbox />;
+    return <WhatsAppProtetta />;
 }

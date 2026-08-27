@@ -27,7 +27,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare, Sparkles } from "lucide-react";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_CHAT_OMNI } from "@/lib/capabilities";
-import { WhatsAppInbox } from "@/components/WhatsAppInbox";
+import { WhatsAppProtetta } from "@/components/WhatsAppProtetta";
 import { EmailInbox } from "@/components/EmailInbox";
 import { OmniChat } from "./_omni/OmniChat";
 import { AvatarUtente } from "@/components/AvatarUtente";
@@ -1249,7 +1249,7 @@ function ChatPageInner() {
       {mode === "omni" && vedeOmni ? (
         <OmniChat thread={threadInterna} apriInterna={setSelId} internaAperta={selId} meId={meId} ricaricaInterna={reloadInbox} />
       ) : mode === "whatsapp" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppProtetta embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} apriConvId={mconvParam} /></div>
       ) : (

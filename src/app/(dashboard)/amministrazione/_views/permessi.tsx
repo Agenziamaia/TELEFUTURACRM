@@ -441,6 +441,14 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
                             <div className="text-sm font-medium text-white">{c.label}</div>
                             <div className="text-[11px] text-slate-500 mt-0.5">{c.desc}</div>
                         </div>
+                        {/* AZZERA IL CODICE WHATSAPP (Luca 27/08): il codice se lo
+                            scelgono loro e nessuno lo può rileggere — quindi
+                            l'unico rimedio se lo dimenticano è cancellarlo e
+                            farne scegliere un altro. Solo su una PERSONA: su un
+                            ruolo intero non avrebbe senso. */}
+                        {c.id === "codice" && g.section === "/chat" && ruolo.startsWith("user:") && eff && (
+                            <AzzeraCodiceWa userId={ruolo.slice(5)} />
+                        )}
                         <button onClick={() => { if (!reqOff) onFlag(c.id, eff); }} disabled={busy === "cap:" + g.section + c.id || reqOff}
                             className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${reqOff ? "cursor-not-allowed" : ""}`}
                             title={reqOff ? `Prima accendi "${req?.label}": senza, questa opzione non conta nulla` : eff ? "Attivo — clicca per disattivare" : "Disattivo — clicca per attivare"}>
@@ -450,5 +458,46 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
                 );
             })}
         </div>
+    );
+}
+
+/* ── AZZERA IL CODICE WHATSAPP ─────────────────────────────────────────────
+   Il codice non è rileggibile da nessuno (nel database c'è solo l'impronta):
+   se la persona lo dimentica, l'unica strada è cancellarlo e farle scegliere
+   il prossimo al primo ingresso. La prova che chi clicca è un admin la fa il
+   DATABASE (`wa_codice_azzera` controlla il ruolo), non questo bottone. */
+function AzzeraCodiceWa({ userId }: { userId: string }) {
+    const { user } = useAuth();
+    const [stato, setStato] = useState<"fermo" | "conferma" | "vado" | "fatto" | "errore">("fermo");
+    const [msg, setMsg] = useState<string | null>(null);
+
+    const azzera = async () => {
+        setStato("vado"); setMsg(null);
+        const { data, error } = await supabase.rpc("wa_codice_azzera", { p_user: userId, p_admin: user?.id || null });
+        const d = (data || {}) as { ok?: boolean; errore?: string };
+        if (error || !d.ok) { setStato("errore"); setMsg(error?.message || d.errore || "non riuscito"); return; }
+        setStato("fatto");
+    };
+
+    if (stato === "fatto") return <span className="text-[11px] text-emerald-400 shrink-0">codice azzerato</span>;
+    if (stato === "conferma") {
+        return (
+            <span className="flex items-center gap-1.5 shrink-0">
+                <button onClick={azzera} className="text-[11px] font-bold px-2 py-1 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20">
+                    Sì, azzera
+                </button>
+                <button onClick={() => setStato("fermo")} className="text-[11px] text-slate-500 hover:text-slate-300 px-1">no</button>
+            </span>
+        );
+    }
+    return (
+        <span className="flex items-center gap-1.5 shrink-0">
+            {msg && <span className="text-[10px] text-rose-300">{msg}</span>}
+            <button onClick={() => setStato("conferma")} disabled={stato === "vado"}
+                title="Cancella il codice: al prossimo ingresso ne sceglierà uno nuovo"
+                className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:bg-white/5">
+                {stato === "vado" ? "…" : "Azzera codice"}
+            </button>
+        </span>
     );
 }

@@ -569,6 +569,22 @@ export const CAP_EMAIL_ADMIN: CapGroupFlags = {
 // altro la vede se e solo se Luca gliela accende (riga `user:<id>`).
 // Le altre tre schede — chat interna, WhatsApp, email — non si toccano: questa
 // capacità governa l'Omnichat e basta.
+// ─── WHATSAPP SOTTO CODICE (Luca 27/08) ────────────────────────────────────
+// «SOLO Sandra e Claudia devono avere un codice che quando aprono WhatsApp
+// gli chiede, altrimenti non è possibile vederlo». Non sono due nomi scritti
+// nel codice: è una capability, così domani si accende o si spegne a chiunque
+// dalla stessa rotellina. Il codice se lo scelgono loro al primo ingresso e
+// non è rileggibile da nessuno — nel database c'è solo l'impronta.
+// la sezione è "/chat": WhatsApp non è una voce di menu a sé, si apre
+// dalla Chat — e l'interruttore deve comparire dove Luca lo cerca
+export const WA_SECTION = "/chat";
+export const CAP_WA_CODICE: CapDef = {
+    id: "codice",
+    label: "Chiede un codice per aprire WhatsApp",
+    desc: "Chi ha questa spia accesa, ogni volta che apre WhatsApp deve inserire un codice personale: senza, le conversazioni non si vedono. Il codice se lo sceglie da sé al primo ingresso e nessuno può rileggerlo (nemmeno l'admin): se lo dimentica lo si azzera e ne sceglie un altro. Cinque tentativi sbagliati bloccano per cinque minuti. Default: spenta per tutti.",
+    default: () => false,
+};
+
 export const CAP_CHAT_OMNI: CapDef = {
     id: "omnichat",
     label: "Omnichat (in costruzione)",
@@ -579,7 +595,9 @@ export const CAP_CHAT: CapGroupFlags = {
     mode: "flags",
     section: "/chat",
     sectionLabel: "Chat",
-    caps: [CAP_CHAT_OMNI],
+    caps: [CAP_CHAT_OMNI, CAP_WA_CODICE],
 };
+
+
 
 export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT];
