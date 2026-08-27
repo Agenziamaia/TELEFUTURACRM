@@ -428,6 +428,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // Con UN solo numero connesso si apre diretto come sempre.
     const [sceltaNumero, setSceltaNumero] = useState<{ dig: string; nome?: string | null } | null>(null);
     const avviaChatNumero = async (digIn: string, nome?: string | null): Promise<boolean> => {
+        try { setTimeout(() => window.dispatchEvent(new Event("tf-omni-refresh")), 1500); } catch { /* lista omni non montata */ }
         if (digIn.replace(/\D/g, "").length < 6) return false;
         if (!visPronta) return false;   // ondata parziale: mai decidere «un solo numero» in anticipo
         const conn = visibleInstances.filter(i => i.status === "connessa");
@@ -507,6 +508,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         setEmojiOpen(false);
         if (!selConv || !text.trim() || sending) return;
         setSending(true);
+        try { setTimeout(() => window.dispatchEvent(new Event("tf-omni-refresh")), 1500); } catch { /* lista omni non montata */ }
         // CHT-02: composer in modalita' MODIFICA -> aggiorna il messaggio, non ne invia uno nuovo
         if (editMsg) {
             const res = await fetch("/api/whatsapp/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "edit", messageId: editMsg.id, userId: user?.id, text: text.trim() }) }).then(r => r.json());

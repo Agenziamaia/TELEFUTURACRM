@@ -713,6 +713,7 @@ function ChatPageInner() {
     setSending(true);
     try {
       await sendMessage(selId, meId, text.trim(), files, refs, replyTo?.id ?? null);
+        try { setTimeout(() => window.dispatchEvent(new Event("tf-omni-refresh")), 1500); } catch { /* lista omni non montata */ }
       setText(""); setFiles([]); setRefs([]); setMention(null); setMentionRows([]); setReplyTo(null);
       if (meId && selId) cancellaAllegatiBozza(String(meId), selId);
       await reloadMessages(selId);

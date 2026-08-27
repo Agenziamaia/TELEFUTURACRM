@@ -488,6 +488,7 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     const closeCompose = async () => { await saveDraft(true); setComposeOpen(false); loadDrafts(); };
     const discardCompose = async () => { if (cDraftId) await supabase.from("email_drafts").delete().eq("id", cDraftId); setComposeOpen(false); setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null); loadDrafts(); };
     const sendCompose = async () => {
+        try { setTimeout(() => window.dispatchEvent(new Event("tf-omni-refresh")), 1500); } catch { /* lista omni non montata */ }
         if (!cTo.trim() || !cBody.trim() || !selAcc || sending) return;
         setSending(true);
         const res = await api("/api/email/send", { accountId: selAcc, to: cTo.trim(), subject: cSubject.trim(), text: cBody.trim(), userId: user?.id });

@@ -10,7 +10,7 @@
    Il perimetro è già applicato dentro `caricaConversazioni`: qui non arriva
    niente che l'utente non possa vedere. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { cn } from "@/utils";
@@ -64,6 +64,17 @@ export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | 
         return () => { vivo = false; };
     }, [puoImmedesimarsi]);
 
+    // la lista NON era viva (Francesco 27/08: «mando un messaggio e non
+    // compare tra i recenti»): un giro ogni 25s + il colpo immediato
+    // dell'evento tf-omni-refresh emesso dagli invii
+    const [tick, setTick] = useState(0);
+    useEffect(() => {
+        const iv = setInterval(() => setTick((t) => t + 1), 25000);
+        const su = () => setTimeout(() => setTick((t) => t + 1), 900);
+        window.addEventListener("tf-omni-refresh", su);
+        return () => { clearInterval(iv); window.removeEventListener("tf-omni-refresh", su); };
+    }, []);
+    const prospettivaPrec = useRef<string | null>(null);
     useEffect(() => {
         let vivo = true;
         setErrore(null);
@@ -71,7 +82,9 @@ export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | 
         // manager) oppure una persona con il SUO ruolo e il SUO negozio
         const p = comeChi.startsWith("u:") ? persone.find((x) => x.id === comeChi.slice(2)) : null;
         const neg = comeChi.startsWith("n:") ? comeChi.slice(2) : null;
-        setChats(null);
+        // lo spinner solo al CAMBIO di prospettiva: sul refresh silenzioso
+        // la lista resta al suo posto e si aggiorna sotto le dita
+        if (prospettivaPrec.current !== comeChi) { setChats(null); prospettivaPrec.current = comeChi; }
         (async () => {
             // per un NEGOZIO servono anche i suoi: numero e casella sono del
             // punto vendita, le chat interne sono di ciascuno
@@ -91,7 +104,7 @@ export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | 
             .catch((e) => { if (vivo) { setChats([]); setErrore(String((e as Error)?.message || e)); } });
         return () => { vivo = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, user?.role, stores.join("|"), comeChi, persone.length]);
+    }, [user?.id, user?.role, stores.join("|"), comeChi, persone.length, tick]);
 
     /* ── IL SELETTORE «VEDI COME» ─────────────────────────────────────────
        Con 150 collaboratori una tendina è inservibile: si scrive e si filtra
