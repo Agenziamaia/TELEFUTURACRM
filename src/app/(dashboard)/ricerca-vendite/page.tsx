@@ -2229,6 +2229,20 @@ export default function RicercaContratto() {
                                             })()}
                                         </td>
                                         <td className="px-4 py-3">
+                                            {/* ESCLUSA (Luca 27/08): dichiarata non valida col pulsante
+                                                viola, e allora è QUESTO che deve dire la colonna Stato —
+                                                una riga che continuava a dire «Attivo» faceva sembrare
+                                                che non fosse successo niente. Lo stato del contratto
+                                                resta scritto sotto: non si perde, passa in secondo piano. */}
+                                            {row.raw?.non_valida ? (
+                                                <span className="inline-flex flex-col items-start gap-0.5">
+                                                    <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-violet-500/20 text-violet-200 border border-violet-400/40"
+                                                        title={String(row.raw?.non_valida_nota || "Non valida per commissioning e gare")}>
+                                                        ✗ Esclusa
+                                                    </span>
+                                                    <span className="text-[9px] text-slate-500 uppercase tracking-wider">{row.stato}</span>
+                                                </span>
+                                            ) : (
                                             <span className={cn(
                                                 "px-2 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider",
                                                 row.stato === 'Attivo' ? "bg-emerald-500/10 text-emerald-400" :
@@ -2236,6 +2250,7 @@ export default function RicercaContratto() {
                                             )}>
                                                 {row.stato}
                                             </span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex gap-1 justify-center">
