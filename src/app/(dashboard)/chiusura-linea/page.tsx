@@ -33,7 +33,7 @@ import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { cn } from "@/utils";
 import { Loader2, Scissors, Upload, X, FileText, Search } from "lucide-react";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { designatiIncarico } from "@/lib/incarichi";
+import { designatiIncarico, avvisaIncaricoSuWhatsApp } from "@/lib/incarichi";
 import { capAllowed, CAP_DISDETTE, CAP_DISDETTE_INVIA, CAP_DISDETTE_GESTISCE } from "@/lib/capabilities";
 
 const BRANDS = ["WindTre", "Vodafone", "Fastweb", "TIM", "Iliad", "Sky", "Very Mobile", "Ho. Mobile", "Kena Mobile", "Altro"];
@@ -339,7 +339,8 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
 // spegnere le task a gestione avvenuta.
 async function taskAiDesignati(titolo: string, dettaglio: string, autore: string, dsId?: string | null) {
     try {
-        const { ids: ass, fulmine } = await designatiIncarico("chiusura_linea");
+        const { ids: ass, fulmine, whatsapp } = await designatiIncarico("chiusura_linea");
+        void avvisaIncaricoSuWhatsApp(whatsapp, `${titolo}\n${dettaglio}\nRichiesta di ${autore}. Apri il CRM → Chiusura Linea.`);
         if (fulmine && ass.length) {
             const link = dsId ? `/chiusura-linea?ds=${dsId}` : "/chiusura-linea";
             await supabase.from("admin_tasks").insert(ass.map((uid) => ({

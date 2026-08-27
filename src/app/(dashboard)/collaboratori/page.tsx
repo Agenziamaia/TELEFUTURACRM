@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
-import { designatiIncarico } from "@/lib/incarichi";
+import { designatiIncarico, avvisaIncaricoSuWhatsApp } from "@/lib/incarichi";
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { Clock, Users, UsersRound, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil, Plus } from "lucide-react";
 import { cn } from "@/utils";
@@ -220,7 +220,18 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         // FULMINE ai DESIGNATI (incarico 'ferie', se il flag è attivo): task ⚡
         // indirizzato solo a loro; il pallino sulla sezione arriva comunque.
         try {
-            const { ids: ass, fulmine } = await designatiIncarico("ferie");
+            const { ids: ass, fulmine, whatsapp } = await designatiIncarico("ferie");
+            // IL MESSAGGIO WHATSAPP (Luca 27/08): il numero era scritto nel
+            // pannello da giorni e non partiva niente, perché qui il campo
+            // veniva letto e buttato via. Va SEMPRE, anche senza fulmine: il
+            // fulmine decide la task dentro il CRM, il numero decide il
+            // messaggio fuori — sono due cose diverse.
+            void avvisaIncaricoSuWhatsApp(whatsapp,
+                `🏖 RICHIESTA FERIE — ${user.name}\n` +
+                `${dateFrom.split("-").reverse().join("/")}${dateTo !== dateFrom ? ` → ${dateTo.split("-").reverse().join("/")}` : ""}` +
+                `${giornoSingolo && halfDay ? ` (mezza giornata, ${halfDay === "mattina" ? "mattina" : "pomeriggio"})` : ""}\n` +
+                `${reason ? `Motivo: ${reason}\n` : ""}` +
+                `Apri il CRM → Collaboratori → Ferie per approvare o rifiutare.`);
             if (fulmine && ass.length) {
                 await supabase.from("admin_tasks").insert(ass.map((uid) => ({
                     tipo: "ferie_richiesta",

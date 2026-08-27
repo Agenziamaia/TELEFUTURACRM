@@ -9,7 +9,7 @@ import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { designatiIncarico } from "@/lib/incarichi";
+import { designatiIncarico, avvisaIncaricoSuWhatsApp } from "@/lib/incarichi";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
@@ -2132,7 +2132,14 @@ function GestioneUsatiInner() {
         const eraDaOrdinare = new Set((prima?.ricambi ?? []).filter(r => r.stato === "da_ordinare").map(r => r.name));
         const nuovi = u.ricambi.filter(r => r.stato === "da_ordinare" && !eraDaOrdinare.has(r.name));
         if (nuovi.length) {
-          const { ids: ass, fulmine } = await designatiIncarico("ricambi");
+          const { ids: ass, fulmine, whatsapp } = await designatiIncarico("ricambi");
+          // il messaggio va SEMPRE se il numero c'è: il fulmine decide la
+          // task dentro il CRM, il numero decide l'avviso fuori (Luca 27/08)
+          void avvisaIncaricoSuWhatsApp(whatsapp,
+            `🔧 RICAMBI DA ORDINARE — ${u.model}\n` +
+            `${nuovi.map(r => r.name).join(", ")}\n` +
+            `${u.store} · IMEI ${u.imei}\n` +
+            `Apri il CRM → Gestione Usati per i dettagli.`);
           if (ass.length && fulmine) {
             // GUARD anti-doppione (video Claudia 04/08: due task identiche):
             // niente nuova task a chi ne ha già una APERTA sullo stesso telefono

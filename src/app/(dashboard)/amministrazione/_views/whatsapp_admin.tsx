@@ -25,6 +25,9 @@ import { cn } from "@/utils";
 type Istanza = {
     id: string; instance_name: string; display_name: string | null; wa_number: string | null;
     status: string; owner_user_id: string | null; negozio: string | null; created_at?: string;
+    // il numero da cui escono gli avvisi automatici del CRM (ferie, ordini,
+    // PDA, bonifici…). Uno solo, e lo decide l'admin qui (Luca 27/08)
+    mittente_notifiche?: boolean;
 };
 // ⚠️ le colonne vere sono `active` e `primary_store` (bug del primo giro:
 // «attivo»/«negozio» non esistono — la query falliva in silenzio e la lista
@@ -182,6 +185,25 @@ export function WhatsAppAdminView() {
             const nome = scelti.length === 1 ? scelti[0] : nomeMulti.trim();
             if (!nome) { alert("Con più punti vendita serve il nome del numero (es. «" + (radiceComune(scelti) || "Magliana") + "»)."); return; }
             setModal({ presetName: nome, negozio: scelti.join(", ") });
+        }
+    };
+
+    // UNO SOLO fa da mittente: spegne gli altri e accende questo. L'indice
+    // unico a database impedisce comunque il doppione.
+    const [mittenteBusy, setMittenteBusy] = useState<string | null>(null);
+    const scegliMittente = async (i: Istanza) => {
+        if (mittenteBusy) return;
+        setMittenteBusy(i.id);
+        try {
+            if (i.mittente_notifiche) {
+                await supabase.from("wa_instances").update({ mittente_notifiche: false }).eq("id", i.id);
+            } else {
+                await supabase.from("wa_instances").update({ mittente_notifiche: false }).eq("mittente_notifiche", true);
+                await supabase.from("wa_instances").update({ mittente_notifiche: true }).eq("id", i.id);
+            }
+        } finally {
+            setMittenteBusy(null);
+            carica();
         }
     };
 
@@ -352,6 +374,23 @@ export function WhatsAppAdminView() {
                                                 ) : <span className="text-slate-600 text-[12px]">—</span>}
                                             </td>
                                             <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                {/* MITTENTE DEGLI AVVISI (Luca 27/08): prima la
+                                                    route ne prendeva «una connessa qualsiasi» e
+                                                    il messaggio poteva partire dal numero
+                                                    personale di un collega. Uno solo alla volta:
+                                                    accendendone un altro il primo si spegne. */}
+                                                {i.status === "connessa" && (
+                                                    <button onClick={() => scegliMittente(i)} disabled={mittenteBusy === i.id}
+                                                        title={i.mittente_notifiche
+                                                            ? "Da questo numero escono gli avvisi automatici del CRM"
+                                                            : "Fai uscire da questo numero gli avvisi automatici del CRM"}
+                                                        className={cn("px-2.5 py-1.5 rounded-lg text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1 border",
+                                                            i.mittente_notifiche
+                                                                ? "border-violet-400/40 bg-violet-500/15 text-violet-200"
+                                                                : "border-white/10 text-slate-400 hover:bg-white/10")}>
+                                                        📣 {i.mittente_notifiche ? "Manda gli avvisi" : "Usa per gli avvisi"}
+                                                    </button>
+                                                )}
                                                 <button onClick={() => verifica(i)} disabled={verificando === i.instance_name}
                                                     className="px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/10 text-[12px] font-semibold mr-1.5 inline-flex items-center gap-1">
                                                     {verificando === i.instance_name ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Verifica

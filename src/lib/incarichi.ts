@@ -19,6 +19,36 @@ export interface DesignatiIncarico {
     whatsapp: string | null;
 }
 
+/**
+ * IL MESSAGGIO WHATSAPP DELL'INCARICO (Luca 27/08).
+ *
+ * Il numero si metteva nel pannello e non succedeva niente: solo i bonifici
+ * istantanei chiamavano davvero la route di invio, tutti gli altri incarichi
+ * leggevano `designatiIncarico` e buttavano via il campo `whatsapp`. Ferie
+ * comprese, che infatti il numero ce l'avevano scritto da giorni.
+ *
+ * Da qui in poi si passa TUTTI da questa funzione: chi vuole avvisare su
+ * WhatsApp la chiama e basta. Se il numero non c'è, non succede niente — è
+ * il modo per dire «questo incarico non avvisa su WhatsApp».
+ *
+ * Best-effort per scelta: un messaggio che non parte non deve MAI far fallire
+ * la richiesta di ferie o la registrazione che l'ha scatenato.
+ */
+export async function avvisaIncaricoSuWhatsApp(numero: string | null | undefined, testo: string): Promise<boolean> {
+    const dig = String(numero || "").replace(/\D/g, "");
+    const corpo = String(testo || "").trim();
+    if (dig.length < 6 || !corpo) return false;
+    try {
+        const res = await fetch("/api/whatsapp/notify", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ number: dig, text: corpo }),
+        }).then((r) => r.json()).catch(() => null);
+        return !!res?.ok;
+    } catch {
+        return false;
+    }
+}
+
 export async function designatiIncarico(chiave: string): Promise<DesignatiIncarico> {
     try {
         interface RigaIncarico { assegnatari?: string[] | null; ruoli?: string[] | null; fulmine?: boolean | null; whatsapp?: string | null }

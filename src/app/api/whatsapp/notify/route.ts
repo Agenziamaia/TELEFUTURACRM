@@ -22,11 +22,27 @@ export async function POST(request: Request) {
         if (dig.length < 6 || !testo) {
             return NextResponse.json({ error: "number e text obbligatori" }, { status: 400 });
         }
-        // un'istanza connessa qualsiasi (preferibilmente la più recente attiva)
+        // ── DA QUALE NUMERO ESCE (Luca 27/08) ─────────────────────────────
+        // Prima si prendeva «una connessa qualsiasi, la più recente»: il
+        // messaggio poteva partire dal numero personale di un collega o da
+        // quello di un negozio, a caso, e nessuno sapeva quale. Ora c'è un
+        // MITTENTE DESIGNATO, scelto dal pannello WhatsApp; la scelta a caso
+        // resta solo come rete di sicurezza, e viene detta nella risposta.
         const { data: insts } = await supabase.from("wa_instances")
-            .select("id, instance_name, status").order("created_at", { ascending: false });
-        const inst = (insts ?? []).find((i) => String(i.status || "").toLowerCase().includes("connect")) || (insts ?? [])[0];
-        if (!inst) return NextResponse.json({ error: "nessun numero WhatsApp collegato al CRM" }, { status: 400 });
+            .select("id, instance_name, status, mittente_notifiche, display_name")
+            .order("created_at", { ascending: false });
+        const connessa = (i: { status?: string | null }) => String(i.status || "").toLowerCase().includes("conness");
+        const designato = (insts ?? []).find((i) => i.mittente_notifiche);
+        const ripiego = (insts ?? []).find(connessa) || null;
+        const inst = designato && connessa(designato) ? designato : ripiego;
+        if (!inst) {
+            return NextResponse.json({
+                error: designato
+                    ? `il numero designato per le notifiche («${designato.display_name || designato.instance_name}») non è collegato, e non c'è nessun altro numero connesso`
+                    : "nessun numero WhatsApp collegato al CRM",
+            }, { status: 400 });
+        }
+        const ripiegato = !designato || !connessa(designato);
 
         // trova o crea la conversazione per il numero — helper CONDIVISO con
         // send-template: un'unica euristica coda-cifre, mai piu' copie divergenti
@@ -50,7 +66,12 @@ export async function POST(request: Request) {
         }).eq("id", conv.id);
 
         if (stato === "failed") return NextResponse.json({ error: "invio non riuscito (istanza disconnessa?)" }, { status: 502 });
-        return NextResponse.json({ ok: true, conversationId: conv.id });
+        return NextResponse.json({
+            ok: true, conversationId: conv.id,
+            da: inst.display_name || inst.instance_name,
+            // chi legge la risposta deve sapere se è uscito dal numero giusto
+            ripiego: ripiegato || undefined,
+        });
     } catch (err) {
         const message = err instanceof Error ? err.message : "errore interno";
         return NextResponse.json({ error: message }, { status: 500 });

@@ -6,7 +6,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 // chiudere/ricaricare la pagina SENZA inviare l'ordine, e riprenderlo piu' tardi.
 const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
-import { designatiIncarico } from "@/lib/incarichi";
+import { designatiIncarico, avvisaIncaricoSuWhatsApp } from "@/lib/incarichi";
 import { brandsDispositivi, modelliDispositivi, BRAND_COMUNI } from "@/lib/dispositivi";
 import { useStores } from "@/lib/org";
 import { useAuth } from "@/context/AuthContext";
@@ -759,7 +759,12 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       // stesso meccanismo di ferie e chiusura linea — senza designati o con
       // fulmine spento non parte nulla, l'ordine resta creato comunque.
       try {
-        const { ids: ass, fulmine } = await designatiIncarico("ordine_merce");
+        const { ids: ass, fulmine, whatsapp } = await designatiIncarico("ordine_merce");
+        const pezziTot = cart.reduce((a, c) => a + c.qty, 0);
+        void avvisaIncaricoSuWhatsApp(whatsapp,
+          `📦 NUOVO ORDINE MERCE ${nextNum} — ${storeOrdine}\n` +
+          `${cart.length} ${cart.length === 1 ? "articolo" : "articoli"} (${pezziTot} pezzi)${orderNote ? ` · Nota: ${orderNote}` : ""}\n` +
+          `Da ${userName || "negozio"}. Apri il CRM → Ordine Merce.`);
         if (fulmine && ass.length) {
           const pezzi = cart.reduce((a, c) => a + c.qty, 0);
           await supabase.from("admin_tasks").insert(ass.map((uid) => ({

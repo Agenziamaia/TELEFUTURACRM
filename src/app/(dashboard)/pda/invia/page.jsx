@@ -7,7 +7,7 @@ import { Search, ShoppingBag, User, Check, ChevronRight, Info, LayoutGrid, Chevr
 import { calculateCF, _CNA, _PNA } from "@/lib/cf";
 import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { supabase } from "@/lib/supabaseClient";
-import { designatiIncarico } from "@/lib/incarichi";
+import { designatiIncarico, avvisaIncaricoSuWhatsApp } from "@/lib/incarichi";
 import { useAuth } from "@/context/AuthContext";
 import { numeroNazionale } from "@/lib/telefono";
 import { useStores, useSellers } from "@/lib/org";
@@ -620,7 +620,12 @@ export default function InviaPda() {
       // office deve accorgersi SUBITO che c'e' una pratica da lavorare in
       // Gestione PDA. Senza designati o con fulmine spento non parte nulla.
       try {
-        const { ids: ass, fulmine } = await designatiIncarico("pda_inviata");
+        const { ids: ass, fulmine, whatsapp } = await designatiIncarico("pda_inviata");
+        void avvisaIncaricoSuWhatsApp(whatsapp,
+          `📨 NUOVA PDA da ${venditore || "agente"}\n` +
+          `${contractRows.length} ${contractRows.length === 1 ? "pratica" : "pratiche"}: ${contractRows.map(r => `${r.brand} ${r.categoria}`).join(", ")}\n` +
+          `Cliente: ${clientData.ragione_sociale || `${clientData.nome} ${clientData.cognome}`.trim()}\n` +
+          `Apri il CRM → Gestione PDA.`);
         if (fulmine && ass.length) {
           const righe = contractRows.map(r => `${r.brand} ${r.categoria}`).join(", ");
           await supabase.from("admin_tasks").insert(ass.map((uid) => ({
