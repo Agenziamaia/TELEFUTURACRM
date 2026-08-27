@@ -5,7 +5,7 @@
 // passano dalle route /api/whatsapp/* (URL e chiave restano lato server).
 //   embedded=true -> pensato per stare DENTRO la pagina Chat (riempie l'altezza,
 //                    niente titolone/margini di pagina).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
@@ -219,6 +219,50 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         setInstances((data ?? []) as Instance[]);   // selInst lo gestisce l'effect sui visibili
     };
     useEffect(() => { loadInstances(); const t = setInterval(loadInstances, 5000); return () => clearInterval(t); }, []);
+
+    /* ── LA VERITÀ SULLA CONNESSIONE ──────────────────────────────────────
+       Il pallino «Connesso» diceva quello che c'è scritto nel database, e il
+       database lo aggiorna il ricevitore degli eventi: se un evento si perde
+       — o se il telefono scollega il dispositivo mentre nessuno guarda — la
+       riga resta «connessa» e il numero sembra vivo mentre è morto (Luca
+       27/08: Claudia l'ha scollegato dal telefono e qui risultava ancora
+       collegato, senza modo di ricollegarlo).
+
+       Questa funzione non si fida: CHIEDE a Evolution com'è messa la sessione
+       e riallinea il database in TUTTE E DUE le direzioni. Appena lo stato
+       scende, il pulsante «Ricollega» compare da solo — è già legato allo
+       stato del numero.                                                    */
+    const verificaConnessione = useCallback(async (name?: string) => {
+        const inst = instances.find((i) => i.id === selInst);
+        const nome = name || inst?.instance_name;
+        if (!nome) return null;
+        try {
+            const res = await api({ action: "state", instanceName: nome });
+            const vivo = res?.state === "open";
+            const riga = instances.find((i) => i.instance_name === nome);
+            // «state» promuove da solo open→connessa: qui resta il caso
+            // opposto, quello che nessuno aggiornava mai
+            if (riga && !vivo && riga.status === "connessa") {
+                await supabase.from("wa_instances").update({ status: "disconnessa" }).eq("id", riga.id);
+            }
+            await loadInstances();
+            return vivo;
+        } catch {
+            return null;                 // rete ballerina: non si declassa niente
+        }
+    }, [instances, selInst]);
+
+    // E UN CONTROLLO OGNI MINUTO, per non dover premere niente.
+    // ⚠️ Passa da un ref: `instances` si ricarica ogni 5 secondi, quindi
+    // `verificaConnessione` cambia identità di continuo — mettendola nelle
+    // dipendenze l'intervallo si azzererebbe prima di scattare, e il controllo
+    // al minuto non sarebbe MAI partito.
+    const verificaRef = useRef(verificaConnessione);
+    useEffect(() => { verificaRef.current = verificaConnessione; }, [verificaConnessione]);
+    useEffect(() => {
+        const t = setInterval(() => { verificaRef.current(); }, 60000);
+        return () => clearInterval(t);
+    }, []);
 
     // conversazioni dell'istanza selezionata (polling leggero). Se il numero NON
     // e' connesso (disconnesso o sessione scaduta) le chat NON si mostrano: restano
@@ -520,7 +564,20 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 )}
                 <div className="flex items-center gap-2">
                     {instConnessa?.status === "connessa" && (
-                        <button onClick={() => sincronizza()} disabled={syncing} title="Ricarica le conversazioni dal telefono (di solito non serve: si aggiorna da solo)"
+                        // PRIMA si controlla se il numero è davvero collegato,
+                        // POI si ricaricano le chat: se la sessione è caduta,
+                        // ricaricare non serve — serve ricollegare (Luca 27/08)
+                        <button onClick={async () => {
+                            if (syncing) return;
+                            setSyncing(true);
+                            const vivo = await verificaConnessione();
+                            setSyncing(false);
+                            if (vivo === false) {
+                                alert("Questo numero non è più collegato: il telefono ha chiuso la sessione.\n\nPremi «Ricollega» e riscansiona il QR.");
+                                return;
+                            }
+                            sincronizza();
+                        }} disabled={syncing} title="Controlla il collegamento e ricarica le conversazioni dal telefono"
                             className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 disabled:opacity-40">
                             {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         </button>
