@@ -34,6 +34,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, BRAND_COLORS , areaOf } from "@/lib/roles";
 import { matchRigheAttivazione, puntiPerRighe, contestoVfFw, brandIdDaLabel, caricaTabellare, calcolaAvanzamento, payEuroAttivazione, esclusaDalleGare } from "@/lib/commissioning";
 import { esitaAppuntamento } from "@/lib/esitoAppuntamento";
+import { sediScoperte, type SedeScoperta } from "@/lib/coperture";
 import { capChoice, CAP_CALENDARIO_VISTA } from "@/lib/capabilities";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
@@ -48,7 +49,7 @@ import {
     Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, CalendarClock,
     LogIn, EyeOff, Eye, ShoppingBag, Signal, Crown, Swords, MessageCircle,
     Euro, Flame, TrainFront, CalendarCheck, Shield, Banknote, Mail,
-    ClipboardList,
+    ClipboardList, LifeBuoy,
 } from "lucide-react";
 import { CoronaOro } from "@/components/IconaCorona";
 
@@ -2969,6 +2970,65 @@ function WidgetDerby({ ctx }) {
 }
 
 
+
+/* ═══ COPERTURE NEGOZI (Luca 27/08): il widget dell'AMMINISTRAZIONE (Sandra)
+   che si ILLUMINA DI ROSSO se oggi — o nei giorni scorsi — un negozio ha
+   avuto una ferie/malattia SENZA copertura (né un turno aggiunto né il flag
+   «coperta così» della sezione Turni). Verde = tutto coperto. ═══ */
+function WidgetCoperture({ ctx }) {
+    const [scoperte, setScoperte] = useState(null);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const giorni = [];
+            for (let i = 7; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); giorni.push(ymdLoc(d)); }
+            const out = await sediScoperte(giorni).catch(() => []);
+            if (vivo) setScoperte(out);
+        })();
+        return () => { vivo = false; };
+    }, [ctx.visKey]);
+    const lista = (scoperte || []);
+    const oggiISO = ctx.oggiISO;
+    const rosse = [...lista].sort((a, b) => b.data.localeCompare(a.data));
+    const allarme = lista.length > 0;
+    return (
+        <WidgetShell icon={LifeBuoy} title="Coperture negozi" accent={allarme ? "var(--tf-ef4444)" : "var(--tf-22c55e)"}
+            action={<Link href="/collaboratori" className="text-[10px] font-bold text-indigo-300 hover:text-indigo-200">Turni →</Link>}>
+            {scoperte === null ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs py-6">Controllo le coperture…</div>
+            ) : allarme ? (
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+                    <div className="rounded-xl border border-rose-500/60 bg-rose-500/[0.12] px-3 py-2 animate-pulse">
+                        <div className="text-[11px] font-black text-rose-300 uppercase tracking-wider">🚨 {lista.length} {lista.length === 1 ? "giornata scoperta" : "giornate scoperte"}</div>
+                        <div className="text-[10px] text-rose-200/80">assenze senza copertura né conferma «coperta così»</div>
+                    </div>
+                    {rosse.slice(0, 8).map((sc) => (
+                        <div key={`${sc.sede}|${sc.data}`} className={cn("rounded-lg border p-2",
+                            sc.data === oggiISO ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-white/10 bg-white/[0.03]")}>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-slate-200 truncate">🏬 {sc.sede}</span>
+                                <span className={cn("text-[10px] font-bold shrink-0 tabular-nums", sc.data === oggiISO ? "text-rose-300" : "text-slate-500")}>
+                                    {sc.data === oggiISO ? "OGGI" : fmtGiornoIT(sc.data)}
+                                </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                                {sc.assenti.map((a) => `${a.tipo === "malattia" ? "🤒" : "🏖"} ${a.persona}`).join(" · ")}
+                            </div>
+                        </div>
+                    ))}
+                    {rosse.length > 8 && <div className="text-[10px] text-slate-500">+{rosse.length - 8} nel dettaglio Turni</div>}
+                </div>
+            ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-1.5 py-6 text-center">
+                    <div className="text-2xl">🛡️</div>
+                    <div className="text-sm font-black text-emerald-300">Tutto coperto</div>
+                    <div className="text-[10px] text-slate-500">nessuna assenza scoperta negli ultimi 7 giorni</div>
+                </div>
+            )}
+        </WidgetShell>
+    );
+}
+
 /* ═══ REGIA TASK (Luca 27/08 notte): il widget dell'AMMINISTRATIVO — due
    colonne: le task assegnate A te e quelle assegnate DA te. Quando chi le
    riceve le chiude, TORNANO indietro con le sue note (📬 ritorni) finché
@@ -3126,6 +3186,8 @@ const FISSI = {
     whatsapp: { label: "WhatsApp del team", icon: MessageCircle, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
     // la REGIA TASK è dell'amministrativo (Luca 27/08): due colonne, a te/da te
     task_regia: { label: "Regia Task", icon: ClipboardList, sizes: [2, 4], def: 4, gruppo: "strumenti", ruoli: ["amministrativo"], minW: 8, minH: 4 },
+    // il semaforo delle COPERTURE (ferie/malattie scoperte) — amministrazione
+    coperture: { label: "Coperture negozi", icon: LifeBuoy, sizes: [1, 2], def: 1, gruppo: "squadra", ruoli: ["amministrativo"] },
     email: { label: "Email del team", icon: Mail, sizes: [2, 4], def: 2, gruppo: "comunicazione", soloManager: true },
 };
 
@@ -3195,6 +3257,7 @@ export function renderWidget(id, ctx, size) {
         case "bacheca": return <WidgetBacheca ctx={ctx} size={size} />;
         case "accessi": return (ctx.seesAll || ctx.level === "store" || ["direttore_cc", "direttore_ob"].includes(ctx.user?.role)) ? <WidgetAccessi ctx={ctx} /> : null;
         case "task_regia": return <WidgetRegiaTask ctx={ctx} size={size} />;
+        case "coperture": return <WidgetCoperture ctx={ctx} />;
         case "whatsapp": return isManagerWa(ctx) ? <WidgetWhatsApp ctx={ctx} size={size} /> : null;
         case "email": return isManagerWa(ctx) ? <WidgetEmail ctx={ctx} size={size} /> : null;
         default: return null;
@@ -3247,7 +3310,7 @@ export function layoutDefault(ctx) {
     if (ctx.level === "global") {
         return decodeLayout([
             "kpi_contratti@s", "kpi_attivi@s", "kpi_lavorazione@s", "kpi_clienti@s", "obiettivo@1", "azioni@1",
-            ...(amministrativo ? ["task_regia@4"] : []),
+            ...(amministrativo ? ["task_regia@4", "coperture@1"] : []),
             "bussola@2", "agenda@2",
             "whatsapp@2", "email@2",
             "soglia_euro@1", "scudo@1", "derby@1", "chart_stato@1",

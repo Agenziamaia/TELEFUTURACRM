@@ -8,6 +8,7 @@ import { Clock, Users, UsersRound, CalendarDays, Shield, X, MapPin, Play, Pause,
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { gruppaSedi, assenzeDelGiorno, type AssenzaGiorno } from "@/lib/coperture";
 import { isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
@@ -1889,6 +1890,11 @@ function TurniSection() {
     const [assegnati, setAssegnati] = useState<Map<string, string[]>>(new Map());
     const [turni, setTurni] = useState<TurnoRow[]>([]);
     const [chiusure, setChiusure] = useState<{ store: string; dal: string; al: string; motivo: string }[]>([]);
+    // PRESENZE AUTOMATICHE (Luca 27/08): niente più click per confermare —
+    // gli assegnati SONO a turno, salvo ferie/malattia (dalla sezione
+    // gemella) o esclusione manuale del giorno (riga tipo 'escluso')
+    const [assenze, setAssenze] = useState<AssenzaGiorno[]>([]);
+    const [coperteOk, setCoperteOk] = useState<Set<string>>(new Set());
     const oggiYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
     const [dataSel, setDataSel] = useState(oggiYmd());
     const [nuovo, setNuovo] = useState<Record<string, { persona: string; inizio: string; fine: string }>>({});
@@ -1902,13 +1908,10 @@ function TurniSection() {
             supabase.from("user_stores").select("user_id, store_name, app_users!inner(full_name, active)"),
             supabase.from("chiusure_negozio").select("store, dal, al, motivo"),
         ]);
-        // mig. 158/159 non ancora applicate: si ripiega sulle colonne storiche
         const st = st0.error
             ? await supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name")
             : st0;
         setChiusure((ch.data ?? []) as never);
-        // gli UFFICI non sono punti vendita a turni (mig. 159): fuori dalla
-        // lista, ma le loro persone restano selezionabili come coperture
         setNegozi(((st.data ?? []) as StoreRow[]).filter(n => !n.is_ufficio));
         setStaff((us.data ?? []) as never);
         const m = new Map<string, string[]>();
@@ -1922,28 +1925,45 @@ function TurniSection() {
             .forEach(l => { if (l.app_users?.active) aggiungi(l.store_name, l.app_users.full_name); });
         setAssegnati(m);
     }, []);
-    const caricaTurni = useCallback(async () => {
-        const { data } = await supabase.from("turni_negozio").select("*").eq("data", dataSel).order("inizio");
-        setTurni((data ?? []) as TurnoRow[]);
+    const caricaGiorno = useCallback(async () => {
+        const [t, asn, ok] = await Promise.all([
+            supabase.from("turni_negozio").select("*").eq("data", dataSel).order("inizio"),
+            assenzeDelGiorno(dataSel),
+            supabase.from("coperture_ok").select("store").eq("data", dataSel),
+        ]);
+        setTurni((t.data ?? []) as TurnoRow[]);
+        setAssenze(asn);
+        setCoperteOk(new Set(((ok.data ?? []) as { store: string }[]).map(o => o.store)));
     }, [dataSel]);
     useEffect(() => { caricaBase(); }, [caricaBase]);
-    useEffect(() => { caricaTurni(); }, [caricaTurni]);
+    useEffect(() => { caricaGiorno(); }, [caricaGiorno]);
 
     const spostaGiorno = (n: number) => { const d = new Date(dataSel + "T12:00"); d.setDate(d.getDate() + n); setDataSel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); };
     const aggiungiTurno = async (store: string, persona: string, inizio: string, fine: string, tipo: string) => {
         if (!persona || !inizio || !fine) return;
         const { error } = await supabase.from("turni_negozio").insert({ store, data: dataSel, persona, inizio, fine, tipo, creato_da: user?.name || null });
         if (error && !/duplicate/i.test(error.message)) { alert("Turno non salvato: " + error.message); return; }
-        await caricaTurni();
+        await caricaGiorno();
     };
     const eliminaTurno = async (t: TurnoRow) => {
         await supabase.from("turni_negozio").delete().eq("id", t.id);
         setTurni(p => p.filter(x => x.id !== t.id));
     };
+    const toggleCopertaOk = async (sedeStore: string, attiva: boolean) => {
+        if (attiva) {
+            const { error } = await supabase.from("coperture_ok").insert({ store: sedeStore, data: dataSel, creato_da: user?.name || null });
+            if (error && !/duplicate/i.test(error.message)) { alert("Non salvato: " + error.message); return; }
+        } else {
+            await supabase.from("coperture_ok").delete().eq("store", sedeStore).eq("data", dataSel);
+        }
+        await caricaGiorno();
+    };
 
     const dataLabel = new Date(dataSel + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     const eOggi = dataSel === oggiYmd();
     const tuttiINomi = staff.map(s => s.full_name);
+    // le SEDI: i multi-punto (Acilia, Collatina, Magliana) sono UNA squadra
+    const sedi = gruppaSedi(negozi);
 
     return (
         <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1959,88 +1979,139 @@ function TurniSection() {
                     <input type="date" value={dataSel} onChange={e => e.target.value && setDataSel(e.target.value)} className="glass-input !h-9 text-xs ml-2" />
                 </div>
                 <p className="text-xs text-slate-500 max-w-md">
-                    Gli <b className="text-slate-300">assegnati</b> al negozio sono la squadra di casa: un click li mette
-                    a turno per la giornata. Le <b className="text-slate-300">coperture</b> si aggiungono anche a mezzo turno.
+                    Gli <b className="text-slate-300">assegnati</b> sono a turno <b className="text-emerald-300">in automatico</b>: ferie e malattie
+                    li tolgono da soli, la ✕ li esclude per il giorno. Le <b className="text-slate-300">coperture</b> si aggiungono anche a mezzo turno.
                 </p>
             </div>
 
-            {/* RIGHE per PUNTO VENDITA (03/08, feedback Luca): negozi in
-                verticale, collaboratori in ORIZZONTALE — niente piu' card
-                confusionarie. Orari e chiusure si amministrano da
-                Amministrazione → Orari & Chiusure; qui solo si leggono. */}
+            {/* RIGHE per SEDE (Luca 27/08): i multi-punto — Acilia, Collatina,
+                Magliana — sono un CALDERONE unico di persone; restano separati
+                solo gli orari delle due insegne. */}
             <div className="glass-card overflow-hidden divide-y divide-white/5">
-                {negozi.map(n => {
-                    // SABATO dedicato (Luca 12/08): se il negozio ha l'orario del
-                    // sabato e la data selezionata È un sabato, vale quello (turno
-                    // unico: la pausa non si applica)
+                {sedi.map(gr => {
+                    const primo = gr.negozi[0];
+                    const nomiGruppo = gr.negozi.map(n => n.name);
                     const eSabato = new Date(dataSel + "T12:00").getDay() === 6;
-                    const sabDedicato = eSabato && !!(n.sabato_apertura && n.sabato_chiusura);
-                    const ap = sabDedicato ? hhmm(n.sabato_apertura!, "09:30") : hhmm(n.orario_apertura, "09:30");
-                    const ch = sabDedicato ? hhmm(n.sabato_chiusura!, "19:30") : hhmm(n.orario_chiusura, "19:30");
-                    // orario SPEZZATO (mig. 158): con la pausa valorizzata le
-                    // coperture M/P seguono le due fasce; senza pausa resta lo
-                    // spartiacque storico delle 14:00
-                    const pi = !sabDedicato && n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : "";
-                    const pf = !sabDedicato && n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "";
-                    const spezzato = !!(pi && pf);
-                    const chiusura = chiusure.find(c => c.store === n.name && c.dal <= dataSel && c.al >= dataSel);
-                    const turniStore = turni.filter(t => t.store === n.name);
-                    const aTurno = new Set(turniStore.map(t => t.persona));
-                    const squadra = (assegnati.get(n.name) || []).filter(p => !aTurno.has(p));
-                    const nv = nuovo[n.name] || { persona: "", inizio: ap, fine: ch };
-                    const setNv = (patch: Partial<typeof nv>) => setNuovo(p => ({ ...p, [n.name]: { ...nv, ...patch } }));
+                    const orarioDi = (n: StoreRow) => {
+                        const sabDedicato = eSabato && !!(n.sabato_apertura && n.sabato_chiusura);
+                        const ap = sabDedicato ? hhmm(n.sabato_apertura!, "09:30") : hhmm(n.orario_apertura, "09:30");
+                        const ch = sabDedicato ? hhmm(n.sabato_chiusura!, "19:30") : hhmm(n.orario_chiusura, "19:30");
+                        const pi = !sabDedicato && n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : "";
+                        const pf = !sabDedicato && n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "";
+                        return { ap, ch, pi, pf, spezzato: !!(pi && pf) };
+                    };
+                    const orari = gr.negozi.map(n => ({ n, o: orarioDi(n) }));
+                    const ap = orari.map(x => x.o.ap).sort()[0];
+                    const ch = orari.map(x => x.o.ch).sort().slice(-1)[0];
+                    const { pi, pf } = orari[0].o;
+                    const chiusi = gr.negozi.map(n => chiusure.find(c => c.store === n.name && c.dal <= dataSel && c.al >= dataSel)).filter(Boolean);
+                    const tuttoChiuso = chiusi.length === gr.negozi.length && gr.negozi.length > 0;
+                    const turniSede = turni.filter(t => nomiGruppo.includes(t.store));
+                    const esclusi = new Set(turniSede.filter(t => t.tipo === "escluso").map(t => t.persona));
+                    const manuali = turniSede.filter(t => t.tipo !== "escluso");
+                    const aTurnoManuale = new Set(manuali.map(t => t.persona));
+                    // il CALDERONE: union degli assegnati delle insegne della sede
+                    const squadra: string[] = [];
+                    nomiGruppo.forEach(nome => (assegnati.get(nome) || []).forEach(p => { if (!squadra.includes(p)) squadra.push(p); }));
+                    const assentiSede = assenze.filter(a => (a.store && nomiGruppo.includes(a.store)) || squadra.includes(a.persona));
+                    const assentiNomi = new Set(assentiSede.map(a => a.persona));
+                    const presenti = squadra.filter(p => !assentiNomi.has(p) && !esclusi.has(p) && !aTurnoManuale.has(p));
+                    const okFlag = nomiGruppo.some(nome => coperteOk.has(nome)) || coperteOk.has(gr.sede);
+                    const nv = nuovo[gr.sede] || { persona: "", inizio: ap, fine: ch };
+                    const setNv = (patch: Partial<typeof nv>) => setNuovo(p => ({ ...p, [gr.sede]: { ...nv, ...patch } }));
                     return (
-                        <div key={n.name} className={cn("flex items-center gap-4 px-4 py-3 flex-wrap", chiusura && "bg-rose-500/[0.05]")}>
-                            {/* colonna negozio: logo del brand (mig. 159) al posto dell'emoji */}
+                        <div key={gr.sede} className={cn("flex items-center gap-4 px-4 py-3 flex-wrap", tuttoChiuso && "bg-rose-500/[0.05]")}>
                             <div className="w-56 shrink-0">
                                 <p className="text-sm font-bold text-white flex items-center gap-1.5">
-                                    {n.brand_negozio && LOGO_BRAND[n.brand_negozio]
-                                        ? <img src={LOGO_BRAND[n.brand_negozio]} alt="" className="w-5 h-5 object-contain shrink-0" />
+                                    {primo.brand_negozio && LOGO_BRAND[primo.brand_negozio]
+                                        ? <img src={LOGO_BRAND[primo.brand_negozio]} alt="" className="w-5 h-5 object-contain shrink-0" />
                                         : <span className="shrink-0">🏬</span>}
-                                    <span className="truncate min-w-0">{n.name}</span>
+                                    <span className="truncate min-w-0">{gr.sede}</span>
+                                    {gr.negozi.length > 1 && <span className="text-[9px] font-bold text-slate-500 uppercase shrink-0">sede unica</span>}
                                 </p>
-                                {chiusura ? (
-                                    <p className="text-[10px] font-black uppercase text-rose-400 mt-0.5">🔒 Chiuso{chiusura.motivo ? ` · ${chiusura.motivo}` : ""}</p>
+                                {tuttoChiuso ? (
+                                    <p className="text-[10px] font-black uppercase text-rose-400 mt-0.5">🔒 Chiuso{chiusi[0]?.motivo ? ` · ${chiusi[0]?.motivo}` : ""}</p>
                                 ) : (
-                                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">🕐 {spezzato ? `${ap}–${pi} · ${pf}–${ch}` : `${ap}–${ch}`}</p>
+                                    // gli ORARI restano per insegna (Luca: «lascia separati solo gli orari»)
+                                    orari.map(({ n, o }) => (
+                                        <p key={n.name} className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+                                            {gr.negozi.length > 1 && <span className="text-slate-600">{n.name.split(/\s+/).slice(1).join(" ") || n.name} · </span>}
+                                            🕐 {o.spezzato ? `${o.ap}–${o.pi} · ${o.pf}–${o.ch}` : `${o.ap}–${o.ch}`}
+                                        </p>
+                                    ))
                                 )}
                             </div>
-                            {/* persone in ORIZZONTALE */}
                             <div className="flex-1 min-w-[320px] flex items-center gap-1.5 flex-wrap">
-                                {chiusura ? (
-                                    <span className="text-xs text-rose-300/80 italic">Punto vendita chiuso in questa data.</span>
+                                {tuttoChiuso ? (
+                                    <span className="text-xs text-rose-300/80 italic">Sede chiusa in questa data.</span>
                                 ) : (<>
-                                    {turniStore.map(t => (
+                                    {/* PRESENTI in automatico: la squadra di casa, già a turno */}
+                                    {presenti.map(p => (
+                                        <span key={p} title="A turno in automatico (assegnato alla sede)"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold border bg-emerald-500/10 text-emerald-300 border-emerald-500/40">
+                                            {p}
+                                            {gestisce && <button onClick={() => aggiungiTurno(primo.name, p, ap, ch, "escluso")} title="Escludi per questo giorno" className="opacity-60 hover:opacity-100">✕</button>}
+                                        </span>
+                                    ))}
+                                    {/* ASSENTI dalla sezione ferie/malattia: fuori dal turno da soli */}
+                                    {assentiSede.map(a => (
+                                        <span key={`${a.persona}-${a.tipo}`} title={a.tipo === "malattia" ? "In malattia (dalla sezione Malattia)" : "In ferie (dalla sezione Ferie)"}
+                                            className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold border",
+                                                a.tipo === "malattia" ? "bg-rose-500/10 text-rose-300 border-rose-500/40" : "bg-amber-500/10 text-amber-300 border-amber-500/40")}>
+                                            {a.tipo === "malattia" ? "🤒" : "🏖"} {a.persona}
+                                        </span>
+                                    ))}
+                                    {/* ESCLUSI a mano per il giorno */}
+                                    {[...esclusi].filter(p => !assentiNomi.has(p)).map(p => {
+                                        const riga = turniSede.find(t => t.tipo === "escluso" && t.persona === p);
+                                        return (
+                                            <span key={p} title="Escluso per questo giorno"
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] border border-dashed border-white/15 text-slate-500 line-through">
+                                                {p}
+                                                {gestisce && riga && <button onClick={() => eliminaTurno(riga)} title="Rimettilo a turno" className="no-underline text-emerald-400 hover:text-emerald-300 font-black">＋</button>}
+                                            </span>
+                                        );
+                                    })}
+                                    {/* COPERTURE e turni manuali */}
+                                    {manuali.map(t => (
                                         <span key={t.id} className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold border",
                                             t.tipo === "giornata" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/40"
                                                 : t.tipo === "mattina" ? "bg-sky-500/10 text-sky-300 border-sky-500/40"
                                                     : t.tipo === "pomeriggio" ? "bg-amber-500/10 text-amber-300 border-amber-500/40"
                                                         : "bg-violet-500/10 text-violet-300 border-violet-500/40")}>
-                                            {t.persona}
+                                            🧩 {t.persona}
                                             <i className="not-italic font-mono font-normal opacity-80">{t.inizio.slice(0, 5)}–{t.fine.slice(0, 5)}</i>
                                             {gestisce && <button onClick={() => eliminaTurno(t)} title="Togli il turno" className="opacity-60 hover:opacity-100">✕</button>}
                                         </span>
                                     ))}
-                                    {squadra.map(p => (
-                                        <span key={p} title="Assegnato al negozio, non ancora a turno in questa data"
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] border border-dashed border-white/15 text-slate-500">
-                                            {p}
-                                            {gestisce && <button onClick={() => aggiungiTurno(n.name, p, ap, ch, "giornata")} title="Conferma a turno per la giornata" className="text-emerald-400 hover:text-emerald-300 font-black">＋</button>}
-                                        </span>
-                                    ))}
-                                    {turniStore.length === 0 && squadra.length === 0 && <span className="text-xs text-slate-600 italic">Nessuno assegnato.</span>}
+                                    {presenti.length === 0 && assentiSede.length === 0 && manuali.length === 0 && <span className="text-xs text-slate-600 italic">Nessuno assegnato.</span>}
+                                    {/* FLAG «coperto così» (Luca 27/08): la squadra ha retto senza aggiunte */}
+                                    {assentiSede.length > 0 && (
+                                        okFlag ? (
+                                            <button disabled={!gestisce} onClick={() => toggleCopertaOk(primo.name, false)}
+                                                title="Segnata come coperta senza collaboratori extra: clicca per togliere"
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold border bg-emerald-500/15 text-emerald-300 border-emerald-500/50">
+                                                ✓ coperta così
+                                            </button>
+                                        ) : gestisce ? (
+                                            <button onClick={() => toggleCopertaOk(primo.name, true)}
+                                                title="La squadra ha coperto senza bisogno di un collaboratore in più"
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold border border-dashed border-emerald-500/40 text-emerald-400/80 hover:bg-emerald-500/10">
+                                                ✓ coperta così?
+                                            </button>
+                                        ) : null
+                                    )}
                                 </>)}
                             </div>
-                            {/* copertura rapida, in coda alla riga */}
-                            {gestisce && !chiusura && (
+                            {gestisce && !tuttoChiuso && (
                                 <div className="flex items-center gap-1.5 flex-wrap shrink-0" onClick={e => e.stopPropagation()}>
                                     <div className="w-44"><SelectPersona value={nv.persona} onChange={v => setNv({ persona: v })} opzioni={tuttiINomi} placeholder="Copertura…" className="glass-input text-xs rounded-lg py-1.5 w-full" /></div>
-                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} title="Giornata intera" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">G</button>
-                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, pi || "14:00", "mattina")} disabled={!nv.persona} title={`Mattina (${ap} → ${pi || "14:00"})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">M</button>
-                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, pf || "14:00", ch, "pomeriggio")} disabled={!nv.persona} title={`Pomeriggio (${pf || "14:00"} → ${ch})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">P</button>
+                                    <button onClick={() => aggiungiTurno(primo.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} title="Giornata intera" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">G</button>
+                                    <button onClick={() => aggiungiTurno(primo.name, nv.persona, ap, pi || "14:00", "mattina")} disabled={!nv.persona} title={`Mattina (${ap} → ${pi || "14:00"})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">M</button>
+                                    <button onClick={() => aggiungiTurno(primo.name, nv.persona, pf || "14:00", ch, "pomeriggio")} disabled={!nv.persona} title={`Pomeriggio (${pf || "14:00"} → ${ch})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">P</button>
                                     <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
                                     <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
-                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Orario personalizzato" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40">＋</button>
+                                    <button onClick={() => aggiungiTurno(primo.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Orario personalizzato" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40">＋</button>
                                 </div>
                             )}
                         </div>
