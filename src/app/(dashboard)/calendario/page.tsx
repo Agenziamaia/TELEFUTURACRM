@@ -919,10 +919,16 @@ export default function Calendario() {
         }
         if (!isTaskTutte) {
             if (t.assignedToStore) {
-                // task di punto vendita: solo con ambito "negozio", su
-                // QUALSIASI negozio visibile (gemelli inclusi, sameStore)
-                if (vistaTask !== "task_negozio") return false;
-                if (!mieiNegozi.some((m) => sameStore(t.assignedToStore, m))) return false;
+                // le task a negozio CREATE DA LEI si vedono sempre (Luca 27/08:
+                // «le sue cose» includono quelle che ha assegnato, anche a un
+                // punto vendita fuori visibilità)
+                const creataDaLei = (t.createdByUserId && t.createdByUserId === user?.id) || t.createdBy === user?.name;
+                if (!creataDaLei) {
+                    // altrimenti: solo con ambito "negozio", su QUALSIASI
+                    // negozio visibile (gemelli inclusi, sameStore)
+                    if (vistaTask !== "task_negozio") return false;
+                    if (!mieiNegozi.some((m) => sameStore(t.assignedToStore, m))) return false;
+                }
             } else if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
         }
         // filtri multi della griglia (null = tutto): il filtro consulente vale

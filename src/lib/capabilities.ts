@@ -508,9 +508,16 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
             // fotografia: oggi vale per tutti i ruoli senza vista completa
             default: () => true,
         },
+        // SCELTA ESPLICITA (Luca 27/08: «a prescindere dai negozi in
+        // visibilità, sul calendario vede solo le SUE cose»): prima era
+        // raggiungibile solo spegnendo le altre due — ora è una voce sua.
+        {
+            id: "task_proprie",
+            label: "Solo le sue cose",
+            desc: "A prescindere dai negozi in visibilità: solo le task assegnate a lei e quelle che lei ha assegnato ad altri (persone o negozi).",
+            default: () => false,
+        },
     ],
-    // "task_proprie" solo come fallback (pattern CAP_CALENDARIO_VISTA):
-    // raggiungibile spegnendo entrambe le scelte dalla rotellina.
     fallback: {
         id: "task_proprie",
         label: "Solo le proprie",
