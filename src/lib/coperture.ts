@@ -58,6 +58,11 @@ export async function assenzeDelGiorno(ymd: string): Promise<AssenzaGiorno[]> {
 
 export type SedeScoperta = { sede: string; data: string; assenti: AssenzaGiorno[] };
 
+/** TOMBSTONE (Luca 27/08 sera: «tombami tutto il passato, facciamolo partire
+ *  da oggi»): il semaforo coperture non guarda MAI prima di questa data —
+ *  il pregresso è chiuso d'ufficio, si vigila da qui in avanti. */
+export const COPERTURE_DA = "2026-08-27";
+
 /** La verifica del widget (Sandra): per ogni giorno della finestra, le SEDI
  *  con almeno un'assenza che NON hanno né una copertura a turno (una riga
  *  turni_negozio non-esclusione su un negozio della sede) né il flag
@@ -100,6 +105,7 @@ export async function sediScoperte(giorni: string[]): Promise<SedeScoperta[]> {
         .forEach((l) => { if (l.app_users?.active) aggiungiP(l.app_users.full_name, l.store_name); });
     const out: SedeScoperta[] = [];
     for (const ymd of giorni) {
+        if (ymd < COPERTURE_DA) continue;   // tomba del pregresso (Luca 27/08)
         if (festivi.has(ymd)) continue;
         if (new Date(ymd + "T12:00").getDay() === 0) continue;   // domenica
         const assenze: AssenzaGiorno[] = [];
