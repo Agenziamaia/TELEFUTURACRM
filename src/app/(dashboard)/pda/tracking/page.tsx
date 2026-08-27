@@ -1011,7 +1011,7 @@ function Drawer({
           <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
           <span className="text-[11px] text-slate-500 mx-1">| Admin:</span>
           <StatoBadge id={row.statoAdmin} set="admin" />
-          {èMarchiataNonConforme({ statoAdmin: baseA.current, storia: storiaRef.current }) && baseA.current !== "non_conforme" && baseA.current !== "ex_non_conforme" && (
+          {inFiltroNonConformi({ statoAdmin: baseA.current, categoria: row.categoria, brand: row.brand, storia: storiaRef.current }) && baseA.current !== "non_conforme" && baseA.current !== "ex_non_conforme" && (
             <span title="È passata per Non Conforme: resta nel filtro finché non arriva a uno stato definitivo"
               className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300">🔥 ex NC</span>
           )}

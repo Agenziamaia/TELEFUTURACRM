@@ -350,7 +350,13 @@ export async function sincronizzaMalusStorico(
         // contato due volte.
         const coperto = db.some((e) => !e.eliminato
           && e.data_fine !== null && e.data_inizio <= d.data_inizio && d.data_inizio <= e.data_fine);
-        if (!coperto) inserts.push(eFuori(d.venditore) ? { ...d, stato: "archiviato" } : d);
+        // …e anche contro gli ALTRI derivati di QUESTO giro (revisore 27/08,
+        // caso EX: l'episodio admin chiuso in questo stesso passaggio non e'
+        // ancora «chiuso a DB» — senza questa guardia il segmento-negozio
+        // sovrapposto rinascerebbe accanto, stesso malus contato due volte)
+        const copertoDaGiro = derivati.some((e) => e !== d && e.data_fine !== null
+          && e.data_inizio < d.data_inizio && d.data_inizio <= e.data_fine);
+        if (!coperto && !copertoDaGiro) inserts.push(eFuori(d.venditore) ? { ...d, stato: "archiviato" } : d);
       } else if (match.data_fine === null) {
         // l'episodio che a DB risultava in corso nel frattempo e' stato sanato:
         // si congela alla data dell'evento, non a oggi.
@@ -393,7 +399,9 @@ export async function sincronizzaMalusStorico(
           // registrato — tipicamente il congelato di una sospensione —
           // l'insert duplicherebbe quel maturato con l'importo totale.
           const copertoAperto = db.some((e) => !e.eliminato && e.data_fine !== null
-            && e.data_inizio <= derivatoAperto.data_inizio && derivatoAperto.data_inizio <= e.data_fine);
+            && e.data_inizio <= derivatoAperto.data_inizio && derivatoAperto.data_inizio <= e.data_fine)
+            || derivati.some((e) => e !== derivatoAperto && e.data_fine !== null
+              && e.data_inizio < derivatoAperto.data_inizio && derivatoAperto.data_inizio <= e.data_fine);
           if (!copertoAperto) inserts.push(derivatoAperto);
         }
       }
