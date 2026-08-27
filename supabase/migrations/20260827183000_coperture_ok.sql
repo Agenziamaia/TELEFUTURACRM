@@ -10,3 +10,10 @@ create table if not exists coperture_ok (
   created_at timestamptz not null default now(),
   primary key (store, data)
 );
+
+-- RLS come le tabelle gemelle (turni_negozio): abilitata con policy aperta
+-- FOR ALL — senza, l'insert dal client moriva («violates row-level security»,
+-- visto da Luca al primo click su «coperta così»).
+alter table coperture_ok enable row level security;
+drop policy if exists coperture_ok_all on coperture_ok;
+create policy coperture_ok_all on coperture_ok for all using (true) with check (true);
