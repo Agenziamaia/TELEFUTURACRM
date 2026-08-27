@@ -1095,7 +1095,22 @@ export default function Calendario() {
          altrimenti basterebbe aprirla e lasciarla lì per sempre.
 
        Chi se la autoassegna non ha nessun patto da rispettare: è roba sua. */
-    const ORE_PATTO = 48;
+    /* LE REGOLE SONO DI LUCA, NON DEL CODICE (28/08): «mettimi il regoletto
+       classico delle regole dove posso modificare il numero di giorni oltre
+       il quale una task non esitata va in malus e l'importo giornaliero».
+       Stessa strada di tracking_regole / caller_regole / usati_regole. */
+    const [regolaPatto, setRegolaPatto] = useState<{ giorni: number; euro: number; saltaDomenica: boolean }>(
+        { giorni: 2, euro: 5, saltaDomenica: true });
+    const caricaRegolaPatto = useCallback(async () => {
+        const { data } = await supabase.from("task_regole").select("giorni_malus, malus_giorno, salta_domenica").eq("id", 1).maybeSingle();
+        if (data) setRegolaPatto({
+            giorni: Number(data.giorni_malus) || 2,
+            euro: Number(data.malus_giorno) || 0,
+            saltaDomenica: data.salta_domenica !== false,
+        });
+    }, []);
+    useEffect(() => { caricaRegolaPatto(); }, [caricaRegolaPatto]);
+    const [regoleAperte, setRegoleAperte] = useState(false);
     const LAVORATE = ["fatta", "abbandonata", "problema"];
     /** giorni pieni fra due date, saltando le domeniche */
     const giorniUtili = (da: Date, a: Date) => {
@@ -1103,7 +1118,7 @@ export default function Calendario() {
         const cur = new Date(da);
         while (cur < a) {
             cur.setTime(cur.getTime() + 86400000);
-            if (cur.getDay() !== 0) n++;
+            if (!regolaPatto.saltaDomenica || cur.getDay() !== 0) n++;
         }
         return n;
     };
@@ -1112,10 +1127,10 @@ export default function Calendario() {
         if (!t.creataIl) return null;
         const d = new Date(t.creataIl);
         if (isNaN(d.getTime())) return null;
-        let restanti = 2;
+        let restanti = Math.max(1, regolaPatto.giorni);
         while (restanti > 0) {
             d.setDate(d.getDate() + 1);
-            if (d.getDay() !== 0) restanti--;
+            if (!regolaPatto.saltaDomenica || d.getDay() !== 0) restanti--;
         }
         d.setHours(23, 59, 59, 999);
         return d;
@@ -1599,6 +1614,60 @@ export default function Calendario() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [appointments, tasks, todayStr, user?.name, isCallCenter]);
 
+    /* ══ DAL COLORE ALL'ARCHIVIO ═══════════════════════════════════════════
+       Un malus che si vede e basta non è un malus: è una decorazione. Qui
+       ogni task oltre il patto diventa un EPISODIO in `task_malus`, con la
+       stessa forma delle sorelle (Tracking PDA, caller, usato) e i loro
+       quattro stati — e con l'user_id fin dalla nascita, che alle altre tre
+       manca e costringe ad agganciare per nome.
+
+       Materializzazione come nel Tracking: la fa il browser di chi apre la
+       sezione, sulle task che vede. `task_id` è unico, quindi due persone
+       che aprono insieme scrivono la stessa riga, non due.
+
+       Quando la task viene finalmente lavorata l'episodio si CHIUDE: smette
+       di maturare e resta lì, in attesa di compensazione — la storia non si
+       cancella perché il debito è stato saldato in ritardo. */
+    const malusScritti = useRef(false);
+    useEffect(() => {
+        if (!datiPronti || malusScritti.current || !regolaPatto.euro) return;
+        malusScritti.current = true;
+        (async () => {
+            const daScrivere: Record<string, unknown>[] = [];
+            const daChiudere: { id: number; giorni: number; importo: number }[] = [];
+            for (const t of tasks) {
+                if (!eAssegnata(t) || t.assignedToStore) continue;   // le task di negozio non hanno una persona sola
+                const scad = scadenzaDi(t);
+                if (!scad) continue;
+                const chiuse = LAVORATE.includes(t.status);
+                const fine = chiuse && t.esitoAt ? new Date(t.esitoAt) : new Date();
+                if (fine <= scad) continue;                          // patto rispettato
+                const giorni = Math.max(1, giorniUtili(scad, fine));
+                const importo = Math.round(giorni * regolaPatto.euro * 100) / 100;
+                if (chiuse) { daChiudere.push({ id: t.id, giorni, importo }); continue; }
+                const utente = calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t.assignedTo || "").trim().toLowerCase());
+                daScrivere.push({
+                    task_id: t.id, user_id: utente?.id ?? null, persona: t.assignedTo,
+                    assegnata_da: t.createdBy || null, titolo: t.title,
+                    scadenza: `${scad.getFullYear()}-${String(scad.getMonth() + 1).padStart(2, "0")}-${String(scad.getDate()).padStart(2, "0")}`,
+                    giorni, malus_giorno: regolaPatto.euro, importo,
+                    stato: "in_corso", updated_at: new Date().toISOString(),
+                });
+            }
+            if (daScrivere.length) {
+                await supabase.from("task_malus").upsert(daScrivere, { onConflict: "task_id" });
+            }
+            for (const c of daChiudere) {
+                // lavorata in ritardo: l'episodio si congela e diventa definitivo
+                await supabase.from("task_malus").update({
+                    giorni: c.giorni, importo: c.importo, stato: "attivo",
+                    data_fine: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString(),
+                }).eq("task_id", c.id).eq("stato", "in_corso");
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [datiPronti, tasks.length, regolaPatto.euro, calendarOperators.length]);
+
     const arretrateInColonna = isTaskTutte
         ? tasksArretrate.filter(t => t.assignedTo === user?.name || t.createdBy === user?.name)
         : tasksArretrate;
@@ -1790,6 +1859,13 @@ export default function Calendario() {
                 <div className="flex gap-3">
                     {/* MOD-26: via il bottone "Cerca appuntamenti" — la ricerca
                         vive nei filtri unificati qui sotto */}
+                    {["admin", "dev"].includes(user?.role || "") && (
+                        <button onClick={() => setRegoleAperte(true)}
+                            title="Regole del patto: giorni prima del malus e importo giornaliero"
+                            className="h-8 px-2.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]">
+                            ⚙︎ Regole
+                        </button>
+                    )}
                     {tasksArretrate.length > 0 && (
                         <button
                             onClick={() => setShowArretrate(v => !v)}
@@ -1806,24 +1882,24 @@ export default function Calendario() {
                     )}
                     <button
                         onClick={() => openCreateTaskModal()}
-                        className="h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-500/50 shadow-emerald-500/20"
+                        className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
                     >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
                         Nuova Task
                     </button>
                     <button
                         onClick={openCreateModal}
-                        className="primary-btn h-10 px-5 flex items-center gap-2"
+                        className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border border-indigo-400/40 bg-indigo-500/20 text-indigo-100 hover:bg-indigo-500/30"
                     >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
                         Nuovo appuntamento
                     </button>
                     {canCreateMeeting && (
                         <button
                             onClick={() => setShowCreateMeetingModal(true)}
-                            className="h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border bg-sky-500 hover:bg-sky-600 text-white border-sky-500/50 shadow-sky-500/20"
+                            className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border border-sky-500/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
                         >
-                            <Users className="w-4 h-4" />
+                            <Users className="w-3.5 h-3.5" />
                             Nuova riunione
                         </button>
                     )}
@@ -1833,14 +1909,75 @@ export default function Calendario() {
                                 setBlockAgendaForm({ mode: "single", startDate: selectedDate || "", endDate: selectedDate || "", note: "" });
                                 setShowBlockAgendaModal(true);
                             }}
-                            className="h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                            className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border border-amber-500/30 bg-amber-500/10 text-amber-300/90 hover:bg-amber-500/20"
                         >
-                            <Lock className="w-4 h-4" />
+                            <Lock className="w-3.5 h-3.5" />
                             Blocca agenda
                         </button>
                     )}
                 </div>
             </div>
+
+            {/* ══ LE REGOLE DEL PATTO (solo admin) ═════════════════════════════
+                Stessa idea di tracking_regole e caller_regole: i numeri che
+                decidono un malus non stanno nel codice, stanno in una riga che
+                il titolare cambia da solo. */}
+            {regoleAperte && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setRegoleAperte(false)}>
+                    <div className="glass-card w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">⚙︎ Regole delle task assegnate</h3>
+                            <button onClick={() => setRegoleAperte(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <p className="text-xs text-slate-400 leading-relaxed">
+                                Valgono solo per le task che una persona riceve da <b className="text-slate-300">qualcun altro</b>:
+                                quelle che ci si assegna da soli non generano nessun malus.
+                            </p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Giorni per lavorarla</label>
+                                    <input type="number" min={1} max={30} className="glass-input w-full"
+                                        value={regolaPatto.giorni}
+                                        onChange={(e) => setRegolaPatto((r) => ({ ...r, giorni: Math.max(1, Number(e.target.value) || 1) }))} />
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Malus al giorno (€)</label>
+                                    <input type="number" min={0} step="0.5" className="glass-input w-full"
+                                        value={regolaPatto.euro}
+                                        onChange={(e) => setRegolaPatto((r) => ({ ...r, euro: Math.max(0, Number(e.target.value) || 0) }))} />
+                                </div>
+                            </div>
+                            <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
+                                <input type="checkbox" className="w-4 h-4" checked={regolaPatto.saltaDomenica}
+                                    onChange={(e) => setRegolaPatto((r) => ({ ...r, saltaDomenica: e.target.checked }))} />
+                                La domenica non conta
+                            </label>
+                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                                Oggi: una task assegnata va lavorata entro <b className="text-slate-300">{regolaPatto.giorni} {regolaPatto.giorni === 1 ? "giorno" : "giorni"}</b>;
+                                dal giorno dopo matura <b className="text-slate-300">{regolaPatto.euro} €</b> al giorno finché non viene chiusa,
+                                abbandonata o rimandata indietro con un motivo.
+                                {" "}Gli episodi finiscono in archivio e confluiscono nella partita della persona,
+                                insieme ai malus del Tracking PDA, dei caller e dell&apos;usato.
+                            </p>
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex justify-end gap-2">
+                            <button onClick={() => { caricaRegolaPatto(); setRegoleAperte(false); }}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-300 hover:bg-white/5">Annulla</button>
+                            <button onClick={async () => {
+                                const { error } = await supabase.from("task_regole").update({
+                                    giorni_malus: regolaPatto.giorni, malus_giorno: regolaPatto.euro,
+                                    salta_domenica: regolaPatto.saltaDomenica,
+                                    aggiornato_il: new Date().toISOString(), aggiornato_da: user?.name || null,
+                                }).eq("id", 1);
+                                if (error) { alert("Non salvato: " + error.message); return; }
+                                setRegoleAperte(false);
+                            }}
+                                className="px-4 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500">Salva le regole</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ══ PRIORITÀ DI OGGI (Luca 27/08) ═══════════════════════════════
                 La prima cosa che si legge aprendo il calendario: non quanti
