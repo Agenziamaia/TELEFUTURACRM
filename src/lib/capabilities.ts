@@ -518,10 +518,12 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
             default: () => false,
         },
     ],
+    // stesso id della scelta esplicita: vale quando tutto è spento, la UI
+    // non lo mostra come voce doppia
     fallback: {
         id: "task_proprie",
-        label: "Solo le proprie",
-        desc: "Vede soltanto le task assegnate a lui o create da lui; niente task di punto vendita.",
+        label: "Solo le sue cose",
+        desc: "A prescindere dai negozi in visibilità: solo le task assegnate a lei e quelle che lei ha assegnato ad altri (persone o negozi).",
     },
 };
 

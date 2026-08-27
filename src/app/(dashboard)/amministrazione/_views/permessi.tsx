@@ -407,7 +407,10 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
         const attivaId = capChoice(ruolo, g, righe);
         return (
             <div className="divide-y divide-white/5">
-                {[...g.caps.map((c) => ({ id: c.id, label: c.label, desc: c.desc })), g.fallback].map((opt) => {
+                {/* il fallback compare come voce SOLO se non coincide già con
+                    una scelta esplicita (caso «Solo le sue cose», Luca 27/08:
+                    stesso id due volte = due pallini accesi insieme) */}
+                {[...g.caps.map((c) => ({ id: c.id, label: c.label, desc: c.desc })), ...(g.caps.some((c) => c.id === g.fallback.id) ? [] : [g.fallback])].map((opt) => {
                     const attiva = attivaId === opt.id;
                     return (
                         <button key={opt.id} disabled={busy === "cap:" + g.section}
