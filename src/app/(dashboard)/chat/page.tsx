@@ -1247,7 +1247,7 @@ function ChatPageInner() {
       </div>
 
       {mode === "omni" && vedeOmni ? (
-        <OmniChat thread={threadInterna} apriInterna={setSelId} internaAperta={selId} meId={meId} />
+        <OmniChat thread={threadInterna} apriInterna={setSelId} internaAperta={selId} meId={meId} ricaricaInterna={reloadInbox} />
       ) : mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (

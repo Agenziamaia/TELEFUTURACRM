@@ -28,10 +28,11 @@ import { RadarOmni } from "./RadarOmni";
 import { ThreadAltrui } from "./ThreadAltrui";
 import type { ChatOmni } from "./tipi";
 
-export function OmniChat({ thread, apriInterna, meId }: {
+export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
     thread?: ReactNode;                                   // il thread della chat interna, dalla pagina Chat
     apriInterna?: (id: string | null) => void;            // quale conversazione interna deve aprire
     meId?: string | null;                                 // per avviare una chat interna da qui
+    ricaricaInterna?: () => void;                         // ricarica l'inbox della pagina (nuova chat creata qui)
 }) {
     const [attiva, setAttiva] = useState<ChatOmni | null>(null);
     // la risposta suggerita dall'AI: si passa all'inbox come testo iniziale
@@ -41,6 +42,9 @@ export function OmniChat({ thread, apriInterna, meId }: {
     // compose della casella. Niente di nuovo sotto: si riusano i tre attrezzi.
     const [nuovaScelta, setNuovaScelta] = useState(false);
     const [nuovaCanale, setNuovaCanale] = useState<null | "wa" | "email" | "interna">(null);
+    // il TICK rimonta l'inbox a ogni scelta: senza, «➕ → WhatsApp → chiudi
+    // il modale → ➕ → WhatsApp» non riapriva niente (revisore 27/08)
+    const [nuovaTick, setNuovaTick] = useState(0);
 
     // Scegliendo una chat interna si dice alla pagina QUALE aprire: è lei che
     // tiene messaggi, sottoscrizioni e bozze, e va avvisata come se avessi
@@ -71,10 +75,10 @@ export function OmniChat({ thread, apriInterna, meId }: {
             {/* ── CENTRO: l'inbox vera, senza la sua lista ── */}
             <section className="flex-1 min-w-0 overflow-hidden">
                 {!attiva && nuovaCanale === "wa" && (
-                    <WhatsAppInbox key="nuova-wa" embedded senzaLista apriNuovaChat />
+                    <WhatsAppInbox key={`nuova-wa-${nuovaTick}`} embedded senzaLista apriNuovaChat />
                 )}
                 {!attiva && nuovaCanale === "email" && (
-                    <EmailInbox key="nuova-email" embedded senzaLista apriComponi />
+                    <EmailInbox key={`nuova-email-${nuovaTick}`} embedded senzaLista apriComponi />
                 )}
                 {!attiva && !nuovaCanale && (
                     <div className="h-full flex items-center justify-center p-8 text-center">
@@ -132,7 +136,7 @@ export function OmniChat({ thread, apriInterna, meId }: {
                                 </span>
                             </button>
                             <button type="button"
-                                onClick={() => { setNuovaScelta(false); setAttiva(null); setNuovaCanale("wa"); }}
+                                onClick={() => { setNuovaScelta(false); setAttiva(null); setNuovaCanale("wa"); setNuovaTick((t) => t + 1); }}
                                 className="flex items-center gap-3 rounded-xl bg-white/[0.04] border border-white/10 px-3 py-3 text-left hover:bg-emerald-500/15 hover:border-emerald-500/40 transition-colors">
                                 <span className="text-xl">🟢</span>
                                 <span className="min-w-0">
@@ -141,7 +145,7 @@ export function OmniChat({ thread, apriInterna, meId }: {
                                 </span>
                             </button>
                             <button type="button"
-                                onClick={() => { setNuovaScelta(false); setAttiva(null); setNuovaCanale("email"); }}
+                                onClick={() => { setNuovaScelta(false); setAttiva(null); setNuovaCanale("email"); setNuovaTick((t) => t + 1); }}
                                 className="flex items-center gap-3 rounded-xl bg-white/[0.04] border border-white/10 px-3 py-3 text-left hover:bg-sky-500/15 hover:border-sky-500/40 transition-colors">
                                 <span className="text-xl">✉️</span>
                                 <span className="min-w-0">
@@ -155,9 +159,12 @@ export function OmniChat({ thread, apriInterna, meId }: {
             )}
             {nuovaCanale === "interna" && meId && (
                 <NewChatModal meId={meId} onClose={() => setNuovaCanale(null)}
+                    onBroadcastDone={() => { setNuovaCanale(null); ricaricaInterna?.(); }}
                     onCreated={(id) => {
                         setNuovaCanale(null);
-                        // la pagina prepara il thread vero; qui si apre il centro
+                        // la pagina prepara il thread vero e ricarica la sua inbox
+                        // (senza, col realtime giù il centro restava vuoto)
+                        ricaricaInterna?.();
                         apriInterna?.(id);
                         setAttiva({
                             id: `in:${id}`, canale: "interna", nome: "", sottotitolo: null,
