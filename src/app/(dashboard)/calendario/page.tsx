@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete, civicoMancante, sembraVia } from "@/components/IndirizzoAutocomplete";
@@ -353,6 +353,43 @@ export default function Calendario() {
     const setSelectedDate = (v: string | null) => setView((p) => ({ ...p, selectedDate: v }));
     const [showModal, setShowModal] = useState(false);
     const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+    /* ── LA NOTA DELL'ESITO SI SCRIVE, NON SI COMBATTE ────────────────────
+       Com'era: `onChange` faceva `await` di una scrittura sul database a
+       OGNI TASTO, e solo dopo aggiornava lo stato. Il campo è controllato,
+       quindi finché la risposta non tornava (100-300 ms) il testo restava
+       quello vecchio: tutte le lettere battute in quell'intervallo
+       sparivano, e le richieste che si accavallavano si sovrascrivevano a
+       vicenda con una copia STANTIA dell'appuntamento. Da qui le frasi
+       sbrindellate del video di Luca (27/08): «a cln on vole pr l tloo».
+
+       Adesso: quello che si batte finisce SUBITO in uno stato locale (la
+       tastiera non aspetta niente), e il salvataggio parte mezzo secondo
+       dopo l'ultimo tasto — più uno di sicurezza quando si esce dal campo
+       o si cambia appuntamento. */
+    const [notaEsito, setNotaEsito] = useState("");
+    const notaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const notaInSospeso = useRef<{ id: number; testo: string } | null>(null);
+
+    const scriviNota = useCallback(async (id: number, testo: string) => {
+        notaInSospeso.current = null;
+        await supabase.from("appointments").update({ esito_note: testo }).eq("id", id);
+        // funzionali: senza, una copia stantia dell'elenco rimetterebbe
+        // indietro quello che si è appena scritto
+        setAppointments(prev => prev.map(a => a.id === id ? { ...a, esitoNote: testo } : a));
+        setSelectedAppointment(prev => (prev && prev.id === id ? { ...prev, esitoNote: testo } : prev));
+    }, []);
+
+    // cambio appuntamento (o chiusura): prima si salva quello che era rimasto
+    // in canna, poi si carica la nota di quello nuovo
+    useEffect(() => {
+        const sosp = notaInSospeso.current;
+        if (sosp && sosp.id !== selectedAppointment?.id) {
+            if (notaTimer.current) clearTimeout(notaTimer.current);
+            scriviNota(sosp.id, sosp.testo);
+        }
+        setNotaEsito(selectedAppointment?.esitoNote ?? "");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedAppointment?.id]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
@@ -2314,16 +2351,10 @@ export default function Calendario() {
                                                             ))}
                                                         </select>
                                                         <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-2">Note esito (salvate con la task)</label>
-                                                        <textarea
-                                                            className="glass-input w-full resize-none text-xs py-2"
-                                                            rows={2}
-                                                            placeholder="Aggiungi una nota quando chiudi o aggiorni la task..."
-                                                            value={t.outcomeNote ?? ""}
-                                                            onChange={async e => {
-                                                                const v = e.target.value;
-                                                                await supabase.from("calendar_tasks").update({ outcome_note: v }).eq("id", t.id);
-                                                                setTasks(prev => prev.map(task => task.id === t.id ? { ...task, outcomeNote: v } : task));
-                                                            }}
+                                                        <NotaTask
+                                                            id={t.id}
+                                                            valore={t.outcomeNote ?? ""}
+                                                            onSalvata={(v) => setTasks(prev => prev.map(task => task.id === t.id ? { ...task, outcomeNote: v } : task))}
                                                         />
                                                     </div>
                                                 </div>
@@ -2522,17 +2553,23 @@ export default function Calendario() {
                                     className="glass-input w-full resize-none text-xs"
                                     rows={2}
                                     placeholder="Note sull'esito dell'appuntamento..."
-                                    value={selectedAppointment.esitoNote ?? ""}
-                                    onChange={async e => {
+                                    value={notaEsito}
+                                    onChange={e => {
                                         const v = e.target.value;
-                                        await supabase.from("appointments").update({ esito_note: v }).eq("id", selectedAppointment.id);
-                                        setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, esitoNote: v } : a));
-                                        setSelectedAppointment({ ...selectedAppointment, esitoNote: v });
+                                        const id = selectedAppointment.id;
+                                        setNotaEsito(v);                       // la tastiera non aspetta nessuno
+                                        notaInSospeso.current = { id, testo: v };
+                                        if (notaTimer.current) clearTimeout(notaTimer.current);
+                                        notaTimer.current = setTimeout(() => scriviNota(id, v), 500);
                                     }}
                                     onBlur={e => {
+                                        const id = selectedAppointment.id;
+                                        const v = e.target.value;
+                                        // uscendo dal campo si salva subito: non si aspetta il mezzo secondo
+                                        if (notaTimer.current) clearTimeout(notaTimer.current);
+                                        if (notaInSospeso.current) scriviNota(id, v);
                                         // fix 10/08: la nota esito finisce anche nello storico della pratica
-                                        const v = e.target.value.trim();
-                                        if (v) notaNegozioSuPratica(selectedAppointment.id, v);
+                                        if (v.trim()) notaNegozioSuPratica(id, v.trim());
                                     }}
                                 />
 
@@ -3540,5 +3577,49 @@ function TaskDettaglioModal({ t, puoGestire, mioNome, persone, negozi, esiti, on
                 </div>
             </div>
         </div>
+    );
+}
+
+
+/* ═══ LA NOTA DI UNA TASK ═════════════════════════════════════════════════
+   Stesso difetto della nota esito, stessa cura (27/08): il campo salvava sul
+   server a OGNI TASTO aspettando la risposta, e siccome il valore mostrato
+   veniva dallo stato — aggiornato solo DOPO — tutto quello che si batteva
+   nel frattempo spariva. Qui il testo vive in locale e il salvataggio parte
+   mezzo secondo dopo l'ultimo tasto (o subito, uscendo dal campo). */
+function NotaTask({ id, valore, onSalvata }: { id: number; valore: string; onSalvata: (v: string) => void }) {
+    const [testo, setTesto] = useState(valore);
+    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const sospeso = useRef(false);
+    useEffect(() => { setTesto(valore); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+
+    const salva = async (v: string) => {
+        sospeso.current = false;
+        await supabase.from("calendar_tasks").update({ outcome_note: v }).eq("id", id);
+        onSalvata(v);
+    };
+    // uscendo dalla pagina con qualcosa non ancora salvato, si salva
+    useEffect(() => () => {
+        if (timer.current) clearTimeout(timer.current);
+    }, []);
+
+    return (
+        <textarea
+            className="glass-input w-full resize-none text-xs py-2"
+            rows={2}
+            placeholder="Aggiungi una nota quando chiudi o aggiorni la task..."
+            value={testo}
+            onChange={(e) => {
+                const v = e.target.value;
+                setTesto(v);
+                sospeso.current = true;
+                if (timer.current) clearTimeout(timer.current);
+                timer.current = setTimeout(() => salva(v), 500);
+            }}
+            onBlur={(e) => {
+                if (timer.current) clearTimeout(timer.current);
+                if (sospeso.current) salva(e.target.value);
+            }}
+        />
     );
 }
