@@ -696,7 +696,7 @@ export default function Dashboard() {
                                                         {v.logo ? <img src={v.logo} alt="" className="h-5 w-8 object-contain shrink-0" /> : <Icon className="w-4 h-4 shrink-0" style={{ color: v.accent || "var(--tf-818cf8)" }} />}
                                                         <span className="min-w-0 flex-1">
                                                             <span className="block text-xs font-semibold text-slate-200 truncate">{v.label}</span>
-                                                            <span className="flex gap-1 mt-0.5">
+                                                            {seesAll && <span className="flex gap-1 mt-0.5">
                                                                 {sigleRuolo(v).length
                                                                     ? sigleRuolo(v).map((sg) => (
                                                                         <span key={sg} className={cn("text-[8px] font-black tracking-wide rounded px-1 py-px border",
@@ -705,7 +705,7 @@ export default function Dashboard() {
                                                                                     : "text-sky-300 border-sky-500/30 bg-sky-500/10")}>{sg}</span>
                                                                     ))
                                                                     : <span className="text-[8px] font-black tracking-wide rounded px-1 py-px border text-slate-500 border-white/10 bg-white/[0.03]">TUTTI</span>}
-                                                            </span>
+                                                            </span>}
                                                         </span>
                                                         <Plus className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-300 shrink-0" />
                                                     </button>
@@ -718,12 +718,12 @@ export default function Dashboard() {
                             {!GRUPPI.some(([gk]) => (disponibili[gk] || []).length) && (
                                 <p className="text-xs text-slate-500 text-center py-6">Hai già tutti i widget disponibili in Home. ✅</p>
                             )}
-                            <div className="pt-3 border-t border-white/5 text-[10px] text-slate-500 leading-relaxed">
+                            {seesAll && <div className="pt-3 border-t border-white/5 text-[10px] text-slate-500 leading-relaxed">
                                 <span className="font-bold text-slate-400 uppercase tracking-wider">A chi è dedicato</span> — <b className="text-slate-300">TUTTI</b>: ogni ruolo ·
                                 <b className="text-sky-300"> PV</b>: punto vendita · <b className="text-sky-300">CC</b>: call center · <b className="text-sky-300">AG</b>: agenti ·
                                 <b className="text-sky-300"> SEDE</b>: sede · <b className="text-amber-300">MGR</b>: solo manager (rete, store manager, dir. call center) ·
                                 <b className="text-purple-300"> AMM</b>: amministrativo. Chi non è nel ruolo non lo vede proprio, in galleria come in Home (i ruoli di direzione vedono tutto).
-                            </div>
+                            </div>}
                         </div>
                     </div>
                 </>
