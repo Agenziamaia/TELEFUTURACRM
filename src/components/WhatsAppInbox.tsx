@@ -9,6 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_WA_CODICE, WA_SECTION } from "@/lib/capabilities";
 import { waScopeDi } from "@/lib/waVisibilita";
 import { areaOf } from "@/lib/roles";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -257,6 +259,44 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // `verificaConnessione` cambia identità di continuo — mettendola nelle
     // dipendenze l'intervallo si azzererebbe prima di scattare, e il controllo
     // al minuto non sarebbe MAI partito.
+    /* ── LA RUBRICA DEL NUMERO (Luca 27/08) ───────────────────────────────
+       «Caricare la rubrica dal telefono al CRM, magari tramite un QR».
+       Il QR non serve e non c'entra: inquadrare un QR non esporta nessuna
+       rubrica — quel passaggio è già stato fatto quando il numero è stato
+       collegato, e WhatsApp da allora tiene la rubrica dentro la sessione.
+       Un pulsante, e i nomi arrivano.
+
+       Il pulsante lo vede SOLO chi ha il codice di accesso (richiesta di
+       Luca): sono le persone con un numero personale protetto, le uniche a
+       cui ha senso far portare dentro la propria rubrica. */
+    const { perms: permessiWa } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const puoRubrica = capAllowed(user?.role, WA_SECTION, CAP_WA_CODICE, permessiWa);
+    const [rubricaBusy, setRubricaBusy] = useState(false);
+    const caricaRubrica = async () => {
+        const inst = instances.find((i) => i.id === selInst);
+        if (!inst || rubricaBusy) return;
+        const nome = inst.display_name || inst.instance_name;
+        if (!window.confirm(
+            `Portare i nomi della rubrica di «${nome}» dentro il CRM?\n\n` +
+            "I contatti restano legati a questo numero: servono a dare un nome alle chat " +
+            "e a trovare la persona quando ne apri una nuova.\n\nL'anagrafica clienti non viene toccata.")) return;
+        setRubricaBusy(true);
+        try {
+            const res = await api({ action: "rubrica", instanceName: inst.instance_name });
+            if (res?.error) { alert("Caricamento non riuscito: " + res.error); return; }
+            if (!res?.letti) {
+                alert("Il telefono non ha restituito nessun contatto.\n\nSuccede quando la rubrica non è ancora stata sincronizzata sul dispositivo collegato: apri WhatsApp sul telefono, lascialo qualche minuto con lo schermo acceso e riprova.");
+                return;
+            }
+            alert(`Rubrica caricata: ${res.salvati || 0} contatti.\n` +
+                `${res.rinominate || 0} ${res.rinominate === 1 ? "chat ha" : "chat hanno"} adesso un nome al posto del numero.`);
+        } catch {
+            alert("Caricamento interrotto: riprova fra poco.");
+        } finally {
+            setRubricaBusy(false);
+        }
+    };
+
     const verificaRef = useRef(verificaConnessione);
     useEffect(() => { verificaRef.current = verificaConnessione; }, [verificaConnessione]);
     useEffect(() => {
@@ -563,6 +603,13 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                     </div>
                 )}
                 <div className="flex items-center gap-2">
+                    {puoRubrica && instConnessa?.status === "connessa" && (
+                        <button onClick={caricaRubrica} disabled={rubricaBusy}
+                            title="Porta i nomi della rubrica del telefono dentro il CRM: le chat smettono di chiamarsi con un numero"
+                            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-sm font-semibold flex items-center gap-2 disabled:opacity-40">
+                            {rubricaBusy ? "carico…" : "📇 Rubrica"}
+                        </button>
+                    )}
                     {instConnessa?.status === "connessa" && (
                         // PRIMA si controlla se il numero è davvero collegato,
                         // POI si ricaricano le chat: se la sessione è caduta,
@@ -896,7 +943,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 </div>
             )}
 
-            {nuovaChat && <NuovaChatModal apri={avviaChatNumero} onClose={() => setNuovaChat(false)} />}
+            {nuovaChat && <NuovaChatModal apri={avviaChatNumero} onClose={() => setNuovaChat(false)} instanceId={selInst} />}
             {sceltaNumero && <ScegliNumeroModal dig={sceltaNumero.dig} nome={sceltaNumero.nome}
                 istanze={visibleInstances.filter(i => i.status === "connessa")} etichetta={etichettaIstanza}
                 apri={apriPerNumero} onClose={() => setSceltaNumero(null)} />}
@@ -970,10 +1017,27 @@ function EmojiPickerWA({ onPick, onClose }: { onPick: (e: string) => void; onClo
 // NUOVA CHAT A NUMERO (Luca 25/08 sera-2): modale del CRM al posto del
 // prompt del browser («sembra che arrivi da Chrome») — centrato, stile glass
 // come gli altri, Invio per aprire. Top-level (lezione: mai annidata).
-function NuovaChatModal({ apri, onClose }: { apri: (dig: string, nome?: string | null) => Promise<boolean>; onClose: () => void }) {
+function NuovaChatModal({ apri, onClose, instanceId }: { apri: (dig: string, nome?: string | null) => Promise<boolean>; onClose: () => void; instanceId?: string | null }) {
     const [numero, setNumero] = useState("");
     const [errore, setErrore] = useState("");
     const [busy, setBusy] = useState(false);
+    // ── LA RUBRICA DI QUESTO NUMERO (Luca 27/08) ──
+    // Cercare per nome invece che ricordarsi il numero: sono i contatti del
+    // telefono, caricati col pulsante «Rubrica». Restano di QUESTO numero.
+    const [cercaRub, setCercaRub] = useState("");
+    const [rubrica, setRubrica] = useState<{ jid: string; numero: string | null; nome: string | null }[]>([]);
+    useEffect(() => {
+        const q = cercaRub.trim();
+        if (!instanceId || q.length < 2) { setRubrica([]); return; }
+        let vivo = true;
+        const t = setTimeout(async () => {
+            const { data } = await supabase.from("wa_contatti")
+                .select("jid, numero, nome").eq("instance_id", instanceId)
+                .ilike("nome", `%${q}%`).order("nome").limit(20);
+            if (vivo) setRubrica((data ?? []) as { jid: string; numero: string | null; nome: string | null }[]);
+        }, 250);
+        return () => { vivo = false; clearTimeout(t); };
+    }, [cercaRub, instanceId]);
     const busyRef = useRef(false);   // il doppio click nello stesso tick vede ancora busy=false
     const conferma = async () => {
         const dig = numero.replace(/\D/g, "");
@@ -983,6 +1047,17 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string, nome?: string |
         setBusy(true);
         try {
             const ok = await apri(dig);
+            if (ok) onClose();
+        } finally { busyRef.current = false; setBusy(false); }
+    };
+    // un contatto della rubrica: numero e nome li abbiamo già
+    const scegliRubrica = async (dig: string, nome: string | null) => {
+        if (busyRef.current) return;
+        busyRef.current = true;
+        setErrore("");
+        setBusy(true);
+        try {
+            const ok = await apri(dig, nome);
             if (ok) onClose();
         } finally { busyRef.current = false; setBusy(false); }
     };
@@ -1026,6 +1101,37 @@ function NuovaChatModal({ apri, onClose }: { apri: (dig: string, nome?: string |
                     </div>
                     <RicercaCliente onScelto={scegliCliente} placeholder="Cerca: nome e cognome, CF, P.IVA o ragione sociale…" />
                     <p className="text-[11px] text-slate-500">Un click sull&apos;anagrafica apre la chat sul cellulare del cliente.</p>
+
+                    {/* la rubrica del telefono: c'è solo se è stata caricata */}
+                    {instanceId && (
+                        <>
+                            <div className="flex items-center gap-3 pt-1">
+                                <div className="flex-1 h-px bg-white/10" />
+                                <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">oppure dalla rubrica</span>
+                                <div className="flex-1 h-px bg-white/10" />
+                            </div>
+                            <input value={cercaRub} onChange={(e) => setCercaRub(e.target.value)}
+                                className="glass-input w-full text-sm" placeholder="Cerca un nome nella rubrica del telefono…" />
+                            {rubrica.length > 0 && (
+                                <div className="max-h-44 overflow-y-auto rounded-xl border border-white/10 divide-y divide-white/5">
+                                    {rubrica.map((c) => (
+                                        <button key={c.jid} disabled={busy}
+                                            onClick={() => { const d = String(c.numero || "").replace(/\D/g, ""); if (d.length >= 6) scegliRubrica(d, c.nome); }}
+                                            className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center justify-between gap-2">
+                                            <span className="text-sm text-slate-200 truncate">{c.nome}</span>
+                                            <span className="text-[11px] text-slate-500 tabular-nums shrink-0">+{c.numero}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {cercaRub.trim().length >= 2 && rubrica.length === 0 && (
+                                <p className="text-[11px] text-slate-500">
+                                    Nessun contatto con questo nome. Se non hai ancora caricato la rubrica,
+                                    il pulsante <b className="text-slate-400">📇 Rubrica</b> sta in alto nella sezione WhatsApp.
+                                </p>
+                            )}
+                        </>
+                    )}
                     {errore && <p className="text-xs text-rose-300 font-semibold">{errore}</p>}
                 </div>
             </div>

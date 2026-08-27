@@ -122,6 +122,16 @@ export async function elencoChat(instanceName: string): Promise<any[]> {
     return res?.chats || res?.records || [];
 }
 
+/** LA RUBRICA DEL NUMERO COLLEGATO (Luca 27/08). Non serve nessun QR nuovo:
+ *  WhatsApp tiene sincronizzata la rubrica del telefono dentro la sessione,
+ *  e qui la si chiede al ponte. Torna i contatti salvati (nome in rubrica) e
+ *  quelli visti (pushName): chi ha un nome vero viene prima. */
+export async function elencoContatti(instanceName: string): Promise<any[]> {
+    const res = await call("POST", `/chat/findContacts/${encodeURIComponent(instanceName)}`, {});
+    if (Array.isArray(res)) return res;
+    return res?.contacts || res?.records || [];
+}
+
 /** Messaggi di una chat (per lo storico quando si apre la conversazione). */
 export async function elencoMessaggi(instanceName: string, remoteJid: string, limit = 50): Promise<any[]> {
     const res = await call("POST", `/chat/findMessages/${encodeURIComponent(instanceName)}`, {

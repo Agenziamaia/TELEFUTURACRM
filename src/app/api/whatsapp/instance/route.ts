@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
+import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoContatti, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
 import { contenutoMessaggio } from "@/lib/waContenuto";
 
@@ -107,6 +107,61 @@ export async function POST(request: Request) {
                 } catch { /* il numero arriverà al prossimo giro */ }
             }
             return NextResponse.json({ ok: true, state });
+        }
+
+        // ── RUBRICA DEL NUMERO (Luca 27/08) ───────────────────────────────
+        // «Caricare la rubrica dal telefono al CRM»: nessun QR nuovo — la
+        // sessione collegata ce l'ha già dentro, gliela chiediamo e basta.
+        // I contatti restano LEGATI A QUEL NUMERO: non diventano clienti e non
+        // toccano l'anagrafica (scelta di Luca). Servono a dare un nome alle
+        // chat e a trovare la persona quando se ne apre una nuova.
+        if (action === "rubrica") {
+            const { data: inst } = await supabase.from("wa_instances")
+                .select("id, instance_name, status").eq("instance_name", b.instanceName).maybeSingle();
+            if (!inst) return NextResponse.json({ error: "numero non trovato" }, { status: 404 });
+
+            const contatti = await elencoContatti(b.instanceName);
+            const righe: { instance_id: string; jid: string; numero: string | null; nome: string | null; aggiornato_il: string }[] = [];
+            const adesso = new Date().toISOString();
+            for (const c of contatti as Record<string, unknown>[]) {
+                const jid = String(c.remoteJid || c.id || c.jid || "");
+                // i gruppi non sono rubrica, e «se stesso» nemmeno
+                if (!jid || jid.endsWith("@g.us") || jid.endsWith("@broadcast")) continue;
+                const numero = jid.split("@")[0].replace(/\D/g, "");
+                if (numero.length < 6) continue;
+                // il nome VERO della rubrica viene prima del pushName, che è
+                // solo come quella persona ha deciso di chiamarsi su WhatsApp
+                const nome = String(c.name || c.verifiedName || c.pushName || "").trim() || null;
+                if (!nome || /^\+?\d[\d\s]*$/.test(nome)) continue;   // un numero non è un nome
+                righe.push({ instance_id: inst.id, jid, numero, nome, aggiornato_il: adesso });
+            }
+
+            let salvati = 0;
+            for (let i = 0; i < righe.length; i += 500) {
+                const { error } = await supabase.from("wa_contatti")
+                    .upsert(righe.slice(i, i + 500), { onConflict: "instance_id,jid" });
+                if (!error) salvati += righe.slice(i, i + 500).length;
+            }
+
+            // ── e adesso i nomi sulle chat che ne sono senza ──
+            // ⚠️ NON si tocca una conversazione che ha già un nome: quello può
+            // venire dall'anagrafica (regola del 31/07) e vale più della rubrica.
+            const { data: conv } = await supabase.from("wa_conversations")
+                .select("id, customer_number, customer_name").eq("instance_id", inst.id).limit(2000);
+            const perCoda = new Map<string, string>();
+            for (const r of righe) if (r.numero && r.nome) perCoda.set(codaNumero(r.numero), r.nome);
+            let rinominate = 0;
+            for (const c of (conv || []) as Record<string, unknown>[]) {
+                const nomeAttuale = String(c.customer_name || "").trim();
+                const senzaNome = !nomeAttuale || /^\+?\d[\d\s]*$/.test(nomeAttuale);
+                if (!senzaNome) continue;
+                const nome = perCoda.get(codaNumero(String(c.customer_number || "")));
+                if (!nome) continue;
+                const { error } = await supabase.from("wa_conversations").update({ customer_name: nome }).eq("id", c.id);
+                if (!error) rinominate++;
+            }
+
+            return NextResponse.json({ ok: true, letti: contatti.length, salvati, rinominate });
         }
 
         if (action === "refresh-numbers") {
