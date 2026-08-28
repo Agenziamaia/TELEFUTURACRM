@@ -315,7 +315,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]).catch(() => null), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -341,6 +341,9 @@ function AnalisiInner() {
                     // direzione, che resta solo come ripiego finché il pannello
                     // è vuoto — e in quel caso il tooltip lo dichiara.
                     soloMese ? supabase.from("target_rete").select("brand, pista, target, unita").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
+                    // LAYOUT CONDIVISO della Rete: la disposizione è una per
+                    // tutta l'azienda, non personale (Luca 28/08)
+                    supabase.from("layout_condiviso").select("valore").eq("chiave", "analisi_rete").maybeSingle(),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -391,6 +394,7 @@ function AnalisiInner() {
                     tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
                     targetDir: dirRes?.data || [],
                     targetRete: tReteRes?.data || [],
+                    layoutRete: Array.isArray(layRete?.data?.valore) ? layRete.data.valore : null,
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -818,8 +822,23 @@ function AnalisiInner() {
         const ver = Number(layoutSalvato?.__v || 0);
         setLayoutIo((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.io, ver).length ? decodeLayout(layoutSalvato.io, ver) : decodeLayout(DEFAULT_LAYOUT.io, 8), "io", ver));
         setLayoutNeg((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.negozio, ver).length ? decodeLayout(layoutSalvato.negozio, ver) : decodeLayout(DEFAULT_LAYOUT.negozio, 8), "negozio", ver));
-        setLayoutRete((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.rete, ver).length ? decodeLayout(layoutSalvato.rete, ver) : decodeLayout(DEFAULT_LAYOUT.rete, 8), "rete", ver));
-    }, [loading, layoutSalvato]);
+        // la RETE non ha un layout per persona: è quello condiviso (o il
+        // default se non è ancora stato scritto)
+        const cond = dati?.layoutRete;
+        setLayoutRete((cur) => cur ?? (cond?.length ? decodeLayout(cond, 9) : decodeLayout(DEFAULT_LAYOUT.rete, 8)));
+    }, [loading, layoutSalvato, dati?.layoutRete]);
+    // CHI PUÒ TOCCARE LA RETE: solo admin/dev. Per tutti gli altri la griglia
+    // è in sola lettura — «sono l'unico a poterla modificare, deve rimanere
+    // così com'è» (Luca 28/08).
+    const comandoRete = isAdminOrAbove(user?.role) && !guardoUnAltro;
+    const salvaRete = async (lista) => {
+        const cod = (l) => l.map((w) => `${w.k}@${w.x || 0},${Number.isFinite(w.y) ? w.y : 999},${w.s},${w.h || hDef(w.k)}`);
+        if (!comandoRete) return;
+        try {
+            await supabase.from("layout_condiviso")
+                .upsert({ chiave: "analisi_rete", valore: cod(lista), updated_at: new Date().toISOString(), updated_by: user?.name || null }, { onConflict: "chiave" });
+        } catch { /* offline: resta locale fino al prossimo giro */ }
+    };
     const salva = async (areaKey, lista) => {
         // ENTRAMBE le aree, sempre. `__v` è unico per l'oggetto: salvando solo
         // l'area corrente, un assestamento in «Io» alzava la versione lasciando
@@ -1047,8 +1066,8 @@ function AnalisiInner() {
                             <p className="mt-1 text-xs text-slate-500">Scegli un periodo dentro un solo mese per vedere a che punto siamo.</p>
                         </div>
                     ) : (
-                        <GrigliaWidget key={`rt-${chiaveP}`} areaKey="rete" ctx={ctxRete} lista={layoutRete}
-                            setLista={(l) => { setLayoutRete(l); salva("rete", l); }}
+                        <GrigliaWidget key={`rt-${chiaveP}`} areaKey="rete" ctx={ctxRete} lista={layoutRete} bloccata={!comandoRete}
+                            setLista={(l) => { setLayoutRete(l); salvaRete(l); }}
                             intestazione={`🚦 Le soglie si prendono INSIEME · arco pieno = fatto, coda a righe = di questo passo, tacche = soglie, rombo verde = target${mieiNegoziUtente.length ? ` · anello chiaro = ${mieiNegoziUtente.join(" + ")}` : ""}`} />
                     ))}
                     {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente, lente: lenteMaster, negSel: negSelMaster }} />}
@@ -1059,7 +1078,7 @@ function AnalisiInner() {
 }
 
 /* ═══ GRIGLIA MODULARE (come la Home: drag, taglie, galleria) ══════════ */
-function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
+function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata = false }) {
     const [galleria, setGalleria] = useState(false);
     const { width, containerRef, mounted } = useContainerWidth();
     // MISURE MINIME (Luca 28/08: «più piccola di così le informazioni non si
@@ -1098,22 +1117,23 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
         <div>
             <div className="flex items-center justify-between gap-2 mb-3 an-in">
                 <p className="text-xs font-bold text-slate-300">{intestazione}</p>
-                <div className="flex gap-1.5">
+                {bloccata ? <span className="text-[10px] text-slate-600">🔒 disposizione fissa</span> : <div className="flex gap-1.5">
                     <button onClick={() => setGalleria(true)} className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold text-slate-300 hover:bg-white/10 transition-colors inline-flex items-center gap-1"><Plus className="w-3 h-3" /> Aggiungi</button>
                     <button onClick={() => setLista(decodeLayout(DEFAULT_LAYOUT[areaKey], 8))} title="Ripristina layout" className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 transition-colors"><RotateCcw className="w-3 h-3" /></button>
-                </div>
+                </div>}
             </div>
             {/* TETRIS VERO (Luca 24/08, quinto giro): react-grid-layout — la
                 card si trascina dalla TESTATA e va dove la molli, le altre si
                 compattano in verticale; resize dall'angolo in basso a destra */}
             <div ref={containerRef}>
             {mounted && <GridLayout className="tf-griglia" layout={rglLayout} width={width} cols={8} rowHeight={96} margin={[16, 16]} containerPadding={[0, 0]}
-                draggableHandle=".tf-drag" draggableCancel="button" compactType="vertical" onLayoutChange={onLayout}>
+                draggableHandle=".tf-drag" draggableCancel="button" compactType="vertical" onLayoutChange={onLayout}
+                isDraggable={!bloccata} isResizable={!bloccata}>
                 {lista.map((w) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (
                         <div key={w.k} className="glass-card an-card rounded-2xl p-4 group/wg relative @container [container-type:size] flex flex-col overflow-hidden">
-                            <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
+                            <div className={cn("flex items-center justify-between gap-2 shrink-0", def.gruppo === "rete" ? "mb-2 -mt-1 -ml-1" : "mb-3")}>
                                 <p title="Trascina la testata per spostare la card"
                                     className="tf-drag text-[11px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-2 min-w-0 flex-1 cursor-grab active:cursor-grabbing select-none touch-none">
                                     <span className="text-slate-600 group-hover/wg:text-slate-300 shrink-0"><GripVertical className="w-3.5 h-3.5" /></span>
@@ -1122,11 +1142,11 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                     {def.senzaTitolo ? null : def.logoChiave
                                         ? <span className="flex items-center gap-1.5 min-w-0">
                                             {def.nomeBreve !== "" && <span className="truncate">{def.emoji} {def.nomeBreve || def.nome}</span>}
-                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? 44 : 20} origine="left" />
+                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? (def.gruppo === "rete" ? 30 : 44) : 20} origine="left" />
                                         </span>
                                         : <span className="truncate">{def.emoji} {def.nome}</span>}
                                 </p>
-                                <div className="flex gap-0.5 opacity-0 group-hover/wg:opacity-100 transition-opacity shrink-0">
+                                <div className={cn("flex gap-0.5 opacity-0 transition-opacity shrink-0", !bloccata && "group-hover/wg:opacity-100")}>
                                     <button onClick={() => rimuovi(w.k)} title="Rimuovi" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="w-3 h-3" /></button>
                                 </div>
                             </div>

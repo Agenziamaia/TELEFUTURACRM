@@ -1942,9 +1942,10 @@ function BloccoBrandRete({ ctx, brand }) {
     // quante soglie deve reggere la riga dei valori sotto la barra
     const nS = inDrill ? inDrill.scala.length : 0;
     const nome = (x) => PISTA_LABEL_RETE[x.chiave] || x.nome;
+    const emo = (x) => PISTA_EMOJI_RETE[x.chiave] || "▫️";
     return (
         <div className="tf-rb" style={{
-            "--col": col, "--righe": righe, "--ultima": ultima, "--nS": Math.max(1, nS),
+            "--col": col, "--righe": righe, "--ultima": ultima, "--nSbar": Math.max(1, nS),
             // con più di un anello l'etichetta della pista è obbligatoria:
             // senza, non sai quale stai guardando
             "--t1": n > 1 ? "-9999px" : "18px",
@@ -1993,8 +1994,8 @@ function BloccoBrandRete({ ctx, brand }) {
                     const prossima = x.scala.find((s) => s.soglia_da > rif) || null;
                     const spaiata = righe > 1 && i === col * (righe - 1);
                     return (
-                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)}
-                            title={nome(x)}>
+                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)} style={{ "--nS": Math.max(1, x.scala.length) }}
+                            title={`${emo(x)} ${nome(x)}`}>
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} soglie={x.scala}
                                 target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
@@ -2004,7 +2005,7 @@ function BloccoBrandRete({ ctx, brand }) {
                                 poi il target, poi quanto manca — ognuno solo se lo
                                 spazio lo paga davvero */}
                             <div className="tf-foot">
-                                <p className="l1">{nome(x)}</p>
+                                <p className="l1">{emo(x)} {nome(x)}</p>
                                 <div className="l2">
                                     {x.presa ? <span className="tf-mini text-white" style={{ background: `${b.colore}cc` }}>S{x.presa.tier} presa</span>
                                         : x.scala.length > 0 ? <span className="tf-mini text-slate-400 bg-white/5">sotto la S1</span> : null}
@@ -2031,7 +2032,7 @@ function BloccoBrandRete({ ctx, brand }) {
                 costava 23-38px per nulla. */}
             <div className="tf-rb-bar">
                 {inDrill && (
-                    <SogliaBar label={nome(inDrill)} emoji="▫️" punti={inDrill.punti} pezzi={inDrill.unit === "pz" ? null : inDrill.pezzi}
+                    <SogliaBar label={nome(inDrill)} emoji={emo(inDrill)} punti={inDrill.punti} pezzi={inDrill.unit === "pz" ? null : inDrill.pezzi}
                         soglie={inDrill.scala} colore={b.colore} proiezione={inDrill.proiezione} gate={inDrill.gate}
                         targetDir={inDrill.target?.v ?? null} targetFonte={inDrill.target?.fonte} unit={inDrill.unit} />
                 )}
@@ -2039,6 +2040,8 @@ function BloccoBrandRete({ ctx, brand }) {
         </div>
     );
 }
+// le stesse emoji del Master: gli anelli senza erano un po' morti (Luca 28/08)
+const PISTA_EMOJI_RETE = { mobile: "📱", fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", luce: "💡", gas: "🔥", energia: "⚡", sky: "🟣", cb: "🔁", smartphone_cb: "📲", business_mobile: "💼", business_fisso: "💼", business_piva: "💼", soluzioni_digitali: "🧩", vas: "✨", protetti: "🛟", device: "📲", t2: "🌐" };
 const PISTA_LABEL_RETE = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", business_piva: "Biz P.IVA", cb: "Customer Base", smartphone_cb: "Smartphone CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas", energia: "Luce & Gas", t2: "Fastweb T2", protetti: "W3 Protetti", device: "Telefoni & device", completezza: "Bonus Completezza" };
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════

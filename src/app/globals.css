@@ -1267,18 +1267,19 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    Le decisioni discrete si fanno con `clamp(0px, calc(EXPR * 9999), 1px)`,
    che vale 0px o 1px, e poi si moltiplica.                                */
 .tf-rb {
-    --HEAD: 56px;        /* testata della card: logo 44 + margine 12        */
+    --HEAD: 38px;        /* testata compatta: logo 30 + margine 8            */
     --SEP: 8px;          /* stacco sopra la barra                           */
     --BOX: 86px;         /* corpo della SogliaBar senza la riga dei valori   */
     --GAPB: 12px;        /* stacco fra anelli e barra                       */
     --GX: 10px; --GY: 10px;
+    --nS: 1;
     --W: 100cqw;
     --H: calc(100cqh - var(--HEAD));
     --cellW: calc(var(--W) / var(--col) - var(--GX));
 
     /* la barra è sempre intera; l'unica parte che può sparire è la riga dei
        valori sotto, che vuole ~34px per soglia */
-    --scaleOn: clamp(0px, calc((var(--W) - var(--nS) * 34px) * 9999), 1px);
+    --scaleOn: clamp(0px, calc((var(--W) - var(--nSbar) * 34px) * 9999), 1px);
     --barH: calc(var(--SEP) + var(--BOX) + var(--scaleOn) * 14);
     --barTot: calc(var(--barH) + var(--GAPB));
 
@@ -1308,14 +1309,18 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
        corona libera di 64px in larghezza. Se ci stanno, l'anello paga 28px
        di diametro per aprirle. */
     --nSl: calc(var(--nS) + 1);
-    --labOn: clamp(0px, calc(min(var(--D0) - 28px - var(--nSl) * 16px, var(--cellW) - var(--D0) - 64px) * 9999), 1px);
-    --D: calc(var(--D0) - var(--labOn) * 28);
+    /* PRIMA si prova a far stare le etichette restringendo l'anello quel tanto
+       che serve (una corona libera di 60px), poi si guarda se l'arco le regge:
+       rinunciarci subito era il motivo per cui su Fastweb non comparivano mai */
+    --Dlab: calc(min(var(--D0), var(--cellW) - 60px) - 28px);
+    --labOn: clamp(0px, calc((var(--Dlab) - var(--nSl) * 14px) * 9999), 1px);
+    --D: calc(var(--D0) - var(--labOn) * (var(--D0) - var(--Dlab)));
 
     /* avanzo verticale incomprimibile: un cerchio non può essere più largo
        della sua colonna. Invece di spalmare il vuoto attorno a ogni anello
        (il difetto Fastweb) si limita il respiro e il blocco si CENTRA: resta
        un margine simmetrico, cioè composizione, non un buco. */
-    --areaMax: calc(var(--righe) * (var(--D) * 1.35 + var(--foot)) + (var(--righe) - 1) * var(--GY));
+    --areaMax: calc(var(--righe) * (var(--D) * 1.5 + var(--foot)) + (var(--righe) - 1) * var(--GY));
     --areaH: min(var(--hR), var(--areaMax));
 
     display: flex; flex-direction: column; justify-content: center;
