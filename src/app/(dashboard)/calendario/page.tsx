@@ -329,7 +329,7 @@ const COLORE_TASK: Record<string, { bordo: string; fondo: string; testo: string;
     in_corso: { bordo: "border-blue-400/40", fondo: "bg-blue-500/10", testo: "text-blue-200", banda: "bg-blue-400", etichetta: "In corso" },
     fatta: { bordo: "border-emerald-500/40", fondo: "bg-emerald-500/10", testo: "text-emerald-200", banda: "bg-emerald-500", etichetta: "Fatta" },
     sospesa: { bordo: "border-amber-400/40", fondo: "bg-amber-500/10", testo: "text-amber-200", banda: "bg-amber-400", etichetta: "Sospesa" },
-    problema: { bordo: "border-orange-400/60", fondo: "bg-orange-500/15", testo: "text-orange-100", banda: "bg-orange-400", etichetta: "Problema" },
+    problema: { bordo: "border-orange-400/60", fondo: "bg-orange-500/15", testo: "text-orange-100", banda: "bg-orange-400", etichetta: "Rimandata al mittente" },
     abbandonata: { bordo: "border-rose-500/40", fondo: "bg-rose-500/10", testo: "text-rose-200/70", banda: "bg-rose-500", etichetta: "Abbandonata" },
 };
 
@@ -928,7 +928,7 @@ export default function Calendario() {
         return out;
     })();
     const treLabel = (() => {
-        const a = new Date(treStart + "T12:00:00"), b = new Date(addDays(treStart, 2) + "T12:00:00");
+        const a = new Date(treDays[0] + "T12:00:00"), b = new Date(treDays[treDays.length - 1] + "T12:00:00");
         const sameM = a.getMonth() === b.getMonth();
         return `${a.getDate()}${sameM ? "" : " " + MONTHS_IT[a.getMonth()]} – ${b.getDate()} ${MONTHS_IT[b.getMonth()]} ${b.getFullYear()}`;
     })();
@@ -1188,14 +1188,15 @@ export default function Calendario() {
        classico delle regole dove posso modificare il numero di giorni oltre
        il quale una task non esitata va in malus e l'importo giornaliero».
        Stessa strada di tracking_regole / caller_regole / usati_regole. */
-    const [regolaPatto, setRegolaPatto] = useState<{ giorni: number; euro: number; saltaDomenica: boolean }>(
-        { giorni: 2, euro: 5, saltaDomenica: true });
+    const [regolaPatto, setRegolaPatto] = useState<{ giorni: number; euro: number; saltaDomenica: boolean; decorrenza: string | null }>(
+        { giorni: 2, euro: 5, saltaDomenica: true, decorrenza: null });
     const caricaRegolaPatto = useCallback(async () => {
-        const { data } = await supabase.from("task_regole").select("giorni_malus, malus_giorno, salta_domenica").eq("id", 1).maybeSingle();
+        const { data } = await supabase.from("task_regole").select("giorni_malus, malus_giorno, salta_domenica, decorrenza").eq("id", 1).maybeSingle();
         if (data) setRegolaPatto({
             giorni: Number(data.giorni_malus) || 2,
             euro: Number(data.malus_giorno) || 0,
             saltaDomenica: data.salta_domenica !== false,
+            decorrenza: data.decorrenza ? String(data.decorrenza).slice(0, 10) : null,
         });
     }, []);
     useEffect(() => { caricaRegolaPatto(); }, [caricaRegolaPatto]);
@@ -1212,6 +1213,16 @@ export default function Calendario() {
         return n;
     };
     /** la scadenza: assegnazione + 2 giorni utili, a fine giornata */
+    /* IL PATTO NON È RETROATTIVO (regola d'azienda, incidente malus Sky del
+       25/08 e tracking del 27/08: «un cambio di regole non è mai retroattivo»).
+       Le task nate PRIMA che la regola esistesse non entrano nel conto: senza
+       questa riga, accendere il patto il 27/08 avrebbe scritto 640 € di malus
+       su task di luglio e mostrato 860 € di debito a chi non ne sapeva nulla. */
+    const dentroLaRegola = (t: CalendarTask) => {
+        if (!regolaPatto.decorrenza) return true;
+        const partenza = String(t.assegnataIl || t.creataIl || "").slice(0, 10);
+        return !!partenza && partenza >= regolaPatto.decorrenza;
+    };
     const scadenzaDi = (t: CalendarTask): Date | null => {
         // il cronometro riparte dalla RIASSEGNAZIONE: una task tornata al
         // mittente e rilanciata non porta con sé il ritardo di prima
@@ -1227,17 +1238,31 @@ export default function Calendario() {
         d.setHours(23, 59, 59, 999);
         return d;
     };
-    /** una task «assegnata»: me l'ha data qualcun altro (o è del mio negozio) */
+    /** una task «assegnata»: gliel'ha data QUALCUN ALTRO.
+     *  ⚠️ Le task di punto vendita NON sono assegnate per definizione
+     *  (revisore 28/08): a DB quasi tutte se le danno le persone del negozio
+     *  stesso — Golban a Merulana, Rodriguez a Collatina, Sonnino a
+     *  Garbatella — e il calendario mostrava loro «🔥 in malus da N giorni»
+     *  per un promemoria che si erano scritti da soli. Vale il solito
+     *  criterio: nel dubbio un malus non si inventa. */
     const eAssegnata = (t: CalendarTask) => {
         const chiDa = String(t.createdBy || "").trim().toLowerCase();
+        // il caso più comune del CRM: i «Promemoria contratto» che la persona
+        // si scrive da sola e che portano anche il tag del negozio (32 a DB).
+        // Se chi la scrive e chi la fa sono la stessa persona, patto non c'è.
+        if (chiDa && chiDa === String(t.assignedTo || "").trim().toLowerCase()) return false;
+        if (t.assignedToStore) {
+            const suo = negozioDi(t.createdBy);          // il negozio di chi l'ha scritta
+            if (suo && matchNegozi(t.assignedToStore, [suo])) return false;   // se l'è data da solo
+            return !!chiDa;
+        }
         const chiA = String(t.assignedTo || "").trim().toLowerCase();
-        if (t.assignedToStore) return true;              // a un negozio: sempre assegnata
         return !!chiDa && !!chiA && chiDa !== chiA;
     };
 
     type Patto = { stato: "in_tempo" | "oggi" | "malus"; giorni: number; scadenza: Date; percentuale: number; testo: string };
     const pattoDi = (t: CalendarTask): Patto | null => {
-        if (!eAssegnata(t)) return null;
+        if (!eAssegnata(t) || !dentroLaRegola(t)) return null;
         if (LAVORATE.includes(t.status)) return null;    // patto rispettato: niente conto
         const scad = scadenzaDi(t);
         if (!scad) return null;
@@ -1737,9 +1762,14 @@ export default function Calendario() {
         malusScritti.current = true;
         (async () => {
             const daScrivere: Record<string, unknown>[] = [];
-            const daChiudere: { id: number; giorni: number; importo: number }[] = [];
+            const daChiudere: { id: number; giorni: number; importo: number; scadenza: string }[] = [];
             for (const t of tasks) {
-                if (!eAssegnata(t) || t.assignedToStore) continue;   // le task di negozio non hanno una persona sola
+                // le task di NEGOZIO ora fanno episodio (revisore 28/08: prima
+                // il calendario mostrava il conto e non lo registrava mai),
+                // ma senza attribuirlo a una persona: `persona` è il punto
+                // vendita e `user_id` resta vuoto finché l'amministrazione non
+                // decide chi risponde per il negozio.
+                if (!eAssegnata(t) || !dentroLaRegola(t)) continue;
                 const scad = scadenzaDi(t);
                 if (!scad) continue;
                 const chiuse = LAVORATE.includes(t.status);
@@ -1747,25 +1777,61 @@ export default function Calendario() {
                 if (fine <= scad) continue;                          // patto rispettato
                 const giorni = Math.max(1, giorniUtili(scad, fine));
                 const importo = Math.round(giorni * regolaPatto.euro * 100) / 100;
-                if (chiuse) { daChiudere.push({ id: t.id, giorni, importo }); continue; }
-                const utente = calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t.assignedTo || "").trim().toLowerCase());
+                const scadISO = `${scad.getFullYear()}-${String(scad.getMonth() + 1).padStart(2, "0")}-${String(scad.getDate()).padStart(2, "0")}`;
+                if (chiuse) { daChiudere.push({ id: t.id, giorni, importo, scadenza: scadISO }); continue; }
+                const utente = t.assignedToStore ? null
+                    : calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t.assignedTo || "").trim().toLowerCase());
                 daScrivere.push({
-                    task_id: t.id, user_id: utente?.id ?? null, persona: t.assignedTo,
+                    task_id: t.id, user_id: utente?.id ?? null,
+                    persona: t.assignedToStore ? `🏬 ${t.assignedToStore}` : t.assignedTo,
                     assegnata_da: t.createdBy || null, titolo: t.title,
                     scadenza: `${scad.getFullYear()}-${String(scad.getMonth() + 1).padStart(2, "0")}-${String(scad.getDate()).padStart(2, "0")}`,
                     giorni, malus_giorno: regolaPatto.euro, importo,
                     stato: "in_corso", updated_at: new Date().toISOString(),
                 });
             }
-            if (daScrivere.length) {
-                await supabase.from("task_malus").upsert(daScrivere, { onConflict: "task_id" });
+            /* ⚠️ NIENTE UPSERT CIECO (revisore 28/08): `task_id` è unico, e
+               riscriverci sopra `stato: "in_corso"` resuscitava gli episodi
+               già chiusi, compensati o archiviati dall'amministrazione — un
+               debito saldato tornava vivo al primo che apriva il calendario.
+               Si tocca solo ciò che è ancora in corso; il resto si crea. */
+            const ids = [...daScrivere.map((x) => x.task_id as number), ...daChiudere.map((c) => c.id)];
+            const { data: gia } = ids.length
+                ? await supabase.from("task_malus").select("task_id, stato").in("task_id", ids)
+                : { data: [] as { task_id: number; stato: string }[] };
+            const statoDi = new Map((gia || []).map((r) => [Number(r.task_id), String(r.stato)]));
+            const nuovi = daScrivere.filter((x) => !statoDi.has(Number(x.task_id)));
+            if (nuovi.length) await supabase.from("task_malus").insert(nuovi);
+            for (const x of daScrivere) {
+                if (statoDi.get(Number(x.task_id)) !== "in_corso") continue;   // chiuso/compensato: non si tocca
+                await supabase.from("task_malus").update({ giorni: x.giorni, importo: x.importo, updated_at: x.updated_at })
+                    .eq("task_id", x.task_id).eq("stato", "in_corso");
             }
             for (const c of daChiudere) {
-                // lavorata in ritardo: l'episodio si congela e diventa definitivo
-                await supabase.from("task_malus").update({
+                // lavorata in ritardo: l'episodio si congela e diventa definitivo.
+                // Se nessuno aveva il calendario aperto mentre maturava, la riga
+                // non esisteva e il malus non nasceva MAI (revisore 28/08: 640 €
+                // mancanti): ora si crea direttamente chiusa.
+                const gia2 = statoDi.get(Number(c.id));
+                if (gia2 && gia2 !== "in_corso") continue;
+                const chiusura = {
                     giorni: c.giorni, importo: c.importo, stato: "attivo",
                     data_fine: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString(),
-                }).eq("task_id", c.id).eq("stato", "in_corso");
+                };
+                if (gia2 === "in_corso") {
+                    await supabase.from("task_malus").update(chiusura).eq("task_id", c.id).eq("stato", "in_corso");
+                } else {
+                    const t2 = tasks.find((x) => x.id === c.id);
+                    const u2 = t2 && !t2.assignedToStore
+                        ? calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t2.assignedTo || "").trim().toLowerCase())
+                        : null;
+                    await supabase.from("task_malus").insert({
+                        task_id: c.id, user_id: u2?.id ?? null,
+                        persona: t2?.assignedToStore ? `🏬 ${t2.assignedToStore}` : (t2?.assignedTo || "—"),
+                        assegnata_da: t2?.createdBy || null, titolo: t2?.title || "—",
+                        scadenza: c.scadenza, malus_giorno: regolaPatto.euro, ...chiusura,
+                    });
+                }
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2877,6 +2943,7 @@ export default function Calendario() {
                         // riporto arretrate (Luca 04/08): solo sul giorno CORRENTE,
                         // nella striscia "Tutto il giorno" come fa Google
                         const arretrateOggi = dayDate === todayStr ? arretrateInColonna : [];
+                        const rimandateOggi = dayDate === todayStr ? rimandateMie : [];
                         type Ev = { key: string; min: number; durata: number; titolo: string; sotto: string; extra?: string; classi: string; onClick: () => void };
                         const evs: Ev[] = [
                             ...dayAppts.filter(a => minutiDi(a.time) < 24 * 60).map((a): Ev => ({
@@ -2915,7 +2982,7 @@ export default function Calendario() {
                         const oraLinea = dayDate === todayStr ? adesso.getHours() * 60 + adesso.getMinutes() : null;
                         return (
                             <div>
-                                {(senzaOra.length > 0 || arretrateOggi.length > 0) && (
+                                {(senzaOra.length > 0 || arretrateOggi.length > 0 || rimandateOggi.length > 0) && (
                                     <div className="mb-3 flex flex-wrap gap-1.5 items-center">
                                         <span className="text-[10px] uppercase tracking-wider text-slate-500">Tutto il giorno:</span>
                                         {/* anche qui partono chiuse (Luca 28/08): un chip
@@ -2932,6 +2999,20 @@ export default function Calendario() {
                                                 title={`Task arretrata del ${ggMm(t.date)} — apri il dettaglio`}
                                                 className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-500/15 text-[11px] text-amber-200 hover:bg-amber-500/25">
                                                 ⏰ {ggMm(t.date)} · {t.title}
+                                            </button>
+                                        ))}
+                                        {rimandateOggi.length > 0 && !rimandateAperte && (
+                                            <button onClick={() => setRimandateAperte(true)}
+                                                title="Task che ti sono tornate indietro"
+                                                className="px-2 py-1 rounded-lg border border-orange-500/40 bg-orange-500/15 text-[11px] font-bold text-orange-200 hover:bg-orange-500/25 flex items-center gap-1">
+                                                <ChevronDown className="w-3 h-3" /> ↩️ Rimandate ({rimandateOggi.length})
+                                            </button>
+                                        )}
+                                        {rimandateAperte && rimandateOggi.map(t => (
+                                            <button key={`rimg-${t.id}`} onClick={() => setTaskDettaglio(t)}
+                                                title={`Tornata indietro da ${t.assignedTo || t.assignedToStore || "—"} — apri per rilanciarla o chiuderla`}
+                                                className="px-2 py-1 rounded-lg border border-orange-500/40 bg-orange-500/15 text-[11px] text-orange-100 hover:bg-orange-500/25">
+                                                ↩️ {t.title}
                                             </button>
                                         ))}
                                         {senzaOra.map(t => { const ct = coloreTask(t); return (
@@ -3101,6 +3182,24 @@ export default function Calendario() {
                                 </div>
                             )}
 
+                            {selectedDate === todayStr && rimandateMie.length > 0 && (
+                                <div className="mb-2 space-y-1.5">
+                                    <button type="button" onClick={() => setRimandateAperte((v) => !v)}
+                                        title={rimandateAperte ? "Richiudi le rimandate" : "Task che ti sono tornate indietro"}
+                                        className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-orange-500/40 bg-orange-500/10 text-[10px] font-bold uppercase tracking-wider text-orange-300 hover:bg-orange-500/20 transition-colors">
+                                        {rimandateAperte ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        ↩️ Rimandate al mittente ({rimandateMie.length})
+                                    </button>
+                                    {rimandateAperte && rimandateMie.map(t => (
+                                        <button key={`rims-${t.id}`} onClick={() => setTaskDettaglio(t)}
+                                            title="Apri la task: puoi rilanciarla o chiuderla"
+                                            className="w-full text-left p-2 rounded-lg border border-orange-500/30 bg-orange-500/[0.07] hover:bg-orange-500/[0.14] transition-colors">
+                                            <div className="text-[12px] font-semibold text-white truncate">{t.title}</div>
+                                            <div className="text-[11px] text-slate-400 truncate">↩️ {t.assignedToStore || t.assignedTo}{t.outcomeNote ? ` · «${t.outcomeNote}»` : ""}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {dateTasks.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center text-slate-500 gap-2 mb-4">
                                     <p className="text-sm">Nessuna task in questo giorno</p>
@@ -3173,7 +3272,7 @@ export default function Calendario() {
                                                         // da uno stato fuori ciclo (in corso / problema) si chiude
                                                         const nextStatus = idx < 0 ? "fatta" : CICLO[(idx + 1) % CICLO.length];
                                                         const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
-                                                        const { error } = await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false, outcome_note: null } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                        const { error } = await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
                                                         // niente bugie: se il database rifiuta, lo schermo non cambia
                                                         if (error) { alert("Non sono riuscito a cambiare lo stato: " + error.message); return; }
                                                         setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus } : task));
@@ -3220,7 +3319,7 @@ export default function Calendario() {
                                                             onChange={async e => {
                                                                 const s = e.target.value as TaskStatus;
                                                                 const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
-                                                                await supabase.from("calendar_tasks").update({ status: s, ...(s === "da_fare" ? { esito_at: null, esito_visto: false, outcome_note: null } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                                await supabase.from("calendar_tasks").update({ status: s, ...(s === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
                                                                 setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: s } : task));
                                                             }}
                                                         >

@@ -2492,7 +2492,7 @@ function RigaTaskNota({ t, oggiISO, extraSotto, diAltri, busy, nota, setNota, ch
             scaduta ? (tonoScaduta === "rose" ? "border-rose-500/50 bg-rose-500/[0.08]" : "border-amber-500/40 bg-amber-500/[0.07]") : "border-white/10 bg-white/[0.03]")}>
             <div className="flex items-start gap-2">
                 <button disabled={busy === `t${t.id}`}
-                    onClick={() => { if (diAltri) setNota(aprendo ? null : { id: t.id, testo: "" }); else chiudi(t, ""); }}
+                    onClick={() => { if (diAltri) setNota(aprendo ? null : { id: t.id, testo: t.outcome_note || "" }); else chiudi(t, ""); }}
                     title={diAltri ? `Chiudi con una nota per ${t.created_by}` : "Segna come fatta"}
                     className="mt-0.5 w-4 h-4 shrink-0 rounded border border-emerald-500/50 text-emerald-300 text-[9px] leading-none hover:bg-emerald-500/20">✓</button>
                 <div className="flex-1 min-w-0">
@@ -2552,7 +2552,7 @@ function WidgetAgenda({ ctx, size }) {
             // task»): stessa finestra degli appuntamenti — quelle di oggi più
             // gli arretrati ancora da fare. Vengono da `calendar_tasks`, le
             // stesse che si creano dal Calendario.
-            const selT = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, client_ref, created_by, created_by_user_id";
+            const selT = "id, date, time, title, notes, status, assigned_to, assigned_to_store, assigned_user_id, client_ref, created_by, created_by_user_id, outcome_note";
             const [og, deb, tk] = await Promise.all([
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("date", ctx.oggiISO).order("time").limit(100),
                 supabase.from("appointments").select(sel).eq("type", "incoming").eq("status", "scheduled")
@@ -2592,7 +2592,10 @@ function WidgetAgenda({ ctx, size }) {
     const chiudiTask = async (t, nota) => {
         setBusy(`t${t.id}`); setErrore(null);
         const { error } = await supabase.from("calendar_tasks").update({
-            status: "fatta", outcome_note: (nota || "").trim() || null,
+            status: "fatta",
+            // ⚠️ solo se ho scritto qualcosa: chiudere in fretta non deve
+            // cancellare la risposta già data (revisore 28/08)
+            ...((nota || "").trim() ? { outcome_note: (nota || "").trim() } : {}),
             esito_at: new Date().toISOString(), esito_visto: creataDaMe(t),
         }).eq("id", t.id);
         setBusy(null); setNotaTask(null);
@@ -3087,7 +3090,10 @@ function WidgetRegiaTask({ ctx, size }) {
         setBusy(`t${t.id}`); setErrore(null);
         // se la chiudo io che l'ho creata non deve «tornare» a me stesso
         const { error } = await supabase.from("calendar_tasks").update({
-            status: "fatta", outcome_note: (nota || "").trim() || null,
+            status: "fatta",
+            // ⚠️ solo se ho scritto qualcosa: chiudere in fretta non deve
+            // cancellare la risposta già data (revisore 28/08)
+            ...((nota || "").trim() ? { outcome_note: (nota || "").trim() } : {}),
             esito_at: new Date().toISOString(), esito_visto: creataDaMe(t),
         }).eq("id", t.id);
         setBusy(null); setNotaPer(null);
