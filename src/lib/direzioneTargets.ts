@@ -98,7 +98,18 @@ function scaleDiRete(tab: Tabellare | null): Record<string, number[]> {
     return out;
 }
 
-export async function caricaDirezione(brand: DirBrandId, monthISO: string): Promise<Direzione> {
+export async function caricaDirezione(
+    brand: DirBrandId, monthISO: string,
+    /* LA DIREZIONE RAGIONA SU ADESSO (Luca 28/08 sera).
+       Qui non si guarda un numero: si decide DOVE mandare la prossima
+       attivazione. Con i numeri fermi a ieri sera il consiglio ignora tutto
+       quello che è già stato caricato oggi e continua a indicare codici che
+       nel frattempo hanno già chiuso — mandandoli **over target**.
+       Per questo il valore di fabbrica è la produzione VIVA: «ieri sera» resta
+       una vista che si può chiedere, non il modo in cui si ragiona. */
+    opts?: { includiOggi?: boolean },
+): Promise<Direzione> {
+    const optOggi = { includiOggi: opts?.includiOggi !== false };
     const [tgtRes, sfrRes, polRes, glRes, regRes] = await Promise.all([
         supabase.from("direzione_targets").select("cod_gara, pista, target, tier").eq("brand", brand).eq("month", monthISO),
         supabase.from("direzione_sfridi").select("pista, pct").eq("brand", brand).eq("month", monthISO),
@@ -121,7 +132,7 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
                 .select("cod_gara, negozio, cluster_mobile, soglie_mobile, soglie_fisso, soglie_piva, extra")
                 .eq("brand", "windtre").eq("month", monthISO).order("negozio"),
             caricaTabellareAzienda("windtre", monthISO),
-            caricaContrattiMese("WindTre", monthISO),
+            caricaContrattiMese("WindTre", monthISO, optOggi),
         ]);
         tab = t; contratti = ctr;
         codici = (pdvRes.data || []).map((r) => {
@@ -151,7 +162,7 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
         // le DUE realtà della lettera A: Vodafone Store (codici T1) e VND
         const [t, ctx] = await Promise.all([
             caricaTabellareAzienda("vodafone", monthISO).then((x) => x ?? caricaTabellare("vodafone", monthISO)),
-            caricaContrattiContesto("vodafone", monthISO, "Vodafone"),
+            caricaContrattiContesto("vodafone", monthISO, "Vodafone", optOggi),
         ]);
         tab = t; contratti = ctx.contratti;
         const rete = scaleDiRete(tab);
@@ -162,14 +173,14 @@ export async function caricaDirezione(brand: DirBrandId, monthISO: string): Prom
     } else if (brand === "fastweb") {
         const [t, ctx] = await Promise.all([
             caricaTabellareAzienda("fastweb", monthISO).then((x) => x ?? caricaTabellare("fastweb", monthISO)),
-            caricaContrattiContesto("fastweb", monthISO, "Fastweb"),
+            caricaContrattiContesto("fastweb", monthISO, "Fastweb", optOggi),
         ]);
         tab = t; contratti = ctx.contratti;
         codici = [{ cod_gara: "T2", negozio: "Lettera Fastweb (T2)", cluster: null, token: [], catchAll: true, soglie: scaleDiRete(tab), piste: {}, targets: {}, tiersScelti: {} }];
     } else {
         const [t, ctr] = await Promise.all([
             caricaTabellareAzienda("sky", monthISO).then((x) => x ?? caricaTabellare("sky", monthISO)),
-            caricaContrattiMese("Sky", monthISO),
+            caricaContrattiMese("Sky", monthISO, optOggi),
         ]);
         tab = t; contratti = ctr;
         codici = [{ cod_gara: "SKY", negozio: "Sky", cluster: null, token: [], catchAll: true, soglie: scaleDiRete(tab), piste: {}, targets: {}, tiersScelti: {} }];

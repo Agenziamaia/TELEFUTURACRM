@@ -190,13 +190,21 @@ export function DirezioneInserimentoAdmin() {
     const [recapAperto, setRecapAperto] = useState(false);
     const [legendaAperta, setLegendaAperta] = useState(false);
     const [giro, setGiro] = useState(0);
+    /* ADESSO ↔ IERI SERA (Luca 28/08 sera).
+       Qui non si guarda un numero: si decide DOVE mandare la prossima
+       attivazione. Con i numeri fermi a ieri sera il consiglio non vede quello
+       che è già stato caricato oggi e continua a indicare codici ormai pieni:
+       li manda **over target**. Perciò si parte SEMPRE dalla produzione viva —
+       «ieri sera» è una vista che si può chiedere, non il modo di ragionare. */
+    const [vistaIeri, setVistaIeri] = useState(false);
 
     useEffect(() => {
         let vivo = true;
         setDir(null); setAperto(null);
-        caricaDirezione(brand, monthISO).then((d) => { if (vivo) { setDir(d); setBozze({}); setBozzeSfr({}); } });
+        caricaDirezione(brand, monthISO, { includiOggi: !vistaIeri })
+            .then((d) => { if (vivo) { setDir(d); setBozze({}); setBozzeSfr({}); } });
         return () => { vivo = false; };
-    }, [brand, monthISO, giro]);
+    }, [brand, monthISO, giro, vistaIeri]);
 
     const flash = (chiave: string, ok: boolean) => {
         if (!ok) { setErroriSalva((s) => ({ ...s, [chiave]: true })); return; }
@@ -292,12 +300,42 @@ export function DirezioneInserimentoAdmin() {
                         tutta larghezza per una cosa che si guarda una volta ogni
                         tanto era spazio buttato */}
                     <RegistroConsigli brand={brand} />
+                    {/* la vista: il consiglio nasce sempre da «Adesso» */}
+                    <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+                        {[
+                            { v: false, l: "⚡ Adesso", t: "I numeri di questo momento, comprese le attivazioni caricate oggi. È così che si decide dove inserire: altrimenti si manda over target un codice che nel frattempo ha già chiuso." },
+                            { v: true, l: "🌙 Ieri sera", t: "Solo per guardare com'era a fine giornata di ieri. I consigli calcolati qui NON tengono conto di oggi." },
+                        ].map((x) => (
+                            <button key={String(x.v)} onClick={() => setVistaIeri(x.v)} title={x.t}
+                                className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
+                                    vistaIeri === x.v
+                                        ? (x.v ? "bg-slate-500/60 text-white" : "bg-emerald-500/80 text-white shadow")
+                                        : "text-slate-400 hover:text-white")}>
+                                {x.l}
+                            </button>
+                        ))}
+                    </div>
                     <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[150px]">
                         {mesi.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
                     </select>
                     <button onClick={() => setGiro((g) => g + 1)} title="Ricarica l'avanzamento" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
                 </div>
             </div>
+
+            {/* guardare indietro va bene, DECIDERE guardando indietro no: qui
+                il consiglio ignora tutto quello che è già stato caricato oggi */}
+            {vistaIeri && (
+                <div className="an-in flex items-center gap-2 flex-wrap rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2">
+                    <span className="text-[12px] font-bold text-amber-200">🌙 Stai guardando com&apos;era ieri sera</span>
+                    <span className="text-[11px] text-amber-100/80">
+                        Le attivazioni caricate oggi non sono contate: non usare questi consigli per decidere dove inserire, o mandi over target un codice che nel frattempo ha già chiuso.
+                    </span>
+                    <button onClick={() => setVistaIeri(false)}
+                        className="ml-auto px-2.5 py-1 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap">
+                        ⚡ Torna ad Adesso
+                    </button>
+                </div>
+            )}
 
             {/* 🕊️ INSERIMENTO LIBERO (Luca 26/08 notte-5): il brand si può
                 «spegnere» — es. Sky, dove la regia non serve: la Bussola dei
