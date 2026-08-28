@@ -28,7 +28,7 @@ import { W3_PALETTO_BUSINESS } from "@/lib/direzioneTargets";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
-import { GARA, LogoBrand, DrillPanel } from "./_widgets";
+import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 // match a PREFISSO bidirezionale (come il pannello target): "Magliana" ↔
@@ -259,6 +259,13 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
        di franchising; lo Smartphone CB pure («questo è un KPI di gruppo»).
        Il resto — mobile, fisso, Customer Base, paletto — è del codice. */
     const DI_GRUPPO = ["assicurazioni", "lucegas", "smartphone_cb"];
+    /* IL DETTAGLIO PER CATEGORIA, CHIUSO (revisore 28/08). Le barre mostrano
+       solo le piste con soglie o punti: i gettoni puri restano fuori — su Sky
+       233 pezzi finivano in una barra sola, e la scomposizione dei telefoni
+       spariva del tutto. Lo spazio che Luca voleva liberare resta libero:
+       questo si apre solo se lo si chiede. */
+    const righe = useMemo(() => righeOperatore(b, sue), [b, sue]);
+    const [dettaglioAperto, setDettaglioAperto] = useState(false);
     const piste = useMemo(() => {
         const tutte = [...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine);
         return { mie: tutte.filter((x) => !DI_GRUPPO.includes(x.chiave)), gruppo: tutte.filter((x) => DI_GRUPPO.includes(x.chiave)) };
@@ -380,7 +387,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pl-2">
                 <div className="flex items-center gap-3 min-w-0">
                     <LogoBrand chiave={G.chiave} colore={G.colore} alt={G.label} h={38} origine="left" />
-                    <span className="text-[10px] text-slate-500 whitespace-nowrap tabular-nums">{fmtN(sue.length)} pezzi{b !== "fw" ? <> · <b className="text-slate-300">{fmtPt(punti)}</b> pt</> : null} <span className="text-slate-600">({filtroLabel})</span></span>
+                    <span className="text-[10px] text-slate-500 whitespace-nowrap tabular-nums">{fmtN(sue.length)} pezzi{punti > 0 ? <> · <b className="text-slate-300">{fmtPt(punti)}</b> pt</> : null} <span className="text-slate-600">({filtroLabel})</span></span>
                 </div>
                 {lente === "codici" && (
                     <div className="flex items-center gap-2">
@@ -396,7 +403,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                    dipende da tutti. Il vecchio elenco per categoria (destra) è
                    sparito: «non serve più a niente visto che abbiamo portato
                    tutto nelle barre». */
-                <div className="grid lg:grid-cols-2 gap-x-5 gap-y-2 pl-2">
+                <div className={cn("grid gap-x-5 gap-y-2 pl-2", (piste.gruppo.length > 0 || (b === "w3" && w3)) && "lg:grid-cols-2")}>
                     <div className="space-y-2">
                         {!av ? (
                             <p className="text-[11px] text-slate-500 rounded-xl bg-white/[.04] border border-white/[.06] px-3 py-3">📅 Soglie spente: periodo su più mesi{tab ? "" : " (o tabellare azienda assente)"}.</p>
@@ -434,6 +441,35 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                                 );
                             })}
                         </>)}
+                        {righe.length > 0 && (
+                            <div className="pt-1">
+                                <button type="button" onClick={() => setDettaglioAperto((v) => !v)}
+                                    className="w-full flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-300 transition-colors">
+                                    <span className={cn("transition-transform", dettaglioAperto && "rotate-90")}>▸</span>
+                                    📊 Dettaglio per categoria ({righe.length})
+                                </button>
+                                {dettaglioAperto && (
+                                    <div className="space-y-1 mt-1.5">
+                                        {righe.map((r) => {
+                                            const pt = Math.round(r.items.reduce((s2, x) => s2 + x.punti, 0) * 100) / 100;
+                                            const maxPt = Math.max(1, b === "fw" ? sue.length : punti);
+                                            return (
+                                                <div key={r.label} onClick={(e) => { e.stopPropagation(); apri({ titolo: `${G.label} · ${r.label}`, sub: filtroLabel, items: r.items }); }}
+                                                    title={`${fmtN(r.items.length)} pezzi${b !== "fw" ? ` · ${fmtPt(pt)} pt` : ""} — clicca per l'elenco`}
+                                                    className="grid grid-cols-[minmax(110px,1.1fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1 hover:bg-white/5 transition-colors cursor-pointer">
+                                                    <span className="text-[11px] font-semibold text-slate-300 truncate">{r.emoji} {r.label}</span>
+                                                    <span className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                                                        <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, ((b === "fw" ? r.items.length : pt) / maxPt) * 100)}%`, background: `linear-gradient(90deg, ${r.colore}55, ${r.colore})` }} />
+                                                    </span>
+                                                    <span className="text-[10px] font-black text-white tabular-nums text-right w-12">{b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtPt(pt)} pt`}</span>
+                                                    <span className="text-[10px] text-slate-500 tabular-nums text-right w-10">{b === "fw" ? "" : `${fmtN(r.items.length)} pz`}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div className="flex flex-wrap gap-1.5 pt-1">
                             {escluse > 0 && <span onClick={() => apri({ titolo: `${G.label} · MNP escluse da lettera`, sub: filtroLabel, items: sue.filter((it) => it.esclusa) })} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-400 cursor-pointer hover:bg-white/10">🚫 {escluse} MNP escluse</span>}
                             {senzaRiga > 0 && <span onClick={() => apri({ titolo: `${G.label} · senza punti`, sub: filtroLabel, items: sue.filter((it) => it.senzaRiga) })} className="px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/25 text-[10px] text-amber-200 cursor-pointer hover:bg-amber-400/20">⚠ {senzaRiga} senza punti</span>}

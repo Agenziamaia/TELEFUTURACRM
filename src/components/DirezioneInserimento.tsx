@@ -112,7 +112,9 @@ export function DirezioneInserimentoAdmin() {
         if (!pistaSola && !kpiTutti) return;
         const fuori = (e: MouseEvent) => {
             const t = e.target as HTMLElement | null;
-            if (t && t.closest("[data-zona-kpi]")) return;
+            // dentro il pannello si continua a lavorare (sfridi, legenda,
+            // priorità) senza perdere il filtro: revisore 28/08
+            if (t && t.closest("[data-zona-kpi],[data-pannello-direzione]")) return;
             setPistaSola(null); setKpiTutti(null);
         };
         const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setPistaSola(null); setKpiTutti(null); } };
@@ -211,7 +213,7 @@ export function DirezioneInserimentoAdmin() {
     const bMeta = DIR_BRANDS.find((b) => b.id === brand)!;
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4" data-pannello-direzione>
             {/* SOLO I BRAND, tessere come nella sezione CALLER (Luca 26/08 sera-5):
                 logo grande, attivo acceso, inattivo in grayscale — niente
                 riquadri colorati né descrizioni */}
@@ -675,7 +677,9 @@ export function DirezioneInserimentoAdmin() {
                         // solo in `DirezioneInserimentoAdmin`, cioè in Gare →
                         // Direzione e in Amministrazione. Il widget dei ragazzi è un
                         // altro componente (`BussolaWidget`) e dà solo il codice.
-                        if (dir.brand === "windtre") {
+                        // il paletto è del FRANCHISING: sui multibrand non esiste,
+                        // e la pastiglia apriva una scheda vuota (revisore 28/08)
+                        if (dir.brand === "windtre" && !k.multibrand) {
                             const fatti = k.businessPezzi || 0;
                             const sfridoPal = Math.max(0, Math.round(Number(dir.sfridi["__paletto_business__"]) || 0));
                             // ⚠️ dalla LETTERA del mese (dir.palettoBusiness), non dalla
@@ -875,18 +879,25 @@ export function DirezioneInserimentoAdmin() {
                                             const obiettivo = dir.palettoBusiness + spPaletto;
                                             const salvo = fatti >= dir.palettoBusiness;      // niente malus
                                             const okP = fatti >= obiettivo;                   // cuscinetto pieno
-                                            const percP = Math.min(100, Math.round((fatti / obiettivo) * 100));
+                                            // la PROIEZIONE come tutte le altre piste (Luca 28/08:
+                                            // «non ha nulla in più o in meno rispetto agli altri,
+                                            // ha il suo target la sua produzione e la sua proiezione»)
+                                            const projP = proiezioneDir(dir, fatti);
                                             return (
                                                 <div className="px-4 py-3.5">
-                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                                                        <span className="text-xs font-bold text-slate-200">💼 Paletto Business <span className="text-[10px] font-normal text-slate-500">— {dir.palettoBusiness} attivazioni P.IVA mobile{spPaletto ? ` + ${spPaletto} di sfrido = obiettivo ${obiettivo}` : ""} o malus 30% sul mobile (vale anche col fisso sotto S1)</span></span>
-                                                        <span className={cn("text-[11px] font-black tabular-nums", okP ? "text-emerald-400" : salvo ? "text-amber-300" : "text-rose-300")}>{fatti} / {obiettivo}{okP ? " ✅" : ""}</span>
-                                                    </div>
-                                                    <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                                                        <div className={cn("h-full rounded-full transition-all", okP ? "bg-emerald-400" : salvo ? "bg-amber-400" : "bg-rose-400")} style={{ width: `${percP}%` }} />
-                                                    </div>
-                                                    {!salvo && <div className="text-[10px] text-rose-300/80 mt-1">⚠ mancano {dir.palettoBusiness - fatti} al paletto: sotto scatta il −30% sul mobile.</div>}
-                                                    {salvo && !okP && <div className="text-[10px] text-amber-300/80 mt-1">paletto salvo — mancano {obiettivo - fatti} al cuscinetto di sicurezza.</div>}
+                                                    <SogliaBar
+                                                        emoji="💼" label="Paletto Business — P.IVA mobile"
+                                                        punti={fatti} pezzi={fatti} unit="pz"
+                                                        soglie={spPaletto > 0
+                                                            ? [{ tier: 1, soglia_da: dir.palettoBusiness }, { tier: 2, soglia_da: obiettivo }]
+                                                            : [{ tier: 1, soglia_da: dir.palettoBusiness }]}
+                                                        colore="#a78bfa" proiezione={projP} targetDir={obiettivo}
+                                                        nota={okP
+                                                            ? "✅ paletto preso e cuscinetto pieno: il premio della gara mobile è al sicuro"
+                                                            : salvo
+                                                                ? `paletto salvo — ${obiettivo - fatti === 1 ? "ne manca 1" : `ne mancano ${obiettivo - fatti}`} al cuscinetto${spPaletto ? ` (${dir.palettoBusiness} + ${spPaletto} di sfrido)` : ""}`
+                                                                : `⚠ ne ${dir.palettoBusiness - fatti === 1 ? "manca 1" : `mancano ${dir.palettoBusiness - fatti}`} al paletto: sotto scatta il −30% sul mobile (vale anche col fisso sotto S1)`}
+                                                    />
                                                 </div>
                                             );
                                         })()}

@@ -566,6 +566,8 @@ export default function Calendario() {
        assegnata a Samantha è una task del SUO negozio, anche se sulla riga
        il negozio non è scritto (Luca 28/08: «filtro Magliana e ne compaiono
        altre che non c'entrano niente»). */
+    const nomeUguale = (a?: string | null, b?: string | null) =>
+        String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase() && !!String(a || "").trim();
     const negozioDi = useMemo(() => {
         const m = new Map<string, string>();
         calendarOperators.forEach((o) => { if (o.name) m.set(o.name.trim().toLowerCase(), o.store || ""); });
@@ -877,7 +879,7 @@ export default function Calendario() {
             if (raw) {
                 const p = JSON.parse(raw) as { calView?: string; mostraDomenica?: boolean };
                 // ⚠️ la VISTA non si ripristina più (Luca 28/08): si riapre
-                // sempre sulla settimana. Resta invece la domenica nascosta,
+                // sempre sui TRE GIORNI. Resta invece la domenica nascosta,
                 // che è una preferenza di ingombro, non di lavoro.
                 if (typeof p.mostraDomenica === "boolean") setMostraDomenica(p.mostraDomenica);
             }
@@ -885,8 +887,10 @@ export default function Calendario() {
     }, [user?.id]);
     useEffect(() => {
         if (!user?.id || !vistaCaricata.current) return;
-        try { localStorage.setItem(`calendario_vista_${user.id}`, JSON.stringify({ calView, mostraDomenica })); } catch { /* no-op */ }
-    }, [user?.id, calView, mostraDomenica]);
+        // si salva SOLO la domenica: la vista riparte sempre dai tre giorni,
+        // quindi scrivere `calView` era una riga morta (revisore 28/08)
+        try { localStorage.setItem(`calendario_vista_${user.id}`, JSON.stringify({ mostraDomenica })); } catch { /* no-op */ }
+    }, [user?.id, mostraDomenica]);
     // VISTA GIORNO (Luca 29/07): fasce orarie in verticale stile Google
     // Calendar — tutto il dettaglio della giornata a colpo d'occhio.
     const [dayDate, setDayDate] = useState(() =>
@@ -911,7 +915,18 @@ export default function Calendario() {
        aprono, ma non mangiano il giorno di oggi. */
     const [arretrateAperte, setArretrateAperte] = useState(false);
     const [rimandateAperte, setRimandateAperte] = useState(false);
-    const treDays = Array.from({ length: 3 }, (_, i) => addDays(treStart, i));
+    const treDays = (() => {
+        // con la domenica nascosta si saltano le domeniche: restano tre giorni
+        // di lavoro, non due e una colonna morta (revisore 28/08)
+        const out: string[] = [];
+        let d = treStart;
+        for (let i = 0; out.length < 3 && i < 10; i++) {
+            const dom = new Date(d + "T12:00:00").getDay() === 0;
+            if (mostraDomenica || !dom) out.push(d);
+            d = addDays(d, 1);
+        }
+        return out;
+    })();
     const treLabel = (() => {
         const a = new Date(treStart + "T12:00:00"), b = new Date(addDays(treStart, 2) + "T12:00:00");
         const sameM = a.getMonth() === b.getMonth();
@@ -982,9 +997,13 @@ export default function Calendario() {
     const areaMia = areaOf(ruolo);
     const vedeRichiami = isCallCenter || areaMia === "cc" || seesAllStores(ruolo);
     const vedeOutbound = isCallCenter || areaMia === "cc" || areaMia === "ob" || seesAllStores(ruolo);
-    // gli AUTO-generati se li crea l'agente (in "Nuovo appuntamento" il ruolo
-    // agente è bloccato proprio su quel tipo): il negozio non ne ha mai
-    const vedeAuto = vedeOutbound;
+    /* AUTO-generati: di agenti e call center (Luca 28/08). MA nel modale di
+       creazione chi non è call center è bloccato proprio su quel tipo, e a DB
+       tutti gli auto-generati di oggi sono di persone di negozio: togliergli
+       il chip significa che, accendendone un altro, i LORO appuntamenti
+       spariscono senza poterli riaccendere. Quindi lo vede anche chi ne ha
+       nel proprio perimetro — la stessa regola dei filtri negozio/consulente,
+       che compaiono quando c'è qualcosa da filtrare. */
     const canCreateMeeting = seesAllStores(user?.role) || seesWholeStore(user?.role);
 
     const isDateBlocked = (dateStr: string) =>
@@ -1050,6 +1069,7 @@ export default function Calendario() {
     //    appuntamenti visibili di più negozi. Consulente: vista "tutti" o
     //    platea reale con più persone (es. direttore CC coi caller).
     //    "Fissato da" resta della sola vista "tutti" (ma ora multi anche lui).
+    const vedeAuto = vedeOutbound || appointments.some((a) => a.type === "self_generated" && visibileBase(a));
     const mostraFiltroNegozio = isCallCenter || mieiNegozi.length > 1 || negoziMiei.length > 1;
     const mostraFiltroConsulente = isCallCenter || agentiMiei.length > 1;
     const puoFiltrareCal = mostraFiltroNegozio || mostraFiltroConsulente;
@@ -1130,8 +1150,16 @@ export default function Calendario() {
             // task di negozio → il suo negozio; task personale → quello di chi
             // l'ha ricevuta. Se di quella persona non sappiamo il negozio, la
             // task NON è di quelli che sto guardando: fuori.
-            const dove = t.assignedToStore || negozioDi(t.assignedTo);
-            if (!matchNegozi(dove, filterStores)) return false;
+            // ⚠️ ECCEZIONE: le task assegnate A ME restano sempre (revisore
+            // 28/08). Sei persone in azienda non hanno un negozio in scheda —
+            // fra cui Luca e i direttori generali — e filtrando un punto
+            // vendita si vedevano sparire le proprie cose da fare, contatore
+            // delle arretrate compreso.
+            const mia = !t.assignedToStore && nomeUguale(t.assignedTo, user?.name);
+            if (!mia) {
+                const dove = t.assignedToStore || negozioDi(t.assignedTo);
+                if (!matchNegozi(dove, filterStores)) return false;
+            }
         }
         return true;
     };
@@ -1830,7 +1858,9 @@ export default function Calendario() {
         const rs = String(cliente.ragione_sociale || "").trim().toLowerCase();
         const nc = `${cliente.nome || ""} ${cliente.cognome || ""}`.trim().toLowerCase();
         const cn = `${cliente.cognome || ""} ${cliente.nome || ""}`.trim().toLowerCase();
-        return { cf, cell: cell.length >= 6 ? cell.slice(-9) : "", nomi: [nome, rs, nc, cn].filter((x) => x.length > 3) };
+        // nomi corti («GIFT», «ALEPH») pescavano qualsiasi nota che li
+        // contenesse: servono almeno 5 lettere e il confine di parola
+        return { cf, cell: cell.length >= 6 ? cell.slice(-9) : "", nomi: [nome, rs, nc, cn].filter((x) => x.length >= 5) };
     }, [cliente]);
     const testoTocca = (...campi: (string | undefined | null)[]) => {
         if (!segniCliente) return false;
@@ -1838,7 +1868,8 @@ export default function Calendario() {
         if (!testo) return false;
         if (segniCliente.cf && testo.includes(segniCliente.cf)) return true;
         if (segniCliente.cell && testo.replace(/\D/g, "").includes(segniCliente.cell)) return true;
-        return segniCliente.nomi.some((n) => testo.includes(n));
+        const fuga = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return segniCliente.nomi.some((n) => new RegExp(`(^|[^\\p{L}\\p{N}])${fuga(n)}([^\\p{L}\\p{N}]|$)`, "iu").test(testo));
     };
     // MOD-26 (Luca 10/08): ricerca UNIFICATA — un solo campo che matcha nome,
     // CF/P.IVA o cellulare (via i tre campi separati del vecchio pannello).
@@ -2517,9 +2548,9 @@ export default function Calendario() {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_310px] gap-6">
                 {/* Calendar Grid */}
-                <div className="lg:col-span-2 glass-card p-6">
+                <div className="glass-card p-6 min-w-0">
                     {/* Navigazione + selettore vista Mese/Settimana */}
                     <div className="flex items-center justify-between mb-6 gap-3">
                         <button
@@ -2556,7 +2587,7 @@ export default function Calendario() {
                             (Luca 04/08, superato il "volutamente discreto" del 31/07).
                             ATTENZIONE semantica: qui lo stato e' mostraDomenica
                             (true = mostra), la pill e' accesa quando e' NASCOSTA. */}
-                        {calView === "week" && (
+                        {(calView === "week" || calView === "tre") && (
                             <button onClick={() => setMostraDomenica(v => !v)}
                                 title="La domenica i negozi sono chiusi: nascondendola le colonne respirano"
                                 className={cn("shrink-0 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-colors",
@@ -2887,7 +2918,16 @@ export default function Calendario() {
                                 {(senzaOra.length > 0 || arretrateOggi.length > 0) && (
                                     <div className="mb-3 flex flex-wrap gap-1.5 items-center">
                                         <span className="text-[10px] uppercase tracking-wider text-slate-500">Tutto il giorno:</span>
-                                        {arretrateOggi.map(t => (
+                                        {/* anche qui partono chiuse (Luca 28/08): un chip
+                                            solo che dice quante sono e le apre */}
+                                        {arretrateOggi.length > 0 && !arretrateAperte && (
+                                            <button onClick={() => setArretrateAperte(true)}
+                                                title="Mostra le task arretrate"
+                                                className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-500/15 text-[11px] font-bold text-amber-200 hover:bg-amber-500/25 flex items-center gap-1">
+                                                <ChevronDown className="w-3 h-3" /> ⏰ Arretrate ({arretrateOggi.length})
+                                            </button>
+                                        )}
+                                        {arretrateAperte && arretrateOggi.map(t => (
                                             <button key={`arr-${t.id}`} onClick={() => setTaskDettaglio(t)}
                                                 title={`Task arretrata del ${ggMm(t.date)} — apri il dettaglio`}
                                                 className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-500/15 text-[11px] text-amber-200 hover:bg-amber-500/25">
