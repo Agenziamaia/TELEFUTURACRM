@@ -90,7 +90,12 @@ function GareInner() {
     return (
         <div className="space-y-6">
             <ToastHost />
-            {/* Header */}
+            {/* Header — SALTATO sulla Direzione Inserimento (Luca 28/08 sera):
+                «tanto lo so dove sono, e per tornare indietro uso la freccia
+                generale in alto a sinistra». Titolo e descrizione occupavano
+                una fascia intera sopra una schermata che si guarda tutto il
+                giorno: quello spazio va al contenuto. */}
+            {gestione?.id !== "direzione" && (
             <div>
                 {(brand || gestione) && (
                     <button onClick={() => go()} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors mb-1">
@@ -123,6 +128,7 @@ function GareInner() {
                             : "Gli operatori (condizioni azienda e gara dei ragazzi), i target, gli obiettivi Home e la direzione inserimento."}
                 </p>
             </div>
+            )}
 
             {gestione ? (
                 gestione.id === "target" ? <TargetSection />
