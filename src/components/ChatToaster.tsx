@@ -4,7 +4,8 @@
 // messaggio, con stile diverso per fonte — chat interna (indaco), WhatsApp
 // (verde), mail in stile "spettro": semi-trasparente e discreta, perché meno
 // urgente delle altre due (e sparisce prima). Clic → si apre la conversazione.
-// WhatsApp e mail notificano SOLO il proprietario dell'istanza/casella.
+// WhatsApp e mail notificano SOLO il proprietario dell'istanza/casella; i
+// numeri di punto vendita suonano a chi ci lavora, mai a chi vede tutto.
 // NB: wa_messages ed email_messages devono stare nella publication realtime
 // (mig. 111) — senza, chat continua a funzionare e le altre due tacciono.
 import { useEffect, useState } from "react";
@@ -13,6 +14,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { markDelivered } from "@/lib/chat";
 import { useAuth } from "@/context/AuthContext";
 import { seesAllStores } from "@/lib/roles";
+import { matchNegozi } from "@/lib/visibleStores";
 import { MessageSquare, Mail, X } from "lucide-react";
 
 type Fonte = "chat" | "wa" | "mail";
@@ -73,8 +75,19 @@ export function ChatToaster() {
                 const { data: conv } = await supabase.from("wa_conversations")
                     .select("customer_name, customer_number, instance_id").eq("id", m.conversation_id).maybeSingle();
                 if (!conv) return;
-                const { data: inst } = await supabase.from("wa_instances").select("owner_user_id").eq("id", conv.instance_id).maybeSingle();
-                if (inst?.owner_user_id && inst.owner_user_id !== user.id) return;
+                const { data: inst } = await supabase.from("wa_instances").select("owner_user_id, negozio").eq("id", conv.instance_id).maybeSingle();
+                /* I NUMERI DEI PUNTI VENDITA non hanno un titolare, e la vecchia
+                   guardia (`owner && owner !== me`) li lasciava passare a
+                   CHIUNQUE: chi vede tutte le chat — dall'amministrativo in su —
+                   riceveva il toast di ogni negozio (Luca 28/08). Come per le
+                   mail: a chi vede tutto arrivano solo i suoi numeri personali;
+                   il numero del negozio suona a chi in quel negozio ci lavora. */
+                if (inst?.owner_user_id) {
+                    if (inst.owner_user_id !== user.id) return;
+                } else {
+                    if (seesAllStores(user.role)) return;
+                    if (!matchNegozi(inst?.negozio, [user.negozio || ""])) return;
+                }
                 if (inChat()) return;
                 aggiungi({
                     id: `wa-${m.id}`, fonte: "wa",
