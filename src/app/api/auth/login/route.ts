@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { firmaSessione, SESSIONE_COOKIE, SESSIONE_GIORNI } from "@/lib/sessioneServer";
 import { supabase } from "@/lib/supabaseClient";
 import { cifraSegreto, decifraSegreto, generaSegreto, otpauthUri, verificaCodice } from "@/lib/totp";
 import QRCode from "qrcode";
@@ -17,6 +18,14 @@ export const dynamic = "force-dynamic";
 //   { stage:"change", email }              -> primo accesso: cambio password
 //   { stage:"totp", email, error? }        -> inserire il codice
 //   { stage:"enroll", email, otpauth, qr } -> scansionare il QR + codice
+// risposta autenticata + cookie di sessione firmato (Blindatura fase A)
+function okConSessione(row: { id: string; role?: string | null }) {
+    const res = NextResponse.json({ ok: true, user: row });
+    res.cookies.set(SESSIONE_COOKIE, firmaSessione({ id: String(row.id), role: String(row.role || ""), exp: Date.now() + SESSIONE_GIORNI * 864e5 }),
+        { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: SESSIONE_GIORNI * 86400 });
+    return res;
+}
+
 export async function POST(request: Request) {
     try {
         const { email, password, code, enrolling } = await request.json();
@@ -67,7 +76,7 @@ export async function POST(request: Request) {
 
         if (!enabled) {
             // chi non e' (ancora) obbligato entra senza 2FA
-            if (!required2fa) return NextResponse.json({ ok: true, user: row });
+            if (!required2fa) return okConSessione(row);
             // ── ISCRIZIONE OBBLIGATORIA ──
             if (!code || !enrolling) {
                 // genera un nuovo segreto, lo salva cifrato (non ancora attivo) e manda il QR
@@ -86,7 +95,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ stage: "enroll", email: row.email, otpauth: uri, qr, error: "Codice non valido, riprova." });
             }
             await supabase.from("app_users").update({ totp_enabled: true }).eq("id", row.id);
-            return NextResponse.json({ ok: true, user: row });
+            return okConSessione(row);
         }
 
         // ── 2FA GIA' ATTIVA: serve il codice ──
@@ -94,7 +103,7 @@ export async function POST(request: Request) {
         let secret = "";
         try { secret = sec?.totp_secret ? decifraSegreto(sec.totp_secret) : ""; } catch { secret = ""; }
         if (!secret || !verificaCodice(code, secret)) return NextResponse.json({ stage: "totp", email: row.email, error: "Codice non valido." });
-        return NextResponse.json({ ok: true, user: row });
+        return okConSessione(row);
     } catch (e) {
         return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Errore interno" }, { status: 500 });
     }

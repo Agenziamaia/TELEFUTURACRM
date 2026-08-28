@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabase } from "@/lib/supabaseClient";
 import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoContatti, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
@@ -62,6 +63,12 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA fase A (28/08): senza sessione firmata non si passa
+    {
+        const sess = richiedeSessione(request);
+        if (!sess) return rispostaSessioneNonValida();
+    }
+
     try {
         const b = await request.json();
         const action = b?.action;

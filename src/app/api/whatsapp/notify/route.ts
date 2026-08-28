@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabase } from "@/lib/supabaseClient";
 import { inviaTesto } from "@/lib/evolution";
 import { trovaOCreaConversazione } from "@/lib/waConversazioni";
@@ -15,6 +16,12 @@ export const dynamic = "force-dynamic";
  * chiamante senza far fallire il flusso che l'ha invocata.
  */
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA fase A (28/08): senza sessione firmata non si passa
+    {
+        const sess = richiedeSessione(request);
+        if (!sess) return rispostaSessioneNonValida();
+    }
+
     try {
         const { number, text } = await request.json();
         const dig = String(number || "").replace(/\D/g, "");
