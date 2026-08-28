@@ -1607,7 +1607,8 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
 
 Da questo momento in TUTTO il gestionale (vendite, ferie, storici, comunicazioni…) esisterà solo "${a}". Il nome attuale resterà visibile SOLO all'amministrazione, in questa scheda.`)) return;
         setAliasBusy(true);
-        const { data, error } = await supabase.rpc("applica_alias", { p_user_id: u.id, p_alias: a });
+        const _r = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "alias", userId: u.id, alias: a }) }).then((r) => r.json());
+        const data = _r?.ok ? "ok" : null, error = _r?.error ? { message: _r.error } : null;
         setAliasBusy(false);
         if (error) { alert("Alias NON applicato: " + error.message); return; }
         const toccate = data && typeof data === "object" ? Object.entries(data as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`).join("\n") : "";
@@ -1638,7 +1639,8 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
         setResetting(true);
         // Hash lato DB (pgcrypto) + must_change_password=true: la password reale non viene
         // mai salvata in chiaro. 'np' resta visibile all'admin solo ora, per comunicarla.
-        const { data, error } = await supabase.rpc("admin_set_password", { p_user_id: u.id, p_new: np });
+        const _r2 = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "reset_password", userId: u.id, nuova: np }) }).then((r) => r.json());
+        const data = _r2?.ok === true, error = _r2?.error ? { message: _r2.error } : null;
         setResetting(false);
         if (!error && data === true) {
             setPw(np);

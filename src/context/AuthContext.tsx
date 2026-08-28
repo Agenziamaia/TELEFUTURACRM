@@ -272,11 +272,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const completeFirstLogin = async (email: string, oldPw: string, newPw: string): Promise<LoginResult> => {
-        const { data, error } = await supabase.rpc("change_password", {
-            p_email: email.trim(),
-            p_old: oldPw,
-            p_new: newPw,
-        });
+        const _r = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "cambia_password", vecchia: oldPw, nuova: newPw }) }).then((r) => r.json());
+        const data = _r?.ok === true, error = _r?.error ? { message: _r.error } : null;
         if (error) return { ok: false, error: error.message };
         if (data !== true) return { ok: false, error: "Password attuale non valida" };
         // Cambiata la password, si passa dal normale flusso di login: cosi' scatta

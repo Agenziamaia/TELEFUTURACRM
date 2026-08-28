@@ -191,9 +191,8 @@ export default function ProfiloPage() {
         if (pwNuova.length < 8) { setMsg("⚠ La nuova password deve avere almeno 8 caratteri."); return; }
         if (pwNuova !== pwConferma) { setMsg("⚠ La conferma non coincide con la nuova password."); return; }
         setPwBusy(true);
-        const { data, error } = await supabase.rpc("change_password", {
-            p_email: (user?.email || riga?.email || "").trim(), p_old: pwVecchia, p_new: pwNuova,
-        });
+        const _r = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "cambia_password", vecchia: pwVecchia, nuova: pwNuova }) }).then((r) => r.json());
+        const data = _r?.ok === true, error = _r?.error ? { message: _r.error } : null;
         setPwBusy(false);
         if (error) { setMsg("⚠ Cambio password non riuscito: " + error.message); return; }
         if (data !== true) { setMsg("⚠ Password attuale non valida."); return; }
