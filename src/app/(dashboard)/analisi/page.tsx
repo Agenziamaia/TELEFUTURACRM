@@ -620,17 +620,22 @@ function AnalisiInner() {
             return d > 0 ? { v: Math.round(d * 100) / 100, fonte: "direzione" } : null;
         };
         const s4Righe = (dati?.altri || []).filter((r) => trkBrandKey(r.brand) === "s4");
-        // IL TABELLARE DELLA RETE È QUELLO AZIENDA, per tutti i brand.
-        // Prima W3/VF/Sky leggevano il lato RAGAZZI e Fastweb l'azienda: la
-        // stessa rete usciva con punti e soglie diversi da quelli del Master
-        // (VF mobile S3 contro S4, Sky S3 contro S5, W3 Luce&Gas sotto la S1
-        // contro S1 presa). Due sezioni non possono dire due verità sulla
-        // stessa produzione: la lettera dell'azienda è quella della rete, ed è
-        // già quella che usa il Master.
+        // IL TABELLARE DELLA RETE È QUELLO DEI RAGAZZI (Luca 28/08: «qui in Rete
+        // ci devono essere i target ragazzi, non ti sbagliare»). Era già la
+        // regola del primo dettato della sezione: «sono i numeri della rete a
+        // determinare le soglie per tutti — almeno, questo è quello che loro
+        // sanno, ed è come è impostata la gara dei ragazzi». La Rete la vedono
+        // tutti, e deve parlare la lingua delle soglie che loro conoscono; i
+        // numeri della lettera azienda restano il mestiere del Master.
+        // Come effetto: le piste che l'azienda tiene per sé (Extra Gara P.IVA,
+        // Bonus Completezza di Vodafone) non compaiono, perché il tabellare
+        // ragazzi non le ha — ed è giusto così.
+        // Fastweb resta l'eccezione: un lato ragazzi non ce l'ha proprio (zero
+        // piste), quindi la sua unica fonte è la lettera T2.
         const conf = [
-            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: dati?.aw3 || null, rows: righeGara.w3 },
-            { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: dati?.avf || null, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
-            { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: dati?.asky || null, rows: righeGara.sky },
+            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: righeGara.tw3, rows: righeGara.w3 },
+            { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
+            { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: righeGara.tsky, rows: righeGara.sky },
             // FASTWEB (Luca 28/08: «su Fastweb continui a non contarmi, hai
             // fatto lo stesso errore sul Master»). Fastweb NON ha un lato
             // ragazzi: per agosto ha zero piste. Il suo tabellare vero è la

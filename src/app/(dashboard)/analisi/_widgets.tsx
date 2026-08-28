@@ -1973,22 +1973,11 @@ function BloccoBrandRete({ ctx, brand }) {
                     const spaiata = righe > 1 && i === col * (righe - 1);
                     return (
                         <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)}
-                            title={`${nome(x)} — clicca per portare qui sotto il dettaglio sulla scala ${x.unit === "pz" ? "dei pezzi" : "dei punti"}`}>
+                            title={nome(x)}>
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} soglie={x.scala}
                                 target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
                                 colore={b.colore} unit={x.unit} parti={x.parti?.length ? x.parti : null}
-                                tip={<div>
-                                    <TipTitolo>{b.label} · {nome(x)}</TipTitolo>
-                                    <TipRiga l={x.unit === "pz" ? "pezzi rete" : "punti rete"} r={x.unit === "pz" ? fmtN(x.punti) : fmtPt(x.punti)} colore={b.colore} />
-                                    {x.proiezione != null && <TipRiga l="🔮 di questo passo" r={x.unit === "pz" ? fmtN(x.proiezione) : fmtPt(x.proiezione)} />}
-                                    {x.unit !== "pz" && <TipRiga l="pezzi in pista" r={fmtN(x.pezzi)} />}
-                                    {conQuota && <TipRiga l="il mio punto vendita" r={`${x.unit === "pz" ? fmtN(x.mio) : fmtPt(x.mio)} · ${fmtN(x.punti > 0 ? (x.mio / x.punti) * 100 : 0, 1)}%`} />}
-                                    {x.target && <TipRiga l={x.target.fonte === "pannello" ? "🎯 target di rete" : "🎯 target direzione (sfrido incluso)"} r={fmtN(x.target.v)} colore="#34d399" />}
-                                    {(x.parti || []).map((q) => <TipRiga key={q.label} l={q.label} r={`${fmtN(q.v)} pz`} colore={q.colore} />)}
-                                    {x.scala.map((sg) => <TipRiga key={sg.tier} l={`Soglia ${sg.tier}`} r={`da ${fmtN(sg.soglia_da)}${x.punti >= sg.soglia_da ? " ✓" : ""}`} />)}
-                                    {x.gate && <TipRiga l="⛔ blocco" r={x.gate} colore="#fbbf24" />}
-                                </div>}
                             />
                             {/* il piede si accende a scalini: etichetta, poi lo stato,
                                 poi il target, poi quanto manca — ognuno solo se lo
