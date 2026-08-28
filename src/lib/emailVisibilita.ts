@@ -22,6 +22,8 @@ export type CasellaVisibile = {
     id: string;
     owner_user_id?: string | null;
     negozio?: string | null;
+    /** casella di SERVIZIO (codici usa e getta): non è la posta di nessuno */
+    uso_sistema?: boolean | null;
 };
 
 export function emailCaselleVisibili<T extends CasellaVisibile>(
@@ -31,8 +33,14 @@ export function emailCaselleVisibili<T extends CasellaVisibile>(
     myStores: string[],
     membroDi: Set<string>,
 ): T[] {
-    if (seesAllStores(role)) return caselle;
-    return caselle.filter((a) =>
+    // LE CASELLE DI SERVIZIO NON SONO POSTA (Luca 28/08 sera): esistono solo
+    // perché ci arrivano i codici di Fastweb, e si governano dal pannello
+    // Amministrazione → Email. Fuori da qui — inbox, chat omnicanale,
+    // contatori — non devono comparire a nessuno, admin compreso: nessuno le
+    // «legge», il CRM ci pesca dentro un numero alla volta su richiesta.
+    const poste = caselle.filter((a) => !a.uso_sistema);
+    if (seesAllStores(role)) return poste;
+    return poste.filter((a) =>
         a.owner_user_id === userId
         || membroDi.has(a.id)
         || (!a.owner_user_id && matchNegozi(a.negozio, myStores)));

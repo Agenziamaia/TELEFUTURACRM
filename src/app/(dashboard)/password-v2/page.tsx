@@ -9,7 +9,9 @@ import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav"
 import { capAllowed, CAP_PASSWORD, CAP_PASSWORD_MODIFICA, CAP_PASSWORD_STORICO } from "@/lib/capabilities";
 import { useStoreRecords } from "@/lib/org";
 import { supabase } from "@/lib/supabaseClient";
-import { Plus, Pencil, Trash2, Save } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, KeyRound } from "lucide-react";
+// tendine: mai <select> di sistema, sempre i componenti del CRM
+import { SelectOpzioni } from "@/components/SelectPersona";
 
 type BrandId = "windtre" | "vodafone" | "tim" | "sky" | "fastweb" | "energia" | "iliad" | "kena" | "ho" | "kipoint";
 
@@ -86,6 +88,10 @@ type Credential = {
     username: string;
     passwordMasked: string;
     passwordReal?: string;
+    // CODICE USA E GETTA (28/08): se questa utenza ha una casella collegata,
+    // in tabella compare il pulsante per farsi consegnare il codice
+    otpAccountId?: string | null;
+    otpProfilo?: string | null;
 };
 
 export default function PasswordV2Page() {
@@ -157,24 +163,75 @@ export default function PasswordV2Page() {
         fetchCats();
     };
 
+    /* ── IL CODICE USA E GETTA (Luca 28/08 sera) ──────────────────────────
+       Fastweb, dopo utente e password, manda un codice via mail a una casella
+       che il collaboratore non ha (e non deve avere: lì dentro c'è altro).
+       Preme il pulsante, il CRM va a leggerlo e glielo mette davanti per un
+       minuto. Il codice non resta da nessuna parte: né qui né nel database. */
+    const [otpAperto, setOtpAperto] = useState<Record<number, { codice: string; scadeA: number }>>({});
+    const [otpInCorso, setOtpInCorso] = useState<number | null>(null);
+    const [otpMsg, setOtpMsg] = useState<Record<number, string>>({});
+    const [adesso, setAdesso] = useState(Date.now());
+    useEffect(() => {
+        // il contatore gira solo mentre c'è davvero un codice a schermo
+        if (!Object.keys(otpAperto).length) return;
+        const t = setInterval(() => setAdesso(Date.now()), 250);
+        return () => clearInterval(t);
+    }, [otpAperto]);
+    useEffect(() => {
+        // scaduto: sparisce da solo, senza che nessuno debba chiudere niente
+        const vivi = Object.entries(otpAperto).filter(([, v]) => v.scadeA > adesso);
+        if (vivi.length !== Object.keys(otpAperto).length) {
+            setOtpAperto(Object.fromEntries(vivi));
+        }
+    }, [adesso, otpAperto]);
+
+    const chiediCodice = async (c: Credential) => {
+        setOtpInCorso(c.id);
+        setOtpMsg((m) => ({ ...m, [c.id]: "" }));
+        try {
+            const r = await fetch(`/api/passwords/credentials/${c.id}/otp`, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+            }).then((x) => x.json()).catch(() => ({ error: "Connessione non riuscita" }));
+            if (r?.codice) {
+                setOtpAperto((m) => ({ ...m, [c.id]: { codice: String(r.codice), scadeA: Date.now() + (Number(r.secondi) || 60) * 1000 } }));
+                setAdesso(Date.now());
+            } else {
+                setOtpMsg((m) => ({ ...m, [c.id]: String(r?.error || "Codice non trovato") }));
+            }
+        } finally { setOtpInCorso(null); }
+    };
+
     // Gestione credenziali (creazione/modifica/eliminazione).
-    const [credForm, setCredForm] = useState<{ id: number | null; accessType: string; username: string; password: string } | null>(null);
+    const [credForm, setCredForm] = useState<{ id: number | null; accessType: string; username: string; password: string; otpAccountId?: string; otpProfilo?: string } | null>(null);
     const [savingCred, setSavingCred] = useState(false);
+    // caselle e formati disponibili per agganciare il codice (solo a chi gestisce)
+    const [otpCaselle, setOtpCaselle] = useState<{ id: string; email: string; nome: string | null; sistema: boolean }[]>([]);
+    const [otpProfili, setOtpProfili] = useState<{ id: string; nome: string; descrizione: string }[]>([]);
+    useEffect(() => {
+        if (!canManage) return;
+        fetch("/api/passwords/caselle", { cache: "no-store" }).then((r) => r.json()).then((j) => {
+            if (j?.caselle) setOtpCaselle(j.caselle);
+            if (j?.profili) setOtpProfili(j.profili);
+        }).catch(() => { /* il form funziona lo stesso, senza le tendine */ });
+    }, [canManage]);
+
     const saveCred = async () => {
         if (!credForm || !brand || !category || !store) return;
         if (!credForm.accessType.trim() || !credForm.username.trim() || (credForm.id === null && !credForm.password)) return;
         setSavingCred(true);
         try {
             // SEC-02: userId nel body per lo storico (pattern email/send).
+            const otp = { otpAccountId: credForm.otpAccountId || null, otpProfilo: credForm.otpProfilo || null };
             if (credForm.id === null) {
                 await fetch(`/api/passwords/credentials`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ brandId: brand, categoryId: category, storeId: store, accessType: credForm.accessType, username: credForm.username, password: credForm.password, userId: user?.id }),
+                    body: JSON.stringify({ brandId: brand, categoryId: category, storeId: store, accessType: credForm.accessType, username: credForm.username, password: credForm.password, userId: user?.id, ...otp }),
                 });
             } else {
                 await fetch(`/api/passwords/credentials/${credForm.id}`, {
                     method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ accessType: credForm.accessType, username: credForm.username, password: credForm.password, userId: user?.id }),
+                    body: JSON.stringify({ accessType: credForm.accessType, username: credForm.username, password: credForm.password, userId: user?.id, ...otp }),
                 });
             }
             setCredForm(null);
@@ -569,6 +626,43 @@ export default function PasswordV2Page() {
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Password {credForm.id !== null && <span className="text-slate-500 normal-case">(vuota = invariata)</span>}</label>
                                         <input value={credForm.password} onChange={(e) => setCredForm({ ...credForm, password: e.target.value })} placeholder={credForm.id === null ? "password" : "••••••"} className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-indigo-500" />
                                     </div>
+                                    {/* CODICE USA E GETTA (28/08): dove arriva e com'è scritto.
+                                        Le caselle dei codici si aggiungono in Amministrazione → Email. */}
+                                    <div className="sm:col-span-3 border-t border-white/10 pt-3 mt-1">
+                                        <div className="text-[10px] font-bold text-amber-300/90 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                            <KeyRound className="w-3 h-3" /> Codice usa e getta (facoltativo)
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Il codice arriva su</label>
+                                                <SelectOpzioni
+                                                    value={otpCaselle.find((x) => x.id === credForm.otpAccountId)?.email || ""}
+                                                    onChange={(v) => setCredForm({ ...credForm, otpAccountId: otpCaselle.find((x) => x.email === v)?.id || "" })}
+                                                    opzioni={otpCaselle.map((x) => x.email)}
+                                                    placeholder="nessuna casella — niente codice"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Formato della mail</label>
+                                                <SelectOpzioni
+                                                    value={otpProfili.find((p) => p.id === credForm.otpProfilo)?.nome || ""}
+                                                    onChange={(v) => setCredForm({ ...credForm, otpProfilo: otpProfili.find((p) => p.nome === v)?.id || "" })}
+                                                    opzioni={otpProfili.map((p) => p.nome)}
+                                                    placeholder="come riconoscere il numero"
+                                                />
+                                            </div>
+                                        </div>
+                                        {credForm.otpProfilo && (
+                                            <p className="text-[10px] text-slate-500 mt-1.5">
+                                                {otpProfili.find((p) => p.id === credForm.otpProfilo)?.descrizione}
+                                            </p>
+                                        )}
+                                        {!otpCaselle.length && (
+                                            <p className="text-[10px] text-slate-500 mt-1.5">
+                                                Nessuna casella collegata: aggiungile in <b className="text-slate-400">Amministrazione → Email → Caselle dei codici</b>.
+                                            </p>
+                                        )}
+                                    </div>
                                     <div className="sm:col-span-3 flex gap-2 justify-end">
                                         <button onClick={() => setCredForm(null)} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold">Annulla</button>
                                         <button onClick={saveCred} disabled={savingCred} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold">
@@ -585,13 +679,16 @@ export default function PasswordV2Page() {
                                         <th className="px-4 py-2 text-left">Tipo di accesso</th>
                                         <th className="px-4 py-2 text-left">Username</th>
                                         <th className="px-4 py-2 text-left text-right">Password</th>
+                                        {/* CODICE USA E GETTA (28/08): la colonna c'è solo se in questa
+                                            schermata almeno un'utenza ha la casella collegata */}
+                                        {credentials.some((c) => c.otpAccountId) && <th className="px-4 py-2 text-center">Codice</th>}
                                         {canManage && <th className="px-4 py-2 text-right">Azioni</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td className="px-4 py-20 text-center" colSpan={canManage ? 4 : 3}>
+                                            <td className="px-4 py-20 text-center" colSpan={3 + (credentials.some((x) => x.otpAccountId) ? 1 : 0) + (canManage ? 1 : 0)}>
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                                                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Caricamento credenziali...</p>
@@ -600,7 +697,7 @@ export default function PasswordV2Page() {
                                         </tr>
                                     ) : credentials.length === 0 ? (
                                         <tr>
-                                            <td className="px-4 py-12 text-center text-slate-500" colSpan={canManage ? 4 : 3}>
+                                            <td className="px-4 py-12 text-center text-slate-500" colSpan={3 + (credentials.some((x) => x.otpAccountId) ? 1 : 0) + (canManage ? 1 : 0)}>
                                                 Nessuna credenziale configurata per questa combinazione.
                                             </td>
                                         </tr>
@@ -667,10 +764,46 @@ export default function PasswordV2Page() {
                                                             </div>
                                                         </div>
                                                     </td>
+                                                    {credentials.some((x) => x.otpAccountId) && (
+                                                        <td className="px-4 py-3 align-middle">
+                                                            {!c.otpAccountId ? (
+                                                                <div className="text-center text-slate-700 text-xs">—</div>
+                                                            ) : otpAperto[c.id] ? (
+                                                                <CodiceAperto
+                                                                    codice={otpAperto[c.id].codice}
+                                                                    restano={Math.max(0, Math.ceil((otpAperto[c.id].scadeA - adesso) / 1000))}
+                                                                    onCopia={() => handleCopy(c.id, otpAperto[c.id].codice)}
+                                                                    copiato={copiedId === c.id}
+                                                                />
+                                                            ) : (
+                                                                <div className="flex flex-col items-center gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => chiediCodice(c)}
+                                                                        disabled={otpInCorso === c.id}
+                                                                        className={cn(
+                                                                            "px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1.5",
+                                                                            otpInCorso === c.id
+                                                                                ? "bg-white/5 border-white/10 text-slate-500"
+                                                                                : "bg-amber-500/15 border-amber-400/40 text-amber-200 hover:bg-amber-500/25 hover:-translate-y-px active:scale-95",
+                                                                        )}
+                                                                        title="Vai a prendere il codice appena arrivato via email"
+                                                                    >
+                                                                        {otpInCorso === c.id
+                                                                            ? <><Loader2 className="w-3 h-3 animate-spin" /> Cerco…</>
+                                                                            : <><KeyRound className="w-3 h-3" /> Chiedi il codice</>}
+                                                                    </button>
+                                                                    {otpMsg[c.id] && (
+                                                                        <span className="text-[10px] text-amber-300/80 max-w-[210px] text-center leading-snug">{otpMsg[c.id]}</span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    )}
                                                     {canManage && (
                                                         <td className="px-4 py-3">
                                                             <div className="flex items-center gap-1 justify-end">
-                                                                <button type="button" title="Modifica" onClick={() => setCredForm({ id: c.id, accessType: c.accessType, username: c.username, password: "" })} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Pencil className="w-3.5 h-3.5" /></button>
+                                                                <button type="button" title="Modifica" onClick={() => setCredForm({ id: c.id, accessType: c.accessType, username: c.username, password: "", otpAccountId: c.otpAccountId || "", otpProfilo: c.otpProfilo || "" })} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Pencil className="w-3.5 h-3.5" /></button>
                                                                 <button type="button" title="Elimina" onClick={() => deleteCred(c.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
                                                             </div>
                                                         </td>
@@ -741,6 +874,43 @@ export default function PasswordV2Page() {
                     </p>
                 </div>
             </div>
+        </div>
+    );
+}
+
+/* IL CODICE, MENTRE È VALIDO (Luca 28/08 sera).
+   Grande abbastanza da leggerlo mentre lo si digita sul portale, con il tempo
+   che scorre davanti: quando finisce sparisce da solo. Nessuno deve chiudere
+   niente, e non resta un codice vecchio a schermo da copiare per sbaglio. */
+function CodiceAperto({ codice, restano, onCopia, copiato }: { codice: string; restano: number; onCopia: () => void; copiato: boolean }) {
+    const quasi = restano <= 10;
+    return (
+        <div className="flex flex-col items-center gap-1">
+            <button
+                type="button"
+                onClick={onCopia}
+                title="Copia il codice"
+                className={cn(
+                    "px-3 py-1.5 rounded-xl border font-mono font-black tracking-[0.25em] text-lg transition-all",
+                    quasi
+                        ? "bg-rose-500/15 border-rose-400/50 text-rose-200"
+                        : "bg-emerald-500/15 border-emerald-400/50 text-emerald-200 hover:bg-emerald-500/25",
+                )}
+            >
+                {codice}
+            </button>
+            <div className="flex items-center gap-1.5">
+                <div className="h-1 w-16 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                        className={cn("h-full rounded-full transition-all duration-300", quasi ? "bg-rose-400" : "bg-emerald-400")}
+                        style={{ width: `${Math.max(0, Math.min(100, (restano / 60) * 100))}%` }}
+                    />
+                </div>
+                <span className={cn("text-[10px] font-bold tabular-nums", quasi ? "text-rose-300" : "text-slate-400")}>
+                    {restano}s
+                </span>
+            </div>
+            <span className="text-[10px] text-slate-500">{copiato ? "copiato ✓" : "clicca per copiare"}</span>
         </div>
     );
 }

@@ -34,6 +34,13 @@ const PRESET: Record<string, { imap_host: string; imap_port: number; smtp_host: 
     "googlemail.com": { imap_host: "imap.gmail.com", imap_port: 993, smtp_host: "smtp.gmail.com", smtp_port: 587 },
     "outlook.com": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
     "hotmail.com": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
+    // Microsoft ha anche i domini italiani: senza queste righe finivano nella
+    // convenzione «mail.<dominio>» e la connessione non partiva (28/08: la
+    // casella dei codici Fastweb è una @hotmail.it)
+    "hotmail.it": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
+    "outlook.it": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
+    "live.it": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
+    "live.com": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
     "aruba.it": { imap_host: "imaps.aruba.it", imap_port: 993, smtp_host: "smtps.aruba.it", smtp_port: 587 },
     "libero.it": { imap_host: "imapmail.libero.it", imap_port: 993, smtp_host: "smtp.libero.it", smtp_port: 587 },
     "virgilio.it": { imap_host: "in.virgilio.it", imap_port: 993, smtp_host: "out.virgilio.it", smtp_port: 587 },
@@ -74,8 +81,11 @@ function smtpTransport(a: Account) {
     });
 }
 
-/** Verifica login IMAP + SMTP. Lancia con un messaggio leggibile se fallisce. */
-export async function testConnessione(a: Account): Promise<void> {
+/** Verifica login IMAP + SMTP. Lancia con un messaggio leggibile se fallisce.
+ *  `soloLettura`: per le caselle di SERVIZIO (codici usa e getta) da cui non
+ *  spediremo mai nulla — inutile pretendere anche l'invio, e sarebbe l'unico
+ *  motivo per cui il collegamento fallirebbe su certe caselle personali. */
+export async function testConnessione(a: Account, opts?: { soloLettura?: boolean }): Promise<void> {
     const c = imapClient(a);
     try { await c.connect(); await c.logout(); }
     catch (e: any) {
@@ -85,6 +95,7 @@ export async function testConnessione(a: Account): Promise<void> {
             : (e?.responseText || e?.message || String(e));
         throw new Error("IMAP: " + d);
     }
+    if (opts?.soloLettura) return;
     try { await smtpTransport(a).verify(); }
     catch (e: any) {
         const d = /invalid|auth|credential|username|password|5\.7\.8/i.test(String(e?.message || ""))
@@ -348,6 +359,73 @@ export async function appendSuSent(a: Account, raw: Buffer): Promise<boolean> {
  *  UNA volta (MailComposer, con Message-ID nostro) e riusato dal chiamante per
  *  l'APPEND sulla cartella Sent IMAP: la copia in webmail e' identica a quella
  *  spedita. Ritorna messageId + raw. */
+// ── I CODICI USA E GETTA (Luca 28/08 sera) ────────────────────────────
+/* Il collaboratore prova ad accedere, l'operatore manda il codice via mail, e
+   il CRM va a prenderlo — senza che nessuno debba avere in mano la casella.
+   Tutto in UNA connessione: aprirne una per cercare e una per spostare
+   raddoppierebbe l'attesa davanti a chi sta guardando lo schermo.
+
+   Lo spostamento nella cartella dedicata è la richiesta di Luca: tre di queste
+   caselle sono di negozio e i colleghi le aprono tutti i giorni; portando via
+   la mail appena la si vede, il codice non resta lì in chiaro per nessuno. */
+
+export type MailOtp = { uid: number; cartella: string; fromAddr: string; subject: string; text: string; html: string | null; date: Date | null };
+
+export async function cercaESpostaMailOtp(
+    a: Account,
+    opts: { mittenteOk: (from: string) => boolean; cartellaOtp: string; daMinuti?: number; max?: number },
+): Promise<{ trovate: MailOtp[]; spostate: number; errore: string | null }> {
+    const daMinuti = opts.daMinuti ?? 20;
+    const max = opts.max ?? 15;
+    const since = new Date(Date.now() - daMinuti * 60_000);
+    const client = imapClient(a);
+    const trovate: MailOtp[] = [];
+    let spostate = 0;
+    try {
+        await client.connect();
+    } catch (e: unknown) {
+        const err = e as { authenticationFailed?: boolean; responseText?: string; message?: string };
+        return {
+            trovate: [], spostate: 0,
+            errore: err?.authenticationFailed
+                ? "la casella non accetta più la password salvata (per Gmail/Outlook serve una «password per le app»)"
+                : (err?.responseText || err?.message || "connessione alla casella non riuscita"),
+        };
+    }
+    try {
+        // la cartella dei codici va creata la prima volta; se c'è già, l'errore
+        // è atteso e si ignora
+        try { await client.mailboxCreate(opts.cartellaOtp); } catch { /* esiste */ }
+
+        for (const cartella of ["INBOX", opts.cartellaOtp]) {
+            let lock: { release: () => void } | null = null;
+            try { lock = await client.getMailboxLock(cartella); } catch { continue; }
+            try {
+                const trovati = await client.search({ since }, { uid: true });
+                const uids = (Array.isArray(trovati) ? trovati : []).slice(-max);
+                if (!uids.length) continue;
+                const daSpostare: number[] = [];
+                for await (const msg of client.fetch(uids, { uid: true, source: true }, { uid: true })) {
+                    const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
+                    if (!m || !opts.mittenteOk(m.fromAddr)) continue;
+                    trovate.push({ uid: m.uid, cartella, fromAddr: m.fromAddr, subject: m.subject, text: m.text, html: m.html, date: m.date });
+                    if (cartella === "INBOX") daSpostare.push(m.uid);
+                }
+                // via dalla posta del negozio: il codice si prende dal CRM
+                if (cartella === "INBOX" && daSpostare.length) {
+                    try {
+                        await client.messageMove(daSpostare.join(","), opts.cartellaOtp, { uid: true });
+                        spostate = daSpostare.length;
+                    } catch { /* niente permessi di spostamento: il codice si legge lo stesso */ }
+                }
+            } finally { lock?.release(); }
+        }
+    } finally { try { await client.logout(); } catch { /* già chiusa */ } }
+    // la più recente per prima: è quella che l'utente sta aspettando
+    trovate.sort((x, y) => (y.date?.getTime() || 0) - (x.date?.getTime() || 0));
+    return { trovate, spostate, errore: null };
+}
+
 export async function inviaEmail(a: Account, opts: { to: string; subject: string; text?: string; html?: string; inReplyTo?: string | null; attachments?: { filename: string; content: Buffer; contentType?: string }[] }): Promise<{ messageId: string; raw: Buffer }> {
     const dominio = String(a.email_address).split("@")[1] || "crm.local";
     const messageId = `<${crypto.randomBytes(16).toString("hex")}@${dominio}>`;

@@ -22,10 +22,22 @@ export async function GET(request: Request) {
     // a chiunque conoscesse l'indirizzo, senza login. Il varco vale sempre.
     const _g = await accesso(request, "email/account");
     if (!_g.ok) return _g.risposta;
+
+    // CASELLE DI SERVIZIO (28/08): quelle dei codici usa e getta non sono
+    // posta di nessuno e restano fuori dall'elenco. Si chiedono a parte
+    // (?sistema=1) e le vede solo chi governa le caselle — il database non le
+    // consegna nemmeno (tf_mie_caselle), qui si passa dalla chiave
+    // amministratore perché il pannello deve pur poterle gestire.
+    const soloSistema = new URL(request.url).searchParams.get("sistema") === "1";
+    if (soloSistema && !(await eAmministrazione(_g.sess.id))) {
+        return NextResponse.json({ error: "Le caselle di servizio si governano dal pannello Email dell'amministrazione." }, { status: 403 });
+    }
+
     const { data } = await supabase.from("email_accounts")
-        .select("id, negozio, owner_user_id, email_address, display_name, status, last_error, created_at")
+        .select("id, negozio, owner_user_id, email_address, display_name, status, last_error, created_at, uso_sistema")
         .order("created_at", { ascending: false });
-    return NextResponse.json({ accounts: data ?? [] });
+    const tutte = (data ?? []) as { uso_sistema?: boolean | null }[];
+    return NextResponse.json({ accounts: tutte.filter((a) => !!a.uso_sistema === soloSistema) });
 }
 
 // GOVERNANCE (Luca 26/08): le caselle si collegano, ricollegano ed eliminano
@@ -70,6 +82,11 @@ export async function POST(request: Request) {
             const password = String(b.password || "");
             if (!email || !password) return NextResponse.json({ error: "email e password obbligatorie" }, { status: 400 });
             const auto = impostazioniPer(email);
+            // CASELLA DI SERVIZIO (28/08): quella dove arrivano i codici usa e
+            // getta. Non è di nessuno e non è di nessun negozio: non compare in
+            // nessuna Inbox, non si scarica, non si somma nei contatori. Da lei
+            // non spediremo mai niente, quindi non le si chiede l'invio.
+            const usoSistema = b.usoSistema === true;
             const acc = {
                 email_address: email,
                 display_name: b.displayName || null,
@@ -81,8 +98,8 @@ export async function POST(request: Request) {
                 smtp_port: Number(b.smtpPort) || auto.smtp_port,
                 last_uid: 0,
             };
-            // verifica login IMAP + SMTP prima di salvare
-            try { await testConnessione(acc as any); }
+            // verifica login IMAP (+ SMTP se è una casella di posta vera)
+            try { await testConnessione(acc as any, { soloLettura: usoSistema }); }
             catch (e: any) { return NextResponse.json({ error: "Connessione non riuscita — " + (e?.message || e) }, { status: 400 }); }
 
             if (action === "test") return NextResponse.json({ ok: true, settings: auto });
@@ -117,6 +134,7 @@ export async function POST(request: Request) {
                     imap_host: acc.imap_host, imap_port: acc.imap_port,
                     smtp_host: acc.smtp_host, smtp_port: acc.smtp_port,
                     negozio, owner_user_id: b.ownerUserId || null, status: "attiva", last_error: null,
+                    uso_sistema: usoSistema,
                 };
                 if (acc.display_name) upd.display_name = acc.display_name;
                 const { data, error } = await supabase.from("email_accounts")
@@ -132,6 +150,7 @@ export async function POST(request: Request) {
 
             const { data, error } = await supabase.from("email_accounts").insert({
                 ...acc, negozio, owner_user_id: b.ownerUserId || null, status: "attiva",
+                uso_sistema: usoSistema,
             }).select("id, email_address, negozio, display_name, status").single();
             if (error) return NextResponse.json({ error: error.message }, { status: 500 });
             if (Array.isArray(b.extraUserIds)) await syncMembri(data.id);

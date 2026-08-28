@@ -281,6 +281,9 @@ export function EmailAdminView() {
                 <p className="text-[12px] text-slate-500">Sei in sola consultazione: la gestione delle caselle si concede dalla rotellina Permessi → «Pannello Email».</p>
             )}
 
+            {/* CASELLE DI SERVIZIO — dove arrivano i codici usa e getta */}
+            <CaselleDiServizio userId={user?.id} puoGestire={puoUtenti || puoNegozi} />
+
             {/* TUTTE LE CASELLE */}
             <div className="glass-panel rounded-2xl overflow-hidden">
                 <div className="px-4 pt-3 pb-2 text-[11px] uppercase tracking-wider text-slate-400 font-semibold">📬 Caselle collegate <span className="text-slate-600">({caselle == null ? "…" : caselle.filter(inElenco).length})</span></div>
@@ -432,6 +435,99 @@ export function EmailAdminView() {
                 <ConnectModal ownerUserId={modal.ownerUserId} extraUserIds={modal.extraUserIds} negozio={modal.negozio}
                     presetEmail={modal.presetEmail} presetDisplay={modal.presetDisplay} userId={user?.id}
                     onClose={() => { setModal(null); setSelUtenti([]); setSelNegozi([]); setNomeMulti(""); carica(); }} />
+            )}
+        </div>
+    );
+}
+
+/* ── LE CASELLE DEI CODICI (Luca 28/08 sera) ────────────────────────────
+   Fastweb non si accontenta di utente e password: manda un codice via mail, e
+   ogni utenza ha la sua casella. Metterle qui significa che il CRM può andare
+   a prendere il codice per conto del collaboratore, senza dargli in mano la
+   casella — che riceve anche tutto il resto.
+
+   Non sono posta: non compaiono in nessuna Inbox, non si scaricano, non
+   contano nei pallini. Il database non le consegna nemmeno al browser (vedi
+   tf_mie_caselle), perciò questo elenco arriva dal server. */
+function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire: boolean }) {
+    const [righe, setRighe] = useState<Casella[] | null>(null);
+    const [apri, setApri] = useState(false);
+    const [tolgo, setTolgo] = useState<string | null>(null);
+
+    const carica = async () => {
+        try {
+            const r = await fetch("/api/email/account?sistema=1", { cache: "no-store" });
+            const j = await r.json();
+            setRighe(j?.error ? [] : ((j.accounts ?? []) as Casella[]));
+        } catch { setRighe([]); }
+    };
+    useEffect(() => { carica(); }, []);
+
+    const elimina = async (c: Casella) => {
+        if (!confirm(`Scollegare «${c.email_address}»?\n\nLe utenze agganciate a questa casella resteranno senza codice finché non ne colleghi un'altra.`)) return;
+        setTolgo(c.id);
+        const r = await fetch("/api/email/account", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", id: c.id, userId }),
+        }).then((x) => x.json()).catch(() => ({ error: "rete" }));
+        setTolgo(null);
+        if (r?.error) { alert("Non è stato possibile scollegarla: " + r.error); return; }
+        carica();
+    };
+
+    return (
+        <div className="glass-panel rounded-2xl overflow-hidden" style={{ borderLeft: "4px solid #f59e0b" }}>
+            <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                    <div className="text-[11px] uppercase tracking-wider text-amber-300/90 font-semibold">
+                        🔑 Caselle dei codici <span className="text-slate-600">({righe === null ? "…" : righe.length})</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                        Dove arrivano i codici usa e getta (Fastweb). Non entrano nella posta di nessuno: il CRM ci pesca il codice solo quando qualcuno lo chiede dalla sezione Password.
+                    </div>
+                </div>
+                {puoGestire && (
+                    <button onClick={() => setApri(true)}
+                        className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 shrink-0">
+                        <Plus className="w-4 h-4" /> Aggiungi casella dei codici
+                    </button>
+                )}
+            </div>
+            {righe === null ? (
+                <div className="p-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>
+            ) : righe.length === 0 ? (
+                <div className="px-4 pb-4 pt-1 text-sm text-slate-500">
+                    Nessuna casella dei codici. Aggiungi quelle su cui Fastweb manda gli OTP, poi in <b className="text-slate-400">Password</b> collega ogni utenza alla sua.
+                </div>
+            ) : (
+                <div className="divide-y divide-white/5">
+                    {righe.map((c) => (
+                        <div key={c.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                            <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                                <div className="text-sm text-white font-medium truncate">{c.display_name || c.email_address}</div>
+                                {c.display_name && <div className="text-[11px] text-slate-500 font-mono truncate">{c.email_address}</div>}
+                            </div>
+                            <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0",
+                                c.status === "disconnessa" || c.status === "errore"
+                                    ? "bg-rose-500/15 border-rose-500/40 text-rose-300"
+                                    : "bg-emerald-500/15 border-emerald-500/40 text-emerald-300")}>
+                                {c.status === "disconnessa" || c.status === "errore" ? "da ricollegare" : "attiva"}
+                            </span>
+                            {c.last_error && <span className="text-[10px] text-rose-300/80 truncate max-w-[280px]" title={c.last_error}>{c.last_error}</span>}
+                            {puoGestire && (
+                                <button onClick={() => elimina(c)} disabled={tolgo === c.id}
+                                    title="Scollega questa casella"
+                                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 shrink-0">
+                                    {tolgo === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+            {apri && (
+                <ConnectModal usoSistema userId={userId} onClose={() => { setApri(false); carica(); }} />
             )}
         </div>
     );

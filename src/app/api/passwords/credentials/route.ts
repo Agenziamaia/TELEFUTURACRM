@@ -33,7 +33,9 @@ export async function GET(request: Request) {
         const categoryId = searchParams.get("categoryId");
         const storeId = searchParams.get("storeId");
 
-        let query = supabase.from("password_credentials").select("id, brand_id, category_id, store_id, access_type, username");
+        // otp_*: dice se questa utenza ha una casella dei codici collegata — il
+        // pulsante «Chiedi il codice» compare solo dove serve davvero
+        let query = supabase.from("password_credentials").select("id, brand_id, category_id, store_id, access_type, username, otp_account_id, otp_profilo");
 
         if (brandId) query = query.eq("brand_id", brandId);
         if (categoryId) query = query.eq("category_id", categoryId);
@@ -53,7 +55,9 @@ export async function GET(request: Request) {
             storeId: c.store_id,
             accessType: c.access_type,
             username: c.username,
-            passwordMasked: "••••••••••" // Default placeholder for UI
+            passwordMasked: "••••••••••", // Default placeholder for UI
+            otpAccountId: c.otp_account_id || null,
+            otpProfilo: c.otp_profilo || null,
         }));
 
         return NextResponse.json(credentials);
@@ -90,6 +94,8 @@ export async function POST(request: Request) {
                 username: String(username),
                 password_encrypted: String(password),
                 created_by: userId, // colonna verificata a DB il 04/08
+                otp_account_id: body?.otpAccountId || null,
+                otp_profilo: body?.otpProfilo || null,
             })
             .select("id")
             .single();

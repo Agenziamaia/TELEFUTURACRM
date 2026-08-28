@@ -62,6 +62,11 @@ async function caricaAllegati(convId: string, list: EmailInAtt[]): Promise<any[]
 async function pollAccountRaw(accId: string) {
     const { data: acc } = await supabase.from("email_accounts").select("*").eq("id", accId).maybeSingle();
     if (!acc) return { error: "account non trovato" };
+    // CASELLE DI SERVIZIO (28/08): quelle dei codici usa e getta non si
+    // scaricano MAI. Salvare quei messaggi vorrebbe dire tenere i codici in
+    // chiaro nel database e farli comparire nelle conversazioni: il CRM ci
+    // entra solo su richiesta, legge un numero e non lascia traccia del numero.
+    if (acc.uso_sistema) return { skipped: true, motivo: "casella di servizio (codici): non si archivia" };
     let res: any;
     try { res = await leggiNuove(acc as any, 30); }
     catch (e: any) {

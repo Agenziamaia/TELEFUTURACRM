@@ -47,6 +47,10 @@ export async function PATCH(
         if (body.password !== undefined && body.password !== "") patch.password_encrypted = String(body.password);
         if (body.categoryId !== undefined) patch.category_id = String(body.categoryId);
         if (body.storeId !== undefined) patch.store_id = String(body.storeId);
+        // CODICE USA E GETTA (28/08): da quale casella arriva e con che formato.
+        // Stringa vuota = «togli il collegamento», non «lascia com'è».
+        if (body.otpAccountId !== undefined) patch.otp_account_id = body.otpAccountId || null;
+        if (body.otpProfilo !== undefined) patch.otp_profilo = body.otpProfilo || null;
         if (Object.keys(patch).length === 0) {
             return NextResponse.json({ error: "Nessun campo da aggiornare" }, { status: 400 });
         }

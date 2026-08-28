@@ -1306,17 +1306,21 @@ function ManageAccountsModal({ accounts, coloreCasella, userId, onClose, onDelet
 // ESPORTATO per il Pannello Email in Amministrazione (governance 26/08):
 // presetEmail/presetDisplay precompilano il ri-collega di una casella
 // esistente (il connect su indirizzo già noto aggiorna le credenziali).
-export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, presetDisplay, userId, extraUserIds }: { onClose: () => void; ownerUserId?: string; negozio?: string; presetEmail?: string; presetDisplay?: string; userId?: string; extraUserIds?: string[] }) {
+export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, presetDisplay, userId, extraUserIds, usoSistema }: { onClose: () => void; ownerUserId?: string; negozio?: string; presetEmail?: string; presetDisplay?: string; userId?: string; extraUserIds?: string[]; usoSistema?: boolean }) {
     const [email, setEmail] = useState(presetEmail || "");
     const [password, setPassword] = useState("");
     const [display, setDisplay] = useState(presetDisplay || negozio || "");
     const [adv, setAdv] = useState(false);
     const [imapHost, setImapHost] = useState(""); const [smtpHost, setSmtpHost] = useState("");
     const [busy, setBusy] = useState(false);
+    // le caselle dei codici sono quasi sempre Gmail/Outlook personali: lì la
+    // password normale non basta più, e senza dirlo il collegamento fallisce
+    // con un messaggio che non spiega niente
+    const provider = /@(gmail|googlemail)\./i.test(email) ? "google" : /@(hotmail|outlook|live|msn)\./i.test(email) ? "microsoft" : null;
     const collega = async () => {
         if (!email.trim() || !password) return;
         setBusy(true);
-        const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, extraUserIds, userId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined });
+        const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, extraUserIds, userId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined, usoSistema: usoSistema === true });
         setBusy(false);
         if (res?.error) { alert(res.error); return; }
         if (res?.reconnected) alert("Questa casella era già collegata: l'ho ri-collegata con le credenziali appena inserite.");
@@ -1332,13 +1336,22 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
                 <div className="p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
-                            <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/30"><Mail className="w-4 h-4 text-white" /></span>
-                            Collega una casella email
+                            <span className={cn("w-8 h-8 rounded-xl flex items-center justify-center shadow-md",
+                                usoSistema ? "bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/30" : "bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/30")}>
+                                <Mail className="w-4 h-4 text-white" />
+                            </span>
+                            {usoSistema ? "Casella dei codici" : "Collega una casella email"}
                         </h3>
                         <button onClick={onClose} className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
                     </div>
                     <div className="space-y-3">
-                        <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nome (es. negozio)</label><input value={display} onChange={e => setDisplay(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="Magliana W3" /></div>
+                        {usoSistema && (
+                            <div className="rounded-xl border border-amber-400/30 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] text-amber-200/90 leading-relaxed">
+                                Questa casella non finisce nella posta di nessuno: serve solo al CRM per andare a prendere
+                                i codici usa e getta quando qualcuno li chiede dalla sezione Password.
+                            </div>
+                        )}
+                        <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">{usoSistema ? "Come chiamarla" : "Nome (es. negozio)"}</label><input value={display} onChange={e => setDisplay(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder={usoSistema ? "Codici Fastweb — Donna Olimpia" : "Magliana W3"} /></div>
                         <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Indirizzo email</label><input value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="magliana@telefuturasrl.com" autoFocus /></div>
                         <div><label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Password casella</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full text-sm mt-1" placeholder="password della casella" /></div>
                         <button onClick={() => setAdv(v => !v)} className="text-xs text-slate-500 hover:text-sky-300 transition-colors">{adv ? "− " : "+ "}Impostazioni avanzate (server)</button>
@@ -1346,7 +1359,28 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
                             <input value={imapHost} onChange={e => setImapHost(e.target.value)} className="glass-input w-full text-sm" placeholder="IMAP host (auto: mail.tuodominio)" />
                             <input value={smtpHost} onChange={e => setSmtpHost(e.target.value)} className="glass-input w-full text-sm" placeholder="SMTP host (auto: mail.tuodominio)" />
                         </div>)}
-                        <div className="text-[11px] text-slate-500 leading-relaxed">Verifichiamo lettura e invio prima di salvare. IMAP/SMTP vengono rilevati dal dominio (Gmail, Aruba, o mail.tuodominio).</div>
+                        {/* PASSWORD PER LE APP (28/08): Gmail e Outlook non accettano
+                            più la password normale da programmi esterni. Senza dirlo
+                            qui, il collegamento fallisce e sembra un guasto del CRM. */}
+                        {provider === "google" && (
+                            <div className="rounded-xl border border-sky-400/25 bg-sky-500/[0.06] px-3 py-2.5 text-[11px] text-sky-100/90 leading-relaxed space-y-1">
+                                <div className="font-bold text-sky-200">È una casella Google: serve una «password per le app»</div>
+                                <div>Su <span className="font-mono">myaccount.google.com</span> → Sicurezza: attiva la <b>verifica in due passaggi</b>, poi
+                                    cerca <b>Password per le app</b>, creane una (nome: «CRM Telefutura») e incolla qui le <b>16 lettere</b> che ti dà — non la password con cui entri in Gmail.</div>
+                            </div>
+                        )}
+                        {provider === "microsoft" && (
+                            <div className="rounded-xl border border-sky-400/25 bg-sky-500/[0.06] px-3 py-2.5 text-[11px] text-sky-100/90 leading-relaxed space-y-1">
+                                <div className="font-bold text-sky-200">È una casella Microsoft (hotmail/outlook/live)</div>
+                                <div>Se sull&apos;account c&apos;è la verifica in due passaggi, su <span className="font-mono">account.microsoft.com/security</span> crea una
+                                    <b> password per le app</b> e incolla quella. Serve anche che <b>IMAP</b> sia attivo nelle impostazioni della posta.</div>
+                            </div>
+                        )}
+                        <div className="text-[11px] text-slate-500 leading-relaxed">
+                            {usoSistema
+                                ? "Verifichiamo la lettura prima di salvare (l'invio non serve: da questa casella non spediremo mai nulla)."
+                                : "Verifichiamo lettura e invio prima di salvare."} IMAP/SMTP vengono rilevati dal dominio (Gmail, Outlook, Aruba, o mail.tuodominio).
+                        </div>
                         <button onClick={collega} disabled={busy || !email.trim() || !password}
                             className={cn("w-full py-2.5 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-all duration-200", busy || !email.trim() || !password ? "bg-white/10 text-slate-500" : "bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/30 hover:-translate-y-0.5 active:scale-[0.98]")}>
                             {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifico…</> : "Collega casella"}
