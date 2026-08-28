@@ -927,7 +927,7 @@ const RETE_PISTE_FISSE: Record<string, { chiave: string; nome: string }[]> = {
     // S4: luce e gas fanno UN punteggio solo, e la soglia è sulla somma
     s4: [{ chiave: "energia", nome: "Luce & Gas" }],
 };
-interface PistaRete { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string; soglie: { tier: number; da: number }[] }
+interface PistaRete { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string; soglie: { tier: number; da: number }[]; soglieAz: { tier: number; da: number }[] }
 const primoDelMese = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 
 const arrota = (v: number) => Math.round(v * 100) / 100;
@@ -973,14 +973,24 @@ function ReteView() {
                     // mai visto da nessuno. La fonte è una sola: quella che
                     // disegna l'anello — ragazzi per W3/VF/Sky, la lettera T2
                     // per Fastweb, che un lato ragazzi non ce l'ha.
-                    const t = await (b.lato === "azienda" ? caricaTabellareAzienda(b.tab, mese) : caricaTabellare(b.tab, mese)).catch(() => null);
+                    // ENTRAMBE LE SCALE (Luca 28/08: «dividimeli in target azienda
+                    // e ragazzi, così capisco le associazioni e li imposto in
+                    // virtù di entrambi i numeri»). Le piste restano quelle che
+                    // l'Analisi mostra; accanto si vedono le due scale.
+                    const [t, taz] = await Promise.all([
+                        (b.lato === "azienda" ? caricaTabellareAzienda(b.tab, mese) : caricaTabellare(b.tab, mese)).catch(() => null),
+                        caricaTabellareAzienda(b.tab, mese).catch(() => null),
+                    ]);
+                    const scale = (tt: { soglie?: { pista: string; tier: number; soglia_da: number }[] } | null, pista: string) =>
+                        (tt?.soglie || []).filter((x) => x.pista === pista)
+                            .map((x) => ({ tier: x.tier, da: Number(x.soglia_da) }))
+                            .filter((x) => x.da > 0).sort((a, b2) => a.tier - b2.tier);
                     for (const p of (t?.piste || [])) {
                         if (b.soloPiste && !b.soloPiste.includes(p.chiave)) continue;
                         out.push({
                             brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti",
-                            soglie: (t?.soglie || []).filter((x: { pista: string; soglia_da: number }) => x.pista === p.chiave)
-                                .map((x: { tier: number; soglia_da: number }) => ({ tier: x.tier, da: Number(x.soglia_da) }))
-                                .filter((x) => x.da > 0).sort((a, b2) => a.tier - b2.tier),
+                            soglie: scale(t, p.chiave),
+                            soglieAz: b.lato === "azienda" ? [] : scale(taz, p.chiave),
                         });
                     }
                 }
@@ -991,6 +1001,7 @@ function ReteView() {
                         soglie: (t?.soglie || []).filter((x: { pista: string }) => x.pista === "energia_consumer")
                             .map((x: { tier: number; soglia_da: number }) => ({ tier: x.tier, da: Number(x.soglia_da) }))
                             .filter((x) => x.da > 0).sort((a, b2) => a.tier - b2.tier),
+                        soglieAz: [],
                     });
                 }
             }
@@ -1106,7 +1117,7 @@ function ReteView() {
                                 className="w-12 bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-xs text-white text-right tabular-nums" />
                             %
                         </label>
-                        <span className="text-[10px] text-slate-600">clicca una soglia: il target esce da solo, soglia + sfrido</span>
+                        <span className="text-[10px] text-slate-600">clicca una soglia: il target esce da solo, soglia + sfrido · <b className="text-slate-500">ragazzi</b> è la scala che disegna l&apos;anello nella Rete</span>
                     </div>
                     <div className="grid gap-2">
                         {righe.map((p) => {
@@ -1122,7 +1133,26 @@ function ReteView() {
                                     {/* LE SOGLIE DELLA LETTERA, a sinistra del campo: si clicca e il
                                         target esce da solo, soglia + sfrido. Sono i numeri veri del
                                         tabellare del mese — caricata la nuova lettera, sono già qui. */}
-                                    <span className="flex-1 flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="flex-1 flex flex-col gap-1 min-w-0">
+                                    {p.soglieAz.length > 0 && (
+                                        <span className="flex flex-wrap items-center gap-1">
+                                            <span className="text-[9px] uppercase tracking-wider text-slate-600 w-14 shrink-0">azienda</span>
+                                            {p.soglieAz.map((sg) => {
+                                                const v = arrota(sg.da * (1 + sfrido(p.brand) / 100));
+                                                const on = (val[k] || "") === String(v);
+                                                return (
+                                                    <button key={`az${sg.tier}`} type="button" title={`Soglia ${sg.tier} della lettera AZIENDA (${fmtIt(sg.da)}) + ${sfrido(p.brand)}% di sfrido = ${fmtIt(v)}`}
+                                                        onClick={(e) => { e.preventDefault(); setVal((x) => ({ ...x, [k]: String(v) })); }}
+                                                        className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums border transition-colors",
+                                                            on ? "text-white bg-white/20 border-white/30" : "text-slate-500 border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.08]")}>
+                                                        S{sg.tier}·{fmtIt(sg.da)}
+                                                    </button>
+                                                );
+                                            })}
+                                        </span>
+                                    )}
+                                    <span className="flex flex-wrap items-center gap-1">
+                                        {p.soglieAz.length > 0 && <span className="text-[9px] uppercase tracking-wider text-slate-500 w-14 shrink-0">ragazzi</span>}
                                         {p.soglie.map((sg) => {
                                             const v = arrota(sg.da * (1 + sfrido(p.brand) / 100));
                                             const on = (val[k] || "") === String(v);
@@ -1149,6 +1179,7 @@ function ReteView() {
                                             );
                                         })()}
                                         {!p.soglie.length && !somme[k] && <span className="text-[10px] text-slate-700">nessuna soglia in lettera</span>}
+                                    </span>
                                     </span>
                                     <input inputMode="decimal" value={val[k] ?? ""} placeholder="—"
                                         onChange={(e) => setVal((v) => ({ ...v, [k]: e.target.value.replace(/[^\d.,]/g, "") }))}
