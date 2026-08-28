@@ -675,6 +675,38 @@ select.rvIn{cursor:pointer}
   border:1px solid color-mix(in srgb,var(--rv-acc) 26%,transparent);
   box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 26px -18px var(--rv-acc)}
 .rvBoxT{font-size:11.5px;font-weight:800;color:color-mix(in srgb,var(--rv-acc) 88%,#fff);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
+/* ═══ IL CARRELLO ═════════════════════════════════════════════════════
+   Era il pezzo che Luca indicava come «quello bello», ma sotto era il più
+   artigianale di tutti: 190 stili scritti a mano e 8 sole classi. Era bello
+   perché curato riga per riga, non perché seguiva una regola — quindi ogni
+   ritocco ripartiva da zero. Qui diventa la regola. */
+.rvGruppo{background:var(--tf-w20);border:1px solid var(--tf-w60);border-radius:14px;margin-bottom:12px;overflow:hidden;box-shadow:var(--rv-shadow)}
+/* la banda col marchio: il colore è l'identità della vendita, resta */
+.rvBanda{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rvBandaLogo{background:#fff;border-radius:9px;padding:3px 10px;display:inline-flex;align-items:center}
+/* la pastiglia SOPRA una banda colorata: il fondo è già forte, quindi vive
+   di trasparenza — non può usare il colore del brand come le altre */
+.rvPillLuce{padding:6px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.38);background:rgba(255,255,255,.18);color:#fff;font-size:11.5px;font-weight:700;line-height:1.2;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,transform .12s}
+.rvPillLuce:hover{background:rgba(255,255,255,.3);border-color:rgba(255,255,255,.6)}
+.rvPillLuce:active{transform:scale(.96)}
+.rvPillLuce-no{background:rgba(0,0,0,.28);border-color:rgba(255,255,255,.45)}
+.rvPillLuce-no:hover{background:rgba(180,30,40,.55);border-color:#fff}
+/* L'AZIONE PRINCIPALE: una sola, grande, e il colore dice se si può fare */
+.rvAzione{padding:12px 30px;border-radius:12px;border:none;font-size:13.5px;font-weight:800;line-height:1.2;cursor:pointer;color:#fff;background:linear-gradient(135deg,#15803d,#22a355);box-shadow:0 6px 18px rgba(21,128,61,.30);transition:filter .15s,transform .12s,box-shadow .15s}
+.rvAzione:hover{filter:brightness(1.08)}
+.rvAzione:active{transform:scale(.98)}
+.rvAzione:disabled{filter:grayscale(.65);opacity:.5;cursor:not-allowed;box-shadow:none}
+.rvAzione-att{background:linear-gradient(135deg,#9a5b00,#c47a00);box-shadow:0 6px 18px rgba(154,91,0,.30)}
+.rvAzione-viola{background:linear-gradient(135deg,#5b21b6,#7c3aed);box-shadow:0 6px 18px rgba(91,33,182,.30)}
+/* la riga di riepilogo in fondo: allegati, attribuzione, nota */
+/* il campo del PREZZO nel carrello: rosso finché manca, verde quando c'è.
+   Erano tre copie a mano con il bordo da 2px e l'angolo a 6. */
+.rvPrezzo{padding:6px 8px;border-radius:9px;font-size:12px;text-align:right;background:var(--tf-w40);color:var(--tf-f8fafc);outline:none;border:1.5px solid var(--tf-w120);transition:border-color .15s,background .15s}
+.rvPrezzo:focus{box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+.rvPrezzo.rvPrezzo-manca{border-color:#ef4444;background:rgba(239,68,68,.10)}
+.rvPrezzo.rvPrezzo-ok{border-color:rgba(52,211,153,.6);background:rgba(40,167,69,.10)}
+.rvCartRiga{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--tf-w20);border:1px solid var(--tf-w60);border-radius:12px;padding:12px 16px;margin:12px 0 10px}
+.rvCartRiga span{font-size:12px;font-weight:700;color:var(--tf-94a3b8)}
 /* ═══ LA SCHEDA DI UN PRODOTTO (Luca 28/08) ═══════════════════════════
    «questo è un box nuovo messo dentro un contesto vecchio»: il riquadro
    dei dati contratto era l'unico vestito, mentre offerta e opzioni erano
@@ -694,6 +726,13 @@ select.rvIn{cursor:pointer}
 .rvReq em{font-style:normal;font-weight:600;text-transform:none;letter-spacing:0;opacity:.85}
 /* il contatore accanto a un'opzione a quantità */
 /* verde e ambra sul bianco: quelli del tema scuro scendevano sotto 2:1 */
+/* `html.light input:not(...)` a riga ~413 è più specifica di qualunque
+   classe: senza !important spegneva il rosso/verde del prezzo e la
+   cornice del contatore. È la stessa trappola di `html.light .rvIn`. */
+html.light input.rvPrezzo{background:#fff !important;border-color:rgba(30,41,82,.18) !important;color:#0f172a !important}
+html.light input.rvPrezzo.rvPrezzo-manca{border-color:#dc2626 !important;background:rgba(239,68,68,.07) !important}
+html.light input.rvPrezzo.rvPrezzo-ok{border-color:#0f7a4d !important;background:rgba(15,122,77,.08) !important}
+html.light input.rvQta{background:#fff !important;border-color:rgba(30,41,82,.18) !important;color:#0f172a !important}
 html.light .rvBadge-empty{color:#475569;background:rgba(30,41,82,.07);border-color:rgba(30,41,82,.18)}
 html.light .rvBadge-ok,html.light .rvReq-ok{color:#0f7a4d;background:rgba(15,122,77,.10);border-color:rgba(15,122,77,.35)}
 html.light .rvBadge-warn,html.light .rvReq-todo{color:#9a5b00;background:rgba(154,91,0,.10);border-color:rgba(154,91,0,.35)}

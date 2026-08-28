@@ -6453,18 +6453,17 @@ function CRM() {
         </div>
         {!onlyMarg&&(allG.length===0?<div style={{background:"var(--tf-w20)",borderRadius:12,padding:40,textAlign:"center",color:"var(--tf-64748b)"}}><div style={{fontSize:40}}>🛒</div><div style={{fontSize:15,fontWeight:600,marginTop:10}}>Vuoto</div></div>:
           allG.map((g,gi)=>(
-            <div key={gi} style={{background:"var(--tf-w20)",borderRadius:12,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
-              <div style={{background:g.brandColor,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div key={gi} className="rvGruppo">
+              <div className="rvBanda" style={{background:`linear-gradient(135deg, ${g.brandColor}, color-mix(in srgb, ${g.brandColor} 72%, #0b1020))`}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);
                   // logo ORIGINALE su chip bianca (Luca 04/08): l'invert bianco
                   // sulla banda rossa Vodafone rendeva il logo invisibile
-                  return bd&&bd.logo?<span style={{background:"#fff",borderRadius:8,padding:"3px 10px",display:"inline-flex",alignItems:"center"}}><Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:32,width:"auto",maxWidth:150,objectFit:"contain"}}/></span>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"var(--tf-f8fafc)",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
+                  return bd&&bd.logo?<span className="rvBandaLogo"><Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:32,width:"auto",maxWidth:150,objectFit:"contain"}}/></span>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"var(--tf-f8fafc)",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} style={{background:"var(--tf-w250)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>✏️ Modifica</button>
+                  <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} className="rvPillLuce">✏️ Modifica</button>
                   {/* 🗑 elimina la vendita dal carrello (Luca 04/08) — la "in
                       corso" si azzera invece col Reset form in pagina */}
-                  {!g.isCurrent&&<button onClick={()=>{if(window.confirm("Eliminare la vendita "+g.brandLabel+" ("+g.items.length+" prodotti) dal carrello?"))rmCG(gi);}} title={"Elimina la vendita "+g.brandLabel} style={{background:"rgba(220,53,69,0.25)",border:"1px solid rgba(255,255,255,0.35)",borderRadius:6,padding:"5px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>🗑️</button>}
-                  {!g.isCurrent&&<button onClick={()=>rmCG(gi)} style={{background:"rgba(255,0,0,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>}
+                  {!g.isCurrent&&<button onClick={()=>{if(window.confirm("Eliminare la vendita "+g.brandLabel+" ("+g.items.length+" prodotti) dal carrello?"))rmCG(gi);}} title={"Elimina la vendita "+g.brandLabel} className="rvPillLuce rvPillLuce-no">🗑️ Elimina</button>}
                 </div>
               </div>
               <div style={{padding:"6px 16px"}}>
@@ -6472,10 +6471,10 @@ function CRM() {
             </div>
           ))
         )}
-        {margItems.length>0&&<div style={{background:"var(--tf-w20)",borderRadius:12,padding:16,marginBottom:12,marginTop:12,boxShadow:"0 2px 8px rgba(0,0,0,.06)",overflow:"hidden"}}>
-          <div style={{background:"linear-gradient(135deg,#6f42c1,#9b59b6)",padding:"10px 16px",borderRadius:"8px 8px 0 0",margin:"-16px -16px 14px -16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        {margItems.length>0&&<div className="rvGruppo" style={{padding:16,marginTop:12}}>
+          <div className="rvBanda" style={{background:"linear-gradient(135deg,#5b21b6,#7c3aed)",margin:"-16px -16px 14px -16px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>📦</span><span style={{color:"#fff",fontWeight:700,fontSize:14}}>Prodotti & Marginalità</span><span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{margItems.length}</span>{(()=>{const ph=margItems.filter(i=>i.countsPhone).reduce((s,i)=>s+(i.qty||1),0);return ph>0?<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:700}}>📱 {ph} telefon{ph===1?"o":"i"} vendut{ph===1?"o":"i"}</span>:null;})()}</div>
-            <button onClick={()=>{setMargEditItem(null);setShowMargPOS(true)}} style={{background:"var(--tf-w200)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>+ Aggiungi</button>
+            <button onClick={()=>{setMargEditItem(null);setShowMargPOS(true)}} className="rvPillLuce">+ Aggiungi</button>
           </div>
           {margItems.map((item,idx)=>(
             <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--tf-w30)"}}>
@@ -6490,7 +6489,7 @@ function CRM() {
                 {(item.auto||item.priceRequired||item.linked)&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
                   <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
                     onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?{...m,importo:v}:m))}}
-                    style={{width:92,padding:"6px 8px",borderRadius:7,fontSize:12,textAlign:"right",border:(item.importo==null||item.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>
+                    className={cn("rvPrezzo",(item.importo==null||item.importo==="")?"rvPrezzo-manca":"rvPrezzo-ok")} style={{width:92}}/>
                   <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>€</span>
                 </span>}
                 {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
@@ -6503,10 +6502,10 @@ function CRM() {
             l'Attribuzione si modifica IN PAGINA (step Allegati del flusso marg,
             che esiste già) — il vecchio box editabile del carrello stonava
             graficamente col resto ed è stato allineato al riepilogo compatto */}
-        <div style={{background:"var(--tf-w20)",border:"1px solid var(--tf-w60)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
-          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
-          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📝 {notaScelta==="si"&&nota.trim()?"nota inserita":notaScelta?"nessuna nota":"scelta Sì/No da fare"}</span>
+        <div className="rvCartRiga">
+          <span>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
+          <span>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
+          <span>📝 {notaScelta==="si"&&nota.trim()?"nota inserita":notaScelta?"nessuna nota":"scelta Sì/No da fare"}</span>
           <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-cbd5e1)",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
         </div>
         {dupCellCliente&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:10,background:"rgba(245,158,11,0.10)",border:"1px solid rgba(245,158,11,0.45)"}}>
@@ -6517,18 +6516,18 @@ function CRM() {
           </div>
         </div>}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
-          <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
+          <button onClick={()=>setShowCart(false)} className="rvPill">← Torna</button>
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
-          <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
-          {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
-          {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
+          <button onClick={()=>setConfirmReset(true)} className="rvPill" style={{borderColor:"rgba(220,53,69,.5)",background:"rgba(220,53,69,.08)",color:"var(--tf-f87171)"}}>🗑️ Reset form</button>
+          {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} className="rvPill" style={{borderColor:"rgba(139,92,246,.55)",background:"rgba(111,66,193,.10)",color:"var(--tf-a78bfa)"}}>+ Altro brand</button>}
+          {onlyMarg&&<button onClick={()=>setShowMargSave(true)} className="rvAzione rvAzione-viola" style={{marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
           {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;
             // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
             // il click chiude il riepilogo e porta dritto allo step mancante
             // (lo fa la guardia dentro finalSubmit, col toast di cosa manca)
             return <button onClick={finalSubmit} disabled={tp===0||submitting}
             title={_m.length?"Portami allo step mancante — completa: "+_m.join(" · "):""}
-            style={{padding:"12px 36px",borderRadius:10,border:_m.length&&tp>0?"1.5px solid rgba(245,158,11,0.7)":"none",background:_ok?"linear-gradient(135deg,#28a745,#20c997)":(_m.length&&tp>0?"rgba(245,158,11,0.15)":"var(--tf-w100)"),color:_m.length&&tp>0?"var(--tf-fbbf24)":"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare →":`💾 Salva contratto (${tp})`}</button>;})()}
+            className={cn("rvAzione",_m.length&&tp>0&&"rvAzione-att")} style={{marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare →":`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
         <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} />
         {posScontrinoAbilitato(selNeg) && <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />}
@@ -6586,8 +6585,8 @@ function CRM() {
               );
             })()))}
             <div style={{display:"flex",gap:10,marginTop:4}}>
-              <button onClick={chiudiMargSave} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer"}}>← Annulla</button>
-              <button onClick={saveMargOnly} disabled={margSaving} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
+              <button onClick={chiudiMargSave} className="rvPill" style={{flex:1,padding:"11px 0"}}>← Annulla</button>
+              <button onClick={saveMargOnly} disabled={margSaving} className="rvAzione" style={{flex:1,padding:"11px 0"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
             </div>
           </div>
         </div>}
@@ -6694,7 +6693,7 @@ function CRM() {
                       :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
                         <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
                           onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
-                          style={{width:74,padding:"4px 6px",borderRadius:6,fontSize:11,textAlign:"right",border:(m.importo==null||m.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"var(--tf-w50)",color:"var(--tf-f8fafc)"}}/>
+                          className={cn("rvPrezzo",(m.importo==null||m.importo==="")?"rvPrezzo-manca":"rvPrezzo-ok")} style={{width:74}}/>
                         <span style={{fontSize:10,color:"var(--tf-8892b0)"}}>€</span>
                       </span>
                       :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"var(--tf-28a745)":"var(--tf-dc3545)"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
