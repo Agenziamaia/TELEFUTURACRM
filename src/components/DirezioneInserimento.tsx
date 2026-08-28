@@ -15,7 +15,7 @@
 //   favore al negozio di chi chiede.
 // La vecchia mappa statica (tabella direzione_inserimento) resta a DB ma
 // non è più montata: questa la sostituisce (export con gli stessi nomi).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -37,6 +37,20 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
     targetDir?: number | null;
     bruciati?: number;
 }) => React.ReactElement;
+
+/* LA CODA DEI CODICI (Luca 28/08): «se ne carichi più di una, una per
+   codice». Sta staccata dall'indicazione grande, in tono minore, e dà solo
+   i NOMI — mai target né avanzamenti: il widget dei ragazzi resta riservato. */
+function CodaCodici({ prossimi }: { prossimi: string[] }) {
+    if (!prossimi.length) return null;
+    return (
+        <div className="mt-3 pt-3 border-t border-white/[0.07] text-[11px] text-slate-400 leading-snug text-center">
+            <span className="text-slate-500">Se ne carichi più di una, una per codice:</span>{" "}
+            la seconda su <b className="text-slate-200">{prossimi[0]}</b>
+            {prossimi[1] ? <>, poi <b className="text-slate-200">{prossimi[1]}</b></> : null}.
+        </div>
+    );
+}
 
 const it = (v: number) => Number(v || 0).toLocaleString("it-IT", { maximumFractionDigits: 2 });
 const mesePrimo = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
@@ -919,6 +933,10 @@ export function DirezioneInserimentoAdmin() {
                     })}
                     </div>
                     ))}
+                    {/* 👀 CHI HA GUARDATO (Luca 28/08): il registro dei consigli
+                        mostrati — per capire, quando un pezzo finisce sul codice
+                        sbagliato, se la Bussola era stata aperta e cosa diceva */}
+                    <RegistroConsigli brand={brand} />
                     {/* 📖 LEGENDA (Luca 27/08-9): le regole non scritte e i colori,
                         così i dubbi si risolvono qui e non in chat */}
                     <div className="glass-card p-4 space-y-3">
@@ -963,6 +981,7 @@ export function DirezioneInserimentoAdmin() {
 // Ritorna solo il CONTENUTO (chi lo usa lo avvolge nella sua card/header).
 // ─────────────────────────────────────────────────────────────────────────────
 export function BussolaWidget({ negozio }: { negozio?: string | null }) {
+    const { user } = useAuth();
     const [dirs, setDirs] = useState<Direzione[] | null>(null);
     const [liberi, setLiberi] = useState<Set<string>>(new Set());
     const [brandSel, setBrandSel] = useState<DirBrandId | "">("");
@@ -973,6 +992,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     // 🔔 notifica cambi (Luca 26/08 notte-5): l'ultimo updated_at della
     // direzione confrontato con l'ultima visita (localStorage per dispositivo)
     const [novita, setNovita] = useState<string | null>(null);
+    const firmaLog = useRef<string>("");
 
     useEffect(() => {
         let vivo = true;
@@ -1083,6 +1103,85 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         return () => { vivo = false; };
     }, [dir, pista, pistaDiGruppo, negozio]);
 
+    const biz = useMemo(() => {
+        if (pista !== BIZMOB || !dir) return null;
+
+        const spPaletto = Math.round(Number(dir.sfridi["__paletto_business__"]) || 0);
+        const obiettivo = dir.palettoBusiness + spPaletto;
+        const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll)
+            .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0, mio: èMioCodice(k, negozio) }))
+            .sort((a, b) => a.fatti - b.fatti);
+        // DUE FASI (Luca 27/08-5): prima TUTTI al paletto (6),
+        // POI il pezzo di sfrido su chi manca; dentro la fase
+        // vale la strategia (default: si CHIUDE il più vicino)
+        const strat = strategiaDi(dir, BIZMOB);
+        const sottoPaletto = franchising.filter((f) => f.fatti < dir.palettoBusiness);
+        const sottoObiettivo = franchising.filter((f) => f.fatti < obiettivo);
+        const fase = sottoPaletto.length ? sottoPaletto : sottoObiettivo;
+        const prioB = prioritaDi(dir, BIZMOB);
+        const rankB = (nome: string) => {
+            const k = dir.codici.find((x) => x.negozio === nome);
+            const i = k ? prioB.indexOf(k.cod_gara) : -1;
+            return i >= 0 ? i : Infinity;
+        };
+        // col «riempi il più scoperto» il negozio del richiedente vince
+        // finché è in fase (= ha capienza); col «vicino» la strategia scavalca
+        const ordinati = [...fase].sort((a, b) =>
+            (rankB(a.nome) - rankB(b.nome))
+            || (strat === "scoperto" && a.mio !== b.mio ? (a.mio ? -1 : 1) : 0)
+            || (strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti))
+            || (Number(b.mio) - Number(a.mio)));
+        const scelto = ordinati[0] || null;
+        const faseLabel = sottoPaletto.length ? dir.palettoBusiness : obiettivo;
+        // CASCATA (Luca 27/08-2): paletti tutti salvi → si passa
+        // all'esigenza dei PUNTI MOBILE (i target della direzione)
+        const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio, strategiaDi(dir, "mobile")) : [];
+        const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
+        return { scelto, ordinati, mobScelto, faseLabel, obiettivo };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pista, dir, negozio]);
+
+    const pistaCons = pista === BIZFISSO ? "fisso" : pista;
+    const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons)).slice(0, 5) : [];
+    const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
+    const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
+    const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
+
+    // il consiglio che l'utente sta VEDENDO, qualunque sia il ramo
+    const mostrato = pista === BIZMOB
+        ? (biz?.scelto?.nome || biz?.mobScelto?.negozio || (biz ? "il codice del tuo negozio" : null))
+        : pistaDiGruppo
+            ? (tipGruppo?.testo ? tipGruppo.testo.replace(/^📍 Caricala su /, "").replace(/^🏠 /, "") : null)
+            : (consigliato?.negozio || null);
+    const codaMostrata = pista === BIZMOB
+        ? (biz?.scelto ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
+        : pistaDiGruppo ? [] : altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio);
+
+    /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
+       non si è potuto sapere se chi ha caricato avesse davvero guardato la
+       Bussola: non esisteva nessuna traccia. Ora ogni consiglio MOSTRATO
+       lascia una riga — chi, quando, che pista, che codice, e la coda. Una
+       riga per consiglio diverso, non per render. */
+    useEffect(() => {
+        if (!brandSel || !pista || !mostrato) return;
+        const firma = [user?.id || "", brandSel, pista, mostrato, codaMostrata.join(">")].join("|");
+        if (firmaLog.current === firma) return;
+        firmaLog.current = firma;
+        const t = setTimeout(() => {
+            supabase.from("direzione_consigli_log").insert({
+                user_id: user?.id || null,
+                utente: user?.name || null,
+                negozio: negozio || null,
+                brand: brandSel,
+                pista,
+                consigliato: mostrato,
+                coda: codaMostrata.join(" → ") || null,
+            }).then(() => null, () => null);   // il registro non deve mai disturbare chi lavora
+        }, 1200);                              // solo se il consiglio resta a schermo
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [brandSel, pista, mostrato, codaMostrata.join(">"), user?.id]);
+
     if (!dirs) return <div className="p-5 flex items-center justify-center h-full min-h-[160px] text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /></div>;
     if (!tuttiBrand.length) {
         return (
@@ -1093,11 +1192,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             </div>
         );
     }
-    const pistaCons = pista === BIZFISSO ? "fisso" : pista;
-    const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons)).slice(0, 5) : [];
-    const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
-    const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
-    const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
+    /* IL REGISTRO DEI CONSIGLI (Luca 28/08): «vorrei che tu facessi un
+       passaggio indietro… se quell'utente è andato sul widget e cosa gli ha
+       segnalato». Finora non si poteva sapere: nessuna traccia. Ora ogni
+       consiglio mostrato lascia una riga — chi, quando, che pista, che
+       codice, e la coda che gli è stata proposta. Una riga per consiglio
+       DIVERSO, non per render. */
+    /* il consiglio del BUSINESS MOBILE, calcolato fuori dal JSX: serve alla
+       carta e al registro dei consigli (Luca 28/08) */
     return (
         <div className="h-full flex flex-col p-3.5 gap-3">
             {/* 🔔 la direzione ha CAMBIATO gli inserimenti */}
@@ -1172,57 +1274,20 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </div>
                 </div>}
                 {/* ④ LA RISPOSTA — la carta col codice, grande */}
-                {pista === BIZMOB && dir && (() => {
-                    const spPaletto = Math.round(Number(dir.sfridi["__paletto_business__"]) || 0);
-                    const obiettivo = dir.palettoBusiness + spPaletto;
-                    const franchising = dir.codici.filter((k) => !k.multibrand && !k.catchAll)
-                        .map((k) => ({ nome: k.negozio, fatti: k.businessPezzi || 0, mio: èMioCodice(k, negozio) }))
-                        .sort((a, b) => a.fatti - b.fatti);
-                    // DUE FASI (Luca 27/08-5): prima TUTTI al paletto (6),
-                    // POI il pezzo di sfrido su chi manca; dentro la fase
-                    // vale la strategia (default: si CHIUDE il più vicino)
-                    const strat = strategiaDi(dir, BIZMOB);
-                    const sottoPaletto = franchising.filter((f) => f.fatti < dir.palettoBusiness);
-                    const sottoObiettivo = franchising.filter((f) => f.fatti < obiettivo);
-                    const fase = sottoPaletto.length ? sottoPaletto : sottoObiettivo;
-                    const prioB = prioritaDi(dir, BIZMOB);
-                    const rankB = (nome: string) => {
-                        const k = dir.codici.find((x) => x.negozio === nome);
-                        const i = k ? prioB.indexOf(k.cod_gara) : -1;
-                        return i >= 0 ? i : Infinity;
-                    };
-                    // col «riempi il più scoperto» il negozio del richiedente vince
-                    // finché è in fase (= ha capienza); col «vicino» la strategia scavalca
-                    const ordinati = [...fase].sort((a, b) =>
-                        (rankB(a.nome) - rankB(b.nome))
-                        || (strat === "scoperto" && a.mio !== b.mio ? (a.mio ? -1 : 1) : 0)
-                        || (strat === "vicino" ? (b.fatti - a.fatti) : (a.fatti - b.fatti))
-                        || (Number(b.mio) - Number(a.mio)));
-                    const scelto = ordinati[0] || null;
-                    const faseLabel = sottoPaletto.length ? dir.palettoBusiness : obiettivo;
-                    // CASCATA (Luca 27/08-2): paletti tutti salvi → si passa
-                    // all'esigenza dei PUNTI MOBILE (i target della direzione)
-                    const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio, strategiaDi(dir, "mobile")) : [];
-                    const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
+                {pista === BIZMOB && dir && biz && (() => {
+                    const { scelto, ordinati, mobScelto } = biz;
                     return (<>
+                        {/* UNA PER CODICE (Luca 28/08). Il 27/08 due P.IVA sono
+                            entrate nello stesso ordine — stesso secondo — e sono
+                            finite entrambe su Libia: il consiglio ne guarda una
+                            sola, e la seconda ha sfondato nello sfrido mentre un
+                            altro codice era a zero. La coda sta STACCATA dalla
+                            card, e dà solo i NOMI: niente target né avanzamenti. */}
                         {scelto ? (
                             <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-3xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
-                                {/* UNA SIM PER CODICE (Luca 28/08). Il 27/08 due P.IVA
-                                    sono entrate nello stesso ordine — stesso secondo —
-                                    e sono finite tutte e due su Libia: il consiglio ne
-                                    guardava una sola, e la seconda ha sfondato nello
-                                    sfrido mentre un altro codice era ancora a zero.
-                                    Qui la coda dice dove va la successiva. Solo i NOMI:
-                                    niente target né avanzamenti (riservatezza). */}
-                                {ordinati.length > 1 && (
-                                    <div className="mt-2 text-[11px] text-slate-300 leading-snug">
-                                        📦 Più di una? Una per codice: la seconda su <b className="text-white">{ordinati[1].nome}</b>
-                                        {ordinati[2] ? <>, poi <b className="text-white">{ordinati[2].nome}</b></> : null}.
-                                    </div>
-                                )}
                             </div>
                         ) : mobScelto ? (
                             <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
@@ -1239,6 +1304,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 <div className="text-lg font-black text-emerald-300">🏠 Caricala sul codice del tuo negozio</div>
                             </div>
                         )}
+                        {scelto && ordinati.length > 1 && <CodaCodici prossimi={ordinati.slice(1, 3).map((x) => x.nome)} />}
                     </>);
                 })()}
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
@@ -1247,6 +1313,16 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         <div className="text-xl font-black text-white leading-snug">{tipGruppo.testo}</div>
                         {tipGruppo.sub ? <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div> : null}
                     </div>
+                )}
+                {/* assicurazioni & co.: la coda ha senso quando la politica è la
+                    BILANCIA (si carica il più scarico) — con la priorità della
+                    direzione o l'«ognuno sul suo» il codice è uno e resta quello */}
+                {pista !== BIZMOB && pistaDiGruppo && tipGruppo && dir
+                    && dir.politiche[pista]?.modo === "bilancia" && !prioritaDi(dir, pista).length && (
+                    <CodaCodici prossimi={[...dir.codici.filter((k) => !k.multibrand && !k.catchAll)]
+                        .sort((a, b) => (a.piste[pista]?.punti || 0) - (b.piste[pista]?.punti || 0))
+                        .filter((k) => !tipGruppo.testo.includes(k.negozio))
+                        .slice(0, 2).map((k) => k.negozio)} />
                 )}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
                     <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
@@ -1258,9 +1334,76 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         </div>
                     </div>
                 )}
+                {/* stessa regola sul FISSO (Luca 28/08) e su ogni pista che ha un
+                    target per codice: la seconda va dove serve dopo, non sullo
+                    stesso codice */}
+                {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
+                    <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
+                )}
 
             </>)}
             <div className="text-[10px] text-slate-600">Indicazione della direzione · aggiornata all&apos;apertura.</div>
+        </div>
+    );
+}
+
+/* ═══ 👀 CHI HA GUARDATO LA BUSSOLA ════════════════════════════════════
+   Il registro dei consigli mostrati ai ragazzi. Serve a rispondere alla
+   domanda che il 28/08 è rimasta senza risposta: «quell'utente è andato
+   sul widget? e cosa gli ha segnalato?». */
+function RegistroConsigli({ brand }: { brand: DirBrandId }) {
+    const [aperto, setAperto] = useState(false);
+    const [righe, setRighe] = useState<{ id: string; visto_il: string; utente: string | null; negozio: string | null; pista: string | null; consigliato: string | null; coda: string | null }[] | null>(null);
+    useEffect(() => {
+        if (!aperto) return;
+        let vivo = true;
+        supabase.from("direzione_consigli_log")
+            .select("id, visto_il, utente, negozio, pista, consigliato, coda")
+            .eq("brand", brand).order("visto_il", { ascending: false }).limit(120)
+            .then(({ data }) => { if (vivo) setRighe((data || []) as never[]); });
+        return () => { vivo = false; };
+    }, [aperto, brand]);
+    const quando = (iso: string) => {
+        const d = new Date(iso);
+        return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    };
+    return (
+        <div className="glass-card p-4 space-y-3">
+            <button type="button" onClick={() => setAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">👀 Chi ha guardato la Bussola</span>
+                <span className="text-[10px] text-slate-600">ultimi consigli mostrati</span>
+                <span className={cn("ml-auto text-slate-500 transition-transform text-xs", aperto && "rotate-180")}>▾</span>
+            </button>
+            {aperto && (
+                righe === null ? <div className="text-[11px] text-slate-500 py-2">carico…</div>
+                    : !righe.length ? <div className="text-[11px] text-slate-500 py-2">Ancora nessuna apertura registrata per questo brand.</div>
+                        : (
+                            <div className="max-h-72 overflow-y-auto custom-scrollbar -mx-1 px-1">
+                                <table className="w-full text-[11px]">
+                                    <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                                        <tr className="border-b border-white/10">
+                                            <th className="text-left font-bold py-1.5">quando</th>
+                                            <th className="text-left font-bold">chi</th>
+                                            <th className="text-left font-bold">pista</th>
+                                            <th className="text-left font-bold">gli ha detto</th>
+                                            <th className="text-left font-bold">poi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {righe.map((r) => (
+                                            <tr key={r.id} className="border-b border-white/[0.04]">
+                                                <td className="py-1.5 text-slate-500 tabular-nums whitespace-nowrap">{quando(r.visto_il)}</td>
+                                                <td className="text-slate-200 font-semibold truncate max-w-[170px]" title={`${r.utente || "—"}${r.negozio ? " · " + r.negozio : ""}`}>{r.utente || "—"}</td>
+                                                <td className="text-slate-400">{r.pista || "—"}</td>
+                                                <td className="text-white font-bold">{r.consigliato || "—"}</td>
+                                                <td className="text-slate-500 truncate max-w-[160px]">{r.coda || ""}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )
+            )}
         </div>
     );
 }
