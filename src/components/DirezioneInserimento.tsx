@@ -1224,6 +1224,12 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         const set = scelte.length ? scelte : (base ? [base] : []);
         return Math.round(set.reduce((t, v) => t + v.punti, 0) * 100) / 100;
     }, [voci, vociSel]);
+    /* NIENTE CODICE SENZA SELEZIONE (Luca 28/08): «fino a quando non viene
+       selezionato nulla non gli devi dare il codice, gli devi dire che devono
+       effettuare le selezioni, altrimenti non c'è il punteggio». Vale dove le
+       voci non hanno una base implicita — la Customer Base: lì un'attivazione
+       senza voci vale zero, e un consiglio senza punti è una scommessa. */
+    const serveScelta = voci.length > 0 && !voci.some((v) => v.base) && puntiAttivazione <= 0;
     const pistaCons = pista === BIZFISSO ? "fisso" : pista;
     const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons), puntiAttivazione).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
@@ -1382,8 +1388,8 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 </span>
                             )}
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            {voci.map((v) => {
+                        {(() => {
+                            const pastiglia = (v: { id: string; nome: string; punti: number; base: boolean }) => {
                                 const acceso = v.base ? !vociSel.some((x) => voci.find((y) => y.id === x)?.base) || vociSel.includes(v.id) : vociSel.includes(v.id);
                                 return (
                                     <button key={v.id} type="button"
@@ -1395,8 +1401,23 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                         <span className={cn("tabular-nums shrink-0", acceso ? "text-white/80" : "text-slate-600")}>+{v.punti}</span>
                                     </button>
                                 );
-                            })}
-                        </div>
+                            };
+                            // sulla Customer Base le voci stanno su due scaffali
+                            // (cambio piano / telefono): tutte in fila erano una
+                            // sbrodolata che nessuno leggeva (Luca 28/08)
+                            const gruppi = [...new Set(voci.map((v) => v.gruppo).filter(Boolean))] as string[];
+                            if (!gruppi.length) return <div className="flex flex-wrap gap-1.5">{voci.map(pastiglia)}</div>;
+                            return (
+                                <div className="space-y-1.5">
+                                    {gruppi.map((g) => (
+                                        <div key={g} className="flex flex-wrap items-center gap-1.5">
+                                            <span className="text-[10px] font-bold text-slate-500 w-full sm:w-auto sm:mr-1">{g}</span>
+                                            {voci.filter((v) => v.gruppo === g).map(pastiglia)}
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
                 {/* ⑤ LA RISPOSTA — la carta col codice, grande */}
@@ -1433,7 +1454,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         {scelto && chiudeIlCodice(biz.capienza, 1) && ordinati.length > 1 && <CodaCodici prossimi={ordinati.slice(1, 3).map((x) => x.nome)} />}
                     </>);
                 })()}
-                {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
+                {!serveScelta && pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
                     <div className="rounded-2xl px-4 py-5 border text-center flex-1 flex flex-col justify-center items-center min-h-0"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 16%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 35%, transparent)`, boxShadow: `0 0 22px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 22%, transparent)` }}>
                         <div className="text-xl font-black text-white leading-snug">{tipGruppo.testo}</div>
@@ -1445,7 +1466,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     bilancia la scelta resta bloccata fino alla data decisa
                     dalla direzione — in entrambi i casi la seconda va dove è
                     andata la prima, e una coda direbbe il falso. */}
-                {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
+                {serveScelta && (
+                    <div className="rounded-2xl px-4 py-5 border border-white/10 bg-white/[0.03] flex-1 flex flex-col justify-center items-center text-center min-h-0">
+                        <div className="text-2xl leading-none mb-1.5">☝️</div>
+                        <div className="text-sm font-bold text-slate-200">Scegli cosa stai caricando</div>
+                        <div className="text-[11px] text-slate-500 mt-1">Senza le voci qui sopra non c&apos;è un punteggio, e senza punteggio non posso dirti dove metterla.</div>
+                    </div>
+                )}
+                {!serveScelta && pista !== BIZMOB && !pistaDiGruppo && consigliato && (
                     <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                         <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
@@ -1462,7 +1490,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     decine di pezzi l'avviso non esce da solo, e dove invece si
                     chiude col prossimo serve eccome (oggi il mobile di Mazzini
                     è a mezzo punto dalla S1). */}
-                {pista !== BIZMOB && !pistaDiGruppo && consigliato
+                {!serveScelta && pista !== BIZMOB && !pistaDiGruppo && consigliato
                     && chiudeIlCodice(capienzaDi(consigliato, altriSottoS1), puntiAttivazione) && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}

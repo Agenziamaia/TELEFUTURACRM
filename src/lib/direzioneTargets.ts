@@ -306,16 +306,27 @@ export function proiezioneDir(dir: Direzione, punti: number): number | null {
    (`puntiPerRighe` è una somma di `punti`; i moltiplicatori riguardano gli
    euro, non i punti). La Customer Base pesca dalla pista PARTNERSHIP, che
    è dove stanno i suoi punti veri. */
-export type VocePunti = { id: string; nome: string; punti: number; base: boolean };
+export type VocePunti = { id: string; nome: string; punti: number; base: boolean; gruppo?: string };
+
+/* CONSUMER O BUSINESS (Luca 28/08): «mi ha messo le opzioni microbusiness
+   anche dopo che ho selezionato consumer», e lo stesso sul fisso. Il campo
+   `tipo_cliente` delle righe W3 è quasi sempre vuoto, quindi non basta: il
+   business si riconosce dal NOME della voce — P.IVA, Microbusiness e, in
+   casa WindTre, tutta la linea «Professional». */
+const PAROLE_BIZ = /(business|p\.?\s?iva|micro|professional)/i;
+function vaCol(nome: string, tipoRiga: string | null | undefined, tc: string): boolean {
+    if (!tc) return true;
+    const t = String(tipoRiga || "").toLowerCase();
+    if (t) return t.startsWith(tc);            // la riga lo dichiara: comanda lei
+    return tc === "business" ? true : !PAROLE_BIZ.test(nome);
+}
 export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer" | "business" | ""): VocePunti[] {
     if (dir.brand !== "windtre") return [];
     const pistaRighe = pista === "cb" ? "partnership" : pista;
     if (!["mobile", "fisso", "partnership"].includes(pistaRighe)) return [];
     const tc = (tipoCliente || "").toLowerCase();
     const righe = (dir.tab?.righe || [])
-        .filter((r) => String(r.pista || "") === pistaRighe && r.attivo !== false && Number(r.punti || 0) > 0)
-        // il tipo cliente, quando la riga lo dichiara, deve combaciare
-        .filter((r) => !tc || !r.tipo_cliente || String(r.tipo_cliente).toLowerCase().startsWith(tc));
+        .filter((r) => String(r.pista || "") === pistaRighe && r.attivo !== false && Number(r.punti || 0) > 0);
     const viste = new Set<string>();
     const out: VocePunti[] = [];
     for (const r of righe) {
@@ -324,10 +335,17 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         const nome = String(r.nome || "voce")
             .replace(/^\+\s*/, "").replace(/\s*×canone\s*/i, "")
             .replace(/\s*\((?:incl\.|conteggio)[^)]*\)/gi, "").trim();
+        if (!vaCol(nome, r.tipo_cliente, tc)) continue;
         const chiave = `${nome}|${r.punti}`;
         if (viste.has(chiave)) continue;      // le varianti con lo stesso valore si fondono
         viste.add(chiave);
-        out.push({ id: String(r.id), nome, punti: Number(r.punti || 0), base });
+        /* DUE SCAFFALI SULLA CUSTOMER BASE (Luca 28/08): «differenziamo i
+           cambi piano dai telefoni, altrimenti è una sbrodolata di opzioni
+           che nessuno seleziona». */
+        const gruppo = pistaRighe !== "partnership" ? undefined
+            : /telefono|device|rate|finanziam/i.test(`${r.nome} ${r.prodotto || ""}`) ? "📱 Telefono"
+                : "🔄 Cambio piano e add-on";
+        out.push({ id: String(r.id), nome, punti: Number(r.punti || 0), base, gruppo });
     }
     // la base per prima, poi le altre dalla più pesante
     return out.sort((a, b) => (Number(b.base) - Number(a.base)) || (b.punti - a.punti) || a.nome.localeCompare(b.nome, "it"));
