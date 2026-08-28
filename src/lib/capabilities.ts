@@ -721,7 +721,7 @@ export const CAP_AI_LIBERTA: CapGroupFlags = {
         {
             id: "sceglie_modello",
             label: "Può cambiare il proprio modello",
-            desc: "Nella sua pagina dell'Assistente compare il selettore: sceglie lui quale modello usare. Senza questo, vale quello impostato qui sopra.",
+            desc: "Vale SOLO se qui sopra hai lasciato «Quello di sistema»: in quel caso nella sua pagina compare il selettore e sceglie lui. Se invece gli hai imposto un modello, usa quello e basta — le due cose sono alternative.",
             default: (role) => ["admin", "dev"].includes(role),
         },
     ],

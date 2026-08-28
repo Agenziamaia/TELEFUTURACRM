@@ -58,7 +58,14 @@ async function risolvi(userId: string, vuoto: SceltaModello): Promise<SceltaMode
        giorno che uno cambia, pannello e risolutore direbbero cose diverse. */
     const sceltaCap = capChoice(role, CAP_AI_MODELLO, perms);
     const daAmm: string | null = AI_MODELLO_DI[sceltaCap] || null;
-    const libero = capAllowed(role, CAP_AI_LIBERTA.section, CAP_AI_LIBERTA.caps[0], perms);
+    /* LE DUE MANOPOLE SONO ALTERNATIVE (Luca 28/08 sera, chiarimento):
+       «se dall'ingranaggio preseleziono un modello specifico, lui può usare
+       solo quello; se invece preseleziono la possibilità di cambiarselo da
+       solo, allora se lo può cambiare».
+       Quindi un modello IMPOSTO vince sulla libertà: altrimenti concedere la
+       libertà avrebbe cancellato in silenzio la scelta appena fatta, e le due
+       manopole si sarebbero contraddette senza dirlo (rilievo del revisore). */
+    const libero = !daAmm && capAllowed(role, CAP_AI_LIBERTA.section, CAP_AI_LIBERTA.caps[0], perms);
 
     // la scelta personale conta SOLO se gli è stata concessa
     let sua: string | null = null;

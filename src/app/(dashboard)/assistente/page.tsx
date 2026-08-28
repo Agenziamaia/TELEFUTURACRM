@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { canUseAI } from "@/lib/roles";
 import { Sparkles, Send, Loader2, Wrench, Check, X, AlertTriangle, Paperclip, FileText, Plus, FolderPlus, Folder, MessageSquare, Settings2, Trash2, PanelLeft } from "lucide-react";
@@ -61,12 +61,70 @@ function Rich({ text }) {
   return <>{out}</>;
 }
 
-const SUGGESTIONS = [
-  "Quanti contratti per brand?",
-  "Contratti in lavorazione del mio negozio",
-  "Chi lavora nel negozio Garbatella?",
-  "Ultime comunicazioni aziendali",
-];
+
+/* ══ IL RESPIRO DELLA PAGINA (Luca 28/08 sera) ═══════════════════════════
+   «deve essere un'esperienza da vivere, non una pagina del 2015».
+   Niente effetti gratuiti: ogni animazione qui dice una cosa precisa —
+   l'assistente sta pensando, il messaggio è appena arrivato, la barra ti
+   sta ascoltando. Tutto si spegne da solo per chi ha chiesto meno
+   movimento (prefers-reduced-motion). */
+const AI_CSS = `
+@keyframes aiSu { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes aiPulse { 0%,100% { opacity: .55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
+@keyframes aiAura { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@keyframes aiPunto { 0%,80%,100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.ai-su { animation: aiSu .32s cubic-bezier(.22,1,.36,1) both; }
+.ai-alone { animation: aiPulse 2.4s ease-in-out infinite; }
+.ai-punto { display:inline-block; width:5px; height:5px; border-radius:99px; background:currentColor; animation: aiPunto 1.2s infinite; }
+/* l'aura della barra: si accende quando stai scrivendo */
+.ai-barra { position: relative; }
+.ai-barra::before {
+  content: ""; position: absolute; inset: -1px; border-radius: 18px; padding: 1px;
+  background: linear-gradient(110deg, rgba(99,102,241,.7), rgba(168,85,247,.6), rgba(34,211,238,.6), rgba(99,102,241,.7));
+  background-size: 200% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity .25s ease;
+}
+.ai-barra.viva::before { opacity: 1; animation: aiAura 4s linear infinite; }
+/* le pillole dei suggerimenti: si sollevano, non si limitano a schiarirsi */
+.ai-sugg { transition: transform .18s cubic-bezier(.22,1,.36,1), background-color .18s, border-color .18s; }
+.ai-sugg:hover { transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) {
+  .ai-su, .ai-alone, .ai-barra.viva::before, .ai-punto { animation: none !important; }
+  .ai-sugg:hover { transform: none; }
+}
+`;
+
+/* ══ DA DOVE SI COMINCIA ═══════════════════════════════════════════════
+   Quattro frasi uguali per tutti dicevano solo «questo coso esiste». Uno
+   store manager che entra deve trovare le domande CHE SI FA LUI, col nome
+   del suo negozio dentro: è la differenza fra uno strumento e il proprio
+   strumento. */
+const salutoOra = () => {
+  const h = new Date().getHours();
+  return h < 5 ? "Ancora sveglio" : h < 13 ? "Buongiorno" : h < 18 ? "Buon pomeriggio" : "Buonasera";
+};
+
+function spuntiPer(user) {
+  const negozio = user?.negozio || user?.primary_store || null;
+  const ruolo = String(user?.role || "");
+  const mio = negozio ? ` di ${negozio}` : "";
+  const perTutti = [
+    { i: "📊", t: `Com'è andata oggi${mio}?`, q: `Fammi il punto sulla produzione di oggi${mio}: quante attivazioni, per brand, e come siamo messi rispetto a ieri.` },
+    { i: "🏁", t: "A che punto sono le gare", q: "A che punto siamo con le gare del mese? Dimmi dove manca poco per chiudere una soglia." },
+  ];
+  const perNegozio = [
+    { i: "👥", t: "Chi sta producendo di più", q: `Chi sta producendo di più${mio} questo mese, e chi è rimasto indietro?` },
+    { i: "📋", t: "Pratiche ferme", q: `Ci sono pratiche in lavorazione o ferme${mio}? Elencamele con data e stato.` },
+  ];
+  const perDirezione = [
+    { i: "🎯", t: "Dove conviene inserire", q: "Su quale codice conviene caricare le prossime attivazioni WindTre, e perché?" },
+    { i: "⚠️", t: "Cosa non torna", q: "Guarda i numeri del mese e dimmi le tre cose che non tornano o che terrei d'occhio." },
+  ];
+  const direzione = ["admin", "dev", "direttore_generale", "direttore_commerciale", "amministrativo"].includes(ruolo);
+  return [...perTutti, ...(direzione ? perDirezione : perNegozio)];
+}
 
 export default function AssistentePage() {
   const { user } = useAuth();
@@ -104,6 +162,9 @@ export default function AssistentePage() {
   const [barraAperta, setBarraAperta] = useState(true);
   const [impostazioni, setImpostazioni] = useState(false);
   const [modProgetto, setModProgetto] = useState(null);          // progetto in modifica
+  const [menuModello, setMenuModello] = useState(false);         // il menù del cervello, sopra la barra
+  const [insegnaA, setInsegnaA] = useState(null);                // su quale risposta sto insegnando
+  const [insegnamento, setInsegnamento] = useState("");
 
   const chiediSpazio = async () => {
     try {
@@ -210,9 +271,46 @@ export default function AssistentePage() {
 
   const convDelProgetto = spazio.conversazioni.filter((c) => (progettoAperto ? c.progetto_id === progettoAperto : true));
   const nomeAssistente = spazio.preferenze?.nome_assistente || "Assistente CRM";
+  const spunti = useMemo(() => spuntiPer(user), [user?.role, user?.negozio, user?.primary_store]);
+  /* le memorie come RIGHE: una cosa imparata per riga. Un unico testone non
+     si legge e non fa capire che si può insegnare a pezzi. */
+  const modelloAttivo = (spazio.modelli?.disponibili || []).find((m) => m.id === spazio.modelli?.attuale) || null;
+  /* si cambia DA QUI, in un click: aprire un pannello per scegliere il
+     cervello e poi salvare era una cerimonia per una cosa che si fa a metà
+     conversazione */
+  const cambiaModello = async (id) => {
+    setMenuModello(false);
+    setSpazio((p) => ({ ...p, modelli: { ...p.modelli, attuale: id } }));   // subito a schermo
+    const r = await azione({
+      azione: "preferenze_salva",
+      nomeAssistente: spazio.preferenze?.nome_assistente ?? null,
+      personalita: spazio.preferenze?.personalita ?? null,
+      memorie: spazio.preferenze?.memorie ?? null,
+      modello: id,
+    });
+    if (r?.error) alert("Non sono riuscito a cambiare modello: " + r.error);
+  };
+  const memorieScritte = String(spazio.preferenze?.memorie || "")
+    .split("\n").map((r) => r.trim()).filter(Boolean);
+  /* la cosa imparata si aggiunge IN CODA alle memorie: una per riga, così
+     restano leggibili e cancellabili una a una */
+  const salvaInsegnamento = async () => {
+    const t = insegnamento.trim();
+    if (!t) return;
+    const nuove = [...memorieScritte, t].join("\n");
+    setInsegnaA(null); setInsegnamento("");
+    const r = await azione({
+      azione: "preferenze_salva",
+      nomeAssistente: spazio.preferenze?.nome_assistente ?? null,
+      personalita: spazio.preferenze?.personalita ?? null,
+      memorie: nuove,
+    });
+    if (r?.error) alert("Non sono riuscito a ricordarlo: " + r.error);
+  };
 
   return (
     <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex bg-[#0b0d14]">
+      <style>{AI_CSS}</style>
 
       {/* ══ LA BARRA: progetti e conversazioni, come in un'app di chat ══ */}
       {barraAperta && (
@@ -288,38 +386,86 @@ export default function AssistentePage() {
           className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white">
           <PanelLeft className="w-4 h-4" />
         </button>
-        <span className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
-          <Sparkles className="w-4 h-4 text-indigo-300" />
+        <span className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
+          {loading && <span className="absolute inset-0 rounded-xl bg-indigo-500/50 blur-md ai-alone" />}
+          <Sparkles className="relative w-4 h-4 text-white" />
         </span>
-        <div>
-          <p className="text-sm font-semibold text-white">{nomeAssistente}</p>
-          <p className="text-xs text-slate-500">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-white truncate">{nomeAssistente}</p>
+          <p className="text-[11px] text-slate-500 truncate">
             {progettoAperto
-              ? `Progetto: ${spazio.progetti.find((x) => x.id === progettoAperto)?.nome || ""}`
-              : "Interroga i dati del CRM in linguaggio naturale"}
+              ? <>📁 {spazio.progetti.find((x) => x.id === progettoAperto)?.nome || ""}</>
+              : <>Conosce i tuoi dati del CRM{modelloAttivo ? <> · <span className="text-slate-400">{modelloAttivo.id === "deepseek-v4-pro" ? "🧠" : "⚡"} {modelloAttivo.nome}</span></> : null}</>}
           </p>
         </div>
+        {/* la scorciatoia alla conoscenza sta in alto, dove si guarda: in
+            fondo alla colonna di sinistra non la trovava nessuno */}
+        <button onClick={() => setImpostazioni(true)} title="Personalità e memorie: insegnagli come ragioni"
+          className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-violet-400/25 bg-violet-500/10 text-violet-200 text-[11px] font-bold hover:bg-violet-500/20 transition-colors shrink-0">
+          🧠 <span className="hidden sm:inline">{memorieScritte.length ? `Sa ${memorieScritte.length} cose di te` : "Insegnagli"}</span>
+        </button>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         {msgs.length === 0 && (
-          <div className="max-w-2xl mx-auto text-center mt-10">
-            <Sparkles className="w-10 h-10 text-indigo-400/50 mx-auto mb-3" />
-            <p className="text-slate-400 mb-5">Chiedimi qualcosa sui dati del CRM.</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {SUGGESTIONS.map((s) => (
-                <button key={s} onClick={() => ask(s)}
-                  className="px-3 py-1.5 rounded-lg text-xs bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10">
-                  {s}
+          /* ══ IL PRIMO IMPATTO ═══════════════════════════════════════════
+             Chi entra deve capire tre cose in tre secondi: che sa i fatti
+             SUOI, che si può cominciare senza pensare cosa scrivere, e che
+             questo assistente si può EDUCARE. Prima c'era una scintilla
+             grigia e quattro frasi buone per chiunque. */
+          <div className="max-w-2xl mx-auto mt-6 sm:mt-10 ai-su">
+            <div className="text-center">
+              <div className="relative inline-flex items-center justify-center mb-4">
+                <span className="absolute inset-0 rounded-full bg-indigo-500/25 blur-xl ai-alone" />
+                <span className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                  <Sparkles className="w-7 h-7 text-white" />
+                </span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                {salutoOra()}{user?.name ? `, ${String(user.name).split(" ")[0]}` : ""}
+              </h2>
+              <p className="text-sm text-slate-400 mt-1.5">
+                Conosco i dati del CRM: vendite, gare, clienti, pratiche, squadra.
+                <span className="text-slate-500"> Chiedi in italiano, come lo diresti a un collega.</span>
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-2 mt-6">
+              {spunti.map((sp) => (
+                <button key={sp.t} onClick={() => ask(sp.q)}
+                  className="ai-sugg group text-left px-3.5 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.07] hover:border-indigo-400/40">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-lg">{sp.i}</span>
+                    <span className="text-sm font-semibold text-slate-100 group-hover:text-white">{sp.t}</span>
+                  </div>
                 </button>
               ))}
             </div>
+
+            {/* COSA SO DI TE — il pezzo che fa capire che è personalizzabile.
+                Se non gli hai insegnato niente lo dice, e ti fa cominciare. */}
+            <button onClick={() => setImpostazioni(true)}
+              className="ai-sugg w-full mt-3 text-left px-4 py-3.5 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.05] hover:border-violet-400/50">
+              <div className="flex items-start gap-3">
+                <span className="text-lg mt-0.5">🧠</span>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-violet-200">
+                    {memorieScritte.length ? `So ${memorieScritte.length} cose di te` : "Non so ancora niente di te"}
+                  </div>
+                  <div className="text-[12px] text-slate-400 mt-0.5 leading-relaxed">
+                    {memorieScritte.length
+                      ? <>Es.: «{memorieScritte[0].slice(0, 70)}{memorieScritte[0].length > 70 ? "…" : ""}» · <span className="text-violet-300">insegnami altro</span></>
+                      : <>Insegnami come ragioni: quali negozi segui, come vuoi le risposte, le tue sigle. <span className="text-violet-300">Da qui in poi me lo ricordo.</span></>}
+                  </div>
+                </div>
+              </div>
+            </button>
           </div>
         )}
 
         <div className="max-w-3xl mx-auto space-y-3">
           {msgs.map((m, idx) => (
-            <div key={idx} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div key={idx} className={`ai-su flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${m.role === "user"
                   ? "bg-indigo-600 text-white rounded-br-sm"
                   : `bg-white/5 border rounded-bl-sm ${m.error ? "border-rose-500/30" : "border-white/5"}`}`}>
@@ -372,6 +518,31 @@ export default function AssistentePage() {
                   </div>
                 )}
                 {m.done && <p className="mt-2 text-xs text-slate-300">{m.done}</p>}
+                {/* ══ INSEGNAGLI DA QUI (Luca 28/08 sera) ══════════════════
+                    Il momento in cui uno capisce che l'assistente si educa è
+                    quello in cui la risposta NON è come la voleva. Se per
+                    correggerlo deve ricordarsi di aprire un pannello, non lo
+                    farà mai: il gesto sta dov'è nato il bisogno. */}
+                {m.role === "assistant" && !m.error && (
+                  <div className="mt-2 -mb-0.5">
+                    {insegnaA === idx ? (
+                      <div className="ai-su flex items-center gap-1.5">
+                        <input autoFocus value={insegnamento} onChange={(e) => setInsegnamento(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") salvaInsegnamento(); if (e.key === "Escape") setInsegnaA(null); }}
+                          placeholder="Es.: gli importi dammeli sempre senza decimali"
+                          className="flex-1 min-w-0 bg-black/30 border border-violet-400/40 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-slate-600 outline-none" />
+                        <button onClick={salvaInsegnamento} disabled={!insegnamento.trim()}
+                          className="px-2.5 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[11px] font-bold">Ricorda</button>
+                        <button onClick={() => setInsegnaA(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setInsegnaA(idx); setInsegnamento(""); }}
+                        className="text-[11px] text-slate-600 hover:text-violet-300 transition-colors">
+                        🧠 insegnami come la volevi
+                      </button>
+                    )}
+                  </div>
+                )}
                 {m.usage && (
                   <p className="mt-1.5 text-[10px] text-slate-600">
                     {m.usage.ms} ms · ${m.usage.costUsd?.toFixed(4)}
@@ -381,10 +552,16 @@ export default function AssistentePage() {
             </div>
           ))}
           {loading && (
-            <div className="flex justify-start">
-              <div className="bg-white/5 border border-white/5 rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                <span className="text-sm text-slate-400">Sto consultando il CRM…</span>
+            <div className="ai-su flex justify-start items-end gap-2">
+              <span className="relative w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
+                <span className="absolute inset-0 rounded-xl bg-indigo-500/40 blur-md ai-alone" />
+                <Sparkles className="relative w-3.5 h-3.5 text-white" />
+              </span>
+              <div className="bg-white/5 border border-white/5 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2 text-indigo-300">
+                <span className="ai-punto" style={{ animationDelay: "0ms" }} />
+                <span className="ai-punto" style={{ animationDelay: "150ms" }} />
+                <span className="ai-punto" style={{ animationDelay: "300ms" }} />
+                <span className="text-[12px] text-slate-500 ml-1">sto guardando nel CRM</span>
               </div>
             </div>
           )}
@@ -413,23 +590,72 @@ export default function AssistentePage() {
               {leggendo && <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] text-slate-400"><Loader2 className="w-3 h-3 animate-spin" /> leggo il file…</span>}
             </div>
           )}
-          <div className="flex items-end gap-2">
+          {/* ══ LA BARRA ═══════════════════════════════════════════════════
+              Un solo blocco che si accende quando scrivi, non tre controlli
+              slegati. Il MODELLO sta qui accanto all'invio — dove lo si
+              cerca — e non sepolto nelle impostazioni in fondo alla colonna
+              (Luca 28/08 sera: «lo switch è vicino al pulsante di invio,
+              non agli allegati»). */}
+          <div className={cnx("ai-barra rounded-[18px] bg-white/[0.04] border border-white/10 px-2 py-2", (input.trim() || allegati.length) && "viva")}>
             <input ref={fileRef} type="file" multiple hidden
               accept=".pdf,.csv,.txt,.md,.json,.xml,.log,.tsv,.eml,.xlsx,.xls,.xlsm,.ods,text/*"
               onChange={(e) => { aggiungiFile(e.target.files); e.target.value = ""; }} />
-            <button onClick={() => fileRef.current?.click()} disabled={loading || leggendo}
-              title="Allega un documento: PDF, Excel, CSV o testo. Il file resta nel CRM: all'assistente arriva solo il testo."
-              className="p-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 disabled:opacity-40">
-              <Paperclip className="w-5 h-5" />
-            </button>
             <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
               onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []); if (f.length) { e.preventDefault(); aggiungiFile(f); } }}
-              placeholder="Chiedi qualcosa sui dati del CRM…" className="glass-input flex-1 resize-none max-h-32 py-2.5" />
-            <button onClick={() => ask()} disabled={loading || leggendo || (!input.trim() && !allegati.some((a) => a.testo))}
-              className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40">
-              <Send className="w-5 h-5" />
-            </button>
+              placeholder={`Scrivi a ${nomeAssistente}…`}
+              className="w-full bg-transparent border-0 outline-none resize-none max-h-40 px-2.5 pt-1.5 pb-2 text-[15px] text-slate-100 placeholder:text-slate-600" />
+            <div className="flex items-center gap-1.5 px-1">
+              <button onClick={() => fileRef.current?.click()} disabled={loading || leggendo}
+                title="Allega un documento: PDF, Excel, CSV o testo. Il file resta nel CRM: all'assistente arriva solo il testo."
+                className="p-2 rounded-xl text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-40 transition-colors">
+                <Paperclip className="w-4.5 h-4.5" />
+              </button>
+
+              {/* QUALE CERVELLO — solo se te lo hanno concesso */}
+              {spazio.modelli?.libero && (
+                <div className="relative">
+                  <button onClick={() => setMenuModello((v) => !v)}
+                    title="Quale modello risponde"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[12px] font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition-colors">
+                    <span>{modelloAttivo?.id === "deepseek-v4-pro" ? "🧠" : "⚡"}</span>
+                    <span className="hidden sm:inline">{modelloAttivo?.nome || "Veloce"}</span>
+                  </button>
+                  {menuModello && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setMenuModello(false)} />
+                      <div className="absolute bottom-full mb-2 left-0 z-30 w-[290px] rounded-2xl border border-white/10 bg-[#12141d] shadow-2xl overflow-hidden ai-su">
+                        {(spazio.modelli?.disponibili || []).map((m) => (
+                          <button key={m.id} onClick={() => cambiaModello(m.id)}
+                            className={cnx("w-full text-left px-3.5 py-3 border-b border-white/5 last:border-0 transition-colors",
+                              modelloAttivo?.id === m.id ? "bg-indigo-500/15" : "hover:bg-white/5")}>
+                            <div className="flex items-center gap-2">
+                              <span>{m.id === "deepseek-v4-pro" ? "🧠" : "⚡"}</span>
+                              <span className="text-sm font-bold text-white">{m.nome}</span>
+                              {modelloAttivo?.id === m.id && <Check className="w-3.5 h-3.5 text-indigo-300 ml-auto" />}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1 leading-snug">{m.descrizione}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <span className="ml-auto text-[11px] text-slate-600 hidden sm:block pr-1">
+                <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10">Invio</kbd> manda ·{" "}
+                <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10">Shift+Invio</kbd> va a capo
+              </span>
+              <button onClick={() => ask()} disabled={loading || leggendo || (!input.trim() && !allegati.some((a) => a.testo))}
+                title="Manda"
+                className={cnx("p-2.5 rounded-xl transition-all",
+                  (input.trim() || allegati.some((a) => a.testo)) && !loading
+                    ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 hover:-translate-y-px active:scale-95"
+                    : "bg-white/5 text-slate-600")}>
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -484,6 +710,14 @@ function PannelloPreferenze({ valori, onChiudi, onSalva, modelli }) {
   // il modello si sceglie SOLO se l'amministrazione ha dato la libertà
   const [modello, setModello] = useState(valori?.modello || "");
   const [salvando, setSalvando] = useState(false);
+  const [nuovaMemoria, setNuovaMemoria] = useState("");
+  const righeMemoria = String(memorie || "").split("\n").map((r) => r.trim()).filter(Boolean);
+  const aggiungiMemoria = () => {
+    const t = nuovaMemoria.trim();
+    if (!t) return;
+    setMemorie([...righeMemoria, t].join("\n"));
+    setNuovaMemoria("");
+  };
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onChiudi}>
       <div className="glass-card border-white/10 w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -506,12 +740,42 @@ function PannelloPreferenze({ valori, onChiudi, onSalva, modelli }) {
             className="glass-input w-full text-sm resize-none" />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Cosa deve ricordarsi di te</label>
-          <textarea value={memorie} onChange={(e) => setMemorie(e.target.value)} rows={5}
-            placeholder={"Es.: Seguo i negozi di Roma sud. Quando dico «i miei» intendo Acilia e Baleniere. Le gare che mi interessano sono Wind3 e Vodafone. Preferisco gli importi in euro senza decimali."}
-            className="glass-input w-full text-sm resize-none" />
-          <p className="text-[10px] text-slate-600">Vale in ogni conversazione: scrivi qui le cose che gli ripeti sempre.</p>
+        {/* ══ QUELLO CHE SA DI TE, UNA COSA PER VOLTA ═══════════════════
+            Un testone unico non si legge, non si corregge e non fa capire
+            che si può insegnare a pezzi. Qui ogni cosa imparata è una
+            scheda: si aggiunge, si toglie, si conta. */}
+        <div className="space-y-2">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            Cosa sa di te <span className="text-slate-600 normal-case font-normal">— {righeMemoria.length ? `${righeMemoria.length} cose` : "ancora niente"}</span>
+          </label>
+          {righeMemoria.length > 0 && (
+            <div className="space-y-1.5">
+              {righeMemoria.map((r, i) => (
+                <div key={i} className="group flex items-start gap-2 px-3 py-2 rounded-xl bg-violet-500/[0.07] border border-violet-400/20">
+                  <span className="text-violet-300 text-xs mt-0.5">🧠</span>
+                  <span className="flex-1 text-[13px] text-slate-200 leading-snug">{r}</span>
+                  <button onClick={() => setMemorie(righeMemoria.filter((_, j) => j !== i).join("\n"))}
+                    title="Dimentica questa"
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-500 hover:text-rose-300 transition-opacity">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <input value={nuovaMemoria} onChange={(e) => setNuovaMemoria(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); aggiungiMemoria(); } }}
+              placeholder="Es.: quando dico «i miei» intendo Acilia e Baleniere"
+              className="glass-input flex-1 text-sm" />
+            <button onClick={aggiungiMemoria} disabled={!nuovaMemoria.trim()}
+              className="px-3 py-2 rounded-lg bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-xs font-bold shrink-0">
+              Aggiungi
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-600">
+            Vale in ogni conversazione. Puoi aggiungerne anche durante una chat, con «insegnami come la volevi» sotto le risposte.
+          </p>
         </div>
 
         {/* QUALE CERVELLO (Luca 28/08 sera): compare solo a chi può cambiarlo.
