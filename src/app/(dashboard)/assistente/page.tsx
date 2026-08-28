@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { canUseAI } from "@/lib/roles";
-import { Sparkles, Send, Loader2, Wrench, Check, X, AlertTriangle, Paperclip, FileText } from "lucide-react";
+import { Sparkles, Send, Loader2, Wrench, Check, X, AlertTriangle, Paperclip, FileText, Plus, FolderPlus, Folder, MessageSquare, Settings2, Trash2, PanelLeft } from "lucide-react";
 import { leggiAllegato, contestoAllegati } from "@/lib/ai/allegati";
 
 // ── mini-markdown (grassetto, tabelle, elenchi) — niente dipendenze esterne ──
@@ -94,27 +94,61 @@ export default function AssistentePage() {
   const fileRef = useRef(null);
   const scrollRef = useRef(null);
 
+  /* ══ LO SPAZIO PERSONALE (Luca 28/08) ═══════════════════════════════════
+     Chat e progetti di questa persona, tenuti nel CRM e non nel browser: si
+     ritrovano da qualsiasi computer, e nessun altro può vederli (le regole
+     del database li consegnano solo a chi li ha scritti). */
+  const [spazio, setSpazio] = useState({ progetti: [], conversazioni: [], preferenze: null });
+  const [convId, setConvId] = useState(null);
+  const [progettoAperto, setProgettoAperto] = useState(null);   // filtro della lista
+  const [barraAperta, setBarraAperta] = useState(true);
+  const [impostazioni, setImpostazioni] = useState(false);
+  const [modProgetto, setModProgetto] = useState(null);          // progetto in modifica
+
+  const chiediSpazio = async () => {
+    try {
+      const d = await fetch("/api/ai/spazio", { credentials: "include", cache: "no-store" }).then((r) => r.json());
+      if (!d?.error) setSpazio({ progetti: d.progetti || [], conversazioni: d.conversazioni || [], preferenze: d.preferenze || null });
+    } catch { /* offline: si continua con quello che c'è */ }
+  };
+  const azione = async (body) => {
+    const d = await fetch("/api/ai/spazio", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => r.json()).catch(() => ({ error: "rete" }));
+    await chiediSpazio();
+    return d;
+  };
+  useEffect(() => { if (meId) chiediSpazio(); }, [meId]);
+
+  // apre una conversazione salvata
+  const apriChat = async (id) => {
+    setConvId(id);
+    setMsgs([]);
+    try {
+      const d = await fetch(`/api/ai/spazio?cosa=conversazione&id=${id}`, { credentials: "include", cache: "no-store" }).then((r) => r.json());
+      if (d?.messaggi) {
+        setMsgs(d.messaggi.filter((m) => m.ruolo !== "tool").map((m) => ({
+          role: m.ruolo === "assistant" ? "assistant" : "user",
+          content: m.contenuto || "",
+        })));
+      }
+    } catch { /* conversazione non caricata */ }
+  };
+  const nuovaChat = async (progettoId) => {
+    const d = await azione({ azione: "chat_nuova", progettoId: progettoId ?? progettoAperto ?? null });
+    if (d?.conversazione?.id) { setConvId(d.conversazione.id); setMsgs([]); }
+  };
+  const eliminaChat = async (id) => {
+    if (!window.confirm("Eliminare questa conversazione?")) return;
+    await azione({ azione: "chat_elimina", id });
+    if (convId === id) { setConvId(null); setMsgs([]); }
+  };
+
   // Segnalazione 69: navigando fra le pagine del CRM la conversazione non deve
   // ripartire da zero. Prima i messaggi stavano solo nello state del componente,
   // quindi uscendo dalla pagina si perdevano. Ora restano salvati per l'utente e
   // si azzerano solo al logout (AuthContext rimuove questa chiave).
-  const CHAT_KEY = meId ? `crm_ai_chat_${meId}` : null;
-  const chatReady = useRef(false);
-  useEffect(() => {
-    if (!CHAT_KEY) return;
-    try {
-      const raw = localStorage.getItem(CHAT_KEY);
-      if (raw) { const d = JSON.parse(raw); if (Array.isArray(d)) setMsgs(d); }
-    } catch { /* ignore */ }
-    chatReady.current = true;
-  }, [CHAT_KEY]);
-  useEffect(() => {
-    if (!CHAT_KEY || !chatReady.current) return;
-    try {
-      if (msgs.length === 0) localStorage.removeItem(CHAT_KEY);
-      else localStorage.setItem(CHAT_KEY, JSON.stringify(msgs));
-    } catch { /* ignore */ }
-  }, [msgs, CHAT_KEY]);
 
   useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs, loading]);
 
@@ -139,14 +173,22 @@ export default function AssistentePage() {
     const history = [...msgs.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content })), { role: "user", content: perAI }];
     setMsgs((p) => [...p, { role: "user", content: domanda, allegati: conTesto.map((a) => ({ nome: a.nome, kb: a.kb })) }]);
     setInput(""); setAllegati([]); setLoading(true);
+    // se sto scrivendo senza una conversazione aperta, se ne apre una: così
+    // la domanda non va persa e la si ritrova domani
+    let idConv = convId;
+    if (!idConv) {
+      const d = await azione({ azione: "chat_nuova", progettoId: progettoAperto ?? null });
+      idConv = d?.conversazione?.id || null;
+      if (idConv) setConvId(idConv);
+    }
     try {
       const res = await fetch("/api/ai/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: meId, messages: history }),
+        body: JSON.stringify({ messages: history, conversazioneId: idConv }),
       });
       const d = await res.json();
       if (d.error) setMsgs((p) => [...p, { role: "assistant", content: `⚠️ ${d.error}`, error: true }]);
-      else setMsgs((p) => [...p, { role: "assistant", content: d.answer, trace: d.trace, pending: d.pending_action, usage: d.usage }]);
+      else { setMsgs((p) => [...p, { role: "assistant", content: d.answer, trace: d.trace, pending: d.pending_action, usage: d.usage }]); chiediSpazio(); }
     } catch (e) {
       setMsgs((p) => [...p, { role: "assistant", content: `⚠️ Errore di rete: ${e?.message || e}`, error: true }]);
     } finally { setLoading(false); }
@@ -157,7 +199,7 @@ export default function AssistentePage() {
     try {
       const res = await fetch("/api/ai/action", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: meId, action }),
+        body: JSON.stringify({ action }),
       });
       const d = await res.json();
       setMsgs((p) => p.map((m, i) => (i === idx ? { ...m, pending: null, done: d.error ? `⚠️ ${d.error}` : `✅ ${d.result}` } : m)));
@@ -166,15 +208,96 @@ export default function AssistentePage() {
   const cancelAction = (idx) =>
     setMsgs((p) => p.map((m, i) => (i === idx ? { ...m, pending: null, done: "Azione annullata." } : m)));
 
+  const convDelProgetto = spazio.conversazioni.filter((c) => (progettoAperto ? c.progetto_id === progettoAperto : true));
+  const nomeAssistente = spazio.preferenze?.nome_assistente || "Assistente CRM";
+
   return (
-    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex flex-col bg-[#0b0d14]">
+    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex bg-[#0b0d14]">
+
+      {/* ══ LA BARRA: progetti e conversazioni, come in un'app di chat ══ */}
+      {barraAperta && (
+        <aside className="w-64 shrink-0 border-r border-white/5 bg-[#0d1018] flex flex-col">
+          <div className="p-3 space-y-2 border-b border-white/5">
+            <button onClick={() => nuovaChat(null)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
+              <Plus className="w-4 h-4" /> Nuova conversazione
+            </button>
+            <button onClick={async () => {
+                const nome = window.prompt("Nome del progetto (es. «Marketing agenzie»)");
+                if (!nome) return;
+                const d = await azione({ azione: "progetto_nuovo", nome });
+                if (d?.progetto?.id) setModProgetto(d.progetto);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-slate-300 text-xs hover:bg-white/10">
+              <FolderPlus className="w-3.5 h-3.5" /> Nuovo progetto
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2 space-y-3">
+            {spazio.progetti.length > 0 && (
+              <div>
+                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">Progetti</p>
+                {spazio.progetti.map((pr) => (
+                  <div key={pr.id} className="group/pr flex items-center gap-1">
+                    <button onClick={() => setProgettoAperto(progettoAperto === pr.id ? null : pr.id)}
+                      className={cnx("flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors",
+                        progettoAperto === pr.id ? "bg-indigo-500/20 text-indigo-200" : "text-slate-300 hover:bg-white/5")}>
+                      <span className="shrink-0">{pr.emoji || "📁"}</span>
+                      <span className="truncate">{pr.nome}</span>
+                    </button>
+                    <button onClick={() => setModProgetto(pr)} title="Contesto e impostazioni del progetto"
+                      className="opacity-0 group-hover/pr:opacity-100 p-1 rounded text-slate-500 hover:text-white">
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div>
+              <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                {progettoAperto ? "Conversazioni del progetto" : "Conversazioni"}
+              </p>
+              {convDelProgetto.length === 0 && <p className="px-2 text-xs text-slate-600 italic">Nessuna conversazione.</p>}
+              {convDelProgetto.map((c) => (
+                <div key={c.id} className="group/c flex items-center gap-1">
+                  <button onClick={() => apriChat(c.id)}
+                    className={cnx("flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-left transition-colors",
+                      convId === c.id ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5")}>
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                    <span className="truncate">{c.titolo || "Nuova conversazione"}</span>
+                  </button>
+                  <button onClick={() => eliminaChat(c.id)} title="Elimina"
+                    className="opacity-0 group-hover/c:opacity-100 p-1 rounded text-slate-600 hover:text-rose-300">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={() => setImpostazioni(true)}
+            className="m-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-400 hover:bg-white/5 hover:text-white">
+            <Settings2 className="w-4 h-4" /> Personalità e memorie
+          </button>
+        </aside>
+      )}
+
+    <div className="flex-1 min-w-0 flex flex-col">
       <div className="flex items-center gap-3 px-5 h-14 border-b border-white/5 shrink-0">
+        <button onClick={() => setBarraAperta((v) => !v)} title="Mostra/nascondi le conversazioni"
+          className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white">
+          <PanelLeft className="w-4 h-4" />
+        </button>
         <span className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
           <Sparkles className="w-4 h-4 text-indigo-300" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-white">Assistente CRM</p>
-          <p className="text-xs text-slate-500">Interroga i dati del CRM in linguaggio naturale</p>
+          <p className="text-sm font-semibold text-white">{nomeAssistente}</p>
+          <p className="text-xs text-slate-500">
+            {progettoAperto
+              ? `Progetto: ${spazio.progetti.find((x) => x.id === progettoAperto)?.nome || ""}`
+              : "Interroga i dati del CRM in linguaggio naturale"}
+          </p>
         </div>
       </div>
 
@@ -307,6 +430,121 @@ export default function AssistentePage() {
               className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40">
               <Send className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* ══ PERSONALITÀ E MEMORIE — le impostazioni di ciascuno ══ */}
+    {impostazioni && (
+      <PannelloPreferenze
+        valori={spazio.preferenze}
+        onChiudi={() => setImpostazioni(false)}
+        onSalva={async (v) => { await azione({ azione: "preferenze_salva", ...v }); setImpostazioni(false); }}
+      />
+    )}
+
+    {/* ══ IL CONTESTO DI UN PROGETTO ══ */}
+    {modProgetto && (
+      <PannelloProgetto
+        progetto={modProgetto}
+        onChiudi={() => setModProgetto(null)}
+        onSalva={async (v) => { await azione({ azione: "progetto_salva", id: modProgetto.id, ...v }); setModProgetto(null); }}
+        onElimina={async () => {
+          if (!window.confirm("Eliminare il progetto? Le conversazioni restano, senza progetto.")) return;
+          await azione({ azione: "progetto_elimina", id: modProgetto.id });
+          if (progettoAperto === modProgetto.id) setProgettoAperto(null);
+          setModProgetto(null);
+        }}
+      />
+    )}
+    </div>
+  );
+}
+
+/* ── piccola utility locale: le classi condizionali senza dipendenze ── */
+function cnx(...v) { return v.filter(Boolean).join(" "); }
+
+/* ══ PERSONALITÀ E MEMORIE (Luca 28/08) ═════════════════════════════════
+   «ognuno può settare l'assistente come più gli piace, dandogli delle
+   memorie e delle istruzioni». Vale solo per chi le scrive. */
+function PannelloPreferenze({ valori, onChiudi, onSalva }) {
+  const [nomeAssistente, setNome] = useState(valori?.nome_assistente || "");
+  const [personalita, setPersonalita] = useState(valori?.personalita || "");
+  const [memorie, setMemorie] = useState(valori?.memorie || "");
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onChiudi}>
+      <div className="glass-card border-white/10 w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-white">✨ Il tuo assistente</h3>
+          <button onClick={onChiudi} className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10"><X className="w-4 h-4" /></button>
+        </div>
+        <p className="text-xs text-slate-500 -mt-2">Queste impostazioni valgono <b className="text-slate-300">solo per te</b>: nessun altro le vede e nessun altro ne è influenzato.</p>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Come si chiama</label>
+          <input value={nomeAssistente} onChange={(e) => setNome(e.target.value)} placeholder="Assistente CRM"
+            className="glass-input w-full text-sm" />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Come vuoi che ti risponda</label>
+          <textarea value={personalita} onChange={(e) => setPersonalita(e.target.value)} rows={4}
+            placeholder={"Es.: Vai dritto al punto, niente premesse. Dammi sempre i numeri prima del commento. Se una cosa non è chiara chiedimela invece di indovinare."}
+            className="glass-input w-full text-sm resize-none" />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Cosa deve ricordarsi di te</label>
+          <textarea value={memorie} onChange={(e) => setMemorie(e.target.value)} rows={5}
+            placeholder={"Es.: Seguo i negozi di Roma sud. Quando dico «i miei» intendo Acilia e Baleniere. Le gare che mi interessano sono Wind3 e Vodafone. Preferisco gli importi in euro senza decimali."}
+            className="glass-input w-full text-sm resize-none" />
+          <p className="text-[10px] text-slate-600">Vale in ogni conversazione: scrivi qui le cose che gli ripeti sempre.</p>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onChiudi} className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5">Annulla</button>
+          <button onClick={() => onSalva({ nomeAssistente, personalita, memorie })}
+            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══ IL CONTESTO DI UN PROGETTO ═════════════════════════════════════════
+   Le istruzioni scritte qui valgono per tutte le conversazioni del progetto:
+   è il modo di dire una volta sola «quando lavoriamo qui, sappi che…». */
+function PannelloProgetto({ progetto, onChiudi, onSalva, onElimina }) {
+  const [nome, setNome] = useState(progetto.nome || "");
+  const [emoji, setEmoji] = useState(progetto.emoji || "");
+  const [istruzioni, setIstruzioni] = useState(progetto.istruzioni || "");
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onChiudi}>
+      <div className="glass-card border-white/10 w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-white">📁 Progetto</h3>
+          <button onClick={onChiudi} className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex gap-2">
+          <input value={emoji} onChange={(e) => setEmoji(e.target.value.slice(0, 2))} placeholder="📁"
+            className="glass-input w-16 text-center text-lg" />
+          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome del progetto"
+            className="glass-input flex-1 text-sm" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Contesto del progetto</label>
+          <textarea value={istruzioni} onChange={(e) => setIstruzioni(e.target.value)} rows={7}
+            placeholder={"Es.: Qui lavoriamo al piano marketing per le agenzie di Roma. Il tono è commerciale. Quando parlo di «onde» intendo le fasi di contatto. Non propormi canali che non siano email, volantini o Facebook."}
+            className="glass-input w-full text-sm resize-none" />
+          <p className="text-[10px] text-slate-600">L'assistente lo terrà presente in tutte le conversazioni di questo progetto.</p>
+        </div>
+        <div className="flex justify-between gap-2 pt-1">
+          <button onClick={onElimina} className="px-3 py-2 rounded-lg text-sm text-rose-300 hover:bg-rose-500/10">Elimina progetto</button>
+          <div className="flex gap-2">
+            <button onClick={onChiudi} className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5">Annulla</button>
+            <button onClick={() => onSalva({ nome, emoji, istruzioni })}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Salva</button>
           </div>
         </div>
       </div>

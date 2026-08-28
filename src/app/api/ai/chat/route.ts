@@ -11,13 +11,24 @@ export const runtime = "nodejs";
 
 const MAX_STEPS = 6;
 
-function systemPrompt(scope: any) {
+type Personale = { personalita?: string | null; memorie?: string | null; nome_assistente?: string | null; progetto?: { nome: string; istruzioni?: string | null } | null };
+
+function systemPrompt(scope: any, p?: Personale) {
   const ambito = scope.seesAll
     ? "Vedi i dati di TUTTI i negozi."
     : `Vedi SOLO i negozi: ${scope.stores.join(", ") || "(nessuno)"}. Non hai accesso ad altri negozi.`;
+  // LO SPAZIO PERSONALE (Luca 28/08): chi vuole, si regola l'assistente come
+  // preferisce — il tono, cosa deve ricordarsi di lui, e il contesto del
+  // progetto in cui sta lavorando. Vale solo per lui: nessuno vede il resto.
+  const suo: string[] = [];
+  if (p?.nome_assistente) suo.push(`Ti chiami ${p.nome_assistente}: è il nome che ti ha dato questa persona.`);
+  if (p?.personalita) suo.push(`COME VUOLE CHE TU RISPONDA (istruzioni sue, hanno la precedenza sullo stile di default):\n${p.personalita}`);
+  if (p?.memorie) suo.push(`COSA DEVI RICORDARE DI LUI (te l'ha scritto lui stesso):\n${p.memorie}`);
+  if (p?.progetto) suo.push(`STATE LAVORANDO NEL PROGETTO «${p.progetto.nome}»${p.progetto.istruzioni ? `:\n${p.progetto.istruzioni}` : "."}`);
   return [
     "Sei l'assistente interno del CRM Telefutura. Rispondi in italiano, conciso e concreto.",
     `Utente: ${scope.fullName} — ruolo ${scope.role}. ${ambito}`,
+    ...(suo.length ? ["", ...suo] : []),
     "",
     "REGOLE:",
     "- Per qualsiasi dato del CRM DEVI usare i tool. Non inventare MAI numeri, nomi o stati.",
@@ -51,7 +62,7 @@ export async function POST(req: Request) {
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON non valido" }, { status: 400 }); }
 
-  const { messages } = body || {};
+  const { messages, conversazioneId } = body || {};
   // 🔒 l'identità viene dalla SESSIONE, non da quello che dichiara il client
   const userId = _sess.id;
   if (!userId || !Array.isArray(messages) || messages.length === 0) {
@@ -65,8 +76,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Assistente riservato ai ruoli manageriali" }, { status: 403 });
   }
 
+  // preferenze personali + contesto del progetto della conversazione
+  let personale: Personale | undefined;
+  try {
+    const [pref, conv] = await Promise.all([
+      supabase.from("ai_preferenze").select("personalita, memorie, nome_assistente").eq("user_id", userId).maybeSingle(),
+      conversazioneId
+        ? supabase.from("ai_conversazioni").select("progetto_id").eq("id", conversazioneId).eq("user_id", userId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    personale = { ...(pref.data || {}) };
+    const progId = (conv.data as { progetto_id?: string | null } | null)?.progetto_id;
+    if (progId) {
+      const { data: pr } = await supabase.from("ai_progetti").select("nome, istruzioni").eq("id", progId).eq("user_id", userId).maybeSingle();
+      if (pr) personale.progetto = pr as { nome: string; istruzioni?: string | null };
+    }
+  } catch { /* senza preferenze l'assistente resta quello di sempre */ }
+
   const convo: ChatMessage[] = [
-    { role: "system", content: systemPrompt(scope) },
+    { role: "system", content: systemPrompt(scope, personale) },
     ...messages.slice(-12).map((m: any) => ({ role: m.role, content: String(m.content ?? "") })),
   ];
 
@@ -135,6 +163,26 @@ export async function POST(req: Request) {
       completion_tokens: completionTokens, cost_usd: cost, latency_ms: Date.now() - started,
       tool_calls: toolCalls, ok: true,
     }).then(() => {}, () => {});
+
+    // ── LA CONVERSAZIONE RESTA (Luca 28/08): domanda e risposta finiscono
+    //    nello spazio personale, così la si ritrova da qualsiasi computer.
+    //    Il titolo si scrive da sé dalla prima domanda.
+    if (conversazioneId) {
+      try {
+        const ultimaDomanda = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
+        await supabase.from("ai_messaggi").insert([
+          { conversazione_id: conversazioneId, user_id: userId, ruolo: "user", contenuto: String(ultimaDomanda) },
+          { conversazione_id: conversazioneId, user_id: userId, ruolo: "assistant", contenuto: answer,
+            meta: { strumenti: trace.map((t) => t.tool), token: promptTokens + completionTokens } },
+        ]);
+        const patch: Record<string, unknown> = { ultimo_messaggio_at: new Date().toISOString() };
+        const { data: conv } = await supabase.from("ai_conversazioni").select("titolo").eq("id", conversazioneId).eq("user_id", userId).maybeSingle();
+        if (conv && !conv.titolo) {
+          patch.titolo = String(ultimaDomanda).replace(/\s+/g, " ").trim().slice(0, 60) || "Nuova conversazione";
+        }
+        await supabase.from("ai_conversazioni").update(patch).eq("id", conversazioneId).eq("user_id", userId);
+      } catch { /* la risposta è più importante del salvataggio */ }
+    }
 
     return NextResponse.json({
       answer, trace, pending_action: pendingAction,
