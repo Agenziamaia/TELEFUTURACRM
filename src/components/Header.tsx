@@ -353,6 +353,15 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                         <AvatarUtente userId={user?.id} nome={user?.name || "Ospite"}
                             className={cn("w-9 h-9 text-xs border-2", viewAs ? "border-amber-400/70 text-amber-200" : "border-indigo-500/40 text-indigo-300")} />
                         {profiloIncompleto && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-[#0f111a] animate-pulse" />}
+                        {/* STO GUARDANDO CON GLI OCCHI DI UN ALTRO (Luca 28/08:
+                            «il cerchio oro è voluto o indica qualcosa che mi
+                            sfugge?»). Prima accanto al nome c'era scritto
+                            «(simulato)»; tolto il nome era rimasto solo il
+                            colore, che da solo non dice niente. */}
+                        {viewAs && (
+                            <span title={viewAsUser ? `Stai guardando come ${viewAsUser.name}` : "Stai guardando con un altro ruolo"}
+                                className="absolute -bottom-1 -right-1 px-1 h-4 rounded-full bg-amber-400 text-[9px] font-black text-[#0f111a] border-2 border-[#0f111a] flex items-center leading-none">👁</span>
+                        )}
                     </div>
                 </button>
                 {menuUtente && (

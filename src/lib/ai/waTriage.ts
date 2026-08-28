@@ -64,6 +64,12 @@ Regole d'oro (gli errori da non fare):
 
 "azione": una riga in italiano, massimo 90 caratteri, concreta e utile a chi lavora ("Rispondere: chiede se la promo vale sulla seconda SIM", "Sollecitare: mancano i documenti per la portabilità", "Riprendere: aveva detto di risentirci a settembre"). Per "niente" una motivazione telegrafica ("promo senza risposta", "conclusa con i saluti", "ha rifiutato").`;
 
+/** La nostra ultima frase chiede qualcosa al cliente? Le stesse parole che
+ *  il widget usa da sempre per le attese azzurre. */
+function chiediamoQualcosa(riga: string): boolean {
+    return /mi mandi|mi invii|mi giri|mandami|inviami|girami|mi pu[oò]|mi serve|mi servirebbe|ci serve|fammi sapere|mi faccia sapere|facci sapere|fatemi sapere|attendo|aspetto|resto in attesa|restiamo in attesa|mi confermi|ci confermi|mi dica|mi dici|appena (pu[oò]|puoi|riesce|riesci)|quando (pu[oò]|puoi|riesce|riesci)|le chiedo|ti chiedo|serve che|servirebbe che|\?/i.test(riga);
+}
+
 type StatoTriage = "rispondere" | "attesa_cliente" | "programmata" | "niente";
 const STATI: StatoTriage[] = ["rispondere", "attesa_cliente", "programmata", "niente"];
 
@@ -91,7 +97,7 @@ function quandoRoma(iso: string): string {
 }
 
 // trascrizione compatta: ultime righe utili, corpi tagliati, media come tag
-function costruisciTrascrizione(msgs: RigaMsg[]): { testo: string; ultimoTs: number } | null {
+function costruisciTrascrizione(msgs: RigaMsg[]): { testo: string; ultimoTs: number; ultimaNostra: boolean } | null {
     const righe = msgs
         .map((m) => ({ ...m, t: new Date(m.wa_timestamp || m.created_at).getTime() }))
         .filter((m) => !isNaN(m.t) && (m.direction === "in" || m.direction === "out")
@@ -109,7 +115,8 @@ function costruisciTrascrizione(msgs: RigaMsg[]): { testo: string; ultimoTs: num
         const fallito = m.direction === "out" && m.status === "failed" ? " [non consegnato]" : "";
         return `[${quandoRoma(m.wa_timestamp || m.created_at)}] ${chi}${fallito}: ${corpo}`;
     }).join("\n");
-    return { testo, ultimoTs: righe[righe.length - 1].t };
+    const fine = righe[righe.length - 1];
+    return { testo, ultimoTs: fine.t, ultimaNostra: fine.direction === "out" };
 }
 
 function estraiJson(testo: string): any | null {
@@ -171,11 +178,30 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
     // con fingerprint fresco piantava un rosso cieco che nessuno riprendeva
     // più in mano (rilievo E1)
     if (!out || !STATI.includes(out.stato)) return { riga: null, usage: res.usage };
-    const stato: StatoTriage = out.stato;
+    let stato: StatoTriage = out.stato;
+    let azione = String(out.azione || "");
+    /* SE L'ULTIMA PAROLA È NOSTRA, NON TOCCA A NOI (Luca 28/08: «Francesco
+       vede questo messaggio come se dovesse rispondergli, ma in realtà le ha
+       già risposto»). Il modello giudica il contenuto e a volte insiste sul
+       «rispondere» anche quando la risposta c'è già, in fondo alla chat: qui
+       è un fatto, non un'opinione — se l'ultimo messaggio è in uscita, il
+       cliente non sta aspettando niente. Diventa un'attesa se gli abbiamo
+       chiesto qualcosa, altrimenti la conversazione è chiusa. */
+    if (stato === "rispondere" && tr.ultimaNostra) {
+        const nostraFinale = tr.testo.split("\n").filter((r) => r.startsWith("NOI")).pop() || "";
+        if (chiediamoQualcosa(nostraFinale)) {
+            stato = "attesa_cliente";
+            azione = azione.replace(/^rispondere\s*:?\s*/i, "").trim() || "aspettiamo la risposta del cliente";
+            azione = `Sollecitare: ${azione}`.slice(0, 140);
+        } else {
+            stato = "niente";
+            azione = "abbiamo già risposto per ultimi";
+        }
+    }
     return {
         riga: {
             ...base, stato,
-            azione: String(out.azione || "").slice(0, 140) || null,
+            azione: azione.slice(0, 140) || null,
             rinvio_fino: normalizzaRinvio(out.rinvio_fino, stato),
         },
         usage: res.usage,

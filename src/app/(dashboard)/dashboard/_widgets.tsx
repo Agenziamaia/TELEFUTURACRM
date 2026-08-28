@@ -1783,6 +1783,17 @@ function WidgetWhatsApp({ ctx, size }) {
                         return;
                     }
                     aiFresche++;
+                    /* RETE DI SICUREZZA (Luca 28/08): se l'ULTIMO messaggio è
+                       nostro, il cliente non ci sta aspettando — qualunque cosa
+                       dica il triage. La guardia sta anche nel motore, ma qui
+                       copre le classificazioni già scritte, senza aspettare che
+                       il cron rigiri tutte le chat. */
+                    if (tri.stato === "rispondere" && ultimo.direction === "out") {
+                        if (!ccIds.has(c?.instance_id) && /\?|attendo|aspetto|mi mandi|mi invii|mi confermi|fammi sapere|mi faccia sapere|mi serve/i.test(String(ultimo.body || ""))) {
+                            attesa.push({ id: cid, nome: nomeChat, da: ultimo.t, fine: ultimo.t, azione: tri.azione });
+                        }
+                        return;
+                    }
                     if (tri.stato === "rispondere") {
                         let i = arr.length - 1, daT = ultimo.t;   // inizio del blocco finale del cliente
                         while (i >= 0 && arr[i].direction === "in") { daT = arr[i].t; i--; }
