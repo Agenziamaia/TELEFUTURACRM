@@ -40,7 +40,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
-import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa, vedeProtettiWa } from "@/lib/waVisibilita";
+import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa } from "@/lib/waVisibilita";
 import { matchNegozi, sameStore } from "@/lib/visibleStores";
 import { cn } from "@/utils";
 import {
@@ -1577,7 +1577,13 @@ function WidgetWhatsApp({ ctx, size }) {
             // solo le CONNESSE: le stesse chat che l'Inbox mostra (un alert su
             // un numero disconnesso sarebbe un click a vuoto)
             const [scopeWa, protWa] = await Promise.all([waScopeRisolto(uid, ctx.user?.role), titolariProtettiWa()]);
-            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores, { soloConnesse: true, scope: scopeWa, protetti: protWa, vedeProtetti: vedeProtettiWa(uid, ctx.user?.role) });
+            /* I NUMERI PERSONALI (quelli col lucchetto) NON entrano MAI nel
+               widget (Luca 28/08): «non devono essere considerate per nessuna
+               statistica». Non è una questione di permessi — Luca li vedrebbe
+               — ma di senso: sono chat private, e mediarle con quelle del
+               lavoro falsa tempi di risposta, ricevuti, inviati e la lista di
+               chi aspetta. Perciò `vedeProtetti: false` per tutti. */
+            let vis = waIstanzeVisibili(insts || [], uid, ctx.user?.role, ctx.myStores, { soloConnesse: true, scope: scopeWa, protetti: protWa, vedeProtetti: false });
             // stessa estensione dell'Inbox: il direttore cc vede i numeri dei suoi operatori
             if (ctx.user?.role === "direttore_cc") {
                 const gia = new Set(vis.map((i) => i.id));
