@@ -1,6 +1,10 @@
 // Tool dell'assistente AI. Ogni tool esegue query PARAMETRICHE (mai SQL libero dal modello),
 // applica l'ambito negozi dell'utente e passa i risultati dal filtro di sicurezza (guard).
-import { supabase } from "@/lib/supabaseClient";
+/* IL CLIENT DEL SERVER (28/08): con la blindatura RLS accesa, la chiave
+   pubblica non vede più le righe — l'assistente rispondeva «Utente non
+   valido o non attivo» a chiunque. Questo modulo gira solo lato server, e i
+   permessi dell'utente li applica il codice (getScope + i filtri dei tool). */
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { Scope, applyStoreScope } from "./scope";
 import { redact } from "./guard";
 import type { ToolDef } from "./deepseek";

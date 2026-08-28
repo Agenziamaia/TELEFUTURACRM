@@ -18,7 +18,11 @@
 // da sollecitare. Distinguere prospezione da pratica richiede di LEGGERE la
 // conversazione: per questo un modello, non un'altra regex.
 
-import { supabase } from "@/lib/supabaseClient";
+/* IL CLIENT DEL SERVER (28/08): con la blindatura RLS accesa, la chiave
+   pubblica non vede più le righe — l'assistente rispondeva «Utente non
+   valido o non attivo» a chiunque. Questo modulo gira solo lato server, e i
+   permessi dell'utente li applica il codice (getScope + i filtri dei tool). */
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
 
 export const TRIAGE_VERSIONE = 1;          // alzarla = riclassificare tutto

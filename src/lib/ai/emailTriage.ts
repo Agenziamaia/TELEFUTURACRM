@@ -18,7 +18,11 @@
 // ABBIAMO SCRITTO NOI, o col cliente censito in anagrafica (client_id), o
 // stellata, non viene MAI cestinata — al massimo resta classificata.
 
-import { supabase } from "@/lib/supabaseClient";
+/* IL CLIENT DEL SERVER (28/08): con la blindatura RLS accesa, la chiave
+   pubblica non vede più le righe — l'assistente rispondeva «Utente non
+   valido o non attivo» a chiunque. Questo modulo gira solo lato server, e i
+   permessi dell'utente li applica il codice (getScope + i filtri dei tool). */
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
 
 export const EMAIL_TRIAGE_VERSIONE = 1;    // alzarla = riclassificare tutto

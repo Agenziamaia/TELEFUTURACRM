@@ -1,6 +1,10 @@
 // Ambito dati dell'utente che interroga l'assistente: quali negozi puo' vedere.
 // Riusa la logica ruoli esistente (src/lib/roles.ts) per restare coerente col resto del CRM.
-import { supabase } from "@/lib/supabaseClient";
+/* IL CLIENT DEL SERVER (28/08): con la blindatura RLS accesa, la chiave
+   pubblica non vede più le righe — l'assistente rispondeva «Utente non
+   valido o non attivo» a chiunque. Questo modulo gira solo lato server, e i
+   permessi dell'utente li applica il codice (getScope + i filtri dei tool). */
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export interface Scope {
   userId: string;
