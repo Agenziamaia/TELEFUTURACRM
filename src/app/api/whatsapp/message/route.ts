@@ -41,13 +41,13 @@ async function aggiornaAnteprimaSeUltimo(conversationId: string, messageId: stri
 
 export async function POST(request: Request) {
     // 🔒 BLINDATURA fase A (28/08): senza sessione firmata non si passa
-    {
-        const sess = richiedeSessione(request);
-        if (!sess) return rispostaSessioneNonValida();
-    }
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
 
     try {
-        const { action, messageId, userId, text } = await request.json();
+        const { action, messageId, text } = await request.json();
+        // 🔒 chi modifica/cancella è chi ha la sessione
+        const userId = _s.id;
         if (!messageId || !userId || (action !== "edit" && action !== "delete")) {
             return NextResponse.json({ error: "action ('edit'|'delete'), messageId e userId obbligatori" }, { status: 400 });
         }

@@ -19,13 +19,13 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
     // 🔒 BLINDATURA fase A (28/08): senza sessione firmata non si passa
-    {
-        const sess = richiedeSessione(request);
-        if (!sess) return rispostaSessioneNonValida();
-    }
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
 
     try {
-        const { userId, number, text, templateId, callId } = await request.json();
+        const { number, text, templateId, callId } = await request.json();
+        // 🔒 il modello parte dal numero DI CHI CHIAMA, preso dalla sessione
+        const userId = _s.id;
         const dig = String(number || "").replace(/\D/g, "");
         const testo = String(text || "").trim();
         if (!userId || dig.length < 6 || !testo) {

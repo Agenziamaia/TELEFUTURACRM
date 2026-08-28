@@ -12,13 +12,13 @@ export const dynamic = "force-dynamic";
 //   { conversationId, text?, userId, mediaUrl, mediaMime, fileName } -> allegato
 export async function POST(request: Request) {
     // 🔒 BLINDATURA fase A (28/08): senza sessione firmata non si passa
-    {
-        const sess = richiedeSessione(request);
-        if (!sess) return rispostaSessioneNonValida();
-    }
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
 
     try {
-        const { conversationId, text, userId, mediaUrl, mediaMime, fileName } = await request.json();
+        const { conversationId, text, mediaUrl, mediaMime, fileName } = await request.json();
+        // 🔒 chi invia è chi ha la sessione, non chi lo dichiara
+        const userId = _s.id;
         const testo = (text || "").trim();
         if (!conversationId || (!testo && !mediaUrl)) {
             return NextResponse.json({ error: "conversationId e testo o allegato obbligatori" }, { status: 400 });

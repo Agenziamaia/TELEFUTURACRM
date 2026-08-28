@@ -18,7 +18,8 @@ const PUO_AMMINISTRARE = ["admin", "dev", "direttore_generale"];
 export async function POST(request: Request) {
     const sess = richiedeSessione(request);
     if (!sess) return rispostaSessioneNonValida();
-    const { azione, email, vecchia, nuova, userId, alias } = await request.json().catch(() => ({}));
+    const { azione, email, vecchia, nuova, userId: bersaglio, alias } = await request.json().catch(() => ({}));
+    // `bersaglio` è la persona SU CUI si agisce: chi agisce è sempre la sessione
 
     // il ruolo si rilegge dal DB: quello del cookie potrebbe essere vecchio
     const { data: io } = await supabase.from("app_users").select("id, role, email, active").eq("id", sess.id).maybeSingle();
@@ -34,15 +35,15 @@ export async function POST(request: Request) {
     }
     if (azione === "reset_password") {
         if (!amministra) return NextResponse.json({ error: "Non hai i permessi per questa operazione" });
-        if (!userId || !nuova) return NextResponse.json({ error: "Dati mancanti" });
-        const { data, error } = await supabase.rpc("admin_set_password", { p_user_id: userId, p_new: nuova });
+        if (!bersaglio || !nuova) return NextResponse.json({ error: "Dati mancanti" });
+        const { data, error } = await supabase.rpc("admin_set_password", { p_user_id: bersaglio, p_new: nuova });
         if (error) return NextResponse.json({ error: error.message });
         return NextResponse.json({ ok: true, risultato: data });
     }
     if (azione === "alias") {
         if (!amministra) return NextResponse.json({ error: "Non hai i permessi per questa operazione" });
-        if (!userId) return NextResponse.json({ error: "Dati mancanti" });
-        const { data, error } = await supabase.rpc("applica_alias", { p_user_id: userId, p_alias: alias || "" });
+        if (!bersaglio) return NextResponse.json({ error: "Dati mancanti" });
+        const { data, error } = await supabase.rpc("applica_alias", { p_user_id: bersaglio, p_alias: alias || "" });
         if (error) return NextResponse.json({ error: error.message });
         return NextResponse.json({ ok: true, risultato: data });
     }

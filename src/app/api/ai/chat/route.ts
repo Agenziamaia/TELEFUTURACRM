@@ -41,10 +41,8 @@ function systemPrompt(scope: any) {
 
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
-    }
+    const _sess = richiedeSessione(req);
+    if (!_sess) return rispostaSessioneNonValida();
 
   const started = Date.now();
   if (!hasKey()) {
@@ -53,7 +51,9 @@ export async function POST(req: Request) {
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON non valido" }, { status: 400 }); }
 
-  const { userId, messages } = body || {};
+  const { messages } = body || {};
+  // 🔒 l'identità viene dalla SESSIONE, non da quello che dichiara il client
+  const userId = _sess.id;
   if (!userId || !Array.isArray(messages) || messages.length === 0) {
     return NextResponse.json({ error: "userId e messages sono obbligatori" }, { status: 400 });
   }
