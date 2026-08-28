@@ -21,7 +21,11 @@ export async function GET(request: Request) {
         const { data } = await supabase.from("app_users").select("role, active").eq("id", sess.id).maybeSingle();
         if (data && data.active === false) return NextResponse.json({ attivo: false, motivo: "disattivato" });
         if (data?.role) role = String(data.role);
-    } catch { /* si tiene il ruolo del cookie */ }
+    } catch {
+        // se non riusciamo a verificare che l'utente sia ancora attivo, NON
+        // si rilascia niente: un licenziato non deve passare per un intoppo
+        return NextResponse.json({ attivo: false, motivo: "verifica" });
+    }
 
     const token = firmaTokenTf({
         uid: sess.id,

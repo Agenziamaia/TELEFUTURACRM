@@ -137,7 +137,7 @@ export function ChatToaster() {
             })
             .subscribe();
         return () => { supabase.removeChannel(channel); };
-    }, [user?.id]);
+    }, [user?.id, storesToast.join("|"), vedeProttiToast]);
 
     const open = (t: Toast) => { setToasts((p) => p.filter((x) => x.id !== t.id)); router.push(t.href); };
     if (toasts.length === 0) return null;
