@@ -69,13 +69,34 @@ function Rich({ text }) {
    sta ascoltando. Tutto si spegne da solo per chi ha chiesto meno
    movimento (prefers-reduced-motion). */
 const AI_CSS = `
+/* ══ COLORE E VELOCITÀ, MISURATI ═════════════════════════════════════════
+   I miei accenti stavano a croma 0,230 e 0,259 — il doppio dei riferimenti
+   (Linear 0,159 · Claude 0,113 · Perplexity 0,081). Un viola così saturo si
+   legge come decorazione, non come materiale: è il segno che distingue una
+   cosa fatta in fretta da una fatta bene.
+   E il tempo non è simmetrico: quello che l'utente innesca appare SUBITO,
+   quello che il sistema si riprende sfuma in 150ms. */
+:root {
+  --ai-accent: #676fd4;         /* croma 0,153 — bottoni, eco della domanda */
+  --ai-accent-ink: #a0acff;     /* testo e icone accentate */
+  --ai-veloce: .1s;             /* pressione, micro-stati */
+  --ai-normale: .16s;           /* il passo di tutti i giorni */
+  --ai-uscita: .15s;            /* ciò che si spegne */
+  --ai-curva: cubic-bezier(.25,.46,.45,.94);
+}
+/* la prosa della risposta: 16px e interlinea 1,6, come un testo da leggere
+   e non come una notifica */
+.ai-prosa p { font-size: 15px; line-height: 1.62; }
+.ai-prosa > *:first-child { margin-top: 0 }
+.ai-prosa > *:last-child { margin-bottom: 0 }
+
 @keyframes aiSu { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes aiPulse { 0%,100% { opacity: .55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
 @keyframes aiAura { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
-@keyframes aiPunto { 0%,80%,100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+@keyframes aiRuota { from { transform: rotate(45deg) } to { transform: rotate(405deg) } }
+.ai-rombo { width: 9px; height: 9px; background: currentColor; animation: aiRuota .7s ease-in-out infinite; }
 .ai-su { animation: aiSu .32s cubic-bezier(.22,1,.36,1) both; }
 .ai-alone { animation: aiPulse 2.4s ease-in-out infinite; }
-.ai-punto { display:inline-block; width:5px; height:5px; border-radius:99px; background:currentColor; animation: aiPunto 1.2s infinite; }
 /* l'aura della barra: si accende quando stai scrivendo */
 .ai-barra { position: relative; }
 .ai-barra::before {
@@ -90,9 +111,20 @@ const AI_CSS = `
 /* le pillole dei suggerimenti: si sollevano, non si limitano a schiarirsi */
 .ai-sugg { transition: transform .18s cubic-bezier(.22,1,.36,1), background-color .18s, border-color .18s; }
 .ai-sugg:hover { transform: translateY(-2px); }
+/* PRESSIONE, NON RIMBALZO (misurato su Amie: 1 → .97 → 1).
+   Il pulsante si COMPRIME sotto il dito e torna: è la sensazione fisica che
+   distingue un'interfaccia curata da una che si limita a cambiare colore.
+   Il rimbalzo si tiene per le entrate in scena, non per i click. */
+.ai-premi { transition: transform .12s cubic-bezier(.4,0,.2,1); }
+.ai-premi:active { transform: scale(.97); }
+/* L'ARRIVO (misurato su Reflect: 1.5s, indigo-300 che si dissolve).
+   Quando si apre una conversazione dall'elenco, il primo messaggio si accende
+   e si spegne: l'occhio sa dove è atterrato senza che nulla glielo dica. */
+@keyframes aiArrivo { 0% { background: rgba(160,172,255,.10); } to { background: transparent; } }
+.ai-arrivo { animation: aiArrivo .2s var(--ai-curva); border-radius: 12px; }
 @media (prefers-reduced-motion: reduce) {
-  .ai-su, .ai-alone, .ai-barra.viva::before, .ai-punto { animation: none !important; }
-  .ai-sugg:hover { transform: none; }
+  .ai-su, .ai-alone, .ai-barra.viva::before, .ai-rombo, .ai-arrivo { animation: none !important; }
+  .ai-sugg:hover, .ai-premi:active { transform: none; }
 }
 `;
 
@@ -166,6 +198,7 @@ export default function AssistentePage() {
   const [insegnaA, setInsegnaA] = useState(null);                // su quale risposta sto insegnando
   const [insegnamento, setInsegnamento] = useState("");
   const [privacy, setPrivacy] = useState(false);          // la spiegazione del lucchetto
+  const [appenaAperta, setAppenaAperta] = useState(false); // il flash quando atterri su una conversazione
   /* ══ GLI APPUNTI E IL LORO RITORNO ═══════════════════════════════════
      Il ciclo che rende un assistente insostituibile: lasci una cosa in due
      secondi, la ritrovi quando serve senza averla cercata, e quindi lasci la
@@ -225,6 +258,8 @@ export default function AssistentePage() {
   const apriChat = async (id) => {
     setConvId(id);
     setMsgs([]);
+    setAppenaAperta(true);
+    setTimeout(() => setAppenaAperta(false), 1600);   // il flash dura una volta sola
     try {
       const d = await fetch(`/api/ai/spazio?cosa=conversazione&id=${id}`, { credentials: "include", cache: "no-store" }).then((r) => r.json());
       if (d?.messaggi) {
@@ -394,7 +429,12 @@ export default function AssistentePage() {
        Il fondo era opaco e copriva le sfumature del CRM: la pagina si leggeva
        come un rettangolo estraneo appoggiato dentro l'app. Ora è velata, il
        fondo dell'applicazione si vede sotto, e la pagina ci appartiene. */
-    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex relative overflow-hidden bg-[#0f111a]/60">
+    /* /75 e non /60 (misura del revisore): al 60% il rosa del fondo del CRM
+       (pink-500, croma 0,212) trapelava attraverso la pagina — proprio il
+       tipo di tinta satura che stavamo togliendo davanti. Il fondo continua a
+       vedersi, ma smorzato. Il gradiente globale non si tocca: è di tutte le
+       pagine, e cambiarlo per una sola sarebbe un danno altrove. */
+    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex relative overflow-hidden bg-[#0f111a]/75">
       <style>{AI_CSS}</style>
 
       {/* ══ LA BARRA: progetti e conversazioni, come in un'app di chat ══ */}
@@ -424,7 +464,7 @@ export default function AssistentePage() {
           <div className="flex-1 overflow-y-auto p-2 space-y-3">
             {spazio.progetti.length > 0 && (
               <div>
-                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">Progetti</p>
+                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#83868f]">Progetti</p>
                 {spazio.progetti.map((pr) => (
                   <div key={pr.id} className="group/pr flex items-center gap-1">
                     <button onClick={() => setProgettoAperto(progettoAperto === pr.id ? null : pr.id)}
@@ -447,27 +487,27 @@ export default function AssistentePage() {
                 mostrava un elenco piatto. Una lista che si allunga senza tempo
                 diventa illeggibile in due settimane. */}
             {convDelProgetto.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-slate-600">
+              <p className="px-2 py-3 text-[12px] text-[#83868f]">
                 {progettoAperto ? "Questo progetto è ancora vuoto." : "Le conversazioni che apri restano qui."}
               </p>
             ) : gruppiConv.map((g) => (
               <div key={g.titolo}>
-                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">{g.titolo}</p>
+                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#83868f]">{g.titolo}</p>
                 {g.righe.map((c) => (
                   <div key={c.id} className="group/c relative flex items-center gap-1">
                     {/* l'attiva si segna con una linguetta di luce nel margine,
                         non con un riquadro: il riquadro spezza la colonna */}
                     {convId === c.id && (
-                      <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-indigo-400 to-violet-500" />
+                      <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[#8b93e8]" />
                     )}
                     <button onClick={() => apriChat(c.id)}
                       className={cnx("flex-1 min-w-0 flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-[13px] text-left transition-colors",
-                        convId === c.id ? "bg-white/[0.06] text-white" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200")}>
+                        convId === c.id ? "bg-white/[0.10] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200")}>
                       {c.fissata && <span className="shrink-0 text-[10px] leading-none">📌</span>}
                       <span className="truncate">{c.titolo || "Nuova conversazione"}</span>
                     </button>
                     <button onClick={() => eliminaChat(c.id)} title="Elimina"
-                      className="opacity-0 group-hover/c:opacity-100 p-1 rounded text-slate-600 hover:text-rose-300 transition-opacity">
+                      className="opacity-0 group-hover/c:opacity-100 p-1 rounded text-[#83868f] hover:text-rose-300 transition-opacity">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -511,8 +551,8 @@ export default function AssistentePage() {
           className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white">
           <PanelLeft className="w-4 h-4" />
         </button>
-        <span className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
-          {loading && <span className="absolute inset-0 rounded-xl bg-indigo-500/50 blur-md ai-alone" />}
+        <span className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shrink-0">
+          {loading && <span className="absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />}
           <Sparkles className="relative w-4 h-4 text-white" />
         </span>
         <div className="min-w-0">
@@ -538,11 +578,11 @@ export default function AssistentePage() {
              SUOI, che si può cominciare senza pensare cosa scrivere, e che
              questo assistente si può EDUCARE. Prima c'era una scintilla
              grigia e quattro frasi buone per chiunque. */
-          <div className="max-w-3xl mx-auto mt-6 sm:mt-10 ai-su">
+          <div className="max-w-[39rem] mx-auto mt-6 sm:mt-10 ai-su">
             <div className="text-center">
               <div className="relative inline-flex items-center justify-center mb-4">
-                <span className="absolute inset-0 rounded-full bg-indigo-500/25 blur-xl ai-alone" />
-                <span className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <span className="absolute inset-0 rounded-full bg-[#676fd4]/25 blur-xl ai-alone" />
+                <span className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shadow-lg shadow-[#676fd4]/25">
                   <Sparkles className="w-7 h-7 text-white" />
                 </span>
               </div>
@@ -585,7 +625,7 @@ export default function AssistentePage() {
             <div className="grid sm:grid-cols-2 gap-2 mt-6">
               {spunti.map((sp) => (
                 <button key={sp.t} onClick={() => ask(sp.q)}
-                  className="ai-sugg group text-left px-3.5 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.07] hover:border-indigo-400/40">
+                  className="ai-sugg ai-premi group text-left px-3.5 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.07] hover:border-indigo-400/40">
                   <div className="flex items-center gap-2.5">
                     <span className="text-lg">{sp.i}</span>
                     <span className="text-sm font-semibold text-slate-100 group-hover:text-white">{sp.t}</span>
@@ -597,7 +637,7 @@ export default function AssistentePage() {
             {/* COSA SO DI TE — il pezzo che fa capire che è personalizzabile.
                 Se non gli hai insegnato niente lo dice, e ti fa cominciare. */}
             <button onClick={() => setImpostazioni(true)}
-              className="ai-sugg w-full mt-3 text-left px-4 py-3.5 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.05] hover:border-violet-400/50">
+              className="ai-sugg ai-premi w-full mt-3 text-left px-4 py-3.5 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.05] hover:border-violet-400/50">
               <div className="flex items-start gap-3">
                 <span className="text-lg mt-0.5">🧠</span>
                 <div className="min-w-0">
@@ -615,15 +655,23 @@ export default function AssistentePage() {
           </div>
         )}
 
-        <div className="max-w-3xl mx-auto space-y-3">
+        <div className="max-w-[39rem] mx-auto space-y-5">
           {msgs.map((m, idx) => (
-            <div key={idx} className={`ai-su flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${m.role === "user"
-                  ? "bg-indigo-600 text-white rounded-br-sm"
-                  : `bg-white/5 border rounded-bl-sm ${m.error ? "border-rose-500/30" : "border-white/5"}`}`}>
+            <div key={idx} className={cnx("ai-su flex", appenaAperta && "ai-arrivo", m.role === "user" ? "justify-end" : "justify-start")}>
+              {/* ══ NIENTE BOLLE (misura del revisore) ═══════════════════
+                  Le code delle bolle e il fondo sulla risposta sono il
+                  linguaggio delle app di messaggistica: nessun assistente serio
+                  le usa, perché spezzano la misura di lettura e fanno sembrare
+                  una risposta ragionata un messaggino.
+                  La risposta è PROSA NUDA — nessun fondo, nessun bordo. La
+                  domanda resta un'eco a destra, senza coda. */}
+              <div className={cnx(
+                m.role === "user"
+                  ? "max-w-[75%] rounded-xl px-3.5 py-2 bg-white/[0.055]"
+                  : cnx("w-full", m.error && "rounded-xl px-3.5 py-2 bg-rose-500/[0.07] ring-1 ring-rose-400/25"))}>
                 {m.role === "user"
-                  ? <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-                  : <Rich text={m.content} />}
+                  ? <p className="text-sm text-slate-100 whitespace-pre-wrap">{m.content}</p>
+                  : <div className="ai-prosa"><Rich text={m.content} /></div>}
                 {m.allegati?.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {m.allegati.map((a, j) => (
@@ -682,21 +730,25 @@ export default function AssistentePage() {
                         <input autoFocus value={insegnamento} onChange={(e) => setInsegnamento(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") salvaInsegnamento(); if (e.key === "Escape") setInsegnaA(null); }}
                           placeholder="Es.: gli importi dammeli sempre senza decimali"
-                          className="flex-1 min-w-0 bg-black/30 border border-violet-400/40 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-slate-600 outline-none" />
+                          className="flex-1 min-w-0 bg-black/30 border border-violet-400/40 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-[#83868f] outline-none" />
                         <button onClick={salvaInsegnamento} disabled={!insegnamento.trim()}
                           className="px-2.5 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[11px] font-bold">Ricorda</button>
                         <button onClick={() => setInsegnaA(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
                       </div>
                     ) : (
+                      /* CONTRASTO (misura del revisore: era 2,51:1, sotto ogni
+                         soglia). È l'invito su cui poggia l'idea che
+                         l'assistente si educhi: scriverlo in un grigio che si
+                         legge a fatica significa che nessuno lo userà mai. */
                       <button onClick={() => { setInsegnaA(idx); setInsegnamento(""); }}
-                        className="text-[11px] text-slate-600 hover:text-violet-300 transition-colors">
-                        🧠 insegnami come la volevi
+                        className="inline-flex items-center gap-1.5 -ml-1 px-2 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-violet-200 hover:bg-violet-500/10 transition-colors">
+                        <span>🧠</span> insegnami come la volevi
                       </button>
                     )}
                   </div>
                 )}
                 {m.usage && (
-                  <p className="mt-1.5 text-[10px] text-slate-600">
+                  <p className="mt-1.5 text-[10px] text-[#83868f]">
                     {m.usage.ms} ms · ${m.usage.costUsd?.toFixed(4)}
                   </p>
                 )}
@@ -705,11 +757,11 @@ export default function AssistentePage() {
           ))}
           {loading && (
             <div className="ai-su flex justify-start items-end gap-2">
-              <span className="relative w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
-                <span className="absolute inset-0 rounded-xl bg-indigo-500/40 blur-md ai-alone" />
+              <span className="relative w-7 h-7 rounded-xl bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shrink-0">
+                <span className="absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />
                 <Sparkles className="relative w-3.5 h-3.5 text-white" />
               </span>
-              <div className="bg-white/5 border border-white/5 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2 text-indigo-300">
+              <div className="flex items-center gap-2 py-2 text-indigo-300/90">
                 <span className="ai-punto" style={{ animationDelay: "0ms" }} />
                 <span className="ai-punto" style={{ animationDelay: "150ms" }} />
                 <span className="ai-punto" style={{ animationDelay: "300ms" }} />
@@ -724,8 +776,8 @@ export default function AssistentePage() {
           testo scorre e si dissolve invece di essere tagliato — è la
           differenza fra due riquadri accostati e una sola superficie. */}
       <div className="relative px-4 py-3 shrink-0">
-        <span aria-hidden className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-[#0f111a]/80 to-transparent" />
-        <div className="max-w-3xl mx-auto">
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-[#0f111a]/90 to-transparent" />
+        <div className="max-w-[39rem] mx-auto">
           {/* ALLEGATI IN ATTESA (Luca 28/08): si vedono prima di mandare, con
               i KB, e si tolgono uno per uno. Quelli che non so leggere lo
               dicono, invece di sparire in silenzio. */}
@@ -778,7 +830,7 @@ export default function AssistentePage() {
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); modoAppunto ? salvaAppunto() : ask(); } }}
               onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []); if (f.length) { e.preventDefault(); aggiungiFile(f); } }}
               placeholder={modoAppunto ? "Scrivi l'appunto: te lo tengo io…" : `Scrivi a ${nomeAssistente}…`}
-              className="w-full bg-transparent border-0 outline-none resize-none max-h-40 px-2.5 pt-1.5 pb-2 text-[15px] text-slate-100 placeholder:text-slate-600" />
+              className="w-full bg-transparent border-0 outline-none resize-none max-h-40 px-2.5 pt-1.5 pb-2 text-[15px] text-slate-100 placeholder:text-[#83868f]" />
             <div className="flex items-center gap-1.5 px-1">
               <button onClick={() => fileRef.current?.click()} disabled={loading || leggendo}
                 title="Allega un documento: PDF, Excel, CSV o testo. Il file resta nel CRM: all'assistente arriva solo il testo."
@@ -828,7 +880,7 @@ export default function AssistentePage() {
                 </div>
               )}
 
-              <span className="ml-auto text-[11px] text-slate-600 hidden sm:block pr-1">
+              <span className="ml-auto text-[11px] text-[#83868f] hidden sm:block pr-1">
                 <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10">Invio</kbd> manda ·{" "}
                 <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10">Shift+Invio</kbd> va a capo
               </span>
@@ -837,8 +889,8 @@ export default function AssistentePage() {
                 title={modoAppunto ? "Annota" : "Manda"}
                 className={cnx("p-2.5 rounded-xl transition-all",
                   (input.trim() || allegati.some((a) => a.testo)) && !loading
-                    ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 hover:-translate-y-px active:scale-95"
-                    : "bg-white/5 text-slate-600")}>
+                    ? "bg-gradient-to-br from-[#676fd4] to-[#7882e9] text-white shadow-lg shadow-[#676fd4]/25 hover:-translate-y-px active:scale-95"
+                    : "bg-white/5 text-[#83868f]")}>
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
               </button>
             </div>
@@ -932,7 +984,7 @@ function PannelloPreferenze({ valori, onChiudi, onSalva }) {
             scheda: si aggiunge, si toglie, si conta. */}
         <div className="space-y-2">
           <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Cosa sa di te <span className="text-slate-600 normal-case font-normal">— {righeMemoria.length ? `${righeMemoria.length} cose` : "ancora niente"}</span>
+            Cosa sa di te <span className="text-[#83868f] normal-case font-normal">— {righeMemoria.length ? `${righeMemoria.length} cose` : "ancora niente"}</span>
           </label>
           {righeMemoria.length > 0 && (
             <div className="space-y-1.5">
@@ -959,7 +1011,7 @@ function PannelloPreferenze({ valori, onChiudi, onSalva }) {
               Aggiungi
             </button>
           </div>
-          <p className="text-[10px] text-slate-600">
+          <p className="text-[10px] text-slate-500">
             Vale in ogni conversazione. Puoi aggiungerne anche durante una chat, con «insegnami come la volevi» sotto le risposte.
           </p>
         </div>
@@ -1000,7 +1052,7 @@ function PannelloProgetto({ progetto, onChiudi, onSalva, onElimina }) {
           <textarea value={istruzioni} onChange={(e) => setIstruzioni(e.target.value)} rows={7}
             placeholder={"Es.: Qui lavoriamo al piano marketing per le agenzie di Roma. Il tono è commerciale. Quando parlo di «onde» intendo le fasi di contatto. Non propormi canali che non siano email, volantini o Facebook."}
             className="glass-input w-full text-sm resize-none" />
-          <p className="text-[10px] text-slate-600">L'assistente lo terrà presente in tutte le conversazioni di questo progetto.</p>
+          <p className="text-[10px] text-[#83868f]">L'assistente lo terrà presente in tutte le conversazioni di questo progetto.</p>
         </div>
         <div className="flex justify-between gap-2 pt-1">
           <button onClick={onElimina} className="px-3 py-2 rounded-lg text-sm text-rose-300 hover:bg-rose-500/10">Elimina progetto</button>
