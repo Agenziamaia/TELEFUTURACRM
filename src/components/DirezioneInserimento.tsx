@@ -38,6 +38,15 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
     bruciati?: number;
 }) => React.ReactElement;
 
+/* Quanto ci sta ancora in questo codice PRIMA che convenga cambiarlo: si
+   guarda il traguardo della fase in corso — la S1 nuda, poi il suo sfrido,
+   poi il target della direzione (Luca 28/08, le due priorità zero). */
+function capienzaDi(k: { mancanoS1: number; mancanoS1Sfr: number; mancano: number }): number {
+    if (k.mancanoS1 > 0) return k.mancanoS1;
+    if (k.mancanoS1Sfr > 0) return k.mancanoS1Sfr;
+    return k.mancano;
+}
+
 /* LA CODA DEI CODICI (Luca 28/08): «se ne carichi più di una, una per
    codice». Sta staccata dall'indicazione grande, in tono minore, e dà solo
    i NOMI — mai target né avanzamenti: il widget dei ragazzi resta riservato. */
@@ -977,7 +986,8 @@ export function DirezioneInserimentoAdmin() {
                             <div className="grid gap-4 lg:grid-cols-2 text-[11px] leading-relaxed text-slate-300">
                                 <div className="space-y-1.5">
                                     <div className="text-[10px] font-bold text-slate-500 uppercase">L&apos;ordine delle decisioni</div>
-                                    <div><b className="text-white">⓪ Prima esigenza — i Target 1</b> (mobile, fisso e CB): finché un codice è sotto la sua <b>S1 nuda</b> (senza sfrido; per la CB l&apos;<b>80%</b> del target Partnership) si carica lì. Prima il negozio del venditore se è lui sotto, poi le priorità ①②③, poi la S1 più vicina a chiudersi. Lo sfrido lo colma il negozio con le attivazioni sue.</div>
+                                    <div><b className="text-white">⓪ Prima esigenza — le S1 NUDE</b> (mobile, fisso e CB): finché un codice è sotto la sua <b>S1 senza sfrido</b> (per la CB l&apos;<b>80%</b> del target Partnership) si carica lì. Prima il negozio del venditore se è lui sotto, poi le priorità ①②③, poi la S1 più vicina a chiudersi.</div>
+                                    <div><b className="text-white">⓪·1 Poi gli SFRIDI delle S1</b> (per la CB il <b>100%</b>): vengono prima di qualunque target più alto — la S2 di un altro codice non vale lo sfrido di questo.</div>
                                     <div><b className="text-white">① Le priorità ①②③</b> cliccate qui nel pannello: vincono su tutto finché il codice non chiude il suo target.</div>
                                     <div><b className="text-white">② La strategia</b>: 🎯 <i>Chiudi il più vicino</i> scavalca il negozio del venditore; ⚖️ <i>Riempi il più scoperto</i> manda prima sul negozio del venditore finché ha capienza, poi sul più scoperto.</div>
                                     <div><b className="text-white">③ A parità</b>: il negozio di chi sta caricando.</div>
@@ -1199,7 +1209,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const codaMostrata = pista === BIZMOB
         ? (biz?.scelto && biz.capienza <= 1 ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
         : pistaDiGruppo ? []
-            : (consigliato && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1)
+            : (consigliato && capienzaDi(consigliato) <= 1)
                 ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
 
     /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
@@ -1386,7 +1396,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     chiude col prossimo serve eccome (oggi il mobile di Mazzini
                     è a mezzo punto dalla S1). */}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato
-                    && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1 && (
+                    && capienzaDi(consigliato) <= 1 && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}
 

@@ -332,12 +332,15 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
     // la CB W3 «va a punti»: i fatti sono i punti PARTNERSHIP, non la
     // pista a pezzi (bug visto da Luca in prova: barre a zero)
     const cbW3 = dir.brand === "windtre" && pista === "cb";
-    // FASE T1 (Luca 27/08): su mobile, fisso e CB Partnership la PRIMA
-    // esigenza — in tutti i casi — è coprire la Soglia 1 NUDA di ogni
-    // codice in corsa (per la CB la S1 è l'80% del target Partnership):
-    // lo sfrido lo colma il negozio stesso con le attivazioni sue
-    // solo W3: le scale Vodafone sono di RETE duplicate sui canali — lì
-    // una «S1 per codice» non esiste (revisore 27/08)
+    /* LE DUE PRIORITÀ ZERO (Luca 28/08). Prima c'era un solo scalino — la
+       S1 nuda — e subito dopo si passava al target, che su un altro codice
+       può essere la S2. Sbagliato: «Mazzini deve raggiungere lo sfrido della
+       soglia 1, che è più importante della soglia 2 di Collatina».
+         ⓪   tutte le S1 NUDE (per la CB: l'80% del target Partnership)
+         ⓪·1 tutti gli SFRIDI delle S1 (per la CB: il 100%)
+         ①…  da qui in poi priorità della direzione e strategia, come prima.
+       Solo W3: le scale Vodafone sono di RETE duplicate sui canali, lì una
+       «S1 per codice» non esiste (revisore 27/08). */
     const faseT1 = dir.brand === "windtre" && (pista === "mobile" || pista === "fisso" || cbW3);
     return dir.codici
         .filter((k) => (k.targets[pista] || 0) > 0)
@@ -346,11 +349,19 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
             const target = k.targets[pista] || 0;
             const s1 = faseT1 ? Number((k.soglie[pista] || [])[0]) || 0 : 0;
             const mancanoS1 = s1 > 0 ? Math.max(0, Math.round((s1 - fatti) * 100) / 100) : 0;
+            // ⓪·1 — lo scalino dello SFRIDO. Sulla CB il «100%» è già la
+            // seconda soglia (le sue soglie sono 80% e 100% del target
+            // Partnership); sulle altre piste si applica lo sfrido di pista.
+            const s1Sfr = !faseT1 || !s1 ? 0
+                : cbW3 ? (Number((k.soglie[pista] || [])[1]) || targetConSfrido(s1, dir.sfridi[pista] || 0))
+                    : targetConSfrido(s1, dir.sfridi[pista] || 0);
+            const mancanoS1Sfr = s1Sfr > 0 ? Math.max(0, Math.round((s1Sfr - fatti) * 100) / 100) : 0;
             return {
                 ...k, fatti, target,
                 mancano: Math.max(0, Math.round((target - fatti) * 100) / 100),
                 mio: èMioCodice(k, negozioUtente),
                 s1, mancanoS1, sottoS1: mancanoS1 > 0,
+                s1Sfr, mancanoS1Sfr, sottoS1Sfr: mancanoS1 <= 0 && mancanoS1Sfr > 0,
             };
         })
         .sort((a, b) => {
@@ -366,6 +377,16 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
                 if (pr1) return pr1;
                 const d1 = a.mancanoS1 - b.mancanoS1;
                 if (d1) return d1;
+            }
+            // ⓪·1 gli SFRIDI delle S1: vengono prima di qualunque target più
+            //     alto (la S2 di un altro codice non vale lo sfrido di questo)
+            if (a.sottoS1Sfr !== b.sottoS1Sfr) return a.sottoS1Sfr ? -1 : 1;
+            if (a.sottoS1Sfr && b.sottoS1Sfr) {
+                if (a.mio !== b.mio) return a.mio ? -1 : 1;
+                const pr2 = rankDi(a.cod_gara, a.mancanoS1Sfr) - rankDi(b.cod_gara, b.mancanoS1Sfr);
+                if (pr2) return pr2;
+                const d2 = a.mancanoS1Sfr - b.mancanoS1Sfr;
+                if (d2) return d2;
             }
             const pr = rankDi(a.cod_gara, a.mancano) - rankDi(b.cod_gara, b.mancano);
             if (pr) return pr;                                          // ① priorità esplicite
