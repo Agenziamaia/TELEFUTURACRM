@@ -719,6 +719,29 @@ select.rvIn{cursor:pointer}
 /* «+ Aggiungi vendita»: il tratteggio dice «non c'è ancora, lo crei tu» */
 .rvAggiungi{width:100%;padding:9px 0;border-radius:11px;border:1px dashed color-mix(in srgb,var(--rv-acc) 45%,transparent);background:transparent;color:var(--rv-acc);font-size:11.5px;font-weight:800;cursor:pointer;transition:background .15s,border-color .15s}
 .rvAggiungi:hover{background:color-mix(in srgb,var(--rv-acc) 9%,transparent);border-color:var(--rv-acc)}
+/* la conferma di fine vendita: l'unica schermata che deve fermarsi finché
+   non la si legge — prima era un avviso volante da 3,5 secondi */
+.rvFattaSfondo{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(4px);z-index:2600;display:flex;align-items:center;justify-content:center;padding:16px}
+.rvFatta{width:100%;max-width:440px;background:var(--tf-12141f);border:1px solid rgba(52,211,153,.35);border-radius:20px;padding:26px 24px;text-align:center;box-shadow:0 22px 60px rgba(0,0,0,.5)}
+.rvFatta-o{width:64px;height:64px;margin:0 auto 14px;border-radius:50%;background:rgba(40,167,69,.14);border:1.5px solid rgba(52,211,153,.5);display:flex;align-items:center;justify-content:center;font-size:31px;font-weight:800;color:var(--tf-34d399);line-height:1}
+html.light .rvFatta{background:#fff;border-color:rgba(15,122,77,.32)}
+html.light .rvFatta-o{color:#0f7a4d;background:rgba(15,122,77,.10);border-color:rgba(15,122,77,.4)}
+.rvFatta h3{margin:0 0 5px;font-size:19px;font-weight:800;color:var(--tf-f8fafc)}
+.rvFatta p{margin:0 0 16px;font-size:13px;color:var(--tf-8892b0);line-height:1.5}
+.rvFatta-d{background:var(--tf-w30);border:1px solid var(--tf-w60);border-radius:13px;padding:12px 14px;margin-bottom:18px;text-align:left;display:flex;flex-direction:column;gap:6px}
+.rvFatta-d div{display:flex;justify-content:space-between;gap:12px;font-size:12.5px}
+.rvFatta-d span:first-child{color:var(--tf-8892b0);font-weight:600}
+.rvFatta-d span:last-child{color:var(--tf-e2e8f0);font-weight:800;text-align:right}
+/* ═══ IL MOMENTO DEL SALVATAGGIO ═══════════════════════════════════════
+   L'ultimo passo: qui si vede COSA manca prima di premere, non dopo. */
+.rvPrima{border-radius:14px;padding:14px 16px;margin-top:16px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.07)}
+.rvPrima-t{font-size:12.5px;font-weight:800;color:var(--tf-fbbf24);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.rvManca{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 10px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--tf-cbd5e1);font-size:12.5px;font-weight:600;cursor:pointer;line-height:1.35;transition:background .15s,border-color .15s}
+.rvManca:hover{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.4)}
+.rvManca i{font-style:normal;flex-shrink:0;width:18px;text-align:center}
+.rvManca u{margin-left:auto;text-decoration:none;font-size:11px;font-weight:800;color:var(--tf-fbbf24);white-space:nowrap;opacity:.85}
+/* quando invece è tutto a posto */
+.rvPronto{border-radius:14px;padding:14px 16px;margin-top:16px;border:1px solid rgba(52,211,153,.4);background:rgba(40,167,69,.08);font-size:12.5px;font-weight:700;color:var(--tf-34d399);display:flex;align-items:center;gap:9px}
 /* ═══ IL CARRELLO ═════════════════════════════════════════════════════
    Era il pezzo che Luca indicava come «quello bello», ma sotto era il più
    artigianale di tutti: 190 stili scritti a mano e 8 sole classi. Era bello

@@ -5377,6 +5377,13 @@ function CRM() {
   const [submitting, setSubmitting] = useState(false);
   // POS: dati per il modale Incasso & Scontrino (si apre a vendita registrata).
   const [scontrino, setScontrino] = useState<ScontrinoData | null>(null);
+  /* CONFERMA DI FINE VENDITA (Luca 28/08). Prima: un avviso volante di 3,5
+     secondi e, sotto, il modulo che si svuotava da solo dopo 2. Di una
+     vendita appena registrata non restava traccia a schermo — se il
+     venditore guardava altrove, non sapeva se era andata. Questa resta
+     finché non la chiude lui, e il carrello si azzera in quel momento
+     (stesso patto dello scontrino: il blocco cade solo alla chiusura). */
+  const [venditaFatta, setVenditaFatta] = useState(null);
   // Conti in sospeso: contatore per rinfrescare il pulsante rosso dopo salva/completa.
   const [sospesoReload, setSospesoReload] = useState(0);
   // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
@@ -5402,6 +5409,7 @@ function CRM() {
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
   const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
+  const chiudiVenditaFatta = () => { setVenditaFatta(null); fullReset(); submitLock.current = false; setSubmitting(false); };
   // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
   // potrebbe avere una vendita in corso); rinfresca solo la lista dei sospesi.
   const chiudiSospeso = () => { setScontrino(null); setSospesoReload((x) => x + 1); };
@@ -5564,6 +5572,39 @@ function CRM() {
     // SENZA numero civico l'anagrafica va completata prima di salvare.
     if (String(ana.via || "").trim() && civicoMancante(ana.via)) m.push("🏠 numero civico nell'indirizzo (step Cliente)");
     return m;
+  };
+  /* ═══ COSA MANCA PER SALVARE — TUTTO, in un posto solo ══════════════════
+     Il bottone diceva «Salva contratto» in VERDE guardando solo
+     `mancanzeVendita()`, che però ignora i prodotti Incompleti, i doppioni
+     di POD/PDR e codice contratto, i numeri e gli ICCID non validi e i
+     prezzi mancanti. Chi premeva si prendeva un avviso e restava lì:
+     il bottone prometteva una cosa che il salvataggio poi rifiutava.
+     Qui si raccoglie TUTTO, con il posto dove si rimedia — così l'elenco
+     si può mostrare PRIMA di premere, e ogni riga ci porta. */
+  const cosaManca = () => {
+    const out = [];
+    // 1. i prodotti lasciati a metà, con nome e cognome
+    cats.forEach(g => (sales[g.id] || []).forEach((row, si) => {
+      if (!row) return;
+      g.subs.forEach(sub => {
+        const d = row[sub.id];
+        if (!(d && d.active)) return;
+        const b = subBadge(d, dupCheck, sub, _reqMissing(g.id + "-" + si + "-" + sub.id));
+        if (b && b.st !== "ok") out.push({ ico: b.st === "empty" ? "●" : "⚠", testo: `${sub.title}${(sales[g.id] || []).length > 1 ? " (vendita #" + (si + 1) + ")" : ""} — ${b.st === "empty" ? "da compilare" : "campi mancanti o non validi"}`, dove: "prodotti" });
+      });
+    }));
+    // 2. i dati che si ripetono o non tornano: qui il salvataggio si ferma
+    if (hasDupCodContr) out.push({ ico: "🔁", testo: "un codice contratto è ripetuto su due prodotti", dove: "prodotti" });
+    if (hasDupPodPdr) out.push({ ico: "🔁", testo: "un POD o un PDR è ripetuto", dove: "prodotti" });
+    if (hasInvalidNumIccid) out.push({ ico: "⚠", testo: "un numero o un ICCID non ha le cifre giuste", dove: "prodotti" });
+    // 3. il prezzo dei prodotti a marginalità
+    margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
+    // 4. documento, contratti, attribuzione, note, civico
+    mancanzeVendita().forEach(t => {
+      const dove = /Allegati|attribuzione/.test(t) ? "allegati" : /civico/.test(t) ? "cliente" : "note";
+      out.push({ ico: t.slice(0, 2).trim(), testo: t.replace(/^\S+\s*/, "").replace(/\s*\(step [^)]+\)$/, ""), dove });
+    });
+    return out;
   };
   const finalSubmit = async () => {
     if (submitLock.current) return;
@@ -6024,7 +6065,15 @@ function CRM() {
         setScontrino({ items: _scRows, negozio: selNeg });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
-        setTimeout(() => { fullReset(); submitLock.current = false; setSubmitting(false); }, 2000);
+        // niente più reset a orologeria: la conferma resta finché non la
+        // chiude il venditore, e il blocco cade con lei
+        setVenditaFatta({
+          brands: fc.map((x) => x.brandLabel || x.brandId).filter(Boolean),
+          prodotti: contractRows.length,
+          cliente: (ana.ragioneSociale || `${ana.nome || ""} ${ana.cognome || ""}`.trim() || ana.cf || "").trim(),
+          negozio: selNeg, venditore: selVend,
+        });
+        setSubmitting(false);
       }
       return true;
     } catch (err) {
@@ -6223,7 +6272,9 @@ function CRM() {
       // POS: apri Incasso & Scontrino sulle voci prezzate (solo negozi abilitati); fullReset alla chiusura.
       const _scRows = buildScontrinoItems(margItems);
       if (_scRows.length && posScontrinoAbilitato(selNeg)) setScontrino({ items: _scRows, negozio: selNeg });
-      else fullReset();
+      else setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length,
+        cliente: (margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim(),
+        negozio: selNeg, venditore: selVend });
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
     }finally{setMargSaving(false);}
@@ -6390,6 +6441,26 @@ function CRM() {
 
   // #124: il popup di conferma reset è condiviso da form E carrello (il carrello
   // fa un return anticipato, quindi il modal inline nel form non lo raggiunge).
+  /* La CONFERMA sta accanto agli altri modali condivisi e viene resa in
+     ENTRAMBI i rami (carrello e modulo): se restasse solo nel carrello e
+     qualcosa lo chiudesse, il blocco anti-doppio-salvataggio non cadrebbe
+     più e non si potrebbe registrare altro fino al ricarico della pagina. */
+  /* LA VENDITA È REGISTRATA: resta finché non la chiude il venditore */
+  const pannelloVenditaFatta = venditaFatta && createPortal(
+    <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)chiudiVenditaFatta();}}>
+      <div className="rvFatta">
+        <div className="rvFatta-o">✓</div>
+        <h3>Vendita registrata</h3>
+        <p>È salvata nel CRM: la trovi in Ricerca Vendite e nel Tracking.</p>
+        <div className="rvFatta-d">
+          {venditaFatta.cliente&&<div><span>Cliente</span><span>{venditaFatta.cliente}</span></div>}
+          <div><span>Prodotti</span><span>{venditaFatta.prodotti}</span></div>
+          {venditaFatta.brands?.length>0&&<div><span>{venditaFatta.brands.length===1?"Brand":"Brand"}</span><span>{venditaFatta.brands.join(", ")}</span></div>}
+          <div><span>Attribuita a</span><span>{[venditaFatta.venditore,venditaFatta.negozio].filter(Boolean).join(" · ")||"—"}</span></div>
+        </div>
+        <button onClick={chiudiVenditaFatta} className="rvAzione" style={{width:"100%"}}>Registra un&apos;altra vendita</button>
+      </div>
+    </div>, document.body);
   const confirmResetModal = confirmReset && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmReset(false)}}>
       <div style={{background:"var(--tf-0e1526)",border:"1px solid var(--tf-w120)",borderRadius:16,padding:"28px 30px",width:"min(420px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.55)",textAlign:"center"}}>
@@ -6515,19 +6586,38 @@ function CRM() {
             <button onClick={()=>setDupCellCliente(null)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w50)",color:"var(--tf-cbd5e1)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Inserisco un altro numero</button>
           </div>
         </div>}
+        {/* PRIMA DI SALVARE (Luca 28/08): l'elenco di cosa manca, con il
+            posto dove si rimedia — un clic e ci sei. Prima il bottone era
+            VERDE anche con prodotti incompleti o prezzi mancanti: si
+            premeva, usciva un avviso e si restava fermi lì. */}
+        {!onlyMarg&&tp>0&&(()=>{const mm=cosaManca();
+          if(!mm.length)return <div className="rvPronto">✓ Tutto pronto — puoi salvare la vendita</div>;
+          const vai=(d)=>{if(d==="carrello")return;setShowCart(false);setVistaStep(d);};
+          return (
+          <div className="rvPrima">
+            <div className="rvPrima-t">⚠️ Prima di salvare manca {mm.length===1?"una cosa":mm.length+" cose"}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:2}}>
+              {mm.map((x,i)=>(
+                <button key={i} onClick={()=>vai(x.dove)} className="rvManca">
+                  <i>{x.ico}</i><span>{x.testo}</span>
+                  {x.dove!=="carrello"&&<u>portami →</u>}
+                </button>
+              ))}
+            </div>
+          </div>);})()}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
           <button onClick={()=>setShowCart(false)} className="rvPill">← Torna</button>
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
           <button onClick={()=>setConfirmReset(true)} className="rvPill" style={{borderColor:"rgba(220,53,69,.5)",background:"rgba(220,53,69,.08)",color:"var(--tf-f87171)"}}>🗑️ Reset form</button>
           {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} className="rvPill" style={{borderColor:"rgba(139,92,246,.55)",background:"rgba(111,66,193,.10)",color:"var(--tf-a78bfa)"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} className="rvAzione rvAzione-viola" style={{marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
-          {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;
+          {!onlyMarg&&(()=>{const _m=cosaManca();const _ok=tp>0&&!submitting&&_m.length===0;
             // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
             // il click chiude il riepilogo e porta dritto allo step mancante
             // (lo fa la guardia dentro finalSubmit, col toast di cosa manca)
             return <button onClick={finalSubmit} disabled={tp===0||submitting}
-            title={_m.length?"Portami allo step mancante — completa: "+_m.join(" · "):""}
-            className={cn("rvAzione",_m.length&&tp>0&&"rvAzione-att")} style={{marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare →":`💾 Salva contratto (${tp})`}</button>;})()}
+            title={_m.length?"Manca: "+_m.map(x=>x.testo).join(" · "):""}
+            className={cn("rvAzione",_m.length&&tp>0&&"rvAzione-att")} style={{marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?`🔒 Manca ${_m.length===1?"una cosa":_m.length+" cose"}`:`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
         <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} />
         {posScontrinoAbilitato(selNeg) && <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />}
@@ -6591,7 +6681,7 @@ function CRM() {
           </div>
         </div>}
         {/* #124: popup di conferma reset anche dentro il carrello */}
-        {confirmResetModal}{confirmNoOpzModal}
+        {pannelloVenditaFatta}{confirmResetModal}{confirmNoOpzModal}
       </div>
     );
     return cartContent;
@@ -7337,7 +7427,7 @@ function CRM() {
       </div>}
 
       {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
-      {confirmResetModal}{confirmNoOpzModal}
+      {pannelloVenditaFatta}{confirmResetModal}{confirmNoOpzModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(
