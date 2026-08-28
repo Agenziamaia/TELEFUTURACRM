@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { canUseAI } from "@/lib/roles";
-import { Sparkles, Send, Loader2, Wrench, Check, X, AlertTriangle } from "lucide-react";
+import { Sparkles, Send, Loader2, Wrench, Check, X, AlertTriangle, Paperclip, FileText } from "lucide-react";
+import { leggiAllegato, contestoAllegati } from "@/lib/ai/allegati";
 
 // ── mini-markdown (grassetto, tabelle, elenchi) — niente dipendenze esterne ──
 function inline(text) {
@@ -86,6 +87,11 @@ export default function AssistentePage() {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // ALLEGATI (Luca 28/08): il file si legge qui e se ne passa il TESTO come
+  // contesto — il modello legge testo, non figure, e il file non lascia il CRM
+  const [allegati, setAllegati] = useState([]);
+  const [leggendo, setLeggendo] = useState(false);
+  const fileRef = useRef(null);
   const scrollRef = useRef(null);
 
   // Segnalazione 69: navigando fra le pagine del CRM la conversazione non deve
@@ -112,16 +118,31 @@ export default function AssistentePage() {
 
   useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs, loading]);
 
+  const aggiungiFile = async (files) => {
+    const lista = Array.from(files || []).slice(0, 5);
+    if (!lista.length) return;
+    setLeggendo(true);
+    try {
+      const letti = await Promise.all(lista.map(leggiAllegato));
+      setAllegati((p) => [...p, ...letti].slice(0, 5));
+    } finally { setLeggendo(false); }
+  };
+
   const ask = async (text) => {
     const q = (text ?? input).trim();
-    if (!q || loading || !meId) return;
-    const history = [...msgs.filter((m) => m.role !== "system"), { role: "user", content: q }];
-    setMsgs((p) => [...p, { role: "user", content: q }]);
-    setInput(""); setLoading(true);
+    const conTesto = allegati.filter((a) => a.testo);
+    if ((!q && !conTesto.length) || loading || !meId) return;
+    // la domanda che vede il modello porta con sé il testo dei documenti;
+    // quella che si vede a schermo resta pulita, coi file elencati sotto
+    const domanda = q || "Leggi i documenti allegati e dimmi cosa contengono.";
+    const perAI = domanda + contestoAllegati(allegati);
+    const history = [...msgs.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content })), { role: "user", content: perAI }];
+    setMsgs((p) => [...p, { role: "user", content: domanda, allegati: conTesto.map((a) => ({ nome: a.nome, kb: a.kb })) }]);
+    setInput(""); setAllegati([]); setLoading(true);
     try {
       const res = await fetch("/api/ai/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: meId, messages: history.map((m) => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({ userId: meId, messages: history }),
       });
       const d = await res.json();
       if (d.error) setMsgs((p) => [...p, { role: "assistant", content: `⚠️ ${d.error}`, error: true }]);
@@ -182,6 +203,15 @@ export default function AssistentePage() {
                 {m.role === "user"
                   ? <p className="text-sm whitespace-pre-wrap">{m.content}</p>
                   : <Rich text={m.content} />}
+                {m.allegati?.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {m.allegati.map((a, j) => (
+                      <span key={j} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/20 text-[11px] text-white/80">
+                        <FileText className="w-3 h-3" /> {a.nome}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {m.trace?.length > 0 && (
                   <details className="mt-2">
@@ -239,14 +269,45 @@ export default function AssistentePage() {
       </div>
 
       <div className="border-t border-white/5 px-4 py-3 shrink-0">
-        <div className="max-w-3xl mx-auto flex items-end gap-2">
-          <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
-            placeholder="Chiedi qualcosa sui dati del CRM…" className="glass-input flex-1 resize-none max-h-32 py-2.5" />
-          <button onClick={() => ask()} disabled={loading || !input.trim()}
-            className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40">
-            <Send className="w-5 h-5" />
-          </button>
+        <div className="max-w-3xl mx-auto">
+          {/* ALLEGATI IN ATTESA (Luca 28/08): si vedono prima di mandare, con
+              i KB, e si tolgono uno per uno. Quelli che non so leggere lo
+              dicono, invece di sparire in silenzio. */}
+          {(allegati.length > 0 || leggendo) && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {allegati.map((a, i) => (
+                <span key={i} title={a.problema || `${a.testo.length} caratteri letti`}
+                  className={`inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg border text-[11px] ${a.problema
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                    : "border-white/10 bg-white/5 text-slate-300"}`}>
+                  <FileText className="w-3 h-3 shrink-0" />
+                  <span className="truncate max-w-[220px]">{a.nome}</span>
+                  <span className="text-slate-500">{a.problema ? `· ${a.problema}` : `· ${a.kb} KB`}</span>
+                  <button onClick={() => setAllegati((p) => p.filter((_, j) => j !== i))}
+                    className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+              {leggendo && <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] text-slate-400"><Loader2 className="w-3 h-3 animate-spin" /> leggo il file…</span>}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <input ref={fileRef} type="file" multiple hidden
+              accept=".pdf,.csv,.txt,.md,.json,.xml,.log,.tsv,.eml,.xlsx,.xls,.xlsm,.ods,text/*"
+              onChange={(e) => { aggiungiFile(e.target.files); e.target.value = ""; }} />
+            <button onClick={() => fileRef.current?.click()} disabled={loading || leggendo}
+              title="Allega un documento: PDF, Excel, CSV o testo. Il file resta nel CRM: all'assistente arriva solo il testo."
+              className="p-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 disabled:opacity-40">
+              <Paperclip className="w-5 h-5" />
+            </button>
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
+              onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []); if (f.length) { e.preventDefault(); aggiungiFile(f); } }}
+              placeholder="Chiedi qualcosa sui dati del CRM…" className="glass-input flex-1 resize-none max-h-32 py-2.5" />
+            <button onClick={() => ask()} disabled={loading || leggendo || (!input.trim() && !allegati.some((a) => a.testo))}
+              className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40">
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
