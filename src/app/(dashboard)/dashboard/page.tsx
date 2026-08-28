@@ -152,7 +152,15 @@ function GrigliaHome({ loading, layout, ctx, onLayoutChange, rimuovi }) {
                                 // Bussola sotto una certa taglia è inusabile)
                                 const inf = infoWidget(w.k, ctx);
                                 const mW = Number(inf?.minW) || 1, mH = Number(inf?.minH) || 1;
-                                return { i: w.k, x: w.x || 0, y: w.y || 0, w: Math.max(w.s, mW), h: Math.max(w.h || 4, mH), minW: mW, minH: mH };
+                                // taglia OBBLIGATA quando il registry dà anche un
+                                // massimo (Luca 28/08 sulla Bussola): sotto una certa
+                                // misura certi widget non si leggono, e sopra
+                                // sprecherebbero mezza Home
+                                const xW = Number(inf?.maxW) || undefined, xH = Number(inf?.maxH) || undefined;
+                                const larg = Math.min(Math.max(w.s, mW), xW ?? 99);
+                                const alt = Math.min(Math.max(w.h || 4, mH), xH ?? 99);
+                                return { i: w.k, x: w.x || 0, y: w.y || 0, w: larg, h: alt, minW: mW, minH: mH, maxW: xW, maxH: xH,
+                                    isResizable: !(xW && xW === mW && xH && xH === mH) };
                             })}
                             onLayoutChange={onLayoutChange}>
                             {layout.map((w) => {

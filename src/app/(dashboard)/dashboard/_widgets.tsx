@@ -3213,7 +3213,12 @@ const FISSI = {
     chart_stato: { label: "Grafico per stato", icon: AlertTriangle, sizes: [1, 2, 4], def: 2, gruppo: "statistiche" },
     chart_top: { label: "Top negozi/venditori", icon: StoreIcon, sizes: [1, 2, 4], def: 2, gruppo: "statistiche", nonPer: ["own"] },
     classifica: { label: "Classifica venditori", icon: Trophy, sizes: [2, 4], def: 4, gruppo: "statistiche" },
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], minW: 6, minH: 4, defW: 6, defH: 4 },
+    /* TAGLIA OBBLIGATA (Luca 28/08): «e' diventato un pochettino troppo corto,
+       allungalo di due colonne e definisci quella la dimensione obbligatoria».
+       Da 6 a 8 colonne su 16 — con il passo «Cosa c'e' dentro?» le pastiglie
+       andavano a capo e il consiglio finiva schiacciato. minW = maxW = 8:
+       non si puo' piu' rimpicciolire, perche' sotto non e' leggibile. */
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], minW: 8, maxW: 8, minH: 4, defW: 8, defH: 4 },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
