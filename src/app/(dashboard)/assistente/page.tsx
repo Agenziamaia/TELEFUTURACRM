@@ -100,12 +100,17 @@ const AI_CSS = `
 /* l'aura della barra: si accende quando stai scrivendo */
 .ai-barra { position: relative; }
 .ai-barra::before {
-  content: ""; position: absolute; inset: -1px; border-radius: 18px; padding: 1px;
-  background: linear-gradient(110deg, rgba(99,102,241,.7), rgba(168,85,247,.6), rgba(34,211,238,.6), rgba(99,102,241,.7));
+  content: ""; position: absolute; inset: -1px; border-radius: 17px; padding: 1px;
+  /* l'aura è DECORAZIONE: senza questa riga lo strato sta sopra il campo e si
+     prende i click — la barra sembrava morta e non si riusciva a scrivere.
+     Un elemento che non è un comando non deve mai stare fra il dito e il
+     comando. (Luca 28/08 sera: «non posso nemmeno cliccare per scrivere») */
+  pointer-events: none;
+  background: linear-gradient(110deg, rgba(103,111,212,.85), rgba(120,130,233,.7), rgba(160,172,255,.55), rgba(103,111,212,.85));
   background-size: 200% 100%;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
-  opacity: 0; transition: opacity .25s ease;
+  opacity: 0; transition: opacity var(--ai-normale) var(--ai-curva);
 }
 .ai-barra.viva::before { opacity: 1; animation: aiAura 4s linear infinite; }
 /* le pillole dei suggerimenti: si sollevano, non si limitano a schiarirsi */
@@ -456,7 +461,7 @@ export default function AssistentePage() {
               title="Personalità e memorie: insegnagli come ragioni"
               className="ai-premi w-full group flex items-center gap-2.5 px-1.5 py-1.5 rounded-xl hover:bg-white/[0.04] transition-colors">
               <span className="relative w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shrink-0">
-                {loading && <span className="absolute inset-0 rounded-[10px] bg-[#676fd4]/35 blur-md ai-alone" />}
+                {loading && <span aria-hidden className="pointer-events-none absolute inset-0 rounded-[10px] bg-[#676fd4]/35 blur-md ai-alone" />}
                 <Sparkles className="relative w-4 h-4 text-white" />
               </span>
               <span className="min-w-0 flex-1 text-left">
@@ -597,7 +602,7 @@ export default function AssistentePage() {
           <PanelLeft className="w-4 h-4" />
         </button>
         <span className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shrink-0">
-          {loading && <span className="absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />}
+          {loading && <span aria-hidden className="pointer-events-none absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />}
           <Sparkles className="relative w-4 h-4 text-white" />
         </span>
         <div className="min-w-0">
@@ -626,7 +631,7 @@ export default function AssistentePage() {
           <div className="max-w-[39rem] mx-auto mt-6 sm:mt-10 ai-su">
             <div className="text-center">
               <div className="relative inline-flex items-center justify-center mb-4">
-                <span className="absolute inset-0 rounded-full bg-[#676fd4]/25 blur-xl ai-alone" />
+                <span aria-hidden className="pointer-events-none absolute inset-0 rounded-full bg-[#676fd4]/25 blur-xl ai-alone" />
                 <span className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shadow-lg shadow-[#676fd4]/25">
                   <Sparkles className="w-7 h-7 text-white" />
                 </span>
@@ -803,7 +808,7 @@ export default function AssistentePage() {
           {loading && (
             <div className="ai-su flex justify-start items-end gap-2">
               <span className="relative w-7 h-7 rounded-xl bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shrink-0">
-                <span className="absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />
+                <span aria-hidden className="pointer-events-none absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />
                 <Sparkles className="relative w-3.5 h-3.5 text-white" />
               </span>
               <div className="flex items-center gap-2 py-2 text-[#a0acff]/90">
