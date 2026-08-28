@@ -36,7 +36,11 @@ const SELEZIONE = `
  where m.created_at > now() - interval '48 hours'
    and coalesce(m.eliminato, false) = false
    and c.stato_admin is not null
-   and coalesce(c.stato_negozio, '') in ('attivato', 'liquidato', 're_inserita', 'ko', 'annullato', 'nuovo')
+   -- ⚠️ SOLO stati che FERMANO davvero il malus (revisore 28/08): «nuovo»
+   -- era nella lista ma non ferma niente — una pratica mai lavorata e in
+   -- ritardo legittimo sarebbe stata annullata a torto. Nessun danno fatto
+   -- (le 8 erano tutte «attivato»), ma lo script è rilanciabile.
+   and coalesce(c.stato_negozio, '') in ('attivato', 'liquidato', 're_inserita', 'ko', 'annullato')
    and not exists (
        select 1 from jsonb_array_elements(coalesce(c.storia, '[]'::jsonb)) ev
         where ev->>'tipo' = 'stato_negozio')`;

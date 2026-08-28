@@ -190,6 +190,32 @@ function ultimoEventoDatato(storia: StoriaEvent[] | null | undefined): StoriaEve
   return null;
 }
 
+/** GLI EVENTI CHE MUOVONO IL CRONOMETRO DEL NEGOZIO (28/08).
+ *
+ *  Il contatore del ritardo misura il VENDITORE: quando l'amministrazione
+ *  verifica, delega o annota, il negozio non ha fatto niente — e il suo
+ *  cronometro non deve ripartire da zero.
+ *
+ *  Perché è importante: il 27/08 il ricostruttore degli episodi è stato
+ *  corretto per non congelare più il passato a ogni esito admin. Se il
+ *  calcolo LIVE avesse continuato ad azzerarsi, il risultato sarebbe stato
+ *  il difetto opposto — un ritardo vero che non conta più niente appena il
+ *  back office guarda la pratica. Le due metà devono dire la stessa cosa.
+ *
+ *  ⚠️ `giorniDaUltimoAggiornamento` (ggAgg, DevSpec §5) resta com'era: quello
+ *  è «da quanto non si tocca la pratica», e l'amministrazione la tocca. */
+const EVENTI_AMMINISTRATIVI = ["stato_admin", "nota_admin", "delega"];
+function ultimoEventoNegozio(storia: StoriaEvent[] | null | undefined): StoriaEvent | null {
+  if (!storia) return null;
+  for (let i = storia.length - 1; i >= 0; i--) {
+    const ev = storia[i];
+    if (!parseRuleDate(String(ev?.data || ""))) continue;
+    if (EVENTI_AMMINISTRATIVI.includes(String(ev?.tipo || ""))) continue;
+    return ev;
+  }
+  return null;
+}
+
 /** ggAgg = working days since last storia event (DevSpec §5). Empty storia → 999. */
 export function giorniDaUltimoAggiornamento(storia: StoriaEvent[], dataInserimento?: string): number {
   // Segnalazione 25: senza storico questa funzione restituiva 999 giorni. Una
@@ -553,7 +579,10 @@ function misure(row: TrackingRow) {
   const gg = giorniLavorativiDa(dataIns);
   // caso Becattini (11/08): si considera solo l'ultimo evento DATATO — gli
   // eventi di modifica contratto (senza `data`) non azzerano il contatore
-  const ultimo = ultimoEventoDatato(row.storia);
+  // ⚠️ ultimoEventoNegozio, non ultimoEventoDatato (28/08): un «Confermato»
+  // del back office azzerava il ritardo del venditore, e il malus vero
+  // spariva. Vedi il commento sopra la funzione.
+  const ultimo = ultimoEventoNegozio(row.storia);
   const dataUlt = ultimo ? clampDecorrenza(ultimo.data, row.categoria) : null;
   const ggUltimo = dataUlt ? giorniLavorativiDa(dataUlt) : null;
   // varianti APERTI (Luca 11/08): warning e malus corrono solo nei giorni in

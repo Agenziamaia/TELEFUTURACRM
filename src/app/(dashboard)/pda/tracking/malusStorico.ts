@@ -204,7 +204,9 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     // passato di una pratica già chiusa e trasformarlo in malus. Se l'esito
     // admin ha un malus suo (Non Conforme) lo calcola `calcolaMalus`: è
     // l'unica strada per cui un esito admin genera soldi.
-    .filter((x) => x.ev.tipo !== "stato_admin" && x.ev.tipo !== "nota_admin")
+    // «delega» compresa (revisore 28/08): delegare la verifica è un gesto
+    // dell'amministrazione con un altro nome — congelava il segmento uguale
+    .filter((x) => !["stato_admin", "nota_admin", "delega"].includes(String(x.ev.tipo || "")))
     .sort((x, y) => x.d.getTime() - y.d.getTime());
 
   type Seg = { start: Date; soglia: number | null; completato: boolean; tipoApertura?: string };
@@ -262,8 +264,22 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
      malus non si inventa. È la stessa lezione dell'incidente sky del
      25/08: il passato non si riscrive. */
   const fermoOra = fermaMalus(row.statoNegozio || "", row.categoria, row.brand);
-  const haEventiNegozio = eventi.some((x) => x.ev.tipo === "stato_negozio");
-  const passatoIndimostrabile = fermoOra && !haEventiNegozio;
+  /* La storia è LEGGIBILE? Gli eventi salvano l'ETICHETTA in chiaro («KO»),
+     non la chiave: appena una voce viene rinominata dal pannello («KO
+     Ripensamento») il vocabolario non la risolve più, `flagCompletato` non si
+     alza e per il ricostruttore la pratica risulta ancora aperta. Sono 90 le
+     pratiche in questo stato oggi, ed è esattamente com'è nato il malus
+     fantasma su CTR-C7451194 (revisore 28/08).
+     Finché gli eventi non salveranno la chiave, la regola è quella di sempre:
+     se la pratica ORA è ferma e non riesco a datare quando si è fermata, non
+     materializzo niente. Un malus non si inventa. */
+  const stopDatabile = eventi.some((x) => {
+    if (x.ev.tipo !== "stato_negozio") return false;
+    const m = x.ev.testo.match(/aggiornato:\s*(.+)$/i);
+    const id = m ? labelToId.get(m[1].trim().toLowerCase()) : undefined;
+    return !!id && fermaMalus(id, row.categoria, row.brand);
+  });
+  const passatoIndimostrabile = fermoOra && !stopDatabile;
 
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i];
