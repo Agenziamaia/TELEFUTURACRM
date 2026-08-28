@@ -1482,10 +1482,16 @@ export default function Calendario() {
 
     const handleCreateMeetingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        /* LA DATA CHE SI VEDE È QUELLA CHE SI SALVA (Luca 28/08: «mi dice che
+           non c'è la data quando ci sta»). Il campo mostrava il giorno
+           selezionato nel calendario come ripiego, ma finché non lo si
+           toccava `newMeeting.date` restava vuoto — e il controllo lo
+           bocciava su un valore che nessuno vedeva. */
+        const dataRiunione = newMeeting.date || selectedDate || todayStr;
         // niente piu' click "morto" (Luca 31/07): se manca un campo lo si DICE
         const mancanti = [
             !newMeeting.title && "Titolo",
-            !newMeeting.date && "Data",
+            !dataRiunione && "Data",
             !newMeeting.startTime && "Ora inizio",
             !newMeeting.endTime && "Ora fine",
             !newMeeting.brand && "Brand",
@@ -1500,7 +1506,7 @@ export default function Calendario() {
 
         const payload = {
             title: newMeeting.title,
-            date: newMeeting.date,
+            date: dataRiunione,
             start_time: newMeeting.startTime,
             end_time: newMeeting.endTime,
             type: newMeeting.type,
@@ -1521,7 +1527,7 @@ export default function Calendario() {
         // il pop-up con Accetto/Rifiuto (esiti cliccabili), resta nello storico
         // comunicazioni e chi ha risposto cosa si vede nel dettaglio ricevute.
         if (newMeeting.recipients.length) {
-            const quando = `${newMeeting.date} dalle ${newMeeting.startTime} alle ${newMeeting.endTime}`;
+            const quando = `${dataRiunione} dalle ${newMeeting.startTime} alle ${newMeeting.endTime}`;
             const dove = newMeeting.type === "in_person" ? (newMeeting.location ? `di persona — ${newMeeting.location}` : "di persona") : (newMeeting.link ? `in videochiamata — ${newMeeting.link}` : "in videochiamata");
             const invito: Record<string, unknown> = {
                 meeting_id: (data as { id?: number })?.id ?? null,
@@ -2150,7 +2156,15 @@ export default function Calendario() {
                     </button>
                     {canCreateMeeting && (
                         <button
-                            onClick={() => setShowCreateMeetingModal(true)}
+                            onClick={() => {
+                                setNewMeeting((prev) => ({
+                                    ...prev,
+                                    date: prev.date || selectedDate || todayStr,
+                                    startTime: prev.startTime || "09:00",
+                                    endTime: prev.endTime || "10:00",
+                                }));
+                                setShowCreateMeetingModal(true);
+                            }}
                             className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border border-sky-500/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
                         >
                             <Users className="w-3.5 h-3.5" />
@@ -3945,7 +3959,7 @@ export default function Calendario() {
                                     <input
                                         type="date"
                                         className="glass-input w-full"
-                                        value={newMeeting.date || (selectedDate ?? "")}
+                                        value={newMeeting.date}
                                         onChange={e => setNewMeeting(p => ({ ...p, date: e.target.value }))}
                                         required
                                     />
