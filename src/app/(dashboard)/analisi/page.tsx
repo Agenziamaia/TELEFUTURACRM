@@ -43,8 +43,8 @@ const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y 
 // l'ordine in cui le piste si presentano dentro il blocco del brand
 // Fastweb: le sole piste che Luca vuole a video (niente varianti business)
 const PISTE_FW = ["mobile", "fisso", "luce", "gas"];
-const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "lucegas", "cb", "smartphone_cb",
-    "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "sky", "t2"];
+const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "energia", "lucegas", "cb", "smartphone_cb", "device",
+    "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "protetti", "sky", "t2"];
 
 const ymLocale = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
 const ymISO = ({ y, m }) => `${y}-${String(m).padStart(2, "0")}`;
@@ -307,7 +307,7 @@ function AnalisiInner() {
                 };
                 const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
-                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0])]) : Promise.resolve(null),
+                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
                     caricaTutte(selExt(daISO, aISO)),
                     inMese ? caricaTutte(selExt(pISO, ultimoPrev)) : Promise.resolve({ data: [] }),
@@ -374,7 +374,7 @@ function AnalisiInner() {
                 setLayoutSalvato(layRes?.data?.analisi_layout || null);
                 setDati({
                     pacchi, soloMese, gl, targetW3: targetRes?.data || [],
-                    aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null, afw: azienda?.[3] || null,
+                    aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null, afw: azienda?.[3] || null, as4: azienda?.[4] || null,
                     prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri, oggiGara,
                     tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
                     targetDir: dirRes?.data || [],
@@ -619,11 +619,19 @@ function AnalisiInner() {
             { id: "fw", label: "Fastweb T2", chiave: "fastweb", colore: GARA.fw.colore,
                 tab: dati?.afw || null, soloPiste: PISTE_FW,
                 rows: righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) !== "vodafone") },
+            // S4 (Luca 28/08): «la soglia è la SOMMA delle due, mentre tu me le
+            // hai scisse in luce e gas». Quindi UN anello solo, con luce e gas
+            // come due tinte dello stesso arco: si uniscono e generano un
+            // punteggio unico, ed è su quello che scattano le soglie.
             { id: "s4", label: "S4 Energia", chiave: "s4", colore: HEX_BRAND.s4, tab: null,
-                pezzi: [
-                    { chiave: "luce", nome: "Luce", righe: s4Righe.filter((r) => !/gas/i.test(String(r.prodotto || ""))) },
-                    { chiave: "gas", nome: "Gas", righe: s4Righe.filter((r) => /gas/i.test(String(r.prodotto || ""))) },
-                ] },
+                pezzi: [{
+                    chiave: "energia", nome: "Luce & Gas", righe: s4Righe,
+                    scala: (dati?.as4?.soglie || []).filter((x) => x.pista === "energia_consumer").sort((a, b) => a.tier - b.tier),
+                    parti: [
+                        { label: "Luce", colore: "#a3e635", righe: s4Righe.filter((r) => !/gas/i.test(String(r.prodotto || ""))) },
+                        { label: "Gas", colore: "#14b8a6", righe: s4Righe.filter((r) => /gas/i.test(String(r.prodotto || ""))) },
+                    ],
+                }] },
         ];
         const out = [];
         for (const c of conf) {
@@ -638,15 +646,22 @@ function AnalisiInner() {
                     if (c.soloPiste && !c.soloPiste.includes(p.chiave)) continue;
                     const st = av.piste[p.chiave]; if (!st) continue;
                     const scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
-                    if (!scala.length && !st.punti) continue;
+                    const tg = targetDi(c.id, p.chiave);
+                    // niente soglie E niente produzione: si mostra lo stesso se
+                    // c'è un target dal pannello (Luca 28/08: «Protecta e i
+                    // punti business non hanno una soglia, quel target lo metto
+                    // io dalla sezione target»)
+                    if (!scala.length && !st.punti && !tg) continue;
                     piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt", punti: st.punti, pezzi: st.pezzi, gate: st.gate || null,
-                        scala, mio: avMio?.piste?.[p.chiave]?.punti ?? 0, target: targetDi(c.id, p.chiave) });
+                        scala, mio: avMio?.piste?.[p.chiave]?.punti ?? 0, target: tg });
                 }
             }
             for (const p of (c.pezzi || [])) {
-                if (!p.righe.length) continue;
+                const tg = targetDi(c.id, p.chiave);
+                if (!p.righe.length && !tg) continue;
                 piste.push({ chiave: p.chiave, nome: p.nome, unit: "pz", punti: p.righe.length, pezzi: p.righe.length, gate: null,
-                    scala: [], mio: p.righe.filter((r) => èMio(r.negozio)).length, target: targetDi(c.id, p.chiave) });
+                    scala: p.scala || [], mio: p.righe.filter((r) => èMio(r.negozio)).length, target: tg,
+                    parti: (p.parti || []).map((q) => ({ label: q.label, colore: q.colore, v: q.righe.length })).filter((q) => q.v > 0) });
             }
             if (!piste.length) continue;
             for (const x of piste) {

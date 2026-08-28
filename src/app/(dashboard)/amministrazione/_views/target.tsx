@@ -924,7 +924,8 @@ const RETE_BRANDS: { id: string; label: string; tab: string | null; lato?: "azie
 ];
 // le piste che NON vengono da un tabellare: contano a pezzi
 const RETE_PISTE_FISSE: Record<string, { chiave: string; nome: string }[]> = {
-    s4: [{ chiave: "luce", nome: "Luce" }, { chiave: "gas", nome: "Gas" }],
+    // S4: luce e gas fanno UN punteggio solo, e la soglia è sulla somma
+    s4: [{ chiave: "energia", nome: "Luce & Gas" }],
 };
 const primoDelMese = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 
@@ -943,10 +944,20 @@ function ReteView() {
             const out: { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string }[] = [];
             for (const b of RETE_BRANDS) {
                 if (b.tab) {
-                    // stesso ingresso del motore: le piste del mese, non una lista scritta a mano
-                    const t = await (b.lato === "azienda" ? caricaTabellareAzienda(b.tab, mese) : caricaTabellare(b.tab, mese)).catch(() => null);
-                    for (const p of (t?.piste || [])) {
+                    // le piste del mese come le legge il motore. Si prendono da
+                    // ENTRAMBI i lati e si uniscono per chiave: certe piste
+                    // vivono solo sulla lettera azienda (W3 Protetti, Business
+                    // P.IVA) e senza questo giro non si potrebbe dar loro un
+                    // target — che è esattamente il caso segnalato da Luca.
+                    const [rag, az] = await Promise.all([
+                        b.lato === "azienda" ? Promise.resolve(null) : caricaTabellare(b.tab, mese).catch(() => null),
+                        caricaTabellareAzienda(b.tab, mese).catch(() => null),
+                    ]);
+                    const viste = new Set<string>();
+                    for (const p of [...(rag?.piste || []), ...(az?.piste || [])]) {
+                        if (viste.has(p.chiave)) continue;
                         if (b.soloPiste && !b.soloPiste.includes(p.chiave)) continue;
+                        viste.add(p.chiave);
                         out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti" });
                     }
                 }

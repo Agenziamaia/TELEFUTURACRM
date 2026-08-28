@@ -1926,7 +1926,7 @@ function BloccoBrandRete({ ctx, brand }) {
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} pezzi={x.pezzi}
                                 soglie={x.scala} target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
-                                colore={b.colore} larghezza="100%" compatto={compatto} unit={x.unit}
+                                colore={b.colore} larghezza="100%" compatto={compatto} unit={x.unit} parti={x.parti?.length ? x.parti : null}
                                 etichetta={PISTA_LABEL_RETE[x.chiave] || x.nome} gate={x.gate}
                                 onClick={() => tocca(k)}
                                 tip={<div>
@@ -1937,7 +1937,8 @@ function BloccoBrandRete({ ctx, brand }) {
                                     {conQuota && <TipRiga l="il mio punto vendita" r={`${x.unit === "pz" ? fmtN(x.mio) : fmtPt(x.mio)} · ${fmtN(x.punti > 0 ? (x.mio / x.punti) * 100 : 0, 1)}%`} />}
                                     {x.target && <TipRiga l={x.target.fonte === "pannello" ? "🎯 target di rete" : "🎯 target (somma direzione)"} r={fmtN(x.target.v)} colore="#34d399" />}
                                     {x.scala.map((sg) => <TipRiga key={sg.tier} l={`Soglia ${sg.tier}`} r={`da ${fmtN(sg.soglia_da)}${x.punti >= sg.soglia_da ? " ✓" : ""}`} />)}
-                                    {!x.scala.length && <TipRiga l="" r="pista a pezzi: niente soglie di lettera" />}
+                                    {(x.parti || []).map((q) => <TipRiga key={q.label} l={q.label} r={`${fmtN(q.v)} pz`} colore={q.colore} />)}
+                                    {!x.scala.length && <TipRiga l="" r={x.target ? "niente soglie di lettera: conta il target" : "pista a pezzi: niente soglie di lettera"} />}
                                 </div>}
                             />
                         </div>

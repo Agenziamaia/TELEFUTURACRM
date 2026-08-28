@@ -541,7 +541,7 @@ const fDi = (sec, v) => {
 export function AnelloScaglioni({
     punti = 0, proiezione = null, pezzi = null, soglie = [], target = null, mio = null,
     colore = "#818cf8", size = 130, larghezza = null, compatto = null,
-    etichetta, logo, gate, nota, onClick, unit = "pt", tip,
+    parti = null, etichetta, logo, gate, nota, onClick, unit = "pt", tip,
 }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
@@ -565,11 +565,29 @@ export function AnelloScaglioni({
     // prende dai PRIMI tratti, così è una frazione dell'arco vero e non una
     // posizione sulla scala delle soglie (l'errore di lettura da evitare)
     const fatti = sec.map((g) => [g.f0, g.f0 + cl01((punti - g.v0) / (g.v1 - g.v0)) * (g.f1 - g.f0)]).filter(([a, b]) => b - a > 0.0009);
-    const miei = [];
-    if (quota > 0) {
-        let resto = fatti.reduce((s, [a, b]) => s + (b - a), 0) * quota;
-        for (const [a, b] of fatti) { if (resto <= 0.0009) break; const p = Math.min(b - a, resto); miei.push([a, a + p]); resto -= p; }
-    }
+    const lungo = fatti.reduce((s, [a, b]) => s + (b - a), 0);
+    // «prendi la fetta iniziale dell'arco già disegnato»: serve alla quota del
+    // mio PV e alle parti colorate (S4: luce e gas dentro lo stesso anello)
+    const fetta = (da, quanto) => {
+        const out = []; let salta = lungo * da, resto = lungo * quanto;
+        for (let [a, b] of fatti) {
+            let d = b - a;
+            if (salta > 0) { const t = Math.min(d, salta); a += t; d -= t; salta -= t; }
+            if (d <= 0 || resto <= 0.0009) continue;
+            const p = Math.min(d, resto); out.push([a, a + p]); resto -= p;
+        }
+        return out;
+    };
+    const miei = quota > 0 ? fetta(0, quota) : [];
+    // PARTI (Luca 28/08, S4): luce e gas non sono due anelli — sono due tinte
+    // dello stesso arco, perché la soglia è sulla LORO SOMMA
+    const tot2 = (parti || []).reduce((sm, p) => sm + (Number(p.v) || 0), 0);
+    let acc2 = 0;
+    const fette2 = (parti && tot2 > 0) ? parti.map((p) => {
+        const q0 = acc2 / tot2, q1 = (acc2 + (Number(p.v) || 0)) / tot2;
+        acc2 += Number(p.v) || 0;
+        return { ...p, tratti: fetta(q0, q1 - q0) };
+    }) : [];
     const rM = r - sw / 2 - 7, swM = 5.4;
     const anello = (
         <div className="relative [container-type:inline-size]" style={larghezza ? { width: larghezza, aspectRatio: "1 / 1" } : { width: size, height: size }}>
@@ -590,11 +608,20 @@ export function AnelloScaglioni({
                             <path d={arco(cc, r, g.f0, g.f1)} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={sw} />
                             {kp > ka && <path d={arco(cc, r, g.f0 + ka * d, g.f0 + (on ? kp : ka) * d)} fill="none" stroke={`url(#hs${uid})`} strokeWidth={sw}
                                 style={{ transition: "d .9s .2s cubic-bezier(.22,1,.36,1)" }} />}
-                            {ka > 0 && <path d={arco(cc, r, g.f0, g.f0 + (on ? ka : 0) * d)} fill="none" stroke={`url(#gs${uid})`} strokeWidth={sw}
+                            {ka > 0 && !fette2.length && <path d={arco(cc, r, g.f0, g.f0 + (on ? ka : 0) * d)} fill="none" stroke={`url(#gs${uid})`} strokeWidth={sw}
                                 style={{ filter: `drop-shadow(0 0 ${piccolo ? 4 : 7}px ${colore}99)`, transition: "d .9s cubic-bezier(.22,1,.36,1)" }} />}
                         </g>
                     );
                 })}
+                {/* ARCO A DUE TINTE: le parti che compongono lo stesso punteggio */}
+                {fette2.map((p, i) => (
+                    <g key={`p${i}`}>
+                        {p.tratti.map(([a, b], j) => (
+                            <path key={j} d={arco(cc, r, a, on ? b : a)} fill="none" stroke={p.colore} strokeWidth={sw}
+                                style={{ filter: `drop-shadow(0 0 ${piccolo ? 4 : 7}px ${p.colore}99)`, transition: "d .9s cubic-bezier(.22,1,.36,1)" }} />
+                        ))}
+                    </g>
+                ))}
                 {/* LA MIA QUOTA: anello interno, stessa tinta più chiara */}
                 {quota > 0 && (
                     <g>
@@ -653,6 +680,16 @@ export function AnelloScaglioni({
                 l'anello a width:100% ci si aggrappava e collassava a zero */}
             {tip ? <Tip className="block" style={{ width: larghezza || size }} tip={tip}>{anello}</Tip> : anello}
             {etichetta && <p className="text-[11px] font-bold text-slate-200 -mt-0.5">{etichetta}</p>}
+            {fette2.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
+                    {fette2.map((p, i) => (
+                        <span key={`l${i}`} className="inline-flex items-center gap-1 text-[9px] text-slate-400">
+                            <span className="w-2 h-2 rounded-full" style={{ background: p.colore }} />
+                            {p.label} <b className="text-slate-200 tabular-nums">{unit === "pz" ? fmtN(p.v) : fmtPt(p.v)}</b>
+                        </span>
+                    ))}
+                </div>
+            )}
             <div className="flex flex-wrap items-center justify-center gap-1 max-w-[230px]">
                 {presa ? <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{presa.tier} presa</span>
                     : soglie.length > 0 && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-400 bg-white/5">sotto la S1</span>}
