@@ -105,6 +105,21 @@ export function DirezioneInserimentoAdmin() {
        decide dove caricare. `sez` perché i due gruppi (Franchising e
        Multibrand) restano indipendenti. */
     const [kpiTutti, setKpiTutti] = useState<{ sez: string; chiave: string } | null>(null);
+    /* SI ESCE CLICCANDO FUORI (Luca 28/08), non con un bottone che ruba una
+       riga a ogni scheda. Dentro la zona dei codici si continua a lavorare —
+       si modificano i target, si aprono i pannelli — e il filtro resta. */
+    useEffect(() => {
+        if (!pistaSola && !kpiTutti) return;
+        const fuori = (e: MouseEvent) => {
+            const t = e.target as HTMLElement | null;
+            if (t && t.closest("[data-zona-kpi]")) return;
+            setPistaSola(null); setKpiTutti(null);
+        };
+        const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setPistaSola(null); setKpiTutti(null); } };
+        document.addEventListener("mousedown", fuori);
+        document.addEventListener("keydown", esc);
+        return () => { document.removeEventListener("mousedown", fuori); document.removeEventListener("keydown", esc); };
+    }, [pistaSola, kpiTutti]);
     const apriTutto = (cod: string, giaAperto: boolean) => {
         setPistaSola(null);
         setAperto(giaAperto && !pistaSola ? null : cod);
@@ -461,7 +476,7 @@ export function DirezioneInserimentoAdmin() {
                         ].filter((s) => s.items.length)
                         : [{ label: null as string | null, items: dir.codici }]
                     ).map((sez) => (
-                    <div key={sez.label || "tutti"} className="space-y-3">
+                    <div key={sez.label || "tutti"} className="space-y-3" data-zona-kpi>
                     {sez.label && (
                         <div className="flex items-center gap-2 px-1">
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">{sez.label}</span>
@@ -714,13 +729,7 @@ export function DirezioneInserimentoAdmin() {
                                                 const solaQui = on && pistaSola === sm.chiave;
                                                 return (
                                                     <button key={sm.chiave} type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            // il paletto non è una pista del tabellare: non ha
-                                                            // un pannello suo, quindi apre il codice intero
-                                                            if (sm.chiave === "__paletto__") { apriTutto(k.cod_gara, false); return; }
-                                                            apriSolaPista(k.cod_gara, sm.chiave);
-                                                        }}
+                                                        onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
                                                         title={`${tipPallino(sm)}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
                                                         className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
                                                             solaQui
@@ -748,23 +757,14 @@ export function DirezioneInserimentoAdmin() {
                                 </div>
                                 {on && (
                                     <div className="border-t border-white/5 divide-y divide-white/[0.04]">
-                                        {(pistaSola || kpiSez) && (
-                                            <div className="px-4 py-2 flex items-center justify-between gap-2 bg-indigo-500/[0.06]">
-                                                <span className="text-[11px] text-indigo-200">
-                                                    {kpiSez === "__paletto__"
-                                                        ? <>Il <b>Paletto</b> si legge dalla pastiglia qui sopra: non ha un pannello suo.</>
-                                                        : <>Stai vedendo <b>una pista sola</b>{kpiSez ? " su tutti i codici" : " di questo codice"}.</>}
-                                                </span>
-                                                <button type="button" onClick={() => { setPistaSola(null); setKpiTutti(null); }}
-                                                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-white/15 text-slate-300 hover:bg-white/10">
-                                                    mostra tutte
-                                                </button>
-                                            </div>
-                                        )}
+                                        {/* niente riga «stai vedendo una pista sola» (Luca
+                                            28/08): si vede da solo, e rubava lo spazio che
+                                            serve al confronto. Si esce ri-cliccando il
+                                            filtro, che resta acceso in cima. */}
                                         {(() => {
                                             const soloQuesta = pistaSola || kpiSez;
-                                            // il paletto non è una pista del tabellare: non ha
-                                            // un pannello da mostrare, resta la pastiglia in riga
+                                            // filtrando il PALETTO restano solo i suoi numeri,
+                                            // che stanno nel blocco qui sotto
                                             if (soloQuesta === "__paletto__") return [];
                                             return soloQuesta ? pisteMostrate.filter((p) => p.chiave === soloQuesta) : pisteMostrate;
                                         })().map((p) => {
@@ -866,7 +866,10 @@ export function DirezioneInserimentoAdmin() {
                                         {/* ⚔️ PALETTO BUSINESS (lettera W3): 6 pezzi business per
                                             codice o malus 30% sulla gara mobile del PV — in Gare non
                                             è ancora censito come gate, qui almeno si monitora */}
-                                        {dir.brand === "windtre" && !k.multibrand && (() => {
+                                        {/* il Paletto si comporta come gli altri KPI (Luca
+                                            28/08): quando ne sto filtrando un altro, sparisce */}
+                                        {dir.brand === "windtre" && !k.multibrand
+                                            && (!(pistaSola || kpiSez) || (pistaSola || kpiSez) === "__paletto__") && (() => {
                                             const fatti = k.businessPezzi || 0;
                                             const spPaletto = Math.round(Number(dir.sfridi[SFRIDO_PALETTO]) || 0);
                                             const obiettivo = dir.palettoBusiness + spPaletto;
