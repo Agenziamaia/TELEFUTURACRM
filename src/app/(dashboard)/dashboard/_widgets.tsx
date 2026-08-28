@@ -55,14 +55,10 @@ import {
 import { CoronaOro } from "@/components/IconaCorona";
 
 // ── Regole di conteggio (UNICHE: le usa anche lo script di riscontro) ───────
-export const isCtr = (c) => String(c?.id || "").startsWith("CTR-");
-export const isExt = (c) => String(c?.id || "").startsWith("EXT-");
-// produzione del negozio = righe registrate NON annullate e non nascoste
-// dalla gestione (le nascoste sono pratiche invalidate dalla direzione)
-export const validaProduzione = (c) => !/annull/i.test(String(c?.stato || "")) && c?.nascosta_gestione !== true;
-// pezzi marginalità: le righe EXT portano la quantità in dettagli.qty
-export const qtyDi = (c) => Math.max(1, Number(c?.qty) || 1);
-export const giornoDi = (c) => String(c?.data || c?.data_registrazione || "").slice(0, 10);
+// Vivono in `@/lib/produzione`, che NON e' un modulo client: cosi' le usa anche
+// il server (il report serale, senza, contava le pratiche annullate). Si
+// ri-esportano da qui perche' mezzo CRM le importa gia' da questo file.
+export { isCtr, isExt, validaProduzione, qtyDi, giornoDi } from "@/lib/produzione";
 
 const norm = (s) => (s || "").trim().toLowerCase();
 const STATO_COLOR = (s = "") => {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Send, Download, RefreshCw } from "lucide-react";
 import ReportGiornaliero from "./ReportGiornaliero";
 import { SelectOpzioni } from "@/components/SelectPersona";
+import type { DatiReport } from "@/lib/report/datiGiornata";
 
 /* ============================================================================
    IL REPORT DELLA SERA (Luca 28/08)
@@ -33,7 +34,9 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
        di un negozio a caso — e nel canale ci finisce col suo nome sopra. */
     const [scelto, setScelto] = useState(negozio);
     const negoziVeri = negozi.length > 1 ? negozi : [];
-    const [dati, setDati] = useState<Record<string, unknown> | null>(null);
+    // il tipo vero, non `unknown`: il giorno che cambia una chiave dei dati il
+    // foglio uscirebbe sbagliato senza che niente se ne accorga
+    const [dati, setDati] = useState<DatiReport | null>(null);
     const [errore, setErrore] = useState<string | null>(null);
     const [commento, setCommento] = useState("");
     const [stato, setStato] = useState<"pronto" | "invio" | "inviato">("pronto");
@@ -42,6 +45,18 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
     const tela = useRef<HTMLDivElement>(null);
     const box = useRef<HTMLDivElement>(null);
     const [scala, setScala] = useState(0.3);
+    const suggerito = useRef("");
+    const invioInCorso = useRef<AbortController | null>(null);
+
+    /* CHIUDERE DURANTE L'INVIO ANNULLA L'INVIO. Prima la richiesta finiva
+       comunque sul canale, ma l'esito arrivava a una finestra che non c'era
+       più: il negozio, non vedendo conferma, riapriva e rimandava — due foto
+       identiche sul canale. */
+    const chiudi = useCallback(() => {
+        invioInCorso.current?.abort();
+        invioInCorso.current = null;
+        onClose();
+    }, [onClose]);
 
     /* ── i numeri ─────────────────────────────────────────────────────── */
     const carica = useCallback(async () => {
@@ -52,7 +67,11 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
             const j = await r.json();
             if (j?.error) { setErrore(j.error); return; }
             setDati(j.dati);
-            setCommento(String(j.dati?.commento || ""));
+            // il commento suggerito si mette SOLO se la casella e' ancora quella
+            // che ha proposto il CRM: chi ha scritto la sua frase non se la vede
+            // cancellare premendo «ricarica»
+            setCommento((c) => (c === "" || c === suggerito.current ? String(j.dati?.commento || "") : c));
+            suggerito.current = String(j.dati?.commento || "");
         } catch (e) {
             setErrore("Non riesco a leggere la giornata: " + ((e as Error)?.message || "rete"));
         }
@@ -79,14 +98,14 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
 
     /* ── esc per chiudere: è una finestra, si comporta da finestra ────── */
     useEffect(() => {
-        const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        const k = (e: KeyboardEvent) => { if (e.key === "Escape") chiudi(); };
         window.addEventListener("keydown", k);
         return () => window.removeEventListener("keydown", k);
-    }, [onClose]);
+    }, [chiudi]);
 
     /* ── la fotografia ────────────────────────────────────────────────── */
     const scatta = useCallback(async (): Promise<string> => {
-        const nodo = tela.current?.firstElementChild as HTMLElement | null;
+        const nodo = tela.current?.querySelector("#report-canvas") as HTMLElement | null;
         if (!nodo) throw new Error("Il report non è ancora pronto.");
 
         // i caratteri devono essere già a posto: fotografare prima vuol dire
@@ -120,20 +139,33 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
         setStato("invio");
         setEsito(null);
         try {
-            const png = await scatta();
-            const r = await fetch("/api/report/invia", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ png, negozio: scelto, data: String(dati?.data || giorno) }),
-            });
+            const url = await scatta();
+
+            /* IL FILE VA COME FILE, non come testo dentro un JSON. Una data-url
+               base64 gonfia di un terzo — 729 KB di foto diventano ~1 MB di
+               corpo — e il `client_max_body_size` di nginx vale 1 MB di
+               default: il negozio avrebbe letto «Unexpected token '<'», che e'
+               la pagina d'errore del proxy interpretata come JSON. */
+            const blob = await (await fetch(url)).blob();
+            const form = new FormData();
+            form.append("immagine", blob, "report.jpg");
+            form.append("negozio", scelto);
+
+            const ac = new AbortController();
+            invioInCorso.current = ac;
+            const r = await fetch("/api/report/invia", { method: "POST", body: form, signal: ac.signal });
             const j = await r.json();
+            invioInCorso.current = null;
             if (j?.error) { setEsito(j.error); setStato("pronto"); return; }
             setStato("inviato");
         } catch (e) {
+            invioInCorso.current = null;
+            if ((e as Error)?.name === "AbortError") return;
             setEsito((e as Error)?.message || "Invio non riuscito.");
             setStato("pronto");
         }
     };
+
 
     const scarica = async () => {
         setEsito(null);
@@ -150,7 +182,7 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
 
     /* il commento entra nel disegno mentre lo si scrive: è l'unica parte del
        report che una persona decide, e va vista al suo posto prima di partire */
-    const datiVivi = dati ? { ...dati, commento } : null;
+    const datiVivi: DatiReport | null = dati ? { ...dati, commento } : null;
 
     return (
         <div className="fixed inset-0 z-[120] bg-[#07080d]/95 backdrop-blur-md flex flex-col">
@@ -174,7 +206,7 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
                         className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
                         <RefreshCw size={15} />
                     </button>
-                    <button onClick={onClose} title="Chiudi"
+                    <button onClick={chiudi} title="Chiudi"
                         className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
                         <X size={16} />
                     </button>
@@ -197,8 +229,7 @@ export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: 
                         {/* il foglio vive a grandezza vera: si rimpicciolisce
                             solo per guardarlo, e si fotografa com'è */}
                         <div ref={tela} style={{ transform: `scale(${scala})`, transformOrigin: "top left" }}>
-                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                            <ReportGiornaliero dati={datiVivi as any} />
+                            <ReportGiornaliero dati={datiVivi} />
                         </div>
                     </div>
                 )}

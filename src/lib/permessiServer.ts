@@ -32,9 +32,14 @@ export const SEZIONE_DI: Record<string, string> = {
     "usati": "/usati",
     "dispositivi": "/magazzino",
     "smartphones": "/magazzino",
-    // il report serale è un pulsante DENTRO la Chiusura Negozio: chi può
-    // chiudere il negozio può mandarne il report, senza un secondo permesso
-    "report": "/chiusura",
+    /* Il report serale è un pulsante DENTRO la Chiusura Negozio: chi può
+       chiudere il negozio può mandarne il report, senza un secondo permesso.
+       ⚠️ Le chiavi sono ESPLICITE, non il prefisso «report»: con quello,
+       qualunque futura /api/report/mensile avrebbe ereditato in silenzio
+       /chiusura, che nel menù è aperta a TUTTI. Una rotta nuova deve dire da
+       sé a quale sezione appartiene. */
+    "report/giornaliero": "/chiusura",
+    "report/invia": "/chiusura",
     // eccezioni più precise del primo segmento: queste due servono le
     // schermate di Amministrazione (Reparti, Marginalità, Catalogo), non le
     // sezioni operative da cui prendono il nome

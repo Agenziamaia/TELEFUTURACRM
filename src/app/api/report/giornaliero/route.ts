@@ -20,6 +20,11 @@ export async function GET(request: Request) {
     const giorno = String(url.searchParams.get("giorno") || "").trim()
         || new Date().toISOString().slice(0, 10);
     if (!negozio) return NextResponse.json({ error: "Manca il negozio." });
+    // senza questo, «?giorno=pippo» finiva stampato sul foglio come
+    // «undefined NaN undefined NaN» — e il foglio si poteva mandare
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(giorno)) {
+        return NextResponse.json({ error: "Data non valida." });
+    }
 
     /* ⚠️ IL NEGOZIO ARRIVA DAL BROWSER, quindi non ci si crede sulla parola.
        Senza questo controllo bastava cambiare l'indirizzo per leggere la

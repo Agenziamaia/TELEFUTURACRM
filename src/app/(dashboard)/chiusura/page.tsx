@@ -789,15 +789,20 @@ export default function ChiusuraNegozio() {
     // Ambito dalla FONTE UNICA: decide anche il "vede tutto" (l'amministrativo
     // puo' essere ristretto dall'admin ad alcuni negozi).
     const { seesAll: isAdmin, stores: visStores } = useVisibleStores();
+    const tuttiNegozi = useStores();      // per il report di chi vede tutto
     const userStores = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
     const [history, setHistory] = useState<Chiusura[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [report, setReport] = useState(false);
-    /* Il negozio del report: quello dell'utente, o il primo che vede. Chi non ne
-       ha nessuno (5 utenti senza primary_store) trova il pulsante spento invece
-       di mandare per sbaglio il report di un negozio che non è il suo. */
-    const storeReport = user?.negozio || visStores[0] || "";
+    /* I NEGOZI FRA CUI SCEGLIERE.
+       ⚠️ `useVisibleStores` per chi vede tutto (admin, dev, direttore generale,
+       amministrativo senza restrizioni) restituisce `stores: []` — non «tutti».
+       Prendendo `visStores[0]` la direzione restava senza selettore e col
+       report inchiodato al proprio primary_store, che per loro è «Ufficio»:
+       cioè un foglio vuoto. Chi vede tutto sceglie fra TUTTI i negozi. */
+    const negoziReport = isAdmin ? tuttiNegozi : visStores;
+    const storeReport = user?.negozio || negoziReport[0] || "";
     const [view, setView] = usePageView<{ overlay: "invio" | "fatture" | null }>("chiusura", { overlay: null });
     const overlay = view.overlay;
     const setOverlay = (v: "invio" | "fatture" | null) => setView((prev) => ({ ...prev, overlay: v }));
@@ -875,7 +880,7 @@ export default function ChiusuraNegozio() {
             </div>
 
             {report ? (
-                <ModaleReport negozio={storeReport} negozi={visStores}
+                <ModaleReport negozio={storeReport} negozi={negoziReport}
                     giorno={new Date().toISOString().slice(0, 10)}
                     onClose={() => setReport(false)} />
             ) : null}

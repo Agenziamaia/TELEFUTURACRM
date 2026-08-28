@@ -11,10 +11,10 @@ import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets"
    Nessuna animazione, nessuna transizione, nessun hover, nessun breakpoint:
    deve produrre lo stesso identico PNG a ogni esecuzione.
 
-   Cattura con Puppeteer:
-     viewport 1080 x 1620, deviceScaleFactor 2
-     attendere document.fonts.ready PRIMA dello screenshot
-     selezionare #report-canvas, non la pagina intera
+   La fotografia la scatta il BROWSER DEL NEGOZIO (ModaleReport.tsx), non un
+   servizio a parte: il foglio e' gia' a schermo, e fotografarlo li' vuol dire
+   che quello che il negozio vede e' quello che parte. html-to-image, JPEG a
+   qualita' 0,95 (il PNG dello stesso foglio pesa cinque volte e mezzo).
 
    Lo sfondo va servito da /report-bg.webp (public/). NON usare URL remote:
    se l'immagine arriva dopo lo scatto, il report esce senza fondale.
@@ -45,7 +45,7 @@ const HEX = {
   sky: "#8b5cf6", s4: "#22c55e", energy: "#22c55e", tim: "#0050ff",
   iliad: "#c00028", dojo: "#14b8a6", verymobile: "#84cc16",
   homobile: "#9b26b6", kenamobile: "#e4002b", kena: "#e4002b",
-  kipoint: "#0072bc", marginalita: "#22c55e"
+  kipoint: "#0072c6", marginalita: "#22c55e"
 };
 
 const G = { head: 136, strip: 62, rail: 56, marg: 138, ai: 96, gap: 12,
@@ -113,7 +113,10 @@ function fmtPt(v) {
   if (n % 1 === 0) return fmtN(n);
   return fmtN(n, Math.round(n * 10) % 10 === 0 ? 1 : 2);
 }
-function fmtEuro(v) { return fmtN(Math.round(Number(v) || 0)) + " \u20AC"; }
+function fmtEuro(v) {
+  const n = Math.round(Number(v) || 0);
+  return n ? fmtN(n) + " \u20AC" : "\u2013";
+}
 
 const gl = function (k) { return "rgba(26,29,41," + Math.min(0.95, VETRO * k).toFixed(3) + ")"; };
 
@@ -131,21 +134,44 @@ function vuotoBrand(b) {
   for (let i = 0; i < b.righe.length; i++) if (Number(b.righe[i].pz) > 0) return false;
   return true;
 }
-function altezzaCard(b) {
-  return G.padCard + G.headCard + G.unitRow + b.righe.length * G.rigaH +
+function altezzaCard(b, rigaH) {
+  return G.padCard + G.headCard + G.unitRow + b.righe.length * rigaH +
     (b.righe.length - 1) * 3 + G.padCardB;
+}
+
+/* L'ALTEZZA DI RIGA CHE FA ENTRARE TUTTO.
+   Il foglio è alto 1620 px e basta; il numero di righe invece cambia — Sky ne ha
+   quattro, e la riga «Altro» compare quando una vendita non trova posto altrove.
+   Con l'altezza fissa a 54 px il caso pieno sfondava la colonna: le carte hanno
+   flexShrink 0, quindi non si stringevano — si sovrapponevano, e Fastweb usciva
+   tagliata a metà dalla fotografia.
+   Qui si parte dallo spazio che c'è e si divide per le righe della colonna più
+   carica. Sotto i 38 px il testo non ci starebbe più: è il pavimento. */
+function altezzaRiga(perId, conRail) {
+  const spazio = H - 2 * CORNICE - G.head - G.strip - G.marg - G.ai
+    - G.gap * (conRail ? 5 : 4) - (conRail ? G.rail : 0);
+  let righeMax = 0, carteMax = 0;
+  COLONNE.forEach(function (ids) {
+    let r = 0, c = 0;
+    ids.forEach(function (id) { const b = perId[id]; if (b) { r += b.righe.length; c += 1; } });
+    if (r > righeMax) { righeMax = r; carteMax = c; }
+  });
+  if (!righeMax) return G.rigaH;
+  const fisso = carteMax * (G.padCard + G.headCard + G.unitRow + G.padCardB)
+    + G.gap * Math.max(0, carteMax - 1) + 3 * Math.max(0, righeMax - carteMax);
+  return Math.max(38, Math.min(G.rigaH, Math.floor((spazio - fisso) / righeMax)));
 }
 
 const W_PZ = Math.round(TS.num * 2.2);
 const W_PT = Math.round(TS.num * 2.5);
 
-function Riga({ b, r }) {
+function Riga({ b, r, rigaH }) {
   const colore = HEX[trkBrandKey(b.id)] || "#94a3b8";
   const zero = !r.pz;
   const p = ptDi(b, r);
   const senzaPunti = p === null || p === undefined;
   return (
-    <div style={{ display: "flex", alignItems: "center", height: G.rigaH, gap: 9,
+    <div style={{ display: "flex", alignItems: "center", height: rigaH, gap: 9,
       padding: "0 10px", borderRadius: 8, opacity: zero ? 0.34 : 1,
       background: zero ? "transparent" : "rgba(255,255,255,0.032)",
       borderLeft: "3px solid " + (zero ? "rgba(255,255,255,0.06)" : colore) }}>
@@ -172,12 +198,12 @@ function Riga({ b, r }) {
   );
 }
 
-function CardBrand({ b }) {
+function CardBrand({ b, rigaH }) {
   const colore = HEX[trkBrandKey(b.id)] || "#94a3b8";
   const vuota = vuotoBrand(b);
   const tp = totPunti(b);
   return (
-    <div style={{ flexGrow: b.righe.length, flexShrink: 0, flexBasis: altezzaCard(b),
+    <div style={{ flexGrow: b.righe.length, flexShrink: 0, flexBasis: altezzaCard(b, rigaH),
       display: "flex", flexDirection: "column",
       padding: G.padCard + "px 10px " + G.padCardB + "px 10px", borderRadius: 15,
       background: vuota ? gl(0.63) : gl(1),
@@ -211,7 +237,7 @@ function CardBrand({ b }) {
           : null}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
-        {b.righe.map(function (r, i) { return <Riga key={b.id + i} b={b} r={r} />; })}
+        {b.righe.map(function (r, i) { return <Riga key={b.id + i} b={b} r={r} rigaH={rigaH} />; })}
       </div>
     </div>
   );
@@ -219,18 +245,23 @@ function CardBrand({ b }) {
 
 /* Rail: presente SOLO se almeno un brand minore ha prodotto oggi.
    Brand minori: TIM, Dojo, Kipoint, Very, Ho, Kena. */
+const RAIL_MAX = 5;   // oltre, la corsia non ci sta in una riga
+
 function Rail({ minori }) {
+  const mostrati = minori.slice(0, RAIL_MAX);
+  const restanti = minori.length - mostrati.length;
   return (
     <div style={{ height: G.rail, display: "flex", alignItems: "center", gap: 10, padding: "0 14px",
+      overflow: "hidden",
       borderRadius: 13, background: "rgba(26,29,41," + Math.min(0.95, VETRO * 0.74).toFixed(3) + ")",
       backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)",
       border: "1px solid " + T.border }}>
       <span style={{ fontSize: TS.unit, fontWeight: 800, letterSpacing: "0.16em",
         textTransform: "uppercase", color: T.dimmer, marginRight: 4 }}>Altri brand</span>
-      {minori.map(function (m) {
+      {mostrati.map(function (m) {
         const c = HEX[trkBrandKey(m.id)] || "#94a3b8";
         return (
-          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px",
+          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", minWidth: 0,
             borderRadius: 9, background: "rgba(255,255,255,0.045)", border: "1px solid " + c + "44" }}>
             <Logo id={m.id} boxH={TS.cat * 1.15} />
             <span style={{ fontSize: TS.num * 0.78, fontWeight: 800, color: T.text,
@@ -240,6 +271,10 @@ function Rail({ minori }) {
           </div>
         );
       })}
+      {restanti > 0
+        ? <span style={{ fontSize: TS.det, fontWeight: 700, color: T.dim, whiteSpace: "nowrap" }}>
+            {"+" + restanti + " altri"}</span>
+        : null}
     </div>
   );
 }
@@ -302,6 +337,9 @@ export default function ReportGiornaliero({ dati }) {
   for (let i = 0; i < d.brands.length; i++) ricavo += Number(d.brands[i].euro) || 0;
   const minori = d.minori || [];
   for (let i = 0; i < minori.length; i++) ricavo += Number(minori[i].e) || 0;
+  // quanto spazio ha ogni riga, viste le carte di OGGI e la corsia di oggi
+  const rigaH = altezzaRiga(perId, (d.minori || []).length > 0);
+
   let margTot = 0;
   for (let i = 0; i < d.marginalita.length; i++) margTot += d.marginalita[i].v;
   const totale = ricavo + margTot;
@@ -371,7 +409,7 @@ export default function ReportGiornaliero({ dati }) {
                 {ids.map(function (id) {
                   const b = perId[id];
                   if (!b) return null;
-                  return <CardBrand key={id} b={b} />;
+                  return <CardBrand key={id} b={b} rigaH={rigaH} />;
                 })}
               </div>
             );
