@@ -955,6 +955,16 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 .tf-griglia .react-grid-item:hover > .react-resizable-handle { opacity: .9; }
 .tf-griglia .react-grid-item > .react-resizable-handle::after { border-color: rgba(148, 163, 184, .85) !important; }
 .tf-griglia .react-grid-item.react-draggable-dragging { z-index: 40; box-shadow: 0 26px 70px rgba(0, 0, 0, .6); }
+/* CHI STAI USANDO STA SOPRA (segnalazione di Francesco via Luca, 28/08).
+   Gli item della griglia sono position:absolute e non hanno z-index: a
+   deciderne l'impilamento resta l'ordine del DOM, quindi un widget in alto
+   finisce SOTTO quello che viene dopo. Basta un'ombra, la ✕ dell'angolo o
+   una tendina che sborda e il pezzo sparisce sotto il vicino — e in hover
+   la .glass-card prende pure un translate, che crea il suo contesto e
+   peggiora le cose. Il widget con cui si sta lavorando passa davanti. */
+.tf-griglia .react-grid-item:hover { z-index: 12; }
+.tf-griglia .react-grid-item:focus-within { z-index: 13; }
+.tf-griglia .react-grid-item.react-resizable-resizing { z-index: 40; }
 
 /* niente "lift" hover dentro la griglia Analisi (Luca 24/08: saltello
    fastidioso): il -translate-y della glass-card confligge col
