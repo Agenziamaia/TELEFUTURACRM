@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
-    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice,
+    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice, vociPunti,
     finestraBilancia, codiceBilancia, codiceAssociato,
     DIR_BRANDS, W3_PALETTO_BUSINESS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
@@ -1028,6 +1028,10 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     // ② TIPO CLIENTE prima della categoria (Luca 27/08-3): preselezione
     // obbligatoria Consumer/Business — così non si sbagliano
     const [tipoCli, setTipoCli] = useState<"consumer" | "business" | "">("");
+    /* COSA C'È DENTRO L'ATTIVAZIONE (Luca 28/08): mobile, fisso e CB vanno a
+       punti, e i punti cambiano con quello che si vende. Qui si spuntano le
+       voci del tabellare; la somma decide anche DOVE conviene caricarla. */
+    const [vociSel, setVociSel] = useState<string[]>([]);
     // 🔔 notifica cambi (Luca 26/08 notte-5): l'ultimo updated_at della
     // direzione confrontato con l'ultima visita (localStorage per dispositivo)
     const [novita, setNovita] = useState<string | null>(null);
@@ -1192,8 +1196,16 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pista, dir, negozio]);
 
+    const voci = useMemo(() => (dir && pista && pista !== BIZMOB ? vociPunti(dir, pista === BIZFISSO ? "fisso" : pista, tipoCli) : []), [dir, pista, tipoCli]);
+    const puntiAttivazione = useMemo(() => {
+        if (!voci.length) return 0;
+        const base = voci.find((v) => v.base);
+        const scelte = voci.filter((v) => vociSel.includes(v.id) || (v.base && !vociSel.some((x) => voci.find((y) => y.id === x)?.base)));
+        const set = scelte.length ? scelte : (base ? [base] : []);
+        return Math.round(set.reduce((t, v) => t + v.punti, 0) * 100) / 100;
+    }, [voci, vociSel]);
     const pistaCons = pista === BIZFISSO ? "fisso" : pista;
-    const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons)).slice(0, 5) : [];
+    const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons), puntiAttivazione).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
     const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
@@ -1278,7 +1290,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         const scala = TRK_LOGO_SCALE[m.id] || 1;
                         const attivo = brandSel === d.id;
                         return (
-                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); }} title={m.label} aria-label={m.label}
+                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); setVociSel([]); }} title={m.label} aria-label={m.label}
                                 // più spazio al brand (Luca 28/08): la tessera è il
                                 // gesto principale, il logo deve leggersi da lontano
                                 className={cn("flex-1 min-w-0 h-16 flex items-center justify-center rounded-xl border px-2 transition-all",
@@ -1298,7 +1310,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     {!brandLibero && (
                         <div className="flex gap-1.5 shrink-0 self-stretch">
                             {([["consumer", "👤", "Consumer"], ["business", "💼", "Business"]] as const).map(([v, icona, titolo]) => (
-                                <button key={v} onClick={() => { setTipoCli(v); setPista(""); }} title={titolo} aria-label={titolo}
+                                <button key={v} onClick={() => { setTipoCli(v); setPista(""); setVociSel([]); }} title={titolo} aria-label={titolo}
                                     className={cn("w-11 rounded-xl text-base border flex items-center justify-center transition-colors",
                                         tipoCli === v
                                             ? "border-white/40 bg-white/[0.16] text-white"
@@ -1323,7 +1335,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa stai vendendo?</div>
                     <div className="flex flex-wrap gap-1.5">
                         {pisteBussola.map((p) => (
-                            <button key={p.chiave} onClick={() => setPista(p.chiave)}
+                            <button key={p.chiave} onClick={() => { setPista(p.chiave); setVociSel([]); }}
                                 className={cn("px-3 py-1.5 rounded-xl text-xs font-bold border transition-all",
                                     pista === p.chiave ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
                                 style={pista === p.chiave ? { background: bMeta?.color || "#38bdf8", boxShadow: `0 0 12px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 50%, transparent)` } : undefined}>
@@ -1332,7 +1344,39 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         ))}
                     </div>
                 </div>}
-                {/* ④ LA RISPOSTA — la carta col codice, grande */}
+                {/* ④ QUANTO VALE (Luca 28/08): mobile, fisso e CB vanno a punti,
+                    e i punti cambiano con quello che c'è dentro l'attivazione.
+                    Le voci sono quelle del tabellare delle Gare, coi punti veri.
+                    Serve anche a decidere DOVE: un'attivazione non si spacchetta,
+                    quindi conviene dove i punti entrano senza sprecarsi. */}
+                {voci.length > 0 && pista !== BIZMOB && (
+                    <div className="space-y-1.5">
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa c&apos;è dentro?</span>
+                            {puntiAttivazione > 0 && (
+                                <span className="ml-auto text-[11px] font-black tabular-nums" style={{ color: bMeta?.color || "#38bdf8" }}>
+                                    vale {puntiAttivazione.toLocaleString("it-IT", { maximumFractionDigits: 2 })} {puntiAttivazione === 1 ? "punto" : "punti"}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {voci.map((v) => {
+                                const acceso = v.base ? !vociSel.some((x) => voci.find((y) => y.id === x)?.base) || vociSel.includes(v.id) : vociSel.includes(v.id);
+                                return (
+                                    <button key={v.id} type="button"
+                                        onClick={() => setVociSel((p2) => p2.includes(v.id) ? p2.filter((x) => x !== v.id) : [...p2, v.id])}
+                                        title={`${v.nome} · ${v.punti} punti`}
+                                        className={cn("px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors flex items-center gap-1.5 max-w-full",
+                                            acceso ? "border-white/35 bg-white/[0.14] text-white" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.08]")}>
+                                        <span className="truncate">{v.nome}</span>
+                                        <span className={cn("tabular-nums shrink-0", acceso ? "text-white/80" : "text-slate-600")}>+{v.punti}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+                {/* ⑤ LA RISPOSTA — la carta col codice, grande */}
                 {pista === BIZMOB && dir && biz && (() => {
                     const { scelto, ordinati, mobScelto } = biz;
                     return (<>

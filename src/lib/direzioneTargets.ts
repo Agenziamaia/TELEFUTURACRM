@@ -298,6 +298,41 @@ export function proiezioneDir(dir: Direzione, punti: number): number | null {
     return Math.max(Math.round(punti), Math.round((punti / gl.trascorsi) * gl.totali));
 }
 
+/* ═══ QUANTO VALE QUELLO CHE STO INSERENDO ═══════════════════════════════
+   Mobile, fisso e Customer Base di W3 non vanno a pezzi ma a PUNTI, e i
+   punti cambiano con quello che c'è dentro l'attivazione (Luca 28/08). Il
+   widget deve poterlo chiedere e sommarlo: le voci sono le righe del
+   tabellare azienda, e i punti si sommano esattamente come fa il motore
+   (`puntiPerRighe` è una somma di `punti`; i moltiplicatori riguardano gli
+   euro, non i punti). La Customer Base pesca dalla pista PARTNERSHIP, che
+   è dove stanno i suoi punti veri. */
+export type VocePunti = { id: string; nome: string; punti: number; base: boolean };
+export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer" | "business" | ""): VocePunti[] {
+    if (dir.brand !== "windtre") return [];
+    const pistaRighe = pista === "cb" ? "partnership" : pista;
+    if (!["mobile", "fisso", "partnership"].includes(pistaRighe)) return [];
+    const tc = (tipoCliente || "").toLowerCase();
+    const righe = (dir.tab?.righe || [])
+        .filter((r) => String(r.pista || "") === pistaRighe && r.attivo !== false && Number(r.punti || 0) > 0)
+        // il tipo cliente, quando la riga lo dichiara, deve combaciare
+        .filter((r) => !tc || !r.tipo_cliente || String(r.tipo_cliente).toLowerCase().startsWith(tc));
+    const viste = new Set<string>();
+    const out: VocePunti[] = [];
+    for (const r of righe) {
+        const base = String(r.componente || "") === "base";
+        // nome corto: via il «+ » iniziale, il «×canone» e le parentesi lunghe
+        const nome = String(r.nome || "voce")
+            .replace(/^\+\s*/, "").replace(/\s*×canone\s*/i, "")
+            .replace(/\s*\((?:incl\.|conteggio)[^)]*\)/gi, "").trim();
+        const chiave = `${nome}|${r.punti}`;
+        if (viste.has(chiave)) continue;      // le varianti con lo stesso valore si fondono
+        viste.add(chiave);
+        out.push({ id: String(r.id), nome, punti: Number(r.punti || 0), base });
+    }
+    // la base per prima, poi le altre dalla più pesante
+    return out.sort((a, b) => (Number(b.base) - Number(a.base)) || (b.punti - a.punti) || a.nome.localeCompare(b.nome, "it"));
+}
+
 export type Strategia = "vicino" | "scoperto";
 /** Le PRIORITÀ esplicite di un KPI (Luca 27/08-6): l'ordine dei codici che
  *  la direzione vuole servire PRIMA — vincono su strategia e spareggi
@@ -323,7 +358,7 @@ export function èMioCodice(k: { token: string[] }, negozio?: string | null): bo
     return !!nu && k.token.some((t) => nu.startsWith(t) || t.startsWith(nu));
 }
 
-export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null, strategia: Strategia = "vicino") {
+export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: string | null, strategia: Strategia = "vicino", punti = 0) {
     const prio = prioritaDi(dir, pista);
     const rankDi = (cod: string, mancano: number) => {
         const i = prio.indexOf(cod);
@@ -370,11 +405,21 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
             // ⓪ FASE T1: chi è sotto la S1 nuda passa davanti a tutto;
             //    dentro la fase: il MIO negozio, poi le priorità del capo,
             //    poi la S1 più vicina a chiudersi
+            /* UN'ATTIVAZIONE NON SI SPACCHETTA (Luca 28/08): «se ho quattro
+               punti fissi, a Libia ne mancano due e a Mazzini tre e mezzo, ha
+               molto più senso caricarlo su Mazzini». Dentro la fase, chi si
+               CHIUDE con questa attivazione passa avanti, e fra quelli si
+               prende il traguardo più alto: è quello che spreca meno punti
+               oltre la soglia. Senza punti dichiarati vale l'ordine di prima. */
+            const chiude = (m: number) => punti > 0 && m > 0 && m <= punti;
             if (a.sottoS1 !== b.sottoS1) return a.sottoS1 ? -1 : 1;
             if (a.sottoS1 && b.sottoS1) {
                 if (a.mio !== b.mio) return a.mio ? -1 : 1;
                 const pr1 = rankDi(a.cod_gara, a.mancanoS1) - rankDi(b.cod_gara, b.mancanoS1);
                 if (pr1) return pr1;
+                const ca = chiude(a.mancanoS1), cb2 = chiude(b.mancanoS1);
+                if (ca !== cb2) return ca ? -1 : 1;
+                if (ca && cb2) return b.mancanoS1 - a.mancanoS1;   // il più alto fra quelli che si chiudono
                 const d1 = a.mancanoS1 - b.mancanoS1;
                 if (d1) return d1;
             }
@@ -385,6 +430,9 @@ export function consigliaCodici(dir: Direzione, pista: string, negozioUtente?: s
                 if (a.mio !== b.mio) return a.mio ? -1 : 1;
                 const pr2 = rankDi(a.cod_gara, a.mancanoS1Sfr) - rankDi(b.cod_gara, b.mancanoS1Sfr);
                 if (pr2) return pr2;
+                const ca2 = chiude(a.mancanoS1Sfr), cb3 = chiude(b.mancanoS1Sfr);
+                if (ca2 !== cb3) return ca2 ? -1 : 1;
+                if (ca2 && cb3) return b.mancanoS1Sfr - a.mancanoS1Sfr;
                 const d2 = a.mancanoS1Sfr - b.mancanoS1Sfr;
                 if (d2) return d2;
             }
