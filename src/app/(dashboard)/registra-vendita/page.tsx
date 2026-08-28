@@ -1481,7 +1481,7 @@ const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
   const content = (
     <div style={{borderBottom:ii<total-1?"1px solid var(--tf-w50)":"none"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",flexWrap:"wrap"}}>
-        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:999,background:it.macroColor+"1f",border:"1px solid "+it.macroColor+"55",fontSize:11,fontWeight:800,color:it.macroColor}}>{it.macroIcon} {it.macro}</span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:999,background:`color-mix(in srgb, ${it.macroColor} 13%, transparent)`,border:`1px solid color-mix(in srgb, ${it.macroColor} 36%, transparent)`,fontSize:11,fontWeight:800,color:it.macroColor}}>{it.macroIcon} {it.macro}</span>
         <span style={{fontSize:13.5,fontWeight:700,color:"var(--tf-f8fafc)"}}>{it.sub}</span>
         {it.details&&it.details.hasContract&&<span style={{fontSize:9,fontWeight:800,color:"#fff",background:it.macroColor,padding:"2px 8px",borderRadius:5,letterSpacing:.5}}>CONTRATTO</span>}
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
@@ -4349,7 +4349,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Contract data */}
       {sub.hasContract&&!sub.isVFMobile&&!sub.isCBVF&&!sub.isVFFisso&&!sub.isVerisure&&!sub.isKaskoFacile&&!sub.isVFCare&&!sub.isVFBizMobile&&!sub.isCBVFBiz&&!sub.isVFFissoBiz&&!sub.isVFSolDig&&!sub.isFWMobile&&!sub.isFWFisso&&!sub.isFWEnergia&&!sub.isILMobile&&!sub.isILBizMobile&&!sub.isILFisso&&!sub.isILFwa&&!sub.isENLuceGas&&!sub.isTimMobile&&!sub.isTimFisso&&!sub.isTimTelepass&&!sub.isVeryMobile&&!sub.isHoMobile&&!sub.isKenaMobile&&!sub.isW3SostSim&&!sub.isVFSostSim&&!sub.isFWSostSim&&!sub.isBizProtecta&&(
-        <div style={{borderTop:"1px solid "+group.color+"20",paddingTop:8,marginTop:8}}>
+        <div style={{borderTop:`1px solid color-mix(in srgb, ${group.color} 14%, transparent)`,paddingTop:8,marginTop:8}}>
           <div className="rvLab">Dati contratto</div>
           <div style={{marginBottom:8,maxWidth:250}}><SCd session={sessionCode} codici={codiciW3} val={sd.codiceOverride||""} onCh={v=>uP(group.id,si,sub.id,"codiceOverride",v)}/></div>
           {sub.ct==="ga"&&<div style={{display:"grid",gridTemplateColumns:showMnpF&&!sub.isMobileBiz?"1fr 1fr 1fr":"1fr 1fr",gap:"8px 14px"}}>
@@ -6634,9 +6634,9 @@ function CRM() {
             {ana.iban&&<div style={{fontSize:10.5,color:"var(--tf-w800)",fontFamily:"monospace",letterSpacing:.5}}>🏦 {ana.iban}</div>}
           </div>}
           <div style={{display:"flex",gap:8,marginTop:12}}>
-            <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>BRAND</div></div>
-            <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>PRODOTTI</div></div>
-            <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>P&M</div></div>
+            <div className="cart-stat rvCartStat"><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>BRAND</div></div>
+            <div className="cart-stat rvCartStat"><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>PRODOTTI</div></div>
+            <div className="cart-stat rvCartStat"><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>P&M</div></div>
           </div>
           {/* il contatore piu' bello: i SOLDONI del carrello (Luca 03/08) */}
           {(()=>{
@@ -6662,32 +6662,32 @@ function CRM() {
         </div>
         <div style={{padding:14,flex:1}}>
           {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].length===0&&margItems.length===0?(
-            <div style={{textAlign:"center",color:"var(--tf-64748b)",padding:"30px 10px"}}><div style={{fontSize:34}}>📭</div><div style={{fontSize:12,marginTop:6}}>Nessuna vendita</div></div>
+            <div className="rvVuoto"><div style={{fontSize:34}}>🛒</div><b>Carrello vuoto</b><small>scegli un prodotto per cominciare</small></div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].map((g,gi)=>(
-                <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid var(--tf-w60)",borderLeft:"4px solid "+(g.brandColor||"var(--tf-64748b)"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} className="rvMini" style={{"--rv-acc":(g.brandColor||"var(--tf-64748b)")}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:6}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={130} height={32} style={{height:27,width:"auto",maxWidth:125,objectFit:"contain"}}/>:<span style={{fontSize:12,fontWeight:800,color:"var(--tf-f8fafc)"}}>{g.brandIcon} {g.brandLabel}</span>;})()}{g.isCurrent?<span style={{color:"var(--tf-ffd800)",fontWeight:900}}>•</span>:null}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"var(--tf-64748b)"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
                   {!expR["g"+gi]&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
                   {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                     {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
-                      <div key={ii} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px",display:"flex",alignItems:"center",gap:6}}>
+                      <div key={ii} className="rvMiniRiga">
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{it.macroIcon} {it.sub}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> · vendita {it.saleNum}</span></div>
                           {off&&<div style={{fontSize:10,color:"var(--tf-8892b0)",marginTop:1}}>{String(off)}</div>}
                         </div>
                         {/* 🗑 anche sugli articoli brand (Luca 11/08): via la voce messa per errore */}
                         {it.subId&&<button onClick={e=>{e.stopPropagation();rimuoviItemCarrello(g,gi,it,ii);}} title="Elimina questo articolo dal carrello"
-                          style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:13,lineHeight:1,padding:"2px 2px",flexShrink:0}}>🗑</button>}
+                          className="rvCestino">🗑</button>}
                       </div>);})}
                   </div>}
                 </div>
               ))}
-              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:(p.marg??true)?false:true}))} style={{border:"1px solid var(--tf-w60)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:(p.marg??true)?false:true}))} className="rvMini" style={{"--rv-acc":"var(--tf-8b5cf6)"}}>
                 <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"var(--tf-6f42c1)"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)"}}>{margItems.length} {(expR.marg??true)?"▾":"▸"}</div></div>
                 {(expR.marg??true)&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                   {margItems.map((m,mi)=>(
-                    <div key={mi} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div key={mi} className="rvMiniRiga" style={{justifyContent:"space-between"}}>
                       <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}{m.model&&<span style={{color:"var(--tf-94a3b8)",fontWeight:700}}> · {m.model}</span>}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
                       {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>€ {Number(m.importo||0).toFixed(2)}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
                       :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
@@ -6699,7 +6699,7 @@ function CRM() {
                       :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"var(--tf-28a745)":"var(--tf-dc3545)"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
                       {/* 🗑 riga per errore (Luca 10/08 via Verifiche) — le AUTO no: derivano dalla vendita brand */}
                       {!m.auto&&<button onClick={e=>{e.stopPropagation();setMargItems(p=>p.filter((_,i)=>i!==mi));}} title="Elimina questa riga dal carrello"
-                        style={{marginLeft:4,background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:13,lineHeight:1,padding:"2px 2px",flexShrink:0}}>🗑</button>}
+                        className="rvCestino" style={{marginLeft:4}}>🗑</button>}
                     </div>
                   ))}
                 </div>}
@@ -6708,7 +6708,7 @@ function CRM() {
           )}
         </div>
         <div style={{padding:14,borderTop:"1px solid var(--tf-w60)"}}>
-          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:inchiostroSu(ultimoColore(bG)),fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Riepilogo carrello →</button>
+          <button onClick={()=>setShowCart(true)} className="rvAzione" style={{width:"100%",padding:"11px 0",background:bG,color:inchiostroSu(ultimoColore(bG)),boxShadow:"none"}}>🛒 Riepilogo carrello →</button>
         </div>
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
@@ -6788,7 +6788,7 @@ function CRM() {
       {vistaStep==="brand"&&<div className="rvCard" style={{padding:20}}>
         <div className="rvCardT" style={{color:"var(--tf-8892b0)",marginBottom:14}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-          {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
+          {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?`color-mix(in srgb, ${b.color} 12%, transparent)`:"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08). ZOOM PER-BRAND (Luca 07/08):
@@ -6974,7 +6974,7 @@ function CRM() {
                   background:on?bC:"var(--tf-w40)",
                   color:on?"#fff":(sesCode?"var(--tf-586174)":"var(--tf-cbd5e1)"),
                   opacity:sesCode&&!on?0.5:1,
-                  boxShadow:on?"0 4px 14px "+bC+"55":"none"}}>
+                  boxShadow:on?`0 4px 14px color-mix(in srgb, ${bC} 34%, transparent)`:"none"}}>
                 {on?"✓ ":""}{c}
               </button>;})}
           </div>
@@ -6985,39 +6985,36 @@ function CRM() {
              compilazione nel MODALE — la griglia resta ferma, niente piu'
              fisarmonica. Stato e validazioni del flusso classico INTATTI. */
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-            {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:14,padding:16,display:"flex",flexDirection:"column"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12,textAlign:"center"}}>
+            {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} className="rvCat" style={{"--rv-acc":group.color}}>
+              <div className="rvCatT">
                 <span style={{fontSize:23}}>{iconW3Cat(group)}</span>
-                <span style={{fontSize:14.5,fontWeight:800,color:group.color,textTransform:"uppercase",letterSpacing:.4}}>{group.title}</span>
+                <b>{group.title}</b>
                 {cc.tot>0&&<span style={{fontSize:10,fontWeight:800,color:"var(--tf-8892b0)",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"var(--tf-28a745)"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"var(--tf-f59e0b)"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
               </div>
               {righe.map((sale,si)=><div key={si} style={{marginBottom:8,paddingBottom:si<righe.length-1?10:0,borderBottom:si<righe.length-1?"1px dashed var(--tf-w90)":"none"}}>
                 {righe.length>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                   <span style={{fontSize:10,fontWeight:800,color:group.color}}>Vendita #{si+1}</span>
                   <div style={{display:"flex",gap:5}}>
-                    <button onClick={()=>resetSale(group.id,si)} title="Reset questa vendita" style={{padding:"2px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",background:"transparent",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>↺</button>
-                    {si>0&&<button onClick={()=>rmSl(group.id,si)} style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"transparent",color:"var(--tf-dc3545)",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
+                    <button onClick={()=>resetSale(group.id,si)} title="Reset questa vendita" className="rvPill rvPill-sm" style={{padding:"3px 10px",fontSize:11,cursor:"pointer"}}>↺</button>
+                    {si>0&&<button onClick={()=>rmSl(group.id,si)} title="Elimina questa vendita" className="rvPill rvPill-sm" style={{padding:"3px 10px",borderColor:"rgba(220,53,69,.5)",color:"var(--tf-f87171)"}}>✕</button>}
                   </div>
                 </div>}
                 {/* QUADRATONI stondati (Luca 03/08): stesse forme dei brand */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,132px),1fr))",gap:8}}>
                   {group.subs.map(sub=>{const d=sale[sub.id];const att=!!(d&&d.active);const b=att?subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+si+"-"+sub.id)):null;
                     const spia=att?(b&&b.st==="ok"?"✓":b&&b.st==="warn"?"⚠":"●"):"+";
                     const cSpia=att?(b&&b.st==="ok"?"var(--tf-28a745)":b&&b.st==="warn"?"var(--tf-f59e0b)":"var(--tf-94a3b8)"):bC;
                     return <button key={sub.id}
                       onClick={()=>{if(!att)togSub(group.id,si,sub.id,group.radio?group.subs.map(x=>x.id):null);setProdModal({gid:group.id,si,subId:sub.id});}}
                       title={att?"Apri e modifica i campi":"Aggiungi e compila nel riquadro"}
-                      style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,minHeight:54,padding:"11px 8px",borderRadius:12,cursor:"pointer",fontSize:14,fontWeight:700,textAlign:"center",transition:"all .15s",
-                        border:att?"2px solid "+group.color:"1px solid var(--tf-w100)",
-                        background:att?group.color+"22":"var(--tf-w40)",
-                        color:att?"var(--tf-f8fafc)":"var(--tf-8892b0)"}}>
+                      className={cn("rvTessera",att&&"rvTessera-on")}>
                       <span style={{lineHeight:1.25}}>{sub.title}</span>
                       {att&&<span style={{fontSize:13,fontWeight:900,color:cSpia}}>{spia}</span>}
                     </button>;})}
                 </div>
               </div>)}
               <div style={{marginTop:"auto",paddingTop:8}}>
-                <button onClick={()=>addSl(group.id)} style={{width:"100%",padding:"8px 0",borderRadius:9,border:"1px dashed "+group.color+"66",background:"transparent",color:group.color,fontSize:11.5,fontWeight:800,cursor:"pointer"}}>+ Aggiungi vendita</button>
+                <button onClick={()=>addSl(group.id)} className="rvAggiungi">+ Aggiungi vendita</button>
               </div>
             </div>;})}
           </div>
@@ -7055,10 +7052,10 @@ function CRM() {
       })()}
 
       {showAna&&showStep4&&brand==="tim"&&tipoCliente==="business"&&(
-        <div style={{background:"linear-gradient(135deg,var(--tf-w60) 0%,var(--tf-w20) 100%)",borderRadius:16,padding:"44px 24px",marginBottom:10,border:"2px solid "+TIM_C+"33",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",boxShadow:"0 6px 20px rgba(0,0,0,.07)"}}>
+        <div style={{background:"linear-gradient(135deg,var(--tf-w60) 0%,var(--tf-w20) 100%)",borderRadius:16,padding:"44px 24px",marginBottom:10,border:"2px solid color-mix(in srgb, var(--tf-0050ff) 22%, transparent)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",boxShadow:"0 6px 20px rgba(0,0,0,.07)"}}>
           <svg width="200" height="150" viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
             <g opacity="0.9">
-              <line x1="40" y1="26" x2="160" y2="26" stroke={TIM_C+"33"} strokeWidth="2"/>
+              <line x1="40" y1="26" x2="160" y2="26" stroke="color-mix(in srgb, var(--tf-0050ff) 20%, transparent)" strokeWidth="2"/>
               <circle cx="40" cy="26" r="5" fill={TIM_C}/>
               <circle cx="100" cy="26" r="5" fill="#5B9BD5"/>
               <circle cx="160" cy="26" r="5" fill={TIM_C}/>

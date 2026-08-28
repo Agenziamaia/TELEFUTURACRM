@@ -675,6 +675,24 @@ select.rvIn{cursor:pointer}
   border:1px solid color-mix(in srgb,var(--rv-acc) 26%,transparent);
   box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 26px -18px var(--rv-acc)}
 .rvBoxT{font-size:11.5px;font-weight:800;color:color-mix(in srgb,var(--rv-acc) 88%,#fff);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
+/* ═══ LA GRIGLIA DEI PRODOTTI ══════════════════════════════════════════
+   È la porta d'ingresso alla scheda del prodotto: si sceglie qui cosa
+   vendere. Una card per categoria, dentro le tessere dei prodotti. */
+.rvCat{background:var(--tf-w30);border:1px solid color-mix(in srgb,var(--rv-acc) 20%,var(--tf-w100));border-radius:16px;padding:16px;display:flex;flex-direction:column;box-shadow:var(--rv-shadow)}
+.rvCatT{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px;text-align:center}
+.rvCatT b{font-size:14.5px;font-weight:800;color:var(--rv-acc);text-transform:uppercase;letter-spacing:.4px}
+/* LA TESSERA di un prodotto. Prima il fondo dell'attiva era scritto come
+   `group.color+"22"`: su una variabile CSS non è un colore valido, quindi
+   la tessera scelta restava SENZA fondo — si distingueva solo dal bordo. */
+.rvTessera{display:flex;align-items:center;justify-content:center;gap:6px;min-height:54px;padding:11px 8px;border-radius:13px;cursor:pointer;font-size:14px;font-weight:700;text-align:center;line-height:1.25;
+  border:1px solid var(--tf-w100);background:var(--tf-w40);color:var(--tf-8892b0);
+  transition:border-color .15s,background .15s,color .15s,transform .12s,box-shadow .15s}
+.rvTessera:hover{border-color:color-mix(in srgb,var(--rv-acc) 50%,transparent);background:color-mix(in srgb,var(--rv-acc) 8%,var(--tf-w40));color:var(--tf-e2e8f0)}
+.rvTessera:active{transform:scale(.97)}
+.rvTessera.rvTessera-on{border:1.5px solid var(--rv-acc);background:color-mix(in srgb,var(--rv-acc) 16%,transparent);color:var(--tf-f8fafc);box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 18%,transparent)}
+/* «+ Aggiungi vendita»: il tratteggio dice «non c'è ancora, lo crei tu» */
+.rvAggiungi{width:100%;padding:9px 0;border-radius:11px;border:1px dashed color-mix(in srgb,var(--rv-acc) 45%,transparent);background:transparent;color:var(--rv-acc);font-size:11.5px;font-weight:800;cursor:pointer;transition:background .15s,border-color .15s}
+.rvAggiungi:hover{background:color-mix(in srgb,var(--rv-acc) 9%,transparent);border-color:var(--rv-acc)}
 /* ═══ IL CARRELLO ═════════════════════════════════════════════════════
    Era il pezzo che Luca indicava come «quello bello», ma sotto era il più
    artigianale di tutti: 190 stili scritti a mano e 8 sole classi. Era bello
@@ -705,6 +723,22 @@ select.rvIn{cursor:pointer}
 .rvPrezzo:focus{box-shadow:0 0 0 3px rgba(99,102,241,.15)}
 .rvPrezzo.rvPrezzo-manca{border-color:#ef4444;background:rgba(239,68,68,.10)}
 .rvPrezzo.rvPrezzo-ok{border-color:rgba(52,211,153,.6);background:rgba(40,167,69,.10)}
+/* LA SIDEBAR DEL CARRELLO: quella sempre a destra sul monitor del negozio.
+   Stessa lingua della vista a schermo pieno, ma in scala ridotta. */
+.rvMini{border:1px solid var(--tf-w60);border-left:4px solid var(--rv-acc);border-radius:11px;padding:9px 11px;cursor:pointer;background:var(--tf-w20);transition:background .15s,border-color .15s}
+.rvMini:hover{background:color-mix(in srgb,var(--rv-acc) 7%,var(--tf-w20))}
+.rvMiniRiga{background:var(--tf-w30);border-radius:9px;padding:6px 9px;display:flex;align-items:center;gap:6px}
+/* il cestino: prima era testo nudo, senza bersaglio e senza reazione —
+   su un elenco fitto si sbaglia riga con niente */
+.rvCestino{background:none;border:1px solid transparent;border-radius:8px;color:var(--tf-8892b0);cursor:pointer;font-size:13px;line-height:1;padding:4px 6px;flex-shrink:0;transition:background .15s,color .15s,border-color .15s}
+.rvCestino:hover{background:rgba(220,53,69,.14);border-color:rgba(220,53,69,.45);color:var(--tf-f87171)}
+.rvCestino:active{transform:scale(.92)}
+/* le tre caselle dei numeri in testata */
+.rvCartStat{flex:1;background:var(--tf-w120);border:1px solid var(--tf-w150);border-radius:10px;padding:7px 0;text-align:center}
+/* quando non c'è ancora niente dentro */
+.rvVuoto{text-align:center;color:var(--tf-64748b);padding:30px 10px}
+.rvVuoto b{display:block;font-size:13px;font-weight:700;margin-top:6px;color:var(--tf-94a3b8)}
+.rvVuoto small{display:block;font-size:11px;margin-top:3px;opacity:.8}
 .rvCartRiga{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--tf-w20);border:1px solid var(--tf-w60);border-radius:12px;padding:12px 16px;margin:12px 0 10px}
 .rvCartRiga span{font-size:12px;font-weight:700;color:var(--tf-94a3b8)}
 /* ═══ LA SCHEDA DI UN PRODOTTO (Luca 28/08) ═══════════════════════════
