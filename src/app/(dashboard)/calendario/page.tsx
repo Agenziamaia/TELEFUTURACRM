@@ -315,6 +315,20 @@ function mapMeetingRow(r: Record<string, unknown>): CalendarMeeting {
     };
 }
 
+/* ── I COLORI DELLE TASK (Luca 27/08: «dobbiamo colorare le task in virtù
+   dello stato d'avanzamento») ─────────────────────────────────────────
+   Erano tutte verdi, quindi da fuori una task chiusa e una da fare
+   erano la stessa cosa. I colori seguono quelli già amministrabili in
+   calendario_esiti, così cambiando lì cambia anche il calendario. */
+const COLORE_TASK: Record<string, { bordo: string; fondo: string; testo: string; banda: string; etichetta: string }> = {
+    da_fare: { bordo: "border-slate-400/40", fondo: "bg-slate-400/10", testo: "text-slate-200", banda: "bg-slate-400", etichetta: "Da fare" },
+    in_corso: { bordo: "border-blue-400/40", fondo: "bg-blue-500/10", testo: "text-blue-200", banda: "bg-blue-400", etichetta: "In corso" },
+    fatta: { bordo: "border-emerald-500/40", fondo: "bg-emerald-500/10", testo: "text-emerald-200", banda: "bg-emerald-500", etichetta: "Fatta" },
+    sospesa: { bordo: "border-amber-400/40", fondo: "bg-amber-500/10", testo: "text-amber-200", banda: "bg-amber-400", etichetta: "Sospesa" },
+    problema: { bordo: "border-orange-400/60", fondo: "bg-orange-500/15", testo: "text-orange-100", banda: "bg-orange-400", etichetta: "Problema" },
+    abbandonata: { bordo: "border-rose-500/40", fondo: "bg-rose-500/10", testo: "text-rose-200/70", banda: "bg-rose-500", etichetta: "Abbandonata" },
+};
+
 const STATUS_COLORS: Record<AppointmentStatus, string> = {
     scheduled: "bg-blue-500/20 text-blue-300 border-blue-500/30",
     attivato: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
@@ -1114,19 +1128,6 @@ export default function Calendario() {
             if (!matchNegozi(dove, filterStores)) return false;
         }
         return true;
-    };
-    /* ── I COLORI DELLE TASK (Luca 27/08: «dobbiamo colorare le task in virtù
-       dello stato d'avanzamento») ─────────────────────────────────────────
-       Erano tutte verdi, quindi da fuori una task chiusa e una da fare
-       erano la stessa cosa. I colori seguono quelli già amministrabili in
-       calendario_esiti, così cambiando lì cambia anche il calendario. */
-    const COLORE_TASK: Record<string, { bordo: string; fondo: string; testo: string; banda: string; etichetta: string }> = {
-        da_fare: { bordo: "border-slate-400/40", fondo: "bg-slate-400/10", testo: "text-slate-200", banda: "bg-slate-400", etichetta: "Da fare" },
-        in_corso: { bordo: "border-blue-400/40", fondo: "bg-blue-500/10", testo: "text-blue-200", banda: "bg-blue-400", etichetta: "In corso" },
-        fatta: { bordo: "border-emerald-500/40", fondo: "bg-emerald-500/10", testo: "text-emerald-200", banda: "bg-emerald-500", etichetta: "Fatta" },
-        sospesa: { bordo: "border-amber-400/40", fondo: "bg-amber-500/10", testo: "text-amber-200", banda: "bg-amber-400", etichetta: "Sospesa" },
-        problema: { bordo: "border-orange-400/60", fondo: "bg-orange-500/15", testo: "text-orange-100", banda: "bg-orange-400", etichetta: "Problema" },
-        abbandonata: { bordo: "border-rose-500/40", fondo: "bg-rose-500/10", testo: "text-rose-200/70", banda: "bg-rose-500", etichetta: "Abbandonata" },
     };
     const coloreTask = (t: CalendarTask) => COLORE_TASK[t.status] || COLORE_TASK.da_fare;
 
@@ -4219,6 +4220,9 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
     const laDevoFareIo = !t.assignedToStore && nomeNorm(t.assignedTo) === nomeNorm(mioNome);
     /** l'ha data qualcun altro a me: qui il giro di ritorno ha senso */
     const assegnataDaAltri = !soLaMia && (laDevoFareIo || !!t.assignedToStore);
+    /** me la sono data da solo: non c'è nessuno a cui rispondere, quindi una
+     *  nota sola e lo stato resta la tendina qui sopra (Luca 28/08) */
+    const autoAssegnata = soLaMia && laDevoFareIo;
     const [addPersone, setAddPersone] = useState<string[]>([]);
     const [addNegozi, setAddNegozi] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
@@ -4310,17 +4314,22 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                             <input type="time" className="glass-input w-full" value={ora} onChange={(e) => setOra(e.target.value)} disabled={!puoGestire} />
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className={cn("grid gap-3", assegnataDaAltri ? "grid-cols-1" : "grid-cols-2")}>
                         <div>
                             <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegnata a</label>
                             <input className="glass-input w-full text-slate-300 bg-white/5" value={t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || "—")} readOnly />
                         </div>
-                        <div>
-                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Stato</label>
-                            <select className="glass-input w-full" value={stato} onChange={(e) => setStato(e.target.value as TaskStatus)}>
-                                {esiti.filter((x) => x.attiva || x.chiave === stato).map((x) => <option key={x.chiave} value={x.chiave}>{x.etichetta}</option>)}
-                            </select>
-                        </div>
+                        {/* chi ha RICEVUTO la task sceglie lo stato accanto alla
+                            sua risposta, qui sotto (Luca 28/08): rispondere e
+                            dire com'è finita sono lo stesso gesto. */}
+                        {!assegnataDaAltri && (
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Stato</label>
+                                <select className="glass-input w-full" value={stato} onChange={(e) => setStato(e.target.value as TaskStatus)}>
+                                    {esiti.filter((x) => x.attiva || x.chiave === stato).map((x) => <option key={x.chiave} value={x.chiave}>{x.etichetta}</option>)}
+                                </select>
+                            </div>
+                        )}
                     </div>
                     {/* IL PATTO, DETTO UNA VOLTA E BENE (Luca 28/08): chi apre
                         una task assegnata deve sapere entro quando va lavorata,
@@ -4360,8 +4369,28 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                             task, qui quella di chi la sta facendo. Scegliendo
                             «Problema» la task torna a chi l'ha assegnata con
                             questa nota attaccata — è il giro di ritorno. */}
+                        {!autoAssegnata && (
                         <div className={cn("mt-3 rounded-xl border p-3 space-y-2",
                             stato === "problema" ? "border-orange-400/50 bg-orange-500/10" : "border-white/10 bg-white/[0.02]")}>
+                            {/* GLI STATI SOPRA LA RISPOSTA (Luca 28/08): chi ha
+                                ricevuto la task li ha qui, dove sta scrivendo,
+                                invece che in una tendina in cima al modale. */}
+                            {assegnataDaAltri && (
+                                <div className="flex flex-wrap gap-1.5 pb-1">
+                                    {esiti.filter((x) => x.attiva || x.chiave === stato).map((x) => {
+                                        const col = COLORE_TASK[x.chiave] || COLORE_TASK.da_fare;
+                                        const on = stato === x.chiave;
+                                        return (
+                                            <button key={x.chiave} type="button" onClick={() => setStato(x.chiave as TaskStatus)}
+                                                className={cn("px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition-colors",
+                                                    on ? cn(col.fondo, col.bordo, col.testo, "ring-1 ring-white/20")
+                                                        : "border-white/10 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]")}>
+                                                {on ? "● " : ""}{x.etichetta}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                             <label className="block text-xs font-medium text-slate-300">
                                 {stato === "problema"
                                     ? <>⚠️ Cosa non va — lo legge <b>{t.createdBy || "chi te l'ha data"}</b></>
@@ -4385,6 +4414,7 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                                 </p>
                             )}
                         </div>
+                        )}
                     </div>
                     {puoGestire && (
                         <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 space-y-3">

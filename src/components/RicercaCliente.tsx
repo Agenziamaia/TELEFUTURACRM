@@ -34,7 +34,11 @@ export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellu
     const [testo, setTesto] = useState(testoIniziale || "");
     const [hits, setHits] = useState<ClienteTrovato[]>([]);
     const [cercando, setCercando] = useState(false);
-    const sceltoRef = useRef<string | null>(null);   // l'etichetta appena scelta: non si ri-cerca
+    /* l'etichetta scelta: non si ri-cerca. Parte VALORIZZATA col testo che
+       arriva da fuori (Luca 28/08: «ogni volta che rientro su una task mi si
+       riapre la selezione del cliente»): un cliente già scelto e salvato è
+       una scelta fatta, non qualcosa che l'utente sta digitando ora. */
+    const sceltoRef = useRef<string | null>(tieniScelto && testoIniziale ? testoIniziale : null);
 
     useEffect(() => {
         if (sceltoRef.current && testo === sceltoRef.current) { setHits([]); return; }
