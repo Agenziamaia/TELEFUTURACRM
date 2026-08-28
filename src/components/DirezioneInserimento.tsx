@@ -489,9 +489,20 @@ export function DirezioneInserimentoAdmin() {
                                 risultato. Cliccandone uno si aprono tutti i codici
                                 della sezione con quel solo KPI. */}
                             <div className="hidden lg:flex items-center gap-1.5 shrink-0">
-                                {[...dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && !PISTE_FUORI.has(p.chiave))
-                                    .map((p) => ({ chiave: p.chiave, nome: p.nome })),
-                                ...(dir.brand === "windtre" ? [{ chiave: "__paletto__", nome: "Paletto" }] : [])]
+                                {(() => {
+                                    // STESSO ORDINE DELLE RIGHE (Luca 28/08): il
+                                    // Paletto sta dopo il Mobile e prima del Fisso,
+                                    // qui come sulle pastiglie dei codici — in coda
+                                    // era un terzo posto che non esiste da nessuna parte.
+                                    const voci = dir.pisteTab
+                                        .filter((p) => dir.kpiCodice.includes(p.chiave) && !PISTE_FUORI.has(p.chiave))
+                                        .map((p) => ({ chiave: p.chiave, nome: p.nome }));
+                                    if (dir.brand === "windtre") {
+                                        const iM = voci.findIndex((x) => x.chiave === "mobile");
+                                        voci.splice(iM < 0 ? voci.length : iM + 1, 0, { chiave: "__paletto__", nome: "Paletto" });
+                                    }
+                                    return voci;
+                                })()
                                     .map((v) => {
                                         const acceso = kpiTutti?.sez === sez.label && kpiTutti?.chiave === v.chiave;
                                         return (
