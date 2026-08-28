@@ -123,7 +123,7 @@ export default function MobileUploadPage() {
     useEffect(() => {
         (async () => {
             if (!token) { setErr("Link non valido."); setLoading(false); return; }
-            const { data } = await supabase.from("qr_uploads").select("*").eq("token", token).maybeSingle();
+            const data = await fetch(`/api/qr/${encodeURIComponent(token)}`, { cache: "no-store" }).then((r) => r.json()).then((j) => j?.sessione || null).catch(() => null);
             if (!data) { setErr("Sessione non trovata o annullata."); setLoading(false); return; }
             if (new Date(data.expires_at) < new Date()) { setErr("QR scaduto. Rigeneralo dal computer."); setLoading(false); return; }
             if (data.status === "caricato") setDone(true);
@@ -193,7 +193,8 @@ export default function MobileUploadPage() {
                 const { data: pub } = supabase.storage.from("qr-uploads").getPublicUrl(path);
                 files.push({ url: pub?.publicUrl, name: it.name, mime: it.mime });
             }
-            const { error: upErr } = await supabase.from("qr_uploads").update({ status: "caricato", files }).eq("token", token);
+            const _up = await fetch(`/api/qr/${encodeURIComponent(token)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "caricato", files }) }).then((r) => r.json()).catch(() => ({ error: "rete" }));
+                const upErr = _up?.error ? { message: _up.error } : null;
             if (upErr) throw upErr;
             setDone(true);
         } catch (e) { alert("Invio non riuscito: " + (e?.message || e)); }
