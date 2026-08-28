@@ -837,7 +837,10 @@ export default function Calendario() {
        È la vista che regge il lavoro di qui: la settimana mostra i nomi, il
        mese mostra pallini. Quindi si apre SEMPRE così — la scelta diversa
        vale per la sessione, non si eredita al rientro. */
-    const [calView, setCalView] = useState<"month" | "week" | "day">("week");
+    /* TRE GIORNI (Luca 28/08): la settimana a sette colonne rendeva ogni
+       giorno una striscia. Tre giorni respirano e coprono comunque «oggi e
+       quello che viene»: è la vista di partenza, ogni volta che si entra. */
+    const [calView, setCalView] = useState<"month" | "week" | "tre" | "day">("tre");
     // domenica a scomparsa nella vista settimana (Luca 31/07): nascosta, gli
     // altri giorni respirano di piu'
     // Domenica NASCOSTA di default (Luca 05/08): il tasto la rimostra e la
@@ -883,6 +886,19 @@ export default function Calendario() {
         `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
     ));
     const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    // la finestra di tre giorni parte da oggi e si sposta di tre in tre
+    const [treStart, setTreStart] = useState(() => `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`);
+    /* Le ARRETRATE partono chiuse (Luca 28/08): si vede che ci sono e che si
+       aprono, ma non mangiano il giorno di oggi. */
+    const [arretrateAperte, setArretrateAperte] = useState(false);
+    const treDays = Array.from({ length: 3 }, (_, i) => addDays(treStart, i));
+    const treLabel = (() => {
+        const a = new Date(treStart + "T12:00:00"), b = new Date(addDays(treStart, 2) + "T12:00:00");
+        const sameM = a.getMonth() === b.getMonth();
+        return `${a.getDate()}${sameM ? "" : " " + MONTHS_IT[a.getMonth()]} – ${b.getDate()} ${MONTHS_IT[b.getMonth()]} ${b.getFullYear()}`;
+    })();
+    // i giorni che la griglia disegna: gli stessi riquadri, altro perimetro
+    const giorniGriglia = calView === "tre" ? treDays : (mostraDomenica ? weekDays : weekDays.slice(0, 6));
     const weekLabel = (() => {
         const a = new Date(weekStart + "T12:00:00"), b = new Date(addDays(weekStart, 6) + "T12:00:00");
         const sameM = a.getMonth() === b.getMonth();
@@ -898,6 +914,7 @@ export default function Calendario() {
         if (isNaN(d.getTime())) return;
         setView((v) => ({ ...v, viewYear: d.getFullYear(), viewMonth: d.getMonth() }));
         setWeekStart(mondayOf(dateStr));
+        setTreStart(dateStr);
         setDayDate(dateStr);
         selectDate(dateStr);
     };
@@ -2441,23 +2458,23 @@ export default function Calendario() {
                     {/* Navigazione + selettore vista Mese/Settimana */}
                     <div className="flex items-center justify-between mb-6 gap-3">
                         <button
-                            onClick={calView === "month" ? prevMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, -7)) : () => { const d = addDays(dayDate, -1); setDayDate(d); selectDate(d); }}
+                            onClick={calView === "month" ? prevMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, -7)) : calView === "tre" ? () => setTreStart(addDays(treStart, -3)) : () => { const d = addDays(dayDate, -1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
                         >
                             <ChevronLeft className="w-5 h-5" />
                         </button>
                         <h3 className="text-xl font-bold text-white text-center flex-1 truncate">
-                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : calView === "week" ? weekLabel
+                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : calView === "week" ? weekLabel : calView === "tre" ? treLabel
                                 : (() => { const d = new Date(dayDate + "T12:00:00"); return `${DAYS_IT[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTHS_IT[d.getMonth()]} ${d.getFullYear()}`; })()}
                         </h3>
                         {/* OGGI (Luca 31/07): torna al giorno corrente in qualsiasi vista */}
                         <button
-                            onClick={() => { const t = new Date(); setViewYear(t.getFullYear()); setViewMonth(t.getMonth()); setWeekStart(mondayOf(todayStr)); setDayDate(todayStr); selectDate(todayStr); }}
+                            onClick={() => { const t = new Date(); setViewYear(t.getFullYear()); setViewMonth(t.getMonth()); setWeekStart(mondayOf(todayStr)); setTreStart(todayStr); setDayDate(todayStr); selectDate(todayStr); }}
                             className="shrink-0 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 text-xs font-bold text-slate-300 hover:bg-white/10 transition-colors">
                             Oggi
                         </button>
                         <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
-                            {([["month", "Mese"], ["week", "Settimana"], ["day", "Giorno"]] as [typeof calView, string][]).map(([id, lab]) => (
+                            {([["month", "Mese"], ["week", "Settimana"], ["tre", "3 giorni"], ["day", "Giorno"]] as [typeof calView, string][]).map(([id, lab]) => (
                                 <button
                                     key={id}
                                     onClick={() => { setCalView(id); if (id === "day") selectDate(dayDate); }}
@@ -2483,7 +2500,7 @@ export default function Calendario() {
                             </button>
                         )}
                         <button
-                            onClick={calView === "month" ? nextMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, 7)) : () => { const d = addDays(dayDate, 1); setDayDate(d); selectDate(d); }}
+                            onClick={calView === "month" ? nextMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, 7)) : calView === "tre" ? () => setTreStart(addDays(treStart, 3)) : () => { const d = addDays(dayDate, 1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
                         >
                             <ChevronRight className="w-5 h-5" />
@@ -2588,9 +2605,9 @@ export default function Calendario() {
                     {/* Vista SETTIMANALE: impegni gia' espansi sotto ogni giorno e
                         cliccabili (l'appuntamento apre il suo dettaglio, la riunione il
                         suo); il pannello a destra resta e segue il giorno selezionato. */}
-                    {calView === "week" && (<>
-                        <div className={cn("grid gap-1.5", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
-                            {(mostraDomenica ? weekDays : weekDays.slice(0, 6)).map((dateStr) => {
+                    {(calView === "week" || calView === "tre") && (<>
+                        <div className={cn("grid gap-1.5", calView === "tre" ? "grid-cols-1 sm:grid-cols-3" : mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
+                            {giorniGriglia.map((dateStr) => {
                                 const wd = new Date(dateStr + "T12:00:00");
                                 const dayAppts = apptsByDate(dateStr);   // già in ordine di orario REALE
                                 const dayTasks = tasksByDate(dateStr);
@@ -2626,8 +2643,14 @@ export default function Calendario() {
                                                 sua data, qui è solo richiamata. */}
                                             {dateStr === todayStr && arretrateInColonna.length > 0 && (
                                                 <div className="mb-1 space-y-1">
-                                                    <div className="px-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400/90">⏰ Arretrate ({arretrateInColonna.length})</div>
-                                                    {arretrateInColonna.map((t) => (
+                                                    <button type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setArretrateAperte((v) => !v); }}
+                                                        title={arretrateAperte ? "Richiudi le arretrate" : "Mostra le task arretrate"}
+                                                        className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/10 text-[9px] font-bold uppercase tracking-wider text-amber-300 hover:bg-amber-500/20 transition-colors">
+                                                        {arretrateAperte ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                        ⏰ Arretrate ({arretrateInColonna.length})
+                                                    </button>
+                                                    {arretrateAperte && arretrateInColonna.map((t) => (
                                                         <button
                                                             key={`arr-${t.id}`}
                                                             onClick={() => { selectDate(dateStr); setTaskDettaglio(t); }}
@@ -2829,25 +2852,27 @@ export default function Calendario() {
                     })()}
                 </div>
 
-                {/* Side panel */}
-                <div className="glass-card p-5 flex flex-col">
+                {/* Side panel — RIMPICCIOLITO DEL 30% (Luca 28/08: «occupa
+                    molto spazio»): stessi contenuti, testo e spazi più stretti,
+                    e ogni riga tronca invece di allargare la colonna. */}
+                <div className="glass-card p-3.5 flex flex-col text-[13px]">
                     {selectedDate ? (
                         <>
-                            <div className="flex items-center justify-between mb-1">
-                                <h4 className="font-semibold text-white text-base">
+                            <div className="flex items-center justify-between mb-1 gap-2">
+                                <h4 className="font-semibold text-white text-sm truncate">
                                     {new Date(selectedDate + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
                                 </h4>
                                 {(isCallCenter || isAgent) && (
                                     <button
                                         onClick={openCreateModal}
-                                        className="p-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors"
+                                        className="shrink-0 p-1 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors"
                                     >
-                                        <Plus className="w-4 h-4" />
+                                        <Plus className="w-3.5 h-3.5" />
                                     </button>
                                 )}
                             </div>
-                            <h4 className="font-medium text-indigo-400 text-sm flex items-center gap-1.5 mb-3">
-                                <Calendar className="w-3.5 h-3.5" />
+                            <h4 className="font-medium text-indigo-400 text-xs flex items-center gap-1.5 mb-2">
+                                <Calendar className="w-3 h-3" />
                                 Appuntamento
                             </h4>
 
@@ -2905,40 +2930,44 @@ export default function Calendario() {
                                 </div>
                             )}
 
-                            {/* Divider & Tasks Section */}
-                            <hr className="border-white/10 my-4" />
+                            {/* Divider & Tasks Section — la data non si ripete
+                                (era scritta identica due volte nella stessa
+                                colonna): basta il titolo della sezione. */}
+                            <hr className="border-white/10 my-3" />
 
-                            <div className="flex items-center justify-between mb-1">
-                                <h4 className="font-semibold text-white text-base">
-                                    {new Date(selectedDate + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+                            <div className="flex items-center justify-between mb-2 gap-2">
+                                <h4 className="font-medium text-emerald-400 text-xs flex items-center gap-1.5">
+                                    <CheckSquare className="w-3 h-3" />
+                                    Task
                                 </h4>
                                 <button
                                     onClick={() => openCreateTaskModal(selectedDate)}
-                                    className="p-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors"
+                                    className="shrink-0 p-1 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors"
                                     title="Nuova Task"
                                 >
-                                    <Plus className="w-4 h-4" />
+                                    <Plus className="w-3.5 h-3.5" />
                                 </button>
                             </div>
-                            <h4 className="font-medium text-emerald-400 text-sm flex items-center gap-1.5 mb-3">
-                                <CheckSquare className="w-3.5 h-3.5" />
-                                Task
-                            </h4>
 
                             {/* riporto arretrate (Luca 04/08): sopra le task del giorno,
                                 solo quando il pannello mostra OGGI */}
                             {selectedDate === todayStr && arretrateInColonna.length > 0 && (
-                                <div className="mb-3 space-y-2">
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400">⏰ Task arretrate ({arretrateInColonna.length})</p>
-                                    {arretrateInColonna.map(t => (
+                                <div className="mb-2 space-y-1.5">
+                                    <button type="button" onClick={() => setArretrateAperte((v) => !v)}
+                                        title={arretrateAperte ? "Richiudi le arretrate" : "Mostra le task arretrate"}
+                                        className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:bg-amber-500/20 transition-colors">
+                                        {arretrateAperte ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                        ⏰ Task arretrate ({arretrateInColonna.length})
+                                    </button>
+                                    {arretrateAperte && arretrateInColonna.map(t => (
                                         <button key={`arrs-${t.id}`} onClick={() => setTaskDettaglio(t)}
                                             title="Apri la task (dettaglio e modifica)"
-                                            className="w-full text-left p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] hover:bg-amber-500/[0.14] transition-colors">
+                                            className="w-full text-left p-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] hover:bg-amber-500/[0.14] transition-colors">
                                             <div className="flex items-center justify-between gap-2">
-                                                <span className="text-sm font-semibold text-white truncate">{t.title}</span>
-                                                <span className="text-[10px] font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
+                                                <span className="text-[12px] font-semibold text-white truncate">{t.title}</span>
+                                                <span className="text-[9px] font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
                                             </div>
-                                            <div className="text-xs text-slate-400 truncate mt-0.5">{t.assignedToStore ? `🏬 ${t.assignedToStore}` : t.assignedTo} · {giorniFa(t.date)} gg fa</div>
+                                            <div className="text-[11px] text-slate-400 truncate">{t.assignedToStore ? `🏬 ${t.assignedToStore}` : t.assignedTo} · {giorniFa(t.date)} gg fa</div>
                                         </button>
                                     ))}
                                 </div>
