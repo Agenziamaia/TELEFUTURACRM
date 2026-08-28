@@ -41,6 +41,14 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
 /* Quanto ci sta ancora in questo codice PRIMA che convenga cambiarlo: si
    guarda il traguardo della fase in corso — la S1 nuda, poi il suo sfrido,
    poi il target della direzione (Luca 28/08, le due priorità zero). */
+/* L'avviso «qui ci sta solo questa» esce quando l'attivazione CHIUDE il
+   traguardo della fase: quel che resta da fare è minore o uguale a quanto
+   vale ciò che sto caricando (Luca 28/08). Senza punti dichiarati si
+   ripiega su un pezzo, che è l'unità di misura del business mobile. */
+function chiudeIlCodice(capienza: number, punti: number): boolean {
+    return capienza > 0 && capienza <= (punti > 0 ? punti : 1);
+}
+
 function capienzaDi(k: { mancanoS1: number; mancanoS1Sfr: number; mancano: number }): number {
     if (k.mancanoS1 > 0) return k.mancanoS1;
     if (k.mancanoS1Sfr > 0) return k.mancanoS1Sfr;
@@ -1221,7 +1229,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const codaMostrata = pista === BIZMOB
         ? (biz?.scelto && biz.capienza <= 1 ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
         : pistaDiGruppo ? []
-            : (consigliato && capienzaDi(consigliato) <= 1)
+            : (consigliato && chiudeIlCodice(capienzaDi(consigliato), puntiAttivazione))
                 ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
 
     /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
@@ -1407,7 +1415,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 <div className="text-lg font-black text-emerald-300">🏠 Caricala sul codice del tuo negozio</div>
                             </div>
                         )}
-                        {scelto && biz.capienza <= 1 && ordinati.length > 1 && <CodaCodici prossimi={ordinati.slice(1, 3).map((x) => x.nome)} />}
+                        {scelto && chiudeIlCodice(biz.capienza, 1) && ordinati.length > 1 && <CodaCodici prossimi={ordinati.slice(1, 3).map((x) => x.nome)} />}
                     </>);
                 })()}
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
@@ -1440,7 +1448,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     chiude col prossimo serve eccome (oggi il mobile di Mazzini
                     è a mezzo punto dalla S1). */}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato
-                    && capienzaDi(consigliato) <= 1 && (
+                    && chiudeIlCodice(capienzaDi(consigliato), puntiAttivazione) && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}
 
