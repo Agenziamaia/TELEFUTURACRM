@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { numeroNazionale } from "@/lib/telefono";
 import { seesAllStores, seesWholeStore, areaOf } from "@/lib/roles";
-import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useVisibleStores, sameStore, matchNegozi } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
@@ -542,6 +542,15 @@ export default function Calendario() {
 
     const storeNames = useMemo(() => calendarStores.map(s => s.name).sort(), [calendarStores]);
     const agents = useMemo(() => [...new Set(calendarOperators.map(o => o.name))].sort(), [calendarOperators]);
+    /* Dove lavora una persona — serve al filtro punto vendita: una task
+       assegnata a Samantha è una task del SUO negozio, anche se sulla riga
+       il negozio non è scritto (Luca 28/08: «filtro Magliana e ne compaiono
+       altre che non c'entrano niente»). */
+    const negozioDi = useMemo(() => {
+        const m = new Map<string, string>();
+        calendarOperators.forEach((o) => { if (o.name) m.set(o.name.trim().toLowerCase(), o.store || ""); });
+        return (nome?: string | null) => m.get(String(nome || "").trim().toLowerCase()) || "";
+    }, [calendarOperators]);
     const meetingUsers = useMemo(() => calendarOperators, [calendarOperators]);
 
     // Operatori a cui posso assegnare una task: tutti se vedo tutti i negozi,
@@ -929,6 +938,9 @@ export default function Calendario() {
     const areaMia = areaOf(ruolo);
     const vedeRichiami = isCallCenter || areaMia === "cc" || seesAllStores(ruolo);
     const vedeOutbound = isCallCenter || areaMia === "cc" || areaMia === "ob" || seesAllStores(ruolo);
+    // gli AUTO-generati se li crea l'agente (in "Nuovo appuntamento" il ruolo
+    // agente è bloccato proprio su quel tipo): il negozio non ne ha mai
+    const vedeAuto = vedeOutbound;
     const canCreateMeeting = seesAllStores(user?.role) || seesWholeStore(user?.role);
 
     const isDateBlocked = (dateStr: string) =>
@@ -1058,7 +1070,13 @@ export default function Calendario() {
         // sulle task personali, quello negozio sulle task di punto vendita —
         // stessa semantica del vecchio filtro della direzione, ora per tutti
         if (filterAgents !== null && !t.assignedToStore && !filterAgents.includes(t.assignedTo)) return false;
-        if (filterStores !== null && t.assignedToStore && !filterStores.some((s) => sameStore(t.assignedToStore, s))) return false;
+        if (filterStores !== null) {
+            // task di negozio → il suo negozio; task personale → quello di chi
+            // l'ha ricevuta. Se di quella persona non sappiamo il negozio, la
+            // task NON è di quelli che sto guardando: fuori.
+            const dove = t.assignedToStore || negozioDi(t.assignedTo);
+            if (!matchNegozi(dove, filterStores)) return false;
+        }
         return true;
     };
     /* ── I COLORI DELLE TASK (Luca 27/08: «dobbiamo colorare le task in virtù
@@ -2064,6 +2082,7 @@ export default function Calendario() {
                         ] as [string, string, string][]).filter(([id]) => {
                             if (id === "richiamo") return vedeRichiami;
                             if (id === "outgoing") return vedeOutbound;
+                            if (id === "self_generated") return vedeAuto;
                             return true;
                         })).map(([id, label, dot]) => (
                             <button key={id} type="button" onClick={() => toggleCat(id)}

@@ -28,7 +28,7 @@ import { W3_PALETTO_BUSINESS } from "@/lib/direzioneTargets";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
-import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
+import { GARA, LogoBrand, DrillPanel } from "./_widgets";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 // match a PREFISSO bidirezionale (come il pannello target): "Magliana" ↔
@@ -61,13 +61,18 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
         if (b === "w3") return righeGara.w3;
         if (b === "sky") return righeGara.sky;
         if (b === "vf") return [...righeGara.vf, ...righeGara.fw.filter(inA)].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || ""))));
+        // FASTWEB = la carta T2 (Luca 28/08: «quando parliamo di Fastweb in
+        // termini di gare e soglie parliamo di T2»). Quello venduto sui codici
+        // T1 è già contato di là, nella lettera A di Vodafone: contarlo anche
+        // qui sarebbe contarlo due volte.
+        if (b === "fw") return righeGara.fw.filter((c) => !inA(c));
         return null;
     };
     const filtraRaw = (arr, b) => !arr ? null : lente === "codici"
         ? (codSel[b]?.length ? arr.filter((c) => codSel[b].includes(c.cod_ins || "—")) : arr)
         : (negSel.length ? arr.filter((c) => negSel.some((n) => norm(n) === norm(c.negozio))) : arr);
 
-    const TABS = { w3: dati.aw3, vf: dati.avf, sky: dati.asky, fw: null };
+    const TABS = { w3: dati.aw3, vf: dati.avf, sky: dati.asky, fw: dati.afw };
 
     return (
         <div className="space-y-4">
@@ -250,7 +255,15 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         return calcolaAvanzamento(tab, raw);
     }, [tab, raw]);
 
-    const righe = useMemo(() => righeOperatore(b, sue), [b, sue]);
+    /* CHI DIPENDE DA CHI (Luca 28/08). Assicurazioni e Luce&Gas hanno soglie
+       di franchising; lo Smartphone CB pure («questo è un KPI di gruppo»).
+       Il resto — mobile, fisso, Customer Base, paletto — è del codice. */
+    const DI_GRUPPO = ["assicurazioni", "lucegas", "smartphone_cb"];
+    const piste = useMemo(() => {
+        const tutte = [...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine);
+        return { mie: tutte.filter((x) => !DI_GRUPPO.includes(x.chiave)), gruppo: tutte.filter((x) => DI_GRUPPO.includes(x.chiave)) };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab]);
     const punti = av
         ? Math.round(Object.values(av.piste || {}).reduce((s, st) => s + (st?.punti || 0), 0) * 100) / 100
         : Math.round(sue.reduce((s, x) => s + x.punti, 0) * 100) / 100;
@@ -337,7 +350,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                 scala = arr.map((v, i) => ({ tier: i + 1, soglia_da: v }));
                 nota = `🎯 target ${w3.frSel[0].negozio}`;
             } else { scala = []; nota = NOTE_MODO[modo] || NOTE_MODO.nessuna; }
-        } else if (b === "w3" && ["assicurazioni", "lucegas", "business_piva"].includes(p.chiave)) {
+        } else if (b === "w3" && ["assicurazioni", "lucegas", "business_piva", "smartphone_cb"].includes(p.chiave)) {
             // soglie DI GRUPPO: solo col gruppo Franchising al completo
             if (modo !== "gruppoFr") {
                 scala = [];
@@ -378,117 +391,73 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
             </div>
 
             {!sue.length ? <p className="text-xs text-slate-500 py-4 text-center">Nessuna vendita {G.label} nel filtro.</p> : (
+                /* DUE COLONNE, DUE SOGGETTI (Luca 28/08): a sinistra quello su
+                   cui il singolo codice può incidere, a destra quello che
+                   dipende da tutti. Il vecchio elenco per categoria (destra) è
+                   sparito: «non serve più a niente visto che abbiamo portato
+                   tutto nelle barre». */
                 <div className="grid lg:grid-cols-2 gap-x-5 gap-y-2 pl-2">
                     <div className="space-y-2">
-                        {b === "fw" ? (
-                            <p className="text-[11px] text-slate-500 rounded-xl bg-white/[.04] border border-white/[.06] px-3 py-3">🟡 La gara Fastweb T2 corre a <b className="text-slate-300">pezzi</b> (niente tabellare a soglie): il dettaglio per categoria è qui a destra. Il Fastweb sui codici T1 conta nella carta Vodafone (lettera A).</p>
-                        ) : av ? (
-                            <>
-                                {/* PRIMA IL TUO CODICE, POI IL GRUPPO (Luca 28/08).
-                                    Le barre erano nell'ordine del tabellare, che mescola
-                                    le due cose: uno leggeva «Mobile» (soglie del suo PDV)
-                                    e subito sotto «Luce & Gas» (soglie di tutto il
-                                    franchising) senza che niente dicesse che stava
-                                    cambiando il soggetto. Ora si legge prima quello su
-                                    cui il singolo negozio può incidere, poi quello che
-                                    dipende da tutti. */}
-                                {(() => {
-                                    const DI_GRUPPO = ["assicurazioni", "lucegas"];
-                                    const piste = [...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine);
-                                    const mie = piste.filter((x) => !DI_GRUPPO.includes(x.chiave));
-                                    const gruppo = piste.filter((x) => DI_GRUPPO.includes(x.chiave));
-                                    const barre = (arr) => arr.map(barraPista).filter(Boolean);
-                                    return barre(mie);
-                                })()}
-                                {b === "w3" && w3 && w3.puntiPr > 0 && (
-                                    <SogliaBar emoji="🏅" label="Partnership Reward (eventi CB)"
-                                        punti={w3.puntiPr} pezzi={w3.eventi.length}
-                                        soglie={w3.modo === "pdv" && w3.pr.target > 0 ? [{ tier: 1, soglia_da: Math.round(w3.pr.target * 0.8) }, { tier: 2, soglia_da: w3.pr.target }] : []}
-                                        colore={G.colore} proiezione={prj(w3.puntiPr)}
-                                        nota={w3.modo === "pdv" && w3.pr.target > 0
-                                            ? (w3.puntiPr >= w3.pr.target ? `🎁 premio pieno ${fmtN(w3.pr.premio)} € preso!`
-                                                : w3.puntiPr >= w3.pr.target * 0.8 ? `🎁 ${fmtN(w3.pr.premio80)} € in tasca · pieni ${fmtN(w3.pr.premio)} € tra ${fmtN(Math.ceil(w3.pr.target - w3.puntiPr))} pt`
-                                                    : `🎁 ${fmtN(w3.pr.premio80)} € tra ${fmtN(Math.ceil(w3.pr.target * 0.8 - w3.puntiPr))} pt (80%) · ${fmtN(w3.pr.premio)} € al target`)
-                                            : "🎯 target e premi sono del SINGOLO PDV: selezionane uno"}
-                                        onClick={() => apri({ titolo: "Partnership Reward — eventi Customer Base", sub: filtroLabel, items: w3.eventi })}
+                        {!av ? (
+                            <p className="text-[11px] text-slate-500 rounded-xl bg-white/[.04] border border-white/[.06] px-3 py-3">📅 Soglie spente: periodo su più mesi{tab ? "" : " (o tabellare azienda assente)"}.</p>
+                        ) : (<>
+                            <p className="pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                                🎯 Del codice <span className="font-medium normal-case tracking-normal text-slate-600">— ci incide il singolo punto vendita</span>
+                            </p>
+                            {piste.mie.map(barraPista).filter(Boolean)}
+                            {b === "w3" && w3 && w3.puntiPr > 0 && (
+                                <SogliaBar emoji="🏅" label="Partnership Reward (eventi CB)"
+                                    punti={w3.puntiPr} pezzi={w3.eventi.length}
+                                    soglie={w3.modo === "pdv" && w3.pr.target > 0 ? [{ tier: 1, soglia_da: Math.round(w3.pr.target * 0.8) }, { tier: 2, soglia_da: w3.pr.target }] : []}
+                                    colore={G.colore} proiezione={prj(w3.puntiPr)}
+                                    nota={w3.modo === "pdv" && w3.pr.target > 0
+                                        ? (w3.puntiPr >= w3.pr.target ? `🎁 premio pieno ${fmtN(w3.pr.premio)} € preso!`
+                                            : w3.puntiPr >= w3.pr.target * 0.8 ? `🎁 ${fmtN(w3.pr.premio80)} € in tasca · pieni ${fmtN(w3.pr.premio)} € tra ${fmtN(Math.ceil(w3.pr.target - w3.puntiPr))} pt`
+                                                : `🎁 ${fmtN(w3.pr.premio80)} € tra ${fmtN(Math.ceil(w3.pr.target * 0.8 - w3.puntiPr))} pt (80%) · ${fmtN(w3.pr.premio)} € al target`)
+                                        : "🎯 target e premi sono del SINGOLO PDV: selezionane uno"}
+                                    onClick={() => apri({ titolo: "Partnership Reward — eventi Customer Base", sub: filtroLabel, items: w3.eventi })}
+                                />
+                            )}
+                            {b === "w3" && w3 && [["t1", w3.t1], ["t2", w3.t2]].filter(([m, r]) => r && w3.modo === m).map(([m, r]) => {
+                                const negozi = String(r.negozio).split("+").map((x) => x.trim());
+                                const rowsMb = raw.filter((c) => negozi.some((n) => stessoNome(n, c.cod_ins || "")));
+                                const avMb = calcolaAvanzamento(tab, rowsMb);
+                                const pMb = Math.round(((avMb.piste?.mobile?.punti || 0) + (avMb.piste?.fisso?.punti || 0)) * 100) / 100;
+                                return (
+                                    <SogliaBar key={r.cod_gara} emoji="🚀" label={`On Top ${m === "t1" ? "T1" : "T2"} · ${r.negozio}`}
+                                        punti={pMb} pezzi={rowsMb.length}
+                                        soglie={(r.soglie_mobile || []).map((v, i) => ({ tier: i + 1, soglia_da: v }))}
+                                        colore={G.colore} proiezione={prj(pMb)}
+                                        nota="⚠ punteggi provvisori (motore franchising) — il tabellare multibrand arriva col suo cantiere"
+                                        onClick={() => apri({ titolo: `On Top Multibrand · ${r.negozio}`, sub: "punti cumulati mobile+fisso", items: sue.filter((it) => negozi.some((n) => stessoNome(n, it.cod_ins))) })}
                                     />
-                                )}
-                                {/* da qui in giù: quello che NON dipende dal singolo
-                                    negozio ma da tutto il franchising */}
-                                {(() => {
-                                    const DI_GRUPPO = ["assicurazioni", "lucegas"];
-                                    const gruppo = [...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine)
-                                        .filter((x) => DI_GRUPPO.includes(x.chiave));
-                                    const barre = gruppo.map(barraPista).filter(Boolean);
-                                    const mostraTitolo = barre.length > 0 || (b === "w3" && w3);
-                                    if (!mostraTitolo) return null;
-                                    return (<>
-                                        <p className="pt-3 pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
-                                            🌍 Di gruppo <span className="font-medium normal-case tracking-normal text-slate-600">— non dipende dal singolo codice</span>
-                                        </p>
-                                        {barre}
-                                    </>);
-                                })()}
-                                {b === "w3" && w3 && (w3.puntiBiz > 0 || w3.modo === "t1" || w3.modo === "t2") && (
-                                    <SogliaBar emoji="💼" label="Extra Gara P.IVA (soglia di Ragione Sociale)"
-                                        punti={w3.puntiBiz} pezzi={w3.eventiBiz.length}
-                                        soglie={w3.modo === "gruppoFr" ? (tab?.soglie || []).filter((s) => s.pista === "business_piva").sort((x, y) => x.tier - y.tier) : []}
-                                        colore={G.colore} proiezione={prj(w3.puntiBiz)}
-                                        nota={w3.modo === "gruppoFr" ? null
-                                            : (w3.modo === "t1" || w3.modo === "t2") ? "🌍 gara del franchising: i multibrand non ci rientrano"
-                                                : "🌍 la soglia è di Ragione Sociale: seleziona «Franchising» per vederla"}
-                                        onClick={() => apri({ titolo: "Extra Gara P.IVA — attivazioni business", sub: filtroLabel, items: w3.eventiBiz })}
-                                    />
-                                )}
-                                {b === "w3" && w3 && [["t1", w3.t1], ["t2", w3.t2]].filter(([m, r]) => r && w3.modo === m).map(([m, r]) => {
-                                    const negozi = String(r.negozio).split("+").map((x) => x.trim());
-                                    const rowsMb = raw.filter((c) => negozi.some((n) => stessoNome(n, c.cod_ins || "")));
-                                    const avMb = calcolaAvanzamento(tab, rowsMb);
-                                    const pMb = Math.round(((avMb.piste?.mobile?.punti || 0) + (avMb.piste?.fisso?.punti || 0)) * 100) / 100;
-                                    return (
-                                        <SogliaBar key={r.cod_gara} emoji="🚀" label={`On Top ${m === "t1" ? "T1" : "T2"} · ${r.negozio}`}
-                                            punti={pMb} pezzi={rowsMb.length}
-                                            soglie={(r.soglie_mobile || []).map((v, i) => ({ tier: i + 1, soglia_da: v }))}
-                                            colore={G.colore} proiezione={prj(pMb)}
-                                            nota="⚠ punteggi provvisori (motore franchising) — il tabellare multibrand arriva col suo cantiere"
-                                            onClick={() => apri({ titolo: `On Top Multibrand · ${r.negozio}`, sub: "punti cumulati mobile+fisso", items: sue.filter((it) => negozi.some((n) => stessoNome(n, it.cod_ins))) })}
-                                        />
-                                    );
-                                })}
-                            </>
-                        ) : (
-                            <p className="text-[11px] text-slate-500 rounded-xl bg-white/[.04] border border-white/[.06] px-3 py-3">📅 Soglie spente: periodo su più mesi{tab ? "" : " (o tabellare azienda assente)"} — la produzione del filtro resta qui a destra.</p>
-                        )}
-                    </div>
-
-                    <div className="space-y-1">
-                        {righe.map((r) => {
-                            const pt = Math.round(r.items.reduce((s, x) => s + x.punti, 0) * 100) / 100;
-                            const maxPt = Math.max(1, b === "fw" ? sue.length : punti);
-                            return (
-                                <Tip key={r.label} block tip={<div>
-                                    <TipTitolo>{r.emoji} {r.label}</TipTitolo>
-                                    <TipRiga l="pezzi" r={fmtN(r.items.length)} colore={r.colore} />
-                                    {b !== "fw" && <TipRiga l="punti" r={fmtPt(pt)} />}
-                                    {r.det.map(([l, v]) => <TipRiga key={l} l={l} r={fmtN(v)} />)}
-                                    <p className="text-[10px] text-indigo-300 mt-1">👆 clicca per l'elenco contratti</p>
-                                </div>}>
-                                    <div onClick={(e) => { e.stopPropagation(); apri({ titolo: `${G.label} · ${r.label}`, sub: filtroLabel, items: r.items }); }}
-                                        className="grid grid-cols-[minmax(120px,1.2fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
-                                        <span className="text-xs font-semibold text-slate-200 truncate">{r.emoji} {r.label}</span>
-                                        <span className="h-2 rounded-full bg-white/5 overflow-hidden">
-                                            <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, ((b === "fw" ? r.items.length : pt) / maxPt) * 100)}%`, background: `linear-gradient(90deg, ${r.colore}55, ${r.colore})` }} />
-                                        </span>
-                                        <span className="text-[11px] font-black text-white tabular-nums text-right w-14">{b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtPt(pt)} pt`}</span>
-                                        <span className="text-[10px] text-slate-500 tabular-nums text-right w-12">{b === "fw" ? "" : `${fmtN(r.items.length)} pz`}</span>
-                                    </div>
-                                </Tip>
-                            );
-                        })}
+                                );
+                            })}
+                        </>)}
                         <div className="flex flex-wrap gap-1.5 pt-1">
                             {escluse > 0 && <span onClick={() => apri({ titolo: `${G.label} · MNP escluse da lettera`, sub: filtroLabel, items: sue.filter((it) => it.esclusa) })} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-400 cursor-pointer hover:bg-white/10">🚫 {escluse} MNP escluse</span>}
                             {senzaRiga > 0 && <span onClick={() => apri({ titolo: `${G.label} · senza punti`, sub: filtroLabel, items: sue.filter((it) => it.senzaRiga) })} className="px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/25 text-[10px] text-amber-200 cursor-pointer hover:bg-amber-400/20">⚠ {senzaRiga} senza punti</span>}
                         </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        {av && (piste.gruppo.length > 0 || (b === "w3" && w3)) && (<>
+                            <p className="pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                                🌍 Di gruppo <span className="font-medium normal-case tracking-normal text-slate-600">— non dipende dal singolo codice</span>
+                            </p>
+                            {piste.gruppo.map(barraPista).filter(Boolean)}
+                            {b === "w3" && w3 && (w3.puntiBiz > 0 || w3.modo === "t1" || w3.modo === "t2") && (
+                                <SogliaBar emoji="💼" label="Extra Gara P.IVA (soglia di Ragione Sociale)"
+                                    punti={w3.puntiBiz} pezzi={w3.eventiBiz.length}
+                                    soglie={w3.modo === "gruppoFr" ? (tab?.soglie || []).filter((s) => s.pista === "business_piva").sort((x, y) => x.tier - y.tier) : []}
+                                    colore={G.colore} proiezione={prj(w3.puntiBiz)}
+                                    nota={w3.modo === "gruppoFr" ? null
+                                        : (w3.modo === "t1" || w3.modo === "t2") ? "🌍 gara del franchising: i multibrand non ci rientrano"
+                                            : "🌍 la soglia è di Ragione Sociale: seleziona «Franchising» per vederla"}
+                                    onClick={() => apri({ titolo: "Extra Gara P.IVA — attivazioni business", sub: filtroLabel, items: w3.eventiBiz })}
+                                />
+                            )}
+                        </>)}
                     </div>
                 </div>
             )}

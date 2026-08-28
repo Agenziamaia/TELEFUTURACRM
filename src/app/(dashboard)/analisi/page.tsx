@@ -250,7 +250,7 @@ function AnalisiInner() {
                 };
                 const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
-                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0])]) : Promise.resolve(null),
+                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0])]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
                     caricaTutte(selExt(daISO, aISO)),
                     inMese ? caricaTutte(selExt(pISO, ultimoPrev)) : Promise.resolve({ data: [] }),
@@ -304,7 +304,7 @@ function AnalisiInner() {
                 setLayoutSalvato(layRes?.data?.analisi_layout || null);
                 setDati({
                     pacchi, soloMese, gl, targetW3: targetRes?.data || [],
-                    aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null,
+                    aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null, afw: azienda?.[3] || null,
                     prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri, oggiGara,
                     tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
                 });
