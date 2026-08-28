@@ -12,7 +12,7 @@ function inline(text) {
   const parts = String(text).split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return parts.map((p, i) => {
     if (/^\*\*[^*]+\*\*$/.test(p)) return <strong key={i} className="text-white">{p.slice(2, -2)}</strong>;
-    if (/^`[^`]+`$/.test(p)) return <code key={i} className="px-1 py-0.5 rounded bg-black/30 text-indigo-200 text-[12px]">{p.slice(1, -1)}</code>;
+    if (/^`[^`]+`$/.test(p)) return <code key={i} className="px-1 py-0.5 rounded bg-black/30 text-[#a0acff] text-[12px]">{p.slice(1, -1)}</code>;
     return <span key={i}>{p}</span>;
   });
 }
@@ -445,9 +445,35 @@ export default function AssistentePage() {
            CRM aperto se ne vedevano addirittura tre. */
         <aside className="relative w-[264px] shrink-0 bg-white/[0.02] flex flex-col min-h-0">
           <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-8 translate-x-full bg-gradient-to-r from-white/[0.03] to-transparent" />
-          <div className="p-3 pb-2 space-y-2">
+          {/* ══ IN CIMA STA CHI TI RISPONDE ══════════════════════════════
+              Prima c'erano due pulsanti generici: qualunque software ha un
+              «Nuovo qualcosa» in alto a sinistra. Ma questo assistente ha un
+              NOME che gli hai dato tu, ed è la cosa che lo rende tuo invece che
+              un'altra funzione del gestionale. Il nome sta in cima, e l'alone
+              respira quando sta lavorando. */}
+          <div className="px-3 pt-3 pb-1">
+            <button onClick={() => setImpostazioni(true)}
+              title="Personalità e memorie: insegnagli come ragioni"
+              className="ai-premi w-full group flex items-center gap-2.5 px-1.5 py-1.5 rounded-xl hover:bg-white/[0.04] transition-colors">
+              <span className="relative w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#676fd4] to-[#7882e9] flex items-center justify-center shrink-0">
+                {loading && <span className="absolute inset-0 rounded-[10px] bg-[#676fd4]/35 blur-md ai-alone" />}
+                <Sparkles className="relative w-4 h-4 text-white" />
+              </span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block text-[13px] font-semibold text-white truncate">{nomeAssistente}</span>
+                <span className="block text-[11px] text-[#83868f] truncate">
+                  {memorieScritte.length ? `sa ${memorieScritte.length} cose di te` : "non sa ancora niente di te"}
+                </span>
+              </span>
+              <Settings2 className="w-3.5 h-3.5 text-[#83868f] opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+            </button>
+          </div>
+
+          {/* UN SOLO avvio pieno. Il progetto è un'azione rara: non merita lo
+              stesso peso visivo di quella che si fa dieci volte al giorno. */}
+          <div className="px-3 pb-2 space-y-1">
             <button onClick={() => nuovaChat(null)}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
+              className="ai-premi w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-[#676fd4] hover:brightness-110 text-white text-[13px] font-semibold transition-[filter,transform]">
               <Plus className="w-4 h-4" /> Nuova conversazione
             </button>
             <button onClick={async () => {
@@ -456,7 +482,7 @@ export default function AssistentePage() {
                 const d = await azione({ azione: "progetto_nuovo", nome });
                 if (d?.progetto?.id) setModProgetto(d.progetto);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-slate-300 text-xs hover:bg-white/10">
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[#83868f] text-[12px] hover:text-slate-300 hover:bg-white/[0.04] transition-colors">
               <FolderPlus className="w-3.5 h-3.5" /> Nuovo progetto
             </button>
           </div>
@@ -469,7 +495,7 @@ export default function AssistentePage() {
                   <div key={pr.id} className="group/pr flex items-center gap-1">
                     <button onClick={() => setProgettoAperto(progettoAperto === pr.id ? null : pr.id)}
                       className={cnx("flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors",
-                        progettoAperto === pr.id ? "bg-indigo-500/20 text-indigo-200" : "text-slate-300 hover:bg-white/5")}>
+                        progettoAperto === pr.id ? "bg-[#676fd4]/18 text-[#a0acff]" : "text-slate-300 hover:bg-white/5")}>
                       <span className="shrink-0">{pr.emoji || "📁"}</span>
                       <span className="truncate">{pr.nome}</span>
                     </button>
@@ -487,9 +513,28 @@ export default function AssistentePage() {
                 mostrava un elenco piatto. Una lista che si allunga senza tempo
                 diventa illeggibile in due settimane. */}
             {convDelProgetto.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-[#83868f]">
-                {progettoAperto ? "Questo progetto è ancora vuoto." : "Le conversazioni che apri restano qui."}
-              </p>
+              /* IL VUOTO DEVE DIRE QUALCOSA. Una riga grigia in mezzo a
+                 quattrocento pixel di nero è un buco, non un'assenza: il primo
+                 giorno di ogni manager sarà esattamente questo, e va progettato
+                 come tale. Qui il vuoto racconta cosa succederà. */
+              <div className="px-2 pt-4 space-y-3">
+                <p className="text-[12px] text-slate-400 leading-relaxed">
+                  {progettoAperto
+                    ? "Questo progetto è ancora vuoto: le conversazioni che apri da qui ci finiscono dentro."
+                    : "Qui sotto resteranno le tue conversazioni, dalla più recente."}
+                </p>
+                {!progettoAperto && (
+                  <div className="space-y-2 pt-1">
+                    <p className="text-[11px] text-[#83868f] leading-relaxed">
+                      📌 Le cose che vuoi ricordarti si scrivono dalla barra, senza aspettare risposta —
+                      te le riporto io davanti quando serve.
+                    </p>
+                    <p className="text-[11px] text-[#83868f] leading-relaxed">
+                      🧠 Sotto ogni risposta puoi insegnarmi come la volevi. Da lì in poi me lo ricordo.
+                    </p>
+                  </div>
+                )}
+              </div>
             ) : gruppiConv.map((g) => (
               <div key={g.titolo}>
                 <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-[#83868f]">{g.titolo}</p>
@@ -566,7 +611,7 @@ export default function AssistentePage() {
         {/* la scorciatoia alla conoscenza sta in alto, dove si guarda: in
             fondo alla colonna di sinistra non la trovava nessuno */}
         <button onClick={() => setImpostazioni(true)} title="Personalità e memorie: insegnagli come ragioni"
-          className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-violet-400/25 bg-violet-500/10 text-violet-200 text-[11px] font-bold hover:bg-violet-500/20 transition-colors shrink-0">
+          className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#7882e9]/30 bg-[#7882e9]/10 text-[#a0acff] text-[11px] font-bold hover:bg-[#7882e9]/18 transition-colors shrink-0">
           🧠 <span className="hidden sm:inline">{memorieScritte.length ? `Sa ${memorieScritte.length} cose di te` : "Insegnagli"}</span>
         </button>
       </div>
@@ -625,7 +670,7 @@ export default function AssistentePage() {
             <div className="grid sm:grid-cols-2 gap-2 mt-6">
               {spunti.map((sp) => (
                 <button key={sp.t} onClick={() => ask(sp.q)}
-                  className="ai-sugg ai-premi group text-left px-3.5 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.07] hover:border-indigo-400/40">
+                  className="ai-sugg ai-premi group text-left px-3.5 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.07] hover:border-[#7882e9]/45">
                   <div className="flex items-center gap-2.5">
                     <span className="text-lg">{sp.i}</span>
                     <span className="text-sm font-semibold text-slate-100 group-hover:text-white">{sp.t}</span>
@@ -637,17 +682,17 @@ export default function AssistentePage() {
             {/* COSA SO DI TE — il pezzo che fa capire che è personalizzabile.
                 Se non gli hai insegnato niente lo dice, e ti fa cominciare. */}
             <button onClick={() => setImpostazioni(true)}
-              className="ai-sugg ai-premi w-full mt-3 text-left px-4 py-3.5 rounded-2xl border border-violet-400/25 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.05] hover:border-violet-400/50">
+              className="ai-sugg ai-premi w-full mt-3 text-left px-4 py-3.5 rounded-2xl border border-[#7882e9]/30 bg-gradient-to-r from-[#7882e9]/[0.09] to-transparent hover:border-[#7882e9]/55">
               <div className="flex items-start gap-3">
                 <span className="text-lg mt-0.5">🧠</span>
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-violet-200">
+                  <div className="text-sm font-bold text-[#a0acff]">
                     {memorieScritte.length ? `So ${memorieScritte.length} cose di te` : "Non so ancora niente di te"}
                   </div>
                   <div className="text-[12px] text-slate-400 mt-0.5 leading-relaxed">
                     {memorieScritte.length
-                      ? <>Es.: «{memorieScritte[0].slice(0, 70)}{memorieScritte[0].length > 70 ? "…" : ""}» · <span className="text-violet-300">insegnami altro</span></>
-                      : <>Insegnami come ragioni: quali negozi segui, come vuoi le risposte, le tue sigle. <span className="text-violet-300">Da qui in poi me lo ricordo.</span></>}
+                      ? <>Es.: «{memorieScritte[0].slice(0, 70)}{memorieScritte[0].length > 70 ? "…" : ""}» · <span className="text-[#a0acff]">insegnami altro</span></>
+                      : <>Insegnami come ragioni: quali negozi segui, come vuoi le risposte, le tue sigle. <span className="text-[#a0acff]">Da qui in poi me lo ricordo.</span></>}
                   </div>
                 </div>
               </div>
@@ -730,9 +775,9 @@ export default function AssistentePage() {
                         <input autoFocus value={insegnamento} onChange={(e) => setInsegnamento(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") salvaInsegnamento(); if (e.key === "Escape") setInsegnaA(null); }}
                           placeholder="Es.: gli importi dammeli sempre senza decimali"
-                          className="flex-1 min-w-0 bg-black/30 border border-violet-400/40 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-[#83868f] outline-none" />
+                          className="flex-1 min-w-0 bg-black/30 border border-[#7882e9]/45 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-[#83868f] outline-none" />
                         <button onClick={salvaInsegnamento} disabled={!insegnamento.trim()}
-                          className="px-2.5 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-[11px] font-bold">Ricorda</button>
+                          className="px-2.5 py-1.5 rounded-lg bg-[#7882e9] hover:brightness-110 disabled:opacity-40 text-white text-[11px] font-bold">Ricorda</button>
                         <button onClick={() => setInsegnaA(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
                       </div>
                     ) : (
@@ -741,7 +786,7 @@ export default function AssistentePage() {
                          l'assistente si educhi: scriverlo in un grigio che si
                          legge a fatica significa che nessuno lo userà mai. */
                       <button onClick={() => { setInsegnaA(idx); setInsegnamento(""); }}
-                        className="inline-flex items-center gap-1.5 -ml-1 px-2 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-violet-200 hover:bg-violet-500/10 transition-colors">
+                        className="inline-flex items-center gap-1.5 -ml-1 px-2 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-[#a0acff] hover:bg-[#7882e9]/10 transition-colors">
                         <span>🧠</span> insegnami come la volevi
                       </button>
                     )}
@@ -761,7 +806,7 @@ export default function AssistentePage() {
                 <span className="absolute inset-0 rounded-xl bg-[#676fd4]/35 blur-md ai-alone" />
                 <Sparkles className="relative w-3.5 h-3.5 text-white" />
               </span>
-              <div className="flex items-center gap-2 py-2 text-indigo-300/90">
+              <div className="flex items-center gap-2 py-2 text-[#a0acff]/90">
                 <span className="ai-punto" style={{ animationDelay: "0ms" }} />
                 <span className="ai-punto" style={{ animationDelay: "150ms" }} />
                 <span className="ai-punto" style={{ animationDelay: "300ms" }} />
@@ -865,11 +910,11 @@ export default function AssistentePage() {
                         {(spazio.modelli?.disponibili || []).map((m) => (
                           <button key={m.id} onClick={() => cambiaModello(m.id)}
                             className={cnx("w-full text-left px-3.5 py-3 border-b border-white/5 last:border-0 transition-colors",
-                              modelloAttivo?.id === m.id ? "bg-indigo-500/15" : "hover:bg-white/5")}>
+                              modelloAttivo?.id === m.id ? "bg-[#676fd4]/15" : "hover:bg-white/5")}>
                             <div className="flex items-center gap-2">
                               <span>{m.id === "deepseek-v4-pro" ? "🧠" : "⚡"}</span>
                               <span className="text-sm font-bold text-white">{m.nome}</span>
-                              {modelloAttivo?.id === m.id && <Check className="w-3.5 h-3.5 text-indigo-300 ml-auto" />}
+                              {modelloAttivo?.id === m.id && <Check className="w-3.5 h-3.5 text-[#a0acff] ml-auto" />}
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1 leading-snug">{m.descrizione}</div>
                           </button>
@@ -989,8 +1034,8 @@ function PannelloPreferenze({ valori, onChiudi, onSalva }) {
           {righeMemoria.length > 0 && (
             <div className="space-y-1.5">
               {righeMemoria.map((r, i) => (
-                <div key={i} className="group flex items-start gap-2 px-3 py-2 rounded-xl bg-violet-500/[0.07] border border-violet-400/20">
-                  <span className="text-violet-300 text-xs mt-0.5">🧠</span>
+                <div key={i} className="group flex items-start gap-2 px-3 py-2 rounded-xl bg-[#7882e9]/[0.07] border border-[#7882e9]/25">
+                  <span className="text-[#a0acff] text-xs mt-0.5">🧠</span>
                   <span className="flex-1 text-[13px] text-slate-200 leading-snug">{r}</span>
                   <button onClick={() => setMemorie(righeMemoria.filter((_, j) => j !== i).join("\n"))}
                     title="Dimentica questa"
@@ -1007,7 +1052,7 @@ function PannelloPreferenze({ valori, onChiudi, onSalva }) {
               placeholder="Es.: quando dico «i miei» intendo Acilia e Baleniere"
               className="glass-input flex-1 text-sm" />
             <button onClick={aggiungiMemoria} disabled={!nuovaMemoria.trim()}
-              className="px-3 py-2 rounded-lg bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-white text-xs font-bold shrink-0">
+              className="px-3 py-2 rounded-lg bg-[#7882e9] hover:brightness-110 disabled:opacity-40 text-white text-xs font-bold shrink-0">
               Aggiungi
             </button>
           </div>
@@ -1020,7 +1065,7 @@ function PannelloPreferenze({ valori, onChiudi, onSalva }) {
           <button onClick={onChiudi} className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5">Annulla</button>
           <button onClick={async () => { setSalvando(true); await onSalva({ nomeAssistente, personalita, memorie }); setSalvando(false); }}
             disabled={salvando}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-semibold">{salvando ? "Salvo…" : "Salva"}</button>
+            className="px-4 py-2 rounded-lg bg-[#676fd4] hover:brightness-110 disabled:opacity-60 text-white text-sm font-semibold">{salvando ? "Salvo…" : "Salva"}</button>
         </div>
       </div>
     </div>
@@ -1059,7 +1104,7 @@ function PannelloProgetto({ progetto, onChiudi, onSalva, onElimina }) {
           <div className="flex gap-2">
             <button onClick={onChiudi} className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5">Annulla</button>
             <button onClick={() => onSalva({ nome, emoji, istruzioni })}
-              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Salva</button>
+              className="px-4 py-2 rounded-lg bg-[#676fd4] hover:brightness-110 text-white text-sm font-semibold">Salva</button>
           </div>
         </div>
       </div>
