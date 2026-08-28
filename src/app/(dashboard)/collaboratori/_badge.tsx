@@ -1,4 +1,5 @@
 "use client";
+import { createPortal } from "react-dom";
 
 /* BADGE / PRESENZE — spostato da Collaboratori all'hub CALL CENTER
    (/caller?tab=badge, richiesta Luca 28/07). Qui vivono la sezione completa
@@ -1115,7 +1116,13 @@ function PresenzeAdmin() {
             </div>
 
             {/* ── Modale correzione turno ── */}
-            {editShift && (
+            {/* IN UN PORTAL (Luca 28/08, stesso difetto delle «Caselle dei
+                codici»): questa card ha la classe `glass-card`, che porta un
+                `backdrop-blur`. Un elemento con un filtro di sfondo diventa il
+                RIFERIMENTO dei figli in posizione fissa, quindi il modale si
+                apriva grande quanto la card invece che quanto lo schermo —
+                misurato: 420×130 al posto di 1200×713. */}
+            {editShift && typeof document !== "undefined" && createPortal((
                 <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4"
                     onClick={() => !salvando && setEditShift(null)} role="dialog" aria-modal="true">
                     <div className="w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl bg-[#12141f]" onClick={(e) => e.stopPropagation()}>
@@ -1161,7 +1168,7 @@ function PresenzeAdmin() {
                         </div>
                     </div>
                 </div>
-            )}
+            ), document.body)}
 
             {/* ── Modale TIMELINE della giornata (Luca 31/07) ── */}
             {timelineShift && <TimelineTurnoModal shift={timelineShift} onClose={() => setTimelineShift(null)} />}

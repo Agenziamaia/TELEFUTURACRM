@@ -6,6 +6,7 @@
 // in basso a destra. Una casella per negozio: IMAP per leggere, SMTP per inviare
 // (route /api/email/*). embedded=true -> pensata per stare dentro la pagina Chat.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
@@ -1331,7 +1332,15 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
         }
         onClose();
     };
-    return (
+    /* IN UN PORTAL, NON DOVE STA IL BOTTONE (Luca 28/08, «Caselle dei
+       codici»: la finestra si apriva dentro la striscia della sezione e il
+       tasto per salvare non si raggiungeva). Le sezioni hanno la classe
+       `glass-panel`, che porta un `backdrop-blur`: un elemento con un filtro
+       di sfondo diventa il RIFERIMENTO dei figli in posizione fissa, e con
+       `overflow-hidden` sullo stesso riquadro il modale veniva tagliato lì
+       dentro. Portandolo su document.body il problema non si ripresenta più,
+       in nessuno dei punti che usano questa finestra. */
+    return typeof document === "undefined" ? null : createPortal(
         <div className="mail-fade fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
             {/* la modal vive anche da sola nel Pannello Email: le animazioni
                 viaggiano con lei (keyframes duplicati = innocui) */}
@@ -1394,5 +1403,5 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
                 </div>
             </div>
         </div>
-    );
+        , document.body);
 }
