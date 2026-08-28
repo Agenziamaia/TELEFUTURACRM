@@ -1241,9 +1241,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         className="shrink-0 px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-[11px] font-bold text-amber-100 hover:bg-amber-500/30">✓ visto</button>
                 </div>
             )}
-            {/* ① OPERATORE — tessere logo, come nel caller */}
+            {/* ① OPERATORE + ② TIPO CLIENTE SULLA STESSA RIGA (Luca 28/08):
+                «più di 3-4 brand non ne avremo mai, mettimi quelle due
+                caselline piccole alla destra dopo tutti i brand» — così sotto
+                resta tutto lo spazio in verticale per la categoria e per le
+                differenziazioni che verranno (MNP/GA, tied/untied). */}
             <div className="space-y-1.5">
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-stretch">
                     {tuttiBrand.map((d) => {
                         const m = DIR_BRANDS.find((b) => b.id === d.id)!;
                         const logo = TRK_BRAND_LOGOS[m.id];
@@ -1264,6 +1268,22 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             </button>
                         );
                     })}
+                    {/* piccole e discrete: sono il secondo passo, non devono
+                        pesare quanto il brand. E niente scale: ingrandendo
+                        sbordavano una sull'altra (Luca 28/08). */}
+                    {!brandLibero && (
+                        <div className="flex gap-1.5 shrink-0 self-stretch">
+                            {([["consumer", "👤", "Consumer"], ["business", "💼", "Business"]] as const).map(([v, icona, titolo]) => (
+                                <button key={v} onClick={() => { setTipoCli(v); setPista(""); }} title={titolo} aria-label={titolo}
+                                    className={cn("w-11 rounded-xl text-base border flex items-center justify-center transition-colors",
+                                        tipoCli === v
+                                            ? "border-white/40 bg-white/[0.16] text-white"
+                                            : "bg-white/[0.04] border-white/10 opacity-70 hover:opacity-100 hover:bg-white/10")}>
+                                    {icona}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
             {/* brand LIBERO: risposta immediata, niente step 2 */}
@@ -1274,22 +1294,6 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     <div className="text-[11px] text-slate-400 mt-1">Per {bMeta?.label || "questo brand"} carica sul codice che preferisci: nessuna indicazione dalla direzione.</div>
                 </div>
             ) : (<>
-                {/* ② TIPO CLIENTE — preselezione anti-errore */}
-                <div className="space-y-1.5">
-                    {/* solo le ICONE (Luca 27/08: «più figo, più spazio al resto») */}
-                    <div className="flex gap-2">
-                        {([["consumer", "👤", "Consumer"], ["business", "💼", "Business"]] as const).map(([v, icona, titolo]) => (
-                            <button key={v} onClick={() => { setTipoCli(v); setPista(""); }} title={titolo} aria-label={titolo}
-                                // e le icone più piccole: sono il secondo passo, non
-                                // devono pesare quanto l'operatore (Luca 28/08)
-                                className={cn("flex-1 h-9 flex items-center justify-center rounded-xl text-base border transition-all",
-                                    tipoCli === v ? "border-transparent scale-[1.04]" : "bg-white/[0.04] border-white/10 hover:bg-white/10 grayscale-[40%] opacity-80 hover:opacity-100 hover:grayscale-0")}
-                                style={tipoCli === v ? { background: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 30%, transparent)`, boxShadow: `0 0 14px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 55%, transparent)`, border: `1px solid color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 70%, transparent)` } : undefined}>
-                                {icona}
-                            </button>
-                        ))}
-                    </div>
-                </div>
                 {/* ③ COSA STAI VENDENDO — le variabili dell'operatore */}
                 {tipoCli !== "" && <div className="space-y-1.5">
                     <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa stai vendendo?</div>
