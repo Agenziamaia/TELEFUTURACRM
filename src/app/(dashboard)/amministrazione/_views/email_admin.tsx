@@ -451,6 +451,7 @@ export function EmailAdminView() {
    tf_mie_caselle), perciò questo elenco arriva dal server. */
 function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire: boolean }) {
     const [righe, setRighe] = useState<Casella[] | null>(null);
+    const [attese, setAttese] = useState<{ email: string; utenze: { accesso: string; username: string }[] }[]>([]);
     const [apri, setApri] = useState(false);
     const [tolgo, setTolgo] = useState<string | null>(null);
 
@@ -459,6 +460,7 @@ function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire
             const r = await fetch("/api/email/account?sistema=1", { cache: "no-store" });
             const j = await r.json();
             setRighe(j?.error ? [] : ((j.accounts ?? []) as Casella[]));
+            setAttese(j?.attese ?? []);
         } catch { setRighe([]); }
     };
     useEffect(() => { carica(); }, []);
@@ -524,6 +526,29 @@ function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire
                             )}
                         </div>
                     ))}
+                </div>
+            )}
+            {/* CHI ASPETTA COSA: le utenze sanno già su quale indirizzo arriva
+                il loro codice; appena colleghi quella casella si agganciano da sole */}
+            {attese.length > 0 && (
+                <div className="px-4 pb-4 pt-2 border-t border-white/5">
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
+                        ⏳ Utenze in attesa della loro casella
+                    </div>
+                    <div className="space-y-1.5">
+                        {attese.map((a) => (
+                            <div key={a.email} className="flex items-start gap-2 flex-wrap text-[12px]">
+                                <span className="font-mono text-amber-200/90">{a.email}</span>
+                                <span className="text-slate-600">←</span>
+                                <span className="text-slate-400">
+                                    {a.utenze.map((u) => `${u.accesso} (${u.username})`).join(" · ")}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2">
+                        Collega questi indirizzi qui sopra: le utenze si agganciano da sole e il pulsante «Chiedi il codice» comincia a funzionare.
+                    </p>
                 </div>
             )}
             {apri && (

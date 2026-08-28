@@ -1324,6 +1324,11 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
         setBusy(false);
         if (res?.error) { alert(res.error); return; }
         if (res?.reconnected) alert("Questa casella era già collegata: l'ho ri-collegata con le credenziali appena inserite.");
+        // le utenze che aspettavano proprio questa casella si sono agganciate
+        // da sole: dirlo evita il dubbio «e adesso devo collegarle a mano?»
+        if (res?.agganciate > 0) {
+            alert(`Casella collegata.\n\n${res.agganciate === 1 ? "Un'utenza aspettava" : `${res.agganciate} utenze aspettavano`} proprio questo indirizzo: ${res.agganciate === 1 ? "si è agganciata" : "si sono agganciate"} da ${res.agganciate === 1 ? "sola" : "sole"}. Il pulsante «Chiedi il codice» ora funziona.`);
+        }
         onClose();
     };
     return (

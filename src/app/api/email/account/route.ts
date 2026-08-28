@@ -37,7 +37,25 @@ export async function GET(request: Request) {
         .select("id, negozio, owner_user_id, email_address, display_name, status, last_error, created_at, uso_sistema")
         .order("created_at", { ascending: false });
     const tutte = (data ?? []) as { uso_sistema?: boolean | null }[];
-    return NextResponse.json({ accounts: tutte.filter((a) => !!a.uso_sistema === soloSistema) });
+    const accounts = tutte.filter((a) => !!a.uso_sistema === soloSistema);
+
+    if (!soloSistema) return NextResponse.json({ accounts });
+
+    // LE UTENZE CHE ASPETTANO (28/08): la mappa dei codici è nota prima delle
+    // caselle. Mostrare qui chi aspetta cosa evita di dover andare a cercare
+    // nella sezione Password quali indirizzi mancano ancora.
+    const { data: attese } = await supabase.from("password_credentials")
+        .select("access_type, username, otp_email_attesa")
+        .not("otp_email_attesa", "is", null);
+    const perIndirizzo: Record<string, { accesso: string; username: string }[]> = {};
+    for (const r of attese || []) {
+        const k = String(r.otp_email_attesa || "").toLowerCase();
+        (perIndirizzo[k] ||= []).push({ accesso: r.access_type, username: r.username });
+    }
+    return NextResponse.json({
+        accounts,
+        attese: Object.entries(perIndirizzo).map(([email, utenze]) => ({ email, utenze })),
+    });
 }
 
 // GOVERNANCE (Luca 26/08): le caselle si collegano, ricollegano ed eliminano
@@ -59,6 +77,19 @@ async function eAmministrazione(userId: string): Promise<boolean> {
     const fuse = new Map<string, boolean>();
     for (const strato of chiavi) (rows || []).filter(r => r.role === strato).forEach(r => fuse.set(r.perm_key, r.allowed));
     return permKeys.some(k => fuse.get(k) === true);
+}
+
+/* «SI AGGANCIA DA SOLA APPENA LA COLLEGHI» (Luca 28/08 sera).
+   La mappa utenza → casella dei codici arriva dall'operatore ed è nota prima
+   che le caselle entrino nel CRM. Chi collega la casella non deve ricordarsi
+   di tornare su ogni utenza: le attese scritte in password_credentials si
+   chiudono da sole qui. */
+async function agganciaUtenzeInAttesa(accountId: string, email: string): Promise<number> {
+    const { data } = await supabase.from("password_credentials")
+        .update({ otp_account_id: accountId, otp_email_attesa: null })
+        .ilike("otp_email_attesa", email)
+        .select("id");
+    return (data || []).length;
 }
 
 export async function POST(request: Request) {
@@ -145,7 +176,8 @@ export async function POST(request: Request) {
                 // M6: il «Collega» dall'Inbox non li passa — un ricollega da lì
                 // azzerava i membri di una casella condivisa)
                 if (Array.isArray(b.extraUserIds)) await syncMembri(existing.id);
-                return NextResponse.json({ ok: true, account: data, reconnected: true });
+                const agganciate = await agganciaUtenzeInAttesa(existing.id, email);
+                return NextResponse.json({ ok: true, account: data, reconnected: true, agganciate });
             }
 
             const { data, error } = await supabase.from("email_accounts").insert({
@@ -154,7 +186,8 @@ export async function POST(request: Request) {
             }).select("id, email_address, negozio, display_name, status").single();
             if (error) return NextResponse.json({ error: error.message }, { status: 500 });
             if (Array.isArray(b.extraUserIds)) await syncMembri(data.id);
-            return NextResponse.json({ ok: true, account: data });
+            const agganciate = await agganciaUtenzeInAttesa(data.id, email);
+            return NextResponse.json({ ok: true, account: data, agganciate });
         }
 
         if (action === "retest") {
