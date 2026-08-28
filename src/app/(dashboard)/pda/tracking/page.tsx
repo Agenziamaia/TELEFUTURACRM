@@ -815,6 +815,7 @@ function Drawer({
   delegatoNome = null,
   episodiMalus = [],
   scartaRef,
+  pendenteRef,
 }: {
   row: TrackingRow;
   onClose: () => void;
@@ -830,6 +831,9 @@ function Drawer({
   episodiMalus?: EpisodioMalus[];
   // cestino: la pratica sta sparendo dalla vista → la bozza si butta, non si salva
   scartaRef?: { current: boolean };
+  /** che cosa resta non confermato su QUESTA pratica: lo legge la lista per
+   *  chiedere prima di passare a un'altra (Luca 28/08) */
+  pendenteRef?: { current: { id: string; testo: string } | null };
 }) {
   // nome VERO di chi modifica nello storico (Luca 02/08): niente piu'
   // "Venditore"/"Amministrazione" generici
@@ -889,6 +893,19 @@ function Drawer({
   // il prop si allunga per altre vie (es. evento delega) vince il piu' ricco
   const storiaRef = useRef<StoriaEvent[]>(row.storia);
   useEffect(() => { if (row.storia.length > storiaRef.current.length) storiaRef.current = row.storia; }, [row.storia]);
+
+  /* Che cosa resta in sospeso su questa pratica: serve alla lista per
+     avvisare prima di cambiare pratica (Luca 28/08). */
+  useEffect(() => {
+    if (!pendenteRef) return;
+    const cambiaN = editStatoN !== baseN.current;
+    const cambiaA = editStatoA !== baseA.current;
+    pendenteRef.current = (cambiaN || cambiaA)
+        ? { id: row.id, testo: `${row.nominativo || "—"} · ${row.dataInserimento || ""} · ${cambiaN ? `esito negozio «${getStatoN(editStatoN, row.categoria, row.brand).label}»` : `esito admin «${getStatoA(editStatoA).label}»`}` }
+        : null;
+    return () => { if (pendenteRef.current?.id === row.id) pendenteRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editStatoN, editStatoA, row.id]);
 
   const commit = (origine?: "negozio" | "admin") => {
     const oraDiOra = new Date().toTimeString().slice(0, 5);
@@ -1500,6 +1517,14 @@ export default function TrackingPdaPage() {
   const selectedRef = useRef<TrackingRow | null>(null);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   const scartaCommitRef = useRef(false);
+  /* IL CAMBIO PRATICA NON DEVE SALVARE DI NASCOSTO (Luca 28/08, caso
+     kandakkattuthadathil). Il drawer salva da solo quando lo si chiude o si
+     passa a un'altra pratica: se uno apre la pratica sbagliata, cambia
+     l'esito, se ne accorge e clicca su quella giusta, l'esito resta scritto
+     sulla prima — che è esattamente quello che è successo il 20/08, con
+     «Attivo» finito su due pratiche dello stesso cliente. Ora, passando da
+     una pratica all'altra con un esito non confermato, si chiede. */
+  const pendenteRef = useRef<{ id: string; testo: string } | null>(null);
   // STORICO MALUS (30/07, mig. 103): episodi persistiti + vista archivio.
   const [episodi, setEpisodi] = useState<EpisodioMalus[]>([]);
   const [malusErr, setMalusErr] = useState<string | null>(null);
@@ -2353,7 +2378,16 @@ export default function TrackingPdaPage() {
         {loading ? (
           <div className="flex items-center justify-center py-24 text-slate-500 text-sm">Caricamento pratiche…</div>
         ) : (
-          <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} canDelete={["admin", "dev"].includes(user?.role || "")} onAskDelete={setDaEliminare} />
+          <Tabella rows={filtered} onSelect={(row) => {
+            const p = pendenteRef.current;
+            if (p && p.id !== row.id) {
+              const ok = window.confirm(
+                `Hai lasciato un esito non confermato sulla pratica che stai chiudendo:\n\n${p.testo}\n\n` +
+                "OK = lo salvo su quella pratica · Annulla = lo scarto e apro la nuova.");
+              if (!ok) scartaCommitRef.current = true;
+            }
+            setSelected(row);
+          }} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} canDelete={["admin", "dev"].includes(user?.role || "")} onAskDelete={setDaEliminare} />
         )}
 
         {/* Modale Regole: FUORI dall'header sticky — il backdrop-blur di un
@@ -2446,6 +2480,7 @@ export default function TrackingPdaPage() {
              istanza fa anche il commit automatico della sua bozza */
           <Drawer key={selected.rowKey || `${selected.id}#${selected.categoria}`}
             row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
+            pendenteRef={pendenteRef}
             members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} canEditNegozio={inPerimetroReale(selected)} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)}
             episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []}
             scartaRef={scartaCommitRef} />
