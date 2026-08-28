@@ -51,7 +51,9 @@ const oggiISO = () => { const d = new Date(); return `${d.getFullYear()}-${Strin
 // x,y e dimensioni w,h in celle (8 colonne, riga = 96px). Il motore è
 // react-grid-layout: drag dalla testata, resize dall'angolo, compattazione
 // verticale — la card va ESATTAMENTE dove la molli.
-const hDef = (k) => { const g = REGISTRO[k]?.gruppo; return g === "operatori" ? 4 : g === "marginalità" ? 5 : 3; };
+// altezza di nascita: il widget può dichiararla (REGISTRO[k].h), altrimenti
+// decide il gruppo — le carte operatore e la marginalità nascono più alte
+const hDef = (k) => { const d = REGISTRO[k]; if (d?.h) return d.h; const g = d?.gruppo; return g === "operatori" ? 4 : g === "marginalità" ? 5 : 3; };
 // decodifica k@x,y,w,h (v9); i formati vecchi (k@s / k@s:h) vengono
 // convertiti con un packing per righe, senza perdere nulla
 const decodeLayout = (arr, versione = 0) => {
@@ -76,6 +78,25 @@ const decodeLayout = (arr, versione = 0) => {
         }
     }
     return items;
+};
+
+// NOVITÀ DI LAYOUT (28/08): un widget appena nato resterebbe invisibile a chi
+// ha già un layout salvato — finirebbe solo in galleria, e nessuno lo cerca.
+// Ogni versione elenca le sue aggiunte per area: si applicano UNA volta (in
+// coda, dove la griglia le compatta) e il primo salvataggio porta il layout
+// alla versione corrente. Un widget rimosso a mano NON torna: la versione è
+// già salita.
+const LAYOUT_V = 10;
+const NOVITA = { 10: { negozio: ["mix:persone"] } };
+const conNovita = (lista, areaKey, versione) => {
+    const out = [...lista];
+    for (let v = Math.max(Number(versione) || 0, 9) + 1; v <= LAYOUT_V; v++) {
+        for (const k of (NOVITA[v]?.[areaKey] || [])) {
+            if (!REGISTRO[k] || out.some((w) => w.k === k)) continue;
+            out.push({ k, s: REGISTRO[k].def || 2, h: hDef(k), x: 0, y: Infinity });
+        }
+    }
+    return out;
 };const MAX_GIORNI = 92;   // tetto del range libero (3 mesi circa)
 
 /* ── arricchimento (lente ragazzi): vendita → punti + campi dettaglio.
@@ -480,7 +501,7 @@ function AnalisiInner() {
             extPrev: (dati?.extPrev || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             altri: (dati?.altri || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
             oggiGara: (dati?.oggiGara || []).filter((r) => inNegozi(r.negozio) && (!collab || norm(r.venditore) === norm(collab))),
-            persona: collab || persona, negozio, negozi, negozioCasa: negozio,
+            persona: collab || persona, collab, negozio, negozi, negozioCasa: negozio,
             // il sub di drill/pannelli nell'area NEGOZIO dice il negozio (o il
             // collaboratore filtrato) — MAI la persona dell'area Io (refuso
             // «di Eros Harzi» aprendo l'analisi di Acilia, Luca 24/08)
@@ -500,11 +521,23 @@ function AnalisiInner() {
     useEffect(() => {
         if (loading) return;
         const ver = Number(layoutSalvato?.__v || 0);
-        setLayoutIo((cur) => cur ?? (decodeLayout(layoutSalvato?.io, ver).length ? decodeLayout(layoutSalvato.io, ver) : decodeLayout(DEFAULT_LAYOUT.io, 8)));
-        setLayoutNeg((cur) => cur ?? (decodeLayout(layoutSalvato?.negozio, ver).length ? decodeLayout(layoutSalvato.negozio, ver) : decodeLayout(DEFAULT_LAYOUT.negozio, 8)));
+        setLayoutIo((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.io, ver).length ? decodeLayout(layoutSalvato.io, ver) : decodeLayout(DEFAULT_LAYOUT.io, 8), "io", ver));
+        setLayoutNeg((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.negozio, ver).length ? decodeLayout(layoutSalvato.negozio, ver) : decodeLayout(DEFAULT_LAYOUT.negozio, 8), "negozio", ver));
     }, [loading, layoutSalvato]);
     const salva = async (areaKey, lista) => {
-        const next = { ...(layoutSalvato || {}), __v: 9, [areaKey]: lista.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || hDef(w.k)}`) };
+        // ENTRAMBE le aree, sempre. `__v` è unico per l'oggetto: salvando solo
+        // l'area corrente, un assestamento in «Io» alzava la versione lasciando
+        // in `negozio` l'array VECCHIO letto dal DB — al giro dopo le novità
+        // risultavano già applicate e un widget nuovo non compariva mai più.
+        // Le liste in memoria le novità ce l'hanno già dentro.
+        const cod = (l) => l.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || hDef(w.k)}`);
+        const altraKey = areaKey === "io" ? "negozio" : "io";
+        const altra = areaKey === "io" ? layoutNeg : layoutIo;
+        const next = {
+            ...(layoutSalvato || {}), __v: LAYOUT_V,
+            [areaKey]: cod(lista),
+            ...(altra?.length ? { [altraKey]: cod(altra) } : {}),
+        };
         setLayoutSalvato(next);
         if (guardoUnAltro) return;      // le impostazioni sue restano sue
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }

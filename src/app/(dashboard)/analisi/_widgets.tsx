@@ -1489,6 +1489,306 @@ function WidgetMixPezzi({ ctx }) {
     );
 }
 
+/* ═══ MIX PERSONE DEL PUNTO VENDITA (Luca 28/08: «chi è che sta producendo
+   di più su quel punto vendita, diviso per ogni brand — e poi un anello
+   generale di produzione totale») — gemello del Mix operatori, ma le fette
+   sono le PERSONE. Il colore appartiene alla persona e NON cambia da un
+   anello all'altro: passi su Denise e la vedi accendersi ovunque, così il
+   suo peso brand per brand si legge in un colpo d'occhio.
+   STILE (Luca 28/08, secondo giro): niente anelli nuovi — si riusano quelli
+   che il CRM ha già. L'anello grande è quello del Mix operatori (stessa
+   misura, stesso stacco tra le fette, stessa aura, % sulle fette larghe);
+   gli anelli per brand sono quelli di «Il mio peso nei negozi» (disco a
+   conic-gradient, cerchio scuro dentro, logo sotto, tooltip di casa).
+   Vive SOLO nell'area Negozio e guarda sempre la SQUADRA INTERA: il filtro
+   collaboratore qui non si applica (con un nome solo il mix non esiste).
+   L'anello generale è in PEZZI — mai punti sommati tra operatori (regola
+   cardine); i punti si accendono con lo switch e valgono DENTRO il brand.
+   Il totale coincide con quello del Mix operatori: stessa base (gara +
+   altri operatori), «non assegnato» compreso — se sparisse, i due anelli
+   direbbero due numeri diversi sulla stessa produzione. ════════════════ */
+// tavolozza assegnata per POSIZIONE in classifica: due persone non possono
+// mai pescare lo stesso colore e il primo produttore ha sempre lo stesso
+// indaco. Da qui il tetto: oltre la tavolozza la coda si raccoglie in
+// «Altri», altrimenti due nomi finirebbero con lo stesso identico colore in
+// ogni anello (caso reale con «Tutti i negozi» selezionati).
+const PALETTE_PERSONE = ["#818cf8", "#f472b6", "#22d3ee", "#fbbf24", "#34d399", "#a78bfa", "#fb7185", "#38bdf8", "#a3e635", "#fb923c", "#2dd4bf", "#e879f9"];
+const MAX_PERSONE = PALETTE_PERSONE.length;
+const COL_ALTRI = "#94a3b8";     // il mucchio oltre la tavolozza
+const COL_ORFANO = "#475569";    // vendite senza venditore
+const COL_IGNOTO = "#64748b";    // brand senza colore suo
+const pcQ = (q) => (q > 0 && q < 0.005 ? "<1" : String(Math.round(q * 100)));
+const primoNome = (n) => String(n || "").trim().split(/\s+/)[0] || "—";
+
+function WidgetMixPersone({ ctx }) {
+    const [hl, setHl] = useState(null);
+    const [pin, setPin] = useState(null);
+    const [unita, setUnita] = useState("pezzi");
+    const [on, setOn] = useState(false);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
+    // niente reset a mano di hl/pin: la griglia dell'area Negozio è keyata su
+    // negozi + collaboratore + periodo, quindi al cambio si rimonta da sola
+
+    const { persone, brands, totPezzi, nSquadra, conPunti } = useMemo(() => {
+        // le vendite si appiattiscono PRIMA in righe nostre (nome, brand,
+        // punti): dopo si accumula solo su oggetti locali, mai sui dati che
+        // arrivano dal contesto
+        const righe = [
+            ...(ctx.itemsStore || []).map((it) => {
+                const g = GARA[it.brandGara];
+                return g ? { nome: it.venditore || "—", bk: it.brandGara, label: g.label, colore: g.colore, chiave: g.chiave, gara: true, punti: Number(it.punti) || 0 } : null;
+            }),
+            // il mix è di TUTTA la produzione, non solo di gara: S4, TIM, Very…
+            ...(ctx.altriStore || []).map((it) => {
+                const kk = trkBrandKey(it.brand);
+                return kk ? { nome: it.venditore || "—", bk: `alt:${kk}`, label: it.brand, colore: HEX_BRAND[kk] || COL_IGNOTO, chiave: TRK_BRAND_LOGOS[kk] ? kk : null, gara: false, punti: Number(it.punti) || 0 } : null;
+            }),
+        ].filter(Boolean);
+        const P = new Map(), B = new Map();
+        for (const r of righe) {
+            // si raggruppa sul nome NORMALIZZATO: due grafie dello stesso nome
+            // ("Denise Rossi" e "denise rossi ") sono una persona sola — e non
+            // due righe con la stessa chiave React
+            const kp = r.nome === "—" ? "__nessuno" : norm(r.nome);
+            let p = P.get(kp);
+            if (!p) { p = { k: kp, nome: r.nome, pezzi: 0, per: new Map() }; P.set(kp, p); }
+            p.pezzi++;
+            let e = p.per.get(r.bk);
+            if (!e) { e = { pezzi: 0, punti: 0 }; p.per.set(r.bk, e); }
+            e.pezzi++; e.punti += r.punti;
+            let b = B.get(r.bk);
+            if (!b) { b = { k: r.bk, label: r.label, colore: r.colore, chiave: r.chiave, gara: r.gara, pezzi: 0, punti: 0 }; B.set(r.bk, b); }
+            b.pezzi++; b.punti += r.punti;
+        }
+        const veri = [...P.values()].filter((p) => p.k !== "__nessuno")
+            .sort((a, b) => b.pezzi - a.pezzi || String(a.nome).localeCompare(String(b.nome), "it"));
+        const testa = veri.slice(0, MAX_PERSONE), coda = veri.slice(MAX_PERSONE);
+        const fondo = [];
+        if (coda.length) {
+            const per = new Map();
+            let pezzi = 0;
+            for (const p of coda) {
+                pezzi += p.pezzi;
+                for (const [bk, e] of p.per) {
+                    let t = per.get(bk);
+                    if (!t) { t = { pezzi: 0, punti: 0 }; per.set(bk, t); }
+                    t.pezzi += e.pezzi; t.punti += e.punti;
+                }
+            }
+            fondo.push({ k: "__altri", pezzi, per, colore: COL_ALTRI, label: `Altri (${coda.length})`, breve: "Altri" });
+        }
+        const orfani = P.get("__nessuno");
+        if (orfani) fondo.push({ ...orfani, colore: COL_ORFANO, label: "Non assegnato", breve: "n.a." });
+        const ordinate = [
+            ...testa.map((p, i) => ({ ...p, colore: PALETTE_PERSONE[i], label: p.nome, breve: primoNome(p.nome) })),
+            ...fondo,
+        ];
+        // brand nell'ordine di sempre (W3, VF, Fastweb, Sky) e poi gli altri
+        // operatori per volume
+        const ordineGara = Object.keys(GARA);
+        const brandOrd = [...B.values()].sort((a, b) => {
+            const ia = a.gara ? ordineGara.indexOf(a.k) : 99, ib = b.gara ? ordineGara.indexOf(b.k) : 99;
+            return ia - ib || b.pezzi - a.pezzi;
+        });
+        return {
+            persone: ordinate, brands: brandOrd,
+            totPezzi: ordinate.reduce((s, p) => s + p.pezzi, 0),
+            nSquadra: veri.length,
+            conPunti: brandOrd.some((b) => b.punti > 0),
+        };
+    }, [ctx.itemsStore, ctx.altriStore]);
+
+    const attivo = hl || pin;
+    const att = persone.find((p) => p.k === attivo) || null;
+    if (!totPezzi) return <p className="text-xs text-slate-500 py-4 text-center">Nessuna vendita nel periodo.</p>;
+
+    // ── anello GENERALE: identico a quello del Mix operatori ──────────────
+    const size = 186, R = 70, SW = 18, C = 2 * Math.PI * R, cx = size / 2, cy = size / 2;
+    const fette = [];
+    let acc = 0;
+    for (const p of persone) { const f = p.pezzi / totPezzi; fette.push({ ...p, f, o: acc, pct: pcQ(f) }); acc += f; }
+
+    // ── un anello per BRAND, stile «Il mio peso nei negozi» ───────────────
+    const nNegozi = ctx.negozi?.length || 1;
+    const perBrand = brands.map((b) => {
+        // i punti valgono solo dentro il brand che li ha (Fastweb T2 e gli
+        // altri operatori non ne hanno: restano a pezzi anche con lo switch)
+        const punti = unita === "punti" && b.punti > 0;
+        const tot = punti ? b.punti : b.pezzi;
+        const quote = persone.map((p) => {
+            const e = p.per.get(b.k);
+            const v = e ? (punti ? e.punti : e.pezzi) : 0;
+            return { k: p.k, colore: p.colore, label: p.label, breve: p.breve, v, q: tot > 0 ? v / tot : 0 };
+        }).filter((x) => x.v > 0);
+        return { b, tot, punti, quote, capo: quote.reduce((m, x) => (!m || x.v > m.v ? x : m), null) };
+    }).filter((x) => x.tot > 0 && x.quote.length);
+    // stessa regola di taglia degli anelli di «peso nei negozi»: pochi grandi,
+    // tanti piccoli, sempre in proporzione alla larghezza della card
+    const cella = `clamp(70px, ${Math.max(7, Math.min(14, Math.round(80 / Math.max(1, perBrand.length))))}cqw, 118px)`;
+
+    return (
+        <div className="w-full select-none flex flex-col gap-3">
+            <div className="tf-mixp">
+                <div className="tf-mixp-anello">
+                    <div className="relative aspect-square w-full mx-auto">
+                        <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full" style={{ overflow: "visible" }}>
+                            <g transform={`translate(${cx},${cy})`}>
+                                <circle r={R} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth={SW} />
+                                <g transform="rotate(-90)">
+                                    {fette.map((x) => {
+                                        const attiva = attivo === x.k, spenta = attivo && !attiva;
+                                        return (
+                                            <circle key={x.k} r={R} fill="none" stroke={x.colore} strokeLinecap="butt"
+                                                strokeWidth={attiva ? SW + 6 : SW}
+                                                strokeDasharray={`${on ? Math.max(0.001, x.f * C - (fette.length > 1 ? 2.5 : 0)) : 0.001} ${C}`}
+                                                strokeDashoffset={-(x.o * C)}
+                                                pointerEvents="stroke" className="cursor-pointer"
+                                                onMouseEnter={() => setHl(x.k)} onMouseLeave={() => setHl(null)}
+                                                onClick={() => setPin((v) => (v === x.k ? null : x.k))}
+                                                style={{
+                                                    transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1), stroke-width .2s, opacity .25s",
+                                                    opacity: spenta ? 0.28 : 1,
+                                                    filter: attiva ? `drop-shadow(0 0 7px ${x.colore}AA)` : `drop-shadow(0 0 3px ${x.colore}33)`,
+                                                }} />
+                                        );
+                                    })}
+                                </g>
+                                {/* % sulle fette larghe: le piccole parlano via hover e righe */}
+                                {on && fette.filter((x) => x.f >= 0.08).map((x) => {
+                                    const th = (x.o + x.f / 2) * 2 * Math.PI - Math.PI / 2;
+                                    return (
+                                        <text key={x.k} x={Math.cos(th) * R} y={Math.sin(th) * R} textAnchor="middle" dominantBaseline="central"
+                                            className="pointer-events-none" fill="#fff" fontSize="10" fontWeight="900"
+                                            style={{ paintOrder: "stroke", stroke: "rgba(10,12,28,.75)", strokeWidth: 3, opacity: attivo && attivo !== x.k ? 0.3 : 1, transition: "opacity .25s" }}>
+                                            {x.pct}%
+                                        </text>
+                                    );
+                                })}
+                            </g>
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            {att ? (
+                                <>
+                                    <span className="w-3 h-3 rounded-full" style={{ background: att.colore }} />
+                                    <span className="text-[26px] font-black tabular-nums leading-none mt-1" style={{ color: att.colore, textShadow: `0 0 18px ${att.colore}66` }}>{pcQ(att.pezzi / totPezzi)}%</span>
+                                    <span className="text-[10px] font-bold text-slate-200 mt-1 truncate max-w-[85%]">{att.label}</span>
+                                    <span className="text-[9px] text-slate-500 mt-0.5 tabular-nums">{fmtN(att.pezzi)} pezzi{pin === att.k ? " · 📌" : ""}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={totPezzi} punti={false} /></span>
+                                    <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">{nNegozi > 1 ? `pezzi · ${nNegozi} negozi` : "pezzi del negozio"}</span>
+                                    <span className="text-[9px] text-slate-600 mt-0.5">{nSquadra} in squadra</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+                <div className="tf-mixp-righe flex flex-col gap-2 w-full max-w-[340px] min-w-0">
+                    <div className="w-full flex flex-col gap-1">
+                        {fette.map((x) => {
+                            const attiva = attivo === x.k;
+                            const io = !!ctx.persona && x.k === norm(ctx.persona);
+                            return (
+                                <div key={x.k} onMouseEnter={() => setHl(x.k)} onMouseLeave={() => setHl(null)}
+                                    onClick={() => setPin((v) => (v === x.k ? null : x.k))}
+                                    title={pin === x.k ? "Sblocca" : "Clicca per bloccare la persona"}
+                                    className={cn("relative rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all overflow-hidden",
+                                        attiva ? "border-white/25 bg-white/[0.07]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]",
+                                        io && !attiva ? "ring-1 ring-indigo-400/40" : "",
+                                        pin && pin !== x.k && !hl ? "opacity-45" : "")}>
+                                    <div className="absolute inset-y-0 left-0" style={{ width: on ? `${x.f * 100}%` : "0%", background: `linear-gradient(90deg, ${x.colore}3d, ${x.colore}08)`, transition: "width .7s cubic-bezier(.2,.8,.2,1)" }} />
+                                    <div className="relative flex items-center gap-2">
+                                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: x.colore, boxShadow: `0 0 6px ${x.colore}88` }} />
+                                        <span className="text-[11px] font-bold text-slate-200 flex-1 truncate">{x.label}</span>
+                                        <span className="text-[10px] text-slate-500 tabular-nums">{fmtN(x.pezzi)} pz</span>
+                                        <span className="text-[13px] font-black tabular-nums w-10 text-right" style={{ color: x.colore }}>{x.pct}%</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="w-full min-h-[34px] flex flex-wrap content-center justify-center gap-1">
+                        {att ? brands.map((b) => {
+                            const e = att.per.get(b.k); if (!e) return null;
+                            return (
+                                <span key={b.k} className="flex items-center gap-1 text-[9px] text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
+                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: b.colore }} />
+                                    {b.label} · <b className="text-slate-100 tabular-nums">{fmtN(e.pezzi)}</b> pz
+                                    {e.punti > 0 && <span className="text-slate-500 tabular-nums">· {fmtPt(e.punti)} pt</span>}
+                                </span>
+                            );
+                        }) : <span className="text-[9px] text-slate-600">passa su una persona: si accende in ogni anello · click per bloccare</span>}
+                    </div>
+                </div>
+            </div>
+
+            {/* ── CHI COMANDA, BRAND PER BRAND ─────────────────────────────── */}
+            <div className="shrink-0">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate">
+                        {ctx.collab ? "chi comanda su ogni brand · sempre tutta la squadra" : "chi comanda su ogni brand"}
+                    </p>
+                    {conPunti && (
+                        <span className="shrink-0 inline-flex rounded-lg border border-white/10 overflow-hidden">
+                            {["pezzi", "punti"].map((u) => (
+                                <button key={u} onClick={() => setUnita(u)} title={u === "pezzi" ? "Anelli brand a pezzi" : "Anelli brand a punti (dove esistono)"}
+                                    className={cn("px-2 py-0.5 text-[9px] font-bold transition-colors", unita === u ? "bg-white/15 text-white" : "text-slate-500 hover:text-slate-300")}>
+                                    {u === "pezzi" ? "pz" : "pt"}
+                                </button>
+                            ))}
+                        </span>
+                    )}
+                </div>
+                <div className="flex flex-wrap justify-center gap-3">
+                    {perBrand.map(({ b, tot, punti, quote, capo }) => {
+                        const mostra = att ? (quote.find((x) => x.k === att.k) || null) : capo;
+                        const colore = mostra ? mostra.colore : COL_IGNOTO;
+                        // disco a spicchi: stessa scocca dell'anello di «peso nei
+                        // negozi», con una fetta per persona invece di una sola
+                        const stop = [];
+                        let g = 0;
+                        for (const x of quote) {
+                            const g2 = g + x.q * 360;
+                            stop.push(`${attivo && attivo !== x.k ? `${x.colore}33` : x.colore} ${g}deg ${g2}deg`);
+                            g = g2;
+                        }
+                        return (
+                            <span key={b.k} className="block" style={{ width: cella }}>
+                                <Tip className="w-full block" tip={
+                                    <div>
+                                        <TipTitolo>{b.label}</TipTitolo>
+                                        <TipRiga l="totale" r={punti ? `${fmtPt(tot)} pt` : `${fmtN(tot)} pz`} />
+                                        {quote.map((x) => <TipRiga key={x.k} l={x.label} r={`${punti ? fmtPt(x.v) + " pt" : fmtN(x.v) + " pz"} · ${pcQ(x.q)}%`} colore={x.colore} />)}
+                                    </div>
+                                }>
+                                    <div className="text-center w-full">
+                                        <div className="relative w-full max-w-[150px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]"
+                                            style={{ background: `conic-gradient(${stop.join(", ")})`, filter: `drop-shadow(0 0 8px ${colore}44)` }}>
+                                            <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
+                                                <span className="font-black tabular-nums" style={{ fontSize: "clamp(0.8rem, 22cqw, 1.5rem)", color: colore }}>
+                                                    {mostra ? `${pcQ(mostra.q)}%` : "0%"}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="mt-1 flex justify-center">
+                                            {b.chiave ? <LogoBrand chiave={b.chiave} alt={b.label} h={17} />
+                                                : <p className="text-[10px] text-slate-400 font-semibold max-w-[110px] truncate">{b.label}</p>}
+                                        </div>
+                                        <p className="text-[10px] font-bold truncate" style={{ color: colore }}>
+                                            {mostra ? mostra.breve : (att?.breve || "—")}
+                                        </p>
+                                    </div>
+                                </Tip>
+                            </span>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════
    REGOLA RESPONSIVE (Luca 24/08, vale per OGNI widget presente e futuro):
    le card sono finestre ridimensionabili (@container) — il layout interno
@@ -1521,9 +1821,12 @@ export const REGISTRO = {
     "squadra:sky": { nome: "Squadra — punti Sky", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "sky", gruppo: "squadra", def: 4, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="sky" /> },
     "duello": { nome: "Duello tra negozi", emoji: "⚔️", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetDuello ctx={ctx} /> },
     "mix:pezzi": { nome: "Mix operatori (pezzi)", emoji: "🧬", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMixPezzi ctx={ctx} /> },
+    // h: 5 → la card nasce alta abbastanza per anello grande + anelli brand
+    //         + legenda, senza che il primo sguardo debba scrollare
+    "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 4, h: 5, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
 export const DEFAULT_LAYOUT = {
     io: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "posizioni@2", "bersaglio@2", "pesonegozi@4", "marg@8", "mix:pezzi@2"],
-    negozio: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "squadra:pezzi@4", "duello@2", "mix:pezzi@2", "marg@8", "squadra:w3@4"],
+    negozio: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "squadra:pezzi@4", "duello@2", "mix:pezzi@2", "mix:persone@4", "marg@8", "squadra:w3@4"],
 };

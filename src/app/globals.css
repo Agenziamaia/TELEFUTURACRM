@@ -983,6 +983,19 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
   .tf-mix-anello { width: auto; height: 100%; flex: 0 1 auto; }
 }
 
+/* ── MIX PERSONE (Luca 28/08): stessa scocca del Mix operatori — card
+   panoramica → anello a sinistra e righe a destra, card stretta → in
+   colonna. Qui la soglia è sulla LARGHEZZA e non sul rapporto: sotto agli
+   anelli c'è anche la fila dei brand, che allunga la card. ────────────── */
+.tf-mixp { display: flex; flex-direction: column; align-items: center; gap: .75rem; }
+.tf-mixp-anello { width: 100%; max-width: 240px; }
+@container (min-width: 26rem) {
+  .tf-mixp { flex-direction: row; justify-content: center; align-items: center; gap: 2rem; }
+  /* misura dell'anello guidata dalla LARGHEZZA della card, mai dall'altezza:
+     con height:100% dentro un blocco che scorre i pezzi si accavallavano */
+  .tf-mixp-anello { flex: 0 0 auto; width: clamp(158px, 30cqw, 240px); }
+}
+
 /* ── AURA CIRCOLARE standard degli anelli di Analisi (Luca 24/08 sera):
    sfumatura radiale perfetta del colore dominante — mai tagliata
    rettangolare come i vecchi drop-shadow ─────────────────────────────── */
