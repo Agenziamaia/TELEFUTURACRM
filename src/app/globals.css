@@ -1121,9 +1121,15 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    business soluzioni digitali VAS, e lo lasci fisso così»). Il numero di
    colonne lo decide il widget (--tf-col, mai più di 4): allargando la card
    gli anelli crescono, non se ne aggiunge un quinto. Card stretta → due. ─ */
-.tf-rete-anelli { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem 1rem; justify-items: center; align-items: start; }
+.tf-rete-anelli { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 1.5rem 1rem; justify-items: center; align-items: start; }
 @container (min-width: 30rem) {
-  .tf-rete-anelli { grid-template-columns: repeat(var(--tf-col, 4), minmax(0, 1fr)); gap: 1.5rem 1.75rem; }
+  /* CE NE STANNO QUANTI CE NE STANNO (Luca 28/08: «allargandolo, i cinque
+     contatori non vanno mai in una riga sola, quando da una certa dimensione
+     ci starebbero tranquillamente»). Il numero di colonne non è più fissato a
+     mano: lo detta la larghezza. La misura minima è scelta perché a card
+     "normale" (~1000px) ne entrino quattro — che è la griglia 4+4 chiesta per
+     Vodafone — e allargando entri il quinto, il sesto e così via. */
+  .tf-rete-anelli { grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 1.5rem 1.75rem; }
 }
 
 /* ── MIX PERSONE (Luca 28/08): stessa scocca del Mix operatori — card

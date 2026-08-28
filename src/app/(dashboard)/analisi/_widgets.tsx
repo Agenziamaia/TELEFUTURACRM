@@ -1889,12 +1889,11 @@ function BloccoBrandRete({ ctx, brand }) {
     const b = (ctx.brandRete || []).find((x) => x.brand === brand);
     if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
     const n = b.piste.length;
-    // MAI PIÙ DI QUATTRO PER RIGA (Luca 28/08): con otto piste vengono le due
-    // righe da quattro che ha chiesto, e allargando la card non ne compare una
-    // quinta a rompere la struttura. Su card stretta si scende a due colonne.
-    const colonne = Math.min(4, Math.max(1, n));
-    // oltre le quattro piste le etichette dei valori uscirebbero addosso al
-    // vicino: restano nel tooltip
+    // quante ne stanno per riga lo decide la LARGHEZZA della card (vedi
+    // .tf-rete-anelli): a card normale ne entrano quattro — la griglia 4+4
+    // chiesta per Vodafone — e allargando entra il quinto.
+    // Oltre le quattro piste le etichette dei valori uscirebbero addosso al
+    // vicino: restano nel tooltip.
     const compatto = n > 4;
     const conQuota = (ctx.mieiNegozi || []).length > 0;
     const primaK = b.piste.length ? `${brand}:${b.piste[0].chiave}` : null;
@@ -1918,7 +1917,7 @@ function BloccoBrandRete({ ctx, brand }) {
                     </span>
                 )}
             </div>
-            <div className="tf-rete-anelli px-3" style={{ "--tf-col": colonne }}>
+            <div className="tf-rete-anelli px-3">
                 {b.piste.map((x) => {
                     const k = `${brand}:${x.chiave}`;
                     return (
