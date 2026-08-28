@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { alRientroNecessario, azzeraTokenTf } from "@/lib/tokenClient";
 import { supabase } from "@/lib/supabaseClient";
 import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav";
 import { roleGradeKey, userKey } from "@/lib/usePermissions";
@@ -95,6 +96,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : null;
     const router = useRouter();
     const pathname = usePathname();
+
+    // BLINDATURA (Luca 28/08): chi era già dentro prima non ha la sessione
+    // FIRMATA del server, quindi non riceve il lasciapassare per il database.
+    // Va accompagnato a rientrare una volta sola, con un messaggio chiaro —
+    // meglio un re-login che pagine misteriosamente vuote.
+    useEffect(() => {
+        alRientroNecessario(() => {
+            if (!localStorage.getItem("crm_session")) return;   // già fuori
+            try {
+                localStorage.setItem("crm_rientro", "1");
+                localStorage.removeItem("crm_session");
+            } catch { /* storage negato */ }
+            if (typeof window !== "undefined") window.location.href = "/";
+        });
+    }, []);
 
     // Ripristina la sessione da localStorage al mount (evita logout al refresh)
     useEffect(() => {
@@ -278,6 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const logout = () => {
+        azzeraTokenTf();   // il lasciapassare non sopravvive all'utente
         clearAiChat(user?.id);
         // #118: la bozza della vendita in corso (Registra Vendita) non sopravvive
         // al logout esplicito — al nuovo login il form riparte vuoto.

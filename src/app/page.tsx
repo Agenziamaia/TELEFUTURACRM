@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
@@ -16,6 +16,13 @@ export default function LoginPage() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [error, setError] = useState("");
+  // rientro guidato dalla blindatura (Luca 28/08): spiegare PERCHÉ si è qui
+  const [rientro, setRientro] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("crm_rientro")) { setRientro(true); localStorage.removeItem("crm_rientro"); }
+    } catch { /* storage negato */ }
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   // 2FA (verifica in due passaggi)
   const [otpCode, setOtpCode] = useState("");
@@ -158,6 +165,12 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {rientro && !error && (
+            <div className="mb-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-[13px] text-sky-100">
+              🔒 <b>Abbiamo rafforzato la sicurezza del CRM.</b> Serve un solo nuovo accesso: entra
+              come sempre e non ti verrà più richiesto.
+            </div>
+          )}
           {error && (
             <div className="mb-6 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
               {error}

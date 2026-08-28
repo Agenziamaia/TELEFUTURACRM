@@ -8,8 +8,13 @@ let _token: string | null = null;
 let _scadenza = 0;                       // epoch ms
 let _inCorso: Promise<string | null> | null = null;
 let _spento = false;                     // il server ha detto "non attivo"
+let _senzaSessione: (() => void) | null = null;   // avvisa chi di dovere
 
 const MARGINE = 5 * 60 * 1000;           // si rinnova 5 minuti prima
+
+/** Chi vuole sapere che il lasciapassare non arriva perché manca la sessione
+ *  del server (utente entrato prima della blindatura): deve rientrare. */
+export function alRientroNecessario(cb: () => void) { _senzaSessione = cb; }
 
 export async function tokenTf(): Promise<string | null> {
     if (typeof window === "undefined") return null;   // niente SSR
@@ -25,6 +30,9 @@ export async function tokenTf(): Promise<string | null> {
                 // chiedere per questa sessione. "sessione" = utente non
                 // loggato: si riproverà al prossimo giro.
                 if (j?.motivo === "secret") _spento = true;
+                // entrato prima della blindatura: il browser non ha la
+                // sessione firmata, va accompagnato a rientrare UNA volta
+                if (j?.motivo === "sessione" && _senzaSessione) _senzaSessione();
                 _token = null; _scadenza = 0;
                 return null;
             }
