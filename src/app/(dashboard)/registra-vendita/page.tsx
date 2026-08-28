@@ -478,6 +478,11 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
 // TIM, Iliad), quasi-nero su quelli chiari (WindTre, Fastweb, Kena, S4).
 // I colori dei brand sono scritti come var(--tf-<esadecimale>): l'esadecimale
 // si legge dal nome della variabile.
+// ATTENZIONE (revisore 28/08): funziona solo su un ESADECIMALE VERO. Non
+// passarle `var(--tf-xxxxxx)`: quel nome porta il valore del tema SCURO, e
+// nel chiaro quattro colori di categoria sono rimappati — il testo finiva
+// a 2,13:1. Le pastiglie ora si scuriscono da sole in CSS.
+const ultimoColore=(g)=>{const m=String(g||"").match(/#[0-9a-fA-F]{6}/g);return m?m[m.length-1]:"#6366f1";};
 const inchiostroSu=(c)=>{
   const m=String(c||"").match(/([0-9a-fA-F]{6})/);
   if(!m)return "#fff";
@@ -3377,7 +3382,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
     {isKipointSped&&(
       <div className="rvNota rvNota-info" style={{marginTop:6}}>
         <div className="rvNota-t">⚖️ Simulatore peso volumetrico <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(H×L×P ÷ 6000 vs peso reale: vince il maggiore)</span></div>
-        <div className="rvG3" style={{maxWidth:560}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,124px),1fr))",gap:"10px 12px",maxWidth:560}}>
           <TF l="Altezza (cm)" v={sp.h||""} o={v=>upSped("h",v)} p="es. 30"/>
           <TF l="Larghezza (cm)" v={sp.l||""} o={v=>upSped("l",v)} p="es. 40"/>
           <TF l="Profondità (cm)" v={sp.p||""} o={v=>upSped("p",v)} p="es. 20"/>
@@ -3399,7 +3404,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
          Wallet e GA Ric. Auto hanno 13-14 offerte e devono mostrare i bottoni
          come MNP Ric. Auto; i muri da 24-36 offerte — W3 MNP — restano tendina) */
       offerte.length>14
-        ? <div className="rvBox" style={{marginTop:6}}><div style={{maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div></div>
+        ? <div className="rvBox" style={{marginTop:6}}><div className="rvBoxT">Offerta <span style={{color:"var(--tf-f87171)"}}>*</span></div><div style={{maxWidth:420}}><DD l="" v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div></div>
         : <div className="rvBox" style={{marginTop:6}}>
             <div className="rvBoxT">Offerta <span style={{color:"var(--tf-f87171)"}}>*</span></div>
             <div className="rvPillRow">
@@ -3443,8 +3448,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
           </div>);})}
         {libere.length>0&&(
           <>
-            <div className="rvLab" style={grpObb.length?{marginTop:12}:undefined}>Facoltative <span className="rvLabX" style={{fontWeight:400,color:"var(--tf-64748b)"}}>{libere.some(o=>o.gruppo)?"(¹ una sola per gruppo)":""}</span>
-              {_haVincolabili&&<span className="rvLabX" style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
+            {grpObb.length>0&&<div className="rvLab" style={{marginTop:12}}>Altre <span className="rvLabX" style={{fontWeight:400,color:"var(--tf-64748b)"}}>{libere.some(o=>o.gruppo)?"(¹ una sola per gruppo)":""}</span>
+              {_haVincolabili&&<span className="rvLabX" style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>}
+            {grpObb.length===0&&_haVincolabili&&<div className="rvLab" style={{marginTop:2}}><span className="rvLabX" style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)"}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span></div>}
             <div className="rvPillRow" style={{gap:6}}>{libere.map(pillOpz)}</div>
           </>
         )}
@@ -3477,7 +3483,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
         <div className="rvNota-s">Se sì, alla sim spetta il gettone di gara per la vendita contestuale: lo segno io sulla sim, tu non devi fare altro.</div>
         <div className="rvPillRow" style={{gap:6}}>
           {(simConv||[]).map((s,ix)=>s.gia?(
-            <span key={ix} className="rvPill rvPill-sm rvPill-si">
+            <span key={ix} className="rvPill rvPill-sm rvPill-si rvPill-statico">
               ✓ Convergenza segnata su {s.etichetta}
             </span>
           ):(
@@ -3492,7 +3498,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
     {(offerte.length===0||off)&&campi.length>0&&(
       /* DATI CONTRATTO — la classe condivisa, ma con la tinta della CATEGORIA
          invece che del brand: qui il colore lo porta il prodotto scelto */
-      <div className="rvBox" style={{marginTop:12,"--rv-acc":color,"--rv-ink":inchiostroSu(color)}}>
+      <div className="rvBox" style={{marginTop:12,"--rv-acc":color}}>
         <div className="rvBoxT">Dati contratto</div>
         <div className="rvG2">
           {campi.map(cmp=>{
@@ -3776,7 +3782,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
   const _reqApiSub=useContext(ReqCtx);
   const _subKey=group.id+"-"+si+"-"+sub.id;
   const _inner = (
-    <div className="rvProd" style={{"--rv-acc":group.color,"--rv-ink":inchiostroSu(group.color)}}>
+    <div className="rvProd" style={{"--rv-acc":group.color}}>
 
       {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color} mobili={sub.catCategoria==="Telefono a Rate"?(mobiliRate||[]):[]}
         simConv={sub.catCategoria==="Fisso"?(simConv||[]):[]} onConvergenza={onConvergenza} simConvCart={sub.catCategoria==="Fisso"?simConvCart:false}/>}
@@ -6596,7 +6602,7 @@ function CRM() {
   const formContent = (
     /* la tinta del brand scelto scende a TUTTE le sezioni (Luca 28/08):
    i riquadri "Dati contratto" erano azzurro Vodafone anche in Fastweb */
-    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,"--rv-acc":bC,"--rv-ink":inchiostroSu(bC)}}>
+    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,"--rv-acc":bC}}>
       {/* ═══════════════════════════════════════════════════════════════════
           RIEPILOGO VENDITE — SIDEBAR DESKTOP
           Per gli SVILUPPATORI: questa sidebar (className "crmSidebar") è
@@ -6703,7 +6709,7 @@ function CRM() {
           )}
         </div>
         <div style={{padding:14,borderTop:"1px solid var(--tf-w60)"}}>
-          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:inchiostroSu(bC),fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Riepilogo carrello →</button>
+          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:inchiostroSu(ultimoColore(bG)),fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Riepilogo carrello →</button>
         </div>
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
@@ -6938,7 +6944,7 @@ function CRM() {
               </>
               :<>
                 {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
-                <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":bG,color:anaMissing.length>0?"var(--tf-64748b)":inchiostroSu(bC),fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+                <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":bG,color:anaMissing.length>0?"var(--tf-64748b)":inchiostroSu(ultimoColore(bG)),fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
               </>}
           </div>
         </div>
@@ -7028,7 +7034,7 @@ function CRM() {
         const d=sale[sub.id];if(!(d&&d.active))return null;
         const b=subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+prodModal.si+"-"+sub.id));
         return <div onClick={()=>setProdModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"var(--tf-12141f)",border:"1px solid "+group.color+"55",borderRadius:18,boxShadow:"0 18px 50px rgba(0,0,0,.55)","--rv-acc":group.color,"--rv-ink":inchiostroSu(group.color)}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"var(--tf-12141f)",border:"1px solid color-mix(in srgb, "+group.color+" 38%, transparent)",borderRadius:18,boxShadow:"0 18px 50px rgba(0,0,0,.55)","--rv-acc":group.color}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid var(--tf-w80)",position:"sticky",top:0,background:"var(--tf-12141f)",zIndex:1}}>
               <span style={{fontSize:21}}>{iconW3Cat(group)}</span>
               <div style={{flex:1,minWidth:0}}>
