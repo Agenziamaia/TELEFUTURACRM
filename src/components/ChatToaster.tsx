@@ -14,7 +14,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { markDelivered } from "@/lib/chat";
 import { useAuth } from "@/context/AuthContext";
 import { seesAllStores } from "@/lib/roles";
-import { matchNegozi } from "@/lib/visibleStores";
+import { matchNegozi, useVisibleStores } from "@/lib/visibleStores";
+import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa, vedeProtettiWa } from "@/lib/waVisibilita";
 import { MessageSquare, Mail, X } from "lucide-react";
 
 type Fonte = "chat" | "wa" | "mail";
@@ -38,6 +39,10 @@ const STILI: Record<Fonte, { card: string; chip: string; etichetta: string }> = 
 
 export function ChatToaster() {
     const { user } = useAuth();
+    // i negozi in visibilità e il diritto di vedere i numeri protetti:
+    // servono alla guardia delle notifiche WhatsApp (Francesco 28/08)
+    const { stores: storesToast } = useVisibleStores();
+    const vedeProttiToast = vedeProtettiWa(user?.id, user?.role);
     const router = useRouter();
     const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -75,19 +80,28 @@ export function ChatToaster() {
                 const { data: conv } = await supabase.from("wa_conversations")
                     .select("customer_name, customer_number, instance_id").eq("id", m.conversation_id).maybeSingle();
                 if (!conv) return;
-                const { data: inst } = await supabase.from("wa_instances").select("owner_user_id, negozio").eq("id", conv.instance_id).maybeSingle();
-                /* I NUMERI DEI PUNTI VENDITA non hanno un titolare, e la vecchia
-                   guardia (`owner && owner !== me`) li lasciava passare a
-                   CHIUNQUE: chi vede tutte le chat — dall'amministrativo in su —
-                   riceveva il toast di ogni negozio (Luca 28/08). Come per le
-                   mail: a chi vede tutto arrivano solo i suoi numeri personali;
-                   il numero del negozio suona a chi in quel negozio ci lavora. */
-                if (inst?.owner_user_id) {
-                    if (inst.owner_user_id !== user.id) return;
-                } else {
-                    if (seesAllStores(user.role)) return;
-                    if (!matchNegozi(inst?.negozio, [user.negozio || ""])) return;
-                }
+                const { data: inst } = await supabase.from("wa_instances")
+                    .select("id, owner_user_id, negozio, display_name, status").eq("id", conv.instance_id).maybeSingle();
+                /* ⚠️ NOTIFICHE DI ALTRI (Francesco, 28/08): la guardia fatta a
+                   mano qui lasciava passare i casi che non aveva previsto — un
+                   numero senza negozio, un'istanza non trovata. Ora si usa LA
+                   STESSA funzione dell'inbox: se quel numero non è tra quelli
+                   che l'utente può aprire, il toast non parte. E se qualcosa
+                   non si riesce a determinare, NON parte lo stesso (fail-closed:
+                   meglio una notifica persa che una notifica di altri). */
+                if (!inst) return;
+                const [scopeWa, protWa] = await Promise.all([
+                    waScopeRisolto(user.id, user.role), titolariProtettiWa(),
+                ]);
+                const suoi = waIstanzeVisibili([inst], user.id, user.role, storesToast, {
+                    scope: scopeWa, protetti: protWa, vedeProtetti: vedeProttiToast,
+                });
+                if (!suoi.length) return;
+                // il numero PERSONALE suona solo al titolare, mai a chi "vede
+                // tutto": la vista larga serve a lavorare, non a essere avvisati
+                if (inst.owner_user_id && inst.owner_user_id !== user.id) return;
+                if (!inst.owner_user_id && seesAllStores(user.role)
+                    && !matchNegozi(inst.negozio, storesToast)) return;
                 if (inChat()) return;
                 aggiungi({
                     id: `wa-${m.id}`, fonte: "wa",
