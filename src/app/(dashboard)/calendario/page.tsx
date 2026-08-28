@@ -14,6 +14,7 @@ import { caricaTutte } from "@/lib/fetchTutte";
 import { numeroNazionale } from "@/lib/telefono";
 import { seesAllStores, seesWholeStore, areaOf } from "@/lib/roles";
 import { useVisibleStores, sameStore, matchNegozi } from "@/lib/visibleStores";
+import { CercaCliente, nomeCliente, type ClienteRif } from "@/components/CercaCliente";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
@@ -625,6 +626,12 @@ export default function Calendario() {
 
     // Search Filters State
     const [searchQuery, setSearchQuery] = useState("");
+    /* IL CLIENTE SCELTO DALL'ANAGRAFICA (Luca 28/08): «così abbiamo un filtro
+       univoco e non ci possiamo sbagliare». Scelto lui, si vede TUTTO quello
+       che lo riguarda — appuntamenti presi dal call center, appuntamenti in
+       negozio, task che lo citano — senza che i filtri di schermo (categorie,
+       negozio, consulente, esito) ne nascondano un pezzo. */
+    const [cliente, setCliente] = useState<ClienteRif | null>(null);
     const [searchDateFrom, setSearchDateFrom] = useState("");
     const [searchDateTo, setSearchDateTo] = useState("");
 
@@ -1040,6 +1047,18 @@ export default function Calendario() {
     //    (Luca 05/08), NON più dalla vista appuntamenti: task_tutte = tutte;
     //    task_negozio = proprie + punti vendita in visibilità (fotografia del
     //    codice storico); task_proprie = solo assegnate a lui / create da lui.
+    /* Solo i PERMESSI, senza i filtri di schermo: serve alla ricerca cliente,
+       che deve trovare tutto quello che quella persona può vedere. */
+    const permessoTask = (t: CalendarTask): boolean => {
+        if (isTaskTutte) return true;
+        if (t.assignedToStore) {
+            const creataDaLei = (t.createdByUserId && t.createdByUserId === user?.id) || t.createdBy === user?.name;
+            if (creataDaLei) return true;
+            if (vistaTask !== "task_negozio") return false;
+            return mieiNegozi.some((m) => sameStore(t.assignedToStore!, m));
+        }
+        return t.assignedTo === user?.name || t.createdBy === user?.name;
+    };
     const taskVisibile = (t: CalendarTask): boolean => {
         if (!catOn("task")) return false;
         if (taskScope === "a_me") {
@@ -1762,10 +1781,36 @@ export default function Calendario() {
     };
 
     // Search result chronological list (includes RBAC store-based filtering implicitly from visibleAppointments)
+    /* I SEGNI DI UN CLIENTE: come lo riconosco in righe scritte da mani
+       diverse (il caller scrive il nome, il negozio il CF, una task lo cita
+       nel titolo). Il cellulare si confronta a sole cifre. */
+    const segniCliente = useMemo(() => {
+        if (!cliente) return null;
+        const cf = String(cliente.cf_piva || "").trim().toLowerCase();
+        const cell = String(cliente.cellulare || "").replace(/\D/g, "");
+        const nome = nomeCliente(cliente).toLowerCase();
+        const rs = String(cliente.ragione_sociale || "").trim().toLowerCase();
+        const nc = `${cliente.nome || ""} ${cliente.cognome || ""}`.trim().toLowerCase();
+        const cn = `${cliente.cognome || ""} ${cliente.nome || ""}`.trim().toLowerCase();
+        return { cf, cell: cell.length >= 6 ? cell.slice(-9) : "", nomi: [nome, rs, nc, cn].filter((x) => x.length > 3) };
+    }, [cliente]);
+    const testoTocca = (...campi: (string | undefined | null)[]) => {
+        if (!segniCliente) return false;
+        const testo = campi.filter(Boolean).join(" ").toLowerCase();
+        if (!testo) return false;
+        if (segniCliente.cf && testo.includes(segniCliente.cf)) return true;
+        if (segniCliente.cell && testo.replace(/\D/g, "").includes(segniCliente.cell)) return true;
+        return segniCliente.nomi.some((n) => testo.includes(n));
+    };
     // MOD-26 (Luca 10/08): ricerca UNIFICATA — un solo campo che matcha nome,
-    // CF/P.IVA o cellulare (via i tre campi separati del vecchio pannello)
-    const searchResults = visibleAppointments.filter(a => {
-        if (searchQuery) {
+    // CF/P.IVA o cellulare (via i tre campi separati del vecchio pannello).
+    // Col cliente scelto la platea è quella dei PERMESSI (visibileBase), non
+    // quella dei filtri di schermo: cercare un cliente è un'altra cosa dal
+    // guardare la griglia, e un suo appuntamento non deve sparire perché ho
+    // spento «Inbound» o sto guardando un altro negozio.
+    const searchResults = (cliente ? appointments.filter(visibileBase) : visibleAppointments).filter(a => {
+        if (cliente && !testoTocca(a.customerName, a.cfPiva, a.customerPhone, a.notes)) return false;
+        if (!cliente && searchQuery) {
             const q = searchQuery.trim().toLowerCase();
             const hit = a.customerName.toLowerCase().includes(q)
                 || (a.cfPiva && a.cfPiva.toLowerCase().includes(q))
@@ -1783,6 +1828,18 @@ export default function Calendario() {
         const dateB = new Date(`${b.date}T${b.time}`);
         return dateB.getTime() - dateA.getTime();
     });
+    /* Le TASK che parlano di quel cliente (Luca 28/08: «accertati che poi io
+       possa vedere TUTTO»): il riferimento cliente, ma anche titolo, note ed
+       esito, perché chi scrive una task il cliente lo mette dove capita. */
+    const taskTrovate = !cliente ? [] : tasks.filter((t) => {
+        if (!permessoTask(t)) return false;
+        if (!testoTocca(t.clientRef, t.title, t.notes, t.outcomeNote)) return false;
+        const from = parseSearchDate(searchDateFrom);
+        const to = parseSearchDate(searchDateTo);
+        if (from && t.date < from) return false;
+        if (to && t.date > to) return false;
+        return true;
+    }).sort((a, b) => (a.date < b.date ? 1 : -1));
 
     // When agent opens create modal, auto-preset to self_generated
     const openCreateModal = () => {
@@ -2061,12 +2118,9 @@ export default function Calendario() {
                     apre il resto. Tutto il resto sta dietro, perché quattro
                     righe di filtri fissi spingevano la griglia sotto la piega. */}
                 <div className="p-2.5 flex flex-wrap items-center gap-2">
-                    <div className="relative flex-1 min-w-[200px] max-w-sm">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                        <input type="text" placeholder="Cerca cliente: nome, CF/P.IVA o cellulare…"
-                            className="glass-input w-full text-sm h-9 pl-9"
-                            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                    </div>
+                    <CercaCliente className="flex-1 min-w-[200px] max-w-sm"
+                        value={cliente} onChange={setCliente}
+                        testo={searchQuery} onTesto={setSearchQuery} />
                     {/* CATEGORIE PER CHI LE USA (Luca 28/08): «i richiami sono
                         del call center, l'outbound degli agenti e del call
                         center, che glieli fissa». Un filtro che nel proprio
@@ -2231,10 +2285,14 @@ export default function Calendario() {
 
             {/* MOD-26: RISULTATI di ricerca — compaiono da soli quando la
                 ricerca unificata (testo o periodo) è attiva */}
-            {(searchQuery.trim() !== "" || searchDateFrom !== "" || searchDateTo !== "") && (
+            {(cliente || searchQuery.trim() !== "" || searchDateFrom !== "" || searchDateTo !== "") && (
                 <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
                     <div>
-                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca ({searchResults.length})</h4>
+                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
+                            {cliente
+                                ? <>👤 {nomeCliente(cliente)} — {searchResults.length} appuntament{searchResults.length === 1 ? "o" : "i"}{taskTrovate.length ? ` · ${taskTrovate.length} task` : ""}</>
+                                : <>Risultati di ricerca ({searchResults.length})</>}
+                        </h4>
                         <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
                             {searchResults.map(appt => (
                                 // cliccabile (revisore UX 27/08): trovavo il cliente e
@@ -2278,9 +2336,35 @@ export default function Calendario() {
                                     </div>
                                 </div>
                             ))}
-                            {searchResults.length === 0 && (
+                            {/* LE TASK DELLO STESSO CLIENTE (Luca 28/08: «devo
+                                poter vedere TUTTO»): stanno qui sotto, con lo
+                                stato a colori e il dettaglio a un clic. */}
+                            {taskTrovate.map((t) => {
+                                const col = coloreTask(t);
+                                return (
+                                    <div key={`task-${t.id}`} role="button" tabIndex={0}
+                                        onClick={() => { vaiAlGiorno(t.date); setTaskDettaglio(t); }}
+                                        onKeyDown={(e) => { if (e.key === "Enter") { vaiAlGiorno(t.date); setTaskDettaglio(t); } }}
+                                        className={cn("cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border transition-colors gap-4 hover:brightness-125", col.fondo, col.bordo)}>
+                                        <div className="flex gap-4 items-center min-w-0">
+                                            <div className="flex flex-col items-center justify-center bg-white/5 text-slate-300 w-12 h-12 rounded-lg shrink-0">
+                                                <span className="text-lg font-bold leading-none">{t.date.split("-")[2]}</span>
+                                                <span className="text-[10px] uppercase font-semibold">{MONTHS_IT[parseInt(t.date.split("-")[1]) - 1].substring(0, 3)}</span>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className={cn("font-semibold truncate", col.testo)}>✓ {t.title}</p>
+                                                <p className="text-xs text-slate-500 truncate">
+                                                    {t.assignedToStore ? `🏪 ${t.assignedToStore}` : `👤 ${t.assignedTo || "—"}`} · da {t.createdBy || "—"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border shrink-0", col.fondo, col.testo, col.bordo)}>{col.etichetta}</span>
+                                    </div>
+                                );
+                            })}
+                            {searchResults.length === 0 && taskTrovate.length === 0 && (
                                 <div className="text-center py-8 text-slate-500 text-sm">
-                                    Nessun appuntamento trovato.
+                                    {cliente ? "Di questo cliente non risulta niente in calendario: né appuntamenti né task." : "Nessun appuntamento trovato."}
                                 </div>
                             )}
                         </div>
