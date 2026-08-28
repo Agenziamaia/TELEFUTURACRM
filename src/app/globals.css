@@ -1327,6 +1327,7 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 /* i chip secondari si spengono per larghezza, uno alla volta */
 .tf-rb-chips .c2 { max-width: calc(var(--c2On) * 9999); padding-inline: calc(var(--c2On) * 8); border-width: var(--c2On); overflow: hidden; }
 .tf-rb-chips .c3 { max-width: calc(var(--c3On) * 9999); padding-inline: calc(var(--c3On) * 8); border-width: var(--c3On); overflow: hidden; }
+.tf-rb-chips .c4 { max-width: calc(var(--c4On) * 9999); padding-inline: calc(var(--c4On) * 8); border-width: var(--c4On); overflow: hidden; }
 
 /* file UGUALI: mai align-content, che distribuisce il vuoto invece di far
    crescere gli anelli */

@@ -1927,7 +1927,9 @@ function BloccoBrandRete({ ctx, brand }) {
     const b = (ctx.brandRete || []).find((x) => x.brand === brand);
     if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
     const { n, col, righe, ultima } = formaRete(ctx, brand);
-    const conQuota = (ctx.mieiNegozi || []).length > 0;
+    // la quota si mostra solo se il mio punto vendita quel brand lo lavora:
+    // altrimenti non è uno zero, è un dato che non mi riguarda
+    const conQuota = !!b.quotaAttiva;
     const primaK = b.piste.length ? `${brand}:${b.piste[0].chiave}` : null;
     const aperta = apri === "__def__" ? primaK : apri;
     // UNA BARRA SEMPRE APERTA, MAI NESSUNA (Luca 28/08: «se ci riclicco sparisce,
@@ -1946,20 +1948,39 @@ function BloccoBrandRete({ ctx, brand }) {
             // con più di un anello l'etichetta della pista è obbligatoria:
             // senza, non sai quale stai guardando
             "--t1": n > 1 ? "-9999px" : "18px",
-            "--c2On": "clamp(0px, calc((100cqw - 301px) * 9999), 1px)",
-            "--c3On": "clamp(0px, calc((100cqw - 509px) * 9999), 1px)",
+            // i chip si spengono da destra man mano che la card si stringe
+            "--c2On": "clamp(0px, calc((100cqw - 330px) * 9999), 1px)",
+            "--c3On": "clamp(0px, calc((100cqw - 530px) * 9999), 1px)",
+            "--c4On": "clamp(0px, calc((100cqw - 700px) * 9999), 1px)",
         }}>
             <div className="tf-rb-chips text-[10px]">
-                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} in soglia
-                </span>
+                {b.conTarget > 0 ? (
+                    <>
+                        {/* la proiezione viene PRIMA: è il dato che guida, ed è
+                            l'unico che si vede fino al 20 del mese */}
+                        <span className="px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                            🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget} in target
+                        </span>
+                        {!ctx.primaDel20 && (
+                            <span className="c2 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+                                <b className="text-white tabular-nums">{b.inTarget}</b>/{b.conTarget} in target adesso
+                            </span>
+                        )}
+                    </>
+                ) : (
+                    // nessun target impostato su questo brand: si ripiega sulle
+                    // soglie, altrimenti la testata non direbbe niente
+                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+                        <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} in soglia
+                    </span>
+                )}
                 {b.appesi > 0 && (
-                    <span className="c2 px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                        🔮 <b className="tabular-nums">{b.appesi}</b> appes{b.appesi > 1 ? "i" : "o"} al passo
+                    <span className="c3 px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                        🔮 <b className="tabular-nums">{b.appesi}</b> scaglion{b.appesi > 1 ? "i" : "e"} al passo
                     </span>
                 )}
                 {conQuota && b.pzMio != null && b.pzRete > 0 && (
-                    <span className="c3 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
+                    <span className="c4 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
                         il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>
                     </span>
                 )}

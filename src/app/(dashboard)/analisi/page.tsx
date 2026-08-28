@@ -590,9 +590,13 @@ function AnalisiInner() {
         const conta = (arr) => { for (const r of arr) { if (norm(r.venditore) !== norm(user?.name) || !r.negozio || r.negozio === "—") continue; per.set(r.negozio, (per.get(r.negozio) || 0) + 1); } };
         conta(items); conta(dati?.altri || []);
         const v = [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
-        if (v.length) return v;
-        const casa = negoziAttivi.find((n) => user?.negozio && sameStore(n, user.negozio));
-        return casa ? [casa] : [];
+        // il negozio del PROFILO entra sempre: legare «il mio PV» alle sole
+        // vendite personali tagliava fuori chi non vende — uno store manager
+        // apriva la Rete e la sua quota non c'era. Chi presidia due punti
+        // vendita li somma (produzione), chi non vende ha comunque il suo.
+        const casa = user?.negozio ? negoziAttivi.find((n) => sameStore(n, user.negozio)) : null;
+        if (casa && !v.some((n) => sameStore(n, casa))) v.push(casa);
+        return v;
     }, [items, dati, user?.name, user?.negozio, negoziAttivi]);
     // ── RETE: un blocco per OPERATORE, dentro le sue piste ────────────────
     // Fastweb T2 e S4 non hanno tabellare (niente punti): contano a PEZZI e
@@ -754,8 +758,25 @@ function AnalisiInner() {
             // diverse è vietato quanto sommarli fra operatori (regola cardine)
             const pzRete = piste.reduce((sm, x) => sm + x.pezzi, 0);
             const pzMio = piste.reduce((sm, x) => sm + (x.unit === "pz" ? x.mio : 0), 0);
+            // IN TARGET, non «in soglia» (Luca 28/08: «qui ci interessa più che
+            // altro capire i target»). Il denominatore sono le piste che un
+            // target ce l'hanno: dire 2/7 contando anche quelle senza obiettivo
+            // sarebbe una bocciatura gratuita.
+            // LO ZERO SOLO DOVE È COMPETENTE (Luca 28/08: «se sono store manager
+            // di Baleniere e non faccio WindTre non avrò semplicemente il dato;
+            // mettimi zero solo quando il dato mi è competente, perché il brand
+            // lo lavoro ma non ho fatto un cazzo»). Il brand è «lavorato» se il
+            // mio punto vendita ci ha messo almeno un pezzo nel periodo.
+            const mieiPezziBrand = c.tab
+                ? c.rows.filter((r) => èMio(r.negozio)).length
+                : (c.pezzi || []).reduce((sm, p) => sm + p.righe.filter((r) => èMio(r.negozio)).length, 0);
+            const conTarget = piste.filter((x) => x.target && x.target.v > 0);
             out.push({
                 brand: c.id, label: c.label, chiave: c.chiave, colore: c.colore, piste, pzRete,
+                quotaAttiva: mieiNegoziUtente.length > 0 && mieiPezziBrand > 0,
+                conTarget: conTarget.length,
+                inTarget: conTarget.filter((x) => x.punti >= x.target.v).length,
+                inTargetProj: conTarget.filter((x) => (x.proiezione ?? x.punti) >= x.target.v).length,
                 // la quota di brand si può dire solo dove le piste sono a pezzi;
                 // sulle piste a punti la si legge anello per anello
                 pzMio: piste.every((x) => x.unit === "pz") ? pzMio : null,
@@ -774,6 +795,11 @@ function AnalisiInner() {
         altri: dati?.altri || [], oggiGara: dati?.oggiGara || [],
         persona: "", negozio: "tutta la rete", negozi: negoziVisibili, negozioCasa: "",
         brandRete, mieiNegozi: mieiNegoziUtente,
+        // FINO AL 20 SI GUARDA SOLO LA PROIEZIONE (Luca 28/08): a inizio mese
+        // «quante piste sono già in target» è un numero che dice zero e
+        // scoraggia — quello che conta è dove si sta andando. Su un mese chiuso
+        // la proiezione non esiste più e si mostra il consuntivo.
+        primaDel20: meseCorrente && new Date().getDate() < 20,
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [items, dati, nG, labels, oggi, meseCorrente, negoziVisibili, brandRete, mieiNegoziUtente]);
 

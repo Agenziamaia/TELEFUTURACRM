@@ -671,7 +671,7 @@ export function AnelloScaglioni({
             <div className="tf-anello-centro">
                 <span className="num">{unit === "pz" ? fmtN(punti) : fmtPt(punti)}</span>
                 <span className="cap">{unit === "pz" ? "pezzi rete" : "punti rete"}</span>
-                {quota > 0 && <span className="mio" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}%&nbsp;mio</span>}
+                {mio != null && punti > 0 && <span className="mio" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}%&nbsp;mio</span>}
             </div>
             {/* etichette dei valori: le accende il CSS quando ci stanno davvero */}
             {soglie.map((s, i) => {
