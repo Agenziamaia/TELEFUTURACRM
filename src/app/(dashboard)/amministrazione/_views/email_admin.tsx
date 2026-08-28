@@ -24,6 +24,9 @@ import { Mail, Loader2, Trash2, RefreshCw, User as UserIcon, Store, KeyRound, Pl
 import { cn } from "@/utils";
 
 type Casella = {
+    // quali utenze prendono i codici da questa casella (solo per le caselle di
+    // servizio: lo calcola il server, così si vede se sta lavorando davvero)
+    serve?: { accesso: string; username: string }[];
     id: string; email_address: string; display_name: string | null;
     negozio: string | null; owner_user_id: string | null; ai_protetta: boolean | null;
     status: string; last_error: string | null; created_at?: string;
@@ -454,6 +457,21 @@ function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire
     const [attese, setAttese] = useState<{ email: string; utenze: { accesso: string; username: string }[] }[]>([]);
     const [apri, setApri] = useState(false);
     const [tolgo, setTolgo] = useState<string | null>(null);
+    /* Il nome è un'etichetta per gli occhi: sbagliarlo scrivendo è normale, e
+       correggerlo non deve costare scollegare e ricollegare con la password. */
+    const [rinomino, setRinomino] = useState<string | null>(null);
+    const [nomeNuovo, setNomeNuovo] = useState("");
+    const salvaNome = async (c: Casella) => {
+        const nome = nomeNuovo.trim();
+        setRinomino(null);
+        if (!nome || nome === (c.display_name || "")) return;
+        const r = await fetch("/api/email/account", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "rinomina", id: c.id, displayName: nome, userId }),
+        }).then((x) => x.json()).catch(() => ({ error: "rete" }));
+        if (r?.error) { alert("Non sono riuscito a rinominarla: " + r.error); return; }
+        carica();
+    };
 
     const carica = async () => {
         try {
@@ -507,8 +525,26 @@ function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire
                         <div key={c.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
                             <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
                             <div className="min-w-0 flex-1">
-                                <div className="text-sm text-white font-medium truncate">{c.display_name || c.email_address}</div>
+                                {rinomino === c.id ? (
+                                    <input autoFocus value={nomeNuovo} onChange={(e) => setNomeNuovo(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") salvaNome(c); if (e.key === "Escape") setRinomino(null); }}
+                                        onBlur={() => salvaNome(c)}
+                                        className="w-full max-w-xs bg-black/40 border border-amber-400/50 rounded-lg px-2 py-1 text-sm text-white outline-none" />
+                                ) : (
+                                    <button onClick={() => { setRinomino(c.id); setNomeNuovo(c.display_name || ""); }}
+                                        title="Clicca per rinominarla"
+                                        className="block max-w-full text-left text-sm text-white font-medium truncate hover:text-amber-200 transition-colors">
+                                        {c.display_name || c.email_address}
+                                    </button>
+                                )}
                                 {c.display_name && <div className="text-[11px] text-slate-500 font-mono truncate">{c.email_address}</div>}
+                                {c.serve?.length ? (
+                                    <div className="text-[11px] text-emerald-300/80 truncate mt-0.5">
+                                        serve: {c.serve.map((u) => `${u.accesso} (${u.username})`).join(" · ")}
+                                    </div>
+                                ) : (
+                                    <div className="text-[11px] text-slate-600 mt-0.5">nessuna utenza agganciata</div>
+                                )}
                             </div>
                             <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0",
                                 c.status === "disconnessa" || c.status === "errore"

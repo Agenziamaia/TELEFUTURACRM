@@ -52,8 +52,18 @@ export async function GET(request: Request) {
         const k = String(r.otp_email_attesa || "").toLowerCase();
         (perIndirizzo[k] ||= []).push({ accesso: r.access_type, username: r.username });
     }
+    /* CHI SERVE OGNI CASELLA (Luca 28/08 sera): vedere l'utenza agganciata
+       accanto all'indirizzo fa notare subito un nome messo storto — e dice a
+       colpo d'occhio se una casella sta lavorando o è lì per niente. */
+    const { data: agganciate } = await supabase.from("password_credentials")
+        .select("access_type, username, otp_account_id")
+        .not("otp_account_id", "is", null);
+    const perCasella: Record<string, { accesso: string; username: string }[]> = {};
+    for (const r of agganciate || []) {
+        (perCasella[String(r.otp_account_id)] ||= []).push({ accesso: r.access_type, username: r.username });
+    }
     return NextResponse.json({
-        accounts,
+        accounts: accounts.map((a) => ({ ...a, serve: perCasella[String((a as { id?: string }).id)] || [] })),
         attese: Object.entries(perIndirizzo).map(([email, utenze]) => ({ email, utenze })),
     });
 }
@@ -197,6 +207,19 @@ export async function POST(request: Request) {
             if (Array.isArray(b.extraUserIds)) await syncMembri(data.id);
             const agganciate = await agganciaUtenzeInAttesa(data.id, email);
             return NextResponse.json({ ok: true, account: data, agganciate });
+        }
+
+        /* RINOMINARE UNA CASELLA (Luca 28/08 sera): il nome è un'etichetta per
+           gli occhi — sbagliarlo scrivendo è normale, e non deve costare
+           scollegare e ricollegare con tanto di password. */
+        if (action === "rinomina") {
+            if (!(await eAmministrazione(String(b.userId || "")))) {
+                return NextResponse.json({ error: "Le caselle si governano dal pannello Email dell'amministrazione." }, { status: 403 });
+            }
+            const nome = String(b.displayName || "").trim().slice(0, 80);
+            const { error } = await supabase.from("email_accounts")
+                .update({ display_name: nome || null }).eq("id", String(b.id || ""));
+            return NextResponse.json(error ? { error: error.message } : { ok: true });
         }
 
         if (action === "retest") {
