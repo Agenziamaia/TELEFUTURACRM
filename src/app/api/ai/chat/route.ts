@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { chat, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
+import { chat, hasKey, type ChatMessage } from "@/lib/ai/deepseek";
 import { modelloDi } from "@/lib/ai/modelloDi";
-import { tettoPer, costoChiamata } from "@/lib/ai/modelli";
+import { tettoPer, costoChiamata, MODELLO_DI_SISTEMA } from "@/lib/ai/modelli";
 import { getScope } from "@/lib/ai/scope";
 import { canUseAI } from "@/lib/roles";
 import { TOOL_DEFS, WRITE_TOOL_DEFS, WRITE_TOOL_NAMES, runTool } from "@/lib/ai/tools";
@@ -107,8 +107,30 @@ export async function POST(req: Request) {
      viene DAL MODELLO: i modelli che ragionano consumano il tetto per
      pensare, e con un tetto basso rispondono il vuoto. */
   const scelta = await modelloDi(String(userId || ""));
-  const MODELLO = scelta.modello;
-  const TETTO = tettoPer(MODELLO, 1500);
+  let MODELLO = scelta.modello;
+  let TETTO = tettoPer(MODELLO, 1500);
+
+  /* SE IL MODELLO SCELTO NON RISPONDE, SI RIPIEGA (rilievo del revisore).
+     Un id che l'operatore non riconosce più, un modello ritirato, un limite
+     sull'account: senza questo l'assistente resterebbe MUTO per quella
+     persona — con un errore tecnico a schermo — finché non si ricorda di
+     tornare nelle impostazioni. Meglio rispondere col modello di sistema e
+     dirlo. */
+  let ripiegato = false;
+  const parla = async (args: Parameters<typeof chat>[0]) => {
+    try {
+      return await chat({ ...args, model: MODELLO, maxTokens: TETTO });
+    } catch (e) {
+      const msg = String((e as Error)?.message || "");
+      // errore del MODELLO (non della rete o della chiave): si riprova con quello di sistema
+      const colpaDelModello = /400|model|not found|unsupported|deprecat/i.test(msg);
+      if (!colpaDelModello || MODELLO === MODELLO_DI_SISTEMA) throw e;
+      ripiegato = true;
+      MODELLO = MODELLO_DI_SISTEMA;
+      TETTO = tettoPer(MODELLO, 1500);
+      return await chat({ ...args, model: MODELLO, maxTokens: TETTO });
+    }
+  };
 
   const tools = [...TOOL_DEFS, ...WRITE_TOOL_DEFS];
   const trace: { tool: string; args: any; ok: boolean; summary?: string }[] = [];
@@ -118,13 +140,23 @@ export async function POST(req: Request) {
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const res = await chat({ messages: convo, tools, model: MODELLO, maxTokens: TETTO });
+      const res = await parla({ messages: convo, tools });
       promptTokens += res.usage?.prompt_tokens ?? 0;
       completionTokens += res.usage?.completion_tokens ?? 0;
 
       const msg = res.message;
       const calls = msg.tool_calls || [];
-      if (!calls.length) { answer = msg.content || ""; break; }
+      if (!calls.length) {
+        answer = msg.content || "";
+        /* RISPOSTA TRONCATA (rilievo del revisore): quando il modello esaurisce
+           il tetto mentre ragiona, torna un contenuto VUOTO — e l'utente si
+           vedeva un messaggio sui «passaggi disponibili», che parla d'altro.
+           Il motivo vero sta in finish_reason: si legge e si dice. */
+        if (!answer.trim() && res.finish_reason === "length") {
+          answer = "La risposta si è interrotta: era troppo lunga per lo spazio disponibile. Prova a chiedermi la stessa cosa in modo più circoscritto, oppure fammelo sapere e alzo il limite.";
+        }
+        break;
+      }
 
       convo.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
 
@@ -159,7 +191,7 @@ export async function POST(req: Request) {
         // 400 non bastavano: il ragionamento del modello li consuma tutti e
         // la proposta usciva vuota (stesso difetto trovato nell'Omnichat il
         // 27/08) — restava il fallback «Confermi l'azione proposta?»
-        const res2 = await chat({ messages: convo, model: MODELLO, maxTokens: TETTO });
+        const res2 = await parla({ messages: convo });
         promptTokens += res2.usage?.prompt_tokens ?? 0;
         completionTokens += res2.usage?.completion_tokens ?? 0;
         answer = res2.message.content || "Confermi l'azione proposta?";

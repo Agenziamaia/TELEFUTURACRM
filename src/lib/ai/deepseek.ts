@@ -73,8 +73,10 @@ export async function chat(opts: {
   }
 }
 
-// Costo stimato in USD (prezzi luglio 2026, per 1M token).
-export function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
-  const p = model === MODEL_PRO ? { in: 0.435, out: 0.87 } : { in: 0.14, out: 0.28 };
-  return (promptTokens / 1e6) * p.in + (completionTokens / 1e6) * p.out;
-}
+// Costo stimato in USD. UN SOLO LISTINO (rilievo del revisore): i prezzi
+// vivono in `modelli.ts` insieme ai modelli, e qui si delega. Con due tabelle
+// il prossimo ritocco ne aggiornava una sola e il costo del triage diventava
+// falso senza dare errore. In più il vecchio calcolo fatturava per differenza
+// (pro = caro, «tutto il resto» = economico): un modello nuovo sarebbe stato
+// contabilizzato al prezzo sbagliato.
+export { costoChiamata as estimateCost } from "@/lib/ai/modelli";

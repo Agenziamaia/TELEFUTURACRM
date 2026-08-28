@@ -441,7 +441,15 @@ export default function AssistentePage() {
         valori={spazio.preferenze}
         modelli={spazio.modelli}
         onChiudi={() => setImpostazioni(false)}
-        onSalva={async (v) => { await azione({ azione: "preferenze_salva", ...v }); setImpostazioni(false); }}
+        /* SE NON SALVA, NON SI CHIUDE (rilievo del revisore): l'errore veniva
+           buttato via e il pannello si chiudeva come se avesse salvato — con
+           personalità e memorie appena scritte perse senza una parola. */
+        onSalva={async (v) => {
+          const r = await azione({ azione: "preferenze_salva", ...v });
+          if (r?.error) { alert("Non sono riuscito a salvare: " + r.error + "\n\nLe tue impostazioni sono ancora qui: riprova o copiale altrove prima di chiudere."); return false; }
+          setImpostazioni(false);
+          return true;
+        }}
       />
     )}
 
@@ -475,6 +483,7 @@ function PannelloPreferenze({ valori, onChiudi, onSalva, modelli }) {
   const [memorie, setMemorie] = useState(valori?.memorie || "");
   // il modello si sceglie SOLO se l'amministrazione ha dato la libertà
   const [modello, setModello] = useState(valori?.modello || "");
+  const [salvando, setSalvando] = useState(false);
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onChiudi}>
       <div className="glass-card border-white/10 w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -530,8 +539,9 @@ function PannelloPreferenze({ valori, onChiudi, onSalva, modelli }) {
 
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onChiudi} className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5">Annulla</button>
-          <button onClick={() => onSalva({ nomeAssistente, personalita, memorie, modello })}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Salva</button>
+          <button onClick={async () => { setSalvando(true); await onSalva({ nomeAssistente, personalita, memorie, modello }); setSalvando(false); }}
+            disabled={salvando}
+            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-semibold">{salvando ? "Salvo…" : "Salva"}</button>
         </div>
       </div>
     </div>

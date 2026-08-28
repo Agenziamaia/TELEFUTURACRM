@@ -28,7 +28,13 @@ export const MODELLI_AI: ModelloAi[] = [
         nome: "Veloce",
         descrizione: "Risponde subito e costa poco. Va bene per quasi tutto: domande, testi, ricerche nel CRM.",
         prezzo: { in: 0.14, out: 0.28 },
-        tettoMin: 1500,
+        /* 3000 e non 1500: questo repo aveva GIÀ misurato che anche il
+           «Veloce» pensa prima di rispondere — «con 700 se li mangiava tutti,
+           ~730 di ragionamento + ~160 di risposta» (omnichat) e «~300-1200 per
+           chat» (triage WhatsApp). Il tetto ufficiale non può essere sotto un
+           pavimento già dimostrato insufficiente altrove. */
+        tettoMin: 3000,
+        ragiona: true,
     },
     {
         id: "deepseek-v4-pro",

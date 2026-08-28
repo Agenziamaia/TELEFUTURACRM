@@ -9,8 +9,8 @@
 //   2. il modello impostato per lui dal pannello Permessi (persona → grado → ruolo)
 //   3. il modello di sistema, come prima che tutto questo esistesse
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { capKey, CAP_AI_MODELLO, CAP_AI_LIBERTA, AI_MODELLO_DI } from "@/lib/capabilities";
-import { MODELLO_DI_SISTEMA, modelloAi } from "@/lib/ai/modelli";
+import { capKey, capChoice, capAllowed, CAP_AI_MODELLO, CAP_AI_LIBERTA, AI_MODELLO_DI } from "@/lib/capabilities";
+import { MODELLO_DI_SISTEMA, MODELLI_AI } from "@/lib/ai/modelli";
 
 export type SceltaModello = {
     /** l'id del modello da usare adesso */
@@ -24,6 +24,15 @@ export type SceltaModello = {
 export async function modelloDi(userId: string): Promise<SceltaModello> {
     const vuoto: SceltaModello = { modello: MODELLO_DI_SISTEMA, libero: false, daAmministrazione: null };
     if (!userId) return vuoto;
+    try {
+        return await risolvi(userId, vuoto);
+    } catch {
+        // una query che va storta non deve lasciare l'assistente senza modello
+        return vuoto;
+    }
+}
+
+async function risolvi(userId: string, vuoto: SceltaModello): Promise<SceltaModello> {
 
     const { data: u } = await supabaseAdmin.from("app_users")
         .select("role, grade, active").eq("id", userId).maybeSingle();
@@ -42,15 +51,14 @@ export async function modelloDi(userId: string): Promise<SceltaModello> {
     const perms = new Map<string, boolean>();
     for (const k of chiavi) (righe || []).filter((r) => r.role === k).forEach((r) => perms.set(r.perm_key, !!r.allowed));
 
-    // il modello deciso dall'amministrazione: vince la prima scelta accesa
-    let daAmm: string | null = null;
-    for (const c of CAP_AI_MODELLO.caps) {
-        if (perms.get(capKey(CAP_AI_MODELLO.section, c.id)) === true) { daAmm = AI_MODELLO_DI[c.id] || null; break; }
-    }
-
-    const liberoDefault = CAP_AI_LIBERTA.caps[0].default(role);
-    const rigaLibero = perms.get(capKey(CAP_AI_LIBERTA.section, "sceglie_modello"));
-    const libero = rigaLibero === undefined ? liberoDefault : rigaLibero;
+    /* SI CHIAMANO GLI HELPER, NON SI RISCRIVE LA REGOLA (rilievo del revisore,
+       ed è lo stesso errore già pagato oggi con permessoSezione): `capChoice` e
+       `capAllowed` tengono conto anche dei DEFAULT delle capacità, una lettura
+       a mano della mappa no. Finché i default sono `false` coincidono; il
+       giorno che uno cambia, pannello e risolutore direbbero cose diverse. */
+    const sceltaCap = capChoice(role, CAP_AI_MODELLO, perms);
+    const daAmm: string | null = AI_MODELLO_DI[sceltaCap] || null;
+    const libero = capAllowed(role, CAP_AI_LIBERTA.section, CAP_AI_LIBERTA.caps[0], perms);
 
     // la scelta personale conta SOLO se gli è stata concessa
     let sua: string | null = null;
@@ -58,7 +66,10 @@ export async function modelloDi(userId: string): Promise<SceltaModello> {
         const { data: pref } = await supabaseAdmin.from("ai_preferenze")
             .select("modello").eq("user_id", userId).maybeSingle();
         const m = String(pref?.modello || "");
-        if (m) sua = modelloAi(m).id;      // se non è più in catalogo, si torna a uno valido
+        /* un id non più in catalogo NON deve degradare al modello di sistema:
+           deve sparire, così torna a valere quello deciso dall'amministrazione
+           (che magari è proprio l'Approfondito) — rilievo del revisore */
+        sua = m && MODELLI_AI.some((x) => x.id === m) ? m : null;
     }
 
     return {
