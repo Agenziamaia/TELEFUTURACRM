@@ -1128,14 +1128,17 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata =
         const maxH = val(d.maxH, larg) || 12;
         return { minW, minH, maxH: Math.max(minH, maxH) };
     };
+    // I VINCOLI GUIDANO LA MANIGLIA, NON RISCRIVONO IL SALVATO. Prima li
+    // applicavo alla lista: così il minimo e il massimo che ho calcolato io
+    // schiacciavano la disposizione decisa dall'admin — Vodafone messo a 5
+    // righe tornava a 4 a ogni caricamento — e la versione corretta veniva pure
+    // salvata. Ora la disposizione dell'utente è la verità; minW/minH/maxH
+    // restano come limiti di quando si trascina la maniglia. Il contenuto si
+    // adatta comunque alla card, quindi nessuno rischia di vedere uno scroll.
     const rglLayout = lista.map((w) => {
         const v = vinc(w.k, w.s);
-        const larg = Math.max(v.minW, Math.min(COLONNE, w.s));
-        // il vincolo si applica QUI, sulla lista: RGL lo userebbe solo per la
-        // maniglia e un'altezza salvata sotto il minimo resterebbe lì (è il
-        // motivo per cui alcune card continuavano a scrollare)
-        return { i: w.k, x: w.x || 0, y: w.y || 0, w: larg,
-            h: Math.max(v.minH, Math.min(v.maxH, w.h || hDef(w.k))), ...v };
+        return { i: w.k, x: w.x || 0, y: w.y || 0,
+            w: Math.max(1, Math.min(COLONNE, w.s)), h: w.h || hDef(w.k), ...v };
     });
     const onLayout = (l) => {
         const mappa = new Map(l.map((it) => [it.i, it]));
