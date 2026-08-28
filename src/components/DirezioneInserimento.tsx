@@ -43,11 +43,17 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
    i NOMI — mai target né avanzamenti: il widget dei ragazzi resta riservato. */
 function CodaCodici({ prossimi }: { prossimi: string[] }) {
     if (!prossimi.length) return null;
+    /* Visibile ma in secondo piano: fondo appena acceso e una banda a
+       sinistra, così si legge senza rubare la scena al codice grande. */
     return (
-        <div className="mt-3 pt-3 border-t border-white/[0.07] text-[11px] text-slate-400 leading-snug text-center">
-            <span className="text-slate-500">Se ne carichi più di una, una per codice:</span>{" "}
-            la seconda su <b className="text-slate-200">{prossimi[0]}</b>
-            {prossimi[1] ? <>, poi <b className="text-slate-200">{prossimi[1]}</b></> : null}.
+        <div className="mt-3 rounded-xl border border-indigo-400/25 border-l-[3px] border-l-indigo-400/70 bg-indigo-500/[0.09] px-3 py-2 flex items-start gap-2 text-left">
+            <span className="text-base leading-none shrink-0 mt-0.5">🔀</span>
+            <div className="text-[11px] leading-snug text-slate-300">
+                <span className="font-bold text-indigo-200">Ne carichi più di una?</span>{" "}
+                <span className="text-slate-400">Una per codice:</span>{" "}
+                la seconda su <b className="text-white">{prossimi[0]}</b>
+                {prossimi[1] ? <>, poi <b className="text-white">{prossimi[1]}</b></> : null}.
+            </div>
         </div>
     );
 }
