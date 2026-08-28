@@ -1524,6 +1524,7 @@ function WidgetMixPersone({ ctx }) {
     const [hl, setHl] = useState(null);
     const [pin, setPin] = useState(null);
     const [unita, setUnita] = useState("pezzi");
+    const [brandSel, setBrandSel] = useState(null);   // null = tutti i marchi
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
     // niente reset a mano di hl/pin: la griglia dell'area Negozio è keyata su
@@ -1602,14 +1603,35 @@ function WidgetMixPersone({ ctx }) {
     const att = persone.find((p) => p.k === attivo) || null;
     if (!totPezzi) return <p className="text-xs text-slate-500 py-4 text-center">Nessuna vendita nel periodo.</p>;
 
+    // FILTRO BRAND (Luca 28/08: «dammi anche la possibilità di filtrare per
+    // brand: a quel punto di quel brand mi dici qual è lo spaccato delle
+    // persone»). Il widget gira nei due sensi: scelto un marchio, l'anello
+    // grande e le righe diventano i SUOI e sotto gli anelli non sono più i
+    // brand ma le PERSONE che lo fanno.
+    const bSel = brands.find((b) => b.k === brandSel) || null;
+    // dentro UN SOLO brand i punti sono leciti ovunque, anello grande compreso:
+    // la regola cardine vieta di sommarli TRA operatori, non dentro l'operatore
+    const puntiBig = !!bSel && unita === "punti" && bSel.punti > 0;
+    const totBig = bSel ? (puntiBig ? bSel.punti : bSel.pezzi) : totPezzi;
+    const unitBig = puntiBig ? "pt" : "pz";
+    const fmtBig = (v) => (puntiBig ? fmtPt(v) : fmtN(v));
+
     // ── anello GENERALE: identico a quello del Mix operatori ──────────────
     const size = 186, R = 70, SW = 18, C = 2 * Math.PI * R, cx = size / 2, cy = size / 2;
     const fette = [];
     let acc = 0;
-    for (const p of persone) { const f = p.pezzi / totPezzi; fette.push({ ...p, f, o: acc, pct: pcQ(f) }); acc += f; }
-
-    // ── un anello per BRAND, stile «Il mio peso nei negozi» ───────────────
+    for (const p of persone) {
+        const e = bSel ? p.per.get(bSel.k) : null;
+        const v = bSel ? (e ? (puntiBig ? e.punti : e.pezzi) : 0) : p.pezzi;
+        if (v <= 0) continue;
+        const f = totBig > 0 ? v / totBig : 0;
+        fette.push({ ...p, v, f, o: acc, pct: pcQ(f) });
+        acc += f;
+    }
+    const attF = fette.find((x) => x.k === attivo) || null;
     const nNegozi = ctx.negozi?.length || 1;
+
+    // ── gli anelli di sotto: uno per BRAND, o uno per PERSONA se filtrato ──
     const perBrand = brands.map((b) => {
         // i punti valgono solo dentro il brand che li ha (Fastweb T2 e gli
         // altri operatori non ne hanno: restano a pezzi anche con lo switch)
@@ -1624,7 +1646,8 @@ function WidgetMixPersone({ ctx }) {
     }).filter((x) => x.tot > 0 && x.quote.length);
     // stessa regola di taglia degli anelli di «peso nei negozi»: pochi grandi,
     // tanti piccoli, sempre in proporzione alla larghezza della card
-    const cella = `clamp(70px, ${Math.max(7, Math.min(14, Math.round(80 / Math.max(1, perBrand.length))))}cqw, 118px)`;
+    const nGiu = bSel ? fette.length : perBrand.length;
+    const cella = `clamp(84px, ${Math.max(8, Math.min(16, Math.round(88 / Math.max(1, nGiu))))}cqw, 150px)`;
 
     return (
         <div className="w-full select-none flex flex-col gap-3">
@@ -1670,15 +1693,18 @@ function WidgetMixPersone({ ctx }) {
                             {att ? (
                                 <>
                                     <span className="w-3 h-3 rounded-full" style={{ background: att.colore }} />
-                                    <span className="text-[26px] font-black tabular-nums leading-none mt-1" style={{ color: att.colore, textShadow: `0 0 18px ${att.colore}66` }}>{pcQ(att.pezzi / totPezzi)}%</span>
+                                    <span className="text-[26px] font-black tabular-nums leading-none mt-1" style={{ color: att.colore, textShadow: `0 0 18px ${att.colore}66` }}>{attF ? attF.pct : "0"}%</span>
                                     <span className="text-[10px] font-bold text-slate-200 mt-1 truncate max-w-[85%]">{att.label}</span>
-                                    <span className="text-[9px] text-slate-500 mt-0.5 tabular-nums">{fmtN(att.pezzi)} pezzi{pin === att.k ? " · 📌" : ""}</span>
+                                    <span className="text-[9px] text-slate-500 mt-0.5 tabular-nums">{fmtBig(attF ? attF.v : 0)} {unitBig === "pt" ? "punti" : "pezzi"}{bSel ? ` · ${bSel.label}` : ""}{pin === att.k ? " · 📌" : ""}</span>
                                 </>
                             ) : (
                                 <>
-                                    <span className="text-2xl font-black text-white tabular-nums leading-none"><Num v={totPezzi} punti={false} /></span>
-                                    <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">{nNegozi > 1 ? `pezzi · ${nNegozi} negozi` : "pezzi del negozio"}</span>
-                                    <span className="text-[9px] text-slate-600 mt-0.5">{nSquadra} in squadra</span>
+                                    {bSel?.chiave && <LogoBrand chiave={bSel.chiave} colore={bSel.colore} alt={bSel.label} h={20} className="mb-1" />}
+                                    <span className="text-2xl font-black text-white tabular-nums leading-none">{on ? fmtBig(totBig) : "0"}</span>
+                                    <span className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">
+                                        {bSel ? (unitBig === "pt" ? "punti" : "pezzi") : (nNegozi > 1 ? `pezzi · ${nNegozi} negozi` : "pezzi del negozio")}
+                                    </span>
+                                    <span className="text-[9px] text-slate-600 mt-0.5">{bSel ? `${fette.length} ${fette.length === 1 ? "persona" : "persone"}` : `${nSquadra} in squadra`}</span>
                                 </>
                             )}
                         </div>
@@ -1701,7 +1727,7 @@ function WidgetMixPersone({ ctx }) {
                                     <div className="relative flex items-center gap-2">
                                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: x.colore, boxShadow: `0 0 6px ${x.colore}88` }} />
                                         <span className="text-[11px] font-bold text-slate-200 flex-1 truncate">{x.label}</span>
-                                        <span className="text-[10px] text-slate-500 tabular-nums">{fmtN(x.pezzi)} pz</span>
+                                        <span className="text-[10px] text-slate-500 tabular-nums">{fmtBig(x.v)} {unitBig}</span>
                                         <span className="text-[13px] font-black tabular-nums w-10 text-right" style={{ color: x.colore }}>{x.pct}%</span>
                                     </div>
                                 </div>
@@ -1712,77 +1738,129 @@ function WidgetMixPersone({ ctx }) {
                         {att ? brands.map((b) => {
                             const e = att.per.get(b.k); if (!e) return null;
                             return (
-                                <span key={b.k} className="flex items-center gap-1 text-[9px] text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
+                                <span key={b.k} onClick={() => setBrandSel((v) => (v === b.k ? null : b.k))}
+                                    title={`Filtra su ${b.label}`}
+                                    className={cn("flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors",
+                                        brandSel === b.k ? "text-white bg-white/15 border-white/25" : "text-slate-300 bg-white/[0.05] border-white/10 hover:bg-white/10")}>
                                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: b.colore }} />
                                     {b.label} · <b className="text-slate-100 tabular-nums">{fmtN(e.pezzi)}</b> pz
                                     {e.punti > 0 && <span className="text-slate-500 tabular-nums">· {fmtPt(e.punti)} pt</span>}
                                 </span>
                             );
-                        }) : <span className="text-[9px] text-slate-600">passa su una persona: si accende in ogni anello · click per bloccare</span>}
+                        }) : <span className="text-[9px] text-slate-600">passa su una persona: si accende in ogni anello · click per bloccare · scegli un marchio per vedere solo il suo</span>}
                     </div>
                 </div>
             </div>
 
-            {/* ── CHI COMANDA, BRAND PER BRAND ─────────────────────────────── */}
+            {/* ── SOTTO: gli anelli. Senza filtro uno per BRAND (al centro chi
+                comanda), con un marchio scelto uno per PERSONA ────────────── */}
             <div className="shrink-0">
-                <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate">
-                        {ctx.collab ? "chi comanda su ogni brand · sempre tutta la squadra" : "chi comanda su ogni brand"}
+                        {bSel ? `chi fa ${bSel.label}` : "chi comanda su ogni brand"}
                     </p>
-                    {conPunti && (
-                        <span className="shrink-0 inline-flex rounded-lg border border-white/10 overflow-hidden">
-                            {["pezzi", "punti"].map((u) => (
-                                <button key={u} onClick={() => setUnita(u)} title={u === "pezzi" ? "Anelli brand a pezzi" : "Anelli brand a punti (dove esistono)"}
-                                    className={cn("px-2 py-0.5 text-[9px] font-bold transition-colors", unita === u ? "bg-white/15 text-white" : "text-slate-500 hover:text-slate-300")}>
-                                    {u === "pezzi" ? "pz" : "pt"}
-                                </button>
-                            ))}
-                        </span>
-                    )}
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {/* FILTRO BRAND: i marchi del punto vendita, «Tutti» per tornare */}
+                        <button onClick={() => setBrandSel(null)} title="Tutti i marchi"
+                            className={cn("px-2 py-1 rounded-lg border text-[9px] font-bold transition-colors",
+                                bSel ? "border-white/10 bg-white/[0.03] text-slate-500 hover:bg-white/[0.06]" : "border-white/25 bg-white/15 text-white")}>
+                            Tutti
+                        </button>
+                        {brands.map((b) => (
+                            <button key={b.k} onClick={() => setBrandSel((v) => (v === b.k ? null : b.k))} title={`Solo ${b.label}`}
+                                className={cn("px-1.5 py-1 rounded-lg border transition-colors flex items-center",
+                                    brandSel === b.k ? "border-white/30 bg-white/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07] opacity-70 hover:opacity-100")}>
+                                {b.chiave ? <LogoBrand chiave={b.chiave} colore={brandSel === b.k ? b.colore : null} alt={b.label} h={15} />
+                                    : <span className="text-[9px] font-bold text-slate-300 px-1">{b.label}</span>}
+                            </button>
+                        ))}
+                        {conPunti && (
+                            <span className="ml-1 shrink-0 inline-flex rounded-lg border border-white/10 overflow-hidden">
+                                {["pezzi", "punti"].map((u) => (
+                                    <button key={u} onClick={() => setUnita(u)} title={u === "pezzi" ? "A pezzi" : "A punti (dove esistono)"}
+                                        className={cn("px-2 py-1 text-[9px] font-bold transition-colors", unita === u ? "bg-white/15 text-white" : "text-slate-500 hover:text-slate-300")}>
+                                        {u === "pezzi" ? "pz" : "pt"}
+                                    </button>
+                                ))}
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <div className="flex flex-wrap justify-center gap-3">
-                    {perBrand.map(({ b, tot, punti, quote, capo }) => {
-                        const mostra = att ? (quote.find((x) => x.k === att.k) || null) : capo;
-                        const colore = mostra ? mostra.colore : COL_IGNOTO;
-                        // disco a spicchi: stessa scocca dell'anello di «peso nei
-                        // negozi», con una fetta per persona invece di una sola
-                        const stop = [];
-                        let g = 0;
-                        for (const x of quote) {
-                            const g2 = g + x.q * 360;
-                            stop.push(`${attivo && attivo !== x.k ? `${x.colore}33` : x.colore} ${g}deg ${g2}deg`);
-                            g = g2;
-                        }
-                        return (
-                            <span key={b.k} className="block" style={{ width: cella }}>
-                                <Tip className="w-full block" tip={
-                                    <div>
-                                        <TipTitolo>{b.label}</TipTitolo>
-                                        <TipRiga l="totale" r={punti ? `${fmtPt(tot)} pt` : `${fmtN(tot)} pz`} />
-                                        {quote.map((x) => <TipRiga key={x.k} l={x.label} r={`${punti ? fmtPt(x.v) + " pt" : fmtN(x.v) + " pz"} · ${pcQ(x.q)}%`} colore={x.colore} />)}
-                                    </div>
-                                }>
-                                    <div className="text-center w-full">
-                                        <div className="relative w-full max-w-[150px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]"
-                                            style={{ background: `conic-gradient(${stop.join(", ")})`, filter: `drop-shadow(0 0 8px ${colore}44)` }}>
-                                            <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
-                                                <span className="font-black tabular-nums" style={{ fontSize: "clamp(0.8rem, 22cqw, 1.5rem)", color: colore }}>
-                                                    {mostra ? `${pcQ(mostra.q)}%` : "0%"}
-                                                </span>
+                    {bSel
+                        // ── un anello per PERSONA del marchio scelto ──────────
+                        ? fette.map((x) => {
+                            const spenta = attivo && attivo !== x.k;
+                            return (
+                                <span key={x.k} className="block" style={{ width: cella }}>
+                                    <Tip className="w-full block" tip={
+                                        <div>
+                                            <TipTitolo>{x.label} · {bSel.label}</TipTitolo>
+                                            <TipRiga l={unitBig === "pt" ? "punti" : "pezzi"} r={`${fmtBig(x.v)} su ${fmtBig(totBig)}`} colore={x.colore} />
+                                            <TipRiga l="quota" r={`${x.pct}%`} />
+                                            <TipRiga l="su tutto il negozio" r={`${fmtN(x.pezzi)} pz`} />
+                                        </div>
+                                    }>
+                                        <div className="text-center w-full cursor-pointer" onMouseEnter={() => setHl(x.k)} onMouseLeave={() => setHl(null)}
+                                            onClick={() => setPin((v) => (v === x.k ? null : x.k))}
+                                            style={{ opacity: spenta ? 0.45 : 1, transition: "opacity .25s" }}>
+                                            <div className="relative w-full max-w-[150px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]"
+                                                style={{ background: `conic-gradient(${x.colore} ${Math.min(360, x.f * 360)}deg, rgba(255,255,255,.07) 0deg)`, filter: `drop-shadow(0 0 8px ${x.colore}44)` }}>
+                                                <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
+                                                    <span className="font-black tabular-nums" style={{ fontSize: "clamp(0.8rem, 22cqw, 1.5rem)", color: x.colore }}>{x.pct}%</span>
+                                                </div>
                                             </div>
+                                            <p className="mt-1.5 text-[11px] font-bold truncate" style={{ color: x.colore }}>{x.breve}</p>
+                                            <p className="text-[9px] text-slate-500 tabular-nums">{fmtBig(x.v)} {unitBig}</p>
                                         </div>
-                                        <div className="mt-1 flex justify-center">
-                                            {b.chiave ? <LogoBrand chiave={b.chiave} alt={b.label} h={17} />
-                                                : <p className="text-[10px] text-slate-400 font-semibold max-w-[110px] truncate">{b.label}</p>}
+                                    </Tip>
+                                </span>
+                            );
+                        })
+                        // ── un anello per BRAND, al centro la quota di chi comanda ──
+                        : perBrand.map(({ b, tot, punti, quote, capo }) => {
+                            const mostra = att ? (quote.find((x) => x.k === att.k) || null) : capo;
+                            const colore = mostra ? mostra.colore : COL_IGNOTO;
+                            // disco a spicchi: stessa scocca dell'anello di «peso nei
+                            // negozi», con una fetta per persona invece di una sola
+                            const stop = [];
+                            let g = 0;
+                            for (const x of quote) {
+                                const g2 = g + x.q * 360;
+                                stop.push(`${attivo && attivo !== x.k ? `${x.colore}33` : x.colore} ${g}deg ${g2}deg`);
+                                g = g2;
+                            }
+                            return (
+                                <span key={b.k} className="block" style={{ width: cella }}>
+                                    <Tip className="w-full block" tip={
+                                        <div>
+                                            <TipTitolo>{b.label}</TipTitolo>
+                                            <TipRiga l="totale" r={punti ? `${fmtPt(tot)} pt` : `${fmtN(tot)} pz`} />
+                                            {quote.map((x) => <TipRiga key={x.k} l={x.label} r={`${punti ? fmtPt(x.v) + " pt" : fmtN(x.v) + " pz"} · ${pcQ(x.q)}%`} colore={x.colore} />)}
+                                            <TipRiga l="" r="click: solo questo marchio" />
                                         </div>
-                                        <p className="text-[10px] font-bold truncate" style={{ color: colore }}>
-                                            {mostra ? mostra.breve : (att?.breve || "—")}
-                                        </p>
-                                    </div>
-                                </Tip>
-                            </span>
-                        );
-                    })}
+                                    }>
+                                        <div className="text-center w-full cursor-pointer" onClick={() => setBrandSel(b.k)} title={`Solo ${b.label}`}>
+                                            <div className="relative w-full max-w-[150px] min-w-[72px] aspect-square mx-auto grid place-items-center rounded-full transition-transform hover:scale-105 [container-type:inline-size]"
+                                                style={{ background: `conic-gradient(${stop.join(", ")})`, filter: `drop-shadow(0 0 8px ${colore}44)` }}>
+                                                <div className="w-[76%] h-[76%] rounded-full bg-[#10132a] grid place-items-center an-scuro">
+                                                    <span className="font-black tabular-nums" style={{ fontSize: "clamp(0.8rem, 22cqw, 1.5rem)", color: colore }}>
+                                                        {mostra ? `${pcQ(mostra.q)}%` : "0%"}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="mt-1.5 flex justify-center items-center h-[26px]">
+                                                {b.chiave ? <LogoBrand chiave={b.chiave} colore={b.colore} alt={b.label} h={24} />
+                                                    : <p className="text-[11px] text-slate-300 font-bold max-w-[110px] truncate">{b.label}</p>}
+                                            </div>
+                                            <p className="text-[11px] font-bold truncate" style={{ color: colore }}>
+                                                {mostra ? mostra.breve : (att?.breve || "—")}
+                                            </p>
+                                        </div>
+                                    </Tip>
+                                </span>
+                            );
+                        })}
                 </div>
             </div>
         </div>
@@ -1821,12 +1899,14 @@ export const REGISTRO = {
     "squadra:sky": { nome: "Squadra — punti Sky", emoji: "🏆", nomeBreve: "Squadra", logoChiave: "sky", gruppo: "squadra", def: 4, solo: "negozio", render: (ctx) => <WidgetSquadra ctx={ctx} metrica="sky" /> },
     "duello": { nome: "Duello tra negozi", emoji: "⚔️", gruppo: "squadra", def: 2, solo: "negozio", render: (ctx) => <WidgetDuello ctx={ctx} /> },
     "mix:pezzi": { nome: "Mix operatori (pezzi)", emoji: "🧬", gruppo: "andamento", def: 2, render: (ctx) => <WidgetMixPezzi ctx={ctx} /> },
-    // h: 5 → la card nasce alta abbastanza per anello grande + anelli brand
-    //         + legenda, senza che il primo sguardo debba scrollare
-    "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 4, h: 5, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
+    // nasce a TUTTA LARGHEZZA (8) e alta 6: e' il riassunto del punto vendita
+    // e apre l'area — cosi' anello, righe e la fila dei marchi stanno in una
+    // schermata sola, senza scrollare
+    "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 8, h: 6, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
 export const DEFAULT_LAYOUT = {
     io: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "posizioni@2", "bersaglio@2", "pesonegozi@4", "marg@8", "mix:pezzi@2"],
-    negozio: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "squadra:pezzi@4", "duello@2", "mix:pezzi@2", "mix:persone@4", "marg@8", "squadra:w3@4"],
+    // il Mix persone apre l'area: è la prima domanda che ci si fa su un PV
+    negozio: ["mix:persone@8", "op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "squadra:pezzi@4", "duello@2", "mix:pezzi@2", "marg@8", "squadra:w3@4"],
 };

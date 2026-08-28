@@ -87,13 +87,18 @@ const decodeLayout = (arr, versione = 0) => {
 // alla versione corrente. Un widget rimosso a mano NON torna: la versione è
 // già salita.
 const LAYOUT_V = 10;
-const NOVITA = { 10: { negozio: ["mix:persone"] } };
+// `su: true` = nasce IN CIMA all'area (Luca 28/08: «aggiungi questo widget di
+// default a tutti, in tutte le visualizzazioni di analisi di negozio») — in
+// coda a una griglia da dieci card non l'avrebbe visto nessuno. La griglia
+// compatta e spinge giù le altre; poi ognuno se lo sposta dove vuole.
+const NOVITA = { 10: { negozio: [{ k: "mix:persone", su: true }] } };
 const conNovita = (lista, areaKey, versione) => {
     const out = [...lista];
     for (let v = Math.max(Number(versione) || 0, 9) + 1; v <= LAYOUT_V; v++) {
-        for (const k of (NOVITA[v]?.[areaKey] || [])) {
+        for (const n of (NOVITA[v]?.[areaKey] || [])) {
+            const k = typeof n === "string" ? n : n.k;
             if (!REGISTRO[k] || out.some((w) => w.k === k)) continue;
-            out.push({ k, s: REGISTRO[k].def || 2, h: hDef(k), x: 0, y: Infinity });
+            out.push({ k, s: REGISTRO[k].def || 2, h: hDef(k), x: 0, y: n.su ? 0 : Infinity });
         }
     }
     return out;
