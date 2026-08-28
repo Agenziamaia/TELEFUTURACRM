@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
         // otp_*: dice se questa utenza ha una casella dei codici collegata — il
         // pulsante «Chiedi il codice» compare solo dove serve davvero
-        let query = supabase.from("password_credentials").select("id, brand_id, category_id, store_id, access_type, username, otp_account_id, otp_profilo");
+        let query = supabase.from("password_credentials").select("id, brand_id, category_id, store_id, access_type, username, otp_account_id, otp_profilo, totp_secret_enc");
 
         if (brandId) query = query.eq("brand_id", brandId);
         if (categoryId) query = query.eq("category_id", categoryId);
@@ -58,6 +58,8 @@ export async function GET(request: Request) {
             passwordMasked: "••••••••••", // Default placeholder for UI
             otpAccountId: c.otp_account_id || null,
             otpProfilo: c.otp_profilo || null,
+            // SOLO se c'è, mai il valore: la chiave non esce dal server
+            haAuthenticator: !!c.totp_secret_enc,
         }));
 
         return NextResponse.json(credentials);

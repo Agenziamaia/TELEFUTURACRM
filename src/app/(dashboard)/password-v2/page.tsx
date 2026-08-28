@@ -92,6 +92,8 @@ type Credential = {
     // in tabella compare il pulsante per farsi consegnare il codice
     otpAccountId?: string | null;
     otpProfilo?: string | null;
+    /* l'utenza ha la chiave dell'autenticatore? (il valore non arriva mai) */
+    haAuthenticator?: boolean;
 };
 
 export default function PasswordV2Page() {
@@ -168,7 +170,7 @@ export default function PasswordV2Page() {
        che il collaboratore non ha (e non deve avere: lì dentro c'è altro).
        Preme il pulsante, il CRM va a leggerlo e glielo mette davanti per un
        minuto. Il codice non resta da nessuna parte: né qui né nel database. */
-    const [otpAperto, setOtpAperto] = useState<Record<number, { codice: string; scadeA: number }>>({});
+    const [otpAperto, setOtpAperto] = useState<Record<number, { codice: string; scadeA: number; tipo?: string }>>({});
     const [otpInCorso, setOtpInCorso] = useState<number | null>(null);
     const [otpAttesa, setOtpAttesa] = useState<Record<number, number>>({});   // i secondi che restano prima del prossimo giro
     const [otpMsg, setOtpMsg] = useState<Record<number, string>>({});
@@ -199,7 +201,7 @@ export default function PasswordV2Page() {
     const chiediCodice = async (c: Credential, giro = 0) => {
         setOtpInCorso(c.id);
         if (giro === 0) setOtpMsg((m) => ({ ...m, [c.id]: "" }));
-        let r: { codice?: string; secondi?: number; error?: string; attesa?: boolean; riprovaTra?: number };
+        let r: { codice?: string; secondi?: number; error?: string; attesa?: boolean; riprovaTra?: number; tipo?: string };
         try {
             r = await fetch(`/api/passwords/credentials/${c.id}/otp`, {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
@@ -207,10 +209,23 @@ export default function PasswordV2Page() {
         } finally { setOtpInCorso(null); }
 
         if (r?.codice) {
-            setOtpAperto((m) => ({ ...m, [c.id]: { codice: String(r.codice), scadeA: Date.now() + (Number(r.secondi) || 60) * 1000 } }));
+            setOtpAperto((m) => ({ ...m, [c.id]: {
+                codice: String(r.codice),
+                scadeA: Date.now() + (Number(r.secondi) || 60) * 1000,
+                tipo: r.tipo,
+            } }));
             setOtpMsg((m) => ({ ...m, [c.id]: "" }));
             setOtpAttesa((m) => { const n = { ...m }; delete n[c.id]; return n; });
             setAdesso(Date.now());
+            /* L'AUTENTICATORE NON SCADE, CAMBIA (28/08 sera): il codice vive 30
+               secondi e poi ne esiste un altro. Farlo sparire costringerebbe a
+               ricliccare proprio mentre si sta digitando sul portale: quando il
+               tempo finisce, il CRM ne prende semplicemente uno nuovo. */
+            if (r.tipo === "authenticator") {
+                window.clearTimeout(attesaRef.current[-c.id]);
+                attesaRef.current[-c.id] = window.setTimeout(
+                    () => chiediCodice(c), ((Number(r.secondi) || 30) + 1) * 1000);
+            }
             return;
         }
 
@@ -241,7 +256,7 @@ export default function PasswordV2Page() {
     };
 
     // Gestione credenziali (creazione/modifica/eliminazione).
-    const [credForm, setCredForm] = useState<{ id: number | null; accessType: string; username: string; password: string; otpAccountId?: string; otpProfilo?: string } | null>(null);
+    const [credForm, setCredForm] = useState<{ id: number | null; accessType: string; username: string; password: string; otpAccountId?: string; otpProfilo?: string; totpSecret?: string; haAuthenticator?: boolean } | null>(null);
     const [savingCred, setSavingCred] = useState(false);
     // caselle e formati disponibili per agganciare il codice (solo a chi gestisce)
     const [otpCaselle, setOtpCaselle] = useState<{ id: string; email: string; nome: string | null; sistema: boolean }[]>([]);
@@ -254,13 +269,33 @@ export default function PasswordV2Page() {
         }).catch(() => { /* il form funziona lo stesso, senza le tendine */ });
     }, [canManage]);
 
+    /* la prova della chiave: si chiede al server il codice di adesso, senza
+       salvare niente. Mezzo secondo di attesa per non interrogarlo a ogni
+       lettera digitata. */
+    const [provaOtp, setProvaOtp] = useState<{ codice?: string; errore?: string } | null>(null);
+    useEffect(() => {
+        const k = String(credForm?.totpSecret || "").replace(/\s+/g, "");
+        if (!k || /^•+$/.test(k) || k.length < 16) { setProvaOtp(null); return; }
+        let vivo = true;
+        const t = setTimeout(async () => {
+            const r = await fetch("/api/passwords/otp-prova", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chiave: k }),
+            }).then((x) => x.json()).catch(() => ({ error: "Non riesco a provarla adesso." }));
+            if (vivo) setProvaOtp(r?.codice ? { codice: r.codice } : { errore: r?.error || "Chiave non valida" });
+        }, 500);
+        return () => { vivo = false; clearTimeout(t); };
+    }, [credForm?.totpSecret]);
+
     const saveCred = async () => {
         if (!credForm || !brand || !category || !store) return;
         if (!credForm.accessType.trim() || !credForm.username.trim() || (credForm.id === null && !credForm.password)) return;
         setSavingCred(true);
         try {
             // SEC-02: userId nel body per lo storico (pattern email/send).
-            const otp = { otpAccountId: credForm.otpAccountId || null, otpProfilo: credForm.otpProfilo || null };
+            const otp: Record<string, unknown> = { otpAccountId: credForm.otpAccountId || null, otpProfilo: credForm.otpProfilo || null };
+            // la chiave si manda SOLO se l'hanno toccata: altrimenti resta quella salvata
+            if (credForm.totpSecret !== undefined && !/^•+$/.test(credForm.totpSecret)) otp.totpSecret = credForm.totpSecret;
             if (credForm.id === null) {
                 await fetch(`/api/passwords/credentials`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
@@ -700,6 +735,48 @@ export default function PasswordV2Page() {
                                                 Nessuna casella collegata: aggiungile in <b className="text-slate-400">Amministrazione → Email → Caselle dei codici</b>.
                                             </p>
                                         )}
+
+                                        {/* ══ OPPURE L'AUTENTICATORE ═══════════════════════════
+                                            Vodafone non manda il codice via mail: lo fa generare
+                                            dall'app sul telefono di qualcuno — e quel qualcuno può
+                                            essere in ferie. La chiave che il portale mostra accanto
+                                            al QR fa la stessa cosa, dentro il CRM. */}
+                                        <div className="mt-3 pt-3 border-t border-white/5 space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                Oppure: chiave dell&apos;autenticatore (Vodafone e simili)
+                                            </label>
+                                            <input
+                                                value={credForm.totpSecret ?? (credForm.haAuthenticator ? "••••••••••••••••" : "")}
+                                                onChange={(e) => setCredForm({ ...credForm, totpSecret: e.target.value })}
+                                                onFocus={() => { if (credForm.totpSecret === undefined) setCredForm({ ...credForm, totpSecret: "" }); }}
+                                                placeholder="incolla qui la chiave del QR — es. JBSW Y3DP EHPK 3PXP"
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm font-mono tracking-wide focus:outline-none focus:border-amber-400/60" />
+                                            {/* IL CONFRONTO: appena incolli, il CRM mostra il codice
+                                                che genera adesso. Se è lo stesso che vedi sul portale,
+                                                la chiave è giusta — ed è l'unico modo per saperlo
+                                                prima di scoprirlo fra una settimana. */}
+                                            {provaOtp && (
+                                                <div className={cn("mt-1.5 rounded-lg px-3 py-2 border flex items-center gap-3",
+                                                    provaOtp.errore ? "border-rose-400/40 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10")}>
+                                                    {provaOtp.errore ? (
+                                                        <span className="text-[11px] text-rose-200 leading-snug">{provaOtp.errore}</span>
+                                                    ) : (
+                                                        <>
+                                                            <span className="font-mono text-xl font-black tracking-[0.2em] text-emerald-200">{provaOtp.codice}</span>
+                                                            <span className="text-[11px] text-emerald-100/80 leading-snug">
+                                                                È questo che ti mostra il portale in questo momento?<br />
+                                                                <span className="text-emerald-200/60">Se sì la chiave è giusta. Se no, ricontrolla di averla copiata tutta.</span>
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <p className="text-[10px] text-slate-500 leading-relaxed">
+                                                Nel portale, alla voce «associa un nuovo dispositivo», accanto al QR c&apos;è una chiave
+                                                di lettere e numeri («non riesci a scansionare?»): incolla quella, anche con gli spazi.
+                                                {credForm.haAuthenticator && <span className="text-amber-300/80"> Ce n&apos;è già una salvata: scrivine una nuova per sostituirla, o svuota il campo per toglierla.</span>}
+                                            </p>
+                                        </div>
                                     </div>
                                     <div className="sm:col-span-3 flex gap-2 justify-end">
                                         <button onClick={() => setCredForm(null)} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold">Annulla</button>
@@ -719,14 +796,14 @@ export default function PasswordV2Page() {
                                         <th className="px-4 py-2 text-left text-right">Password</th>
                                         {/* CODICE USA E GETTA (28/08): la colonna c'è solo se in questa
                                             schermata almeno un'utenza ha la casella collegata */}
-                                        {credentials.some((c) => c.otpAccountId) && <th className="px-4 py-2 text-center">Codice</th>}
+                                        {credentials.some((c) => c.otpAccountId || c.haAuthenticator) && <th className="px-4 py-2 text-center">Codice</th>}
                                         {canManage && <th className="px-4 py-2 text-right">Azioni</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td className="px-4 py-20 text-center" colSpan={3 + (credentials.some((x) => x.otpAccountId) ? 1 : 0) + (canManage ? 1 : 0)}>
+                                            <td className="px-4 py-20 text-center" colSpan={3 + (credentials.some((x) => x.otpAccountId || x.haAuthenticator) ? 1 : 0) + (canManage ? 1 : 0)}>
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                                                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Caricamento credenziali...</p>
@@ -735,7 +812,7 @@ export default function PasswordV2Page() {
                                         </tr>
                                     ) : credentials.length === 0 ? (
                                         <tr>
-                                            <td className="px-4 py-12 text-center text-slate-500" colSpan={3 + (credentials.some((x) => x.otpAccountId) ? 1 : 0) + (canManage ? 1 : 0)}>
+                                            <td className="px-4 py-12 text-center text-slate-500" colSpan={3 + (credentials.some((x) => x.otpAccountId || x.haAuthenticator) ? 1 : 0) + (canManage ? 1 : 0)}>
                                                 Nessuna credenziale configurata per questa combinazione.
                                             </td>
                                         </tr>
@@ -802,14 +879,16 @@ export default function PasswordV2Page() {
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    {credentials.some((x) => x.otpAccountId) && (
+                                                    {credentials.some((x) => x.otpAccountId || x.haAuthenticator) && (
                                                         <td className="px-4 py-3 align-middle">
-                                                            {!c.otpAccountId ? (
+                                                            {!(c.otpAccountId || c.haAuthenticator) ? (
                                                                 <div className="text-center text-slate-700 text-xs">—</div>
                                                             ) : otpAperto[c.id] ? (
                                                                 <CodiceAperto
                                                                     codice={otpAperto[c.id].codice}
                                                                     restano={Math.max(0, Math.ceil((otpAperto[c.id].scadeA - adesso) / 1000))}
+                                                    durata={otpAperto[c.id].tipo === "authenticator" ? 30 : 60}
+                                                    daApp={otpAperto[c.id].tipo === "authenticator"}
                                                                     onCopia={() => handleCopy(c.id, otpAperto[c.id].codice)}
                                                                     copiato={copiedId === c.id}
                                                                 />
@@ -845,7 +924,7 @@ export default function PasswordV2Page() {
                                                     {canManage && (
                                                         <td className="px-4 py-3">
                                                             <div className="flex items-center gap-1 justify-end">
-                                                                <button type="button" title="Modifica" onClick={() => setCredForm({ id: c.id, accessType: c.accessType, username: c.username, password: "", otpAccountId: c.otpAccountId || "", otpProfilo: c.otpProfilo || "" })} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Pencil className="w-3.5 h-3.5" /></button>
+                                                                <button type="button" title="Modifica" onClick={() => setCredForm({ id: c.id, accessType: c.accessType, username: c.username, password: "", otpAccountId: c.otpAccountId || "", otpProfilo: c.otpProfilo || "", haAuthenticator: !!c.haAuthenticator })} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Pencil className="w-3.5 h-3.5" /></button>
                                                                 <button type="button" title="Elimina" onClick={() => deleteCred(c.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
                                                             </div>
                                                         </td>
@@ -924,7 +1003,7 @@ export default function PasswordV2Page() {
    Grande abbastanza da leggerlo mentre lo si digita sul portale, con il tempo
    che scorre davanti: quando finisce sparisce da solo. Nessuno deve chiudere
    niente, e non resta un codice vecchio a schermo da copiare per sbaglio. */
-function CodiceAperto({ codice, restano, onCopia, copiato }: { codice: string; restano: number; onCopia: () => void; copiato: boolean }) {
+function CodiceAperto({ codice, restano, onCopia, copiato, durata = 60, daApp = false }: { codice: string; restano: number; onCopia: () => void; copiato: boolean; durata?: number; daApp?: boolean }) {
     const quasi = restano <= 10;
     return (
         <div className="flex flex-col items-center gap-1">
@@ -945,14 +1024,16 @@ function CodiceAperto({ codice, restano, onCopia, copiato }: { codice: string; r
                 <div className="h-1 w-16 rounded-full bg-white/10 overflow-hidden">
                     <div
                         className={cn("h-full rounded-full transition-all duration-300", quasi ? "bg-rose-400" : "bg-emerald-400")}
-                        style={{ width: `${Math.max(0, Math.min(100, (restano / 60) * 100))}%` }}
+                        style={{ width: `${Math.max(0, Math.min(100, (restano / durata) * 100))}%` }}
                     />
                 </div>
                 <span className={cn("text-[10px] font-bold tabular-nums", quasi ? "text-rose-300" : "text-slate-400")}>
                     {restano}s
                 </span>
             </div>
-            <span className="text-[10px] text-slate-500">{copiato ? "copiato ✓" : "clicca per copiare"}</span>
+            <span className="text-[10px] text-slate-500">
+                {copiato ? "copiato ✓" : daApp ? "si rinnova da solo" : "clicca per copiare"}
+            </span>
         </div>
     );
 }

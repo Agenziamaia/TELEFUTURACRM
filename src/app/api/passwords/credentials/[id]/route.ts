@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { cifraSegreto, chiaveValida } from "@/lib/totp";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,18 @@ export async function PATCH(
         // Stringa vuota = «togli il collegamento», non «lascia com'è».
         if (body.otpAccountId !== undefined) patch.otp_account_id = body.otpAccountId || null;
         if (body.otpProfilo !== undefined) patch.otp_profilo = body.otpProfilo || null;
+        /* LA CHIAVE DELL'AUTENTICATORE (28/08 sera): si verifica PRIMA di
+           salvarla — una chiave storta non dà errore, dà un codice che il
+           portale rifiuta, e si perde tempo a cercare il problema altrove.
+           Va a riposo cifrata, come quella della 2FA del CRM: dal database non
+           esce mai in chiaro. Stringa vuota = «togli l'autenticatore». */
+        if (body.totpSecret !== undefined) {
+            const chiave = String(body.totpSecret || "").replace(/\s+/g, "").toUpperCase();
+            if (!chiave) patch.totp_secret_enc = null;
+            else if (!chiaveValida(chiave)) {
+                return NextResponse.json({ error: "La chiave dell'autenticatore non è valida: dev'essere quella testuale che il portale mostra accanto al QR (lettere A-Z e cifre 2-7, almeno 16 caratteri)." }, { status: 400 });
+            } else patch.totp_secret_enc = cifraSegreto(chiave);
+        }
         if (Object.keys(patch).length === 0) {
             return NextResponse.json({ error: "Nessun campo da aggiornare" }, { status: 400 });
         }

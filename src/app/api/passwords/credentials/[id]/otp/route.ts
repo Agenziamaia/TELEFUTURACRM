@@ -3,6 +3,7 @@ import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { cercaESpostaMailOtp } from "@/lib/email";
 import { profiloOtp, mittenteAtteso, codiceDaMessaggio, CARTELLA_OTP } from "@/lib/otpProfili";
+import { decifraSegreto, generaCodice, secondiResidui } from "@/lib/totp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,11 +42,40 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     if (isNaN(credId)) return NextResponse.json({ error: "Credenziale non valida" });
 
     const { data: cred } = await supabase.from("password_credentials")
-        .select("id, access_type, username, otp_account_id, otp_profilo")
+        .select("id, access_type, username, otp_account_id, otp_profilo, totp_secret_enc")
         .eq("id", credId).maybeSingle();
     if (!cred) return NextResponse.json({ error: "Credenziale non trovata" });
+
+    /* ══ DUE STRADE PER LO STESSO BISOGNO ═══════════════════════════════
+       C'è chi manda il codice via mail (Fastweb) e chi lo fa generare da
+       un'app sul telefono (Vodafone). Per chi lo chiede è la stessa cosa —
+       «dammi il codice» — e il pulsante è uno solo: qui si decide come
+       procurarselo. L'autenticatore ha la precedenza: è istantaneo e non
+       dipende dall'arrivo di una mail. */
+    if (cred.totp_secret_enc) {
+        let codice: string | null = null;
+        try { codice = generaCodice(decifraSegreto(cred.totp_secret_enc)); }
+        catch { codice = null; }
+        if (!codice) {
+            return NextResponse.json({ error: "La chiave dell'autenticatore non è leggibile: va reinserita dall'amministrazione." });
+        }
+        await supabase.from("password_access_log").insert({
+            credential_id: credId,
+            user_id: _s.id,
+            action: "otp",
+            details: { tipo: "authenticator" },     // mai il codice
+        }).then(undefined, () => { /* l'audit non blocca la consegna */ });
+
+        return NextResponse.json({
+            codice,
+            tipo: "authenticator",
+            // il tempo VERO che resta prima che cambi, non un conto inventato
+            secondi: secondiResidui(),
+        });
+    }
+
     if (!cred.otp_account_id || !cred.otp_profilo) {
-        return NextResponse.json({ error: "Per questa utenza non è configurata la casella dei codici. Chiedi all'amministrazione di collegarla." });
+        return NextResponse.json({ error: "Per questa utenza non è configurato il codice: serve la casella email dove arriva, oppure la chiave dell'autenticatore. Chiedi all'amministrazione." });
     }
 
     const profilo = profiloOtp(cred.otp_profilo);

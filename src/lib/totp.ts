@@ -31,6 +31,35 @@ export function generaSegreto(): string {
 export function otpauthUri(email: string, secret: string): string {
     return authenticator.keyuri(email || "utente", "Telefutura CRM", secret);
 }
+/* ══ GENERARE il codice, non solo verificarlo (Luca 28/08 sera) ═════════
+   Alcune utenze — Vodafone — vogliono il codice dell'app Authenticator, che
+   oggi vive sul telefono di una persona: se quella è in ferie o cambia
+   telefono, al portale non entra nessuno.
+   L'app non fa niente di magico: applica un algoritmo pubblico a una chiave
+   che il portale mostra una volta sola. Con quella chiave il codice lo sa
+   calcolare anche il CRM — è la stessa cosa che fa già per la propria verifica
+   in due passaggi, solo dall'altro lato. */
+
+/** Il codice a 6 cifre di adesso, dalla chiave dell'autenticatore. */
+export function generaCodice(secret: string): string | null {
+    try { return authenticator.generate(String(secret || "").replace(/\s+/g, "").toUpperCase()); }
+    catch { return null; }
+}
+
+/** Quanti secondi restano prima che il codice cambi (il passo è 30 secondi:
+ *  serve a mostrare il tempo vero, non un conto alla rovescia inventato). */
+export function secondiResidui(): number {
+    const passo = 30;
+    return passo - (Math.floor(Date.now() / 1000) % passo);
+}
+
+/** La chiave è scritta bene? Le chiavi degli autenticatori sono base32:
+ *  lettere A-Z e cifre 2-7, spesso mostrate a gruppi di quattro. */
+export function chiaveValida(secret: string): boolean {
+    const s = String(secret || "").replace(/\s+/g, "").toUpperCase();
+    return s.length >= 16 && /^[A-Z2-7]+=*$/.test(s) && !!generaCodice(s);
+}
+
 /** true se il codice a 6 cifre corrisponde al segreto (con tolleranza ±30s). */
 export function verificaCodice(code: string, secret: string): boolean {
     try { return authenticator.verify({ token: String(code || "").replace(/\D/g, ""), secret }); }
