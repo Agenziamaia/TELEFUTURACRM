@@ -258,6 +258,10 @@ export function DirezioneInserimentoAdmin() {
                     );
                 })}
                 <div className="flex items-center gap-2 shrink-0">
+                    {/* il registro sta QUI, in un angolo (Luca 28/08): una riga a
+                        tutta larghezza per una cosa che si guarda una volta ogni
+                        tanto era spazio buttato */}
+                    <RegistroConsigli brand={brand} />
                     <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[150px]">
                         {mesi.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
                     </select>
@@ -270,18 +274,40 @@ export function DirezioneInserimentoAdmin() {
                 ragazzi mostrerà «inserimento libero» invece dei consigli */}
             {dir && (() => {
                 const libero = dir.politiche["__libero__"]?.modo === "libero";
+                const nascosto = dir.politiche["__nascosto__"]?.modo === "nascosto";
                 const lKey = "pol|__libero__";
+                const nKey = "pol|__nascosto__";
+                /* DUE INTERRUTTORI, UNO ACCANTO ALL'ALTRO (Luca 28/08): quello
+                   spazio era largo e mezzo vuoto. A sinistra la regia (libero /
+                   guidato), a destra la presenza nel widget dei ragazzi. */
                 return (
-                    <div className={cn("glass-card p-3.5 flex flex-wrap items-center gap-3", libero && "border-emerald-500/30")}>
-                        <button type="button" onClick={() => salvaPolitica("__libero__", libero ? "guidato" : "libero")}
-                            className={cn("relative w-11 h-6 rounded-full transition-colors shrink-0", libero ? "bg-emerald-500" : "bg-white/15")}
-                            title={libero ? "Riattiva la regia degli inserimenti" : "Spegni la regia: inserimento libero"}>
-                            <span className={cn("absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all", libero ? "left-[22px]" : "left-0.5")} />
-                        </button>
-                        <span className="text-sm font-bold text-slate-100">🕊️ Inserimento libero per {bMeta.label}</span>
-                        <span className="text-[11px] text-slate-500">{libero ? "la Bussola dice ai ragazzi: «carica dove preferisci» — niente target né consigli" : "spento: vale la regia (target, politiche e consigli della Bussola)"}</span>
-                        {salvate[lKey] && <Check className="w-4 h-4 text-emerald-400" />}
-                        {erroriSalva[lKey] && <span className="text-[10px] font-bold text-rose-300">✗</span>}
+                    <div className="grid md:grid-cols-2 gap-3">
+                        <div className={cn("glass-card p-3.5 flex items-center gap-3", libero && "border-emerald-500/30")}>
+                            <button type="button" onClick={() => salvaPolitica("__libero__", libero ? "guidato" : "libero")}
+                                className={cn("relative w-11 h-6 rounded-full transition-colors shrink-0", libero ? "bg-emerald-500" : "bg-white/15")}
+                                title={libero ? "Riattiva la regia degli inserimenti" : "Spegni la regia: inserimento libero"}>
+                                <span className={cn("absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all", libero ? "left-[22px]" : "left-0.5")} />
+                            </button>
+                            <div className="min-w-0">
+                                <div className="text-sm font-bold text-slate-100">🕊️ Inserimento libero</div>
+                                <div className="text-[11px] text-slate-500 leading-snug">{libero ? "la Bussola dice: «carica dove preferisci» — niente target né consigli" : "spento: vale la regia (target, politiche e consigli)"}</div>
+                            </div>
+                            {salvate[lKey] && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                            {erroriSalva[lKey] && <span className="text-[10px] font-bold text-rose-300 shrink-0">✗</span>}
+                        </div>
+                        <div className={cn("glass-card p-3.5 flex items-center gap-3", nascosto && "border-slate-400/30")}>
+                            <button type="button" onClick={() => salvaPolitica("__nascosto__", nascosto ? "visibile" : "nascosto")}
+                                className={cn("relative w-11 h-6 rounded-full transition-colors shrink-0", nascosto ? "bg-slate-400" : "bg-white/15")}
+                                title={nascosto ? "Rimetti il brand nel widget dei ragazzi" : "Togli il brand dal widget: caricano dove vogliono, senza occupare spazio"}>
+                                <span className={cn("absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all", nascosto ? "left-[22px]" : "left-0.5")} />
+                            </button>
+                            <div className="min-w-0">
+                                <div className="text-sm font-bold text-slate-100">🙈 Nascondi dal widget</div>
+                                <div className="text-[11px] text-slate-500 leading-snug">{nascosto ? `${bMeta.label} non compare ai ragazzi: caricano dove vogliono` : "il brand compare nella Bussola dei ragazzi"}</div>
+                            </div>
+                            {salvate[nKey] && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                            {erroriSalva[nKey] && <span className="text-[10px] font-bold text-rose-300 shrink-0">✗</span>}
+                        </div>
                     </div>
                 );
             })()}
@@ -939,10 +965,6 @@ export function DirezioneInserimentoAdmin() {
                     })}
                     </div>
                     ))}
-                    {/* 👀 CHI HA GUARDATO (Luca 28/08): il registro dei consigli
-                        mostrati — per capire, quando un pezzo finisce sul codice
-                        sbagliato, se la Bussola era stata aperta e cosa diceva */}
-                    <RegistroConsigli brand={brand} />
                     {/* 📖 LEGENDA (Luca 27/08-9): le regole non scritte e i colori,
                         così i dubbi si risolvono qui e non in chat */}
                     <div className="glass-card p-4 space-y-3">
@@ -1010,10 +1032,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                 supabase.from("direzione_politiche").select("brand, pista, modo, updated_at").eq("month", mese),
             ]);
             const lib = new Set((pol.data || []).filter((r) => r.pista === "__libero__" && r.modo === "libero").map((r) => String(r.brand)));
-            const brands = [...new Set((tgt.data || []).map((r) => String(r.brand)))].filter((b) => DIR_BRANDS.some((x) => x.id === b) && !lib.has(b)) as DirBrandId[];
+            // brand NASCOSTI (Luca 28/08): fuori dal widget del tutto — i
+            // ragazzi caricano dove vogliono, senza che occupi una tessera
+            const nasc = new Set((pol.data || []).filter((r) => r.pista === "__nascosto__" && r.modo === "nascosto").map((r) => String(r.brand)));
+            const brands = [...new Set((tgt.data || []).map((r) => String(r.brand)))].filter((b) => DIR_BRANDS.some((x) => x.id === b) && !lib.has(b) && !nasc.has(b)) as DirBrandId[];
             const out = await Promise.all(brands.map((b) => caricaDirezione(b, mese).catch(() => null)));
             if (!vivo) return;
-            setLiberi(lib);
+            setLiberi(new Set([...lib].filter((b) => !nasc.has(b))));
             setDirs(out.filter(Boolean) as Direzione[]);
             // ultimo cambio della direzione (targets + politiche del mese)
             const ts = [...(tgt.data || []), ...(pol.data || [])].map((r) => String(r.updated_at || "")).filter(Boolean).sort().pop() || null;
@@ -1373,43 +1398,48 @@ function RegistroConsigli({ brand }: { brand: DirBrandId }) {
         const d = new Date(iso);
         return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     };
-    return (
-        <div className="glass-card p-4 space-y-3">
-            <button type="button" onClick={() => setAperto((v) => !v)} className="w-full flex items-center gap-2 text-left">
-                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">👀 Chi ha guardato la Bussola</span>
-                <span className="text-[10px] text-slate-600">ultimi consigli mostrati</span>
-                <span className={cn("ml-auto text-slate-500 transition-transform text-xs", aperto && "rotate-180")}>▾</span>
-            </button>
-            {aperto && (
-                righe === null ? <div className="text-[11px] text-slate-500 py-2">carico…</div>
-                    : !righe.length ? <div className="text-[11px] text-slate-500 py-2">Ancora nessuna apertura registrata per questo brand.</div>
-                        : (
-                            <div className="max-h-72 overflow-y-auto custom-scrollbar -mx-1 px-1">
-                                <table className="w-full text-[11px]">
-                                    <thead className="text-[10px] uppercase tracking-wider text-slate-500">
-                                        <tr className="border-b border-white/10">
-                                            <th className="text-left font-bold py-1.5">quando</th>
-                                            <th className="text-left font-bold">chi</th>
-                                            <th className="text-left font-bold">pista</th>
-                                            <th className="text-left font-bold">gli ha detto</th>
-                                            <th className="text-left font-bold">poi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {righe.map((r) => (
-                                            <tr key={r.id} className="border-b border-white/[0.04]">
-                                                <td className="py-1.5 text-slate-500 tabular-nums whitespace-nowrap">{quando(r.visto_il)}</td>
-                                                <td className="text-slate-200 font-semibold truncate max-w-[170px]" title={`${r.utente || "—"}${r.negozio ? " · " + r.negozio : ""}`}>{r.utente || "—"}</td>
-                                                <td className="text-slate-400">{r.pista || "—"}</td>
-                                                <td className="text-white font-bold">{r.consigliato || "—"}</td>
-                                                <td className="text-slate-500 truncate max-w-[160px]">{r.coda || ""}</td>
+    return (<>
+        <button type="button" onClick={() => setAperto(true)}
+            title="Chi ha aperto la Bussola e cosa gli è stato consigliato"
+            className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 shrink-0 text-sm leading-none">👀</button>
+        {aperto && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAperto(false)}>
+                <div className="glass-card p-5 w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/10">
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">👀 Chi ha guardato la Bussola</span>
+                        <span className="text-[10px] text-slate-500">ultimi consigli mostrati · {DIR_BRANDS.find((b) => b.id === brand)?.label}</span>
+                        <button onClick={() => setAperto(false)} className="ml-auto text-slate-500 hover:text-slate-200 text-lg leading-none">×</button>
+                    </div>
+                    {righe === null ? <div className="text-[11px] text-slate-500 py-4 text-center">carico…</div>
+                        : !righe.length ? <div className="text-[11px] text-slate-500 py-4 text-center">Ancora nessuna apertura registrata per questo brand.</div>
+                            : (
+                                <div className="overflow-y-auto custom-scrollbar -mx-1 px-1">
+                                    <table className="w-full text-[11px]">
+                                        <thead className="text-[10px] uppercase tracking-wider text-slate-500 sticky top-0 bg-[#0d1117]">
+                                            <tr className="border-b border-white/10">
+                                                <th className="text-left font-bold py-1.5">quando</th>
+                                                <th className="text-left font-bold">chi</th>
+                                                <th className="text-left font-bold">pista</th>
+                                                <th className="text-left font-bold">gli ha detto</th>
+                                                <th className="text-left font-bold">poi</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )
-            )}
-        </div>
-    );
+                                        </thead>
+                                        <tbody>
+                                            {righe.map((r) => (
+                                                <tr key={r.id} className="border-b border-white/[0.04]">
+                                                    <td className="py-1.5 text-slate-500 tabular-nums whitespace-nowrap">{quando(r.visto_il)}</td>
+                                                    <td className="text-slate-200 font-semibold truncate max-w-[190px]" title={`${r.utente || "—"}${r.negozio ? " · " + r.negozio : ""}`}>{r.utente || "—"}</td>
+                                                    <td className="text-slate-400">{r.pista || "—"}</td>
+                                                    <td className="text-white font-bold">{r.consigliato || "—"}</td>
+                                                    <td className="text-slate-500 truncate max-w-[180px]">{r.coda || ""}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                </div>
+            </div>
+        )}
+    </>);
 }
