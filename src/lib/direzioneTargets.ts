@@ -360,8 +360,11 @@ function vaCol(nome: string, tipoRiga: string | null | undefined, tc: string): b
    ⚠️ Cambiano solo le ETICHETTE: i punti restano quelli del tabellare. */
 const NOMI_CORTI: { re: RegExp; nome: string }[] = [
     // 📱 sotto la categoria Telefono, ripetere «telefono» è rumore
-    { re: /telefono.*finanziam/i, nome: "Finanziato" },
-    { re: /telefono.*(vendita a rate|a rate)/i, nome: "A rate" },
+    /* «finanziato» E «finanziamento»: la prima versione prendeva solo la
+       seconda, e sul mobile le due righe — che dicono la stessa cosa e valgono
+       uguale — smettevano di riconoscersi, comparendo DUE volte (Luca 28/08). */
+    { re: /telefon\w*\s+(in\s+)?finanzia\w*/i, nome: "Finanziato" },
+    { re: /telefon\w*.*(vendita a rate|a rate|rateizz\w*)/i, nome: "A rate" },
     // 🔄 i cambi piano: vincolato ↔ non vincolato, come li chiamano in negozio
     { re: /cambio offerta.*untied/i, nome: "Cambio piano non vincolato (Untied)" },
     { re: /cambio offerta.*(easy pay|smart pack)/i, nome: "Cambio piano vincolato (Tied)" },
