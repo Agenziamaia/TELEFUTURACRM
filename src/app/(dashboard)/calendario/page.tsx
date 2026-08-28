@@ -1314,7 +1314,21 @@ export default function Calendario() {
     const tasksByDate = (dateStr: string) =>
         tasks.filter(t => t.date === dateStr && taskVisibile(t) && (!taskOutcomeFilter || t.status === taskOutcomeFilter));
 
-    const meetingsByDate = (dateStr: string) => catOn("meeting") ? meetings.filter(m => m.date === dateStr) : [];
+    /* CHI VEDE UNA RIUNIONE (Luca 28/08: «ho messo una riunione per Acilia ma
+       la vedono tutti»). Non c'era NESSUN filtro: si filtrava solo per data,
+       quindi ogni riunione era di dominio pubblico — invitati, link della
+       videochiamata e risposte comprese. Ora la vede chi la riguarda. */
+    const vedoRiunione = (m: CalendarMeeting) => {
+        if (isCallCenter || seesAllStores(ruolo)) return true;              // direzione
+        if (nomeUguale(m.createdBy, user?.name)) return true;               // l'ho fissata io
+        const invitati = Array.isArray(m.recipients) ? m.recipients : [];
+        if (invitati.some((r) => r.id === user?.id || nomeUguale(r.name, user?.name))) return true;
+        // il responsabile vede le riunioni dei suoi: gli servono per sapere
+        // chi è occupato e quando
+        if (seesWholeStore(ruolo) && invitati.some((r) => r.store && mieiNegozi.some((n) => sameStore(r.store!, n)))) return true;
+        return false;
+    };
+    const meetingsByDate = (dateStr: string) => catOn("meeting") ? meetings.filter(m => m.date === dateStr && vedoRiunione(m)) : [];
 
     const handleDayClick = (day: number) => {
         selectDate(`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
