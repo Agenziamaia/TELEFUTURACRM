@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, ScanLine, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound, ClipboardCheck } from "lucide-react";
+import { Search, ScanLine, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound } from "lucide-react";
 import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
@@ -8,8 +8,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel, seesAllStores, areaOf } from "@/lib/roles";
 import { apriTelefono } from "@/lib/dialer";
-import { effectiveAllowed } from "@/lib/nav";
-import { useRolePermissions } from "@/lib/usePermissions";
 import { supabase } from "@/lib/supabaseClient";
 import { useRoles } from "@/lib/useRoles";
 import { cn } from "@/utils";
@@ -40,34 +38,9 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
     const { roles: allRoles } = useRoles();
     // utenti attivi del ruolo simulato, per impersonare la PERSONA (visibilita' sua)
     const [utentiRuolo, setUtentiRuolo] = useState<{ id: string; full_name: string; grade: string | null; primary_store: string | null }[]>([]);
-    // MOD-36/38: contatore voci aperte della sezione Verifiche — l'admin conta
-    // le da_verificare + le segnalazioni del delegato in attesa sua; un utente
-    // DELEGATO conta solo le verifiche assegnate a lui (bottone visibile solo
-    // se ne ha). Aggiornato a ogni navigazione; select difensivo.
-    const [verificheAperte, setVerificheAperte] = useState(0);
-    const isAdminVer = ["admin", "dev"].includes(user?.role || "");
-    // MOD-43 (Luca 10/08): la sezione si CONCEDE dai permessi (/verifiche) —
-    // per grado (store_manager@senior) o per persona (user:<id>), come Francesco
-    const { perms: permsVer } = useRolePermissions(user?.role, user?.grade, user?.id);
-    const puoVerifiche = isAdminVer || effectiveAllowed(user?.role, "/verifiche", ["admin", "dev"], permsVer);
-    useEffect(() => {
-        if (!user?.id) { setVerificheAperte(0); return; }
-        let vivo = true;
-        const q = isAdminVer
-            ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
-            : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
-        const ricarica = () => q.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
-        ricarica();
-        // la pagina Verifiche avvisa a ogni esito: il badge si aggiorna subito
-        const h = () => {
-            const q2 = isAdminVer
-                ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
-                : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
-            q2.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
-        };
-        window.addEventListener("verifiche-cambiate", h);
-        return () => { vivo = false; window.removeEventListener("verifiche-cambiate", h); };
-    }, [user?.id, isAdminVer, pathname]);
+    /* il contatore delle VERIFICHE non c'è più (Luca 28/08): la sezione è
+       spenta dal 26/08, e quella query partiva a ogni navigazione per ogni
+       utente per accendere un badge che non voleva dire più niente. */
     useEffect(() => {
         if (!viewAs) { setUtentiRuolo([]); return; }
         let vivo = true;
@@ -253,59 +226,9 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                 >
                     <Menu className="w-6 h-6" />
                 </button>
-                {/* Segnalazione 75: la barra di ricerca non faceva nulla. Ora cerca il
-                    cliente (nome, C.F./P.IVA, cellulare) e porta al suo contratto piu'
-                    recente. Rispetta il negozio dell'utente. */}
-                <div ref={boxRef} className="max-w-md w-full relative hidden md:block">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        {searching ? <Loader2 className="h-4 w-4 text-slate-500 animate-spin" /> : <Search className="h-4 w-4 text-slate-500" />}
-                    </div>
-                    <input
-                        type="text"
-                        value={q}
-                        onChange={(e) => { setQ(e.target.value); setOpenRes(true); }}
-                        onFocus={() => setOpenRes(true)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter" && hits.length > 0) apriHit(hits[0]);
-                            if (e.key === "Escape") setOpenRes(false);
-                        }}
-                        className="glass-input w-full pl-10 h-10 text-sm"
-                        placeholder="Cerca cliente: nome, C.F./P.IVA o cellulare…"
-                    />
-                    {openRes && q.trim().length >= 2 && (
-                        <div className="absolute left-0 right-0 top-full mt-2 rounded-xl border border-white/10 bg-[#161a26] shadow-2xl z-50 overflow-hidden">
-                            {hits.length === 0 ? (
-                                <p className="px-3 py-3 text-xs text-slate-500">
-                                    {searching ? "Ricerca in corso…" : "Nessun cliente trovato"}
-                                </p>
-                            ) : (
-                                <>
-                                    <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
-                                        Contratto più recente — Invio per il primo
-                                    </p>
-                                    {hits.map((h) => (
-                                        <button key={h.contractId} type="button" onClick={() => apriHit(h)}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5">
-                                            <span className="w-7 h-7 shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 flex items-center justify-center">
-                                                <UserIcon className="w-3.5 h-3.5 text-indigo-300" />
-                                            </span>
-                                            <span className="flex-1 min-w-0">
-                                                <span className="block text-sm text-white truncate">{h.cliente}</span>
-                                                <span className="block text-[10px] text-slate-500 truncate">
-                                                    {[h.cf, h.cellulare].filter(Boolean).join(" · ") || "—"}
-                                                </span>
-                                            </span>
-                                            <span className="shrink-0 text-right">
-                                                <span className="block text-[11px] text-slate-300">{[h.brand, h.prodotto].filter(Boolean).join(" · ") || "—"}</span>
-                                                <span className="block text-[10px] text-slate-500">{h.data || ""}</span>
-                                            </span>
-                                        </button>
-                                    ))}
-                                </>
-                            )}
-                        </div>
-                    )}
-                </div>
+                {/* la RICERCA CLIENTE non sta più qui (Luca 28/08): serviva lo
+                    spazio per la barra dinamica che arriva. La ricerca vive
+                    dentro le sezioni che la usano davvero. */}
             </div>
 
             <div className="flex items-center gap-6">
@@ -365,23 +288,9 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                         )}
                     </div>
                 )}
-                {/* VERIFICHE (MOD-36/38, Luca 10/08, "momentaneo"): admin — il
-                    recap degli update da esitare + sospesi; un utente DELEGATO
-                    vede il bottone solo se ha verifiche assegnate. */}
-                {(puoVerifiche || verificheAperte > 0) && (
-                    <button
-                        onClick={() => router.push("/verifiche")}
-                        title="Verifiche — update da esitare e questioni in sospeso"
-                        className="relative text-slate-400 hover:text-emerald-300 transition-colors"
-                    >
-                        <ClipboardCheck className="h-5 w-5" />
-                        {verificheAperte > 0 && (
-                            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center">
-                                {verificheAperte}
-                            </span>
-                        )}
-                    </button>
-                )}
+                {/* il bottone VERIFICHE è stato tolto (Luca 28/08): la sezione è
+                    spenta dal 26/08 e il suo contatore restava acceso in cima a
+                    tutti per niente. */}
                 {/* TEMA chiaro/scuro (Luca 29/07): come su telefoni e sistemi
                     operativi — ☀️ accende il chiaro, 🌙 torna allo scuro. */}
                 <button
@@ -432,18 +341,17 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                     password e LOG OUT (spostato qui dalla sidebar, dove ora vive
                     l'avviso delle comunicazioni da leggere) */}
                 <div className="relative" ref={menuUtenteRef}>
-                <button onClick={() => setMenuUtente((o) => !o)} title="Profilo, password e log out"
-                    className="flex items-center gap-3 pl-4 border-l border-white/10 cursor-pointer text-left">
-                    <div className="hidden text-right md:block">
-                        <p className="text-sm font-medium text-white leading-none">{user?.name || "Ospite"}</p>
-                        <p className={cn("text-xs mt-1", viewAs ? "text-amber-300 font-semibold" : "text-slate-400")}>
-                            {user?.role ? roleLabel(user.role) : "Nessun Ruolo"}{viewAsUser ? ` (simulato: ${viewAsUser.name})` : viewAs ? " (simulato)" : ""}
-                        </p>
-                    </div>
+                <button onClick={() => setMenuUtente((o) => !o)}
+                    title={`${user?.name || "Ospite"}${user?.role ? " · " + roleLabel(user.role) : ""}${viewAsUser ? " (simulato: " + viewAsUser.name + ")" : viewAs ? " (simulato)" : ""}`}
+                    className="flex items-center pl-4 border-l border-white/10 cursor-pointer">
+                    {/* solo le INIZIALI, stile Google (Luca 28/08): nome e ruolo
+                        stanno nel menu che si apre cliccando. Chi simula un
+                        altro ruolo lo vede dall'anello ambra. */}
                     <div className="relative">
                         {/* FOTO PROFILO (Luca 05/08): la foto caricata dal profilo appare
                             anche qui; senza foto restano le iniziali di sempre */}
-                        <AvatarUtente userId={user?.id} nome={user?.name || "Ospite"} className="w-9 h-9 text-xs border-2 border-indigo-500/40 text-indigo-300" />
+                        <AvatarUtente userId={user?.id} nome={user?.name || "Ospite"}
+                            className={cn("w-9 h-9 text-xs border-2", viewAs ? "border-amber-400/70 text-amber-200" : "border-indigo-500/40 text-indigo-300")} />
                         {profiloIncompleto && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-[#0f111a] animate-pulse" />}
                     </div>
                 </button>
