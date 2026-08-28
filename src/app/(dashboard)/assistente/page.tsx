@@ -128,19 +128,6 @@ function spuntiPer(user) {
 
 export default function AssistentePage() {
   const { user } = useAuth();
-  // Nascondere la voce di menu non basta: la pagina e' raggiungibile per URL.
-  if (!canUseAI(user?.role)) {
-    return (
-      <div className="w-full">
-        <div className="glass-card p-8 text-center">
-          <h2 className="text-xl font-bold text-white mb-2">Assistente AI</h2>
-          <p className="text-slate-400 text-sm">
-            Funzione riservata ai ruoli manageriali. Se ti serve, chiedi al tuo responsabile.
-          </p>
-        </div>
-      </div>
-    );
-  }
   const meId = user?.id;
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -165,6 +152,7 @@ export default function AssistentePage() {
   const [menuModello, setMenuModello] = useState(false);         // il menù del cervello, sopra la barra
   const [insegnaA, setInsegnaA] = useState(null);                // su quale risposta sto insegnando
   const [insegnamento, setInsegnamento] = useState("");
+  const [privacy, setPrivacy] = useState(false);          // la spiegazione del lucchetto
 
   const chiediSpazio = async () => {
     try {
@@ -274,6 +262,28 @@ export default function AssistentePage() {
   const spunti = useMemo(() => spuntiPer(user), [user?.role, user?.negozio, user?.primary_store]);
   /* le memorie come RIGHE: una cosa imparata per riga. Un unico testone non
      si legge e non fa capire che si può insegnare a pezzi. */
+  /* Oggi · Ieri · Ultimi 7 giorni · Prima — e le fissate sopra a tutto.
+     Dati che il server manda già: `ultimo_messaggio_at` e `fissata`. */
+  const gruppiConv = useMemo(() => {
+    const g = { fissate: [], oggi: [], ieri: [], settimana: [], prima: [] };
+    const ora = new Date();
+    const inizioOggi = new Date(ora.getFullYear(), ora.getMonth(), ora.getDate()).getTime();
+    for (const c of convDelProgetto) {
+      if (c.fissata) { g.fissate.push(c); continue; }
+      const t = new Date(c.ultimo_messaggio_at || 0).getTime();
+      if (t >= inizioOggi) g.oggi.push(c);
+      else if (t >= inizioOggi - 864e5) g.ieri.push(c);
+      else if (t >= inizioOggi - 7 * 864e5) g.settimana.push(c);
+      else g.prima.push(c);
+    }
+    return [
+      { titolo: "📌 Fissate", righe: g.fissate },
+      { titolo: "Oggi", righe: g.oggi },
+      { titolo: "Ieri", righe: g.ieri },
+      { titolo: "Ultimi 7 giorni", righe: g.settimana },
+      { titolo: "Prima", righe: g.prima },
+    ].filter((x) => x.righe.length);
+  }, [convDelProgetto]);
   const modelloAttivo = (spazio.modelli?.disponibili || []).find((m) => m.id === spazio.modelli?.attuale) || null;
   /* si cambia DA QUI, in un click: aprire un pannello per scegliere il
      cervello e poi salvare era una cerimonia per una cosa che si fa a metà
@@ -308,14 +318,43 @@ export default function AssistentePage() {
     if (r?.error) alert("Non sono riuscito a ricordarlo: " + r.error);
   };
 
+  /* ══ PERMESSI, DOPO GLI STATI (28/08 sera) ══════════════════════════
+     Nascondere la voce di menù non basta: l'indirizzo si può digitare. Ma
+     questo controllo stava PRIMA delle dichiarazioni di stato, e uscire di lì
+     faceva contare a React un numero di stati diverso fra un passaggio e
+     l'altro: ricaricando la pagina con F5 andava in errore. Dal menù non si
+     vedeva, perché lì l'utente è già caricato. Ora esce da qui, dove tutto è
+     già dichiarato. */
+  if (!canUseAI(user?.role)) {
+    return (
+      <div className="w-full">
+        <div className="glass-card p-8 text-center">
+          <h2 className="text-xl font-bold text-white mb-2">Assistente AI</h2>
+          <p className="text-slate-400 text-sm">
+            Funzione riservata ai ruoli manageriali. Se ti serve, chiedi al tuo responsabile.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex bg-[#0b0d14]">
+    /* ══ UNA SOLA SUPERFICIE ═══════════════════════════════════════════
+       Il fondo era opaco e copriva le sfumature del CRM: la pagina si leggeva
+       come un rettangolo estraneo appoggiato dentro l'app. Ora è velata, il
+       fondo dell'applicazione si vede sotto, e la pagina ci appartiene. */
+    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex relative overflow-hidden bg-[#0f111a]/60">
       <style>{AI_CSS}</style>
 
       {/* ══ LA BARRA: progetti e conversazioni, come in un'app di chat ══ */}
       {barraAperta && (
-        <aside className="w-64 shrink-0 border-r border-white/5 bg-[#0d1018] flex flex-col">
-          <div className="p-3 space-y-2 border-b border-white/5">
+        /* Nessun bordo, nessun colore proprio: una velatura sulla STESSA
+           superficie, e una sfumatura al posto della linea di taglio. Prima
+           erano due colonne affiancate di due colori diversi — con il menù del
+           CRM aperto se ne vedevano addirittura tre. */
+        <aside className="relative w-[264px] shrink-0 bg-white/[0.02] flex flex-col min-h-0">
+          <span aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-8 translate-x-full bg-gradient-to-r from-white/[0.03] to-transparent" />
+          <div className="p-3 pb-2 space-y-2">
             <button onClick={() => nuovaChat(null)}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
               <Plus className="w-4 h-4" /> Nuova conversazione
@@ -351,37 +390,72 @@ export default function AssistentePage() {
                 ))}
               </div>
             )}
-            <div>
-              <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
-                {progettoAperto ? "Conversazioni del progetto" : "Conversazioni"}
+            {/* ══ LE CONVERSAZIONI, IN ORDINE DI TEMPO ═══════════════════
+                Il server manda da sempre QUANDO hai parlato l'ultima volta con
+                ognuna, e quali hai fissato: la pagina buttava via tutt'e due e
+                mostrava un elenco piatto. Una lista che si allunga senza tempo
+                diventa illeggibile in due settimane. */}
+            {convDelProgetto.length === 0 ? (
+              <p className="px-2 py-3 text-[12px] text-slate-600">
+                {progettoAperto ? "Questo progetto è ancora vuoto." : "Le conversazioni che apri restano qui."}
               </p>
-              {convDelProgetto.length === 0 && <p className="px-2 text-xs text-slate-600 italic">Nessuna conversazione.</p>}
-              {convDelProgetto.map((c) => (
-                <div key={c.id} className="group/c flex items-center gap-1">
-                  <button onClick={() => apriChat(c.id)}
-                    className={cnx("flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-left transition-colors",
-                      convId === c.id ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/5")}>
-                    <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                    <span className="truncate">{c.titolo || "Nuova conversazione"}</span>
-                  </button>
-                  <button onClick={() => eliminaChat(c.id)} title="Elimina"
-                    className="opacity-0 group-hover/c:opacity-100 p-1 rounded text-slate-600 hover:text-rose-300">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
+            ) : gruppiConv.map((g) => (
+              <div key={g.titolo}>
+                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">{g.titolo}</p>
+                {g.righe.map((c) => (
+                  <div key={c.id} className="group/c relative flex items-center gap-1">
+                    {/* l'attiva si segna con una linguetta di luce nel margine,
+                        non con un riquadro: il riquadro spezza la colonna */}
+                    {convId === c.id && (
+                      <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-indigo-400 to-violet-500" />
+                    )}
+                    <button onClick={() => apriChat(c.id)}
+                      className={cnx("flex-1 min-w-0 flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-[13px] text-left transition-colors",
+                        convId === c.id ? "bg-white/[0.06] text-white" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200")}>
+                      {c.fissata && <span className="shrink-0 text-[10px] leading-none">📌</span>}
+                      <span className="truncate">{c.titolo || "Nuova conversazione"}</span>
+                    </button>
+                    <button onClick={() => eliminaChat(c.id)} title="Elimina"
+                      className="opacity-0 group-hover/c:opacity-100 p-1 rounded text-slate-600 hover:text-rose-300 transition-opacity">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
 
-          <button onClick={() => setImpostazioni(true)}
-            className="m-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-400 hover:bg-white/5 hover:text-white">
-            <Settings2 className="w-4 h-4" /> Personalità e memorie
-          </button>
+          {/* ══ IL PIEDE: CHI SEI, E CHE QUI SEI SOLO ═══════════════════
+              Prima c'era un secondo pulsante "Personalità e memorie", uguale a
+              quello in testata: due comandi per la stessa cosa fanno solo
+              chiedere quale dei due comandi.
+              Al suo posto la cosa che mancava davvero. Questo spazio è privato
+              per costruzione — le regole del database non consegnano a nessuno
+              le conversazioni di un altro, amministratore compreso — ma se non
+              lo si dice, nessuno lo sa: e chi non lo sa non ci scrive dentro le
+              cose che contano. */}
+          <div className="mt-auto p-3 space-y-2">
+            <button onClick={() => setPrivacy((v) => !v)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] transition-colors">
+              <span className="text-[13px] leading-none">🔒</span>
+              <span className="font-semibold">Solo tu — nemmeno l&apos;amministratore</span>
+            </button>
+            {privacy && (
+              <p className="ai-su px-2 text-[11px] text-slate-500 leading-relaxed">
+                Le conversazioni, i progetti e le memorie sono legati al tuo profilo dal database stesso: una
+                richiesta fatta con un altro account non le riceve, e non c&apos;è una schermata da cui leggerle.
+                Nessuno in azienda vede cosa scrivi qui — solo quante persone usano l&apos;assistente e quanto costa.
+              </p>
+            )}
+          </div>
         </aside>
       )}
 
     <div className="flex-1 min-w-0 flex flex-col">
-      <div className="flex items-center gap-3 px-5 h-14 border-b border-white/5 shrink-0">
+      {/* niente seconda testata (il CRM ne ha già una sopra): questi comandi
+          galleggiano sulla conversazione, senza linea che li separi. `min-h`
+          e non `h`: al massimo ingrandimento dei testi il contenuto usciva. */}
+      <div className="flex items-center gap-3 px-5 min-h-[52px] py-2 shrink-0">
         <button onClick={() => setBarraAperta((v) => !v)} title="Mostra/nascondi le conversazioni"
           className="p-1.5 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white">
           <PanelLeft className="w-4 h-4" />
@@ -413,7 +487,7 @@ export default function AssistentePage() {
              SUOI, che si può cominciare senza pensare cosa scrivere, e che
              questo assistente si può EDUCARE. Prima c'era una scintilla
              grigia e quattro frasi buone per chiunque. */
-          <div className="max-w-2xl mx-auto mt-6 sm:mt-10 ai-su">
+          <div className="max-w-3xl mx-auto mt-6 sm:mt-10 ai-su">
             <div className="text-center">
               <div className="relative inline-flex items-center justify-center mb-4">
                 <span className="absolute inset-0 rounded-full bg-indigo-500/25 blur-xl ai-alone" />
@@ -568,7 +642,11 @@ export default function AssistentePage() {
         </div>
       </div>
 
-      <div className="border-t border-white/5 px-4 py-3 shrink-0">
+      {/* Nessuna linea sopra la barra: una sfumatura che sale dal fondo. Il
+          testo scorre e si dissolve invece di essere tagliato — è la
+          differenza fra due riquadri accostati e una sola superficie. */}
+      <div className="relative px-4 py-3 shrink-0">
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-[#0f111a]/80 to-transparent" />
         <div className="max-w-3xl mx-auto">
           {/* ALLEGATI IN ATTESA (Luca 28/08): si vedono prima di mandare, con
               i KB, e si tolgono uno per uno. Quelli che non so leggere lo
@@ -624,7 +702,7 @@ export default function AssistentePage() {
                   {menuModello && (
                     <>
                       <div className="fixed inset-0 z-20" onClick={() => setMenuModello(false)} />
-                      <div className="absolute bottom-full mb-2 left-0 z-30 w-[290px] rounded-2xl border border-white/10 bg-[#12141d] shadow-2xl overflow-hidden ai-su">
+                      <div className="absolute bottom-full mb-2 left-0 z-30 w-[290px] rounded-2xl border border-white/10 bg-[#12141f] shadow-2xl ring-1 ring-white/10 overflow-hidden ai-su">
                         {(spazio.modelli?.disponibili || []).map((m) => (
                           <button key={m.id} onClick={() => cambiaModello(m.id)}
                             className={cnx("w-full text-left px-3.5 py-3 border-b border-white/5 last:border-0 transition-colors",
