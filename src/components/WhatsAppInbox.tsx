@@ -111,7 +111,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // spia «Tutti i numeri» apre la vista completa — ma i numeri protetti
     // da codice restano di titolare e admin, sempre
     const { perms: permessiWa } = useRolePermissions(user?.role, user?.grade, user?.id);
-    const waScope: "all" | "store" | "own" = useMemo(() => waScopeConPerms(user?.id, user?.role, permessiWa), [user?.id, user?.role, permessiWa]);
+    const waScope = useMemo(() => waScopeConPerms(user?.id, user?.role, permessiWa), [user?.id, user?.role, permessiWa]);
     const [protettiSet, setProtettiSet] = useState<Set<string> | null>(null);   // null = non ancora noto → fail-closed
     useEffect(() => { titolariProtettiWa().then(setProtettiSet).catch(() => { }); }, []);
     // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08 sera): un numero NOMINATO col
@@ -151,6 +151,13 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                 : instances.filter(i => !(i.owner_user_id && protettiSet.has(String(i.owner_user_id)) && i.owner_user_id !== user?.id));
         if (waScope === "all") return base;
         if (waScope === "own") return base.filter(i => i.owner_user_id === user?.id || condivisoNegozio(i) || supervisioneCC(i));
+        // PERIMETRI ALLARGATI dalla rotellina (Luca 28/08): la base «i suoi»
+        // più il reparto scelto
+        const mio = (i: Instance) => i.owner_user_id === user?.id || condivisoNegozio(i)
+            || (user?.role === "store_manager" && negoziIstanza(i).some(n => myStores.some(s => sameStore(n, s))));
+        if (waScope === "negozi_tutti") return base.filter(i => mio(i) || !i.owner_user_id);
+        if (waScope === "cc") return base.filter(i => mio(i) || (!!i.owner_user_id && areaOf((ruoliTitolari[i.owner_user_id] || "") as never) === "cc"));
+        if (waScope === "agenti") return base.filter(i => mio(i) || (!!i.owner_user_id && areaOf((ruoliTitolari[i.owner_user_id] || "") as never) === "ob"));
         // store manager: come da sempre TUTTI i numeri del suo negozio (anche
         // personali dei suoi), più i condivisi per nome e il suo personale
         return base.filter(i =>

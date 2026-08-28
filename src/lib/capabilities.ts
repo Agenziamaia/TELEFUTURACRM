@@ -608,8 +608,8 @@ export const CAP_EMAIL_ADMIN: CapGroupFlags = {
 export const WA_SECTION = "/chat";
 export const CAP_WA_CODICE: CapDef = {
     id: "codice",
-    label: "Chiede un codice per aprire WhatsApp",
-    desc: "Chi ha questa spia accesa, ogni volta che apre WhatsApp deve inserire un codice personale: senza, le conversazioni non si vedono. Il codice se lo sceglie da sé al primo ingresso e nessuno può rileggerlo (nemmeno l'admin): se lo dimentica lo si azzera e ne sceglie un altro. Cinque tentativi sbagliati bloccano per cinque minuti. Default: spenta per tutti.",
+    label: "WhatsApp Protetto",
+    desc: "Se accesa, l'utente può collegare un WhatsApp personale PROTETTO: al primo ingresso sceglie un codice e da lì in poi serve quello per aprire le conversazioni. Il numero resta visibile solo a lui e all'admin — nessun permesso di visibilità lo scavalca. Il codice non è rileggibile da nessuno: se lo dimentica, si azzera e ne sceglie un altro; cinque tentativi sbagliati bloccano per cinque minuti. Default: spenta per tutti.",
     default: () => false,
 };
 
@@ -635,13 +635,31 @@ export const CAP_CHAT: CapGroupFlags = {
 // codice, che restano dell'admin e del titolare e basta.
 export const CAP_WA_TUTTI: CapDef = {
     id: "wa_tutti",
-    label: "Tutti i numeri",
-    desc: "Vede tutti i numeri WhatsApp collegati, a prescindere dai negozi in visibilità. Restano comunque esclusi i numeri personali protetti da codice: quelli li vedono solo l'admin e il titolare. Default: spenta per tutti.",
+    label: "Tutti",
+    desc: "Vede tutti i numeri WhatsApp collegati: negozi, call center e agenti. Restano comunque esclusi i personali protetti da lucchetto — quelli li vede solo l'admin (e il titolare). Default: spenta per tutti.",
+    default: () => false,
+};
+export const CAP_WA_NEGOZI_TUTTI: CapDef = {
+    id: "wa_negozi_tutti",
+    label: "Tutti i negozi",
+    desc: "Oltre ai suoi: i numeri di TUTTI i punti vendita della rete (quelli intestati ai negozi, non i personali).",
+    default: () => false,
+};
+export const CAP_WA_CC: CapDef = {
+    id: "wa_cc",
+    label: "Tutti quelli del call center",
+    desc: "Oltre ai suoi: i numeri delle persone del reparto call center.",
+    default: () => false,
+};
+export const CAP_WA_AGENTI: CapDef = {
+    id: "wa_agenti",
+    label: "Tutti gli agenti",
+    desc: "Oltre ai suoi: i numeri delle persone del reparto agenti.",
     default: () => false,
 };
 export const CAP_WA_NEGOZI_VISTA: CapDef = {
     id: "wa_negozi",
-    label: "Solo i suoi negozi",
+    label: "Solo i negozi assegnati",
     desc: "Vede il suo numero personale e i numeri dei punti vendita che ha in visibilità. Default per tutti.",
     default: () => true,
 };
@@ -649,10 +667,10 @@ export const CAP_WA_VISTA: CapGroupChoice = {
     mode: "choice",
     section: WA_SECTION,
     sectionLabel: "Chat — WhatsApp",
-    caps: [CAP_WA_TUTTI, CAP_WA_NEGOZI_VISTA],
+    caps: [CAP_WA_TUTTI, CAP_WA_NEGOZI_TUTTI, CAP_WA_CC, CAP_WA_AGENTI, CAP_WA_NEGOZI_VISTA],
     fallback: {
         id: "wa_negozi",
-        label: "Solo i suoi negozi",
+        label: "Solo i negozi assegnati",
         desc: "Vede il suo numero personale e i numeri dei punti vendita che ha in visibilità. Default per tutti.",
     },
 };

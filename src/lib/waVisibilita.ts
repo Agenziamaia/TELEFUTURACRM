@@ -6,13 +6,14 @@
 // l'inbox mostra: stesse utenze, e solo quelle CONNESSE (l'inbox nasconde
 // le chat delle disconnesse).
 import { sameStore } from "@/lib/visibleStores";
+import { areaOf } from "@/lib/roles";
 import { capChoice, capKey, CAP_WA_VISTA, CAP_WA_CODICE, WA_SECTION } from "@/lib/capabilities";
 import type { PermMap } from "@/lib/nav";
 import { supabase } from "@/lib/supabaseClient";
 
 export const WA_LUCA_ID = "0355d28b-968f-4089-93b7-b8b5eeeda40c";
 
-export type WaScope = "all" | "store" | "own";
+export type WaScope = "all" | "store" | "own" | "cc" | "negozi_tutti" | "agenti";
 
 export function waScopeDi(userId?: string | null, role?: string | null): WaScope {
     if (userId === WA_LUCA_ID) return "all";
@@ -31,7 +32,11 @@ export function vedeProtettiWa(userId?: string | null, role?: string | null): bo
  *  negozi; per il resto vale la regola storica. */
 export function waScopeConPerms(userId: string | null | undefined, role: string | null | undefined, perms: PermMap | null): WaScope {
     if (userId === WA_LUCA_ID || role === "admin" || role === "dev") return "all";
-    if (capChoice(role, CAP_WA_VISTA, perms) === "wa_tutti") return "all";
+    const scelta = capChoice(role, CAP_WA_VISTA, perms);
+    if (scelta === "wa_tutti") return "all";
+    if (scelta === "wa_negozi_tutti") return "negozi_tutti";
+    if (scelta === "wa_cc") return "cc";
+    if (scelta === "wa_agenti") return "agenti";
     if (role === "store_manager") return "store";
     return "own";
 }
@@ -41,7 +46,7 @@ export function waScopeConPerms(userId: string | null | undefined, role: string 
 export async function waScopeRisolto(userId?: string | null, role?: string | null): Promise<WaScope> {
     if (userId === WA_LUCA_ID || role === "admin" || role === "dev") return "all";
     try {
-        const chiavi = [capKey(WA_SECTION, "wa_tutti"), capKey(WA_SECTION, "wa_negozi")];
+        const chiavi = ["wa_tutti", "wa_negozi_tutti", "wa_cc", "wa_agenti", "wa_negozi"].map((id) => capKey(WA_SECTION, id));
         const soggetti = [role || "", userId ? `user:${userId}` : ""].filter(Boolean);
         const { data } = await supabase.from("role_permissions").select("role, perm_key, allowed")
             .in("role", soggetti).in("perm_key", chiavi);
@@ -92,9 +97,14 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
     userId: string | null | undefined,
     role: string | null | undefined,
     myStores: string[],
-    opts: { soloConnesse?: boolean; scope?: WaScope; protetti?: Set<string> | null; vedeProtetti?: boolean } = {},
+    opts: { soloConnesse?: boolean; scope?: WaScope; protetti?: Set<string> | null; vedeProtetti?: boolean; ruoloDi?: (ownerId: string) => string | null | undefined } = {},
 ): T[] {
     const scope = opts.scope || waScopeDi(userId, role);
+    // area del titolare, per i perimetri «call center» e «agenti»
+    const areaOwner = (i: T) => {
+        const r = i.owner_user_id ? opts.ruoloDi?.(String(i.owner_user_id)) : null;
+        return r ? areaOf(String(r)) : null;
+    };
     // NUMERI DI NEGOZIO AUTOMATICI (Luca 25/08): SOLO i numeri SENZA titolare
     // si condividono per nome/negozio (rilievo alto del revisore: i personali
     // hanno negozio = primary_store dal create → i colleghi si vedevano le
@@ -113,8 +123,15 @@ export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string
         if (opts.protetti && i.owner_user_id && opts.protetti.has(String(i.owner_user_id))
             && !opts.vedeProtetti && i.owner_user_id !== userId) return false;
         if (scope === "all") return true;
+        // la BASE è sempre «i suoi»: personale + negozi assegnati
+        const base = (!!userId && i.owner_user_id === userId) || condiviso(i)
+            || (role === "store_manager" && negoziDi(i).some((n) => myStores.some((s) => sameStore(n, s))));
         if (scope === "store") return negoziDi(i).some((n) => myStores.some((s) => sameStore(n, s)))
             || condiviso(i) || (!!userId && i.owner_user_id === userId);
+        // i PERIMETRI ALLARGATI (Luca 28/08): la base più il reparto scelto
+        if (scope === "negozi_tutti") return base || !i.owner_user_id;   // i numeri di negozio sono quelli senza titolare
+        if (scope === "cc") return base || areaOwner(i) === "cc";
+        if (scope === "agenti") return base || areaOwner(i) === "ob";
         return (!!userId && i.owner_user_id === userId) || condiviso(i);
     });
 }
