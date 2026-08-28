@@ -462,9 +462,12 @@ export function esitoAdminDefinitivo(statoAdmin: string, categoria: string, bran
 
 /** MARCHIATA (Luca 27/08): è passata per Non Conforme almeno una volta —
  *  lo stato corrente o un evento admin nella storia (l'EX incluso). */
-export function èMarchiataNonConforme(row: { statoAdmin: string; storia?: TrackingRow["storia"] }): boolean {
+export function èMarchiataNonConforme(row: { statoAdmin: string; storia?: TrackingRow["storia"]; categoria?: string }): boolean {
   if (row.statoAdmin === "non_conforme" || row.statoAdmin === "ex_non_conforme") return true;
-  return (row.storia || []).some((ev) => ev.tipo === "stato_admin" && /non conforme/i.test(ev.testo || ""));
+  // solo gli eventi di QUESTA riga: su una pratica scissa il «non conforme»
+  // della fibra non marchia la TV (Luca 28/08)
+  return (row.storia || []).some((ev) => (!ev.cat || ev.cat === row.categoria)
+    && ev.tipo === "stato_admin" && /non conforme/i.test(ev.testo || ""));
 }
 
 /** Il filtro «Non Conforme» mostra le NC vive E le marchiate (EX) finché

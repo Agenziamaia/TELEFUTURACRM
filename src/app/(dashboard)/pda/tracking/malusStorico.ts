@@ -188,13 +188,23 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     malus_euro: euro,
   };
 
+  /* SOLO GLI EVENTI DI QUESTA RIGA (Luca 28/08). Su una pratica SCISSA — 3P
+     Sky (fibra + TV), mobile con MNP + finanziamento — lo storico è uno solo
+     ma le lavorazioni sono due: senza questo filtro l'esito admin della fibra
+     faceva maturare il malus anche sulla TV. Gli eventi senza `cat` sono
+     quelli di prima del 28/08 e quelli delle pratiche non scisse: valgono per
+     tutte le righe, come hanno sempre fatto. */
+  const dellaRiga = (ev: StoriaEvent) => !ev.cat || ev.cat === row.categoria;
+
   // TUTTI gli eventi datati: serve all'ancora del malus amministrativo, che
   // deve restare attaccata all'esito che lo genera
   const eventiTutti = (row.storia || [])
+    .filter(dellaRiga)
     .map((ev) => ({ ev, d: parseData(ev.data) }))
     .filter((x): x is { ev: StoriaEvent; d: Date } => !!x.d)
     .sort((x, y) => x.d.getTime() - y.d.getTime());
   const eventi = (row.storia || [])
+    .filter(dellaRiga)
     .map((ev) => ({ ev, d: parseData(ev.data) }))
     .filter((x): x is { ev: StoriaEvent; d: Date } => !!x.d)
     // GUARDIA 1 (27/08): gli eventi dell'AMMINISTRAZIONE non spezzano il

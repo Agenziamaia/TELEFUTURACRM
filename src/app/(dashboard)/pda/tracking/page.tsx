@@ -921,20 +921,20 @@ function Drawer({
       const fuJson = JSON.stringify(s.fu);
       const cambioFu = row.categoria === "piva" && fuJson !== baseFu.current;
       if (s.statoN !== baseN.current) {
-        eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN, row.categoria, row.brand).label, utente: nomeUtente, ruolo: "negozio" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN, row.categoria, row.brand).label, utente: nomeUtente, ruolo: "negozio" , cat: row.categoria });
         // EX NON CONFORME (Luca 27/08): il negozio ha RILAVORATO una pratica
         // Non Conforme → il marchio scatta da solo, il malus giornaliero si
         // ferma qui (l'episodio si chiude a questa data) e la pratica rivive
         // il ciclo normale restando nel filtro non conformi
         if (baseA.current === "non_conforme") {
-          eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_admin", testo: "Esito admin aggiornato: EX Non Conforme — automatico: il negozio ha rilavorato la pratica", utente: "Sistema", ruolo: "admin" });
+          eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_admin", testo: "Esito admin aggiornato: EX Non Conforme — automatico: il negozio ha rilavorato la pratica", utente: "Sistema", ruolo: "admin" , cat: row.categoria });
           s.statoA = "ex_non_conforme";
           baseA.current = "ex_non_conforme";
           setEditStatoA("ex_non_conforme");
         }
       }
       if (nota) {
-        eventi.push({ data: oggi, ora: oraDiOra, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" , cat: row.categoria });
       }
       if (s.statoN !== baseN.current || nota || cambioFu) {
         dirty = true;
@@ -948,10 +948,10 @@ function Drawer({
     if (origine !== "negozio") {
       const nota = s.notaA.trim();
       if (s.statoA !== baseA.current) {
-        eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_admin", testo: "Esito admin aggiornato: " + getStatoA(s.statoA).label, utente: nomeUtente, ruolo: "admin" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "stato_admin", testo: "Esito admin aggiornato: " + getStatoA(s.statoA).label, utente: nomeUtente, ruolo: "admin" , cat: row.categoria });
       }
       if (nota) {
-        eventi.push({ data: oggi, ora: oraDiOra, tipo: "nota_admin", testo: nota, utente: nomeUtente, ruolo: "admin" });
+        eventi.push({ data: oggi, ora: oraDiOra, tipo: "nota_admin", testo: nota, utente: nomeUtente, ruolo: "admin" , cat: row.categoria });
       }
       if (s.statoA !== baseA.current || nota) {
         dirty = true;
@@ -1598,16 +1598,16 @@ export default function TrackingPdaPage() {
       if (baseErr) throw baseErr;
 
       // Optional: fetch tracking columns (requires migration 022). If it fails, we still show contracts with defaults.
-      let trackingMap = new Map<string, { stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }>();
-      const { data: trackingData, error: trackingErr } = await caricaTutte<{ id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }>((from, to) =>
-        supabase.from("contracts").select("id, stato_negozio, stato_admin, storia, stati_categoria")
+      let trackingMap = new Map<string, { stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string>; stati_admin_categoria?: Record<string, string> }>();
+      const { data: trackingData, error: trackingErr } = await caricaTutte<{ id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string>; stati_admin_categoria?: Record<string, string> }>((from, to) =>
+        supabase.from("contracts").select("id, stato_negozio, stato_admin, storia, stati_categoria, stati_admin_categoria")
           .order("created_at", { ascending: false }).order("id").range(from, to));
 
       if (!trackingErr && trackingData?.length) {
         trackingMap = new Map(
-          (trackingData as { id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }[]).map((r) => [
+          (trackingData as { id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string>; stati_admin_categoria?: Record<string, string> }[]).map((r) => [
             r.id,
-            { stato_negozio: r.stato_negozio, stato_admin: r.stato_admin, storia: r.storia, stati_categoria: r.stati_categoria },
+            { stato_negozio: r.stato_negozio, stato_admin: r.stato_admin, storia: r.storia, stati_categoria: r.stati_categoria, stati_admin_categoria: r.stati_admin_categoria },
           ])
         );
       }
@@ -1794,10 +1794,20 @@ export default function TrackingPdaPage() {
       // in stati_categoria; se manca si eredita da stato_negozio, cosi' le
       // pratiche gia' lavorate non perdono lo stato.
       const perCat = (r.stati_categoria as Record<string, string> | undefined) || {};
+      /* ESITO ADMIN PER RIGA (Luca 28/08): «sul 3P la fibra e la TV hanno due
+         percorsi completamente diversi, e anche il finanziamento col mobile
+         MNP» — un contratto solo, ma due lavorazioni. L'esito negozio era già
+         per riga (stati_categoria); quello admin no, viveva in una colonna
+         sola e si copiava su entrambe. La chiave è quella indicata da Luca:
+         codice contratto + categoria. Se la riga non ha ancora un esito suo,
+         eredita quello vecchio della pratica — così le 168 pratiche già
+         scisse non cambiano da sole. */
+      const perCatAdmin = (r.stati_admin_categoria as Record<string, string> | undefined) || {};
       cats.forEach((c) => out.push({
         ...base,
         categoria: c,
         rowKey: `${base.id}#${c}`,
+        statoAdmin: perCatAdmin[c] ?? base.statoAdmin,
         // #119: ogni riga (categoria) e' INDIPENDENTE. Se la categoria non ha un
         // esito proprio in stati_categoria, eredita lo stato_negozio condiviso SOLO
         // se e' VALIDO per quella categoria (retrocompat delle pratiche vecchie il cui
@@ -2211,9 +2221,12 @@ export default function TrackingPdaPage() {
       // questo callback ha deps [] e nel suo closure `rawList` e' quello del primo
       // render (vuoto), quindi il merge partiva da {} e CANCELLAVA le altre categorie
       // gia' salvate (corruzione della riga sorella allo "Salva esito negozio").
-      const { data: _cur } = await supabase.from("contracts").select("stati_categoria, dettagli").eq("id", updated.id).maybeSingle();
+      const { data: _cur } = await supabase.from("contracts").select("stati_categoria, stati_admin_categoria, dettagli").eq("id", updated.id).maybeSingle();
       const attuali = ((_cur?.stati_categoria as Record<string, string>) || {});
       const nuoviStati = { ...attuali, [cat]: updated.statoNegozio };
+      // idem per l'ADMIN, sulla sua casella (Luca 28/08)
+      const attualiAdmin = ((_cur?.stati_admin_categoria as Record<string, string>) || {});
+      const nuoviAdmin = { ...attualiAdmin, [cat]: updated.statoAdmin };
 
       // Lo stato del contratto e' "Attivo" solo quando TUTTI i controlli sono
       // completati: con due verifiche aperte la pratica non e' finita.
@@ -2223,12 +2236,14 @@ export default function TrackingPdaPage() {
         : statoContrattoDa(tuttiStati.find((st) => statoContrattoDa(st) !== "Attivo") ?? updated.statoNegozio);
 
       const payload: Record<string, unknown> = {
-        stato_admin: updated.statoAdmin,
         storia: updated.storia,
         stato: statoContratto,
         stati_categoria: nuoviStati,
+        stati_admin_categoria: nuoviAdmin,
       };
-      if (!rigaEspansa) payload.stato_negozio = updated.statoNegozio;
+      // sulla pratica SCISSA gli esiti stanno solo nelle loro caselle: le
+      // colonne condivise resterebbero l'una sopra l'altra (Luca 28/08)
+      if (!rigaEspansa) { payload.stato_negozio = updated.statoNegozio; payload.stato_admin = updated.statoAdmin; }
       // MOD-27: i follow-up P.IVA (cliente irreperibile) vivono in dettagli —
       // prima non venivano MAI persistiti; si scrivono solo quando cambiano
       if (opts?.salvaFollowup) {

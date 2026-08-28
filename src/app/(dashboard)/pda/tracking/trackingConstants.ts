@@ -161,6 +161,11 @@ export type StoriaEvent = {
   // ORARIO dell'azione (Luca 27/08) — campo a parte: `data` resta il formato
   // storico su cui lavora la ricostruzione del malus
   ora?: string;
+  /** LA RIGA a cui l'evento appartiene, sulle pratiche SCISSE (Luca 28/08):
+   *  un 3P Sky è fibra + TV, un mobile può essere MNP + finanziamento — un
+   *  contratto solo, due lavorazioni. Assente = evento della pratica intera
+   *  (tutto lo storico fino al 28/08, e le pratiche non scisse). */
+  cat?: string;
 };
 
 export type FollowUpItem = { label: string; data: string; esito: string; note: string };
