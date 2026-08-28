@@ -1186,7 +1186,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
             : (consigliato?.negozio || null);
     const codaMostrata = pista === BIZMOB
         ? (biz?.scelto ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
-        : pistaDiGruppo ? [] : altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio);
+        : pistaDiGruppo ? [] : /fisso/i.test(pista) ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
 
     /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
        non si è potuto sapere se chi ha caricato avesse davvero guardato la
@@ -1369,10 +1369,11 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         </div>
                     </div>
                 )}
-                {/* stessa regola sul FISSO (Luca 28/08) e su ogni pista che ha un
-                    target per codice: la seconda va dove serve dopo, non sullo
-                    stesso codice */}
-                {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
+                {/* SOLO SUL FISSO (Luca 28/08). L'avevo messa su tutte le piste a
+                    target per codice, e finiva anche sulla Customer Base e sul
+                    mobile, dove un codice ne assorbe decine: lì «una per codice»
+                    non è la regola. Resta dove i pezzi sono pochi e contano. */}
+                {pista !== BIZMOB && !pistaDiGruppo && consigliato && /fisso/i.test(pista) && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}
 
