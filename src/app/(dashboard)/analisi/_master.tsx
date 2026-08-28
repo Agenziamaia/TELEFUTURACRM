@@ -37,18 +37,14 @@ const stessoNome = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y
 const PISTA_LABEL = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", cb: "Customer Base", business_piva: "Business (eventi)", business_mobile: "Business mobile", business_fisso: "Business fisso", soluzioni_digitali: "Soluzioni digitali", vas: "VAS", luce: "Luce", gas: "Gas" };
 const PISTA_EMOJI = { mobile: "📱", fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", sky: "🟣", cb: "🔁", business_piva: "💼", business_mobile: "💼", business_fisso: "💼", soluzioni_digitali: "🧩", vas: "✨", luce: "💡", gas: "🔥" };
 
-export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, meseCorrente, istantanea, onIstantanea }) {
-    const [lente, setLente] = useState("codici");
+/* I FILTRI DEL MASTER STANNO NELLA BARRA DEL PERIODO (Luca 28/08 sera).
+   La lente Codici/Negozi, la scelta dei punti vendita e l'interruttore
+   Ieri sera/Adesso avevano una riga tutta loro sopra le carte: spazio buttato,
+   e filtri separati da quelli che si usano insieme. Ora arrivano da fuori —
+   qui restano solo i filtri per singolo brand, che appartengono alle carte. */
+export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, meseCorrente, lente = "codici", negSel = [] }) {
     const [codSel, setCodSel] = useState({ w3: [], vf: [], sky: [], fw: [] });
-    const [negSel, setNegSel] = useState([]);
     const [drill, setDrill] = useState(null);
-
-    const negoziTutti = useMemo(() => {
-        const per = new Map();
-        for (const it of items) { if (it.negozio === "—") continue; per.set(it.negozio, (per.get(it.negozio) || 0) + 1); }
-        // alfabetica come la tendina dell'area Negozio (Luca 25/08)
-        return [...per.keys()].sort((a, b) => a.localeCompare(b, "it"));
-    }, [items]);
 
     const itemsDi = (b) => items.filter((it) => it.brandGara === b);
     const filtra = (arr, b) => lente === "codici"
@@ -76,40 +72,6 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
 
     return (
         <div className="space-y-4">
-            {/* barra descrittiva ELIMINATA (Luca 24/08: «non ha senso di
-                esistere») — resta solo lo switch, a destra sotto il periodo */}
-            <div className="an-in flex justify-end items-center gap-2 -mt-1 flex-wrap">
-                {/* ADESSO ↔ IERI SERA (Luca 28/08 sera): la produzione si muove
-                    solo dopo l'ora di scatto, e chi dirige gli inserimenti stava
-                    scegliendo i codici sui numeri della sera prima. */}
-                {typeof onIstantanea === "function" && (
-                    <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10 mr-auto">
-                        {[
-                            { v: false, l: "🌙 Ieri sera", t: "Produzione consolidata: la giornata di oggi entra dopo l'ora di scatto. È il dato con cui si ragiona sui compensi." },
-                            { v: true, l: "⚡ Adesso", t: "Comprese le vendite registrate oggi, punti inclusi. È il dato con cui scegliere su quale codice inserire." },
-                        ].map((x) => (
-                            <button key={String(x.v)} onClick={() => onIstantanea(x.v)} title={x.t}
-                                className={cn("px-3.5 py-2 rounded-lg text-xs font-black transition-all",
-                                    !!istantanea === x.v
-                                        ? (x.v ? "bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30" : "bg-slate-500/60 text-white")
-                                        : "text-slate-400 hover:text-white")}>
-                                {x.l}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                {/* con la lente NEGOZI torna la multiselezione dei PV (Luca
-                    25/08: era sparita insieme alla barra descrittiva) */}
-                {lente === "negozi" && (
-                    <SelectMulti values={negSel} onChange={setNegSel} opzioni={negoziTutti} placeholder="tutti i negozi…" maxVoci={100} className="min-w-[240px]" />
-                )}
-                <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
-                    {[{ id: "codici", l: "🎯 Codici" }, { id: "negozi", l: "🏪 Negozi" }].map((x) => (
-                        <button key={x.id} onClick={() => setLente(x.id)} className={cn("px-3.5 py-2 rounded-lg text-xs font-black transition-all", lente === x.id ? "bg-fuchsia-500/80 text-white shadow-lg shadow-fuchsia-500/30" : "text-slate-400 hover:text-white")}>{x.l}</button>
-                    ))}
-                </div>
-            </div>
-
             {/* PRATICHE NON VALIDE (Luca 27/08): quante ne sono state tolte dal
                 conto, e perché. Sta qui perché è la plancia di chi controlla i
                 numeri: una pratica sparita dal commissioning deve avere un

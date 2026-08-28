@@ -243,6 +243,12 @@ function AnalisiInner() {
        La scelta resta a chi l'ha fatta: la direzione inserimenti lavora tutto
        il giorno su «Adesso» e non deve rimetterlo a ogni apertura. */
     const [istantanea, setIstantanea] = useState(false);
+    /* I FILTRI STANNO TUTTI INSIEME (Luca 28/08 sera): la lente del Master e la
+       scelta dei negozi vivevano in una riga tutta loro sopra le carte, che
+       rubava spazio e separava filtri che si usano insieme. Lo stato sta qui
+       perché la barra dei filtri è qui; il Master lo riceve e basta. */
+    const [lenteMaster, setLenteMaster] = useState("codici");
+    const [negSelMaster, setNegSelMaster] = useState([]);
     useEffect(() => {
         if (!user?.id) return;
         try { setIstantanea(localStorage.getItem("tf_analisi_istantanea_" + user.id) === "1"); } catch { /* niente memoria: parte consolidata */ }
@@ -365,6 +371,13 @@ function AnalisiInner() {
     }, [chiaveP, user?.id, tentativo, istantanea]);
 
     const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, p.prW3, p.assW3, idxDi)), [dati, idxDi]);
+    // i negozi che compaiono nella produzione, per la tendina del Master
+    // (stessa lista di prima, solo calcolata dove ora vive il filtro)
+    const negoziMaster = useMemo(() => {
+        const visti = new Set();
+        for (const it of items) if (it.negozio && it.negozio !== "—") visti.add(it.negozio);
+        return [...visti].sort((a, b) => a.localeCompare(b, "it"));
+    }, [items]);
     const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, dati.prev.prW3, dati.prev.assW3, null) : [], [dati]);
 
     // righe RAW del periodo per le gare di Rete/Regia (solo mese singolo:
@@ -713,6 +726,39 @@ function AnalisiInner() {
                             <SelectOpzioni value={collab || TUTTI} onChange={(v) => setCollabSel(v)} opzioni={[TUTTI, ...squadraNegozio]} placeholder="tutti…" className="min-w-[180px]" />
                         </div>
                     )}
+                    {/* MASTER: i suoi filtri stanno qui con gli altri (Luca 28/08
+                        sera) — la riga che avevano sopra le carte era spazio buttato */}
+                    {area === "regia" && areePermesse.has("regia") && (
+                        <>
+                            <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+                                {[
+                                    { v: false, l: "🌙 Ieri sera", t: "Produzione consolidata: la giornata di oggi entra dopo l'ora di scatto. È il dato con cui si ragiona sui compensi." },
+                                    { v: true, l: "⚡ Adesso", t: "Comprese le vendite registrate oggi, punti inclusi. È il dato con cui scegliere su quale codice inserire." },
+                                ].map((x) => (
+                                    <button key={String(x.v)} onClick={() => cambiaIstantanea(x.v)} title={x.t}
+                                        className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                                            istantanea === x.v
+                                                ? (x.v ? "bg-emerald-500/80 text-white shadow" : "bg-slate-500/60 text-white")
+                                                : "text-slate-400 hover:text-white")}>
+                                        {x.l}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+                                {[{ id: "codici", l: "🎯 Codici" }, { id: "negozi", l: "🏪 Negozi" }].map((x) => (
+                                    <button key={x.id} onClick={() => setLenteMaster(x.id)}
+                                        className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                                            lenteMaster === x.id ? "bg-fuchsia-500/80 text-white shadow" : "text-slate-400 hover:text-white")}>
+                                        {x.l}
+                                    </button>
+                                ))}
+                            </div>
+                            {lenteMaster === "negozi" && (
+                                <SelectMulti values={negSelMaster} onChange={setNegSelMaster} opzioni={negoziMaster}
+                                    placeholder="tutti i negozi…" maxVoci={100} className="min-w-[220px]" />
+                            )}
+                        </>
+                    )}
                 </div>
                 {/* TIMELINE DI PRODUZIONE nell'header (Luca 24/08): tutta la
                     produzione giorno per giorno, brand cliccabili per filtrare */}
@@ -740,7 +786,7 @@ function AnalisiInner() {
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
                     {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [], oggiGara: dati?.oggiGara || [] }} />}
-                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente, istantanea, onIstantanea: cambiaIstantanea }} />}
+                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente, lente: lenteMaster, negSel: negSelMaster }} />}
                 </>
             )}
         </div>
