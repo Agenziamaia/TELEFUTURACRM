@@ -1283,11 +1283,14 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
     --barH: calc(var(--SEP) + var(--BOX) + var(--scaleOn) * 14);
     --barTot: calc(var(--barH) + var(--GAPB));
 
-    /* i chip di testa si accendono solo se, garantiti 96px di anello per
-       fila, avanzano ancora i 37px che costano */
+    /* I CHIP DI TESTA NON SI SACRIFICANO (Luca 28/08: «su WindTre mi è sparito
+       tutto, non vedo niente»). Nella scala delle rinunce li avevo messi in
+       fondo, e su una card con due file di anelli sparivano: ma «quanti KPI
+       sono in target» è il motivo per cui si apre la pagina, mentre l'anello
+       un po' più piccolo non toglie niente. I 37px si tolgono sempre. */
     --hR0: calc(var(--H) - var(--barTot));
-    --chipsOn: clamp(0px, calc((var(--hR0) - var(--righe) * 96px - (var(--righe) - 1) * var(--GY) - 37px) * 9999), 1px);
-    --hR: calc(var(--hR0) - var(--chipsOn) * 37);
+    --chipsOn: 1px;
+    --hR: calc(var(--hR0) - 37px);
 
     --rowH: calc((var(--hR) - (var(--righe) - 1) * var(--GY)) / var(--righe));
     --slack: calc(var(--rowH) - var(--cellW));
@@ -1312,7 +1315,7 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
     /* PRIMA si prova a far stare le etichette restringendo l'anello quel tanto
        che serve (una corona libera di 60px), poi si guarda se l'arco le regge:
        rinunciarci subito era il motivo per cui su Fastweb non comparivano mai */
-    --Dlab: calc(min(var(--D0), var(--cellW) - 60px) - 28px);
+    --Dlab: calc(min(var(--D0), var(--cellW) - 84px) - 28px);
     --labOn: clamp(0px, calc((var(--Dlab) - var(--nSl) * 14px) * 9999), 1px);
     --D: calc(var(--D0) - var(--labOn) * (var(--D0) - var(--Dlab)));
 

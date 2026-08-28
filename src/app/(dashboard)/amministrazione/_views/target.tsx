@@ -927,11 +927,24 @@ const RETE_PISTE_FISSE: Record<string, { chiave: string; nome: string }[]> = {
     // S4: luce e gas fanno UN punteggio solo, e la soglia è sulla somma
     s4: [{ chiave: "energia", nome: "Luce & Gas" }],
 };
+interface PistaRete { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string; soglie: { tier: number; da: number }[] }
 const primoDelMese = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+
+const arrota = (v: number) => Math.round(v * 100) / 100;
+const fmtIt = (v: number) => {
+    const n = Math.round(Number(v) * 100) / 100;
+    const [i, d] = String(Math.abs(n)).split(".");
+    return (n < 0 ? "-" : "") + i.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + (d ? "," + d : "");
+};
 
 function ReteView() {
     const [mese, setMese] = useState(primoDelMese());
-    const [piste, setPiste] = useState<{ brand: string; label: string; colore: string; chiave: string; nome: string; unita: string }[]>([]);
+    const [piste, setPiste] = useState<PistaRete[]>([]);
+    // le somme dei target direzione per pista, e lo SFRIDO per operatore:
+    // clicchi una soglia della lettera e il target di rete esce da solo
+    const [somme, setSomme] = useState<Record<string, number>>({});
+    const [sfridi, setSfridi] = useState<Record<string, string>>({});
+    const [sfridiIni, setSfridiIni] = useState("");
     const [val, setVal] = useState<Record<string, string>>({});
     const [iniziale, setIniziale] = useState<Record<string, string>>({});
     // KPI IMPORTANTI e soglia di allarme (Luca 28/08). Non stanno in
@@ -944,43 +957,69 @@ function ReteView() {
     const [alertIni, setAlertIni] = useState("85");
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const sfrido = (b: string) => Number(String(sfridi[b] ?? "").replace(",", ".")) || 0;
 
     useEffect(() => {
         let vivo = true;
         (async () => {
             setLoading(true);
-            const out: { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string }[] = [];
+            const out: PistaRete[] = [];
             for (const b of RETE_BRANDS) {
                 if (b.tab) {
-                    // le piste del mese come le legge il motore. Si prendono da
-                    // ENTRAMBI i lati e si uniscono per chiave: certe piste
-                    // vivono solo sulla lettera azienda (W3 Protetti, Business
-                    // P.IVA) e senza questo giro non si potrebbe dar loro un
-                    // target — che è esattamente il caso segnalato da Luca.
-                    const [rag, az] = await Promise.all([
-                        b.lato === "azienda" ? Promise.resolve(null) : caricaTabellare(b.tab, mese).catch(() => null),
-                        caricaTabellareAzienda(b.tab, mese).catch(() => null),
-                    ]);
-                    const viste = new Set<string>();
-                    for (const p of [...(rag?.piste || []), ...(az?.piste || [])]) {
-                        if (viste.has(p.chiave)) continue;
+                    // LE STESSE PISTE E LE STESSE SOGLIE CHE MOSTRA L'ANALISI.
+                    // Prima si univano i due lati del tabellare e si finiva per
+                    // poter dare un target a piste che nella Rete non compaiono
+                    // (Business P.IVA, Bonus Completezza): un numero salvato e
+                    // mai visto da nessuno. La fonte è una sola: quella che
+                    // disegna l'anello — ragazzi per W3/VF/Sky, la lettera T2
+                    // per Fastweb, che un lato ragazzi non ce l'ha.
+                    const t = await (b.lato === "azienda" ? caricaTabellareAzienda(b.tab, mese) : caricaTabellare(b.tab, mese)).catch(() => null);
+                    for (const p of (t?.piste || [])) {
                         if (b.soloPiste && !b.soloPiste.includes(p.chiave)) continue;
-                        viste.add(p.chiave);
-                        out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti" });
+                        out.push({
+                            brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti",
+                            soglie: (t?.soglie || []).filter((x: { pista: string; soglia_da: number }) => x.pista === p.chiave)
+                                .map((x: { tier: number; soglia_da: number }) => ({ tier: x.tier, da: Number(x.soglia_da) }))
+                                .filter((x) => x.da > 0).sort((a, b2) => a.tier - b2.tier),
+                        });
                     }
                 }
-                for (const p of (RETE_PISTE_FISSE[b.id] || [])) out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi" });
+                for (const p of (RETE_PISTE_FISSE[b.id] || [])) {
+                    const t = b.id === "s4" ? await caricaTabellareAzienda("s4", mese).catch(() => null) : null;
+                    out.push({
+                        brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi",
+                        soglie: (t?.soglie || []).filter((x: { pista: string }) => x.pista === "energia_consumer")
+                            .map((x: { tier: number; soglia_da: number }) => ({ tier: x.tier, da: Number(x.soglia_da) }))
+                            .filter((x) => x.da > 0).sort((a, b2) => a.tier - b2.tier),
+                    });
+                }
             }
-            const [{ data }, kpi] = await Promise.all([
+            const [{ data }, kpi, dir] = await Promise.all([
                 supabase.from("target_rete").select("brand, pista, target").eq("month", mese),
                 supabase.from("layout_condiviso").select("valore").eq("chiave", "rete_kpi").maybeSingle(),
+                // i target che la DIREZIONE ha già dato per codice di
+                // inserimento: sommati per pista sono il target della rete —
+                // è così che nasce la Customer Base di WindTre, «la somma delle
+                // Partnership al 100% più lo sfrido» (Luca)
+                supabase.from("direzione_targets").select("brand, pista, target").eq("month", mese),
             ]);
             if (!vivo) return;
-            const v0 = (kpi.data?.valore || {}) as { importanti?: string[]; alertPct?: number };
+            const sd: Record<string, number> = {};
+            const IDDIR: Record<string, string> = { w3: "windtre", vf: "vodafone", fw: "fastweb", sky: "sky" };
+            for (const r of ((dir.data || []) as { brand: string; pista: string; target: number }[])) {
+                const bid = Object.keys(IDDIR).find((k) => IDDIR[k] === r.brand);
+                if (!bid) continue;
+                const k = `${bid}|${r.pista}`;
+                sd[k] = (sd[k] || 0) + (Number(r.target) || 0);
+            }
+            setSomme(sd);
+            const v0 = (kpi.data?.valore || {}) as { importanti?: string[]; alertPct?: number; sfridi?: Record<string, string> };
             const setImp0 = new Set<string>(Array.isArray(v0.importanti) ? v0.importanti : []);
             setImp(setImp0); setImpIni([...setImp0].sort().join(","));
             const p0 = String(v0.alertPct ?? 85);
             setAlertPct(p0); setAlertIni(p0);
+            const sf = (v0.sfridi || {}) as Record<string, string>;
+            setSfridi(sf); setSfridiIni(JSON.stringify(sf));
             const m: Record<string, string> = {};
             for (const r of (data || []) as { brand: string; pista: string; target: number }[]) {
                 if (Number(r.target) > 0) m[`${r.brand}|${r.pista}`] = String(r.target);
@@ -993,8 +1032,8 @@ function ReteView() {
     const sporco = useMemo(() => {
         const chiavi = new Set([...Object.keys(val), ...Object.keys(iniziale)]);
         if ([...chiavi].some((k) => (val[k] || "") !== (iniziale[k] || ""))) return true;
-        return [...imp].sort().join(",") !== impIni || alertPct !== alertIni;
-    }, [val, iniziale, imp, impIni, alertPct, alertIni]);
+        return [...imp].sort().join(",") !== impIni || alertPct !== alertIni || JSON.stringify(sfridi) !== sfridiIni;
+    }, [val, iniziale, imp, impIni, alertPct, alertIni, sfridi, sfridiIni]);
 
     const salva = async () => {
         setBusy(true);
@@ -1017,12 +1056,12 @@ function ReteView() {
         const pct = Math.max(1, Math.min(200, Number(String(alertPct).replace(",", ".")) || 85));
         {
             const { error } = await supabase.from("layout_condiviso").upsert({
-                chiave: "rete_kpi", valore: { importanti: [...imp], alertPct: pct },
+                chiave: "rete_kpi", valore: { importanti: [...imp], alertPct: pct, sfridi },
                 updated_at: new Date().toISOString(),
             }, { onConflict: "chiave" });
             if (dbError("Salvataggio KPI importanti", error)) { setBusy(false); return; }
         }
-        setImpIni([...imp].sort().join(",")); setAlertPct(String(pct)); setAlertIni(String(pct));
+        setImpIni([...imp].sort().join(",")); setAlertPct(String(pct)); setAlertIni(String(pct)); setSfridiIni(JSON.stringify(sfridi));
         notify(`Target di rete salvati ✓ (${ups.length} pist${ups.length === 1 ? "a" : "e"}, ${imp.size} KPI in evidenza)`, "ok");
         setIniziale(Object.fromEntries(Object.entries(val).filter(([, v]) => String(v).trim() !== "")));
         setBusy(false);
@@ -1058,8 +1097,18 @@ function ReteView() {
                 <p className="text-sm text-slate-500 px-1">Nessun tabellare per questo mese: carica i tabellari e torna qui.</p>
             ) : perBrand.map(({ b, righe }) => (
                 <div key={b.id} className="glass-card rounded-xl p-4">
-                    <p className="text-xs font-black mb-3" style={{ color: b.colore }}>{b.label}</p>
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="flex items-center gap-3 mb-3 flex-wrap">
+                        <p className="text-xs font-black" style={{ color: b.colore }}>{b.label}</p>
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            sfrido
+                            <input inputMode="decimal" value={sfridi[b.id] ?? ""} placeholder="0"
+                                onChange={(e) => setSfridi((v) => ({ ...v, [b.id]: e.target.value.replace(/[^\d.,]/g, "") }))}
+                                className="w-12 bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5 text-xs text-white text-right tabular-nums" />
+                            %
+                        </label>
+                        <span className="text-[10px] text-slate-600">clicca una soglia: il target esce da solo, soglia + sfrido</span>
+                    </div>
+                    <div className="grid gap-2">
                         {righe.map((p) => {
                             const k = `${p.brand}|${p.chiave}`;
                             return (
@@ -1069,11 +1118,42 @@ function ReteView() {
                                     <button type="button" title={imp.has(k) ? "Togli dall'evidenza" : "Metti in evidenza"}
                                         onClick={(e) => { e.preventDefault(); setImp((v) => { const n = new Set(v); if (n.has(k)) n.delete(k); else n.add(k); return n; }); }}
                                         className={cn("text-sm leading-none transition-opacity", imp.has(k) ? "opacity-100" : "opacity-25 hover:opacity-60")}>⭐</button>
-                                    <span className="text-xs text-slate-300 flex-1 truncate">{p.nome}</span>
+                                    <span className="text-xs text-slate-300 truncate shrink-0 w-32">{p.nome}</span>
+                                    {/* LE SOGLIE DELLA LETTERA, a sinistra del campo: si clicca e il
+                                        target esce da solo, soglia + sfrido. Sono i numeri veri del
+                                        tabellare del mese — caricata la nuova lettera, sono già qui. */}
+                                    <span className="flex-1 flex flex-wrap items-center gap-1 min-w-0">
+                                        {p.soglie.map((sg) => {
+                                            const v = arrota(sg.da * (1 + sfrido(p.brand) / 100));
+                                            const on = (val[k] || "") === String(v);
+                                            return (
+                                                <button key={sg.tier} type="button" title={`Soglia ${sg.tier} (${fmtIt(sg.da)}) + ${sfrido(p.brand)}% di sfrido = ${fmtIt(v)}`}
+                                                    onClick={(e) => { e.preventDefault(); setVal((x) => ({ ...x, [k]: String(v) })); }}
+                                                    className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums border transition-colors",
+                                                        on ? "text-white border-white/30" : "text-slate-400 border-white/10 bg-white/[0.03] hover:bg-white/10")}
+                                                    style={on ? { background: `${p.colore}cc` } : undefined}>
+                                                    S{sg.tier}·{fmtIt(sg.da)}
+                                                </button>
+                                            );
+                                        })}
+                                        {somme[k] > 0 && (() => {
+                                            const v = arrota(somme[k] * (1 + sfrido(p.brand) / 100));
+                                            const on = (val[k] || "") === String(v);
+                                            return (
+                                                <button type="button" title={`Somma dei target che la direzione ha dato per codice (${fmtIt(somme[k])}) + ${sfrido(p.brand)}% di sfrido`}
+                                                    onClick={(e) => { e.preventDefault(); setVal((x) => ({ ...x, [k]: String(v) })); }}
+                                                    className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums border transition-colors",
+                                                        on ? "text-white bg-emerald-500/70 border-white/30" : "text-emerald-300/80 border-emerald-400/25 bg-emerald-400/5 hover:bg-emerald-400/15")}>
+                                                    Σ direzione · {fmtIt(somme[k])}
+                                                </button>
+                                            );
+                                        })()}
+                                        {!p.soglie.length && !somme[k] && <span className="text-[10px] text-slate-700">nessuna soglia in lettera</span>}
+                                    </span>
                                     <input inputMode="decimal" value={val[k] ?? ""} placeholder="—"
                                         onChange={(e) => setVal((v) => ({ ...v, [k]: e.target.value.replace(/[^\d.,]/g, "") }))}
-                                        className="w-24 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white text-right tabular-nums" />
-                                    <span className="text-[10px] text-slate-600 w-9">{p.unita === "pezzi" ? "pz" : "pt"}</span>
+                                        className="w-24 shrink-0 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white text-right tabular-nums" />
+                                    <span className="text-[10px] text-slate-600 w-6 shrink-0">{p.unita === "pezzi" ? "pz" : "pt"}</span>
                                 </label>
                             );
                         })}
