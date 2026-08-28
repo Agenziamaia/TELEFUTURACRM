@@ -1930,8 +1930,13 @@ function BloccoBrandRete({ ctx, brand }) {
     const conQuota = (ctx.mieiNegozi || []).length > 0;
     const primaK = b.piste.length ? `${brand}:${b.piste[0].chiave}` : null;
     const aperta = apri === "__def__" ? primaK : apri;
-    const tocca = (k) => setApri(aperta === k ? null : k);
-    const inDrill = b.piste.find((x) => aperta === `${brand}:${x.chiave}`) || null;
+    // UNA BARRA SEMPRE APERTA, MAI NESSUNA (Luca 28/08: «se ci riclicco sparisce,
+    // invece non deve sparire: ci deve sempre essere una barra esplosa relativa
+    // a uno degli anelli»). Il click SCEGLIE la pista, non fa da interruttore;
+    // e se la pista scelta non c'è più — cambio di mese, tabellare diverso — si
+    // ricade sulla prima, così la barra non resta mai vuota.
+    const tocca = (k) => setApri(k);
+    const inDrill = b.piste.find((x) => aperta === `${brand}:${x.chiave}`) || b.piste[0] || null;
     // quante soglie deve reggere la riga dei valori sotto la barra
     const nS = inDrill ? inDrill.scala.length : 0;
     const nome = (x) => PISTA_LABEL_RETE[x.chiave] || x.nome;
@@ -1968,7 +1973,7 @@ function BloccoBrandRete({ ctx, brand }) {
                     const spaiata = righe > 1 && i === col * (righe - 1);
                     return (
                         <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)}
-                            title={`${nome(x)} — clicca per il dettaglio sulla scala ${x.unit === "pz" ? "dei pezzi" : "dei punti"}`}>
+                            title={`${nome(x)} — clicca per portare qui sotto il dettaglio sulla scala ${x.unit === "pz" ? "dei pezzi" : "dei punti"}`}>
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} soglie={x.scala}
                                 target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
