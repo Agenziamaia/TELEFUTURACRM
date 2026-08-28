@@ -683,4 +683,54 @@ export const CAP_CHAT_WA: CapGroupFlags = {
 
 
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT, CAP_WA_VISTA, CAP_CHAT_WA];
+
+// ─── ASSISTENTE AI: quale cervello, e chi può cambiarlo ──────────────────────
+/* Luca 28/08 sera: «un ingranaggio accanto all'Assistente AI dove si sceglie
+   QUALE modello usa quell'utente — e la possibilità di dargli il permesso di
+   cambiarlo da solo».
+   La scelta passa dal pannello Permessi come tutto il resto, quindi vale per
+   RUOLO, per GRADO e per PERSONA con la stessa precedenza: «per utente» si fa
+   scegliendo la persona in testa al pannello. Chi non ha nulla impostato usa il
+   modello di sistema, come prima di oggi. */
+export const CAP_AI_MODELLO: CapGroupChoice = {
+    mode: "choice",
+    section: "/assistente",
+    sectionLabel: "Assistente AI — quale modello",
+    caps: [
+        {
+            id: "modello_pro",
+            label: "Approfondito",
+            desc: "Ragiona prima di rispondere: regge analisi e conti complicati, ma è più lento e costa circa tre volte tanto.",
+            default: () => false,
+        },
+        {
+            id: "modello_flash",
+            label: "Veloce",
+            desc: "Risponde subito e costa poco. Va bene per quasi tutto.",
+            default: () => false,
+        },
+    ],
+    fallback: { id: "modello_sistema", label: "Quello di sistema", desc: "Come oggi: il modello predefinito del CRM (Veloce)." },
+};
+
+export const CAP_AI_LIBERTA: CapGroupFlags = {
+    mode: "flags",
+    section: "/assistente",
+    sectionLabel: "Assistente AI — comportamenti",
+    caps: [
+        {
+            id: "sceglie_modello",
+            label: "Può cambiare il proprio modello",
+            desc: "Nella sua pagina dell'Assistente compare il selettore: sceglie lui quale modello usare. Senza questo, vale quello impostato qui sopra.",
+            default: (role) => ["admin", "dev"].includes(role),
+        },
+    ],
+};
+
+/** id del modello scelto per una persona, o null = quello di sistema */
+export const AI_MODELLO_DI: Record<string, string> = {
+    modello_pro: "deepseek-v4-pro",
+    modello_flash: "deepseek-v4-flash",
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT, CAP_WA_VISTA, CAP_CHAT_WA, CAP_AI_MODELLO, CAP_AI_LIBERTA];

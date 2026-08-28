@@ -98,7 +98,7 @@ export default function AssistentePage() {
      Chat e progetti di questa persona, tenuti nel CRM e non nel browser: si
      ritrovano da qualsiasi computer, e nessun altro può vederli (le regole
      del database li consegnano solo a chi li ha scritti). */
-  const [spazio, setSpazio] = useState({ progetti: [], conversazioni: [], preferenze: null });
+  const [spazio, setSpazio] = useState({ progetti: [], conversazioni: [], preferenze: null, modelli: null });
   const [convId, setConvId] = useState(null);
   const [progettoAperto, setProgettoAperto] = useState(null);   // filtro della lista
   const [barraAperta, setBarraAperta] = useState(true);
@@ -108,7 +108,7 @@ export default function AssistentePage() {
   const chiediSpazio = async () => {
     try {
       const d = await fetch("/api/ai/spazio", { credentials: "include", cache: "no-store" }).then((r) => r.json());
-      if (!d?.error) setSpazio({ progetti: d.progetti || [], conversazioni: d.conversazioni || [], preferenze: d.preferenze || null });
+      if (!d?.error) setSpazio({ progetti: d.progetti || [], conversazioni: d.conversazioni || [], preferenze: d.preferenze || null, modelli: d.modelli || null });
     } catch { /* offline: si continua con quello che c'è */ }
   };
   const azione = async (body) => {
@@ -439,6 +439,7 @@ export default function AssistentePage() {
     {impostazioni && (
       <PannelloPreferenze
         valori={spazio.preferenze}
+        modelli={spazio.modelli}
         onChiudi={() => setImpostazioni(false)}
         onSalva={async (v) => { await azione({ azione: "preferenze_salva", ...v }); setImpostazioni(false); }}
       />
@@ -468,10 +469,12 @@ function cnx(...v) { return v.filter(Boolean).join(" "); }
 /* ══ PERSONALITÀ E MEMORIE (Luca 28/08) ═════════════════════════════════
    «ognuno può settare l'assistente come più gli piace, dandogli delle
    memorie e delle istruzioni». Vale solo per chi le scrive. */
-function PannelloPreferenze({ valori, onChiudi, onSalva }) {
+function PannelloPreferenze({ valori, onChiudi, onSalva, modelli }) {
   const [nomeAssistente, setNome] = useState(valori?.nome_assistente || "");
   const [personalita, setPersonalita] = useState(valori?.personalita || "");
   const [memorie, setMemorie] = useState(valori?.memorie || "");
+  // il modello si sceglie SOLO se l'amministrazione ha dato la libertà
+  const [modello, setModello] = useState(valori?.modello || "");
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onChiudi}>
       <div className="glass-card border-white/10 w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -502,9 +505,32 @@ function PannelloPreferenze({ valori, onChiudi, onSalva }) {
           <p className="text-[10px] text-slate-600">Vale in ogni conversazione: scrivi qui le cose che gli ripeti sempre.</p>
         </div>
 
+        {/* QUALE CERVELLO (Luca 28/08 sera): compare solo a chi può cambiarlo.
+            Gli altri usano quello deciso dall'amministrazione, senza vedere
+            un selettore che poi non conterebbe nulla. */}
+        {modelli?.libero && (
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quale modello usa</label>
+            <div className="space-y-1.5">
+              {[{ id: "", nome: "Come dice l'amministrazione", descrizione: modelli.nomeAmministrazione ? `Adesso è «${modelli.nomeAmministrazione}».` : "Il modello predefinito del CRM." },
+                ...(modelli.disponibili || [])].map((m) => (
+                <button key={m.id || "auto"} type="button" onClick={() => setModello(m.id)}
+                  className={cnx("w-full text-left px-3 py-2 rounded-xl border transition-colors",
+                    (modello || "") === m.id
+                      ? "border-indigo-400/60 bg-indigo-500/10"
+                      : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]")}>
+                  <div className="text-sm font-semibold text-white">{m.nome}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{m.descrizione}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-600">Il modello approfondito ragiona prima di rispondere: più lento e più caro, ma regge i conti complicati.</p>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onChiudi} className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5">Annulla</button>
-          <button onClick={() => onSalva({ nomeAssistente, personalita, memorie })}
+          <button onClick={() => onSalva({ nomeAssistente, personalita, memorie, modello })}
             className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold">Salva</button>
         </div>
       </div>

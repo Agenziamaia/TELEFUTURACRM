@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { chat, estimateCost, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
+import { chat, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
+import { modelloDi } from "@/lib/ai/modelloDi";
+import { tettoPer, costoChiamata } from "@/lib/ai/modelli";
 import { getScope } from "@/lib/ai/scope";
 import { canUseAI } from "@/lib/roles";
 import { TOOL_DEFS, WRITE_TOOL_DEFS, WRITE_TOOL_NAMES, runTool } from "@/lib/ai/tools";
@@ -100,6 +102,14 @@ export async function POST(req: Request) {
     ...messages.slice(-12).map((m: any) => ({ role: m.role, content: String(m.content ?? "") })),
   ];
 
+  /* IL MODELLO È DI CHI SCRIVE (Luca 28/08 sera): lo decide il pannello
+     Permessi, o l'utente stesso se gli è stata data la libertà. Il tetto
+     viene DAL MODELLO: i modelli che ragionano consumano il tetto per
+     pensare, e con un tetto basso rispondono il vuoto. */
+  const scelta = await modelloDi(String(userId || ""));
+  const MODELLO = scelta.modello;
+  const TETTO = tettoPer(MODELLO, 1500);
+
   const tools = [...TOOL_DEFS, ...WRITE_TOOL_DEFS];
   const trace: { tool: string; args: any; ok: boolean; summary?: string }[] = [];
   let promptTokens = 0, completionTokens = 0, toolCalls = 0;
@@ -108,7 +118,7 @@ export async function POST(req: Request) {
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const res = await chat({ messages: convo, tools, model: MODEL_FAST, maxTokens: 1500 });
+      const res = await chat({ messages: convo, tools, model: MODELLO, maxTokens: TETTO });
       promptTokens += res.usage?.prompt_tokens ?? 0;
       completionTokens += res.usage?.completion_tokens ?? 0;
 
@@ -149,7 +159,7 @@ export async function POST(req: Request) {
         // 400 non bastavano: il ragionamento del modello li consuma tutti e
         // la proposta usciva vuota (stesso difetto trovato nell'Omnichat il
         // 27/08) — restava il fallback «Confermi l'azione proposta?»
-        const res2 = await chat({ messages: convo, model: MODEL_FAST, maxTokens: 1500 });
+        const res2 = await chat({ messages: convo, model: MODELLO, maxTokens: TETTO });
         promptTokens += res2.usage?.prompt_tokens ?? 0;
         completionTokens += res2.usage?.completion_tokens ?? 0;
         answer = res2.message.content || "Confermi l'azione proposta?";
@@ -159,9 +169,9 @@ export async function POST(req: Request) {
 
     if (!answer) answer = "Non sono riuscito a completare la richiesta entro i passaggi disponibili.";
 
-    const cost = estimateCost(MODEL_FAST, promptTokens, completionTokens);
+    const cost = costoChiamata(MODELLO, promptTokens, completionTokens);
     supabase.from("ai_usage").insert({
-      user_id: scope.userId, model: MODEL_FAST, prompt_tokens: promptTokens,
+      user_id: scope.userId, model: MODELLO, prompt_tokens: promptTokens,
       completion_tokens: completionTokens, cost_usd: cost, latency_ms: Date.now() - started,
       tool_calls: toolCalls, ok: true,
     }).then(() => {}, () => {});
@@ -192,7 +202,7 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     supabase.from("ai_usage").insert({
-      user_id: scope.userId, model: MODEL_FAST, prompt_tokens: promptTokens,
+      user_id: scope.userId, model: MODELLO, prompt_tokens: promptTokens,
       completion_tokens: completionTokens, latency_ms: Date.now() - started,
       tool_calls: toolCalls, ok: false, error: String(e?.message || e).slice(0, 500),
     }).then(() => {}, () => {});
