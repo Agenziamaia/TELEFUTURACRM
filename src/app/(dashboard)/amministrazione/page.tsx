@@ -674,6 +674,15 @@ function AmministrazioneInner() {
                 <UserForm
                     editing={editing}
                     stores={stores}
+                    onApriEsistente={(id) => {
+                        // la scheda COMPLETA è già in elenco: si apre quella,
+                        // con negozi, brand e visibilità al loro posto
+                        const u = (users || []).find((x) => x.id === id);
+                        if (!u) { setShowForm(false); return; }
+                        setEditing(u);
+                        setShowForm(false);
+                        setTimeout(() => setShowForm(true), 0);   // rimonta il form sull'utente giusto
+                    }}
                     onClose={() => setShowForm(false)}
                     onSaved={() => {
                         setShowForm(false);
@@ -852,11 +861,15 @@ function UserForm({
     stores,
     onClose,
     onSaved,
+    onApriEsistente,
 }: {
     editing: AppUser | null;
     stores: Store[];
     onClose: () => void;
     onSaved: () => void;
+    /* porta sulla scheda di chi ha già quell'email, invece di lasciare
+       l'amministrazione a compilare un doppione che il database rifiuterà */
+    onApriEsistente?: (id: string) => void;
 }) {
     const formRules = useRoleCosts();
     const { roles: allRoles, gradesOf } = useRoles();
@@ -876,6 +889,36 @@ function UserForm({
     });
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
+
+    /* «QUESTA EMAIL È GIÀ DI QUALCUNO» (Luca 28/08 sera, caso Franca).
+       Franca stava rifacendo da zero la scheda di un collaboratore che esisteva
+       già — gli mancavano solo i dati del contratto — e il CRM le rispondeva
+       «duplicate key value violates unique constraint app_users_email_key»:
+       una frase del database, che non dice né chi c'è già né cosa fare.
+       Ora l'email si controlla MENTRE si scrive, prima di compilare tutto il
+       resto, e si può saltare direttamente sulla scheda giusta. */
+    type Gemello = { id: string; full_name: string; role?: string | null; grade?: string | null; active?: boolean | null; status?: string | null; primary_store?: string | null };
+    const [gemello, setGemello] = useState<Gemello | null>(null);
+    const vaiAllaScheda = (g: Gemello) => {
+        if (!g?.id) return;
+        if (onApriEsistente) onApriEsistente(g.id);
+        else onClose();
+    };
+    useEffect(() => {
+        const mail = String(f.email || "").trim().toLowerCase();
+        if (!mail || !mail.includes("@")) { setGemello(null); return; }
+        let vivo = true;
+        const t = setTimeout(async () => {
+            const { data } = await supabase.from("app_users")
+                .select("id, full_name, role, grade, active, status, primary_store")
+                .ilike("email", mail).limit(1);
+            if (!vivo) return;
+            const trovato = (data || [])[0];
+            // in modifica, ritrovare SE STESSI non è un problema
+            setGemello(trovato && trovato.id !== editing?.id ? (trovato as Gemello) : null);
+        }, 400);
+        return () => { vivo = false; clearTimeout(t); };
+    }, [f.email, editing?.id]);
 
     // MOD-25 (Luca 10/08): tendina delle utenze Aircall via /api/aircall/users
     // (credenziali solo server). Preselezione per EMAIL quando il campo e'
@@ -1044,7 +1087,11 @@ function UserForm({
         } else {
             const { data, error } = await supabase.from("app_users").insert(payload).select("id").single();
             if (error) {
-                setErr(error.message);
+                // il vincolo sull'email parla in database: qui si traduce in
+                // qualcosa che dice chi c'è già e cosa fare
+                setErr(/app_users_email_key|duplicate key/i.test(error.message)
+                    ? `Questa email è già usata da un altro collaboratore${gemello ? ` — ${gemello.full_name}` : ""}. Se è la stessa persona apri la sua scheda e modificala, invece di crearne una nuova: così non si perdono storico, vendite e presenze.`
+                    : error.message);
                 setSaving(false);
                 return;
             }
@@ -1110,7 +1157,26 @@ function UserForm({
                             <input className="glass-input w-full" value={f.full_name || ""} onChange={(e) => set("full_name", e.target.value)} />
                         </Field>
                         <Field label="Email (per il login)">
-                            <input className="glass-input w-full" value={f.email || ""} onChange={(e) => set("email", e.target.value)} />
+                            <input className={"glass-input w-full" + (gemello ? " !border-amber-400/60" : "")} value={f.email || ""} onChange={(e) => set("email", e.target.value)} />
+                            {/* chi c'è già con questa email: si scopre PRIMA di
+                                compilare tutto il resto, non dopo aver premuto Salva */}
+                            {gemello && (
+                                <div className="mt-1.5 rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-100 leading-relaxed">
+                                    <b className="text-amber-200">{gemello.full_name}</b> usa già questa email
+                                    {gemello.role ? ` — ${gemello.role}${gemello.grade ? " · " + gemello.grade : ""}` : ""}
+                                    {gemello.primary_store ? ` · ${gemello.primary_store}` : ""}
+                                    {gemello.active === false || gemello.status === "licenziato" ? " (non più attivo)" : ""}.
+                                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                                        <button type="button" onClick={() => vaiAllaScheda(gemello)}
+                                            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-[11px] font-bold">
+                                            Apri la sua scheda
+                                        </button>
+                                        <span className="text-amber-100/70">
+                                            Se è la stessa persona modificala: creandone una nuova perdi storico, vendite e presenze.
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </Field>
                         <Field label="PEC">
                             <input className="glass-input w-full" value={f.pec || ""} onChange={(e) => set("pec", e.target.value)} placeholder="nome@pec.it" />
