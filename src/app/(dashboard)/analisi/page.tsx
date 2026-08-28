@@ -329,7 +329,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete, kpiRes, letteraRes] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete, kpiRes, letteraRes, sfridiRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]).catch(() => null), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -365,6 +365,11 @@ function AnalisiInner() {
                     // aggiornando la lettera, si aggiorna anche questo»
                     // (Luca 29/08) — il target non si scrive a mano.
                     soloMese ? supabase.from("pay_regole_lettera").select("chiave, valore").eq("brand", "windtre").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
+                    // CUSCINETTO sul paletto business: il Master e la Direzione
+                    // mostrano come obiettivo «paletto + sfrido», non il paletto
+                    // nudo. Due schermate con due obiettivi diversi sullo stesso
+                    // KPI sono peggio di nessun obiettivo.
+                    soloMese ? supabase.from("direzione_sfridi").select("pista, pct").eq("brand", "windtre").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -418,6 +423,7 @@ function AnalisiInner() {
                     layoutRete: Array.isArray(layRete?.data?.valore) ? layRete.data.valore : null,
                     kpiRete: kpiRes?.data?.valore || null,
                     letteraW3: Object.fromEntries((letteraRes?.data || []).map((r) => [String(r.chiave), Number(r.valore)])),
+                    sfridiW3: Object.fromEntries((sfridiRes?.data || []).map((r) => [String(r.pista), Number(r.pct)])),
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -692,7 +698,10 @@ function AnalisiInner() {
                     // la soglia a 0 non è uno scaglione: è il pavimento. Tenendola
                     // si apriva un settore di larghezza zero che pesava un quarto
                     // di giro e si riempiva tutto al primo pezzo.
-                    scala: (dati?.as4?.soglie || []).filter((x) => x.pista === "energia_consumer" && Number(x.soglia_da) > 0).sort((a, b) => a.tier - b.tier),
+                    // ...e i tier si RINUMERANO: tenendo quelli originali la
+                    // prima soglia utile si chiamava «S2» e mancava la S1.
+                    scala: (dati?.as4?.soglie || []).filter((x) => x.pista === "energia_consumer" && Number(x.soglia_da) > 0)
+                        .sort((a, b) => a.tier - b.tier).map((x, i) => ({ ...x, tier: i + 1 })),
                     parti: [
                         { label: "Luce", colore: "#a3e635", righe: s4Righe.filter((r) => !/gas/i.test(String(r.prodotto || ""))) },
                         { label: "Gas", colore: "#14b8a6", righe: s4Righe.filter((r) => /gas/i.test(String(r.prodotto || ""))) },
@@ -754,31 +763,78 @@ function AnalisiInner() {
                         mio: daFianco ? arrot(daItemsMio.get(p.chiave) || 0) : (avMio?.piste?.[p.chiave]?.punti ?? 0),
                         target: tg });
                 }
-                // ── PALETTO BUSINESS W3 (Luca 29/08) ──────────────────────
-                // «Telefoni & device va sostituito con Business Mobile, lo
-                // stesso dato per il quale abbiamo il paletto per evitare il
-                // malus». La definizione e' quella del motore e del Master:
-                // attivazioni della pista MOBILE con cliente business —
-                // contare i business di QUALSIASI pista dava falsi verdi su
-                // una penale del 30%.
-                // Il target non si scrive a mano: e' il paletto della LETTERA
-                // del mese (pay_regole_lettera.paletto_piva_mobile, 6 ad
-                // agosto) per i codici che ce l'hanno. I multibrand (MB-*)
-                // restano fuori: il paletto e' del franchising. Cambia la
-                // lettera, cambia il target da solo.
+                // ── I DUE OBBLIGHI PER CODICE DI WINDTRE ──────────────────
+                // Business mobile (Luca 29/08: «Telefoni & device va sostituito
+                // con Business mobile, lo stesso dato per il quale abbiamo il
+                // paletto per evitare il malus») e W3 Protetti — «almeno uno per
+                // punto vendita, pena il malus». Sono la stessa forma: un minimo
+                // che ogni CODICE deve fare per conto suo.
+                // E per questo la somma di rete, da sola, MENTE: 30 pezzi fatti
+                // tutti su un codice lascerebbero gli altri quattro in malus.
+                // Il numero grande resta la somma, ma accanto viaggia sempre
+                // «quanti codici sono a posto», che e' la domanda vera.
                 if (c.id === "w3") {
-                    // il conteggio non lo rifaccio io: `calcolaAvanzamento` lo
-                    // tiene gia' come `pivaMobile` — attivazioni della pista
-                    // MOBILE con cliente business — ed e' LA definizione del
-                    // malus30Mobile. Contare i business di qualsiasi pista
-                    // darebbe falsi verdi su una penale del 30%.
-                    const codici = (dati?.targetW3 || []).filter((r) => !String(r.cod_gara || "").startsWith("MB-")).length;
+                    const codici = (dati?.targetW3 || []).map((r) => ({
+                        cod: String(r.cod_gara || ""),
+                        // il paletto e' del FRANCHISING: sui multibrand non
+                        // esiste, quindi ne restano fuori sia la loro produzione
+                        // sia il loro pezzo di obiettivo
+                        mb: String(r.cod_gara || "").startsWith("MB-"),
+                        token: String(r.negozio || "").split("+").map(norm).filter(Boolean),
+                    }));
+                    const franch = codici.filter((k) => !k.mb);
+                    // stessa regola di `codiceDi` della Direzione: il codice di
+                    // inserimento della pratica contro i nomi del pannello PDV
+                    const codiceDi = (r) => {
+                        const ci = norm(r.cod_ins);
+                        if (!ci) return null;
+                        for (const k of codici) if (k.token.some((t) => t && ci.startsWith(t))) return k;
+                        if (ci.length >= 4) { const c1 = codici.filter((k) => k.token.some((t) => t.startsWith(ci))); if (c1.length === 1) return c1[0]; }
+                        return null;
+                    };
+                    const perCodice = (tieni) => {
+                        const per = new Map(franch.map((k) => [k.cod, 0]));
+                        let tot = 0, mioN = 0;
+                        for (const r of c.rows) {
+                            if (!tieni(r)) continue;
+                            const k = codiceDi(r);
+                            if (!k || k.mb) continue;
+                            tot++; if (èMio(r.negozio)) mioN++;
+                            per.set(k.cod, (per.get(k.cod) || 0) + 1);
+                        }
+                        return { per, tot, mio: mioN };
+                    };
+                    const pistaDi = (r) => {
+                        const set = matchRigheAttivazione(c.tab.righe, r, brandIdDaLabel(r.brand));
+                        return set.length ? String(set[0].pista || "") : "";
+                    };
+                    // BUSINESS MOBILE: la definizione e' quella del motore
+                    // (`pivaMobile`) e del malus30Mobile — attivazioni della
+                    // pista MOBILE con cliente business. Contare i business di
+                    // qualsiasi pista darebbe falsi verdi su una penale del 30%.
+                    const bm = perCodice((r) => /business/i.test(String(r.tipo_cliente || "")) && pistaDi(r) === "mobile");
                     const paletto = Number(dati?.letteraW3?.paletto_piva_mobile) || 0;
-                    const tg = targetDi("w3", "business_mobile")
-                        || (paletto > 0 && codici > 0 ? { v: paletto * codici, fonte: "lettera" } : null);
+                    // l'obiettivo e' quello che vedono il Master e la Direzione:
+                    // paletto + cuscinetto, non il paletto nudo
+                    const cusc = Math.max(0, Math.round(Number(dati?.sfridiW3?.__paletto_business__) || 0));
+                    const okBm = paletto > 0 ? franch.filter((k) => (bm.per.get(k.cod) || 0) >= paletto).length : 0;
                     piste.push({ chiave: "business_mobile", nome: "Business mobile", unit: "pz",
-                        punti: av.pivaMobile, pezzi: av.pivaMobile, gate: null, scala: [],
-                        mio: avMio?.pivaMobile ?? 0, target: tg, sub: true });
+                        punti: bm.tot, pezzi: bm.tot, gate: null, scala: [], sub: true,
+                        mio: bm.mio, obbligo: paletto > 0 ? { fatti: okBm, su: franch.length, quota: paletto } : null,
+                        target: targetDi("w3", "business_mobile")
+                            || (paletto > 0 && franch.length > 0 ? { v: (paletto + cusc) * franch.length, fonte: "lettera" } : null) });
+                    // W3 PROTETTI: un Protecta per punto vendita. La somma non e'
+                    // un obiettivo di rete — cinque fatti tutti in un negozio non
+                    // salvano gli altri quattro — ma la COPERTURA si': l'anello
+                    // conta i pezzi, l'obbligo dice quanti codici sono coperti.
+                    const pr = perCodice((r) => pistaDi(r) === "protetti");
+                    const okPr = franch.filter((k) => (pr.per.get(k.cod) || 0) >= 1).length;
+                    const iPr = piste.findIndex((x) => x.chiave === "protetti");
+                    if (iPr >= 0) {
+                        piste[iPr] = { ...piste[iPr], unit: "pz", punti: pr.tot, pezzi: pr.tot, mio: pr.mio,
+                            obbligo: { fatti: okPr, su: franch.length, quota: 1 },
+                            target: piste[iPr].target || (franch.length > 0 ? { v: franch.length, fonte: "obbligo" } : null) };
+                    }
                 }
             }
             for (const p of (c.pezzi || [])) {
@@ -1193,7 +1249,13 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata =
     const rimuovi = (k) => setLista(lista.filter((w) => w.k !== k));
     const aggiungi = (k) => { setLista([...lista, { k, s: REGISTRO[k].def || 2, h: hDef(k), x: 0, y: Infinity }]); setGalleria(false); };
     const presenti = new Set(lista.map((w) => w.k));
-    const disponibili = Object.entries(REGISTRO).filter(([k, d]) => !presenti.has(k) && (!d.solo || d.solo === areaKey));
+    // NELLA RETE SI AGGIUNGONO SOLO WIDGET DI RETE. Dalla galleria erano
+    // pescabili anche le carte operatore, il cui dettaglio elenca riga per
+    // riga il NOME DEL VENDITORE: con un layout condiviso da tutta l'azienda
+    // sarebbe bastato un clic per mettere il dettaglio individuale sotto gli
+    // occhi di tutti — l'unica cosa che la sezione non deve fare mai.
+    const disponibili = Object.entries(REGISTRO).filter(([k, d]) => !presenti.has(k)
+        && (areaKey === "rete" ? d.solo === "rete" : (!d.solo || d.solo === areaKey)));
 
     return (
         <div>

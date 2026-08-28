@@ -2037,10 +2037,22 @@ function BloccoBrandRete({ ctx, brand }) {
                                     )}
                                     {x.target && <span className={cn("tf-mini border", rif >= x.target.v ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/30" : "text-slate-300 bg-white/5 border-white/10")}>🎯 {fmtN(x.target.v)}</span>}
                                     {x.gate && <span className="tf-mini text-amber-300 bg-amber-400/10 border border-amber-400/25">⛔</span>}
+                                    {/* OBBLIGO PER CODICE: la somma di rete da sola mente
+                                        (30 pezzi fatti tutti su un codice lasciano gli altri
+                                        quattro in malus). Accanto al numero grande viaggia
+                                        sempre «quanti codici sono a posto». */}
+                                    {x.obbligo && (
+                                        <span className={cn("tf-mini border", x.obbligo.fatti >= x.obbligo.su
+                                            ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/30"
+                                            : "text-rose-300 bg-rose-400/10 border-rose-400/30")}>
+                                            🏷 {x.obbligo.fatti}/{x.obbligo.su}
+                                        </span>
+                                    )}
                                 </div>
                                 <p className="l4">
-                                    {prossima ? <>→ S{prossima.tier} · <b>{fmtPt(prossima.soglia_da - rif)}</b></>
-                                        : x.presaProj ? "ultima soglia presa 👑" : ""}
+                                    {x.obbligo ? <>{x.obbligo.fatti}/{x.obbligo.su} codici a <b>{x.obbligo.quota}</b></>
+                                        : prossima ? <>→ S{prossima.tier} · <b>{fmtPt(prossima.soglia_da - rif)}</b></>
+                                            : x.presaProj ? "ultima soglia presa 👑" : ""}
                                 </p>
                             </div>
                         </div>
@@ -2055,6 +2067,10 @@ function BloccoBrandRete({ ctx, brand }) {
                 {inDrill && (
                     <SogliaBar label={nome(inDrill)} emoji={emo(inDrill)} punti={inDrill.punti} pezzi={inDrill.unit === "pz" ? null : inDrill.pezzi}
                         soglie={inDrill.scala} colore={b.colore} proiezione={inDrill.proiezione} gate={inDrill.gate}
+                        malus={inDrill.obbligo && inDrill.obbligo.fatti < inDrill.obbligo.su
+                            ? `${inDrill.obbligo.su - inDrill.obbligo.fatti} codici sotto il minimo di ${inDrill.obbligo.quota}` : null}
+                        nota={inDrill.obbligo && inDrill.obbligo.fatti >= inDrill.obbligo.su
+                            ? `tutti i ${inDrill.obbligo.su} codici al minimo ✅` : null}
                         targetDir={inDrill.target?.v ?? null} targetFonte={inDrill.target?.fonte} unit={inDrill.unit} />
                 )}
             </div>

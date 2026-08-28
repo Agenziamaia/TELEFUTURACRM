@@ -65,7 +65,12 @@ export const NAVIGATION: NavEntry[] = [
         children: [
             { name: "Io", sez: "io", icon: User, roles: ["admin", "dev"] },
             { name: "Negozio", sez: "negozio", icon: Store, roles: ["admin", "dev"] },
-            { name: "Rete", sez: "rete", icon: Globe, roles: ["admin", "dev"] },
+            // LA RETE E' DI TUTTI, TRANNE GLI APPRENDISTI (Luca, briefing
+            // della sezione). Il valore di fabbrica apre; a chiudere sono le
+            // due righe di grado `@apprendista` in role_permissions, che
+            // vincono sul ruolo. Cosi' un ruolo nuovo nasce dentro, come
+            // Luca ha chiesto, e non fuori per dimenticanza.
+            { name: "Rete", sez: "rete", icon: Globe, roles: EVERYONE },
             // "Master" per Luca (21/08): la sez resta "regia" — è la chiave di
             // permesso già concessa, cambiarla scollegherebbe le righe esistenti
             { name: "Master", sez: "regia", icon: CoronaIcona, roles: ["admin", "dev"] },

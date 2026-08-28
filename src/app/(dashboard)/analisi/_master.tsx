@@ -220,12 +220,20 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
     // le due schermate mostravano due obiettivi diversi sullo stesso KPI —
     // la Direzione 6+1=7, il Master 6 secco.
     const [sfridoPaletto, setSfridoPaletto] = useState(0);
+    // ...e il PALETTO stesso viene dalla LETTERA del mese, non dalla costante:
+    // «e' 6 questo mese ma poi cambiera'» (Luca 27/08). La Direzione e la Rete
+    // lo leggono di li'; qui restava fisso a 6, e alla prima lettera diversa
+    // il Master avrebbe raccontato un obiettivo che non esiste piu'.
+    const [palettoW3, setPalettoW3] = useState(W3_PALETTO_BUSINESS);
     useEffect(() => {
         if (b !== "w3" || !tab?.month) return;
         let vivo = true;
         supabase.from("direzione_sfridi").select("pct")
             .eq("brand", "windtre").eq("month", tab.month).eq("pista", "__paletto_business__").maybeSingle()
             .then(({ data }) => { if (vivo) setSfridoPaletto(Math.round(Number(data?.pct) || 0)); });
+        supabase.from("pay_regole_lettera").select("valore")
+            .eq("brand", "windtre").eq("month", tab.month).eq("chiave", "paletto_piva_mobile").maybeSingle()
+            .then(({ data }) => { if (vivo) setPalettoW3(Number(data?.valore) || W3_PALETTO_BUSINESS); });
         return () => { vivo = false; };
     }, [b, tab?.month]);
 
@@ -301,7 +309,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         // questa conta solo le attivazioni P.IVA mobile che aprono il premio.
         if (b === "w3" && p.chiave === "business_piva") {
             const fatte = av?.pivaMobile ?? 0;
-            const SERVONO = W3_PALETTO_BUSINESS;
+            const SERVONO = palettoW3;
             const obiettivo = SERVONO + sfridoPaletto;
             const salvo = fatte >= SERVONO;        // niente malus
             const pieno = fatte >= obiettivo;      // cuscinetto raggiunto

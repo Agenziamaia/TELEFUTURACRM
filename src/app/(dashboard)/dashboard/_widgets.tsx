@@ -279,16 +279,21 @@ function CorpoProduzione({ ctx, size, righe, pesa, color, unita, dettaglioL }) {
     return { pezzi, oggiN, proiezione, perGiorno, best };
 }
 
+/* FATTO E PROIEZIONE PESANO UGUALE (Luca 29/08: «me la metti piu' piccola in
+   termini di font rispetto all'attuale, e hanno la stessa importanza; il
+   colore diverso va bene, ma dagli almeno la stessa visibilita'»). Erano 36px
+   contro 18px — un rapporto 2:1 che la faceva leggere come una nota. Adesso
+   sono entrambi 30px, e a distinguerli resta il colore. */
 function BloccoNumero({ pezzi, proiezione, unita, color }) {
     return (
-        <div className="flex items-end justify-between gap-2">
+        <div className="flex flex-wrap items-end justify-between gap-x-2 gap-y-1">
             <div>
-                <p className="text-4xl font-black text-white leading-none tabular-nums">{Number(pezzi).toLocaleString("it-IT")}</p>
+                <p className="text-3xl font-black text-white leading-none tabular-nums">{Number(pezzi).toLocaleString("it-IT")}</p>
                 <p className="text-[11px] text-slate-500 mt-1">{unita}</p>
             </div>
             {proiezione != null && proiezione > pezzi && (
                 <div className="text-right">
-                    <p className="text-lg font-black leading-none tabular-nums" style={{ color }}>≈{proiezione}</p>
+                    <p className="text-3xl font-black leading-none tabular-nums" style={{ color }}>≈{proiezione}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">fine mese</p>
                 </div>
             )}
@@ -366,9 +371,10 @@ function TileKpi({ label, value, sub, proj, color }) {
     return (
         <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
             <div className="text-[9px] uppercase tracking-widest font-bold text-slate-500 mb-1">{label}</div>
-            <div className="flex items-end justify-between gap-1">
-                <span className="text-2xl font-black text-white leading-none tabular-nums">{value}</span>
-                {proj != null && <span className="text-[11px] font-bold tabular-nums" style={{ color }} title="Proiezione a fine mese sul ritmo dei giorni lavorativi">≈{proj}</span>}
+            {/* stessa regola di BloccoNumero: erano 24px contro 11px */}
+            <div className="flex flex-wrap items-end justify-between gap-x-1 gap-y-0.5">
+                <span className="text-xl font-black text-white leading-none tabular-nums">{value}</span>
+                {proj != null && <span className="text-xl font-black leading-none tabular-nums" style={{ color }} title="Proiezione a fine mese sul ritmo dei giorni lavorativi">≈{proj}</span>}
             </div>
             {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
         </div>
@@ -456,7 +462,7 @@ function WidgetW3({ ctx, size }) {
                             {tabellaL.map(([lbl, v, pr, sub]) => (
                                 <div key={lbl} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]">
                                     <span className="text-slate-300">{lbl}{sub ? <span className="text-slate-500"> · {sub}</span> : null}</span>
-                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-normal ml-1.5" style={{ color }}>≈{pr}</span>}</span>
+                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-bold ml-1.5" style={{ color }}>≈{pr}</span>}</span>
                                 </div>
                             ))}
                         </div>
@@ -649,7 +655,7 @@ function WidgetVodafone({ ctx, size }) {
                             {tabellaL.map(([lbl, v, pr, sub]) => (
                                 <div key={lbl} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]">
                                     <span className="text-slate-300">{lbl}{sub ? <span className="text-slate-500"> · {sub}</span> : null}</span>
-                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-normal ml-1.5" style={{ color }}>≈{pr}</span>}</span>
+                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-bold ml-1.5" style={{ color }}>≈{pr}</span>}</span>
                                 </div>
                             ))}
                             <p className="text-[10px] text-slate-600 pt-1">Il business Vodafone avrà un widget dedicato.</p>
@@ -767,7 +773,7 @@ function WidgetSky({ ctx, size }) {
                             {tabellaL.map(([lbl, v, pr, sub]) => (
                                 <div key={lbl} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-white/[0.02]">
                                     <span className="text-slate-300">{lbl}{sub ? <span className="text-slate-500"> · {sub}</span> : null}</span>
-                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-normal ml-1.5" style={{ color }}>≈{pr}</span>}</span>
+                                    <span className="font-mono font-bold text-slate-100">{v}{pr != null && <span className="font-bold ml-1.5" style={{ color }}>≈{pr}</span>}</span>
                                 </div>
                             ))}
                         </div>

@@ -926,7 +926,16 @@ const RETE_BRANDS: { id: string; label: string; tab: string | null; lato?: "azie
 const RETE_PISTE_FISSE: Record<string, { chiave: string; nome: string }[]> = {
     // S4: luce e gas fanno UN punteggio solo, e la soglia è sulla somma
     s4: [{ chiave: "energia", nome: "Luce & Gas" }],
+    // W3: il paletto business (pezzi P.IVA mobile). Nel tabellare non c'è
+    // come pista, ma l'Analisi lo disegna — e senza questa riga non si
+    // potevano mettere né la ⭐ né l'allarme proprio sul KPI del malus.
+    w3: [{ chiave: "business_mobile", nome: "Business mobile (paletto)" }],
 };
+// piste che il tabellare contiene ma che NON sono una gara: «Telefoni &
+// device» vive in pay_piste solo per il conteggio TNP del seed lettera, non
+// ha soglie né target, e l'Analisi la nasconde. Elencarla qui voleva dire
+// poterle salvare un target e farla riapparire per sbaglio (Luca 29/08).
+const RETE_PISTE_FUORI = new Set(["device"]);
 interface PistaRete { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string; soglie: { tier: number; da: number }[]; soglieAz: { tier: number; da: number }[] }
 const primoDelMese = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 
@@ -987,6 +996,7 @@ function ReteView() {
                             .filter((x) => x.da > 0).sort((a, b2) => a.tier - b2.tier);
                     for (const p of (t?.piste || [])) {
                         if (b.soloPiste && !b.soloPiste.includes(p.chiave)) continue;
+                        if (RETE_PISTE_FUORI.has(p.chiave)) continue;
                         out.push({
                             brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti",
                             soglie: scale(t, p.chiave),
@@ -996,6 +1006,7 @@ function ReteView() {
                 }
                 for (const p of (RETE_PISTE_FISSE[b.id] || [])) {
                     const t = b.id === "s4" ? await caricaTabellareAzienda("s4", mese).catch(() => null) : null;
+                    if (b.id !== "s4") { out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi", soglie: [], soglieAz: [] }); continue; }
                     out.push({
                         brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi",
                         soglie: (t?.soglie || []).filter((x: { pista: string }) => x.pista === "energia_consumer")
@@ -1179,7 +1190,7 @@ function ReteView() {
                                             const v = arrota(somme[k] * (1 + sfrido(p.brand) / 100));
                                             const on = (val[k] || "") === String(v);
                                             return (
-                                                <button type="button" title={`Somma dei target che la direzione ha dato per codice (${fmtIt(somme[k])}) + ${sfrido(p.brand)}% di sfrido`}
+                                                <button type="button" title={`Somma dei target che la direzione ha dato per codice (${fmtIt(somme[k])}) + ${sfrido(p.brand)}% di sfrido = ${fmtIt(v)}. ⚠️ i target della direzione hanno GIÀ il loro sfrido dentro (la Customer Base a 1.341 è 1.251 + 7%): aggiungerne un altro qui lo compone.`}
                                                     onClick={(e) => { e.preventDefault(); setVal((x) => ({ ...x, [k]: String(v) })); }}
                                                     className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums border transition-colors",
                                                         on ? "text-white bg-emerald-500/70 border-white/30" : "text-emerald-300/80 border-emerald-400/25 bg-emerald-400/5 hover:bg-emerald-400/15")}>
