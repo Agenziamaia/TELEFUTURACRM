@@ -40,21 +40,42 @@ export function useRolePermissions(role: string | null | undefined, grade?: stri
         const chiavi = [role];
         if (grade) chiavi.push(roleGradeKey(role, grade));
         if (userId) chiavi.push(userKey(userId));
-        supabase.from("role_permissions").select("role,perm_key,allowed").in("role", chiavi)
-            .then(({ data, error }) => {
-                if (!vivo) return;
-                const m: PermMap = new Map();
-                if (!error) {
-                    const rows = (data ?? []) as { role: string; perm_key: string; allowed: boolean }[];
-                    // prima le righe di ruolo, poi le eccezioni di grado, poi
-                    // quelle della PERSONA — l'ultimo strato vince
-                    rows.filter((r) => r.role === role).forEach((r) => m.set(r.perm_key, r.allowed));
-                    if (grade) rows.filter((r) => r.role === roleGradeKey(role, grade)).forEach((r) => m.set(r.perm_key, r.allowed));
-                    if (userId) rows.filter((r) => r.role === userKey(userId)).forEach((r) => m.set(r.perm_key, r.allowed));
+
+        /* SE LA LETTURA NON RIESCE, SI RIPROVA (Luca 28/08).
+           Prima bastava un singolo intoppo — il lasciapassare non ancora
+           pronto, un attimo di rete — perché il CRM si arrendesse a una mappa
+           vuota: e con la mappa vuota il pannello Permessi viene IGNORATO e
+           valgono i valori di fabbrica del menù. Due facce, entrambe brutte:
+           chi era stato abilitato a mano perdeva la sezione, e chi era stato
+           tolto se la ritrovava. Ora si insiste tre volte prima di arrendersi,
+           e la resa lascia una traccia in console. */
+        const leggi = async (tentativo = 0): Promise<void> => {
+            const { data, error } = await supabase.from("role_permissions")
+                .select("role,perm_key,allowed").in("role", chiavi);
+            if (!vivo) return;
+            if (error) {
+                if (tentativo < 2) {                       // 3 tentativi in tutto
+                    await new Promise((r) => setTimeout(r, 400 * (tentativo + 1)));
+                    if (!vivo) return;
+                    return leggi(tentativo + 1);
                 }
-                setPerms(m);
+                console.warn("[permessi] non sono riuscito a leggere role_permissions:", error.message,
+                    "— valgono i default del menù, le abilitazioni date dal pannello NON sono applicate.");
+                setPerms(new Map());
                 setLoaded(true);
-            });
+                return;
+            }
+            const m: PermMap = new Map();
+            const rows = (data ?? []) as { role: string; perm_key: string; allowed: boolean }[];
+            // prima le righe di ruolo, poi le eccezioni di grado, poi
+            // quelle della PERSONA — l'ultimo strato vince
+            rows.filter((r) => r.role === role).forEach((r) => m.set(r.perm_key, r.allowed));
+            if (grade) rows.filter((r) => r.role === roleGradeKey(role, grade)).forEach((r) => m.set(r.perm_key, r.allowed));
+            if (userId) rows.filter((r) => r.role === userKey(userId)).forEach((r) => m.set(r.perm_key, r.allowed));
+            setPerms(m);
+            setLoaded(true);
+        };
+        void leggi();
         return () => { vivo = false; };
     }, [role, grade, userId]);
 

@@ -143,6 +143,31 @@ export function PermessiView() {
     // dove SCRIVONO interruttori e rotelline in questa vista
     const chiaveScrittura = persona ? userKey(persona) : grado ? roleGradeKey(ruolo, grado) : ruolo;
 
+    /* «MA SONO TUTTI ABILITATI, COME MAI?» (Luca 28/08)
+       Guardando il RUOLO la levetta era muta: diceva verde anche quando sotto
+       c'era un grado o una persona che la contraddiceva — e quelle persone non
+       vedevano la sezione senza che si capisse il perché (caso vero: Password
+       accesa a "venditore", ma spenta per gli apprendisti).
+       Da qui la levetta del ruolo DICHIARA le sue eccezioni: chi le ha e in
+       che verso. Il conto si fa solo nella vista di ruolo — con un grado o una
+       persona scelti la levetta parla già di loro. */
+    const eccezioniDi = (href: string): { chi: string; vale: boolean; teste: number }[] => {
+        if (grado || persona) return [];
+        const out: { chi: string; vale: boolean; teste: number }[] = [];
+        const conEccPersonale = new Set<string>();
+        for (const p of persone) {                       // solo le persone di QUESTO ruolo
+            const pm = righePersone.get(p.id);
+            if (pm?.has(href)) { out.push({ chi: p.full_name, vale: !!pm.get(href), teste: 1 }); conEccPersonale.add(p.id); }
+        }
+        righeGradi.forEach((pm, gr) => {
+            if (!pm.has(href)) return;
+            // le teste vere: chi ha quel grado e non ha già un'eccezione sua
+            const teste = persone.filter((p) => p.grade === gr && !conEccPersonale.has(p.id)).length;
+            out.push({ chi: `${gradeLabel(ruolo, gr)}${teste ? ` (${teste})` : " — nessuno con questo grado"}`, vale: !!pm.get(href), teste });
+        });
+        return out;
+    };
+
     if (!isAdmin) return (
         <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">
             Sezione riservata all&apos;Admin.
@@ -314,6 +339,14 @@ export function PermessiView() {
                         Gli interruttori mostrano cosa VEDE il ruolo scelto{ruolo && gradesFor(ruolo).length > 0 ? " (o il grado selezionato qui sopra)" : ""}: menù e accesso alle pagine seguono in automatico.
                         L&apos;Admin vede sempre tutto e non è modificabile da qui.
                     </p>
+                    {/* la legenda del bollino: senza, «≠ 3» non dice niente a nessuno */}
+                    {ruolo && !grado && !persona && (
+                        <p className="text-xs text-slate-500">
+                            Il bollino <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 border border-amber-400/40 text-amber-300">≠ n</span> accanto
+                            a una levetta avvisa che <b className="text-amber-300/90">per n persone di questo ruolo vale il contrario</b> (un grado o un&apos;eccezione personale):
+                            passaci sopra per sapere chi, e scegli il grado o la persona qui sopra per regolarli.
+                        </p>
+                    )}
                 </div>
                 {ruolo && ["agente", "direttore_ob"].includes(ruolo) && (
                     <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
@@ -336,6 +369,9 @@ export function PermessiView() {
                                     const eff = effectiveAllowed(ruolo, v.href, v.defaultRoles, permsEff, v.gruppo);
                                     const eccezione = !persona && !!grado && (righeGradi.get(grado)?.has(v.href) ?? false);
                                     const eccPersona = !!persona && (righePersone.get(persona)?.has(v.href) ?? false);
+                                    // chi, dentro questo ruolo, fa eccezione a questa levetta
+                                    const eccContro = eccezioniDi(v.href).filter((e) => e.vale !== eff);   // chi la contraddice
+                                    const teste = eccContro.reduce((s, e) => s + e.teste, 0);             // quante persone davvero
                                     // COERENZA GERARCHICA (regola Luca): con un antenato spento la voce
                                     // non conta nulla e NON si puo' accendere — prima si accende l'hub
                                     // (o la sezione), poi si scelgono le voci interne una a una.
@@ -363,6 +399,14 @@ export function PermessiView() {
                                                         className={`p-1.5 rounded-lg border transition-colors shrink-0 ${capOpen === v.href ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-300" : "border-white/10 text-slate-400 hover:text-white hover:bg-white/5"}`}>
                                                         ⚙️
                                                     </button>
+                                                )}
+                                                {/* «non vale per tutti»: la levetta del ruolo dichiara chi la contraddice */}
+                                                {eccContro.length > 0 && (
+                                                    <span
+                                                        title={`Attenzione: questa levetta NON vale per tutti.\n\n${eccContro.map((e) => `• ${e.chi}: ${e.vale ? "la vede lo stesso" : "NON la vede"}`).join("\n")}\n\nScegli il grado (o la persona) qui sopra per regolarli.`}
+                                                        className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 border border-amber-400/40 text-amber-300 cursor-help">
+                                                        ≠ {teste || eccContro.length}
+                                                    </span>
                                                 )}
                                                 {eccezione && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title={`Eccezione del grado ${gradeLabel(ruolo, grado)} su questa voce`} />}
                                                 {eccPersona && <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" title={`Eccezione personale di ${personaObj?.full_name} su questa voce`} />}
