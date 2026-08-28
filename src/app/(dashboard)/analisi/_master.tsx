@@ -384,7 +384,22 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                             <p className="text-[11px] text-slate-500 rounded-xl bg-white/[.04] border border-white/[.06] px-3 py-3">🟡 La gara Fastweb T2 corre a <b className="text-slate-300">pezzi</b> (niente tabellare a soglie): il dettaglio per categoria è qui a destra. Il Fastweb sui codici T1 conta nella carta Vodafone (lettera A).</p>
                         ) : av ? (
                             <>
-                                {[...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine).map(barraPista)}
+                                {/* PRIMA IL TUO CODICE, POI IL GRUPPO (Luca 28/08).
+                                    Le barre erano nell'ordine del tabellare, che mescola
+                                    le due cose: uno leggeva «Mobile» (soglie del suo PDV)
+                                    e subito sotto «Luce & Gas» (soglie di tutto il
+                                    franchising) senza che niente dicesse che stava
+                                    cambiando il soggetto. Ora si legge prima quello su
+                                    cui il singolo negozio può incidere, poi quello che
+                                    dipende da tutti. */}
+                                {(() => {
+                                    const DI_GRUPPO = ["assicurazioni", "lucegas"];
+                                    const piste = [...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine);
+                                    const mie = piste.filter((x) => !DI_GRUPPO.includes(x.chiave));
+                                    const gruppo = piste.filter((x) => DI_GRUPPO.includes(x.chiave));
+                                    const barre = (arr) => arr.map(barraPista).filter(Boolean);
+                                    return barre(mie);
+                                })()}
                                 {b === "w3" && w3 && w3.puntiPr > 0 && (
                                     <SogliaBar emoji="🏅" label="Partnership Reward (eventi CB)"
                                         punti={w3.puntiPr} pezzi={w3.eventi.length}
@@ -398,6 +413,22 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                                         onClick={() => apri({ titolo: "Partnership Reward — eventi Customer Base", sub: filtroLabel, items: w3.eventi })}
                                     />
                                 )}
+                                {/* da qui in giù: quello che NON dipende dal singolo
+                                    negozio ma da tutto il franchising */}
+                                {(() => {
+                                    const DI_GRUPPO = ["assicurazioni", "lucegas"];
+                                    const gruppo = [...(tab?.piste || [])].sort((x, y) => x.ordine - y.ordine)
+                                        .filter((x) => DI_GRUPPO.includes(x.chiave));
+                                    const barre = gruppo.map(barraPista).filter(Boolean);
+                                    const mostraTitolo = barre.length > 0 || (b === "w3" && w3);
+                                    if (!mostraTitolo) return null;
+                                    return (<>
+                                        <p className="pt-3 pb-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                                            🌍 Di gruppo <span className="font-medium normal-case tracking-normal text-slate-600">— non dipende dal singolo codice</span>
+                                        </p>
+                                        {barre}
+                                    </>);
+                                })()}
                                 {b === "w3" && w3 && (w3.puntiBiz > 0 || w3.modo === "t1" || w3.modo === "t2") && (
                                     <SogliaBar emoji="💼" label="Extra Gara P.IVA (soglia di Ragione Sociale)"
                                         punti={w3.puntiBiz} pezzi={w3.eventiBiz.length}

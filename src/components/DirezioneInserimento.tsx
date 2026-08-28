@@ -91,6 +91,22 @@ export function DirezioneInserimentoAdmin() {
     const [monthISO, setMonthISO] = useState(mesePrimo());
     const [dir, setDir] = useState<Direzione | null>(null);
     const [aperto, setAperto] = useState<string | null>(null);
+    /* UNA PISTA SOLA (Luca 28/08): «se clicco direttamente sul pallino Fisso o
+       Mobile mi deve aprire solo quel codice con solo la pista che sto
+       cliccando; se clicco da qualsiasi altra parte sulla barra mi apre tutto
+       il codice». Il pallino è già la sintesi di quella pista: cliccarlo
+       chiede il dettaglio DI QUELLA, non di tutte e quattro. */
+    const [pistaSola, setPistaSola] = useState<string | null>(null);
+    const apriTutto = (cod: string, giaAperto: boolean) => {
+        setPistaSola(null);
+        setAperto(giaAperto && !pistaSola ? null : cod);
+    };
+    const apriSolaPista = (cod: string, chiave: string) => {
+        // ri-cliccare la stessa pastiglia richiude: è l'unico gesto che serve
+        if (aperto === cod && pistaSola === chiave) { setAperto(null); setPistaSola(null); return; }
+        setAperto(cod);
+        setPistaSola(chiave);
+    };
     const [bozze, setBozze] = useState<Record<string, string>>({});       // "cod|pista" → input target
     const [bozzeSfr, setBozzeSfr] = useState<Record<string, string>>({}); // pista → input sfrido
     const [salvate, setSalvate] = useState<Record<string, boolean>>({});
@@ -601,7 +617,12 @@ export function DirezioneInserimentoAdmin() {
                         return (
                             <div key={k.cod_gara} className="glass-card overflow-hidden transition-shadow"
                                 style={{ borderLeft: `3px solid ${on ? bMeta.color : `color-mix(in srgb, ${bMeta.color} 35%, transparent)`}`, boxShadow: on ? `0 0 22px color-mix(in srgb, ${bMeta.color} 22%, transparent)` : undefined }}>
-                                <button onClick={() => setAperto(on ? null : k.cod_gara)} className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/[0.03] transition-colors">
+                                {/* ⚠️ era un <button>: dentro adesso ci sono i bottoni
+                                    delle singole piste, e i bottoni non si annidano */}
+                                <div role="button" tabIndex={0}
+                                    onClick={() => apriTutto(k.cod_gara, on)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); apriTutto(k.cod_gara, on); } }}
+                                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer text-left">
                                     <div className="flex items-center gap-3 min-w-0 flex-1">
                                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: bMeta.color, boxShadow: `0 0 8px ${bMeta.color}` }} />
                                         <span className="text-sm font-black text-white truncate">{k.negozio}</span>
@@ -612,14 +633,22 @@ export function DirezioneInserimentoAdmin() {
                                         stessa colonna su ogni riga → colpo d'occhio verticale */}
                                     {semafori.length > 0 && (
                                         <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "128px" }}>
-                                            {semafori.map((sm) => (
-                                                <span key={sm.chiave} title={tipPallino(sm)}
-                                                    className="flex items-center gap-1.5 rounded-md bg-white/[0.03] border border-white/[0.06] px-2 py-1">
-                                                    <span className="text-[10px] font-semibold text-slate-400 truncate flex-1">{EMOJI_PISTA(sm.nome)} {sm.nome}</span>
-                                                    {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
-                                                    <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
-                                                </span>
-                                            ))}
+                                            {semafori.map((sm) => {
+                                                const solaQui = on && pistaSola === sm.chiave;
+                                                return (
+                                                    <button key={sm.chiave} type="button"
+                                                        onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
+                                                        title={`${tipPallino(sm)}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
+                                                        className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
+                                                            solaQui
+                                                                ? "bg-indigo-500/20 border-indigo-400/50"
+                                                                : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20")}>
+                                                        <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{EMOJI_PISTA(sm.nome)} {sm.nome}</span>
+                                                        {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
+                                                        <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                     <div className="flex items-center gap-2 shrink-0">
@@ -633,10 +662,21 @@ export function DirezioneInserimentoAdmin() {
                                         )}
                                         <span className={cn("text-slate-500 transition-transform text-xs", on && "rotate-180")}>▾</span>
                                     </div>
-                                </button>
+                                </div>
                                 {on && (
                                     <div className="border-t border-white/5 divide-y divide-white/[0.04]">
-                                        {pisteMostrate.map((p) => {
+                                        {pistaSola && (
+                                            <div className="px-4 py-2 flex items-center justify-between gap-2 bg-indigo-500/[0.06]">
+                                                <span className="text-[11px] text-indigo-200">
+                                                    Stai vedendo <b>una pista sola</b> di questo codice.
+                                                </span>
+                                                <button type="button" onClick={() => setPistaSola(null)}
+                                                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-white/15 text-slate-300 hover:bg-white/10">
+                                                    mostra tutte
+                                                </button>
+                                            </div>
+                                        )}
+                                        {(pistaSola ? pisteMostrate.filter((p) => p.chiave === pistaSola) : pisteMostrate).map((p) => {
                                             const scala = k.soglie[p.chiave] || null;
                                             // la CB «va a punti» (gara parallela Partnership):
                                             // il numero che conta è cbPunti, i pezzi nel sub
