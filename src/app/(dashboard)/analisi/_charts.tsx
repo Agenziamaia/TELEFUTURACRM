@@ -607,8 +607,7 @@ export function AnelloScaglioni({
         return { left: `${50 + 50 * cx}%`, top: `${50 + 50 * cy}%`, transform: `translate(${tx}, ${ty})` };
     };
     const anello = (
-        <div className={cn("tf-anello", importante && "tf-imp", allarme && "tf-alert")} onClick={onClick}
-            style={{ "--aura": `${colore}66` }}>
+        <div className={cn("tf-anello", importante && "tf-imp", allarme && "tf-alert")} onClick={onClick}>
             <svg viewBox={`0 0 ${V} ${V}`}>
                 <defs>
                     <linearGradient id={`gs${uid}`} x1="0" y1="0" x2="1" y2="1">
@@ -680,6 +679,8 @@ export function AnelloScaglioni({
                 return <span key={`l${s.tier}`} className="tf-lab" style={{ ...posLab(sec[i].f1 + 0.0062), color: st === "presa" ? "#fff" : st === "proj" ? colore : "#64748b" }}>S{s.tier}·{fmtN(s.soglia_da)}</span>;
             })}
             {target > 0 && <span className="tf-lab" style={{ ...posLab(fDi(sec, target)), color: "#34d399" }}>🎯{fmtN(target)}</span>}
+            {/* il glifo dice l'allarme anche senza movimento e senza colore */}
+            {allarme && <span className="tf-bang" title="Proiezione sotto il target">!</span>}
         </div>
     );
     return tip ? <Tip className="block" tip={tip}>{anello}</Tip> : anello;

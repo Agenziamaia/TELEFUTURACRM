@@ -1091,10 +1091,15 @@ function ReteView() {
                     Lascia vuoto per non avere target su quella pista.
                 </span>
                 <label className="flex items-center gap-2 text-[11px] text-slate-400 border-l border-white/10 pl-3">
-                    ⭐ <span>in evidenza: lampeggia sotto il</span>
-                    <input inputMode="decimal" value={alertPct} onChange={(e) => setAlertPct(e.target.value.replace(/[^\d.,]/g, ""))}
+                    <span className="inline-block w-4 h-4 rounded-full border-2 border-slate-300/60 shrink-0" title="in evidenza" />
+                    <span>★ i KPI in evidenza hanno un contorno; si accende in</span>
+                    <span className="inline-block w-4 h-4 rounded-full border-2 shrink-0" style={{ borderColor: "rgba(251,146,60,.95)", boxShadow: "0 0 8px rgba(251,146,60,.6)" }} title="in allarme" />
+                    <span>ambra quando la <b className="text-slate-300">proiezione</b> scende sotto il</span>
+                    <input inputMode="decimal" value={alertPct}
+                        onChange={(e) => { const n = e.target.value.replace(/[^\d.,]/g, ""); const v = Number(n.replace(",", ".")); setAlertPct(n === "" || !isFinite(v) ? n : String(Math.max(1, Math.min(200, v)))); }}
                         className="w-14 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white text-right tabular-nums" />
                     <span>% del target</span>
+                    <span className="text-slate-600">· in evidenza ora: <b className="text-slate-400 tabular-nums">{imp.size}</b></span>
                 </label>
                 <button onClick={salva} disabled={!sporco || busy}
                     className={cn("primary-btn text-xs px-3 py-1.5 ml-auto inline-flex items-center gap-1.5", (!sporco || busy) && "opacity-40")}>
@@ -1124,12 +1129,16 @@ function ReteView() {
                             const k = `${p.brand}|${p.chiave}`;
                             return (
                                 <label key={k} className={cn("flex items-center gap-2 border rounded-lg px-3 py-2",
-                                    imp.has(k) ? "bg-amber-400/[0.07] border-amber-400/30" : "bg-white/[0.03] border-white/10")}>
+                                    imp.has(k) ? "bg-white/[0.06] border-white/25" : "bg-white/[0.03] border-white/10")}>
                                     {/* ⭐ = KPI in evidenza: nell'Analisi avrà l'aura attorno all'anello */}
                                     <button type="button" title={imp.has(k) ? "Togli dall'evidenza" : "Metti in evidenza"}
                                         onClick={(e) => { e.preventDefault(); setImp((v) => { const n = new Set(v); if (n.has(k)) n.delete(k); else n.add(k); return n; }); }}
-                                        className={cn("text-sm leading-none transition-opacity", imp.has(k) ? "opacity-100" : "opacity-25 hover:opacity-60")}>⭐</button>
-                                    <span className="text-xs text-slate-300 truncate shrink-0 w-32">{p.nome}</span>
+                                        aria-pressed={imp.has(k)}
+                                        className={cn("text-sm leading-none transition-colors", imp.has(k) ? "text-amber-300" : "text-slate-500 hover:text-slate-300")}>{imp.has(k) ? "★" : "☆"}</button>
+                                    <span className="text-xs text-slate-300 truncate shrink-0 w-32">
+                                        {p.nome}
+                                        {imp.has(k) && !(val[k] || "").trim() && <span className="block text-[9px] text-amber-300/70 leading-tight">senza target non scatta l&apos;allarme</span>}
+                                    </span>
                                     {/* LE SOGLIE DELLA LETTERA, a sinistra del campo: si clicca e il
                                         target esce da solo, soglia + sfrido. Sono i numeri veri del
                                         tabellare del mese — caricata la nuova lettera, sono già qui. */}

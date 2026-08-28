@@ -758,7 +758,13 @@ function AnalisiInner() {
                 // Vale solo sui KPI in evidenza: far lampeggiare tutto è come
                 // non far lampeggiare niente.
                 x.importante = evidenza.has(`${c.id}|${x.chiave}`);
-                x.allarme = !!(x.importante && x.target?.v > 0 && rif < x.target.v * (alertPct / 100));
+                // L'ALLARME VUOLE LA PROIEZIONE, e solo quella. `prj` torna null
+                // finché il mese non ha abbastanza giorni per proiettare: col
+                // vecchio `rif` si ricadeva sul FATTO grezzo, e il 2 del mese
+                // ogni KPI in evidenza era in allarme perché era al 7% del
+                // target. Una settimana di discoteca, e poi nessuno guarda più.
+                x.allarme = !!(x.importante && x.target?.v > 0 && x.proiezione != null
+                    && x.proiezione < x.target.v * (alertPct / 100));
             }
             // ORDINE FISSO (Luca 28/08: «lo lasci fisso così, deve rimanere
             // fatto per forza così»): consumer prima, poi energia, poi

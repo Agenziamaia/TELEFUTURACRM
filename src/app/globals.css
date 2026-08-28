@@ -1354,28 +1354,56 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 /* ═══ KPI IN EVIDENZA E ALLARME (Luca 28/08) ═════════════════════════════
    «Fra tutti questi ce ne sono alcuni più rilevanti: appena entro, se ho degli
    anelli con un'aura intorno e altri normali, l'occhio mi ricade su quelli».
-   L'aura è una CORONA MORBIDA attorno all'anello intero — forma diversa dal
-   glow che i tratti hanno già, così non si confonde con «questo arco è
-   acceso»: quella dice acceso, questa dice GUARDA QUI.
-   Sta DIETRO (z-index -1) per non toccare né i tratti né le tacche. */
+
+   UN CONTORNO, NON UN BAGLIORE. Dentro l'anello è già tutto bagliore caldo
+   nella tinta del brand — l'arco, le tacche, i chip. Aggiungere un alone più
+   grande della stessa tinta metteva «questo conta di più» sulla STESSA
+   variabile percettiva che dice «quanto hai fatto»: l'anello con l'arco lungo
+   attirava più di quello in evidenza, e l'alone gli sfocava pure il bordo. Il
+   filo è un canale libero: nessun altro segno della card ha un bordo.
+
+   E IL FILO È NEUTRO, uguale per tutti i brand. Colorarlo del brand rompeva il
+   significato su due marchi su cinque: su Fastweb (giallo) l'evidenza era
+   indistinguibile dall'ambra dell'allarme, e su Vodafone lo INVERTIVA — aura
+   rossa per «importante» (che si legge pericolo) e oro per «in allarme» (che si
+   legge medaglia). Con l'evidenza neutra, l'ambra resta libera e ovunque
+   significa una cosa sola.
+
+   Sta DENTRO il box dell'anello (inset 7%): il tratto arriva all'83,6% del
+   raggio, quindi il filo cade appena fuori senza mai debordare — prima con
+   inset negativo la corona veniva tagliata dritta dai fianchi della cella. */
 .tf-anello.tf-imp::before {
-    content: ""; position: absolute; inset: -8%; border-radius: 50%; pointer-events: none;
-    background: radial-gradient(closest-side, transparent 68%, var(--aura) 83%, transparent 100%);
+    content: ""; position: absolute; inset: 7%; border-radius: 50%; pointer-events: none;
+    border: 2px solid rgba(226, 232, 240, .55);
+    box-shadow: 0 0 7px rgba(226, 232, 240, .30), inset 0 0 7px rgba(226, 232, 240, .22);
 }
-/* ALLARME: la stessa corona RESPIRA e vira all'ambra. Il lampeggio della Home
-   è un pallino che si espande (animate-ping): qui è un alone che pulsa attorno
-   a un cerchio — due figure diverse, due significati diversi, nessun rischio di
-   scambiarle. Lento (2,4s) perché deve chiamare, non aggredire. */
+/* ALLARME: stesso segno, ambra, più spesso — e BATTE invece di respirare.
+   Un respiro sinusoidale è la grammatica dello «sto caricando», ed è già usata
+   a pochi pixel di distanza dalla tacca della prossima soglia. Il battito è
+   asimmetrico — salita in 6 centesimi, decadimento lungo — che è il modo in cui
+   si accende un allarme e non un'attesa. */
 .tf-anello.tf-alert::before {
-    background: radial-gradient(closest-side, transparent 66%, rgba(251, 191, 36, .55) 82%, rgba(244, 63, 94, .22) 92%, transparent 100%);
-    animation: tfAuraAllarme 2.4s ease-in-out infinite;
+    border: 2.5px solid rgba(251, 146, 60, .95);
+    box-shadow: 0 0 12px rgba(251, 146, 60, .6), inset 0 0 10px rgba(251, 146, 60, .35);
+    animation: tfAuraAllarme 2.6s linear infinite;
 }
 @keyframes tfAuraAllarme {
-    0%, 100% { opacity: .35; transform: scale(.98); }
-    50% { opacity: 1; transform: scale(1.03); }
+    0% { opacity: .42 } 6% { opacity: 1 } 20% { opacity: .55 }
+    30% { opacity: .92 } 48%, 100% { opacity: .42 }
 }
-/* chi ha chiesto meno animazioni non deve subirla: resta l'aura, ferma e ambra */
-@media (prefers-reduced-motion: reduce) { .tf-anello.tf-alert::before { animation: none; opacity: .9; } }
+/* IL GLIFO regge il significato dove il movimento non arriva: chi ha chiesto
+   meno animazioni, chi non distingue l'ambra, e le misure piccole. */
+.tf-anello .tf-bang { position: absolute; top: 3%; right: 3%; border-radius: 50%;
+    width: clamp(13px, calc(var(--D) * .13), 26px); height: clamp(13px, calc(var(--D) * .13), 26px);
+    display: grid; place-items: center; background: rgba(251, 146, 60, .95); color: #0f111a;
+    font-weight: 900; font-size: clamp(9px, calc(var(--D) * .075), 15px); line-height: 1;
+    box-shadow: 0 0 8px rgba(251, 146, 60, .55); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+    .tf-anello.tf-alert::before { animation: none; opacity: 1; }
+    /* anche la tacca della prossima soglia smette di pulsare: senza questa
+       riga restava l'informazione neutra a muoversi e spariva l'allarme */
+    .tf-anello .animate-pulse { animation: none; }
+}
 .tf-anello > svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .tf-anello-centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; text-align: center; pointer-events: none; white-space: nowrap; padding: 0 17%; }
