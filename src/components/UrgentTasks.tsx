@@ -45,7 +45,7 @@ export function UrgentTasks() {
         let vivo = true;
         const load = async () => {
             const targets = isAdmin ? ["admin", "direzione"] : ["direzione"];
-            const [pers, rig, pack, ccr, car] = await Promise.all([
+            const [pers, rig, pack, ccr, car, mie] = await Promise.all([
                 // (1) task personali: le vede il destinatario, chiunque sia
                 supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
                     .eq("target_user_id", user.id).eq("done", false).order("created_at", { ascending: false }),
@@ -57,6 +57,23 @@ export function UrgentTasks() {
                     .in("target_role", targets).is("target_user_id", null).eq("done", false).order("created_at", { ascending: false }) : null,
                 vedeRichiesteModifica ? supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
                 isDirezione ? supabase.from("client_access_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
+                /* ══ LE TASK CHE MI HANNO ASSEGNATO (Luca 28/08 sera) ═══════
+                   Prima nessuno ti avvisava, e intanto il patto dei due giorni
+                   correva. Niente pop-up — «sarebbe troppo invadente, e il
+                   widget in home basta»: il fulmine resta ACCESO finché la
+                   task non ha uno stato definitivo.
+                   Definitivo = gli stessi stati che il calendario considera
+                   LAVORATE: fatta, rimandata al mittente, abbandonata. Non ne
+                   invento una seconda lista: due copie della stessa regola
+                   divergono sempre.
+                   E «assegnata» vuol dire DA UN ALTRO: se me la sono scritta
+                   da solo non c'è nessuno che aspetta una risposta. */
+                supabase.from("calendar_tasks")
+                    .select("id, title, notes, date, created_by, created_by_user_id, assegnata_il, created_at")
+                    .eq("assigned_user_id", user.id)
+                    .not("status", "in", "(fatta,problema,abbandonata)")
+                    .neq("created_by_user_id", user.id)
+                    .order("created_at", { ascending: false }),
             ]);
             if (!vivo) return;
             const list: Task[] = ([...((pers.data ?? []) as Task[]), ...((pack?.data ?? []) as Task[])])
@@ -77,6 +94,21 @@ export function UrgentTasks() {
                 titolo: `${car!.count} richiest${car!.count === 1 ? "a" : "e"} di accesso ai dati cliente`,
                 dettaglio: "Si approvano dalla pagina Clienti: il primo che decide la chiude per tutti.",
             });
+            /* una riga per ciascuna, non un contatore: chi l'ha assegnata e da
+               quanto aspetta sono l'informazione che serve per decidere. */
+            for (const t of (mie?.data ?? []) as { id: string; title: string; notes: string | null; date: string | null; created_by: string | null; assegnata_il: string | null; created_at: string }[]) {
+                const da = t.assegnata_il || t.created_at;
+                const giorni = Math.floor((Date.now() - new Date(da).getTime()) / 864e5);
+                const quando = giorni <= 0 ? "oggi" : giorni === 1 ? "da ieri" : `da ${giorni} giorni`;
+                list.push({
+                    id: `cal-${t.id}`,
+                    synthetic: true,
+                    created_at: da,
+                    link: "/calendario",
+                    titolo: `📋 ${t.title}`,
+                    dettaglio: `Assegnata da ${t.created_by || "un collega"}, ${quando}.${t.notes ? " " + t.notes : ""} Resta qui finché non la segni fatta o la rimandi al mittente.`,
+                });
+            }
             setTasks(list);
         };
         load();
@@ -95,6 +127,8 @@ export function UrgentTasks() {
             // le aggiunge alla publication)
             .on("postgres_changes", { event: "*", schema: "public", table: "contract_change_requests" }, ricarica)
             .on("postgres_changes", { event: "*", schema: "public", table: "client_access_requests" }, ricarica)
+            // e quando qualcuno mi assegna una task, o io la chiudo
+            .on("postgres_changes", { event: "*", schema: "public", table: "calendar_tasks" }, ricarica)
             .subscribe();
         const onVis = () => { if (document.visibilityState === "visible") ricarica(); };
         document.addEventListener("visibilitychange", onVis);
