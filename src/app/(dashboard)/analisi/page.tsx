@@ -315,7 +315,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete, kpiRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]).catch(() => null), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -344,6 +344,8 @@ function AnalisiInner() {
                     // LAYOUT CONDIVISO della Rete: la disposizione è una per
                     // tutta l'azienda, non personale (Luca 28/08)
                     supabase.from("layout_condiviso").select("valore").eq("chiave", "analisi_rete").maybeSingle(),
+                    // KPI in evidenza + soglia di allarme (Gare → Target → Rete)
+                    supabase.from("layout_condiviso").select("valore").eq("chiave", "rete_kpi").maybeSingle(),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -395,6 +397,7 @@ function AnalisiInner() {
                     targetDir: dirRes?.data || [],
                     targetRete: tReteRes?.data || [],
                     layoutRete: Array.isArray(layRete?.data?.valore) ? layRete.data.valore : null,
+                    kpiRete: kpiRes?.data?.valore || null,
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -627,6 +630,8 @@ function AnalisiInner() {
                 .reduce((sm, x) => sm + (Number(x.target) || 0), 0);
             return d > 0 ? { v: Math.round(d * 100) / 100, fonte: "direzione" } : null;
         };
+        const evidenza = new Set(Array.isArray(dati?.kpiRete?.importanti) ? dati.kpiRete.importanti : []);
+        const alertPct = Number(dati?.kpiRete?.alertPct) > 0 ? Number(dati.kpiRete.alertPct) : 85;
         const s4Righe = (dati?.altri || []).filter((r) => trkBrandKey(r.brand) === "s4");
         // IL TABELLARE DELLA RETE È QUELLO DEI RAGAZZI (Luca 28/08: «qui in Rete
         // ci devono essere i target ragazzi, non ti sbagliare»). Era già la
@@ -746,7 +751,14 @@ function AnalisiInner() {
                 x.prossima = pr;
                 x.presa = [...x.scala].reverse().find((v) => x.punti >= v.soglia_da) || null;
                 x.presaProj = [...x.scala].reverse().find((v) => rif >= v.soglia_da) || null;
-                x.prossima = pr;
+                // ⭐ KPI IN EVIDENZA e ⚠︎ ALLARME (Luca 28/08). L'evidenza è una
+                // scelta stabile fatta nel pannello; l'allarme scatta quando la
+                // PROIEZIONE — non il fatto, che a inizio mese è sempre poco —
+                // resta sotto la percentuale del target che l'azienda si è data.
+                // Vale solo sui KPI in evidenza: far lampeggiare tutto è come
+                // non far lampeggiare niente.
+                x.importante = evidenza.has(`${c.id}|${x.chiave}`);
+                x.allarme = !!(x.importante && x.target?.v > 0 && rif < x.target.v * (alertPct / 100));
             }
             // ORDINE FISSO (Luca 28/08: «lo lasci fisso così, deve rimanere
             // fatto per forza così»): consumer prima, poi energia, poi

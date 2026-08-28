@@ -1348,6 +1348,31 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 .tf-pista.spaiata { grid-column: calc(var(--col) - var(--ultima) + 1) / span 2; }
 
 .tf-anello { width: var(--D); height: var(--D); position: relative; flex: 0 0 auto; }
+/* ═══ KPI IN EVIDENZA E ALLARME (Luca 28/08) ═════════════════════════════
+   «Fra tutti questi ce ne sono alcuni più rilevanti: appena entro, se ho degli
+   anelli con un'aura intorno e altri normali, l'occhio mi ricade su quelli».
+   L'aura è una CORONA MORBIDA attorno all'anello intero — forma diversa dal
+   glow che i tratti hanno già, così non si confonde con «questo arco è
+   acceso»: quella dice acceso, questa dice GUARDA QUI.
+   Sta DIETRO (z-index -1) per non toccare né i tratti né le tacche. */
+.tf-anello.tf-imp::before {
+    content: ""; position: absolute; inset: -8%; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(closest-side, transparent 68%, var(--aura) 83%, transparent 100%);
+}
+/* ALLARME: la stessa corona RESPIRA e vira all'ambra. Il lampeggio della Home
+   è un pallino che si espande (animate-ping): qui è un alone che pulsa attorno
+   a un cerchio — due figure diverse, due significati diversi, nessun rischio di
+   scambiarle. Lento (2,4s) perché deve chiamare, non aggredire. */
+.tf-anello.tf-alert::before {
+    background: radial-gradient(closest-side, transparent 66%, rgba(251, 191, 36, .55) 82%, rgba(244, 63, 94, .22) 92%, transparent 100%);
+    animation: tfAuraAllarme 2.4s ease-in-out infinite;
+}
+@keyframes tfAuraAllarme {
+    0%, 100% { opacity: .35; transform: scale(.98); }
+    50% { opacity: 1; transform: scale(1.03); }
+}
+/* chi ha chiesto meno animazioni non deve subirla: resta l'aura, ferma e ambra */
+@media (prefers-reduced-motion: reduce) { .tf-anello.tf-alert::before { animation: none; opacity: .9; } }
 .tf-anello > svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .tf-anello-centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; text-align: center; pointer-events: none; white-space: nowrap; padding: 0 17%; }

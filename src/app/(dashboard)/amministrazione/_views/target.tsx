@@ -934,6 +934,14 @@ function ReteView() {
     const [piste, setPiste] = useState<{ brand: string; label: string; colore: string; chiave: string; nome: string; unita: string }[]>([]);
     const [val, setVal] = useState<Record<string, string>>({});
     const [iniziale, setIniziale] = useState<Record<string, string>>({});
+    // KPI IMPORTANTI e soglia di allarme (Luca 28/08). Non stanno in
+    // `target_rete` perché quello è per MESE: «questo KPI è importante» è una
+    // scelta stabile, rifarla ogni mese sarebbe una tassa. Vivono in una riga
+    // condivisa, valida per tutta l'azienda come la disposizione della pagina.
+    const [imp, setImp] = useState<Set<string>>(new Set());
+    const [impIni, setImpIni] = useState<string>("");
+    const [alertPct, setAlertPct] = useState("85");
+    const [alertIni, setAlertIni] = useState("85");
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
 
@@ -963,8 +971,16 @@ function ReteView() {
                 }
                 for (const p of (RETE_PISTE_FISSE[b.id] || [])) out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi" });
             }
-            const { data } = await supabase.from("target_rete").select("brand, pista, target").eq("month", mese);
+            const [{ data }, kpi] = await Promise.all([
+                supabase.from("target_rete").select("brand, pista, target").eq("month", mese),
+                supabase.from("layout_condiviso").select("valore").eq("chiave", "rete_kpi").maybeSingle(),
+            ]);
             if (!vivo) return;
+            const v0 = (kpi.data?.valore || {}) as { importanti?: string[]; alertPct?: number };
+            const setImp0 = new Set<string>(Array.isArray(v0.importanti) ? v0.importanti : []);
+            setImp(setImp0); setImpIni([...setImp0].sort().join(","));
+            const p0 = String(v0.alertPct ?? 85);
+            setAlertPct(p0); setAlertIni(p0);
             const m: Record<string, string> = {};
             for (const r of (data || []) as { brand: string; pista: string; target: number }[]) {
                 if (Number(r.target) > 0) m[`${r.brand}|${r.pista}`] = String(r.target);
@@ -976,8 +992,9 @@ function ReteView() {
 
     const sporco = useMemo(() => {
         const chiavi = new Set([...Object.keys(val), ...Object.keys(iniziale)]);
-        return [...chiavi].some((k) => (val[k] || "") !== (iniziale[k] || ""));
-    }, [val, iniziale]);
+        if ([...chiavi].some((k) => (val[k] || "") !== (iniziale[k] || ""))) return true;
+        return [...imp].sort().join(",") !== impIni || alertPct !== alertIni;
+    }, [val, iniziale, imp, impIni, alertPct, alertIni]);
 
     const salva = async () => {
         setBusy(true);
@@ -997,7 +1014,16 @@ function ReteView() {
             const { error } = await supabase.from("target_rete").delete().eq("brand", d.brand).eq("pista", d.pista).eq("month", mese);
             if (dbError("Rimozione target", error)) { setBusy(false); return; }
         }
-        notify(`Target di rete salvati ✓ (${ups.length} pist${ups.length === 1 ? "a" : "e"})`, "ok");
+        const pct = Math.max(1, Math.min(200, Number(String(alertPct).replace(",", ".")) || 85));
+        {
+            const { error } = await supabase.from("layout_condiviso").upsert({
+                chiave: "rete_kpi", valore: { importanti: [...imp], alertPct: pct },
+                updated_at: new Date().toISOString(),
+            }, { onConflict: "chiave" });
+            if (dbError("Salvataggio KPI importanti", error)) { setBusy(false); return; }
+        }
+        setImpIni([...imp].sort().join(",")); setAlertPct(String(pct)); setAlertIni(String(pct));
+        notify(`Target di rete salvati ✓ (${ups.length} pist${ups.length === 1 ? "a" : "e"}, ${imp.size} KPI in evidenza)`, "ok");
         setIniziale(Object.fromEntries(Object.entries(val).filter(([, v]) => String(v).trim() !== "")));
         setBusy(false);
     };
@@ -1014,6 +1040,12 @@ function ReteView() {
                     I target di rete sono <b className="text-slate-400">per mese</b>, non per gara: le piste sono quelle vere del tabellare.
                     Lascia vuoto per non avere target su quella pista.
                 </span>
+                <label className="flex items-center gap-2 text-[11px] text-slate-400 border-l border-white/10 pl-3">
+                    ⭐ <span>in evidenza: lampeggia sotto il</span>
+                    <input inputMode="decimal" value={alertPct} onChange={(e) => setAlertPct(e.target.value.replace(/[^\d.,]/g, ""))}
+                        className="w-14 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white text-right tabular-nums" />
+                    <span>% del target</span>
+                </label>
                 <button onClick={salva} disabled={!sporco || busy}
                     className={cn("primary-btn text-xs px-3 py-1.5 ml-auto inline-flex items-center gap-1.5", (!sporco || busy) && "opacity-40")}>
                     <Save className="w-3.5 h-3.5" /> {busy ? "Salvo…" : "Salva"}
@@ -1031,7 +1063,12 @@ function ReteView() {
                         {righe.map((p) => {
                             const k = `${p.brand}|${p.chiave}`;
                             return (
-                                <label key={k} className="flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2">
+                                <label key={k} className={cn("flex items-center gap-2 border rounded-lg px-3 py-2",
+                                    imp.has(k) ? "bg-amber-400/[0.07] border-amber-400/30" : "bg-white/[0.03] border-white/10")}>
+                                    {/* ⭐ = KPI in evidenza: nell'Analisi avrà l'aura attorno all'anello */}
+                                    <button type="button" title={imp.has(k) ? "Togli dall'evidenza" : "Metti in evidenza"}
+                                        onClick={(e) => { e.preventDefault(); setImp((v) => { const n = new Set(v); if (n.has(k)) n.delete(k); else n.add(k); return n; }); }}
+                                        className={cn("text-sm leading-none transition-opacity", imp.has(k) ? "opacity-100" : "opacity-25 hover:opacity-60")}>⭐</button>
                                     <span className="text-xs text-slate-300 flex-1 truncate">{p.nome}</span>
                                     <input inputMode="decimal" value={val[k] ?? ""} placeholder="—"
                                         onChange={(e) => setVal((v) => ({ ...v, [k]: e.target.value.replace(/[^\d.,]/g, "") }))}

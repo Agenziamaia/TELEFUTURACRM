@@ -562,7 +562,7 @@ const fDi = (sec, v) => {
 
 export function AnelloScaglioni({
     punti = 0, proiezione = null, soglie = [], target = null, mio = null,
-    colore = "#818cf8", parti = null, unit = "pt", tip, onClick,
+    colore = "#818cf8", parti = null, unit = "pt", tip, onClick, importante = false, allarme = false,
 }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
@@ -607,7 +607,8 @@ export function AnelloScaglioni({
         return { left: `${50 + 50 * cx}%`, top: `${50 + 50 * cy}%`, transform: `translate(${tx}, ${ty})` };
     };
     const anello = (
-        <div className="tf-anello" onClick={onClick}>
+        <div className={cn("tf-anello", importante && "tf-imp", allarme && "tf-alert")} onClick={onClick}
+            style={{ "--aura": `${colore}66` }}>
             <svg viewBox={`0 0 ${V} ${V}`}>
                 <defs>
                     <linearGradient id={`gs${uid}`} x1="0" y1="0" x2="1" y2="1">

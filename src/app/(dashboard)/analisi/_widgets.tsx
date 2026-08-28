@@ -1946,6 +1946,7 @@ function BloccoBrandRete({ ctx, brand }) {
     return (
         <div className="tf-rb" style={{
             "--col": col, "--righe": righe, "--ultima": ultima, "--nSbar": Math.max(1, nS),
+            "--nS": Math.max(1, ...b.piste.map((x) => x.scala.length)),
             // con più di un anello l'etichetta della pista è obbligatoria:
             // senza, non sai quale stai guardando
             "--t1": n > 1 ? "-9999px" : "18px",
@@ -1994,12 +1995,13 @@ function BloccoBrandRete({ ctx, brand }) {
                     const prossima = x.scala.find((s) => s.soglia_da > rif) || null;
                     const spaiata = righe > 1 && i === col * (righe - 1);
                     return (
-                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)} style={{ "--nS": Math.max(1, x.scala.length) }}
+                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)}
                             title={`${emo(x)} ${nome(x)}`}>
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} soglie={x.scala}
                                 target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
                                 colore={b.colore} unit={x.unit} parti={x.parti?.length ? x.parti : null}
+                                importante={x.importante} allarme={x.allarme}
                             />
                             {/* il piede si accende a scalini: etichetta, poi lo stato,
                                 poi il target, poi quanto manca — ognuno solo se lo
