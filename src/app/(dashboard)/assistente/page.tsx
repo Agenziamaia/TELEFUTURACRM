@@ -101,6 +101,19 @@ const AI_CSS = `
    store manager che entra deve trovare le domande CHE SI FA LUI, col nome
    del suo negozio dentro: è la differenza fra uno strumento e il proprio
    strumento. */
+/* «giovedì alle 23:10»: la data precisa fa riconoscere il momento in cui
+   l'hai scritto, e quindi il pensiero che avevi. «3 giorni fa» no. */
+const GIORNI = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+function quandoScritto(iso) {
+  const d = new Date(iso || 0);
+  const ora = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  const giorniFa = Math.floor((Date.now() - d.getTime()) / 864e5);
+  if (giorniFa < 1) return `oggi alle ${ora}`;
+  if (giorniFa < 2) return `ieri alle ${ora}`;
+  if (giorniFa < 7) return `${GIORNI[d.getDay()]} alle ${ora}`;
+  return `il ${d.toLocaleDateString("it-IT", { day: "numeric", month: "long" })} alle ${ora}`;
+}
+
 const salutoOra = () => {
   const h = new Date().getHours();
   return h < 5 ? "Ancora sveglio" : h < 13 ? "Buongiorno" : h < 18 ? "Buon pomeriggio" : "Buonasera";
@@ -153,6 +166,44 @@ export default function AssistentePage() {
   const [insegnaA, setInsegnaA] = useState(null);                // su quale risposta sto insegnando
   const [insegnamento, setInsegnamento] = useState("");
   const [privacy, setPrivacy] = useState(false);          // la spiegazione del lucchetto
+  /* ══ GLI APPUNTI E IL LORO RITORNO ═══════════════════════════════════
+     Il ciclo che rende un assistente insostituibile: lasci una cosa in due
+     secondi, la ritrovi quando serve senza averla cercata, e quindi lasci la
+     prossima. Senza restituzione un posto dove scrivere si abbandona in due
+     settimane. */
+  const [ritorni, setRitorni] = useState([]);             // quelli la cui ora è arrivata
+  const [modoAppunto, setModoAppunto] = useState(false);  // la barra scrive un appunto, non una domanda
+  const [quandoRicorda, setQuandoRicorda] = useState(""); // "", stasera, domani, lunedi, settimana
+  const [appuntoFatto, setAppuntoFatto] = useState("");   // la conferma che scivola via
+
+  const chiediAppunti = async () => {
+    try {
+      const d = await fetch("/api/ai/appunti", { credentials: "include", cache: "no-store" }).then((r) => r.json());
+      if (d?.daRestituire) setRitorni(d.daRestituire);
+    } catch { /* niente ritorni: la pagina funziona lo stesso */ }
+  };
+  const salvaAppunto = async () => {
+    const testo = input.trim();
+    if (!testo) return;
+    setInput(""); setModoAppunto(false);
+    const d = await fetch("/api/ai/appunti", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ azione: "nuovo", testo, quando: quandoRicorda || null, origine: "assistente" }),
+    }).then((r) => r.json()).catch(() => ({ error: "rete" }));
+    setQuandoRicorda("");
+    if (d?.error) { alert("Non sono riuscito ad annotarlo: " + d.error); setInput(testo); return; }
+    // la conferma dice l'ora e basta: nessun commento su che ora sia
+    const ora = new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    setAppuntoFatto(`annotato, ${ora}`);
+    setTimeout(() => setAppuntoFatto(""), 2600);
+  };
+  const ritornoVisto = async (id) => {
+    setRitorni((p) => p.filter((x) => x.id !== id));
+    await fetch("/api/ai/appunti", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ azione: "visto", id }),
+    }).catch(() => { /* tornerà la prossima volta */ });
+  };
 
   const chiediSpazio = async () => {
     try {
@@ -168,7 +219,7 @@ export default function AssistentePage() {
     await chiediSpazio();
     return d;
   };
-  useEffect(() => { if (meId) chiediSpazio(); }, [meId]);
+  useEffect(() => { if (meId) { chiediSpazio(); chiediAppunti(); } }, [meId]);
 
   // apre una conversazione salvata
   const apriChat = async (id) => {
@@ -504,6 +555,33 @@ export default function AssistentePage() {
               </p>
             </div>
 
+            {/* ══ QUELLO CHE MI AVEVI LASCIATO ═══════════════════════════
+                Sta sopra ogni altra cosa perché è l'unico motivo per cui uno
+                riapre: non «c'è uno strumento», ma «c'è una cosa mia che mi
+                aspetta». Se non c'è niente di vero da dire, non compare —
+                un ritorno inventato vale meno di nessun ritorno. */}
+            {ritorni.length > 0 && (
+              <div className="mt-6 space-y-2">
+                {ritorni.map((r) => (
+                  <div key={r.id} className="ai-su rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-500/[0.09] to-transparent px-4 py-3.5">
+                    <div className="flex items-start gap-3">
+                      <span className="text-lg leading-none mt-0.5">📌</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] text-amber-100/90 leading-relaxed">{r.testo}</p>
+                        <p className="text-[11px] text-amber-200/50 mt-1.5">
+                          me l&apos;avevi lasciato tu, {quandoScritto(r.created_at)}
+                        </p>
+                      </div>
+                      <button onClick={() => ritornoVisto(r.id)} title="Ok, l'ho visto"
+                        className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-bold transition-colors">
+                        fatto
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="grid sm:grid-cols-2 gap-2 mt-6">
               {spunti.map((sp) => (
                 <button key={sp.t} onClick={() => ask(sp.q)}
@@ -674,20 +752,49 @@ export default function AssistentePage() {
               cerca — e non sepolto nelle impostazioni in fondo alla colonna
               (Luca 28/08 sera: «lo switch è vicino al pulsante di invio,
               non agli allegati»). */}
-          <div className={cnx("ai-barra rounded-[18px] bg-white/[0.04] border border-white/10 px-2 py-2", (input.trim() || allegati.length) && "viva")}>
+          {/* la promessa: «ricordamelo…». Un clic, oppure niente. */}
+          {modoAppunto && (
+            <div className="ai-su flex items-center gap-1.5 mb-2 px-1 flex-wrap">
+              <span className="text-[11px] text-slate-500">ricordamelo</span>
+              {[["", "quando lo cerco"], ["stasera", "stasera"], ["domani", "domani"], ["lunedi", "lunedì"], ["settimana", "fra una settimana"]].map(([v, l]) => (
+                <button key={v || "mai"} onClick={() => setQuandoRicorda(v)}
+                  className={cnx("px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors",
+                    quandoRicorda === v ? "bg-amber-500/25 text-amber-200" : "text-slate-500 hover:text-slate-300 hover:bg-white/5")}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+          {appuntoFatto && (
+            <div className="ai-su mb-2 px-1 text-[12px] text-amber-200/90">📌 {appuntoFatto}</div>
+          )}
+          <div className={cnx("ai-barra rounded-2xl px-2 py-2 border transition-colors",
+            modoAppunto ? "bg-amber-500/[0.06] border-amber-400/30" : "bg-white/[0.04] border-white/10",
+            (input.trim() || allegati.length) && "viva")}>
             <input ref={fileRef} type="file" multiple hidden
               accept=".pdf,.csv,.txt,.md,.json,.xml,.log,.tsv,.eml,.xlsx,.xls,.xlsm,.ods,text/*"
               onChange={(e) => { aggiungiFile(e.target.files); e.target.value = ""; }} />
             <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); modoAppunto ? salvaAppunto() : ask(); } }}
               onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []); if (f.length) { e.preventDefault(); aggiungiFile(f); } }}
-              placeholder={`Scrivi a ${nomeAssistente}…`}
+              placeholder={modoAppunto ? "Scrivi l'appunto: te lo tengo io…" : `Scrivi a ${nomeAssistente}…`}
               className="w-full bg-transparent border-0 outline-none resize-none max-h-40 px-2.5 pt-1.5 pb-2 text-[15px] text-slate-100 placeholder:text-slate-600" />
             <div className="flex items-center gap-1.5 px-1">
               <button onClick={() => fileRef.current?.click()} disabled={loading || leggendo}
                 title="Allega un documento: PDF, Excel, CSV o testo. Il file resta nel CRM: all'assistente arriva solo il testo."
                 className="p-2 rounded-xl text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-40 transition-colors">
                 <Paperclip className="w-4.5 h-4.5" />
+              </button>
+
+              {/* ══ ANNOTA, senza aspettare risposta ═══════════════════════
+                  Alle 23 di sabato nessuno «apre una chat con l'AI aziendale».
+                  Un campo che accetta una riga e sparisce, invece, sì. È la
+                  porta dell'uso personale — e l'inizio del giro di ritorno. */}
+              <button onClick={() => setModoAppunto((v) => !v)}
+                title="Lascia un appunto: te lo tengo io, e se vuoi te lo riporto davanti"
+                className={cnx("flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[12px] font-semibold transition-colors",
+                  modoAppunto ? "bg-amber-500/20 text-amber-200" : "text-slate-400 hover:bg-white/10 hover:text-white")}>
+                <span>📌</span><span className="hidden sm:inline">Annota</span>
               </button>
 
               {/* QUALE CERVELLO — solo se te lo hanno concesso */}
@@ -725,8 +832,9 @@ export default function AssistentePage() {
                 <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10">Invio</kbd> manda ·{" "}
                 <kbd className="px-1 py-0.5 rounded bg-white/5 border border-white/10">Shift+Invio</kbd> va a capo
               </span>
-              <button onClick={() => ask()} disabled={loading || leggendo || (!input.trim() && !allegati.some((a) => a.testo))}
-                title="Manda"
+              <button onClick={() => (modoAppunto ? salvaAppunto() : ask())}
+                disabled={loading || leggendo || (!input.trim() && !(modoAppunto ? false : allegati.some((a) => a.testo)))}
+                title={modoAppunto ? "Annota" : "Manda"}
                 className={cnx("p-2.5 rounded-xl transition-all",
                   (input.trim() || allegati.some((a) => a.testo)) && !loading
                     ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 hover:-translate-y-px active:scale-95"
