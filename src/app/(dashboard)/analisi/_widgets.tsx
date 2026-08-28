@@ -1882,7 +1882,10 @@ function WidgetMixPersone({ ctx }) {
    anelli dentro si misurano in `cqw`, cioè sulla LARGHEZZA DELLA CARD: la
    stessa card stretta e alta li impila, larga e bassa li affianca. ═════ */
 function BloccoBrandRete({ ctx, brand }) {
-    const [apri, setApri] = useState(null);
+    // il dettaglio nasce APERTO sul primo contatore (Luca 28/08: «altrimenti
+    // non si vede, non se lo immaginano che si può cliccare»): "__def__" è lo
+    // stato iniziale, null è una chiusura voluta dall'utente
+    const [apri, setApri] = useState("__def__");
     const b = (ctx.brandRete || []).find((x) => x.brand === brand);
     if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
     const n = b.piste.length;
@@ -1894,6 +1897,9 @@ function BloccoBrandRete({ ctx, brand }) {
     // vicino: restano nel tooltip
     const compatto = n > 4;
     const conQuota = (ctx.mieiNegozi || []).length > 0;
+    const primaK = b.piste.length ? `${brand}:${b.piste[0].chiave}` : null;
+    const aperta = apri === "__def__" ? primaK : apri;
+    const tocca = (k) => setApri(aperta === k ? null : k);
     return (
         <div className="w-full flex flex-col gap-3">
             <div className="flex items-center gap-2 flex-wrap text-[10px] shrink-0">
@@ -1922,7 +1928,7 @@ function BloccoBrandRete({ ctx, brand }) {
                                 soglie={x.scala} target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
                                 colore={b.colore} larghezza="100%" compatto={compatto} unit={x.unit}
                                 etichetta={PISTA_LABEL_RETE[x.chiave] || x.nome} gate={x.gate}
-                                onClick={() => setApri((v) => (v === k ? null : k))}
+                                onClick={() => tocca(k)}
                                 tip={<div>
                                     <TipTitolo>{b.label} · {PISTA_LABEL_RETE[x.chiave] || x.nome}</TipTitolo>
                                     <TipRiga l={x.unit === "pz" ? "pezzi rete" : "punti rete"} r={x.unit === "pz" ? fmtN(x.punti) : fmtPt(x.punti)} colore={b.colore} />
@@ -1939,10 +1945,11 @@ function BloccoBrandRete({ ctx, brand }) {
                 })}
             </div>
             {/* DRILL: la barra lineare, dove l'angolo torna a essere punti */}
-            {b.piste.filter((x) => apri === `${brand}:${x.chiave}`).map((x) => (
+            {b.piste.filter((x) => aperta === `${brand}:${x.chiave}`).map((x) => (
                 <div key={`bar${x.chiave}`} className="pt-3 border-t border-white/10">
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
                         📏 {PISTA_LABEL_RETE[x.chiave] || x.nome} — sulla scala {x.unit === "pz" ? "dei pezzi" : "dei punti"}
+                        <span className="ml-2 normal-case tracking-normal font-normal text-slate-600">clicca un altro anello per cambiare dettaglio</span>
                     </p>
                     <SogliaBar label={PISTA_LABEL_RETE[x.chiave] || x.nome} emoji="▫️" punti={x.punti} pezzi={x.unit === "pz" ? null : x.pezzi}
                         soglie={x.scala} colore={b.colore} proiezione={x.proiezione} gate={x.gate}

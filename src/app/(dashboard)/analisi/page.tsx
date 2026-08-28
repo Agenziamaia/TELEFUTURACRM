@@ -41,6 +41,8 @@ const norm = (s) => String(s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 
 // l'ordine in cui le piste si presentano dentro il blocco del brand
+// Fastweb: le sole piste che Luca vuole a video (niente varianti business)
+const PISTE_FW = ["mobile", "fisso", "luce", "gas"];
 const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "lucegas", "cb", "smartphone_cb",
     "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "sky", "t2"];
 
@@ -604,8 +606,19 @@ function AnalisiInner() {
             { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: righeGara.tw3, rows: righeGara.w3 },
             { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
             { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: righeGara.tsky, rows: righeGara.sky },
-            { id: "fw", label: "Fastweb T2", chiave: "fastweb", colore: GARA.fw.colore, tab: null,
-                pezzi: [{ chiave: "t2", nome: "Fastweb T2", righe: items.filter((it) => it.brandGara === "fw") }] },
+            // FASTWEB (Luca 28/08: «su Fastweb continui a non contarmi, hai
+            // fatto lo stesso errore sul Master»). Fastweb NON ha un lato
+            // ragazzi: per agosto ha zero piste. Il suo tabellare vero è la
+            // lettera T2 sul lato AZIENDA, con mobile/fisso/luce/gas e le loro
+            // soglie — quindi si conta a PUNTI come gli altri, non a pezzi.
+            // Le righe sono quelle FUORI dalla lettera A di Vodafone: quelle
+            // dentro sono già contate di là, contarle qui sarebbe due volte.
+            // PISTE VOLUTE: solo mobile, fisso, luce, gas — le varianti
+            // business (fisso business, energy luce/gas business, boost sim)
+            // Luca le ha escluse esplicitamente.
+            { id: "fw", label: "Fastweb T2", chiave: "fastweb", colore: GARA.fw.colore,
+                tab: dati?.afw || null, soloPiste: PISTE_FW,
+                rows: righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) !== "vodafone") },
             { id: "s4", label: "S4 Energia", chiave: "s4", colore: HEX_BRAND.s4, tab: null,
                 pezzi: [
                     { chiave: "luce", nome: "Luce", righe: s4Righe.filter((r) => !/gas/i.test(String(r.prodotto || ""))) },
@@ -622,6 +635,7 @@ function AnalisiInner() {
                 const mieRows = c.rows.filter((r) => èMio(r.negozio));
                 const avMio = mieRows.length ? calcolaAvanzamento(c.tab, mieRows) : null;
                 for (const p of c.tab.piste) {
+                    if (c.soloPiste && !c.soloPiste.includes(p.chiave)) continue;
                     const st = av.piste[p.chiave]; if (!st) continue;
                     const scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                     if (!scala.length && !st.punti) continue;

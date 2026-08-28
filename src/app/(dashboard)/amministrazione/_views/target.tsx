@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { ROLES, STORE_CATEGORIES, roleLabel } from "@/lib/roles";
-import { caricaTabellare } from "@/lib/commissioning";
+import { caricaTabellare, caricaTabellareAzienda } from "@/lib/commissioning";
 import {
     Loader2,
     Plus,
@@ -913,16 +913,17 @@ function PalettiView({
 /* a mano. È per MESE, non per gara: la gara è il contenitore dei premi */
 /* ai ragazzi, questo è l'obiettivo dell'azienda sul mese.             */
 /* ================================================================== */
-const RETE_BRANDS: { id: string; label: string; tab: string | null; colore: string }[] = [
+const RETE_BRANDS: { id: string; label: string; tab: string | null; lato?: "azienda"; soloPiste?: string[]; colore: string }[] = [
     { id: "w3", label: "WindTre", tab: "windtre", colore: "#f97316" },
     { id: "vf", label: "Vodafone", tab: "vodafone", colore: "#e60000" },
     { id: "sky", label: "Sky", tab: "sky", colore: "#8b5cf6" },
-    { id: "fw", label: "Fastweb T2", tab: null, colore: "#eab308" },
+    // Fastweb non ha lato ragazzi: le sue piste stanno sulla lettera T2, lato
+    // AZIENDA. E si mostrano solo le quattro volute (niente varianti business).
+    { id: "fw", label: "Fastweb T2", tab: "fastweb", lato: "azienda", soloPiste: ["mobile", "fisso", "luce", "gas"], colore: "#eab308" },
     { id: "s4", label: "S4 Energia", tab: null, colore: "#22c55e" },
 ];
 // le piste che NON vengono da un tabellare: contano a pezzi
 const RETE_PISTE_FISSE: Record<string, { chiave: string; nome: string }[]> = {
-    fw: [{ chiave: "t2", nome: "Fastweb T2" }],
     s4: [{ chiave: "luce", nome: "Luce" }, { chiave: "gas", nome: "Gas" }],
 };
 const primoDelMese = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -943,8 +944,11 @@ function ReteView() {
             for (const b of RETE_BRANDS) {
                 if (b.tab) {
                     // stesso ingresso del motore: le piste del mese, non una lista scritta a mano
-                    const t = await caricaTabellare(b.tab, mese).catch(() => null);
-                    for (const p of (t?.piste || [])) out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti" });
+                    const t = await (b.lato === "azienda" ? caricaTabellareAzienda(b.tab, mese) : caricaTabellare(b.tab, mese)).catch(() => null);
+                    for (const p of (t?.piste || [])) {
+                        if (b.soloPiste && !b.soloPiste.includes(p.chiave)) continue;
+                        out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti" });
+                    }
                 }
                 for (const p of (RETE_PISTE_FISSE[b.id] || [])) out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi" });
             }
