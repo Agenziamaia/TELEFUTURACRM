@@ -29,8 +29,8 @@ import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrat
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
-import { TipRiga, TipTitolo, AnelloScaglioni, SogliaBar, fmtPt, fmtN } from "./_charts";
-import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero } from "./_widgets";
+import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero, HEX_BRAND } from "./_widgets";
+import { trkBrandKey } from "@/lib/brandAssets";
 import { CoronaOro } from "@/components/IconaCorona";
 import { GridLayout, useContainerWidth } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -39,7 +39,6 @@ import { Master } from "./_master";
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const norm = (s) => String(s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
-const PISTA_LABEL = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", cb: "CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas" };
 
 const ymLocale = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
 const ymISO = ({ y, m }) => `${y}-${String(m).padStart(2, "0")}`;
@@ -300,7 +299,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0])]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -321,6 +320,11 @@ function AnalisiInner() {
                     // fonte della tacca 🎯 nelle barre del Master: una verità
                     // sola. L'ambito «Rete» in Gare → Target arriverà dopo.
                     soloMese ? supabase.from("direzione_targets").select("brand, pista, target").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
+                    // TARGET DI RETE veri, impostati da Gare → Target → Rete
+                    // (brand+pista+mese): vincono sulla somma dei target
+                    // direzione, che resta solo come ripiego finché il pannello
+                    // è vuoto — e in quel caso il tooltip lo dichiara.
+                    soloMese ? supabase.from("target_rete").select("brand, pista, target, unita").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -367,7 +371,8 @@ function AnalisiInner() {
                     aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null, afw: azienda?.[3] || null,
                     prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri, oggiGara,
                     tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
-                    targetRete: dirRes?.data || [],
+                    targetDir: dirRes?.data || [],
+                    targetRete: tReteRes?.data || [],
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -571,28 +576,115 @@ function AnalisiInner() {
         const casa = negoziAttivi.find((n) => user?.negozio && sameStore(n, user.negozio));
         return casa ? [casa] : [];
     }, [items, dati, user?.name, user?.negozio, negoziAttivi]);
+    // ── RETE: un blocco per OPERATORE, dentro le sue piste ────────────────
+    // Fastweb T2 e S4 non hanno tabellare (niente punti): contano a PEZZI e
+    // il perno del loro anello è il target — «quanto manca all'obiettivo»,
+    // che lì è la sola domanda sensata (Luca 28/08: «manca Fastweb, manca S4»).
+    const brandRete = useMemo(() => {
+        if (!righeGara) return [];
+        const èMio = (n) => mieiNegoziUtente.some((m) => norm(m) === norm(n));
+        const prj = (v) => (meseCorrente && dati?.gl?.mostraProiezione !== false && dati?.gl?.trascorsi > 0 && v > 0)
+            ? Math.round((v / dati.gl.trascorsi) * dati.gl.totali * 100) / 100 : null;
+        const ID_DIR = { w3: "windtre", vf: "vodafone", fw: "fastweb", sky: "sky" };
+        const targetDi = (b, pista) => {
+            const r = (dati?.targetRete || []).find((x) => x.brand === b && x.pista === pista);
+            if (r && Number(r.target) > 0) return { v: Math.round(Number(r.target) * 100) / 100, fonte: "pannello" };
+            // ripiego finché Gare → Target → Rete è vuoto: la somma dei target
+            // direzione per codice. Il tooltip lo dichiara, non lo nasconde.
+            const d = (dati?.targetDir || []).filter((x) => x.brand === ID_DIR[b] && x.pista === pista)
+                .reduce((sm, x) => sm + (Number(x.target) || 0), 0);
+            return d > 0 ? { v: Math.round(d * 100) / 100, fonte: "direzione" } : null;
+        };
+        const s4Righe = (dati?.altri || []).filter((r) => trkBrandKey(r.brand) === "s4");
+        const conf = [
+            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: righeGara.tw3, rows: righeGara.w3 },
+            { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
+            { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: righeGara.tsky, rows: righeGara.sky },
+            { id: "fw", label: "Fastweb T2", chiave: "fastweb", colore: GARA.fw.colore, tab: null,
+                pezzi: [{ chiave: "t2", nome: "Fastweb T2", righe: items.filter((it) => it.brandGara === "fw") }] },
+            { id: "s4", label: "S4 Energia", chiave: "s4", colore: HEX_BRAND.s4, tab: null,
+                pezzi: [
+                    { chiave: "luce", nome: "Luce", righe: s4Righe.filter((r) => !/gas/i.test(String(r.prodotto || ""))) },
+                    { chiave: "gas", nome: "Gas", righe: s4Righe.filter((r) => /gas/i.test(String(r.prodotto || ""))) },
+                ] },
+        ];
+        const out = [];
+        for (const c of conf) {
+            const piste = [];
+            if (c.tab) {
+                const av = calcolaAvanzamento(c.tab, c.rows);
+                // stesso motore sulle SOLE righe dei miei negozi: la quota esce
+                // dai punti veri della pista, mai da una proporzione a occhio
+                const mieRows = c.rows.filter((r) => èMio(r.negozio));
+                const avMio = mieRows.length ? calcolaAvanzamento(c.tab, mieRows) : null;
+                for (const p of c.tab.piste) {
+                    const st = av.piste[p.chiave]; if (!st) continue;
+                    const scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
+                    if (!scala.length && !st.punti) continue;
+                    piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt", punti: st.punti, pezzi: st.pezzi, gate: st.gate || null,
+                        scala, mio: avMio?.piste?.[p.chiave]?.punti ?? 0, target: targetDi(c.id, p.chiave) });
+                }
+            }
+            for (const p of (c.pezzi || [])) {
+                if (!p.righe.length) continue;
+                piste.push({ chiave: p.chiave, nome: p.nome, unit: "pz", punti: p.righe.length, pezzi: p.righe.length, gate: null,
+                    scala: [], mio: p.righe.filter((r) => èMio(r.negozio)).length, target: targetDi(c.id, p.chiave) });
+            }
+            if (!piste.length) continue;
+            for (const x of piste) {
+                x.proiezione = prj(x.punti);
+                const rif = x.proiezione ?? x.punti;
+                const pr = x.scala.find((v) => v.soglia_da > rif) || null;
+                // ORDINE PER URGENZA: prima le piste su cui si può ancora
+                // incidere, in fondo quelle già chiuse
+                x.urgenza = pr ? (pr.soglia_da - rif) / Math.max(1, pr.soglia_da) : 3;
+                x.presa = [...x.scala].reverse().find((v) => x.punti >= v.soglia_da) || null;
+                x.presaProj = [...x.scala].reverse().find((v) => rif >= v.soglia_da) || null;
+            }
+            piste.sort((a, b) => a.urgenza - b.urgenza);
+            // QUOTA DEL BRAND IN PEZZI, mai in punti: sommare punti fra piste
+            // diverse è vietato quanto sommarli fra operatori (regola cardine)
+            const pzRete = piste.reduce((sm, x) => sm + x.pezzi, 0);
+            const pzMio = piste.reduce((sm, x) => sm + (x.unit === "pz" ? x.mio : 0), 0);
+            out.push({
+                brand: c.id, label: c.label, chiave: c.chiave, colore: c.colore, piste, pzRete,
+                // la quota di brand si può dire solo dove le piste sono a pezzi;
+                // sulle piste a punti la si legge anello per anello
+                pzMio: piste.every((x) => x.unit === "pz") ? pzMio : null,
+                inSoglia: piste.filter((x) => x.presa).length,
+                conSoglie: piste.filter((x) => x.scala.length).length,
+                appesi: piste.filter((x) => x.presaProj && (!x.presa || x.presaProj.tier > x.presa.tier)).length,
+            });
+        }
+        return out;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [righeGara, items, dati, mieiNegoziUtente.join("|"), meseCorrente]);
+
     const ctxRete = useMemo(() => ({
         ...base, areaKey: "rete",
         items, itemsPrev: [], ext: [], extPrev: [],
         altri: dati?.altri || [], oggiGara: dati?.oggiGara || [],
         persona: "", negozio: "tutta la rete", negozi: negoziVisibili, negozioCasa: "",
+        brandRete, mieiNegozi: mieiNegoziUtente,
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [items, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
+    }), [items, dati, nG, labels, oggi, meseCorrente, negoziVisibili, brandRete, mieiNegoziUtente]);
 
     // ── layout per area (app_users.analisi_layout) ────────────────────────
 
     const [layoutIo, setLayoutIo] = useState(null);
     const [layoutNeg, setLayoutNeg] = useState(null);
+    const [layoutRete, setLayoutRete] = useState(null);
     // stesso problema della Home (Luca 27/08): entrando nel profilo di un
     // altro, il layout restava il mio e al primo assestamento glielo scrivevo
     // addosso. Si azzera al cambio persona, e mentre guardo non si salva.
     const guardoUnAltro = !!viewAsUser || !!viewAs;
-    useEffect(() => { setLayoutIo(null); setLayoutNeg(null); }, [user?.id]);
+    useEffect(() => { setLayoutIo(null); setLayoutNeg(null); setLayoutRete(null); }, [user?.id]);
     useEffect(() => {
         if (loading) return;
         const ver = Number(layoutSalvato?.__v || 0);
         setLayoutIo((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.io, ver).length ? decodeLayout(layoutSalvato.io, ver) : decodeLayout(DEFAULT_LAYOUT.io, 8), "io", ver));
         setLayoutNeg((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.negozio, ver).length ? decodeLayout(layoutSalvato.negozio, ver) : decodeLayout(DEFAULT_LAYOUT.negozio, 8), "negozio", ver));
+        setLayoutRete((cur) => cur ?? conNovita(decodeLayout(layoutSalvato?.rete, ver).length ? decodeLayout(layoutSalvato.rete, ver) : decodeLayout(DEFAULT_LAYOUT.rete, 8), "rete", ver));
     }, [loading, layoutSalvato]);
     const salva = async (areaKey, lista) => {
         // ENTRAMBE le aree, sempre. `__v` è unico per l'oggetto: salvando solo
@@ -601,13 +693,9 @@ function AnalisiInner() {
         // risultavano già applicate e un widget nuovo non compariva mai più.
         // Le liste in memoria le novità ce l'hanno già dentro.
         const cod = (l) => l.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || hDef(w.k)}`);
-        const altraKey = areaKey === "io" ? "negozio" : "io";
-        const altra = areaKey === "io" ? layoutNeg : layoutIo;
-        const next = {
-            ...(layoutSalvato || {}), __v: LAYOUT_V,
-            [areaKey]: cod(lista),
-            ...(altra?.length ? { [altraKey]: cod(altra) } : {}),
-        };
+        const inMemoria = { io: layoutIo, negozio: layoutNeg, rete: layoutRete };
+        const next = { ...(layoutSalvato || {}), __v: LAYOUT_V, [areaKey]: cod(lista) };
+        for (const [k, l] of Object.entries(inMemoria)) if (k !== areaKey && l?.length) next[k] = cod(l);
         setLayoutSalvato(next);
         if (guardoUnAltro) return;      // le impostazioni sue restano sue
         try { if (user?.id) await supabase.from("app_users").update({ analisi_layout: next }).eq("id", user.id); } catch { /* offline: resta locale */ }
@@ -815,7 +903,16 @@ function AnalisiInner() {
                         <GrigliaWidget key={`ng-${negozi.join("|")}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
-                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [], oggiGara: dati?.oggiGara || [], mieiNegozi: mieiNegoziUtente, targetRete: dati?.targetRete || [] }} />}
+                    {area === "rete" && layoutRete && (!righeGara ? (
+                        <div className="glass-card an-card rounded-2xl p-8 an-in text-center">
+                            <p className="text-sm font-bold text-slate-300">🚦 Le soglie della rete sono mensili</p>
+                            <p className="mt-1 text-xs text-slate-500">Scegli un periodo dentro un solo mese per vedere a che punto siamo.</p>
+                        </div>
+                    ) : (
+                        <GrigliaWidget key={`rt-${chiaveP}`} areaKey="rete" ctx={ctxRete} lista={layoutRete}
+                            setLista={(l) => { setLayoutRete(l); salva("rete", l); }}
+                            intestazione={`🚦 Le soglie si prendono INSIEME · arco pieno = fatto, coda a righe = di questo passo, tacche = soglie, rombo verde = target${mieiNegoziUtente.length ? ` · anello chiaro = ${mieiNegoziUtente.join(" + ")}` : ""}`} />
+                    ))}
                     {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente, lente: lenteMaster, negSel: negSelMaster }} />}
                 </>
             )}
@@ -915,162 +1012,3 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     );
 }
 
-/* ═══ AREA RETE (rifatta 28/08 sul dettato di Luca) ═════════════════════
-   «Dobbiamo dare a tutti la visibilità di come sta andando ogni brand
-   rispetto a quelle che possono essere delle soglie o un target che ho
-   impostato io». Tre mosse:
-   ① la produzione giorno per giorno sale nella TESTATA, identica a Io e
-     Negozio (la card in fondo non c'è più);
-   ② via la corsa dei negozi: il confronto fra punti vendita è roba della
-     fase 2, riservata ai manager;
-   ③ i contatori si RAGGRUPPANO PER OPERATORE e diventano anelli a
-     SCAGLIONI, che portano insieme le quattro cose che contano —
-     produzione, proiezione, le n soglie, l'UNICO target — più la quota
-     del mio punto vendita su quel KPI («quanto sta impattando il mio
-     negozio rispetto alla produzione di rete del mobile WindTre»).
-   Il click su un anello apre sotto la SogliaBar lineare del Master: la
-   scala a scaglioni risponde a «quale scaglione», la barra a «quanti
-   punti» — due domande diverse, due strumenti. ═══════════════════════ */
-function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, altri, oggiGara = [], mieiNegozi = [], targetRete = [] }) {
-    const [apri, setApri] = useState(null);   // `${brand}:${pista}` con la barra aperta
-    const chiaveMiei = mieiNegozi.join("|");
-    // proiezione fine mese sul ritmo dei giorni lavorativi trascorsi: STESSA
-    // formula del Master, una sola verità sulla proiezione in tutto il CRM
-    const prj = (v) => (meseCorrente && gl?.mostraProiezione !== false && gl?.trascorsi > 0 && v > 0) ? Math.round((v / gl.trascorsi) * gl.totali * 100) / 100 : null;
-
-    const brandRete = useMemo(() => {
-        if (!righeGara) return [];
-        const mio = (n) => mieiNegozi.some((m) => norm(m) === norm(n));
-        const targetDi = (b, pista) => {
-            const idDir = b === "w3" ? "windtre" : b === "vf" ? "vodafone" : b === "fw" ? "fastweb" : "sky";
-            const t = (targetRete || []).filter((r) => r.brand === idDir && r.pista === pista)
-                .reduce((s, r) => s + (Number(r.target) || 0), 0);
-            return t > 0 ? Math.round(t * 100) / 100 : null;
-        };
-        const conf = [
-            { id: "w3", tab: righeGara.tw3, rows: righeGara.w3 },
-            { id: "vf", tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
-            { id: "sky", tab: righeGara.tsky, rows: righeGara.sky },
-        ];
-        const out = [];
-        for (const c of conf) {
-            if (!c.tab) continue;
-            const av = calcolaAvanzamento(c.tab, c.rows);
-            // stesso motore sulle SOLE righe dei miei negozi: la quota esce dai
-            // punti veri della pista, mai da una proporzione a occhio
-            const mieRows = c.rows.filter((r) => mio(r.negozio));
-            const avMio = mieRows.length ? calcolaAvanzamento(c.tab, mieRows) : null;
-            const piste = [];
-            for (const p of c.tab.piste) {
-                const st = av.piste[p.chiave]; if (!st) continue;
-                const scala = c.tab.soglie.filter((s) => s.pista === p.chiave).sort((a, b) => a.tier - b.tier);
-                if (!scala.length && !st.punti) continue;
-                const proiezione = prj(st.punti);
-                const rif = proiezione ?? st.punti;
-                const prossima = scala.find((s) => s.soglia_da > rif) || null;
-                piste.push({
-                    pista: p.chiave, nome: p.nome, st, scala, proiezione,
-                    mio: avMio?.piste?.[p.chiave]?.punti ?? 0,
-                    target: targetDi(c.id, p.chiave),
-                    // ORDINE PER URGENZA: prima le piste su cui si può ancora
-                    // incidere (soglia vicina), in fondo quelle già chiuse
-                    urgenza: prossima ? (prossima.soglia_da - rif) / Math.max(1, prossima.soglia_da) : 3,
-                    presa: [...scala].reverse().find((s) => st.punti >= s.soglia_da) || null,
-                    presaProj: [...scala].reverse().find((s) => rif >= s.soglia_da) || null,
-                });
-            }
-            if (!piste.length) continue;
-            piste.sort((a, b) => a.urgenza - b.urgenza);
-            // QUOTA DEL BRAND IN PEZZI, mai in punti: sommare punti fra piste
-            // diverse è vietato quanto sommarli fra operatori (regola cardine)
-            const suoi = items.filter((it) => it.brandGara === c.id);
-            const pzRete = suoi.length, pzMio = suoi.filter((it) => mio(it.negozio)).length;
-            out.push({
-                brand: c.id, piste, pzRete, pzMio,
-                inSoglia: piste.filter((x) => x.presa).length,
-                appesi: piste.filter((x) => x.presaProj && (!x.presa || x.presaProj.tier > x.presa.tier)).length,
-            });
-        }
-        return out;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [righeGara, chiaveMiei, targetRete, items, meseCorrente, gl]);
-
-    if (!righeGara) return (
-        <div className="glass-card an-card rounded-2xl p-8 an-in text-center">
-            <p className="text-sm font-bold text-slate-300">🚦 Le soglie della rete sono mensili</p>
-            <p className="mt-1 text-xs text-slate-500">Scegli un periodo dentro un solo mese per vedere a che punto siamo.</p>
-        </div>
-    );
-    if (!brandRete.length) return <div className="glass-card an-card rounded-2xl p-8 an-in text-center"><p className="text-xs text-slate-500">Nessun tabellare per questo mese.</p></div>;
-
-    return (
-        <div className="space-y-4">
-            <p className="text-[11px] text-slate-500">
-                🚦 <b className="text-slate-300">Le soglie si prendono INSIEME.</b> Ogni anello è una pista: l&apos;arco pieno è quello che la rete ha fatto,
-                la coda a righe dove arriva di questo passo, le tacche sono le soglie e il rombo verde il target.
-                {mieiNegozi.length > 0 && <> L&apos;anello chiaro dentro è <b className="text-slate-300">il tuo punto vendita</b> ({mieiNegozi.join(" + ")}).</>}
-                {" "}Clicca un anello per la barra dei punti.
-            </p>
-            {brandRete.map(({ brand, piste, pzRete, pzMio, inSoglia, appesi }) => {
-                const G = GARA[brand];
-                return (
-                    <div key={brand} className="glass-card an-card rounded-2xl p-4 an-in">
-                        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                            <LogoBrand chiave={G.chiave} colore={G.colore} alt={G.label} h={30} origine="left" />
-                            <div className="flex items-center gap-2 flex-wrap text-[10px]">
-                                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-                                    <b className="text-white tabular-nums">{inSoglia}</b>/{piste.length} piste in soglia
-                                </span>
-                                {appesi > 0 && (
-                                    <span className="px-2 py-1 rounded-lg border text-white" style={{ background: `${G.colore}22`, borderColor: `${G.colore}55` }}>
-                                        🔮 <b className="tabular-nums">{appesi}</b> {appesi > 1 ? "scaglioni appesi" : "scaglione appeso"} al passo
-                                    </span>
-                                )}
-                                {pzRete > 0 && mieiNegozi.length > 0 && (
-                                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
-                                        il mio PV <b className="tabular-nums" style={{ color: G.colore }}>{fmtN((pzMio / pzRete) * 100, 1)}%</b> dei pezzi
-                                        <span className="text-slate-600"> ({fmtN(pzMio)}/{fmtN(pzRete)})</span>
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap justify-center gap-x-9 gap-y-6">
-                            {piste.map((x) => {
-                                const k = `${brand}:${x.pista}`;
-                                return (
-                                    <AnelloScaglioni key={k}
-                                        punti={x.st.punti} proiezione={x.proiezione} pezzi={x.st.pezzi}
-                                        soglie={x.scala} target={x.target} mio={mieiNegozi.length ? x.mio : null}
-                                        colore={G.colore} size={150} etichetta={PISTA_LABEL[x.pista] || x.nome}
-                                        gate={x.st.gate || null}
-                                        onClick={() => setApri((v) => (v === k ? null : k))}
-                                        tip={<div>
-                                            <TipTitolo>{G.label} · {PISTA_LABEL[x.pista] || x.nome}</TipTitolo>
-                                            <TipRiga l="punti rete" r={fmtPt(x.st.punti)} colore={G.colore} />
-                                            {x.proiezione != null && <TipRiga l="🔮 di questo passo" r={fmtPt(x.proiezione)} />}
-                                            <TipRiga l="pezzi in pista" r={fmtN(x.st.pezzi)} />
-                                            {mieiNegozi.length > 0 && <TipRiga l="il mio punto vendita" r={`${fmtPt(x.mio)} · ${fmtN(x.st.punti > 0 ? (x.mio / x.st.punti) * 100 : 0, 1)}%`} />}
-                                            {x.target && <TipRiga l="🎯 target direzione" r={fmtN(x.target)} colore="#34d399" />}
-                                            {x.scala.map((s) => <TipRiga key={s.tier} l={`Soglia ${s.tier}`} r={`da ${fmtN(s.soglia_da)}${x.st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
-                                        </div>}
-                                    />
-                                );
-                            })}
-                        </div>
-                        {/* DRILL: la barra lineare, dove l'angolo torna a essere punti */}
-                        {piste.filter((x) => apri === `${brand}:${x.pista}`).map((x) => (
-                            <div key={`b${x.pista}`} className="mt-4 pt-3 border-t border-white/10">
-                                <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
-                                    📏 {PISTA_LABEL[x.pista] || x.nome} — sulla scala dei punti
-                                </p>
-                                <SogliaBar label={PISTA_LABEL[x.pista] || x.nome} emoji="▫️" punti={x.st.punti} pezzi={x.st.pezzi}
-                                    soglie={x.scala} colore={G.colore} proiezione={x.proiezione} gate={x.st.gate || null}
-                                    targetDir={x.target} onClick={() => setApri(null)} />
-                            </div>
-                        ))}
-                    </div>
-                );
-            })}
-        </div>
-    );
-}

@@ -22,7 +22,7 @@ import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets"
 import { brandIdDaLabel } from "@/lib/commissioning";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { cn } from "@/utils";
-import { Num, Tip, TipRiga, TipTitolo, BarStack, RaceBars, HeatCal, Donut, Delta, fmtPt, fmtN, fmtEuro } from "./_charts";
+import { Num, Tip, TipRiga, TipTitolo, BarStack, RaceBars, HeatCal, Donut, Delta, AnelloScaglioni, SogliaBar, fmtPt, fmtN, fmtEuro } from "./_charts";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 // COLORI in HEX PIENO, mai var(--…): nei grafici si concatena l'alpha
@@ -1871,6 +1871,86 @@ function WidgetMixPersone({ ctx }) {
     );
 }
 
+/* ═══ RETE: un widget per OPERATORE (Luca 28/08) ════════════════════════
+   «Sarebbe comodo trattarle come quelle dentro Analisi sul negozio: avere la
+   possibilità di farle diventare più grandi, più piccole, adattare il
+   contenuto in modalità responsive — per esempio WindTre più piccolina a
+   sinistra con molta più profondità verso il basso, così da trovarmi i
+   cinque contatori su tre righe, e tutto lo spazio di destra per Vodafone».
+   Quindi ogni brand è una card della griglia: si trascina, si ridimensiona,
+   il layout si salva in app_users.analisi_layout come per Io e Negozio. Gli
+   anelli dentro si misurano in `cqw`, cioè sulla LARGHEZZA DELLA CARD: la
+   stessa card stretta e alta li impila, larga e bassa li affianca. ═════ */
+function BloccoBrandRete({ ctx, brand }) {
+    const [apri, setApri] = useState(null);
+    const b = (ctx.brandRete || []).find((x) => x.brand === brand);
+    if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
+    const n = b.piste.length;
+    // gli anelli scalano con la card; oltre le quattro piste le etichette dei
+    // valori uscirebbero addosso al vicino, e restano nel tooltip
+    const cella = "clamp(94px, 26cqw, 178px)";
+    const compatto = n > 4;
+    const conQuota = (ctx.mieiNegozi || []).length > 0;
+    return (
+        <div className="w-full flex flex-col gap-3">
+            <div className="flex items-center gap-2 flex-wrap text-[10px] shrink-0">
+                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} {b.conSoglie === 1 ? "pista in soglia" : "piste in soglia"}
+                </span>
+                {b.appesi > 0 && (
+                    <span className="px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                        🔮 <b className="tabular-nums">{b.appesi}</b> {b.appesi > 1 ? "scaglioni appesi" : "scaglione appeso"} al passo
+                    </span>
+                )}
+                {conQuota && b.pzMio != null && b.pzRete > 0 && (
+                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
+                        il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>
+                        <span className="text-slate-600"> ({fmtN(b.pzMio)}/{fmtN(b.pzRete)} pz)</span>
+                    </span>
+                )}
+            </div>
+            <div className="flex flex-wrap justify-center gap-x-7 gap-y-6 px-3">
+                {b.piste.map((x) => {
+                    const k = `${brand}:${x.chiave}`;
+                    return (
+                        <div key={k} style={{ width: cella }}>
+                            <AnelloScaglioni
+                                punti={x.punti} proiezione={x.proiezione} pezzi={x.pezzi}
+                                soglie={x.scala} target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
+                                colore={b.colore} larghezza="100%" compatto={compatto} unit={x.unit}
+                                etichetta={PISTA_LABEL_RETE[x.chiave] || x.nome} gate={x.gate}
+                                onClick={() => setApri((v) => (v === k ? null : k))}
+                                tip={<div>
+                                    <TipTitolo>{b.label} · {PISTA_LABEL_RETE[x.chiave] || x.nome}</TipTitolo>
+                                    <TipRiga l={x.unit === "pz" ? "pezzi rete" : "punti rete"} r={x.unit === "pz" ? fmtN(x.punti) : fmtPt(x.punti)} colore={b.colore} />
+                                    {x.proiezione != null && <TipRiga l="🔮 di questo passo" r={x.unit === "pz" ? fmtN(x.proiezione) : fmtPt(x.proiezione)} />}
+                                    {x.unit !== "pz" && <TipRiga l="pezzi in pista" r={fmtN(x.pezzi)} />}
+                                    {conQuota && <TipRiga l="il mio punto vendita" r={`${x.unit === "pz" ? fmtN(x.mio) : fmtPt(x.mio)} · ${fmtN(x.punti > 0 ? (x.mio / x.punti) * 100 : 0, 1)}%`} />}
+                                    {x.target && <TipRiga l={x.target.fonte === "pannello" ? "🎯 target di rete" : "🎯 target (somma direzione)"} r={fmtN(x.target.v)} colore="#34d399" />}
+                                    {x.scala.map((sg) => <TipRiga key={sg.tier} l={`Soglia ${sg.tier}`} r={`da ${fmtN(sg.soglia_da)}${x.punti >= sg.soglia_da ? " ✓" : ""}`} />)}
+                                    {!x.scala.length && <TipRiga l="" r="pista a pezzi: niente soglie di lettera" />}
+                                </div>}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+            {/* DRILL: la barra lineare, dove l'angolo torna a essere punti */}
+            {b.piste.filter((x) => apri === `${brand}:${x.chiave}`).map((x) => (
+                <div key={`bar${x.chiave}`} className="pt-3 border-t border-white/10">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
+                        📏 {PISTA_LABEL_RETE[x.chiave] || x.nome} — sulla scala {x.unit === "pz" ? "dei pezzi" : "dei punti"}
+                    </p>
+                    <SogliaBar label={PISTA_LABEL_RETE[x.chiave] || x.nome} emoji="▫️" punti={x.punti} pezzi={x.unit === "pz" ? null : x.pezzi}
+                        soglie={x.scala} colore={b.colore} proiezione={x.proiezione} gate={x.gate}
+                        targetDir={x.target?.v ?? null} unit={x.unit} onClick={() => setApri(null)} />
+                </div>
+            ))}
+        </div>
+    );
+}
+const PISTA_LABEL_RETE = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", business_piva: "Biz P.IVA", cb: "Customer Base", smartphone_cb: "Smartphone CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas", t2: "Fastweb T2" };
+
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════
    REGOLA RESPONSIVE (Luca 24/08, vale per OGNI widget presente e futuro):
    le card sono finestre ridimensionabili (@container) — il layout interno
@@ -1907,10 +1987,17 @@ export const REGISTRO = {
     // e apre l'area — cosi' anello, righe e la fila dei marchi stanno in una
     // schermata sola, senza scrollare
     "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 8, h: 6, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
+    // ── RETE: un widget per operatore, ridimensionabile come gli altri ────
+    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 6, solo: "rete", logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
+    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 6, solo: "rete", logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
+    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
+    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 5, solo: "rete", logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
+    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
 };
-export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento"];
+export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento", "rete"];
 export const DEFAULT_LAYOUT = {
     io: ["op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "posizioni@2", "bersaglio@2", "pesonegozi@4", "marg@8", "mix:pezzi@2"],
     // il Mix persone apre l'area: è la prima domanda che ci si fa su un PV
+    rete: ["rete:w3@4", "rete:vf@4", "rete:sky@4", "rete:fw@2", "rete:s4@2"],
     negozio: ["mix:persone@8", "op:w3@4", "op:vf@4", "op:sky@4", "op:fw@4", "op:s4@2", "squadra:pezzi@4", "duello@2", "mix:pezzi@2", "marg@8", "squadra:w3@4"],
 };

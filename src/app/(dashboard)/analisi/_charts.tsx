@@ -522,9 +522,9 @@ const schiarisci = (c, t = 0.6) => {
 };
 
 /** settori uguali per scaglione: [{v0, v1, tier, f0, f1}] */
-function settoriScaglioni(soglie, punti, proiezione, target) {
+function settoriScaglioni(perni, punti, proiezione, target) {
     const out = []; let prev = 0;
-    for (const s of soglie) { out.push({ v0: prev, v1: s.soglia_da, tier: s.tier, w: 1 }); prev = s.soglia_da; }
+    for (const v of perni) { out.push({ v0: prev, v1: v, w: 1 }); prev = v; }
     // il settore «oltre» è più stretto: è una coda, non uno scaglione da prendere
     const oltre = Math.max(prev * 1.25, (proiezione || punti) * 1.06, punti * 1.06, (target || 0) * 1.08, prev + 1);
     out.push({ v0: prev, v1: oltre, tier: null, w: 0.6 });
@@ -540,14 +540,20 @@ const fDi = (sec, v) => {
 
 export function AnelloScaglioni({
     punti = 0, proiezione = null, pezzi = null, soglie = [], target = null, mio = null,
-    colore = "#818cf8", size = 130, etichetta, logo, gate, nota, onClick, unit = "pt", tip,
+    colore = "#818cf8", size = 130, larghezza = null, compatto = null,
+    etichetta, logo, gate, nota, onClick, unit = "pt", tip,
 }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
     const uid = useId().replace(/:/g, "");
-    const piccolo = size < 150;
+    // la card è ridimensionabile: la misura la decide chi monta l'anello
+    const piccolo = compatto != null ? compatto : size < 150;
     const V = 220, cc = V / 2, r = 84, sw = 16;             // geometria in viewBox fisso
-    const sec = settoriScaglioni(soglie, punti, proiezione, target);
+    // senza soglie (Fastweb T2, S4: piste che contano a pezzi) il perno è il
+    // TARGET: l'anello diventa «quanto manca all'obiettivo», che è la sola
+    // domanda sensata lì
+    const perni = soglie.length ? soglie.map((x) => x.soglia_da) : (target > 0 ? [target] : []);
+    const sec = settoriScaglioni(perni, punti, proiezione, target);
     const proj = proiezione != null && proiezione > punti ? proiezione : punti;
     const chiaro = schiarisci(colore);
     const presa = [...soglie].reverse().find((s) => punti >= s.soglia_da) || null;
@@ -566,8 +572,8 @@ export function AnelloScaglioni({
     }
     const rM = r - sw / 2 - 7, swM = 5.4;
     const anello = (
-        <div className="relative" style={{ width: size, height: size }}>
-            <svg viewBox={`0 0 ${V} ${V}`} width={size} height={size} style={{ overflow: "visible" }}>
+        <div className="relative [container-type:inline-size]" style={larghezza ? { width: larghezza, aspectRatio: "1 / 1" } : { width: size, height: size }}>
+            <svg viewBox={`0 0 ${V} ${V}`} width="100%" height="100%" style={{ overflow: "visible" }}>
                 <defs>
                     <linearGradient id={`gs${uid}`} x1="0" y1="0" x2="1" y2="1">
                         <stop offset="0%" stopColor={colore} stopOpacity=".58" /><stop offset="100%" stopColor={colore} />
@@ -632,17 +638,20 @@ export function AnelloScaglioni({
             </svg>
             {/* il centro tiene il NUMERO VERO: è il prezzo dichiarato della scala
                 a scaglioni — la forma conta gli scaglioni, il numero i punti */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none" style={{ paddingLeft: size * 0.24, paddingRight: size * 0.24 }}>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-[17%] whitespace-nowrap">
                 {logo}
-                <span className="font-black text-white tabular-nums leading-none" style={{ fontSize: piccolo ? 16 : 21 }}>{fmtPt(punti)}</span>
+                <span className="font-black text-white tabular-nums leading-none" style={{ fontSize: "clamp(13px, 15cqw, 24px)" }}>{fmtPt(punti)}</span>
                 <span className="text-[8px] text-slate-500 uppercase tracking-wider leading-tight mt-0.5">{unit === "pz" ? "pezzi rete" : "punti rete"}</span>
-                {quota > 0 && <span className="text-[9px] font-black tabular-nums mt-1" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}% mio</span>}
+                {quota > 0 && <span className="text-[9px] font-black tabular-nums mt-1" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}%&nbsp;mio</span>}
             </div>
         </div>
     );
     return (
-        <div className={cn("flex flex-col items-center gap-1.5", onClick && "cursor-pointer")} onClick={onClick} title={onClick ? "Apri il dettaglio" : undefined}>
-            {tip ? <Tip tip={tip}>{anello}</Tip> : anello}
+        <div className={cn("flex flex-col items-center gap-1.5", onClick && "cursor-pointer")} onClick={onClick} title={onClick ? "Apri il dettaglio" : undefined}
+            style={larghezza ? { width: larghezza } : undefined}>
+            {/* il wrapper del tooltip è inline-flex: senza una larghezza sua,
+                l'anello a width:100% ci si aggrappava e collassava a zero */}
+            {tip ? <Tip className="block" style={{ width: larghezza || size }} tip={tip}>{anello}</Tip> : anello}
             {etichetta && <p className="text-[11px] font-bold text-slate-200 -mt-0.5">{etichetta}</p>}
             <div className="flex flex-wrap items-center justify-center gap-1 max-w-[230px]">
                 {presa ? <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{presa.tier} presa</span>

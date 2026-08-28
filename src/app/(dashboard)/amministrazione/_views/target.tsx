@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { ROLES, STORE_CATEGORIES, roleLabel } from "@/lib/roles";
+import { caricaTabellare } from "@/lib/commissioning";
 import {
     Loader2,
     Plus,
@@ -20,6 +21,7 @@ import {
     Flag,
     Trophy,
     Check,
+    Globe,
 } from "lucide-react";
 import { notify, dbError } from "./toast";
 
@@ -68,6 +70,9 @@ const SUBS: { id: string; label: string; icon: typeof UserIcon; type: SubjectTyp
     { id: "negozi", label: "Negozio", icon: StoreIcon, type: "store" },
     { id: "catnegozi", label: "Categoria Negozio", icon: Tag, type: "store_category" },
     { id: "paletti", label: "Paletti", icon: Flag, type: null },
+    // RETE: soggetto unico (tutti i PV insieme), metriche = le piste vere del
+    // mese. Non passa da gara/metric: vedi il commento su ReteView.
+    { id: "rete", label: "Rete", icon: Globe, type: null },
 ];
 
 const PTYPES: { type: SubjectType; label: string }[] = [
@@ -335,7 +340,9 @@ export function TargetSection() {
                 })}
             </div>
 
-            {!garaId ? (
+            {active.id === "rete" ? (
+                <ReteView />
+            ) : !garaId ? (
                 <p className="text-sm text-slate-500 px-1">Crea una gara per impostare i target.</p>
             ) : active.type ? (
                 <TargetEditor
@@ -892,6 +899,135 @@ function PalettiView({
                     </>
                 )}
             </div>
+        </div>
+    );
+}
+
+/* ================================================================== */
+/* TARGET DI RETE (Luca 28/08) — brand × pista × mese                  */
+/* Le "metriche" qui non si scrivono a mano: sono le PISTE VERE del    */
+/* mese, lette dai tabellari come fa il motore delle gare, più le due  */
+/* famiglie che i tabellari non hanno (Fastweb T2 e S4, che contano a  */
+/* pezzi). Così il numero che scrivi qui è già agganciato all'anello   */
+/* che lo mostrerà in Analisi → Rete: nessuna mappa da tenere allineata */
+/* a mano. È per MESE, non per gara: la gara è il contenitore dei premi */
+/* ai ragazzi, questo è l'obiettivo dell'azienda sul mese.             */
+/* ================================================================== */
+const RETE_BRANDS: { id: string; label: string; tab: string | null; colore: string }[] = [
+    { id: "w3", label: "WindTre", tab: "windtre", colore: "#f97316" },
+    { id: "vf", label: "Vodafone", tab: "vodafone", colore: "#e60000" },
+    { id: "sky", label: "Sky", tab: "sky", colore: "#8b5cf6" },
+    { id: "fw", label: "Fastweb T2", tab: null, colore: "#eab308" },
+    { id: "s4", label: "S4 Energia", tab: null, colore: "#22c55e" },
+];
+// le piste che NON vengono da un tabellare: contano a pezzi
+const RETE_PISTE_FISSE: Record<string, { chiave: string; nome: string }[]> = {
+    fw: [{ chiave: "t2", nome: "Fastweb T2" }],
+    s4: [{ chiave: "luce", nome: "Luce" }, { chiave: "gas", nome: "Gas" }],
+};
+const primoDelMese = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+
+function ReteView() {
+    const [mese, setMese] = useState(primoDelMese());
+    const [piste, setPiste] = useState<{ brand: string; label: string; colore: string; chiave: string; nome: string; unita: string }[]>([]);
+    const [val, setVal] = useState<Record<string, string>>({});
+    const [iniziale, setIniziale] = useState<Record<string, string>>({});
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            setLoading(true);
+            const out: { brand: string; label: string; colore: string; chiave: string; nome: string; unita: string }[] = [];
+            for (const b of RETE_BRANDS) {
+                if (b.tab) {
+                    // stesso ingresso del motore: le piste del mese, non una lista scritta a mano
+                    const t = await caricaTabellare(b.tab, mese).catch(() => null);
+                    for (const p of (t?.piste || [])) out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "punti" });
+                }
+                for (const p of (RETE_PISTE_FISSE[b.id] || [])) out.push({ brand: b.id, label: b.label, colore: b.colore, chiave: p.chiave, nome: p.nome, unita: "pezzi" });
+            }
+            const { data } = await supabase.from("target_rete").select("brand, pista, target").eq("month", mese);
+            if (!vivo) return;
+            const m: Record<string, string> = {};
+            for (const r of (data || []) as { brand: string; pista: string; target: number }[]) {
+                if (Number(r.target) > 0) m[`${r.brand}|${r.pista}`] = String(r.target);
+            }
+            setPiste(out); setVal(m); setIniziale(m); setLoading(false);
+        })();
+        return () => { vivo = false; };
+    }, [mese]);
+
+    const sporco = useMemo(() => {
+        const chiavi = new Set([...Object.keys(val), ...Object.keys(iniziale)]);
+        return [...chiavi].some((k) => (val[k] || "") !== (iniziale[k] || ""));
+    }, [val, iniziale]);
+
+    const salva = async () => {
+        setBusy(true);
+        const ups: { brand: string; pista: string; month: string; target: number; unita: string }[] = [];
+        const via: { brand: string; pista: string }[] = [];
+        for (const p of piste) {
+            const k = `${p.brand}|${p.chiave}`;
+            const n = Number(String(val[k] ?? "").replace(",", "."));
+            if (n > 0) ups.push({ brand: p.brand, pista: p.chiave, month: mese, target: Math.round(n * 100) / 100, unita: p.unita });
+            else if (iniziale[k]) via.push({ brand: p.brand, pista: p.chiave });
+        }
+        if (ups.length) {
+            const { error } = await supabase.from("target_rete").upsert(ups, { onConflict: "brand,pista,month" });
+            if (dbError("Salvataggio target di rete", error)) { setBusy(false); return; }
+        }
+        for (const d of via) {
+            const { error } = await supabase.from("target_rete").delete().eq("brand", d.brand).eq("pista", d.pista).eq("month", mese);
+            if (dbError("Rimozione target", error)) { setBusy(false); return; }
+        }
+        notify(`Target di rete salvati ✓ (${ups.length} pist${ups.length === 1 ? "a" : "e"})`, "ok");
+        setIniziale(Object.fromEntries(Object.entries(val).filter(([, v]) => String(v).trim() !== "")));
+        setBusy(false);
+    };
+
+    const perBrand = RETE_BRANDS.map((b) => ({ b, righe: piste.filter((p) => p.brand === b.id) })).filter((x) => x.righe.length);
+
+    return (
+        <div className="space-y-4">
+            <div className="glass-card rounded-xl p-3 flex flex-wrap items-center gap-3">
+                <span className="text-xs text-slate-400">Mese</span>
+                <input type="month" value={mese.slice(0, 7)} onChange={(e) => setMese(`${e.target.value}-01`)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white" />
+                <span className="text-[11px] text-slate-600">
+                    I target di rete sono <b className="text-slate-400">per mese</b>, non per gara: le piste sono quelle vere del tabellare.
+                    Lascia vuoto per non avere target su quella pista.
+                </span>
+                <button onClick={salva} disabled={!sporco || busy}
+                    className={cn("primary-btn text-xs px-3 py-1.5 ml-auto inline-flex items-center gap-1.5", (!sporco || busy) && "opacity-40")}>
+                    <Save className="w-3.5 h-3.5" /> {busy ? "Salvo…" : "Salva"}
+                </button>
+            </div>
+
+            {loading ? (
+                <p className="text-sm text-slate-500 px-1 inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Leggo i tabellari del mese…</p>
+            ) : !perBrand.length ? (
+                <p className="text-sm text-slate-500 px-1">Nessun tabellare per questo mese: carica i tabellari e torna qui.</p>
+            ) : perBrand.map(({ b, righe }) => (
+                <div key={b.id} className="glass-card rounded-xl p-4">
+                    <p className="text-xs font-black mb-3" style={{ color: b.colore }}>{b.label}</p>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                        {righe.map((p) => {
+                            const k = `${p.brand}|${p.chiave}`;
+                            return (
+                                <label key={k} className="flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2">
+                                    <span className="text-xs text-slate-300 flex-1 truncate">{p.nome}</span>
+                                    <input inputMode="decimal" value={val[k] ?? ""} placeholder="—"
+                                        onChange={(e) => setVal((v) => ({ ...v, [k]: e.target.value.replace(/[^\d.,]/g, "") }))}
+                                        className="w-24 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white text-right tabular-nums" />
+                                    <span className="text-[10px] text-slate-600 w-9">{p.unita === "pezzi" ? "pz" : "pt"}</span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }
