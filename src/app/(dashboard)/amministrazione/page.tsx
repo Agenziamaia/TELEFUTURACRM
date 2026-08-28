@@ -93,6 +93,12 @@ import {
 
 /* ---------- Tipi ---------- */
 interface AppUser {
+    // chi ha creato e chi ha toccato per ultimo questa scheda (28/08):
+    // vuote sulle schede più vecchie, che nascevano senza firma
+    created_by?: string | null;
+    updated_by?: string | null;
+    scheda_updated_at?: string | null;
+    created_at?: string | null;
     id: string;
     full_name: string;
     nome_riservato?: string | null;   // nome vero dietro l'alias (mig. 142) — solo amministrazione
@@ -899,6 +905,23 @@ function UserForm({
        resto, e si può saltare direttamente sulla scheda giusta. */
     type Gemello = { id: string; full_name: string; role?: string | null; grade?: string | null; active?: boolean | null; status?: string | null; primary_store?: string | null };
     const [gemello, setGemello] = useState<Gemello | null>(null);
+    /* LA FIRMA DELLA SCHEDA (28/08): chi l'ha creata e chi l'ha toccata per
+       ultimo. Le schede nate prima di oggi non ce l'hanno — si dice, invece di
+       far finta che l'informazione non esista. */
+    const [firma, setFirma] = useState<{ creata?: string; modificata?: string } | null>(null);
+    useEffect(() => {
+        const ids = [editing?.created_by, editing?.updated_by].filter(Boolean) as string[];
+        if (!editing || !ids.length) { setFirma(null); return; }
+        let vivo = true;
+        supabase.from("app_users").select("id, full_name").in("id", [...new Set(ids)])
+            .then(({ data }) => {
+                if (!vivo) return;
+                const nome = (id?: string | null) => (data || []).find((x) => x.id === id)?.full_name;
+                setFirma({ creata: nome(editing.created_by), modificata: nome(editing.updated_by) });
+            });
+        return () => { vivo = false; };
+    }, [editing?.id, editing?.created_by, editing?.updated_by]);
+
     const vaiAllaScheda = (g: Gemello) => {
         if (!g?.id) return;
         if (onApriEsistente) onApriEsistente(g.id);
@@ -1076,16 +1099,21 @@ function UserForm({
             back_office_id: ruoloAgenzia ? f.back_office_id || null : null,
         };
 
+        // CHI TOCCA LA SCHEDA lascia il nome (28/08): su IBAN, RAL e contratti
+        // sapere solo «quando» non basta — alla domanda «chi ha inserito questo
+        // utente?» il CRM non sapeva rispondere.
+        const firmato = { ...payload, updated_by: me?.id || null, scheda_updated_at: new Date().toISOString() };
+
         let userId = editing?.id;
         if (editing) {
-            const { error } = await supabase.from("app_users").update(payload).eq("id", editing.id);
+            const { error } = await supabase.from("app_users").update(firmato).eq("id", editing.id);
             if (error) {
                 setErr(error.message);
                 setSaving(false);
                 return;
             }
         } else {
-            const { data, error } = await supabase.from("app_users").insert(payload).select("id").single();
+            const { data, error } = await supabase.from("app_users").insert({ ...firmato, created_by: me?.id || null }).select("id").single();
             if (error) {
                 // il vincolo sull'email parla in database: qui si traduce in
                 // qualcosa che dice chi c'è già e cosa fare
@@ -1138,7 +1166,17 @@ function UserForm({
         <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="glass-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-bold text-white">{editing ? "Modifica utente" : "Nuovo utente"}</h2>
+                    <div>
+                        <h2 className="text-lg font-bold text-white">{editing ? "Modifica utente" : "Nuovo utente"}</h2>
+                        {editing && (
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                {firma?.creata
+                                    ? <>Scheda creata da <b className="text-slate-400">{firma.creata}</b>{editing.created_at ? ` il ${fmtDate(editing.created_at)}` : ""}</>
+                                    : <>Scheda del {editing.created_at ? fmtDate(editing.created_at) : "—"} — chi l&apos;ha creata non è tracciato (prima del 28/08)</>}
+                                {firma?.modificata ? <> · ultima modifica di <b className="text-slate-400">{firma.modificata}</b></> : null}
+                            </p>
+                        )}
+                    </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
                         <X className="w-5 h-5" />
                     </button>
