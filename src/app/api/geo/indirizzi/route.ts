@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +26,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(request);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(request, "geo/indirizzi");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
     }
 
     const q = new URL(request.url).searchParams.get("q")?.trim() || "";

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { puoVederePassword } from "@/lib/passwordPermessi";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
@@ -22,8 +22,10 @@ async function logAudit(credentialId: number | null, userId: string | null, acti
 export async function GET(request: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(request);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(request, "passwords/credentials");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
         // 🔒 il caveau è riservato ai ruoli previsti, non a tutti i loggati
         const _p = await puoVederePassword(_s.id);
         if (!_p.ok) return NextResponse.json({ error: "Non hai i permessi per le password aziendali" }, { status: 403 });
@@ -69,8 +71,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(request);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(request, "passwords/credentials");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
         // 🔒 il caveau è riservato ai ruoli previsti, non a tutti i loggati
         const _p = await puoVederePassword(_s.id);
         if (!_p.ok) return NextResponse.json({ error: "Non hai i permessi per le password aziendali" }, { status: 403 });

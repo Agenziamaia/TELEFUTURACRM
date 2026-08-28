@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { getScope } from "@/lib/ai/scope";
 import { WRITE_TOOL_NAMES } from "@/lib/ai/tools";
@@ -14,8 +14,10 @@ export const runtime = "nodejs";
  */
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    const _sess = richiedeSessione(req);
-    if (!_sess) return rispostaSessioneNonValida();
+    // 🔒 sessione + permesso della sezione, come nel pannello
+    const _g = await accesso(req, "ai/action");
+    if (!_g.ok) return _g.risposta;
+    const _sess = _g.sess;
 
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON non valido" }, { status: 400 }); }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaTesto, inviaMedia } from "@/lib/evolution";
 
@@ -12,8 +12,10 @@ export const dynamic = "force-dynamic";
 //   { conversationId, text?, userId, mediaUrl, mediaMime, fileName } -> allegato
 export async function POST(request: Request) {
     // 🔒 BLINDATURA fase A (28/08): senza sessione firmata non si passa
-        const _s = richiedeSessione(request);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(request, "whatsapp/send");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
 
     try {
         const { conversationId, text, mediaUrl, mediaMime, fileName } = await request.json();

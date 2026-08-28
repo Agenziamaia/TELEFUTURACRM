@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { arrotonda5 } from "@/lib/pos";
 
@@ -14,8 +14,10 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(req, "vendita/incasso");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
     }
 
   const b: any = await req.json().catch(() => ({}));

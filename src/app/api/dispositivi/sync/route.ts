@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { headers } from "next/headers";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
@@ -59,10 +59,8 @@ async function upsertBatch(rows: { categoria: string; brand: string; modello: st
 
 export async function POST() {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        const _s = richiedeSessione(new Request("http://x", { headers: { cookie: (await headers()).get("cookie") || "" } }));
-        if (!_s) return rispostaSessioneNonValida();
-    }
+    const _g = await accesso(new Request("http://x", { headers: { cookie: (await headers()).get("cookie") || "" } }), "dispositivi/sync");
+    if (!_g.ok) return _g.risposta;
 
     try {
         const esito: Record<string, number | string> = {};

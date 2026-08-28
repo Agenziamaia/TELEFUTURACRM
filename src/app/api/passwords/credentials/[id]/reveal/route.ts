@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { puoVederePassword } from "@/lib/passwordPermessi";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
@@ -10,8 +10,10 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     // 🔒 BLINDATURA (28/08): sessione firmata + ruolo abilitato al caveau
-    const _s = richiedeSessione(request);
-    if (!_s) return rispostaSessioneNonValida();
+    // 🔒 sessione firmata + permesso della sezione, come nel pannello
+    const _g = await accesso(request, "passwords/credentials/[id]/reveal");
+    if (!_g.ok) return _g.risposta;
+    const _s = _g.sess;
     const _p = await puoVederePassword(_s.id);
     if (!_p.ok) return NextResponse.json({ error: "Non hai i permessi per le password aziendali" }, { status: 403 });
 

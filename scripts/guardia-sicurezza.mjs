@@ -58,14 +58,42 @@ const route = tuttiIFile("src/app/api");
 for (const f of route) {
     const nome = f.replace("src/app/api/", "").replace("/route.ts", "");
     const testo = readFileSync(f, "utf8");
-    const haGate = testo.includes("richiedeSessione");
+    const haGate = testo.includes("richiedeSessione") || testo.includes("accesso(");
     const ammessa = Object.keys(SENZA_SESSIONE).some((k) => nome === k || nome.startsWith(k + "/"));
     if (!haGate && !ammessa) {
         problema(`${nome}: chiunque può chiamarla, anche senza login`,
-            `aggiungi in cima all'handler:  const _s = richiedeSessione(request); if (!_s) return rispostaSessioneNonValida();\n      (se dev'essere pubblica, motivala in SENZA_SESSIONE dentro questa guardia)`);
+            `aggiungi in cima all'handler:  const _g = await accesso(request, "${nome}"); if (!_g.ok) return _g.risposta;\n      (se dev'essere pubblica, motivala in SENZA_SESSIONE dentro questa guardia)`);
     }
 }
 console.log(`   ${route.length} funzioni esaminate\n`);
+
+/* ── 1-bis. i PERMESSI DEL PANNELLO valgono anche qui (Luca 28/08) ────────
+   «i permessi devono essere collegati TUTTI alla sezione permessi del
+   pannello, altrimenti che senso ha». Una route che appartiene a una sezione
+   del CRM deve passare da `accesso()`, che legge role_permissions: se usa la
+   sola sessione, chi ha la sezione spenta ci arriva lo stesso. */
+console.log(`${B}1-bis. Permessi collegati al pannello amministrativo${X}`);
+const SEZIONI = ["passwords", "whatsapp", "email", "ai", "vendita", "pos", "aircall", "usati", "dispositivi", "smartphones"];
+for (const f of route) {
+    const nome = f.replace("src/app/api/", "").replace("/route.ts", "");
+    const testo = readFileSync(f, "utf8");
+    const ammessa = Object.keys(SENZA_SESSIONE).some((k) => nome === k || nome.startsWith(k + "/"));
+    if (ammessa) continue;
+    const suaSezione = SEZIONI.some((k) => nome === k || nome.startsWith(k + "/"));
+    if (suaSezione && !testo.includes("accesso(")) {
+        problema(`${nome}: controlla la sessione ma NON il permesso della sezione`,
+            `usa il varco unico:  const _g = await accesso(request, "${nome}"); if (!_g.ok) return _g.risposta;\n      (così vale quello che è impostato in Amministrazione → Permessi, e non una lista scritta nel codice)`);
+    }
+    // e nessuno deve reintrodurre elenchi di ruoli dentro una route.
+    // admin/dev fanno eccezione: passano ovunque per disegno, non sono un
+    // criterio di permesso ma la scorciatoia di chi amministra il sistema.
+    if (/\b(role|ruolo)\s*===\s*["'](direttore_generale|store_manager|venditore|direttore_commerciale|caller)["']/.test(testo)
+        || /\[[^\]]*["'](direttore_generale|store_manager)["'][^\]]*\]\s*\.includes\(/.test(testo)) {
+        problema(`${nome}: decide i permessi con un elenco di ruoli scritto nel codice`,
+            `i permessi stanno in Amministrazione → Permessi: usa accesso()/permessoSezione(), non liste fisse`);
+    }
+}
+console.log("   controllo completato\n");
 
 /* ── 2. l'identità non si prende MAI da quello che manda il browser ────── */
 console.log(`${B}2. Identità presa dalla sessione, non dal client${X}`);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,8 +11,10 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(req, "gif/search");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
     }
 
   const key = process.env.GIPHY_API_KEY;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { headers } from "next/headers";
 import { aircallGet } from "@/lib/aircall";
 
@@ -10,10 +10,8 @@ export const dynamic = "force-dynamic";
 // 10 pagine da 50 (l'account ne ha poche decine).
 export async function GET() {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        const _s = richiedeSessione(new Request("http://x", { headers: { cookie: (await headers()).get("cookie") || "" } }));
-        if (!_s) return rispostaSessioneNonValida();
-    }
+    const _g = await accesso(new Request("http://x", { headers: { cookie: (await headers()).get("cookie") || "" } }), "aircall/users");
+    if (!_g.ok) return _g.risposta;
 
     try {
         if (!process.env.AIRCALL_API_ID || !process.env.AIRCALL_API_TOKEN) {

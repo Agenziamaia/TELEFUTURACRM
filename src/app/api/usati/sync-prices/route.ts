@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { fetchRefurbedPrices } from "@/lib/pricing/refurbed";
 import { computeBuyback, type CategoriaDispositivo } from "@/lib/pricing/grades";
@@ -27,8 +27,10 @@ const REFURBED_BRANDS = new Set([
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(req, "usati/sync-prices");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
     }
 
   const t0 = Date.now();

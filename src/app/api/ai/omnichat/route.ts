@@ -10,7 +10,7 @@
 // poter leggere niente che l'utente non stesse già guardando.
 
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { chat, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
 
 export const dynamic = "force-dynamic";
@@ -50,8 +50,10 @@ const SISTEMA = [
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(req, "ai/omnichat");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
     }
 
     if (!hasKey()) {

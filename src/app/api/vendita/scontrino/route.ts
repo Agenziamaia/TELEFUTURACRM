@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { buildRequestXml } from "@/lib/fiscalprint";
 import { formaPagamento } from "@/lib/pos";
@@ -21,8 +21,10 @@ const DEFAULT_RT = process.env.RT_DEVICE_URL || "http://192.168.1.219";
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
+        // 🔒 sessione firmata + permesso della sezione, come nel pannello
+        const _g = await accesso(req, "vendita/scontrino");
+        if (!_g.ok) return _g.risposta;
+        const _s = _g.sess;
     }
 
     const b: any = await req.json().catch(() => ({}));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, estimateCost, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
 import { getScope } from "@/lib/ai/scope";
@@ -52,8 +52,10 @@ function systemPrompt(scope: any, p?: Personale) {
 
 export async function POST(req: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    const _sess = richiedeSessione(req);
-    if (!_sess) return rispostaSessioneNonValida();
+    // 🔒 sessione + permesso della sezione, come nel pannello
+    const _g = await accesso(req, "ai/chat");
+    if (!_g.ok) return _g.risposta;
+    const _sess = _g.sess;
 
   const started = Date.now();
   if (!hasKey()) {

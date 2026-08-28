@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -13,8 +13,10 @@ export const dynamic = "force-dynamic";
 const mio = (uid: string) => ({ user_id: uid });
 
 export async function GET(request: Request) {
-    const s = richiedeSessione(request);
-    if (!s) return rispostaSessioneNonValida();
+    // 🔒 sessione + permesso della sezione, come nel pannello
+    const _g = await accesso(request, "ai/spazio");
+    if (!_g.ok) return _g.risposta;
+    const s = _g.sess;
     const url = new URL(request.url);
     const cosa = url.searchParams.get("cosa") || "tutto";
 
@@ -45,8 +47,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const s = richiedeSessione(request);
-    if (!s) return rispostaSessioneNonValida();
+    // 🔒 sessione + permesso della sezione, come nel pannello
+    const _g = await accesso(request, "ai/spazio");
+    if (!_g.ok) return _g.risposta;
+    const s = _g.sess;
     const b = await request.json().catch(() => ({}));
     const azione = String(b?.azione || "");
 
