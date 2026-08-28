@@ -75,7 +75,7 @@ const EMOJI_PISTA = (nome: string) => {
     if (n.includes("mobile")) return "📱";
     if (n.includes("fisso") || n.includes("wireline")) return "🌐";
     if (n.includes("luce") || n.includes("gas") || n.includes("energia")) return "⚡";
-    if (n.includes("piva") || n.includes("business")) return "💼";
+    if (n.includes("piva") || n.includes("business") || n.includes("paletto")) return "💼";
     if (n.includes("assicura")) return "🛡️";
     if (n.includes("customer") || n.includes("cb")) return "🔁";
     if (n.includes("tv") || n.includes("sky")) return "📺";
@@ -97,6 +97,14 @@ export function DirezioneInserimentoAdmin() {
        il codice». Il pallino è già la sintesi di quella pista: cliccarlo
        chiede il dettaglio DI QUELLA, non di tutte e quattro. */
     const [pistaSola, setPistaSola] = useState<string | null>(null);
+    /* CONFRONTO VERTICALE (Luca 28/08): «sulla linea del franchising mettimi
+       quegli stessi pulsanti, senza colore, e cliccandoli mi apre tutti i
+       codici con SOLO quel KPI in visione».
+       È l'altra metà del gesto: il pallino sulla riga guarda UN codice a
+       fondo, questo guarda UN KPI su tutti — la colonna che serve quando si
+       decide dove caricare. `sez` perché i due gruppi (Franchising e
+       Multibrand) restano indipendenti. */
+    const [kpiTutti, setKpiTutti] = useState<{ sez: string; chiave: string } | null>(null);
     const apriTutto = (cod: string, giaAperto: boolean) => {
         setPistaSola(null);
         setAperto(giaAperto && !pistaSola ? null : cod);
@@ -459,6 +467,34 @@ export function DirezioneInserimentoAdmin() {
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">{sez.label}</span>
                             <span className="text-[10px] text-slate-600">{sez.items.length}</span>
                             <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
+                            {/* stessi tasti delle righe, ma SENZA pallino: qui non c'è
+                                uno stato da mostrare — è un modo di guardare, non un
+                                risultato. Cliccandone uno si aprono tutti i codici
+                                della sezione con quel solo KPI. */}
+                            <div className="hidden lg:flex items-center gap-1.5 shrink-0">
+                                {[...dir.pisteTab.filter((p) => dir.kpiCodice.includes(p.chiave) && !PISTE_FUORI.has(p.chiave))
+                                    .map((p) => ({ chiave: p.chiave, nome: p.nome })),
+                                ...(dir.brand === "windtre" ? [{ chiave: "__paletto__", nome: "Paletto" }] : [])]
+                                    .map((v) => {
+                                        const acceso = kpiTutti?.sez === sez.label && kpiTutti?.chiave === v.chiave;
+                                        return (
+                                            <button key={v.chiave} type="button"
+                                                onClick={() => {
+                                                    setAperto(null); setPistaSola(null);
+                                                    setKpiTutti(acceso ? null : { sez: sez.label as string, chiave: v.chiave });
+                                                }}
+                                                title={acceso
+                                                    ? `Chiudi: torna all'elenco`
+                                                    : `Apri TUTTI i codici mostrando solo ${v.nome}`}
+                                                className={cn("px-2 py-1 rounded-md border text-[10px] font-semibold transition-colors",
+                                                    acceso
+                                                        ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100"
+                                                        : "border-white/[0.08] bg-white/[0.03] text-slate-500 hover:text-slate-200 hover:bg-white/[0.07]")}>
+                                                {EMOJI_PISTA(v.nome)} {v.nome}
+                                            </button>
+                                        );
+                                    })}
+                            </div>
                         </div>
                     )}
                     {/* 🌍 TARGET DI GRUPPO (W3): luce&gas, assicurazioni… — non
@@ -575,7 +611,10 @@ export function DirezioneInserimentoAdmin() {
                         </div>
                     )}
                     {sez.items.map((k) => {
-                        const on = aperto === k.cod_gara;
+                        // aperta se l'ho aperta io, oppure se sto guardando un KPI
+                        // solo su tutta la sezione
+                        const kpiSez = kpiTutti?.sez === sez.label ? kpiTutti.chiave : null;
+                        const on = aperto === k.cod_gara || !!kpiSez;
                         // SOLO i KPI su cui l'operatore pesa PER CODICE (W3:
                         // mobile, fisso, CB a punti, protetti — Luca 26/08):
                         // le categorie di gruppo vivono nella card sotto
@@ -709,18 +748,26 @@ export function DirezioneInserimentoAdmin() {
                                 </div>
                                 {on && (
                                     <div className="border-t border-white/5 divide-y divide-white/[0.04]">
-                                        {pistaSola && (
+                                        {(pistaSola || kpiSez) && (
                                             <div className="px-4 py-2 flex items-center justify-between gap-2 bg-indigo-500/[0.06]">
                                                 <span className="text-[11px] text-indigo-200">
-                                                    Stai vedendo <b>una pista sola</b> di questo codice.
+                                                    {kpiSez === "__paletto__"
+                                                        ? <>Il <b>Paletto</b> si legge dalla pastiglia qui sopra: non ha un pannello suo.</>
+                                                        : <>Stai vedendo <b>una pista sola</b>{kpiSez ? " su tutti i codici" : " di questo codice"}.</>}
                                                 </span>
-                                                <button type="button" onClick={() => setPistaSola(null)}
+                                                <button type="button" onClick={() => { setPistaSola(null); setKpiTutti(null); }}
                                                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-white/15 text-slate-300 hover:bg-white/10">
                                                     mostra tutte
                                                 </button>
                                             </div>
                                         )}
-                                        {(pistaSola ? pisteMostrate.filter((p) => p.chiave === pistaSola) : pisteMostrate).map((p) => {
+                                        {(() => {
+                                            const soloQuesta = pistaSola || kpiSez;
+                                            // il paletto non è una pista del tabellare: non ha
+                                            // un pannello da mostrare, resta la pastiglia in riga
+                                            if (soloQuesta === "__paletto__") return [];
+                                            return soloQuesta ? pisteMostrate.filter((p) => p.chiave === soloQuesta) : pisteMostrate;
+                                        })().map((p) => {
                                             const scala = k.soglie[p.chiave] || null;
                                             // la CB «va a punti» (gara parallela Partnership):
                                             // il numero che conta è cbPunti, i pezzi nel sub
