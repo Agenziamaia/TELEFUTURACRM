@@ -188,7 +188,13 @@ export default function MobileUploadPage() {
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
                 const path = `${token}/${Date.now()}-${i}-${it.name}`;
-                const { error } = await supabase.storage.from("qr-uploads").upload(path, it.blob, { contentType: it.mime, upsert: true });
+                // NIENTE upsert (Luca 28/08, invio bloccato dal telefono del
+                // cliente): "sovrascrivi se esiste" chiede al database anche il
+                // permesso di MODIFICARE file già caricati — che agli ospiti non
+                // diamo, o chiunque potrebbe rimpiazzare il documento di un
+                // altro. Qui non serve: il nome porta l'orario al millisecondo,
+                // due caricamenti non collidono mai.
+                const { error } = await supabase.storage.from("qr-uploads").upload(path, it.blob, { contentType: it.mime });
                 if (error) throw error;
                 const { data: pub } = supabase.storage.from("qr-uploads").getPublicUrl(path);
                 files.push({ url: pub?.publicUrl, name: it.name, mime: it.mime });
