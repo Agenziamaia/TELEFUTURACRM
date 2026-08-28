@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { puoVederePassword } from "@/lib/passwordPermessi";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
@@ -8,11 +9,11 @@ export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        const _s = richiedeSessione(request);
-        if (!_s) return rispostaSessioneNonValida();
-    }
+    // 🔒 BLINDATURA (28/08): sessione firmata + ruolo abilitato al caveau
+    const _s = richiedeSessione(request);
+    if (!_s) return rispostaSessioneNonValida();
+    const _p = await puoVederePassword(_s.id);
+    if (!_p.ok) return NextResponse.json({ error: "Non hai i permessi per le password aziendali" }, { status: 403 });
 
     try {
         const { id } = await params;
@@ -21,12 +22,11 @@ export async function POST(
             return NextResponse.json({ error: "Invalid credential ID" }, { status: 400 });
         }
 
-        // SEC-02: chi rivela arriva dal body (pattern email/send) — prima il
-        // log reveal restava anonimo (user_id sempre null). Parse difensivo:
-        // il body puo' mancare nei chiamanti legacy.
-        const body = await request.json().catch(() => ({}));
-        const rawUserId = body?.userId;
-        const userId = typeof rawUserId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUserId) ? rawUserId : null;
+        // 🔒 CHI HA GUARDATO (28/08): prima il nome arrivava dal browser, quindi
+        // il registro degli accessi si poteva falsificare — bastava dichiarare
+        // il nome di un collega. Ora è quello della sessione firmata: il
+        // registro dice sempre la verità su chi ha aperto il caveau.
+        const userId = _s.id;
 
         // 1. Fetch the encrypted password
         const { data, error } = await supabase

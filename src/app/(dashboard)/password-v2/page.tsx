@@ -187,7 +187,7 @@ export default function PasswordV2Page() {
         // SEC-02: userId nel body per lo storico (pattern email/send).
         await fetch(`/api/passwords/credentials/${id}`, {
             method: "DELETE", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId: user?.id }),
+            body: JSON.stringify({}),
         });
         fetchCredentials();
         if (canSeeHistory) fetchHistory();
@@ -294,7 +294,7 @@ export default function PasswordV2Page() {
             // SEC-02: userId nel body — il log reveal ora registra CHI ha rivelato.
             const res = await fetch(`/api/passwords/credentials/${id}/reveal`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId: user?.id }),
+                body: JSON.stringify({}),
             });
             const data = await res.json();
             if (data.password) {
