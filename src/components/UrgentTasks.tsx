@@ -45,7 +45,15 @@ export function UrgentTasks() {
         let vivo = true;
         const load = async () => {
             const targets = isAdmin ? ["admin", "direzione"] : ["direzione"];
-            const [pers, rig, pack, ccr, car, mie] = await Promise.all([
+            /* ══ UNA FONTE CHE CADE NON DEVE SPEGNERE IL FULMINE ═══════════
+               Con Promise.all bastava che UNA delle sei letture fallisse — un
+               errore di rete, un permesso — perché l'intero blocco saltasse e
+               `setTasks` non venisse mai chiamato: il fulmine restava fermo a
+               quello che c'era, senza dire niente. Sintomo tipico: «queste mi
+               sono uscite ora ma prima non le vedevo» (Luca 28/08 sera).
+               Con allSettled ogni fonte risponde per sé: quelle che arrivano
+               si vedono, quella che cade lascia solo un buco. */
+            const esiti = await Promise.allSettled([
                 // (1) task personali: le vede il destinatario, chiunque sia
                 supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
                     .eq("target_user_id", user.id).eq("done", false).order("created_at", { ascending: false }),
@@ -76,6 +84,19 @@ export function UrgentTasks() {
                     .order("created_at", { ascending: false }),
             ]);
             if (!vivo) return;
+            const val = <T,>(i: number): T | null =>
+                esiti[i].status === "fulfilled" ? ((esiti[i] as PromiseFulfilledResult<T>).value) : null;
+            const pers = val<{ data: Task[] | null }>(0) || { data: [] };
+            const rig = val<{ count: number | null }>(1) || { count: 0 };
+            const pack = val<{ data: Task[] | null }>(2);
+            const ccr = val<{ count: number | null }>(3);
+            const car = val<{ count: number | null }>(4);
+            const mie = val<{ data: unknown[] | null }>(5);
+            // se qualcosa non ha risposto lo si scrive: un fulmine che mente
+            // è peggio di un fulmine spento
+            const caduti = esiti.filter((e) => e.status === "rejected").length;
+            if (caduti) console.warn(`[fulmine] ${caduti} fonti su ${esiti.length} non hanno risposto: l'elenco potrebbe essere incompleto.`);
+
             const list: Task[] = ([...((pers.data ?? []) as Task[]), ...((pack?.data ?? []) as Task[])])
                 .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
             const nRig = rig.count ?? 0;
