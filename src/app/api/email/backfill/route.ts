@@ -248,4 +248,10 @@ export async function POST(request: Request) {
     }
 }
 
-export async function GET() { return NextResponse.json({ ok: true, service: "email-backfill" }); }
+export async function GET(request: Request) {
+    // 🔒 anche il "ci sei?" chiede la sessione (28/08 sera): il lucchetto
+    // stava solo sul POST e la guardia controllava il FILE, non il verbo.
+    const _g = await accesso(request, "email/backfill");
+    if (!_g.ok) return _g.risposta;
+    return NextResponse.json({ ok: true, service: "email-backfill" });
+}

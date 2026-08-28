@@ -55,17 +55,51 @@ console.log(`\n${B}🔒 GUARDIA DI SICUREZZA — controllo del codice${X}\n`);
 /* ── 1. ogni route del server deve chiedere la sessione ─────────────────── */
 console.log(`${B}1. Lucchetto sulle funzioni del server${X}`);
 const route = tuttiIFile("src/app/api");
+const VERBI = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+/* Il lucchetto si controlla VERBO PER VERBO, non per file (Luca 28/08 sera).
+   Prima bastava che il file contenesse un `accesso(` da qualche parte: in
+   whatsapp/instance ed email/account il lucchetto stava solo sul POST, e la
+   GET — l'elenco dei numeri WhatsApp e delle caselle email aziendali — usciva
+   a chiunque conoscesse l'indirizzo, senza login. Il file sembrava protetto. */
+const corpoDi = (testo, verbo) => {
+    const m = new RegExp(`export\\s+async\\s+function\\s+${verbo}\\s*\\(`).exec(testo);
+    if (!m) return null;
+    // prima si chiude la lista dei PARAMETRI: possono stare su più righe e
+    // contenere graffe ({ params }: { params: ... }), che altrimenti verrebbero
+    // scambiate per l'inizio del corpo e il controllo leggerebbe il pezzo
+    // sbagliato (falsi allarmi su reveal, PATCH, DELETE).
+    let i = m.index + m[0].length - 1, tonde = 0;
+    for (; i < testo.length; i++) {
+        if (testo[i] === "(") tonde++;
+        else if (testo[i] === ")" && --tonde === 0) { i++; break; }
+    }
+    const apre = testo.indexOf("{", i);
+    if (apre < 0) return null;
+    let liv = 0;
+    for (let j = apre; j < testo.length; j++) {
+        if (testo[j] === "{") liv++;
+        else if (testo[j] === "}" && --liv === 0) return testo.slice(apre, j + 1);
+    }
+    return testo.slice(apre);
+};
+let verbiEsaminati = 0;
 for (const f of route) {
     const nome = f.replace("src/app/api/", "").replace("/route.ts", "");
     const testo = readFileSync(f, "utf8");
-    const haGate = testo.includes("richiedeSessione") || testo.includes("accesso(");
     const ammessa = Object.keys(SENZA_SESSIONE).some((k) => nome === k || nome.startsWith(k + "/"));
-    if (!haGate && !ammessa) {
-        problema(`${nome}: chiunque può chiamarla, anche senza login`,
-            `aggiungi in cima all'handler:  const _g = await accesso(request, "${nome}"); if (!_g.ok) return _g.risposta;\n      (se dev'essere pubblica, motivala in SENZA_SESSIONE dentro questa guardia)`);
+    if (ammessa) continue;
+    for (const verbo of VERBI) {
+        const corpo = corpoDi(testo, verbo);
+        if (corpo === null) continue;
+        verbiEsaminati++;
+        if (!/richiedeSessione|accesso\s*\(/.test(corpo)) {
+            problema(`${nome} → ${verbo}: chiunque può chiamarla, anche senza login`,
+                `aggiungi in cima a ${verbo}:  const _g = await accesso(request, "${nome}"); if (!_g.ok) return _g.risposta;\n      (il lucchetto su un altro verbo dello stesso file NON protegge questo)`);
+        }
     }
 }
-console.log(`   ${route.length} funzioni esaminate\n`);
+console.log(`   ${route.length} file, ${verbiEsaminati} funzioni esaminate una per una\n`);
 
 /* ── 1-bis. i PERMESSI DEL PANNELLO valgono anche qui (Luca 28/08) ────────
    «i permessi devono essere collegati TUTTI alla sezione permessi del

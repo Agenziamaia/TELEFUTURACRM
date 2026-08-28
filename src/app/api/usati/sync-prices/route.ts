@@ -122,7 +122,11 @@ export async function POST(req: Request) {
 }
 
 // GET: stato ultimo sync (per il pannello admin)
-export async function GET() {
+export async function GET(request: Request) {
+    // 🔒 anche in lettura (28/08 sera): la guardia controllava il file, non
+    // il singolo verbo, e questa usciva a chiunque conoscesse l'indirizzo.
+    const _g = await accesso(request, "usati/sync-prices");
+    if (!_g.ok) return _g.risposta;
   const { data: last } = await supabase.from("price_sync_log").select("*").order("id", { ascending: false }).limit(1).maybeSingle();
   const { count } = await supabase.from("market_buyback_prices").select("id", { count: "exact", head: true });
   return NextResponse.json({ ok: true, last, rows_in_cache: count ?? 0 });

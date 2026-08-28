@@ -8,7 +8,11 @@ export const dynamic = "force-dynamic";
 // Reparti & IVA (spec Luca): mappa reparto -> aliquota/natura, editabile da Amministrazione.
 // GET  → elenco reparti (1..40).
 // PUT  { reparti:[{reparto,descrizione,aliquota,natura,attivo}] }  → upsert (uno o tutti).
-export async function GET() {
+export async function GET(request: Request) {
+    // 🔒 anche in lettura (28/08 sera): la guardia controllava il file, non
+    // il singolo verbo, e questa usciva a chiunque conoscesse l'indirizzo.
+    const _g = await accesso(request, "pos/reparti");
+    if (!_g.ok) return _g.risposta;
     const { data, error } = await supabase.from("pos_reparti")
         .select("reparto, descrizione, aliquota, natura, attivo").order("reparto");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

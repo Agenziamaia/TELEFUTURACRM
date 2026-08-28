@@ -32,12 +32,22 @@ export const SEZIONE_DI: Record<string, string> = {
     "usati": "/usati",
     "dispositivi": "/magazzino",
     "smartphones": "/magazzino",
+    // eccezioni più precise del primo segmento: queste due servono le
+    // schermate di Amministrazione (Reparti, Marginalità, Catalogo), non le
+    // sezioni operative da cui prendono il nome
+    "pos/reparti": "/amministrazione",
+    "usati/sync-prices": "/amministrazione",
 };
 
-/** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2" */
+/** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".
+ *  Vince la chiave PIÙ SPECIFICA ("pos/reparti" prima di "pos"), così una
+ *  singola route può appartenere a una sezione diversa dalle sue sorelle. */
 export function sezioneDellaRoute(nomeRoute: string): string | null {
-    const primo = String(nomeRoute || "").split("/")[0];
-    return SEZIONE_DI[primo] || null;
+    const n = String(nomeRoute || "");
+    for (const k of Object.keys(SEZIONE_DI).sort((a, b) => b.length - a.length)) {
+        if (n === k || n.startsWith(k + "/")) return SEZIONE_DI[k];
+    }
+    return null;
 }
 
 /** Il permesso EFFETTIVO di una persona su una sezione.

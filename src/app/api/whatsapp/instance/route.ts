@@ -54,7 +54,12 @@ function datiChat(ch: any): { numero: string; isGroup: boolean; chatJid: string 
 //  POST   { action:"state", instanceName }               -> stato connessione
 //  POST   { action:"delete", instanceName }              -> elimina
 
-export async function GET() {
+export async function GET(request: Request) {
+    // 🔒 anche in LETTURA (28/08 sera): il lucchetto stava solo sul POST, e
+    // l'elenco dei numeri WhatsApp aziendali usciva a chiunque conoscesse
+    // l'indirizzo, senza alcun login. Il varco vale per ogni verbo.
+    const _g = await accesso(request, "whatsapp/instance");
+    if (!_g.ok) return _g.risposta;
     // elenco istanze registrate nel CRM (per il pannello admin)
     const { data } = await supabase.from("wa_instances")
         .select("id, instance_name, display_name, owner_user_id, wa_number, status, created_at")

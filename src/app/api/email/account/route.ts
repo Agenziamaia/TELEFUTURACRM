@@ -16,7 +16,12 @@ export const dynamic = "force-dynamic";
 //  POST { action:"delete", id, userId }             -> elimina casella + storico (cascade)
 
 
-export async function GET() {
+export async function GET(request: Request) {
+    // 🔒 anche in LETTURA (28/08 sera): il lucchetto stava solo sul POST, e
+    // l'elenco delle caselle aziendali (indirizzi, negozio, titolare) usciva
+    // a chiunque conoscesse l'indirizzo, senza login. Il varco vale sempre.
+    const _g = await accesso(request, "email/account");
+    if (!_g.ok) return _g.risposta;
     const { data } = await supabase.from("email_accounts")
         .select("id, negozio, owner_user_id, email_address, display_name, status, last_error, created_at")
         .order("created_at", { ascending: false });
