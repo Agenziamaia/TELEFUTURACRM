@@ -13,7 +13,7 @@
    lanciata prima di ogni deploy:  npm run sicurezza
    Se trova una violazione esce con errore e dice esattamente cosa fare.
    ═══════════════════════════════════════════════════════════════════════ */
-import { readFileSync, readdirSync, statSync } from "fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 
 const R = "\x1b[31m", G = "\x1b[32m", Y = "\x1b[33m", B = "\x1b[1m", X = "\x1b[0m";
@@ -146,6 +146,51 @@ for (const f of [...route, ...pagine]) {
     }
 }
 console.log("   controllo completato\n");
+
+/* ── 5. UNA SOLA REGOLA DEI PERMESSI, non due copie (Luca 28/08) ─────────
+   Il pomeriggio del 28 il server aveva una sua versione «equivalente» della
+   precedenza ruolo→grado→persona: sbagliava a leggere il menù e per un'ora ha
+   negato le password a chi eredita i valori di fabbrica (direttore generale
+   compreso). La regola vive in nav.ts: il server la CHIAMA, non la riscrive. */
+console.log(`${B}5. I permessi si calcolano in un posto solo${X}`);
+{
+    const f = "src/lib/permessiServer.ts";
+    if (existsSync(f)) {
+        const testo = readFileSync(f, "utf8");
+        if (!/effectiveAllowed\s*\(/.test(testo))
+            problema(`${f}: non usa effectiveAllowed di nav.ts`,
+                `il permesso di una sezione si calcola con la STESSA funzione del browser e del pannello (nav.ts): una seconda copia della regola diverge sempre`);
+        if (/\.includes\(\s*role\s*\)/.test(testo))
+            problema(`${f}: sembra decidere confrontando il ruolo a mano`,
+                `passa da effectiveAllowed(role, href, ruoliDefault, perms, gruppo): tiene conto di gruppo, grado e persona`);
+    }
+}
+console.log("   controllo completato\n");
+
+/* ── 6. le pagine SENZA login non possono chiedere di sovrascrivere ──────
+   /m/* le apre il cliente col QR, senza account: lì «upsert» chiede anche il
+   permesso di modificare file già caricati — che a un ospite non si dà, o
+   chiunque potrebbe rimpiazzare il documento d'identità di un altro. */
+console.log(`${B}6. Le pagine pubbliche non sovrascrivono file${X}`);
+{
+    // qui servono le PAGINE, non le route: tuttiIFile raccoglie solo route.ts
+    const sorgenti = (dir, out = []) => {
+        for (const n of readdirSync(dir)) {
+            const p = join(dir, n);
+            if (statSync(p).isDirectory()) sorgenti(p, out);
+            else if (/\.(tsx?|jsx?)$/.test(n)) out.push(p);
+        }
+        return out;
+    };
+    const pubbliche = existsSync("src/app/m") ? sorgenti("src/app/m") : [];
+    for (const f of pubbliche) {
+        const testo = readFileSync(f, "utf8");
+        if (/storage[\s\S]{0,120}?upsert\s*:\s*true/.test(testo))
+            problema(`${f}: carica su Storage con upsert: true`,
+                `una pagina senza login non ha (e non deve avere) il permesso di sovrascrivere: togli upsert, il nome del file porta già l'orario`);
+    }
+    console.log(`   ${pubbliche.length} file pubblici esaminati\n`);
+}
 
 /* ── esito ─────────────────────────────────────────────────────────────── */
 if (violazioni) {
