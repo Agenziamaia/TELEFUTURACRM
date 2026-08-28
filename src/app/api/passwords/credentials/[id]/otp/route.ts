@@ -21,12 +21,13 @@ export const dynamic = "force-dynamic";
    · la mail viene portata via dall'INBOX: tre di queste caselle sono di
      negozio e i colleghi le aprono tutti i giorni. */
 
-/* CINQUE MINUTI (Luca 28/08 sera): «un'email che può essere arrivata massimo
-   cinque minuti prima». Più vecchia di così non è il codice di adesso — è
-   quello di un tentativo precedente, e consegnarlo farebbe fallire l'accesso
-   facendo credere che il sistema funzioni. Meglio dire «non è ancora
-   arrivato» che dare un numero scaduto. */
-const MINUTI_VALIDI = 5;
+/* TRE MINUTI (Luca 28/08 sera, dopo la prova sul campo): «può prendere in
+   considerazione solo le mail ricevute al massimo tre minuti prima, altrimenti
+   gli dà una marea di OTP che sono tutti sbagliati — perché un OTP c'è
+   sempre». È il punto: nella casella un codice c'è quasi sempre, ed è sempre
+   plausibile. Solo la finestra stretta distingue quello di adesso da quello di
+   stamattina. Meglio «non è ancora arrivato» che un numero che non entra. */
+const MINUTI_VALIDI = 3;
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
     // 🔒 stesso permesso della password: chi può vedere la credenziale può
@@ -80,8 +81,8 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
         // non c'è ancora: si dice quanto aspettare, e il CRM ci riprova da solo
         return NextResponse.json({
             attesa: true,
-            riprovaTra: 15,
-            error: `Non è ancora arrivato niente su ${acc.email_address}. Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
+            riprovaTra: 30,          // Luca: mezzo minuto fra un giro e l'altro
+            error: `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}. Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
         });
     }
 

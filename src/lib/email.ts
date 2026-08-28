@@ -417,13 +417,31 @@ export async function cercaESpostaMailOtp(
             let lock: { release: () => void } | null = null;
             try { lock = await client.getMailboxLock(cartella); } catch { continue; }
             try {
+                /* ⚠️ IL «SINCE» DI IMAP RAGIONA A GIORNI, NON A MINUTI.
+                   Chiedendo le mail degli ultimi 3 minuti il server restituisce
+                   TUTTE QUELLE DI OGGI: la finestra non veniva applicata, e il
+                   CRM consegnava tranquillamente un codice di ore prima — che
+                   è sempre presente, sempre plausibile e sempre sbagliato.
+                   (Luca 28/08 sera: «me lo ha generato comunque, ma l'ha
+                   pescato dall'ultima mail»)
+                   Il taglio vero si fa QUI, sulla data del messaggio. */
                 const trovati = await client.search({ since }, { uid: true });
                 const uids = (Array.isArray(trovati) ? trovati : []).slice(-max);
                 if (!uids.length) continue;
                 const daSpostare: number[] = [];
+                const limite = since.getTime();
                 for await (const msg of client.fetch(uids, { uid: true, source: true }, { uid: true })) {
                     const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
                     if (!m || !opts.mittenteOk(m.fromAddr)) continue;
+                    // fuori finestra: non è il codice di adesso, e consegnarlo
+                    // farebbe fallire l'accesso facendo credere che funzioni
+                    const quando = m.date ? new Date(m.date).getTime() : 0;
+                    if (!quando || quando < limite) {
+                        // vecchia ma del mittente giusto: la si porta comunque
+                        // via dalla posta, così non resta lì in chiaro
+                        if (cartella === "INBOX") daSpostare.push(m.uid);
+                        continue;
+                    }
                     trovate.push({ uid: m.uid, cartella, fromAddr: m.fromAddr, subject: m.subject, text: m.text, html: m.html, date: m.date });
                     if (cartella === "INBOX") daSpostare.push(m.uid);
                 }

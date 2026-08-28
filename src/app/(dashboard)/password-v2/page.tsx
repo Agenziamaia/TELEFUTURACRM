@@ -192,7 +192,7 @@ export default function PasswordV2Page() {
        chiede il codice qui: la mail è ancora per strada. Dirgli «riprova tra
        40 secondi» significa che deve stare lì a contare e ricliccare, con le
        mani già occupate dal portale davanti.
-       Quindi il CRM RIPROVA DA SOLO — tre giri a distanza di 15 secondi, con
+       Quindi il CRM RIPROVA DA SOLO — tre giri a distanza di 30 secondi, con
        il conto alla rovescia a schermo — e si ferma appena il codice arriva.
        Una pressione sola, e si torna a guardare il portale. */
     const attesaRef = useRef<Record<number, number>>({});
@@ -216,7 +216,7 @@ export default function PasswordV2Page() {
 
         // non è arrivato: se è solo questione di tempo, ci riprovo io
         if (r?.attesa && giro < 2) {
-            const secondi = Number(r.riprovaTra) || 15;
+            const secondi = Number(r.riprovaTra) || 30;
             setOtpMsg((m) => ({ ...m, [c.id]: String(r.error || "") }));
             setOtpAttesa((m) => ({ ...m, [c.id]: secondi }));
             window.clearInterval(attesaRef.current[c.id]);
@@ -236,7 +236,7 @@ export default function PasswordV2Page() {
         // dopo tre giri: il problema non è il tempo
         setOtpAttesa((m) => { const n = { ...m }; delete n[c.id]; return n; });
         setOtpMsg((m) => ({ ...m, [c.id]: r?.attesa
-            ? "Non è arrivato niente in 45 secondi. Controlla di aver premuto «invia codice» sul portale — quando l'hai fatto, richiedilo qui."
+            ? "Non è arrivato niente in un minuto e mezzo. Controlla di aver premuto «invia codice» sul portale — quando l'hai fatto, richiedilo qui."
             : String(r?.error || "Codice non trovato") }));
     };
 
