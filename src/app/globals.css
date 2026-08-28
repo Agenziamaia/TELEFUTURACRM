@@ -1160,15 +1160,29 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    business soluzioni digitali VAS, e lo lasci fisso così»). Il numero di
    colonne lo decide il widget (--tf-col, mai più di 4): allargando la card
    gli anelli crescono, non se ne aggiunge un quinto. Card stretta → due. ─ */
-.tf-rete-anelli { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 1.5rem 1rem; justify-items: center; align-items: start; }
-@container (min-width: 30rem) {
-  /* CE NE STANNO QUANTI CE NE STANNO (Luca 28/08: «allargandolo, i cinque
-     contatori non vanno mai in una riga sola, quando da una certa dimensione
-     ci starebbero tranquillamente»). Il numero di colonne non è più fissato a
-     mano: lo detta la larghezza. La misura minima è scelta perché a card
-     "normale" (~1000px) ne entrino quattro — che è la griglia 4+4 chiesta per
-     Vodafone — e allargando entri il quinto, il sesto e così via. */
-  .tf-rete-anelli { grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 1.5rem 1.75rem; }
+/* LA STRUTTURA NON SI RICOMPONE (Luca 28/08: «se allargo o stringo Vodafone,
+   l'unica cosa che cambia è la dimensione delle cose all'interno»). Le colonne
+   le dichiara il widget (--tf-col, dalla regola "fino a 5 in riga, oltre due
+   righe bilanciate"): allargando la card gli anelli CRESCONO, non si
+   riordinano. Due sole marce indietro, per non ridurli a francobolli su una
+   card molto stretta: sotto le 52rem si scende a --tf-col-m (mai più di 4) e
+   sotto le 22rem a due colonne. */
+/* la fila di anelli si prende l'altezza avanzata e la distribuisce, e la
+   MISURA dell'anello segue l'altezza della card (cqh) oltre che la larghezza:
+   allungando la card gli anelli crescono davvero, invece di lasciare mezzo
+   riquadro vuoto sotto. */
+.tf-rete-anelli { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; justify-items: center; align-content: space-evenly; flex: 1 1 auto; min-height: 0; }
+/* NIENTE SCROLL DENTRO LA CARD (Luca 28/08: «non esiste la possibilità che
+   dentro la card io possa scrollare col mouse; la card deve essere sempre
+   responsive rispetto alla sua dimensione»). L'anello si misura sull'altezza
+   disponibile TOLTO lo spazio della barra sotto, che deve restare sempre
+   intera: se la card si accorcia, a stringersi è l'anello, non la barra. */
+.tf-rete-anelli > * { max-width: clamp(90px, calc((100cqh - 195px) / var(--tf-righe, 1) - 104px), 300px); }
+@container (min-width: 22rem) {
+  .tf-rete-anelli { grid-template-columns: repeat(var(--tf-col-m, 4), minmax(0, 1fr)); gap: 1.5rem 1.25rem; }
+}
+@container (min-width: 52rem) {
+  .tf-rete-anelli { grid-template-columns: repeat(var(--tf-col, 4), minmax(0, 1fr)); gap: 1.5rem 1.75rem; }
 }
 
 /* ── MIX PERSONE (Luca 28/08): stessa scocca del Mix operatori — card

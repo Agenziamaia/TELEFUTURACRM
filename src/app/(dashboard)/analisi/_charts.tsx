@@ -667,7 +667,7 @@ export function AnelloScaglioni({
                 a scaglioni — la forma conta gli scaglioni, il numero i punti */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-[17%] whitespace-nowrap">
                 {logo}
-                <span className="font-black text-white tabular-nums leading-none" style={{ fontSize: "clamp(13px, 15cqw, 24px)" }}>{fmtPt(punti)}</span>
+                <span className="font-black text-white tabular-nums leading-none" style={{ fontSize: "clamp(13px, 15cqw, 34px)" }}>{fmtPt(punti)}</span>
                 <span className="text-[8px] text-slate-500 uppercase tracking-wider leading-tight mt-0.5">{unit === "pz" ? "pezzi rete" : "punti rete"}</span>
                 {quota > 0 && <span className="text-[9px] font-black tabular-nums mt-1" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}%&nbsp;mio</span>}
             </div>

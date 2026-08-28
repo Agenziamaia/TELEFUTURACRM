@@ -638,6 +638,22 @@ function AnalisiInner() {
             const piste = [];
             if (c.tab) {
                 const av = calcolaAvanzamento(c.tab, c.rows);
+                // PISTE PARALLELE (Luca 28/08: «su W3 il contatore della
+                // customer base non funziona»). Certe piste non maturano nel
+                // motore del tabellare ma in un conteggio a fianco: su W3 la
+                // Customer Base vive nelle righe PARTNERSHIP del lato azienda
+                // e le assicurazioni nella loro pista, ed è `arricchisci` a
+                // portarle sull'item con la sua `pista`. Il motore lì torna
+                // zero — che è il motivo per cui il contatore era a zero.
+                // Dove il motore non ha niente e gli item invece sì, si prende
+                // il valore degli item.
+                const daItems = new Map(), daItemsMio = new Map();
+                for (const it of items) {
+                    if (it.brandGara !== c.id || !it.pista || !it.punti) continue;
+                    daItems.set(it.pista, (daItems.get(it.pista) || 0) + Number(it.punti));
+                    if (èMio(it.negozio)) daItemsMio.set(it.pista, (daItemsMio.get(it.pista) || 0) + Number(it.punti));
+                }
+                const arrot = (v) => Math.round(v * 100) / 100;
                 // stesso motore sulle SOLE righe dei miei negozi: la quota esce
                 // dai punti veri della pista, mai da una proporzione a occhio
                 const mieRows = c.rows.filter((r) => èMio(r.negozio));
@@ -647,13 +663,18 @@ function AnalisiInner() {
                     const st = av.piste[p.chiave]; if (!st) continue;
                     const scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                     const tg = targetDi(c.id, p.chiave);
+                    const fuoriMotore = (daItems.get(p.chiave) || 0) > 0;
                     // niente soglie E niente produzione: si mostra lo stesso se
                     // c'è un target dal pannello (Luca 28/08: «Protecta e i
                     // punti business non hanno una soglia, quel target lo metto
                     // io dalla sezione target»)
-                    if (!scala.length && !st.punti && !tg) continue;
-                    piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt", punti: st.punti, pezzi: st.pezzi, gate: st.gate || null,
-                        scala, mio: avMio?.piste?.[p.chiave]?.punti ?? 0, target: tg });
+                    if (!scala.length && !st.punti && !tg && !fuoriMotore) continue;
+                    const daFianco = !st.punti && (daItems.get(p.chiave) || 0) > 0;
+                    piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt",
+                        punti: daFianco ? arrot(daItems.get(p.chiave)) : st.punti,
+                        pezzi: st.pezzi, gate: st.gate || null, scala,
+                        mio: daFianco ? arrot(daItemsMio.get(p.chiave) || 0) : (avMio?.piste?.[p.chiave]?.punti ?? 0),
+                        target: tg });
                 }
             }
             for (const p of (c.pezzi || [])) {
@@ -968,7 +989,15 @@ function AnalisiInner() {
 function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     const [galleria, setGalleria] = useState(false);
     const { width, containerRef, mounted } = useContainerWidth();
-    const rglLayout = lista.map((w) => ({ i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || hDef(w.k), minW: 1, minH: 2 }));
+    // MISURE MINIME (Luca 28/08: «più piccola di così le informazioni non si
+    // leggono»): il widget le dichiara nel REGISTRO, altrimenti valgono quelle
+    // storiche. Sotto quella misura la maniglia non scende più.
+    const rglLayout = lista.map((w) => ({
+        i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || hDef(w.k),
+        minW: REGISTRO[w.k]?.minW || 1,
+        // la minima può dipendere dal contenuto (quante piste ha quel brand)
+        minH: typeof REGISTRO[w.k]?.minH === "function" ? REGISTRO[w.k].minH(ctx) : (REGISTRO[w.k]?.minH || 2),
+    }));
     const onLayout = (l) => {
         const mappa = new Map(l.map((it) => [it.i, it]));
         const next = lista.map((w) => { const it = mappa.get(w.k); return it ? { ...w, x: it.x, y: it.y, s: it.w, h: it.h } : w; });

@@ -1881,6 +1881,19 @@ function WidgetMixPersone({ ctx }) {
    il layout si salva in app_users.analisi_layout come per Io e Negozio. Gli
    anelli dentro si misurano in `cqw`, cioè sulla LARGHEZZA DELLA CARD: la
    stessa card stretta e alta li impila, larga e bassa li affianca. ═════ */
+// ALTEZZA MINIMA di un blocco brand, in righe di griglia (Luca 28/08: «non
+// esiste che io scrolli dentro la card; esistono delle misure minime»).
+// Si conta quello che DEVE starci: testata + tante file di anelli quante ne
+// impone la regola delle colonne + la barra sotto, che deve restare intera.
+export function minHRete(ctx, brand) {
+    const b = (ctx?.brandRete || []).find((x) => x.brand === brand);
+    const n = b?.piste?.length || 1;
+    const col = n <= 5 ? Math.max(1, n) : Math.ceil(n / 2);
+    const righe = Math.ceil(n / col);
+    const px = 34 + 24 + righe * 214 + 124 + 72;   // testata, gap, file, barra, cornice
+    return Math.max(4, Math.ceil((px + 16) / 112));
+}
+
 function BloccoBrandRete({ ctx, brand }) {
     // il dettaglio nasce APERTO sul primo contatore (Luca 28/08: «altrimenti
     // non si vede, non se lo immaginano che si può cliccare»): "__def__" è lo
@@ -1889,9 +1902,15 @@ function BloccoBrandRete({ ctx, brand }) {
     const b = (ctx.brandRete || []).find((x) => x.brand === brand);
     if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
     const n = b.piste.length;
-    // quante ne stanno per riga lo decide la LARGHEZZA della card (vedi
-    // .tf-rete-anelli): a card normale ne entrano quattro — la griglia 4+4
-    // chiesta per Vodafone — e allargando entra il quinto.
+    // QUANTE PER RIGA (Luca 28/08, due richieste che sembravano opposte:
+    // «su WindTre i cinque contatori devono poter stare in una riga sola» e
+    // «su Vodafone niente cinque sopra e tre sotto — mobile fisso luce gas, e
+    // sotto i quattro business in fila; allargando cambia solo la dimensione»).
+    // La regola che le tiene entrambe: fino a CINQUE stanno in riga; oltre, due
+    // righe BILANCIATE. Otto piste → 4+4, cinque → 5, sette → 4+3. Il numero
+    // non dipende dalla larghezza: allargando la card gli anelli crescono e
+    // basta, la struttura non si ricompone sotto gli occhi.
+    const colonne = n <= 5 ? Math.max(1, n) : Math.ceil(n / 2);
     // Oltre le quattro piste le etichette dei valori uscirebbero addosso al
     // vicino: restano nel tooltip.
     const compatto = n > 4;
@@ -1899,8 +1918,12 @@ function BloccoBrandRete({ ctx, brand }) {
     const primaK = b.piste.length ? `${brand}:${b.piste[0].chiave}` : null;
     const aperta = apri === "__def__" ? primaK : apri;
     const tocca = (k) => setApri(aperta === k ? null : k);
+    const righe = Math.ceil(n / colonne);
     return (
-        <div className="w-full flex flex-col gap-3">
+        // h-full: la card sa quanto è alta, e il contenuto se la prende tutta
+        // invece di lasciare mezzo riquadro vuoto (Luca 28/08: «l'ho estesa in
+        // lunghezza però non si è riproporzionata»)
+        <div className="w-full h-full flex flex-col gap-3">
             <div className="flex items-center gap-2 flex-wrap text-[10px] shrink-0">
                 <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
                     <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} {b.conSoglie === 1 ? "pista in soglia" : "piste in soglia"}
@@ -1917,11 +1940,11 @@ function BloccoBrandRete({ ctx, brand }) {
                     </span>
                 )}
             </div>
-            <div className="tf-rete-anelli px-3">
+            <div className="tf-rete-anelli px-3 overflow-hidden" style={{ "--tf-col": colonne, "--tf-col-m": Math.min(4, colonne), "--tf-righe": righe }}>
                 {b.piste.map((x) => {
                     const k = `${brand}:${x.chiave}`;
                     return (
-                        <div key={k} className="w-full max-w-[178px] min-w-0">
+                        <div key={k} className="w-full min-w-0">
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} pezzi={x.pezzi}
                                 soglie={x.scala} target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
@@ -1946,7 +1969,7 @@ function BloccoBrandRete({ ctx, brand }) {
             </div>
             {/* DRILL: la barra lineare, dove l'angolo torna a essere punti */}
             {b.piste.filter((x) => aperta === `${brand}:${x.chiave}`).map((x) => (
-                <div key={`bar${x.chiave}`} className="pt-3 border-t border-white/10">
+                <div key={`bar${x.chiave}`} className="pt-3 border-t border-white/10 shrink-0">
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
                         📏 {PISTA_LABEL_RETE[x.chiave] || x.nome} — sulla scala {x.unit === "pz" ? "dei pezzi" : "dei punti"}
                         <span className="ml-2 normal-case tracking-normal font-normal text-slate-600">clicca un altro anello per cambiare dettaglio</span>
@@ -1998,11 +2021,11 @@ export const REGISTRO = {
     // schermata sola, senza scrollare
     "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 8, h: 6, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
     // ── RETE: un widget per operatore, ridimensionabile come gli altri ────
-    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 6, solo: "rete", logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
-    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 6, solo: "rete", logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
-    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
-    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 5, solo: "rete", logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
-    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
+    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "w3"), logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
+    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "vf"), logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
+    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "sky"), logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
+    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 6, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "fw"), logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
+    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "s4"), logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento", "rete"];
 export const DEFAULT_LAYOUT = {
