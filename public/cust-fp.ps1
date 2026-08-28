@@ -47,8 +47,21 @@ foreach ($m in [regex]::Matches($xml, 'data="([^"]*)"')) {
   $lines += [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)
 }
 
+# Auto-rileva la cartella del driver: se in $Fpnet manca MiraOposDll (es. store
+# ClickOnce come Castani/Acilia, dove i DLL stanno in AppData\Local\Apps\2.0 con un
+# path che CAMBIA a ogni aggiornamento dell'app), cerca la cartella che contiene
+# MiraOposDll + il suo OPOS (POS.Devices.OPOSFiscalPrinter) insieme.
+if (-not (Test-Path (Join-Path $Fpnet "MiraOposDll.dll"))) {
+  try {
+    $hit = Get-ChildItem (Join-Path $env:LOCALAPPDATA "Apps\2.0") -Recurse -Filter "MiraOposDll.dll" -ErrorAction SilentlyContinue |
+      ForEach-Object { $_.DirectoryName } | Sort-Object -Unique |
+      Where-Object { Test-Path (Join-Path $_ "POS.Devices.OPOSFiscalPrinter.dll") } | Select-Object -First 1
+    if ($hit) { $Fpnet = $hit }
+  } catch { }
+}
+
 try { Set-Location $Fpnet; [Reflection.Assembly]::LoadFrom((Join-Path $Fpnet "MiraOposDll.dll")) | Out-Null }
-catch { Esito $false "MiraOposDll non caricata: $($_.Exception.Message)" ""; exit 1 }
+catch { Esito $false "MiraOposDll non caricata (fpnet=$Fpnet): $($_.Exception.Message)" ""; exit 1 }
 
 $fp = $null
 try {
