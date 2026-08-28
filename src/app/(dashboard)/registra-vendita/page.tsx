@@ -12,6 +12,10 @@ import { storeRoot as _storeRoot } from "@/lib/storeRoot";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
+// il selettore del CRM, quello che si cerca scrivendo: le tendine di sistema
+// aprono il menu del sistema operativo, che non si può vestire (Luca 28/08)
+import { SelectOpzioni } from "@/components/SelectPersona";
+import { cn } from "@/utils";
 import { ContiSospesi, type SospesoRow } from "./ContiSospesi";
 
 // POS scontrino/cassa: ATTIVO solo nei negozi in tabella pos_scontrino_negozi
@@ -1435,11 +1439,12 @@ const SCd = ({session,codici,val,onCh}) => {
   const content = (
     <div>
       <div className="rvLab">Codice <span style={{color:"var(--tf-f87171)"}}>*</span></div>
-      <select value={actual} onChange={e=>onCh(e.target.value)} className="rvIn"
-        style={actual?{border:"1.5px solid rgba(52,211,153,0.55)",background:isOv?undefined:"rgba(40,167,69,0.10)"}:undefined}>
-        <option value="">— Seleziona —</option>
-        {codici.map(c=><option key={c} value={c}>{c}</option>)}
-      </select>
+      {/* la tendina del SISTEMA non si può vestire: il menu che si apre è
+          quello del sistema operativo, blu e fuori posto (Luca 28/08). Qui
+          usiamo lo stesso selettore del resto del CRM — si cerca scrivendo,
+          e il menu è nostro. */}
+      <SelectOpzioni value={actual} onChange={onCh} opzioni={codici} placeholder="— Seleziona —"
+        className={cn("rvSel", actual && !isOv && "rvSel-ok", isOv && "rvSel-mod")} />
       {actual&&!isOv&&<div style={{fontSize:11,color:"var(--tf-34d399)",marginTop:3}}>✓ Da codice inserimento</div>}
       {isOv&&<div style={{fontSize:11,color:"var(--tf-fb923c)",marginTop:3}}>⚠ Modificato</div>}
     </div>
@@ -1726,11 +1731,9 @@ const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:10,fontWeight:600,color:"var(--tf-64748b)",marginBottom:2}}>Tipologia €</div>
-            <select value={riga.tipoBundleVal||""} onChange={e=>onUpd("tipoBundleVal",e.target.value)}
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w20)"}}>
-              <option value="">--</option>
-              {BUNDLE_VALORI.map(v=><option key={v} value={v}>{v} €</option>)}
-            </select>
+            {/* l'euro resta un'etichetta: il valore salvato è il numero nudo */}
+            <SelectOpzioni value={riga.tipoBundleVal?`${riga.tipoBundleVal} €`:""} onChange={v=>onUpd("tipoBundleVal",v.replace(/\s*€$/,""))}
+              opzioni={BUNDLE_VALORI.map(v=>`${v} €`)} placeholder="—" className="rvSel" />
           </div>
         </div>
       )}
@@ -3478,9 +3481,14 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
       </div>
     )}
     {(offerte.length===0||off)&&campi.length>0&&(
-      <div style={{marginTop:10,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
-        <div style={{fontSize:11,fontWeight:700,color,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
+      /* DATI CONTRATTO — vestito come il resto (Luca 28/08): fondo sfumato,
+         filetto del brand a sinistra, campi più larghi e aria fra le righe */
+      <div style={{marginTop:12,padding:"13px 14px",borderRadius:14,
+        background:`linear-gradient(160deg, color-mix(in srgb, ${color} 9%, transparent), var(--tf-w30))`,
+        border:`1px solid color-mix(in srgb, ${color} 26%, transparent)`,
+        boxShadow:`0 1px 0 rgba(255,255,255,.03) inset, 0 8px 26px -18px ${color}`}}>
+        <div className="rvSez" style={{fontSize:11.5,fontWeight:800,color,marginBottom:11,textTransform:"uppercase",letterSpacing:".7px"}}>Dati contratto</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:"12px 14px"}}>
           {campi.map(cmp=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
             if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
@@ -4056,10 +4064,9 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <TF l="Seriale Kasko" r v={f.kfSeriale||""} o={v=>uF(group.id,si,sub.id,"kfSeriale",v)} p="es. KF-000123"/>
             <div>
               <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Tipologia Kasko <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
-              <select value={f.kfTipologia||""} onChange={e=>uF(group.id,si,sub.id,"kfTipologia",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w20)"}}>
-                <option value="">— Seleziona —</option>
-                {["29,90","39,90","59,90","89,90","109,99","129,99","149,99","179,99","189,99","219,99"].map(v=><option key={v} value={v}>{v} €</option>)}
-              </select>
+              <SelectOpzioni value={f.kfTipologia?`${f.kfTipologia} €`:""} onChange={v=>uF(group.id,si,sub.id,"kfTipologia",v.replace(/\s*€$/,""))}
+                opzioni={["29,90","39,90","59,90","89,90","109,99","129,99","149,99","179,99","189,99","219,99"].map(v=>`${v} €`)}
+                placeholder="— Seleziona —" className="rvSel" />
             </div>
             <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.kfCodIns||""} onCh={v=>uP(group.id,si,sub.id,"kfCodIns",v)}/>
           </div>
@@ -6604,6 +6611,19 @@ function CRM() {
 .rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
 .rvIn::placeholder{color:#586174}
 select.rvIn{cursor:pointer}
+/* ── I CAMPI, VESTITI COME IL CARRELLO (Luca 28/08: «ci sono sezioni in uno
+   stile che non è più adatto a quello che abbiamo evoluto»). Le tendine di
+   sistema sono sparite: al loro posto il selettore del CRM, che qui prende
+   la stessa faccia degli altri campi e i suoi stati — verde quando il dato
+   arriva dal codice inserimento, ambra quando è stato cambiato a mano. */
+.rvSel > div{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;background:var(--tf-w40);border:1px solid var(--tf-w120);color:#f8fafc;transition:border-color .15s,box-shadow .15s,background .15s}
+.rvSel > div:hover{border-color:rgba(129,140,248,.45);background:rgba(99,102,241,.05)}
+.rvSel-ok > div{border:1.5px solid rgba(52,211,153,.55);background:rgba(40,167,69,.10)}
+.rvSel-mod > div{border:1.5px solid rgba(251,146,60,.55);background:rgba(251,146,60,.08)}
+/* la testata di una sezione: filetto colorato a sinistra, come nelle card
+   della Home — si capisce dove comincia un blocco senza leggerne il titolo */
+.rvSez{position:relative;padding-left:11px}
+.rvSez::before{content:"";position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:3px;background:linear-gradient(180deg,rgba(129,140,248,.9),rgba(99,102,241,.25))}
 .rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:#161a2c;border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
 .rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:#f8fafc}
 .rvOpt:hover{background:rgba(99,102,241,.18)}
@@ -7127,10 +7147,8 @@ select.rvIn{cursor:pointer}
                 {ynSky(sale.fibraGnp,()=>uSkyF(si,"fibraGnp","Sì"),()=>{uSkyF(si,"fibraGnp","No");uSkyF(si,"fibraGnpBrand","");uSkyF(si,"fibraGnpNum","");})}</div>
                 {sale.fibraGnp==="Sì"&&<>
                   <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Brand GNP</div>
-                  <select value={sale.fibraGnpBrand||""} onChange={e=>uSkyF(si,"fibraGnpBrand",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12}}>
-                    <option value="">— Seleziona —</option>
-                    {SKY_BRAND_FIBRA.map(b=><option key={b} value={b}>{b}</option>)}
-                  </select></div>
+                  <SelectOpzioni value={sale.fibraGnpBrand||""} onChange={v=>uSkyF(si,"fibraGnpBrand",v)}
+                    opzioni={SKY_BRAND_FIBRA} placeholder="— Seleziona —" className="rvSel" /></div>
                   <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Numero fisso in portabilità</div>
                   <input value={sale.fibraGnpNum||""} onChange={e=>uSkyF(si,"fibraGnpNum",e.target.value)} placeholder="es. 060000000" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
                 </>}
@@ -7154,10 +7172,9 @@ select.rvIn{cursor:pointer}
                   <TF l="Numero provvisorio" r v={sale.mobNumProv||""} o={v=>uSkyF(si,"mobNumProv",v)} p="es. 393XXXXXXX"/>
                   <TF l="Numero definitivo" r v={sale.mobNumDef||""} o={v=>uSkyF(si,"mobNumDef",v)} p="Numero da portare"/>
                   <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Brand MNP <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
-                  <select value={sale.mobBrandMnp||""} onChange={e=>uSkyF(si,"mobBrandMnp",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12}}>
-                    <option value="">— Seleziona —</option>
-                    {["TIM","Vodafone","Fastweb","WINDTRE","Iliad","PosteMobile","CoopVoce","ho.","Very Mobile","Rabona","Lyca","Kena","MVNO altro"].map(b=><option key={b} value={b}>{b}</option>)}
-                  </select></div>
+                  <SelectOpzioni value={sale.mobBrandMnp||""} onChange={v=>uSkyF(si,"mobBrandMnp",v)}
+                    opzioni={["TIM","Vodafone","Fastweb","WINDTRE","Iliad","PosteMobile","CoopVoce","ho.","Very Mobile","Rabona","Lyca","Kena","MVNO altro"]}
+                    placeholder="— Seleziona —" className="rvSel" /></div>
                   <TF l="ICCID" r v={sale.mobIccid||""} o={v=>uSkyF(si,"mobIccid",v)} p="893XXXXXXXXXXXXXXXX"/>
                 </div>}
                 {sale.mobMnp==="No"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px",marginTop:8}}>
