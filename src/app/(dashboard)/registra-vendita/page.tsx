@@ -4418,20 +4418,20 @@ const NoteStep = ({store,show,setShow,scelta,setScelta,nota,setNota,pData,setPDa
     <div className="rvCard" style={{borderLeft:"4px solid #e83e8c"}}>
       <div className="rvCardT" style={{color:"var(--tf-e83e8c)",marginBottom:14}}>📝 Step 7 — Note / Promemoria</div>
       <div style={{textAlign:"center",marginBottom:show?16:0}}>
-        <div style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",marginBottom:10}}>Vuoi aggiungere delle note?</div>
-        <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-          <button onClick={()=>{setScelta("si");setShow(true);}} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:si?"2px solid #28a745":"2px solid var(--tf-w100)",background:si?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:si?"var(--tf-28a745)":"var(--tf-8892b0)"}}>Sì</button>
-          <button onClick={()=>{setScelta("no");setShow(false);}} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:no?"2px solid #dc3545":"2px solid var(--tf-w100)",background:no?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:no?"var(--tf-f87171)":"var(--tf-8892b0)"}}>No</button>
+        <div className="rvDom" style={{marginBottom:10}}>Vuoi aggiungere delle note?</div>
+        <div className="rvPillRow" style={{justifyContent:"center"}}>
+          <button onClick={()=>{setScelta("si");setShow(true);}} className={cn("rvPill",si&&"rvPill-si")}>{si?"✓ ":""}Sì</button>
+          <button onClick={()=>{setScelta("no");setShow(false);}} className={cn("rvPill",no&&"rvPill-no")}>{no?"✕ ":""}No</button>
         </div>
         {!scelta&&<div style={{fontSize:11,color:"var(--tf-64748b)",marginTop:8}}>Scegli Sì o No per completare lo step</div>}
       </div>
       {show&&<div className="rvG2">
-        <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
-        <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
+        <div className="rvSub" style={{padding:"13px 14px"}}><div className="rvLab">📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} className="rvIn" style={{resize:"vertical",fontFamily:"inherit"}}/></div>
+        <div className="rvSub" style={{padding:"13px 14px"}}><div className="rvLab">📅 Promemoria</div>
           <div className="rvG2" style={{gap:8}}><div><div className="rvLab">Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} className="rvIn"/></div><div><div className="rvLab">Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} className="rvIn"/></div></div>
           {/* Negozio: si auto-compila dal login ma resta modificabile a mano. */}
           <div style={{marginTop:8}}><DD l="Negozio" v={negozioPro} o={v=>setNegozioPro(v)} vals={negozi} nt="Dal login — modificabile"/></div>
-          <div style={{marginTop:8}}><div className="rvLab">Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+          <div style={{marginTop:8}}><div className="rvLab">Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} className="rvIn" style={{resize:"vertical",fontFamily:"inherit"}}/></div>
         </div>
       </div>}
     </div>
@@ -5514,17 +5514,17 @@ function CRM() {
     return <label key={boxId}
       onDragOver={e => onBoxDragOver(e, boxId)} onDragEnter={e => onBoxDragOver(e, boxId)}
       onDragLeave={onBoxDragLeave} onDrop={e => onBoxDrop(e, a.t, rowKey)}
-      style={{ display: "block", border: "2px dashed " + (over ? "var(--tf-17a2b8)" : (cnt > 0 ? "rgba(23,162,184,0.55)" : "var(--tf-w100)")), borderRadius: 10, padding: "14px 10px", textAlign: "center", cursor: "pointer", background: over ? "rgba(23,162,184,0.22)" : (cnt > 0 ? "rgba(23,162,184,0.08)" : "var(--tf-w30)"), transform: over ? "scale(1.02)" : "none", transition: "all .12s" }}>
+      className={cn("rvCarica", cnt > 0 && "rvCarica-pieno", over && "rvCarica-sopra")}>
       <input type="file" multiple onChange={e => handleFileChange(e, a.t, rowKey)} style={{ display: "none" }} />
-      <div style={{ fontSize: 24, marginBottom: 4 }}>{a.i}</div>
-      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>{a.l}</div>
+      <em>{a.i}</em>
+      <b>{a.l}</b>
       <div style={{ display: "inline-flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
-        <span style={{ display: "inline-block", padding: "5px 14px", borderRadius: 6, background: "var(--tf-17a2b8)", color: "#fff", fontSize: 10, fontWeight: 700 }}>Carica</span>
-        <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); openQr(a.t, rowKey); }} title="Carica dal telefono via QR" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, background: "rgba(23,162,184,0.12)", border: "1px solid rgba(23,162,184,0.5)", color: "var(--tf-5fd3e6)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📱 QR</button>
+        <span className="rvPill rvPill-sm rvPill-on" style={{"--rv-acc":"var(--tf-17a2b8)",fontSize:10.5,padding:"5px 14px"}}>Carica</span>
+        <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); openQr(a.t, rowKey); }} title="Carica dal telefono via QR" className="rvPill rvPill-sm" style={{fontSize:10.5,padding:"5px 12px",borderColor:"rgba(23,162,184,.5)",color:"var(--tf-67e8f9)"}}>📱 QR</button>
       </div>
-      <div style={{ fontSize: 9, color: "var(--tf-64748b)", marginTop: 5 }}>{over ? "Rilascia qui" : "o trascina i file"}</div>
+      <small>{over ? "Rilascia qui" : "o trascina i file"}</small>
       {notaBox && <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tf-8892b0)", marginTop: 4 }}>{notaBox}</div>}
-      {cnt > 0 && <div style={{ marginTop: 6, fontSize: 10, color: "var(--tf-17a2b8)", fontWeight: 700 }}>{cnt} file</div>}
+      {cnt > 0 && <div className="rvCarica-n">{cnt} file caricat{cnt===1?"o":"i"}</div>}
     </label>;
   };
   // Lista file: `voci` = [{a: allegato, i: indice REALE in attachments}] cosi'
@@ -6830,24 +6830,24 @@ function CRM() {
 
       {vistaStep==="cliente"&&(brand||(margFlow&&!brand))&&<div className="rvCard" style={{borderLeft:"4px solid #6f42c1"}}>
         <div className="rvCardT" style={{color:"var(--tf-6f42c1)",marginBottom:12}}>👥 Cliente — tipo e ricerca</div>
-        {margFlow&&!brand&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:8,background:"rgba(111,66,193,0.10)",border:"1px dashed rgba(111,66,193,0.5)",fontSize:12,color:"var(--tf-a78bfa)",fontWeight:600}}>
+        {margFlow&&!brand&&<div className="rvNota rvNota-scelta" style={{marginTop:0,marginBottom:12,fontSize:12,color:"var(--tf-a78bfa)",fontWeight:600}}>
           💰 Vendita a marginalità: bastano anche <b>solo nome</b>, <b>solo cognome</b> o <b>solo il CF</b>. Se il cliente non vuole lasciare nulla puoi saltare, ma la scelta viene registrata.
         </div>}
         <div style={{display:"flex",gap:12,marginBottom:tipoCliente?16:0}}>
-          {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid var(--tf-w60)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"var(--tf-w40)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"var(--tf-6f42c1)":"var(--tf-f8fafc)"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
+          {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} className={cn("rvScelta",tipoCliente===t&&"rvScelta-on")} style={{"--rv-acc":"var(--tf-8b5cf6)"}}><em>{t==="privato"?"👤":"🏢"}</em><b>{t==="privato"?"Privato":"Business"}</b></button>)}
         </div>
-        {tipoCliente&&<div style={{background:"var(--tf-w30)",borderRadius:8,padding:14,position:"relative"}}>
-          <div style={{fontSize:12,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:8}}>{tipoCliente==="privato"?"Codice Fiscale":"Partita IVA"}</div>
+        {tipoCliente&&<div className="rvSub" style={{position:"relative",padding:"13px 14px"}}>
+          <div className="rvLab">{tipoCliente==="privato"?"Codice Fiscale":"Partita IVA"}</div>
           <div style={{display:"flex",gap:8}}>
-            <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z — o nome":"12345678901 — o ragione sociale"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();doLookup();}}} style={{flex:1,minWidth:220,padding:"10px 12px",borderRadius:8,border:"1px solid var(--tf-w100)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
-            <button onClick={doLookup} style={{padding:"10px 18px",borderRadius:8,border:"none",background:"var(--tf-6f42c1)",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔍 Cerca</button>
-            <button onClick={skipLookup} title="Apri l'anagrafica e compila a mano — il Codice Fiscale resta comunque obbligatorio" style={{padding:"10px 16px",borderRadius:8,border:"1px solid var(--tf-w180)",background:"var(--tf-w40)",color:"var(--tf-cbd5e1)",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Compila</button>
+            <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z — o nome":"12345678901 — o ragione sociale"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();doLookup();}}} className="rvIn" style={{flex:1,minWidth:220,fontFamily:"monospace",letterSpacing:1.2}}/>
+            <button onClick={doLookup} className="rvPill rvPill-on" style={{"--rv-acc":"var(--tf-8b5cf6)",whiteSpace:"nowrap"}}>🔍 Cerca</button>
+            <button onClick={skipLookup} title="Apri l'anagrafica e compila a mano — il Codice Fiscale resta comunque obbligatorio" className="rvPill" style={{whiteSpace:"nowrap"}}>✏️ Compila</button>
             {tipoCliente==="privato"&&(
               /* TURISTA qui, accanto a Compila (03/08): cliente di passaggio senza
                  CF italiano — attiva il flag e apre l'anagrafica; ricliccando si spegne */
               <button onClick={()=>{if(turista){setTurista(false);}else{setTurista(true);if(!showAna)skipLookup();}}}
                 title="Cliente turista senza Codice Fiscale italiano: CF non richiesto, vendita limitata a WindTre privato (Mobile Wallet e CB) o Marginalità"
-                style={{padding:"10px 16px",borderRadius:8,border:turista?"1px solid rgba(245,158,11,0.7)":"1px solid var(--tf-w180)",background:turista?"rgba(245,158,11,0.15)":"var(--tf-w40)",color:turista?"var(--tf-fbbf24)":"var(--tf-cbd5e1)",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                className="rvPill" style={{whiteSpace:"nowrap",...(turista?{borderColor:"rgba(245,158,11,.7)",background:"rgba(245,158,11,.14)",color:"var(--tf-fbbf24)"}:{}),fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                 🌍 Turista{turista?" ✓":""}
               </button>
             )}
@@ -6855,8 +6855,8 @@ function CRM() {
           {(()=>{
             // CONTROLLO P.IVA (Luca 03/08): 11 cifre e basta — oltre, lo dico subito
             const num=(lookupValue||"").replace(/\s+/g,"");
-            if(/^\d{12,}$/.test(num))return <div style={{marginTop:8,background:"rgba(220,38,38,0.12)",border:"1px solid rgba(220,38,38,0.35)",borderRadius:6,padding:"7px 12px",fontSize:12,color:"var(--tf-fca5a5)",fontWeight:700}}>⚠️ Una Partita IVA italiana ha 11 cifre — ne hai scritte {num.length}</div>;
-            if(/^\d{11}$/.test(num))return <div style={{marginTop:8,background:"rgba(40,167,69,0.10)",borderRadius:6,padding:"6px 12px",fontSize:11,color:"var(--tf-28a745)",fontWeight:600}}>✓ P.IVA — 11 cifre</div>;
+            if(/^\d{12,}$/.test(num))return <div className="rvEsito rvEsito-no">⚠️ Una Partita IVA italiana ha 11 cifre — ne hai scritte {num.length}</div>;
+            if(/^\d{11}$/.test(num))return <div className="rvEsito rvEsito-ok">✓ P.IVA — 11 cifre</div>;
             return null;
           })()}
           {sugg.length>0&&(
@@ -7310,7 +7310,7 @@ function CRM() {
           <div className="rvCardT" style={{color:"var(--tf-28a745)",marginBottom:14}}>🏪 Attribuzione</div>
           <div className="rvG3">
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn"/></div>
+            <div><div className="rvLab">Data <span style={{color:"var(--tf-f87171)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn"/></div>
           </div>
         </div>}
         {vistaStep==="note"&&((margFlow&&!brand)||(showAna&&showStep4))&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} scelta={notaScelta} setScelta={setNotaScelta} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
@@ -7318,12 +7318,12 @@ function CRM() {
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {/* MOD-44c: anche in marginalità l'indietro dai prodotti passa dal Cliente */}
-          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
-          <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
+          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} className="rvPill" style={{padding:"11px 20px",fontSize:13.5,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          <button onClick={()=>setConfirmReset(true)} className="rvPill" style={{padding:"11px 20px",borderColor:"rgba(220,53,69,.5)",background:"rgba(220,53,69,.08)",color:"var(--tf-f87171)"}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           {/* Avanti sta a DESTRA (Luca 04/08): convenzione dei wizard */}
-          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 30px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"var(--tf-c7d2fe)",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
+          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} className="rvPill rvPill-on" style={{padding:"11px 30px",fontSize:14}}>Avanti →</button>}
           {/* Luca 04/08: NIENTE scorciatoia al riepilogo da qui (si saltavano
               Allegati/Note e partivano vendite senza documenti) — l'utente
               avanza con "Avanti"; il riepilogo si apre dal pannello/🛒 laterale. */}
