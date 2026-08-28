@@ -1254,10 +1254,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pista, dir, negozio]);
 
-    const voci = useMemo(() => (dir && pista && pista !== BIZMOB ? vociPunti(dir, pista === BIZFISSO ? "fisso" : pista, tipoCli) : []), [dir, pista, tipoCli]);
+    const voci = useMemo(() => (dir && pista && pista !== BIZMOB
+        ? vociPunti(dir, pista === BIZFISSO ? "fisso" : pista, pista === BIZFISSO ? "business" : tipoCli)
+        : []), [dir, pista, tipoCli]);
     // la BASE è data per scontata e non si sceglie (Luca 28/08): al conto si
     // aggiungono solo le opzioni spuntate
-    const base = useMemo(() => (dir && pista && pista !== BIZMOB ? puntiBase(dir, pista === BIZFISSO ? "fisso" : pista) : 0), [dir, pista]);
+    // il tipo cliente cambia la partenza: il fisso business parte da 1,5
+    const base = useMemo(() => (dir && pista && pista !== BIZMOB ? puntiBase(dir, pista === BIZFISSO ? "fisso" : pista, pista === BIZFISSO ? "business" : tipoCli) : 0), [dir, pista, tipoCli]);
     const puntiAttivazione = useMemo(() => {
         const extra = voci.filter((v) => vociSel.includes(v.id)).reduce((t, v) => t + v.punti, 0);
         return Math.round((base + extra) * 100) / 100;

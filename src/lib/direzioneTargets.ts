@@ -351,6 +351,36 @@ function vaCol(nome: string, tipoRiga: string | null | undefined, tc: string): b
     if (t) return t.startsWith(tc);            // la riga lo dichiara: comanda lei
     return tc === "business" ? true : !PAROLE_BIZ.test(nome);
 }
+/* I NOMI DELLA LETTERA NON SONO NOMI DA SCHERMO (Luca 28/08 sera).
+   «Cambio offerta MIA Easy Pay / Smart Pack / CYC Easy Pay (incl. MIA
+   Unlimited EP 1° mese gratis)» è preciso per chi legge la gara e illeggibile
+   per chi deve scegliere in dieci secondi davanti al cliente. Qui i nomi
+   diventano quelli di Registra Vendita — e i cambi piano si riducono a quello
+   che sono davvero: vincolato (4 punti) o non vincolato (2).
+   ⚠️ Cambiano solo le ETICHETTE: i punti restano quelli del tabellare. */
+const NOMI_CORTI: { re: RegExp; nome: string }[] = [
+    // 📱 sotto la categoria Telefono, ripetere «telefono» è rumore
+    { re: /telefono.*finanziam/i, nome: "Finanziato" },
+    { re: /telefono.*(vendita a rate|a rate)/i, nome: "A rate" },
+    // 🔄 i cambi piano: vincolato ↔ non vincolato, come li chiamano in negozio
+    { re: /cambio offerta.*untied/i, nome: "Cambio piano non vincolato (Untied)" },
+    { re: /cambio offerta.*(easy pay|smart pack)/i, nome: "Cambio piano vincolato (Tied)" },
+    { re: /cambio offerta.*microbusiness/i, nome: "Cambio piano Microbusiness" },
+    { re: /cambio piano fisso.*netflix/i, nome: "Cambio piano fisso + Netflix" },
+    { re: /rivincol/i, nome: "Rivincolo" },
+    { re: /migrazione tecnologica|wlr verso fttc/i, nome: "Migrazione tecnologica" },
+    { re: /migrazione.*fibra/i, nome: "Migrazione a fibra" },
+    { re: /offerte speciali di caring/i, nome: "Offerta Caring" },
+    { re: /add on:\s*/i, nome: "" },        // «Add on: Reload Exchange» → «Reload Exchange»
+];
+function nomeCorto(nome: string): string {
+    for (const r of NOMI_CORTI) {
+        if (!r.re.test(nome)) continue;
+        return r.nome || nome.replace(r.re, "").trim();
+    }
+    return nome;
+}
+
 export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer" | "business" | ""): VocePunti[] {
     if (dir.brand !== "windtre") return [];
     const pistaRighe = pista === "cb" ? "partnership" : pista;
@@ -375,6 +405,14 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         //    è componente `base_underground` e restava in lista, sommabile
         //    alla base vera (Luca 28/08)
         if (base || /^base/.test(String(r.componente || ""))) continue;
+        /* LA P.IVA NON SI SPUNTA (Luca 28/08 sera): sul business ce l'ha per
+           definizione — è già nella partenza da 1,5 — e sul consumer non
+           esiste. Lasciarla in lista faceva solo contare male. */
+        if (pistaRighe === "fisso" && String(r.componente || "") === "piva") continue;
+        /* NETFLIX SUL BUSINESS NON C'È (Luca 28/08 sera): è un'opzione del
+           fisso consumer, e in mezzo alle voci business era un invito a
+           sbagliare il conto. */
+        if (pistaRighe === "fisso" && tc === "business" && /netflix/i.test(nome)) continue;
         if (!vaCol(nome, r.tipo_cliente, tc)) continue;
         /* DOPPIONI (Luca 28/08: «telefono finanziato è doppione»). Il
            tabellare ha più righe per la stessa cosa — «Telefono finanziato ·
@@ -382,7 +420,10 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
            motore servono ancore diverse. A chi carica serve UNA voce. La
            chiave è il valore più le prime due parole che contano, troncate:
            così «finanziato» e «finanziamento» si riconoscono uguali. */
-        const chiave = `${r.punti}|${chiaveVoce(nome)}`;
+        // la firma si fa sul nome CORTO: due voci della lettera che diventano
+        // la stessa cosa a schermo devono comparire una volta sola
+        const etichetta = nomeCorto(nome);
+        const chiave = `${r.punti}|${chiaveVoce(etichetta)}`;
         const gia = viste.get(chiave);
         if (gia !== undefined) {
             if (nome.length < out[gia].nome.length) out[gia] = { ...out[gia], nome };  // vince il nome più corto
@@ -395,7 +436,7 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         const gruppo = pistaRighe !== "partnership" ? undefined
             : /telefono|device|rate|finanziam/i.test(`${r.nome} ${r.prodotto || ""}`) ? "📱 Telefono"
                 : "🔄 Cambio piano e add-on";
-        out.push({ id: String(r.id), nome, punti: Number(r.punti || 0), base, gruppo });
+        out.push({ id: String(r.id), nome: etichetta, punti: Number(r.punti || 0), base, gruppo });
     }
     // dalla più pesante: quello che vale di più si vede per primo
     return out.sort((a, b) => (b.punti - a.punti) || a.nome.localeCompare(b.nome, "it"));
@@ -404,12 +445,23 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
 /** I punti che l'attivazione vale COMUNQUE, senza scegliere niente: la riga
  *  base della pista (0,75 sul mobile W3, 1 sul fisso). Zero dove una base non
  *  esiste — la Customer Base, dove ogni voce è un evento a sé. */
-export function puntiBase(dir: Direzione, pista: string): number {
+export function puntiBase(dir: Direzione, pista: string, tipoCliente?: "consumer" | "business" | ""): number {
     if (dir.brand !== "windtre") return 0;
     const pistaRighe = pista === "cb" ? "partnership" : pista;
-    const b = (dir.tab?.righe || []).find((r) => String(r.pista || "") === pistaRighe
-        && r.attivo !== false && String(r.componente || "") === "base" && Number(r.punti || 0) > 0);
-    return Number(b?.punti || 0);
+    const righe = (dir.tab?.righe || []).filter((r) => String(r.pista || "") === pistaRighe && r.attivo !== false);
+    const b = righe.find((r) => String(r.componente || "") === "base" && Number(r.punti || 0) > 0);
+    let punti = Number(b?.punti || 0);
+    /* IL FISSO BUSINESS PARTE DA 1,5 (Luca 28/08 sera).
+       Il tabellare tiene la P.IVA come voce a parte (+0,5) perché sul consumer
+       non c'è. Ma un fisso business LA P.IVA CE L'HA SEMPRE — è quello che lo
+       rende business: lasciarla da spuntare significava contare 1 quando vale
+       1,5, e chi non la spuntava vedeva un punteggio più basso del vero.
+       Qui entra nella partenza, e sparisce dalle cose da scegliere. */
+    if (pistaRighe === "fisso" && tipoCliente === "business") {
+        const piva = righe.find((r) => String(r.componente || "") === "piva" && Number(r.punti || 0) > 0);
+        punti += Number(piva?.punti || 0);
+    }
+    return Math.round(punti * 100) / 100;
 }
 
 export type Strategia = "vicino" | "scoperto";
