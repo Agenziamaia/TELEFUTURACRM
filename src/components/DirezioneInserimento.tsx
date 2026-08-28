@@ -1199,7 +1199,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const codaMostrata = pista === BIZMOB
         ? (biz?.scelto && biz.capienza <= 1 ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
         : pistaDiGruppo ? []
-            : (/fisso/i.test(pista) && consigliato && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1)
+            : (consigliato && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1)
                 ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
 
     /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
@@ -1378,11 +1378,14 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         </div>
                     </div>
                 )}
-                {/* SOLO SUL FISSO (Luca 28/08). L'avevo messa su tutte le piste a
-                    target per codice, e finiva anche sulla Customer Base e sul
-                    mobile, dove un codice ne assorbe decine: lì «una per codice»
-                    non è la regola. Resta dove i pezzi sono pochi e contano. */}
-                {pista !== BIZMOB && !pistaDiGruppo && consigliato && /fisso/i.test(pista)
+                {/* Su TUTTE le piste a target per codice — mobile, fisso, CB.
+                    Prima l'avevo ristretta al fisso perché sulla Customer Base
+                    compariva sempre; ma il difetto era un altro, ed è la
+                    capienza ad averlo risolto: dove un codice assorbe ancora
+                    decine di pezzi l'avviso non esce da solo, e dove invece si
+                    chiude col prossimo serve eccome (oggi il mobile di Mazzini
+                    è a mezzo punto dalla S1). */}
+                {pista !== BIZMOB && !pistaDiGruppo && consigliato
                     && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1 && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}
