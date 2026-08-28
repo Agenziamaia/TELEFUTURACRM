@@ -29,14 +29,35 @@ riapre la porta.** Da qui le regole.
 
 ## Le cinque regole
 
-### 1. Ogni funzione in `src/app/api/**` chiede la sessione
+### 1. Ogni funzione in `src/app/api/**` passa dal varco unico
 ```ts
-const _s = richiedeSessione(request);
-if (!_s) return rispostaSessioneNonValida();
+const _g = await accesso(request, "passwords/credentials");   // nome della route
+if (!_g.ok) return _g.risposta;
+const _s = _g.sess;                                            // ← l'identità vera
 ```
+`accesso()` fa due cose insieme: verifica **la sessione firmata** e **il permesso
+della sezione** letto da `role_permissions` — la stessa tabella della rotellina in
+Amministrazione → Permessi.
+
 Se una route deve restare pubblica (webhook con token, login, upload da QR),
 va **motivata** nell'elenco `SENZA_SESSIONE` dentro `scripts/guardia-sicurezza.mjs`.
 Non esistono eccezioni silenziose.
+
+### 1-bis. I permessi stanno SOLO nel pannello, mai nel codice
+```ts
+if (["admin","direttore_generale","store_manager"].includes(role))   // ❌ MAI
+const _g = await accesso(request, "passwords/credentials");           // ✅ sempre
+```
+Una lista di ruoli dentro una route è una **seconda verità**: il giorno che
+qualcuno abilita un ruolo dal pannello, la route non lo sa e lo taglia fuori.
+È successo il 28/08 con le password: una lista fissa aveva escluso i 14 store
+specialist che Luca aveva abilitato a mano (e la sua regola era più fine della
+lista: venditore sì, apprendista no).
+
+La mappa route → sezione sta in `src/lib/permessiServer.ts` (`SEZIONE_DI`): se
+aggiungi una route di una sezione nuova, aggiungi lì la riga. La guardia
+controlla che le route delle sezioni note usino `accesso()` e che nessuno
+reintroduca elenchi di ruoli.
 
 ### 2. L'identità si prende dalla sessione, mai dal browser
 ```ts
