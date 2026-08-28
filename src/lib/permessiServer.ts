@@ -14,7 +14,7 @@
 // verità che si scorda di aggiornarsi (successo il 28/08 con le password, dove
 // una lista fissa aveva tagliato fuori i venditori abilitati a mano).
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { NAVIGATION } from "@/lib/nav";
+import { routeBases, effectiveAllowed, groupKey, groupByLabel, type PermMap } from "@/lib/nav";
 import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 
 /* ── A QUALE SEZIONE APPARTIENE OGNI FUNZIONE DI SERVER ──────────────────
@@ -40,21 +40,16 @@ export function sezioneDellaRoute(nomeRoute: string): string | null {
     return SEZIONE_DI[primo] || null;
 }
 
-/** I ruoli che vedono una sezione quando non c'è nessuna riga esplicita:
- *  quelli scritti nella voce di menu, così la verità resta una sola. */
-function ruoliDiPartenza(href: string): string[] {
-    try {
-        for (const g of (NAVIGATION as unknown as { items?: { href?: string; roles?: string[] }[] }[])) {
-            const voce = g?.items?.find((v) => v?.href === href);
-            if (voce?.roles?.length) return voce.roles;
-        }
-    } catch { /* nessuna voce trovata */ }
-    return [];
-}
-
-/** Il permesso EFFETTIVO di una persona su una sezione, con la stessa
- *  precedenza della rotellina: eccezione sulla PERSONA → sul RUOLO+GRADO →
- *  sul RUOLO → default della voce di menu. */
+/** Il permesso EFFETTIVO di una persona su una sezione.
+ *
+ *  ⚠️ LA STESSA IDENTICA FUNZIONE DEL BROWSER (`effectiveAllowed` di nav.ts),
+ *  sugli stessi dati. Non una seconda implementazione «equivalente»: il 28/08
+ *  ne avevo scritta una a mano e sbagliava a leggere il menù (cercava le voci
+ *  in `items`, che non esiste — sono in `children`). Risultato: chi non aveva
+ *  una riga scritta a mano nel pannello — cioè chi eredita i valori di
+ *  fabbrica, direttore generale e store manager compresi — si è visto negare
+ *  le password per un'ora. Due copie della stessa regola divergono sempre:
+ *  qui ne esiste una sola, e sta in nav.ts. */
 export async function permessoSezione(userId: string, href: string): Promise<{ ok: boolean; role: string }> {
     try {
         const { data: u } = await supabaseAdmin.from("app_users")
@@ -63,17 +58,28 @@ export async function permessoSezione(userId: string, href: string): Promise<{ o
         if (!u || u.active === false) return { ok: false, role };
         if (role === "admin" || role === "dev") return { ok: true, role };
 
-        const perPersona = `user:${userId}`;
-        const perGrado = u.grade ? `${role}@${u.grade}` : null;
-        const chiavi = [perPersona, perGrado, role].filter(Boolean) as string[];
+        // ruolo → grado → persona, l'ultimo strato vince (come useRolePermissions)
+        const chiavi = [role, u.grade ? `${role}@${u.grade}` : null, `user:${userId}`]
+            .filter(Boolean) as string[];
         const { data: righe } = await supabaseAdmin.from("role_permissions")
-            .select("role, allowed").eq("perm_key", href).in("role", chiavi);
-
-        for (const chiave of chiavi) {           // già in ordine di specificità
-            const r = (righe || []).find((x) => x.role === chiave);
-            if (r) return { ok: !!r.allowed, role };
+            .select("role, perm_key, allowed").in("role", chiavi);
+        const perms: PermMap = new Map();
+        for (const chiave of chiavi) {
+            (righe || []).filter((x) => x.role === chiave).forEach((x) => perms.set(x.perm_key, !!x.allowed));
         }
-        return { ok: ruoliDiPartenza(href).includes(role), role };
+
+        // la voce di menù vera, con il suo gruppo e i suoi ruoli di partenza
+        const base = routeBases().find((r) => r.base === href.split("?")[0]);
+        const voce = base?.items.find((i) => i.href === href) ?? base?.items[0];
+        if (!voce) return { ok: false, role };    // sezione sconosciuta: chiusa
+
+        // gerarchia: col gruppo spento la voce non conta nulla (come nel pannello)
+        if (voce.group) {
+            const gruppoOk = effectiveAllowed(role, groupKey(voce.group),
+                groupByLabel(voce.group)?.roles ?? ["*"], perms, voce.group);
+            if (!gruppoOk) return { ok: false, role };
+        }
+        return { ok: effectiveAllowed(role, voce.href, voce.roles, perms, voce.group), role };
     } catch {
         return { ok: false, role: "" };          // nel dubbio non si apre
     }
