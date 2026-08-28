@@ -90,10 +90,24 @@ export async function testConnessione(a: Account, opts?: { soloLettura?: boolean
     try { await c.connect(); await c.logout(); }
     catch (e: any) {
         try { await c.logout(); } catch { }
-        const d = e?.authenticationFailed
-            ? "credenziali rifiutate. Se e' Gmail/Outlook serve una 'password per le app' (non quella normale) e IMAP attivo. Per le caselle @telefuturasrl.com usa la password della casella."
-            : (e?.responseText || e?.message || String(e));
-        throw new Error("IMAP: " + d);
+        /* LA RISPOSTA DEL SERVER NON SI BUTTA (Luca 28/08 sera).
+           Google dice ESATTAMENTE cosa non va — «Application-specific password
+           required», «Invalid credentials», «IMAP access is disabled» — e noi
+           la sostituivamo con un consiglio generico. Chi legge non sa se ha
+           sbagliato password, se manca la verifica in due passaggi o se è IMAP
+           spento: tre problemi diversi, tre soluzioni diverse. */
+        const risposta = String(e?.responseText || e?.response || e?.message || "");
+        let consiglio = "";
+        if (/application-specific|app password|app-specific/i.test(risposta)) {
+            consiglio = " → Serve la «password per le app»: quella normale Google non l'accetta. Su myaccount.google.com → Sicurezza, attiva la verifica in due passaggi, poi cerca «Password per le app» e creane una.";
+        } else if (/imap.*(disabled|not enabled)|not enabled for imap/i.test(risposta)) {
+            consiglio = " → IMAP è spento su questa casella. In Gmail: ⚙️ → Visualizza tutte le impostazioni → Inoltro e POP/IMAP → Attiva IMAP.";
+        } else if (/invalid credentials|authentication fail|login failed|bad username/i.test(risposta)) {
+            consiglio = " → Utente o password non accettati. Se è Gmail o Outlook, dev'essere la «password per le app» di 16 lettere, non quella con cui entri nella posta.";
+        } else if (e?.authenticationFailed) {
+            consiglio = " → Credenziali rifiutate. Per Gmail/Outlook serve una «password per le app» e IMAP attivo; per le caselle @telefuturasrl.com la password della casella.";
+        }
+        throw new Error("IMAP: " + (risposta || "connessione non riuscita") + consiglio);
     }
     if (opts?.soloLettura) return;
     try { await smtpTransport(a).verify(); }

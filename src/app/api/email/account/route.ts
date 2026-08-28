@@ -110,7 +110,16 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "le caselle si collegano solo dal pannello Email dell'amministrazione" }, { status: 403 });
             }
             const email = String(b.email || "").trim().toLowerCase();
-            const password = String(b.password || "");
+            /* GLI SPAZI DELLA PASSWORD PER LE APP (Luca 28/08 sera).
+               Google la mostra a gruppi di quattro — «abcd efgh ijkl mnop» —
+               e chi la copia se li porta dietro: il server la rifiuta e il CRM
+               risponde «credenziali rifiutate», mandando a cercare un problema
+               che non c'è. Sedici lettere con tre spazi in mezzo sono una
+               password per le app: gli spazi si tolgono da soli. */
+            const grezza = String(b.password || "");
+            const password = /^(\s*[a-z]{4}\s+){3}[a-z]{4}\s*$/i.test(grezza)
+                ? grezza.replace(/\s+/g, "")
+                : grezza;
             if (!email || !password) return NextResponse.json({ error: "email e password obbligatorie" }, { status: 400 });
             const auto = impostazioniPer(email);
             // CASELLA DI SERVIZIO (28/08): quella dove arrivano i codici usa e
