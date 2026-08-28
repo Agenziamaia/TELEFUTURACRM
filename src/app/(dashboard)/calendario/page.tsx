@@ -131,7 +131,7 @@ function brandCoincide(a: string, b: string): boolean {
 
 // id e' l'uuid di app_users (gli operatori arrivano dagli utenti reali, non piu'
 // dalla tabella seed calendar_operators).
-type MeetingUser = { id: string; name: string; store: string; brands: string[] };
+type MeetingUser = { id: string; name: string; store: string; brands: string[]; role?: string };
 
 // ── TENDINA MULTI-SELEZIONE per i filtri del calendario (Luca 05/08) ─────────
 // «Chi vede più negozi o più consulenti deve avere il filtro … con una tendina
@@ -568,6 +568,24 @@ export default function Calendario() {
        altre che non c'entrano niente»). */
     const nomeUguale = (a?: string | null, b?: string | null) =>
         String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase() && !!String(a || "").trim();
+    /* IL RESPONSABILE DI UN PUNTO VENDITA (Luca 28/08): «se è assegnata al
+       negozio il responsabile è lo store manager; se non c'è lo store manager
+       lo sono tutti». Se c'è, il malus è suo. Se non c'è, l'episodio resta
+       intestato al negozio: uno solo, non uno a testa — moltiplicarlo per lo
+       staff moltiplicherebbe i soldi, e questo lo decide l'amministrazione. */
+    const managerDi = useMemo(() => {
+        const m = new Map<string, MeetingUser>();
+        calendarOperators.forEach((o) => {
+            if (!o.store || !/store_manager/i.test(String(o.role || ""))) return;
+            const k = o.store.trim().toLowerCase();
+            if (!m.has(k)) m.set(k, o);
+        });
+        return (negozio?: string | null) => {
+            const n = String(negozio || "").trim().toLowerCase();
+            if (!n) return null;
+            return m.get(n) || [...m.entries()].find(([k]) => sameStore(k, n))?.[1] || null;
+        };
+    }, [calendarOperators]);
     const negozioDi = useMemo(() => {
         const m = new Map<string, string>();
         calendarOperators.forEach((o) => { if (o.name) m.set(o.name.trim().toLowerCase(), o.store || ""); });
@@ -616,7 +634,7 @@ export default function Calendario() {
                 // Negozi e collaboratori REALI (le tabelle calendar_stores/calendar_operators
                 // contenevano ancora dati di esempio: Marco Bianchi, "Roma Centro (RM001)", ecc.)
                 supabase.from("stores").select("id, name").order("name"),
-                supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name"),
+                supabase.from("app_users").select("id, full_name, primary_store, role").eq("active", true).order("full_name"),
                 supabase.from("user_brands").select("user_id, brand"),
             ]);
             if (cancelled) return;
@@ -637,6 +655,7 @@ export default function Calendario() {
                     id: String(r.id),
                     name: r.full_name as string,
                     store: (r.primary_store as string) ?? "",
+                    role: (r.role as string) ?? "",
                     brands: bmap.get(String(r.id)) ?? [],
                 })));
             }
@@ -1779,11 +1798,17 @@ export default function Calendario() {
                 const importo = Math.round(giorni * regolaPatto.euro * 100) / 100;
                 const scadISO = `${scad.getFullYear()}-${String(scad.getMonth() + 1).padStart(2, "0")}-${String(scad.getDate()).padStart(2, "0")}`;
                 if (chiuse) { daChiudere.push({ id: t.id, giorni, importo, scadenza: scadISO }); continue; }
-                const utente = t.assignedToStore ? null
+                const resp = t.assignedToStore ? managerDi(t.assignedToStore) : null;
+                const utente = t.assignedToStore ? resp
                     : calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t.assignedTo || "").trim().toLowerCase());
                 daScrivere.push({
                     task_id: t.id, user_id: utente?.id ?? null,
-                    persona: t.assignedToStore ? `🏬 ${t.assignedToStore}` : t.assignedTo,
+                    persona: t.assignedToStore
+                        ? (resp ? resp.name : `🏬 ${t.assignedToStore}`)
+                        : t.assignedTo,
+                    note: t.assignedToStore
+                        ? (resp ? `store manager di ${t.assignedToStore}` : `punto vendita ${t.assignedToStore} — senza store manager risponde tutto lo staff`)
+                        : null,
                     assegnata_da: t.createdBy || null, titolo: t.title,
                     scadenza: `${scad.getFullYear()}-${String(scad.getMonth() + 1).padStart(2, "0")}-${String(scad.getDate()).padStart(2, "0")}`,
                     giorni, malus_giorno: regolaPatto.euro, importo,
@@ -1822,12 +1847,17 @@ export default function Calendario() {
                     await supabase.from("task_malus").update(chiusura).eq("task_id", c.id).eq("stato", "in_corso");
                 } else {
                     const t2 = tasks.find((x) => x.id === c.id);
-                    const u2 = t2 && !t2.assignedToStore
-                        ? calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t2.assignedTo || "").trim().toLowerCase())
-                        : null;
+                    const r2 = t2?.assignedToStore ? managerDi(t2.assignedToStore) : null;
+                    const u2 = t2?.assignedToStore ? r2
+                        : calendarOperators.find((u) => u.name.trim().toLowerCase() === String(t2?.assignedTo || "").trim().toLowerCase());
                     await supabase.from("task_malus").insert({
                         task_id: c.id, user_id: u2?.id ?? null,
-                        persona: t2?.assignedToStore ? `🏬 ${t2.assignedToStore}` : (t2?.assignedTo || "—"),
+                        persona: t2?.assignedToStore
+                            ? (r2 ? r2.name : `🏬 ${t2.assignedToStore}`)
+                            : (t2?.assignedTo || "—"),
+                        note: t2?.assignedToStore
+                            ? (r2 ? `store manager di ${t2.assignedToStore}` : `punto vendita ${t2.assignedToStore} — senza store manager risponde tutto lo staff`)
+                            : null,
                         assegnata_da: t2?.createdBy || null, titolo: t2?.title || "—",
                         scadenza: c.scadenza, malus_giorno: regolaPatto.euro, ...chiusura,
                     });
@@ -3267,12 +3297,21 @@ export default function Calendario() {
                                                         // «in corso» e «problema» in mezzo, il clic non
                                                         // chiudeva più niente. Quelli due si scelgono dal
                                                         // dettaglio, dove c'è anche la nota da scrivere.
-                                                        const CICLO: TaskStatus[] = ["da_fare", "fatta", "sospesa", "abbandonata"];
+                                                        // su una task ASSEGNATA «sospesa» non esiste più
+                                                        // (Luca 28/08: «o la svolgi o la rimandi indietro»)
+                                                        const CICLO: TaskStatus[] = eAssegnata(t)
+                                                            ? ["da_fare", "fatta", "abbandonata"]
+                                                            : ["da_fare", "fatta", "sospesa", "abbandonata"];
                                                         const idx = CICLO.indexOf(t.status);
                                                         // da uno stato fuori ciclo (in corso / problema) si chiude
                                                         const nextStatus = idx < 0 ? "fatta" : CICLO[(idx + 1) % CICLO.length];
                                                         const stessoAutore = String(t.createdBy || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
-                                                        const { error } = await supabase.from("calendar_tasks").update({ status: nextStatus, ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }) }).eq("id", t.id);
+                                                        const { error } = await supabase.from("calendar_tasks").update({
+                                                            status: nextStatus,
+                                                            // uscendo da «rimandata» il cronometro riparte da adesso
+                                                            ...(t.status === "problema" ? { assegnata_il: new Date().toISOString() } : {}),
+                                                            ...(nextStatus === "da_fare" ? { esito_at: null, esito_visto: false } : { esito_at: new Date().toISOString(), esito_visto: stessoAutore }),
+                                                        }).eq("id", t.id);
                                                         // niente bugie: se il database rifiuta, lo schermo non cambia
                                                         if (error) { alert("Non sono riuscito a cambiare lo stato: " + error.message); return; }
                                                         setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus } : task));
@@ -4654,7 +4693,11 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                                 invece che in una tendina in cima al modale. */}
                             {assegnataDaAltri && (
                                 <div className="flex flex-wrap gap-1.5 pb-1">
-                                    {esiti.filter((x) => x.attiva || x.chiave === stato).map((x) => {
+                                    {/* niente «sospesa» qui (Luca 28/08): «una task che
+                                        ti viene assegnata o la svolgi o la rimandi
+                                        indietro per un motivo». Sospendere fermava il
+                                        lavoro senza fermare il conto dei due giorni. */}
+                                    {esiti.filter((x) => (x.attiva || x.chiave === stato) && (x.chiave !== "sospesa" || stato === "sospesa")).map((x) => {
                                         const col = COLORE_TASK[x.chiave] || COLORE_TASK.da_fare;
                                         const on = stato === x.chiave;
                                         return (
