@@ -345,7 +345,7 @@ export function TimelineHero({ ctx, tecnico = false }) {
         // l'ordine vale anche per gli ALTRI operatori: ordinarli per volume
         // li faceva scambiare di posto da un mese all'altro
         const ordine = ["w3", "vf", "fw", "sky", "alt:s4", "alt:tim", "alt:verymobile",
-            "alt:homobile", "alt:iliad", "alt:kena", "alt:dojo", "marg"];
+            "alt:homobile", "alt:iliad", "alt:kenamobile", "alt:dojo", "marg"];
         return [...out.values()].sort((a, b) => {
             const ia = ordine.indexOf(a.key), ib = ordine.indexOf(b.key);
             if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
@@ -1892,17 +1892,31 @@ function WidgetMixPersone({ ctx }) {
    il layout si salva in app_users.analisi_layout come per Io e Negozio. Gli
    anelli dentro si misurano in `cqw`, cioè sulla LARGHEZZA DELLA CARD: la
    stessa card stretta e alta li impila, larga e bassa li affianca. ═════ */
-// ALTEZZA MINIMA di un blocco brand, in righe di griglia (Luca 28/08: «non
-// esiste che io scrolli dentro la card; esistono delle misure minime»).
-// Si conta quello che DEVE starci: testata + tante file di anelli quante ne
-// impone la regola delle colonne + la barra sotto, che deve restare intera.
-export function minHRete(ctx, brand) {
+// ALTEZZA MINIMA e MASSIMA di un blocco brand, in righe di griglia. Il minimo
+// serve perché sotto una certa misura le informazioni non si leggono; il
+// MASSIMO perché un cerchio non può essere più largo della sua colonna: una
+// card stretta e altissima non è spazio da sfruttare, è una forma sbagliata,
+// ed era il difetto «Fastweb con vuoti enormi sopra e sotto».
+const formaRete = (ctx, brand) => {
     const b = (ctx?.brandRete || []).find((x) => x.brand === brand);
     const n = b?.piste?.length || 1;
     const col = n <= 5 ? Math.max(1, n) : Math.ceil(n / 2);
-    const righe = Math.ceil(n / col);
-    const px = 34 + 24 + righe * 214 + 124 + 72;   // testata, gap, file, barra, cornice
-    return Math.max(4, Math.ceil((px + 16) / 112));
+    return { n, col, righe: Math.ceil(n / col), ultima: n - col * (Math.ceil(n / col) - 1) };
+};
+export function minWRete(ctx, brand) {
+    const { col } = formaRete(ctx, brand);
+    return Math.max(2, Math.ceil((82 * col + 48) / 135));   // 72px di anello + 10 di gap
+}
+export function minHRete(ctx, brand) {
+    const { righe } = formaRete(ctx, brand);
+    return righe >= 3 ? 5 : righe === 2 ? 4 : 3;
+}
+export function maxHRete(ctx, brand, w) {
+    const { col, righe } = formaRete(ctx, brand);
+    const cellW = Math.max(40, (135 * (w || 4) - 48) / col - 10);
+    const D = Math.min(cellW, 480);
+    const piede = 18 + (cellW >= 56 ? 15 : 0) + (cellW >= 78 ? 15 : 0) + (cellW >= 76 ? 14 : 0);
+    return Math.max(minHRete(ctx, brand), Math.floor((righe * (1.35 * D + piede) + (righe - 1) * 10 + 37 + 120 + 104) / 112));
 }
 
 function BloccoBrandRete({ ctx, brand }) {
@@ -1912,88 +1926,105 @@ function BloccoBrandRete({ ctx, brand }) {
     const [apri, setApri] = useState("__def__");
     const b = (ctx.brandRete || []).find((x) => x.brand === brand);
     if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
-    const n = b.piste.length;
-    // QUANTE PER RIGA (Luca 28/08, due richieste che sembravano opposte:
-    // «su WindTre i cinque contatori devono poter stare in una riga sola» e
-    // «su Vodafone niente cinque sopra e tre sotto — mobile fisso luce gas, e
-    // sotto i quattro business in fila; allargando cambia solo la dimensione»).
-    // La regola che le tiene entrambe: fino a CINQUE stanno in riga; oltre, due
-    // righe BILANCIATE. Otto piste → 4+4, cinque → 5, sette → 4+3. Il numero
-    // non dipende dalla larghezza: allargando la card gli anelli crescono e
-    // basta, la struttura non si ricompone sotto gli occhi.
-    const colonne = n <= 5 ? Math.max(1, n) : Math.ceil(n / 2);
-    // Oltre le quattro piste le etichette dei valori uscirebbero addosso al
-    // vicino: restano nel tooltip.
-    const compatto = n > 4;
+    const { n, col, righe, ultima } = formaRete(ctx, brand);
     const conQuota = (ctx.mieiNegozi || []).length > 0;
     const primaK = b.piste.length ? `${brand}:${b.piste[0].chiave}` : null;
     const aperta = apri === "__def__" ? primaK : apri;
     const tocca = (k) => setApri(aperta === k ? null : k);
-    const righe = Math.ceil(n / colonne);
+    const inDrill = b.piste.find((x) => aperta === `${brand}:${x.chiave}`) || null;
+    // quante soglie deve reggere la riga dei valori sotto la barra
+    const nS = inDrill ? inDrill.scala.length : 0;
+    const nome = (x) => PISTA_LABEL_RETE[x.chiave] || x.nome;
     return (
-        // h-full: la card sa quanto è alta, e il contenuto se la prende tutta
-        // invece di lasciare mezzo riquadro vuoto (Luca 28/08: «l'ho estesa in
-        // lunghezza però non si è riproporzionata»)
-        <div className="w-full h-full flex flex-col gap-3">
-            <div className="flex items-center gap-2 flex-wrap text-[10px] shrink-0">
+        <div className="tf-rb" style={{
+            "--col": col, "--righe": righe, "--ultima": ultima, "--nS": Math.max(1, nS),
+            // con più di un anello l'etichetta della pista è obbligatoria:
+            // senza, non sai quale stai guardando
+            "--t1": n > 1 ? "-9999px" : "18px",
+            "--c2On": "clamp(0px, calc((100cqw - 301px) * 9999), 1px)",
+            "--c3On": "clamp(0px, calc((100cqw - 509px) * 9999), 1px)",
+        }}>
+            <div className="tf-rb-chips text-[10px]">
                 <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} {b.conSoglie === 1 ? "pista in soglia" : "piste in soglia"}
+                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} in soglia
                 </span>
                 {b.appesi > 0 && (
-                    <span className="px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                        🔮 <b className="tabular-nums">{b.appesi}</b> {b.appesi > 1 ? "scaglioni appesi" : "scaglione appeso"} al passo
+                    <span className="c2 px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                        🔮 <b className="tabular-nums">{b.appesi}</b> appes{b.appesi > 1 ? "i" : "o"} al passo
                     </span>
                 )}
                 {conQuota && b.pzMio != null && b.pzRete > 0 && (
-                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
+                    <span className="c3 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
                         il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>
-                        <span className="text-slate-600"> ({fmtN(b.pzMio)}/{fmtN(b.pzRete)} pz)</span>
                     </span>
                 )}
             </div>
-            <div className="tf-rete-anelli px-3 overflow-hidden" style={{ "--tf-col": colonne, "--tf-col-m": Math.min(4, colonne), "--tf-righe": righe }}>
-                {b.piste.map((x) => {
+
+            <div className="tf-rb-area">
+                {b.piste.map((x, i) => {
                     const k = `${brand}:${x.chiave}`;
+                    const rif = x.proiezione ?? x.punti;
+                    const prossima = x.scala.find((s) => s.soglia_da > rif) || null;
+                    const spaiata = righe > 1 && i === col * (righe - 1);
                     return (
-                        <div key={k} className="w-full min-w-0">
+                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)}
+                            title={`${nome(x)} — clicca per il dettaglio sulla scala ${x.unit === "pz" ? "dei pezzi" : "dei punti"}`}>
                             <AnelloScaglioni
-                                punti={x.punti} proiezione={x.proiezione} pezzi={x.pezzi}
-                                soglie={x.scala} target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
-                                colore={b.colore} larghezza="100%" compatto={compatto} unit={x.unit} parti={x.parti?.length ? x.parti : null}
-                                etichetta={PISTA_LABEL_RETE[x.chiave] || x.nome} gate={x.gate}
-                                onClick={() => tocca(k)}
+                                punti={x.punti} proiezione={x.proiezione} soglie={x.scala}
+                                target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
+                                colore={b.colore} unit={x.unit} parti={x.parti?.length ? x.parti : null}
                                 tip={<div>
-                                    <TipTitolo>{b.label} · {PISTA_LABEL_RETE[x.chiave] || x.nome}</TipTitolo>
+                                    <TipTitolo>{b.label} · {nome(x)}</TipTitolo>
                                     <TipRiga l={x.unit === "pz" ? "pezzi rete" : "punti rete"} r={x.unit === "pz" ? fmtN(x.punti) : fmtPt(x.punti)} colore={b.colore} />
                                     {x.proiezione != null && <TipRiga l="🔮 di questo passo" r={x.unit === "pz" ? fmtN(x.proiezione) : fmtPt(x.proiezione)} />}
                                     {x.unit !== "pz" && <TipRiga l="pezzi in pista" r={fmtN(x.pezzi)} />}
                                     {conQuota && <TipRiga l="il mio punto vendita" r={`${x.unit === "pz" ? fmtN(x.mio) : fmtPt(x.mio)} · ${fmtN(x.punti > 0 ? (x.mio / x.punti) * 100 : 0, 1)}%`} />}
-                                    {x.target && <TipRiga l={x.target.fonte === "pannello" ? "🎯 target di rete" : "🎯 target (somma direzione)"} r={fmtN(x.target.v)} colore="#34d399" />}
-                                    {x.scala.map((sg) => <TipRiga key={sg.tier} l={`Soglia ${sg.tier}`} r={`da ${fmtN(sg.soglia_da)}${x.punti >= sg.soglia_da ? " ✓" : ""}`} />)}
+                                    {x.target && <TipRiga l={x.target.fonte === "pannello" ? "🎯 target di rete" : "🎯 target direzione (sfrido incluso)"} r={fmtN(x.target.v)} colore="#34d399" />}
                                     {(x.parti || []).map((q) => <TipRiga key={q.label} l={q.label} r={`${fmtN(q.v)} pz`} colore={q.colore} />)}
-                                    {!x.scala.length && <TipRiga l="" r={x.target ? "niente soglie di lettera: conta il target" : "pista a pezzi: niente soglie di lettera"} />}
+                                    {x.scala.map((sg) => <TipRiga key={sg.tier} l={`Soglia ${sg.tier}`} r={`da ${fmtN(sg.soglia_da)}${x.punti >= sg.soglia_da ? " ✓" : ""}`} />)}
+                                    {x.gate && <TipRiga l="⛔ blocco" r={x.gate} colore="#fbbf24" />}
                                 </div>}
                             />
+                            {/* il piede si accende a scalini: etichetta, poi lo stato,
+                                poi il target, poi quanto manca — ognuno solo se lo
+                                spazio lo paga davvero */}
+                            <div className="tf-foot">
+                                <p className="l1">{nome(x)}</p>
+                                <div className="l2">
+                                    {x.presa ? <span className="tf-mini text-white" style={{ background: `${b.colore}cc` }}>S{x.presa.tier} presa</span>
+                                        : x.scala.length > 0 ? <span className="tf-mini text-slate-400 bg-white/5">sotto la S1</span> : null}
+                                </div>
+                                <div className="l3">
+                                    {x.presaProj && (!x.presa || x.presaProj.tier > x.presa.tier) && (
+                                        <span className="tf-mini text-white border border-white/20" style={{ background: `repeating-linear-gradient(45deg, ${b.colore}aa 0 4px, ${b.colore}55 4px 8px)` }}>🔮 S{x.presaProj.tier}</span>
+                                    )}
+                                    {x.target && <span className={cn("tf-mini border", rif >= x.target.v ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/30" : "text-slate-300 bg-white/5 border-white/10")}>🎯 {fmtN(x.target.v)}</span>}
+                                    {x.gate && <span className="tf-mini text-amber-300 bg-amber-400/10 border border-amber-400/25">⛔</span>}
+                                </div>
+                                <p className="l4">
+                                    {prossima ? <>→ S{prossima.tier} · <b>{fmtPt(prossima.soglia_da - rif)}</b></>
+                                        : x.presaProj ? "ultima soglia presa 👑" : ""}
+                                </p>
+                            </div>
                         </div>
                     );
                 })}
             </div>
-            {/* DRILL: la barra lineare, dove l'angolo torna a essere punti */}
-            {b.piste.filter((x) => aperta === `${brand}:${x.chiave}`).map((x) => (
-                <div key={`bar${x.chiave}`} className="pt-3 border-t border-white/10 shrink-0">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
-                        📏 {PISTA_LABEL_RETE[x.chiave] || x.nome} — sulla scala {x.unit === "pz" ? "dei pezzi" : "dei punti"}
-                        <span className="ml-2 normal-case tracking-normal font-normal text-slate-600">clicca un altro anello per cambiare dettaglio</span>
-                    </p>
-                    <SogliaBar label={PISTA_LABEL_RETE[x.chiave] || x.nome} emoji="▫️" punti={x.punti} pezzi={x.unit === "pz" ? null : x.pezzi}
-                        soglie={x.scala} colore={b.colore} proiezione={x.proiezione} gate={x.gate}
-                        targetDir={x.target?.v ?? null} unit={x.unit} onClick={() => setApri(null)} />
-                </div>
-            ))}
+
+            {/* IL DETTAGLIO: la barra lineare, dove l'angolo torna a essere punti.
+                Niente titolo sopra: ripeteva il nome che la barra ha già dentro e
+                costava 23-38px per nulla. */}
+            <div className="tf-rb-bar">
+                {inDrill && (
+                    <SogliaBar label={nome(inDrill)} emoji="▫️" punti={inDrill.punti} pezzi={inDrill.unit === "pz" ? null : inDrill.pezzi}
+                        soglie={inDrill.scala} colore={b.colore} proiezione={inDrill.proiezione} gate={inDrill.gate}
+                        targetDir={inDrill.target?.v ?? null} targetFonte={inDrill.target?.fonte} unit={inDrill.unit} />
+                )}
+            </div>
         </div>
     );
 }
-const PISTA_LABEL_RETE = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", business_piva: "Biz P.IVA", cb: "Customer Base", smartphone_cb: "Smartphone CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas", t2: "Fastweb T2" };
+const PISTA_LABEL_RETE = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", business_piva: "Biz P.IVA", cb: "Customer Base", smartphone_cb: "Smartphone CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas", energia: "Luce & Gas", t2: "Fastweb T2", protetti: "W3 Protetti", device: "Telefoni & device", completezza: "Bonus Completezza" };
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════
    REGOLA RESPONSIVE (Luca 24/08, vale per OGNI widget presente e futuro):
@@ -2032,11 +2063,11 @@ export const REGISTRO = {
     // schermata sola, senza scrollare
     "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 8, h: 6, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
     // ── RETE: un widget per operatore, ridimensionabile come gli altri ────
-    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "w3"), logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
-    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "vf"), logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
-    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "sky"), logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
-    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 6, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "fw"), logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
-    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", minW: 3, minH: (ctx) => minHRete(ctx, "s4"), logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
+    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: (ctx) => minWRete(ctx, "w3"), minH: (ctx) => minHRete(ctx, "w3"), maxH: (ctx, w) => maxHRete(ctx, "w3", w), logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
+    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: (ctx) => minWRete(ctx, "vf"), minH: (ctx) => minHRete(ctx, "vf"), maxH: (ctx, w) => maxHRete(ctx, "vf", w), logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
+    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", minW: (ctx) => minWRete(ctx, "sky"), minH: (ctx) => minHRete(ctx, "sky"), maxH: (ctx, w) => maxHRete(ctx, "sky", w), logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
+    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 6, solo: "rete", minW: (ctx) => minWRete(ctx, "fw"), minH: (ctx) => minHRete(ctx, "fw"), maxH: (ctx, w) => maxHRete(ctx, "fw", w), logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
+    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", minW: (ctx) => minWRete(ctx, "s4"), minH: (ctx) => minHRete(ctx, "s4"), maxH: (ctx, w) => maxHRete(ctx, "s4", w), logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento", "rete"];
 export const DEFAULT_LAYOUT = {

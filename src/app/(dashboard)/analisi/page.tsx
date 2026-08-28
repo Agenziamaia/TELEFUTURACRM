@@ -25,7 +25,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
+import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento, PARALLELE_SOLO_AZIENDA } from "@/lib/commissioning";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
@@ -43,6 +43,10 @@ const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y 
 // l'ordine in cui le piste si presentano dentro il blocco del brand
 // Fastweb: le sole piste che Luca vuole a video (niente varianti business)
 const PISTE_FW = ["mobile", "fisso", "luce", "gas"];
+// piste i cui punti NON escono dal motore del tabellare ma dal conteggio a
+// fianco (Partnership, assicurazioni, smartphone CB): là il motore vale 0 per
+// costruzione, e la verità sta sull'item arricchito
+const PISTE_DA_ITEMS = new Set(["cb", "assicurazioni", "smartphone_cb"]);
 const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "energia", "lucegas", "cb", "smartphone_cb", "device",
     "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "protetti", "sky", "t2"];
 
@@ -66,7 +70,13 @@ const decodeLayout = (arr, versione = 0) => {
         if (!REGISTRO[k]) return null;
         if (versione >= 9) {
             const [x, y, w, h] = String(resto || "").split(",").map(Number);
-            return { k, x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0, s: w >= 1 && w <= 8 ? Math.round(w) : (REGISTRO[k].def || 2), h: h >= 2 && h <= 12 ? Math.round(h) : hDef(k) };
+            const ss = w >= 1 && w <= 8 ? Math.round(w) : (REGISTRO[k].def || 2);
+            // x dentro le 8 colonne: nel salvato ci sono coordinate come 9 o
+            // 6+3=12 che react-grid-layout ricollocava in silenzio, spostando
+            // le card da dove l'utente le aveva lasciate
+            return { k, s: ss, x: Number.isFinite(x) ? Math.max(0, Math.min(8 - ss, Math.round(x))) : 0,
+                y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
+                h: h >= 2 && h <= 12 ? Math.round(h) : hDef(k) };
         }
         const [ts, th] = String(resto || "").split(":");
         let nS = Number(ts);
@@ -307,7 +317,7 @@ function AnalisiInner() {
                 };
                 const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
-                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
+                    soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]).catch(() => null), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
                     caricaTutte(selExt(daISO, aISO)),
                     inMese ? caricaTutte(selExt(pISO, ultimoPrev)) : Promise.resolve({ data: [] }),
@@ -365,7 +375,9 @@ function AnalisiInner() {
                         && String(r.data || "").slice(0, 10) === tagliato)
                     .map(mapAltro).filter((r) => r.g >= 1);
                 const altri = (altRes?.data || [])
-                    .filter((r) => validaExt(r) && !gare4.has(brandIdDaLabel(r.brand) || "") && !/sostituzione/i.test(String(r.prodotto || "")))
+                    // le demo restano fuori come in tutto il resto del CRM:
+                    // era l'unico numero della Rete che non passava dal cutoff
+                    .filter((r) => validaExt(r) && r.is_demo !== true && !gare4.has(brandIdDaLabel(r.brand) || "") && !/sostituzione/i.test(String(r.prodotto || "")))
                     .map((r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 }))
                     .filter((r) => r.g >= 1);
                 const catNome = new Map((mCats.data || []).map((c) => [c.id, c.name]));
@@ -597,15 +609,28 @@ function AnalisiInner() {
             if (r && Number(r.target) > 0) return { v: Math.round(Number(r.target) * 100) / 100, fonte: "pannello" };
             // ripiego finché Gare → Target → Rete è vuoto: la somma dei target
             // direzione per codice. Il tooltip lo dichiara, non lo nasconde.
+            // NIENTE RIPIEGO SU PROTETTI: lì i target per codice valgono
+            // «almeno un Protecta per punto vendita, pena il malus». Sommarli
+            // dà 5, che non è un obiettivo di rete: cinque fatti tutti in un
+            // negozio non salvano gli altri quattro. Sono l'unico caso, fra i
+            // target direzione, di numeri NON sommabili.
+            if (pista === "protetti") return null;
             const d = (dati?.targetDir || []).filter((x) => x.brand === ID_DIR[b] && x.pista === pista)
                 .reduce((sm, x) => sm + (Number(x.target) || 0), 0);
             return d > 0 ? { v: Math.round(d * 100) / 100, fonte: "direzione" } : null;
         };
         const s4Righe = (dati?.altri || []).filter((r) => trkBrandKey(r.brand) === "s4");
+        // IL TABELLARE DELLA RETE È QUELLO AZIENDA, per tutti i brand.
+        // Prima W3/VF/Sky leggevano il lato RAGAZZI e Fastweb l'azienda: la
+        // stessa rete usciva con punti e soglie diversi da quelli del Master
+        // (VF mobile S3 contro S4, Sky S3 contro S5, W3 Luce&Gas sotto la S1
+        // contro S1 presa). Due sezioni non possono dire due verità sulla
+        // stessa produzione: la lettera dell'azienda è quella della rete, ed è
+        // già quella che usa il Master.
         const conf = [
-            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: righeGara.tw3, rows: righeGara.w3 },
-            { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
-            { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: righeGara.tsky, rows: righeGara.sky },
+            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: dati?.aw3 || null, rows: righeGara.w3 },
+            { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: dati?.avf || null, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
+            { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: dati?.asky || null, rows: righeGara.sky },
             // FASTWEB (Luca 28/08: «su Fastweb continui a non contarmi, hai
             // fatto lo stesso errore sul Master»). Fastweb NON ha un lato
             // ragazzi: per agosto ha zero piste. Il suo tabellare vero è la
@@ -626,7 +651,10 @@ function AnalisiInner() {
             { id: "s4", label: "S4 Energia", chiave: "s4", colore: HEX_BRAND.s4, tab: null,
                 pezzi: [{
                     chiave: "energia", nome: "Luce & Gas", righe: s4Righe,
-                    scala: (dati?.as4?.soglie || []).filter((x) => x.pista === "energia_consumer").sort((a, b) => a.tier - b.tier),
+                    // la soglia a 0 non è uno scaglione: è il pavimento. Tenendola
+                    // si apriva un settore di larghezza zero che pesava un quarto
+                    // di giro e si riempiva tutto al primo pezzo.
+                    scala: (dati?.as4?.soglie || []).filter((x) => x.pista === "energia_consumer" && Number(x.soglia_da) > 0).sort((a, b) => a.tier - b.tier),
                     parti: [
                         { label: "Luce", colore: "#a3e635", righe: s4Righe.filter((r) => !/gas/i.test(String(r.prodotto || ""))) },
                         { label: "Gas", colore: "#14b8a6", righe: s4Righe.filter((r) => /gas/i.test(String(r.prodotto || ""))) },
@@ -660,6 +688,10 @@ function AnalisiInner() {
                 const avMio = mieRows.length ? calcolaAvanzamento(c.tab, mieRows) : null;
                 for (const p of c.tab.piste) {
                     if (c.soloPiste && !c.soloPiste.includes(p.chiave)) continue;
+                    // «i ragazzi non devono averne PER NIENTE visibilità, è un
+                    // bonus dedicato all'azienda» (Luca, su Extra Gara P.IVA):
+                    // la Rete la vedranno tutti, quindi qui non entra
+                    if (PARALLELE_SOLO_AZIENDA.has(p.chiave)) continue;
                     const st = av.piste[p.chiave]; if (!st) continue;
                     const scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                     const tg = targetDi(c.id, p.chiave);
@@ -669,7 +701,16 @@ function AnalisiInner() {
                     // punti business non hanno una soglia, quel target lo metto
                     // io dalla sezione target»)
                     if (!scala.length && !st.punti && !tg && !fuoriMotore) continue;
-                    const daFianco = !st.punti && (daItems.get(p.chiave) || 0) > 0;
+                    // FONTE DICHIARATA, non «quella che non è zero»: su queste
+                    // piste il motore del tabellare non conta per costruzione
+                    // (salta le righe delle gare parallele) e i punti arrivano
+                    // dal conteggio a fianco che `arricchisci` porta sull'item.
+                    // Col vecchio «se il motore è a zero» sarebbe bastata una
+                    // riga da 0,5 punti per far sparire in silenzio i 1.173
+                    // della Customer Base.
+                    const daFianco = PISTE_DA_ITEMS.has(p.chiave)
+                        ? (daItems.get(p.chiave) || 0) > 0
+                        : (!st.punti && (daItems.get(p.chiave) || 0) > 0);
                     piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt",
                         punti: daFianco ? arrot(daItems.get(p.chiave)) : st.punti,
                         pezzi: st.pezzi, gate: st.gate || null, scala,
@@ -692,6 +733,7 @@ function AnalisiInner() {
                 x.prossima = pr;
                 x.presa = [...x.scala].reverse().find((v) => x.punti >= v.soglia_da) || null;
                 x.presaProj = [...x.scala].reverse().find((v) => rif >= v.soglia_da) || null;
+                x.prossima = pr;
             }
             // ORDINE FISSO (Luca 28/08: «lo lasci fisso così, deve rimanere
             // fatto per forza così»): consumer prima, poi energia, poi
@@ -753,7 +795,7 @@ function AnalisiInner() {
         // in `negozio` l'array VECCHIO letto dal DB — al giro dopo le novità
         // risultavano già applicate e un widget nuovo non compariva mai più.
         // Le liste in memoria le novità ce l'hanno già dentro.
-        const cod = (l) => l.map((w) => `${w.k}@${w.x || 0},${w.y || 0},${w.s},${w.h || hDef(w.k)}`);
+        const cod = (l) => l.map((w) => `${w.k}@${w.x || 0},${Number.isFinite(w.y) ? w.y : 999},${w.s},${w.h || hDef(w.k)}`);
         const inMemoria = { io: layoutIo, negozio: layoutNeg, rete: layoutRete };
         const next = { ...(layoutSalvato || {}), __v: LAYOUT_V, [areaKey]: cod(lista) };
         for (const [k, l] of Object.entries(inMemoria)) if (k !== areaKey && l?.length) next[k] = cod(l);
@@ -992,12 +1034,24 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     // MISURE MINIME (Luca 28/08: «più piccola di così le informazioni non si
     // leggono»): il widget le dichiara nel REGISTRO, altrimenti valgono quelle
     // storiche. Sotto quella misura la maniglia non scende più.
-    const rglLayout = lista.map((w) => ({
-        i: w.k, x: w.x || 0, y: w.y || 0, w: w.s, h: w.h || hDef(w.k),
-        minW: REGISTRO[w.k]?.minW || 1,
-        // la minima può dipendere dal contenuto (quante piste ha quel brand)
-        minH: typeof REGISTRO[w.k]?.minH === "function" ? REGISTRO[w.k].minH(ctx) : (REGISTRO[w.k]?.minH || 2),
-    }));
+    const vinc = (k, w) => {
+        const d = REGISTRO[k] || {};
+        const val = (v, ...a) => (typeof v === "function" ? v(ctx, ...a) : v);
+        const minW = val(d.minW) || 1;
+        const larg = Math.max(minW, Math.min(8, w));
+        const minH = val(d.minH) || 2;
+        const maxH = val(d.maxH, larg) || 12;
+        return { minW, minH, maxH: Math.max(minH, maxH) };
+    };
+    const rglLayout = lista.map((w) => {
+        const v = vinc(w.k, w.s);
+        const larg = Math.max(v.minW, Math.min(8, w.s));
+        // il vincolo si applica QUI, sulla lista: RGL lo userebbe solo per la
+        // maniglia e un'altezza salvata sotto il minimo resterebbe lì (è il
+        // motivo per cui alcune card continuavano a scrollare)
+        return { i: w.k, x: w.x || 0, y: w.y || 0, w: larg,
+            h: Math.max(v.minH, Math.min(v.maxH, w.h || hDef(w.k))), ...v };
+    });
     const onLayout = (l) => {
         const mappa = new Map(l.map((it) => [it.i, it]));
         const next = lista.map((w) => { const it = mappa.get(w.k); return it ? { ...w, x: it.x, y: it.y, s: it.w, h: it.h } : w; });
@@ -1045,7 +1099,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
                                     <button onClick={() => rimuovi(w.k)} title="Rimuovi" className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="w-3 h-3" /></button>
                                 </div>
                             </div>
-                            <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">{def.render(ctx, w.s)}</div>
+                            <div className={cn("flex-1 min-h-0", def.gruppo === "rete" ? "overflow-hidden" : "overflow-y-auto pr-1 -mr-1")}>{def.render(ctx, w.s)}</div>
                         </div>
                     );
                 })}

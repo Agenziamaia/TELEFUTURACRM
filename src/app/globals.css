@@ -1255,30 +1255,127 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    business soluzioni digitali VAS, e lo lasci fisso così»). Il numero di
    colonne lo decide il widget (--tf-col, mai più di 4): allargando la card
    gli anelli crescono, non se ne aggiunge un quinto. Card stretta → due. ─ */
-/* LA STRUTTURA NON SI RICOMPONE (Luca 28/08: «se allargo o stringo Vodafone,
-   l'unica cosa che cambia è la dimensione delle cose all'interno»). Le colonne
-   le dichiara il widget (--tf-col, dalla regola "fino a 5 in riga, oltre due
-   righe bilanciate"): allargando la card gli anelli CRESCONO, non si
-   riordinano. Due sole marce indietro, per non ridurli a francobolli su una
-   card molto stretta: sotto le 52rem si scende a --tf-col-m (mai più di 4) e
-   sotto le 22rem a due colonne. */
-/* la fila di anelli si prende l'altezza avanzata e la distribuisce, e la
-   MISURA dell'anello segue l'altezza della card (cqh) oltre che la larghezza:
-   allungando la card gli anelli crescono davvero, invece di lasciare mezzo
-   riquadro vuoto sotto. */
-.tf-rete-anelli { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; justify-items: center; align-content: space-evenly; flex: 1 1 auto; min-height: 0; }
-/* NIENTE SCROLL DENTRO LA CARD (Luca 28/08: «non esiste la possibilità che
-   dentro la card io possa scrollare col mouse; la card deve essere sempre
-   responsive rispetto alla sua dimensione»). L'anello si misura sull'altezza
-   disponibile TOLTO lo spazio della barra sotto, che deve restare sempre
-   intera: se la card si accorcia, a stringersi è l'anello, non la barra. */
-.tf-rete-anelli > * { max-width: clamp(90px, calc((100cqh - 195px) / var(--tf-righe, 1) - 104px), 300px); }
-@container (min-width: 22rem) {
-  .tf-rete-anelli { grid-template-columns: repeat(var(--tf-col-m, 4), minmax(0, 1fr)); gap: 1.5rem 1.25rem; }
+/* ═══ RETE — MOTORE DI LAYOUT DELLA CARD BRAND ═══════════════════════════
+   Regole dettate da Luca il 28/08, e sono vincoli:
+   ① dentro la card non si scrolla MAI;
+   ② la barra sotto resta sempre INTERA: se manca spazio si stringe l'anello;
+   ③ ridimensionando cambia solo la DIMENSIONE, la struttura non si ricompone;
+   ④ esistono misure minime, ma piccole.
+   Le costanti qui sotto sono MISURATE nel browser sul markup vero, non
+   stimate: era l'errore del giro precedente (195px e 104px inventati, e una
+   max-WIDTH ricavata dall'altezza). Tutto è CSS: nessun ResizeObserver.
+   Le decisioni discrete si fanno con `clamp(0px, calc(EXPR * 9999), 1px)`,
+   che vale 0px o 1px, e poi si moltiplica.                                */
+.tf-rb {
+    --HEAD: 56px;        /* testata della card: logo 44 + margine 12        */
+    --SEP: 8px;          /* stacco sopra la barra                           */
+    --BOX: 86px;         /* corpo della SogliaBar senza la riga dei valori   */
+    --GAPB: 12px;        /* stacco fra anelli e barra                       */
+    --GX: 10px; --GY: 10px;
+    --W: 100cqw;
+    --H: calc(100cqh - var(--HEAD));
+    --cellW: calc(var(--W) / var(--col) - var(--GX));
+
+    /* la barra è sempre intera; l'unica parte che può sparire è la riga dei
+       valori sotto, che vuole ~34px per soglia */
+    --scaleOn: clamp(0px, calc((var(--W) - var(--nS) * 34px) * 9999), 1px);
+    --barH: calc(var(--SEP) + var(--BOX) + var(--scaleOn) * 14);
+    --barTot: calc(var(--barH) + var(--GAPB));
+
+    /* i chip di testa si accendono solo se, garantiti 96px di anello per
+       fila, avanzano ancora i 37px che costano */
+    --hR0: calc(var(--H) - var(--barTot));
+    --chipsOn: clamp(0px, calc((var(--hR0) - var(--righe) * 96px - (var(--righe) - 1) * var(--GY) - 37px) * 9999), 1px);
+    --hR: calc(var(--hR0) - var(--chipsOn) * 37);
+
+    --rowH: calc((var(--hR) - (var(--righe) - 1) * var(--GY)) / var(--righe));
+    --slack: calc(var(--rowH) - var(--cellW));
+
+    /* piede sotto l'anello, a scalini: ogni riga si accende solo se l'avanzo
+       la paga E la cella è larga abbastanza perché si legga */
+    --f1: clamp(0px, calc(min(var(--slack) - var(--t1), var(--cellW) - 48px, var(--rowH) - 62px) * 9999), 1px);
+    --f2: clamp(0px, calc(min(var(--slack) - 33px, var(--cellW) - 56px, var(--rowH) - 96px) * 9999), 1px);
+    --f3: clamp(0px, calc(min(var(--slack) - 48px, var(--cellW) - 78px, var(--rowH) - 120px) * 9999), 1px);
+    --f4: clamp(0px, calc(min(var(--slack) - 62px, var(--cellW) - 76px, var(--rowH) - 140px) * 9999), 1px);
+    --foot: calc(var(--f1) * 18 + var(--f2) * 15 + var(--f3) * 15 + var(--f4) * 14);
+
+    /* LA MISURA DELL'ANELLO, in una riga: il minore fra la larghezza della
+       cella e l'altezza della fila meno il piede. Zero costanti inventate. */
+    --D0: clamp(40px, min(var(--cellW), var(--rowH) - var(--foot) - 2px), 480px);
+
+    /* le etichette dei valori attorno all'anello non dipendono da QUANTE
+       piste ci sono ma dai PIXEL: servono ~16px di arco per etichetta e una
+       corona libera di 64px in larghezza. Se ci stanno, l'anello paga 28px
+       di diametro per aprirle. */
+    --nSl: calc(var(--nS) + 1);
+    --labOn: clamp(0px, calc(min(var(--D0) - 28px - var(--nSl) * 16px, var(--cellW) - var(--D0) - 64px) * 9999), 1px);
+    --D: calc(var(--D0) - var(--labOn) * 28);
+
+    /* avanzo verticale incomprimibile: un cerchio non può essere più largo
+       della sua colonna. Invece di spalmare il vuoto attorno a ogni anello
+       (il difetto Fastweb) si limita il respiro e il blocco si CENTRA: resta
+       un margine simmetrico, cioè composizione, non un buco. */
+    --areaMax: calc(var(--righe) * (var(--D) * 1.35 + var(--foot)) + (var(--righe) - 1) * var(--GY));
+    --areaH: min(var(--hR), var(--areaMax));
+
+    display: flex; flex-direction: column; justify-content: center;
+    height: 100%; min-height: 0; overflow: hidden;
 }
-@container (min-width: 52rem) {
-  .tf-rete-anelli { grid-template-columns: repeat(var(--tf-col, 4), minmax(0, 1fr)); gap: 1.5rem 1.75rem; }
-}
+.tf-rb-chips { flex: 0 0 auto; height: calc(var(--chipsOn) * 25); margin-bottom: calc(var(--chipsOn) * 12);
+    overflow: hidden; display: flex; align-items: flex-start; flex-wrap: nowrap; white-space: nowrap; gap: 8px; }
+.tf-rb-chips > span { flex: 0 0 auto; height: 25px; }
+/* i chip secondari si spengono per larghezza, uno alla volta */
+.tf-rb-chips .c2 { max-width: calc(var(--c2On) * 9999); padding-inline: calc(var(--c2On) * 8); border-width: var(--c2On); overflow: hidden; }
+.tf-rb-chips .c3 { max-width: calc(var(--c3On) * 9999); padding-inline: calc(var(--c3On) * 8); border-width: var(--c3On); overflow: hidden; }
+
+/* file UGUALI: mai align-content, che distribuisce il vuoto invece di far
+   crescere gli anelli */
+.tf-rb-area { flex: 0 0 auto; height: var(--areaH); min-height: 0; display: grid;
+    grid-template-columns: repeat(calc(var(--col) * 2), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--righe), minmax(0, 1fr));
+    column-gap: 0; row-gap: var(--GY); }
+.tf-pista { grid-column: span 2; padding-inline: calc(var(--GX) / 2); min-width: 0; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; }
+/* ultima fila spaiata (7 piste = 4+3): mezza colonna di offset, così è
+   centrata. Va scritto con lo shorthand start/span: il solo grid-column-start
+   azzererebbe lo span e la cella si dimezzerebbe. */
+.tf-pista.spaiata { grid-column: calc(var(--col) - var(--ultima) + 1) / span 2; }
+
+.tf-anello { width: var(--D); height: var(--D); position: relative; flex: 0 0 auto; }
+.tf-anello > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.tf-anello-centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; pointer-events: none; white-space: nowrap; padding: 0 17%; }
+.tf-anello-centro .num { font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; line-height: 1;
+    font-size: clamp(11px, calc(var(--D) * .15), 44px); }
+/* la didascalia e la quota esistono solo se ci stanno davvero */
+.tf-anello-centro .cap { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: .08em;
+    line-height: 1.3; margin-top: 2px; overflow: hidden;
+    height: calc(clamp(0px, calc((var(--D) - 80px) * 9999), 1px) * 11); }
+.tf-anello-centro .mio { font-size: 9px; font-weight: 900; font-variant-numeric: tabular-nums; margin-top: 3px;
+    line-height: 14px; overflow: hidden;
+    height: calc(clamp(0px, calc((var(--D) - 104px) * 9999), 1px) * 14); }
+/* etichette dei valori: overlay HTML a px FISSI. Come testo dentro il viewBox
+   venivano scalate — a 100px di anello rendevano 4px, invisibili. */
+.tf-lab { position: absolute; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+    white-space: nowrap; pointer-events: none; font-size: calc(var(--labOn) * 9); }
+
+.tf-foot { width: 100%; height: var(--foot); overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+.tf-foot .l1 { height: calc(var(--f1) * 18); overflow: hidden; font-size: 11px; font-weight: 700; color: #e2e8f0;
+    line-height: 18px; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; }
+.tf-foot .l2 { height: calc(var(--f2) * 15); overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.tf-foot .l3 { height: calc(var(--f3) * 15); overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.tf-foot .l4 { height: calc(var(--f4) * 14); overflow: hidden; font-size: 10px; color: #94a3b8; line-height: 14px;
+    white-space: nowrap; max-width: 100%; text-overflow: ellipsis; }
+.tf-foot .l2 > *, .tf-foot .l3 > * { min-width: 0; }
+.tf-mini { padding: 0 5px; border-radius: 5px; font-size: 9px; font-weight: 900; line-height: 13px;
+    white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tf-rb-bar { flex: 0 0 auto; margin-top: var(--GAPB); height: var(--barH); overflow: hidden;
+    padding-top: var(--SEP); border-top: 1px solid rgba(255, 255, 255, .1); }
+/* dentro la Rete la riga di stato della barra non va MAI a capo: il suo
+   budget in altezza è fisso (--BOX), e una seconda riga la taglierebbe —
+   cioè romperebbe la regola «la barra resta intera» */
+.tf-rb-bar .sb-chips { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+.tf-rb-bar .sb-chips > * { flex: 0 0 auto; }
 
 /* ── MIX PERSONE (Luca 28/08): stessa scocca del Mix operatori — card
    panoramica → anello a sinistra e righe a destra, card stretta → in
