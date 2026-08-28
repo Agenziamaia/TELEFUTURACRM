@@ -642,6 +642,90 @@ html.light header{background-color:#ffffff !important;}
 /* ═══ LIGHT MODE — dropdown custom Registra Vendita (.rv*) + header definito ═══ */
 html.light .rvMenu{background:#ffffff !important;border-color:rgba(15,23,42,.12) !important;box-shadow:0 14px 36px rgba(15,23,42,.16) !important;}
 html.light .rvOpt{color:#1e2952 !important;}
+/* ═══════════════ REGISTRA VENDITA — LA CASSETTA DEGLI STILI ═══════════
+   Stava in un <style> dentro la pagina, ma quel blocco vive solo nel
+   ramo del FORM: aprendo il carrello le classi sparivano e i bottoni
+   tornavano bottoni di sistema. Qui vale in tutti i rami.
+   Le correzioni per il tema chiaro stanno subito sotto. */
+:root{--rv-acc:var(--tf-6366f1);--rv-ink:#fff;--rv-menu:#161a2c;--rv-menu-grp:#1b2030;--rv-menu-sh:rgba(0,0,0,.65)}
+html.light{--rv-menu:#ffffff;--rv-menu-sh:rgba(30,41,82,.18)}
+@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
+.rvLab{font-size:11.5px;font-weight:800;color:var(--tf-8892b0);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+/* la parte di un'etichetta che NON va urlata: una spiegazione fra
+   parentesi o un contatore, dentro un'etichetta maiuscola */
+.rvLabX{text-transform:none;letter-spacing:0;font-size:11px}
+.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:var(--tf-w40);border:1px solid var(--tf-w120);color:var(--tf-f8fafc);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+.rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
+.rvIn::placeholder{color:var(--tf-586174)}
+select.rvIn{cursor:pointer}
+/* ── I CAMPI, VESTITI COME IL CARRELLO (Luca 28/08: «ci sono sezioni in uno
+   stile che non è più adatto a quello che abbiamo evoluto»). Le tendine di
+   sistema sono sparite: al loro posto il selettore del CRM, che qui prende
+   la stessa faccia degli altri campi e i suoi stati — verde quando il dato
+   arriva dal codice inserimento, ambra quando è stato cambiato a mano. */
+.rvIn.rvIn-mod{border-color:rgba(251,146,60,.6);border-width:1.5px;background:rgba(251,146,60,.08)}
+/* ═══ LA CASSETTA DEGLI ATTREZZI (Luca 28/08) ══════════════════════════
+   «ci sono sezioni rimaste un pochettino all style»: il motivo e' che ogni
+   riquadro era ridisegnato a mano dove serviva. Il "Dati contratto" era
+   scritto 20 volte uguale a se stesso e SEMPRE azzurro Vodafone — dentro
+   Fastweb, dentro Sky, dentro WindTre. Da qui in poi e' una classe sola e
+   il colore arriva da --rv-acc, che il form cambia col brand scelto. */
+.rvBox{position:relative;padding:14px 15px;border-radius:14px;box-sizing:border-box;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 9%,transparent),var(--tf-w30));
+  border:1px solid color-mix(in srgb,var(--rv-acc) 26%,transparent);
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 26px -18px var(--rv-acc)}
+.rvBoxT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
+/* la card di uno step: era riscritta 10 volte, e l'ombra del tema chiaro
+   (--rv-shadow) era finita su UNA sola — le altre nove restavano piatte */
+/* il sotto-riquadro neutro: raggruppa domande dentro una sezione. Non
+   prende la tinta del brand, se no si somma a quella del riquadro. */
+/* la DOMANDA (finisce col punto interrogativo): non e' un'etichetta di
+   campo, quindi non va in maiuscolo — si legge come una frase */
+.rvDom{font-size:12.5px;font-weight:700;color:var(--tf-f8fafc);margin-bottom:8px}
+.rvSub{background:var(--tf-w30);border:1px solid var(--tf-w100);border-radius:12px;padding:10px 12px}
+.rvCard{background:var(--tf-w20);border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:var(--rv-shadow)}
+.rvCardT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:12px;text-transform:uppercase;letter-spacing:.7px}
+/* la griglia dei campi: si adatta da sola invece di spezzarsi sui portatili */
+/* le griglie dei campi: erano 56 copie a mano con quattro spaziature
+   diverse (8px, 10px, 12px, 16px) e le colonne FISSE — su uno schermo
+   stretto due colonne schiacciano il campo e un ICCID da 19 cifre non ci
+   sta piu'. Stessa resa sui monitor del negozio, si apre solo dove serve. */
+.rvG2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,255px),1fr));gap:10px 14px}
+.rvG3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:10px 14px}
+.rvG21{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:10px 14px}
+.rvG1{display:grid;grid-template-columns:1fr;gap:10px 14px}
+/* gli stati del campo, prima ripetuti a mano dentro ogni ternario */
+/* gli stati battono il :focus (revisore 28/08): il rosso dell'errore deve
+   restare mentre lo stai correggendo — l'anello indigo del focus resta lo
+   stesso, cosi' si vedono tutti e due */
+.rvIn.rvIn-ok{border-color:rgba(52,211,153,.6);border-width:1.5px;background:rgba(40,167,69,.10)}
+.rvIn.rvIn-err{border-color:#ef4444;border-width:1.5px;background:rgba(239,68,68,.10)}
+.rvIn.rvIn-lock{border-color:rgba(34,211,238,.45);border-width:1.5px;background:rgba(23,162,184,.10);color:var(--tf-7dd3fc);font-style:italic}
+.rvIn.rvIn-alt{border-color:rgba(139,92,246,.6);border-width:1.5px;background:rgba(111,66,193,.10)}
+.rvHint{font-size:11px;color:var(--tf-64748b);margin-top:3px;line-height:1.45}
+.rvHint-lock{color:var(--tf-67e8f9)}
+.rvErr{font-size:11px;color:var(--tf-f87171);margin-top:3px;font-weight:700}
+/* ── LE PASTIGLIE: UNA LINGUA SOLA ────────────────────────────────────
+   C'erano tre modi diversi di chiedere la stessa cosa: il Si'/No verde e
+   rosso con l'angolo a 6px, le scelte piccole blu fisso #2E75B6 (che non
+   era il colore di nessun brand) e le pastiglie tonde del carrello. Sono
+   rimaste le pastiglie tonde: le altre due prendono la stessa faccia,
+   cambia solo il colore quando sono accese. */
+.rvPill{padding:9px 20px;border-radius:999px;border:1px solid var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0);font-size:13px;font-weight:700;cursor:pointer;line-height:1.2;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s,color .15s}
+.rvPill:hover{border-color:color-mix(in srgb,var(--rv-acc) 45%,transparent);background:color-mix(in srgb,var(--rv-acc) 9%,transparent);color:var(--tf-e2e8f0)}
+.rvPill:disabled{cursor:not-allowed;opacity:.75;border-color:var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0)}
+.rvPill.rvPill-on{border:1.5px solid var(--rv-acc);background:var(--rv-acc);color:var(--rv-ink);box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 35%,transparent)}
+.rvPill.rvPill-si{border:1.5px solid #34d399;background:linear-gradient(135deg,#1a9c53,#28a745);color:#fff;box-shadow:0 4px 14px rgba(40,167,69,.32)}
+.rvPill.rvPill-no{border:1.5px solid #f87171;background:linear-gradient(135deg,#b02a37,#dc3545);color:#fff;box-shadow:0 4px 14px rgba(220,53,69,.30)}
+.rvPill-sm{padding:6px 15px;font-size:11.5px}
+.rvPill:active{transform:scale(.96)}
+.rvPillRow{display:flex;gap:8px;flex-wrap:wrap}
+.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:var(--rv-menu);border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px var(--rv-menu-sh);max-height:280px;overflow-y:auto}
+.rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:var(--tf-f8fafc)}
+.rvOpt:hover{background:rgba(99,102,241,.18)}
+.rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--tf-94a3b8);background:var(--rv-menu-grp);text-transform:uppercase;position:sticky;top:0}
+.crmFab{position:fixed;bottom:18px;right:18px;z-index:4300;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:999px;border:none;cursor:pointer;color:#fff;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+@media(min-width:1100px){.crmFab{display:none}}
 html.light .rvOpt:hover{background:rgba(99,102,241,.10) !important;}
 html.light .rvGrp{color:#5a6b84 !important;background:#f1f4f9 !important;}
 html.light .rvIn{background:#ffffff !important;border-color:rgba(15,23,42,.16) !important;color:#0f172a !important;}

@@ -3442,8 +3442,8 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
           </div>);})}
         {libere.length>0&&(
           <>
-            <div className="rvLab">Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{libere.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>
-              {_haVincolabili&&<span style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
+            <div className="rvLab">Opzioni <span className="rvLabX" style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{libere.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>
+              {_haVincolabili&&<span className="rvLabX" style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{libere.map(pillOpz)}</div>
           </>
         )}
@@ -3500,7 +3500,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
             if(/^operatore gnp$/i.test(cmp.nome)&&hasCampoGnp&&(f["GNP"]||"")!=="Sì")return null;
             // CAT-02: se la regola porta i suoi valori (jsonb valori:[…]) vincono quelli, altrimenti il lookup storico
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={Array.isArray(cmp.valori)&&cmp.valori.length?cmp.valori:_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
-            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} className="rvIn rvIn-sm"/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
+            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} className="rvIn"/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
             if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);
               // extra gara telefoni FW: il modello preseleziona la fascia
               // (opzione del gruppo «fascia» — resta correggibile a mano).
@@ -4426,7 +4426,7 @@ const NoteStep = ({store,show,setShow,scelta,setScelta,nota,setNota,pData,setPDa
       {show&&<div className="rvG2">
         <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
-          <div className="rvG2" style={{gap:8}}><div><div className="rvLab">Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} className="rvIn rvIn-sm"/></div><div><div className="rvLab">Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} className="rvIn rvIn-sm"/></div></div>
+          <div className="rvG2" style={{gap:8}}><div><div className="rvLab">Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} className="rvIn"/></div><div><div className="rvLab">Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} className="rvIn"/></div></div>
           {/* Negozio: si auto-compila dal login ma resta modificabile a mano. */}
           <div style={{marginTop:8}}><DD l="Negozio" v={negozioPro} o={v=>setNegozioPro(v)} vals={negozi} nt="Dal login — modificabile"/></div>
           <div style={{marginTop:8}}><div className="rvLab">Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
@@ -6611,84 +6611,9 @@ function CRM() {
             sempre a destra. Su schermi piccoli/anteprima resta nascosto.
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
-      <style>{`:root{--rv-acc:var(--tf-6366f1);--rv-ink:#fff;--rv-menu:#161a2c;--rv-menu-grp:#1b2030;--rv-menu-sh:rgba(0,0,0,.65)}
-html.light{--rv-menu:#ffffff;--rv-menu-sh:rgba(30,41,82,.18)}
-@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
-.rvLab{font-size:11.5px;font-weight:800;color:var(--tf-8892b0);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
-.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:var(--tf-w40);border:1px solid var(--tf-w120);color:var(--tf-f8fafc);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
-.rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
-.rvIn::placeholder{color:var(--tf-586174)}
-select.rvIn{cursor:pointer}
-/* ── I CAMPI, VESTITI COME IL CARRELLO (Luca 28/08: «ci sono sezioni in uno
-   stile che non è più adatto a quello che abbiamo evoluto»). Le tendine di
-   sistema sono sparite: al loro posto il selettore del CRM, che qui prende
-   la stessa faccia degli altri campi e i suoi stati — verde quando il dato
-   arriva dal codice inserimento, ambra quando è stato cambiato a mano. */
-.rvIn.rvIn-mod{border-color:rgba(251,146,60,.6);border-width:1.5px;background:rgba(251,146,60,.08)}
-/* ═══ LA CASSETTA DEGLI ATTREZZI (Luca 28/08) ══════════════════════════
-   «ci sono sezioni rimaste un pochettino all style»: il motivo e' che ogni
-   riquadro era ridisegnato a mano dove serviva. Il "Dati contratto" era
-   scritto 20 volte uguale a se stesso e SEMPRE azzurro Vodafone — dentro
-   Fastweb, dentro Sky, dentro WindTre. Da qui in poi e' una classe sola e
-   il colore arriva da --rv-acc, che il form cambia col brand scelto. */
-.rvBox{position:relative;padding:14px 15px;border-radius:14px;box-sizing:border-box;
-  background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 9%,transparent),var(--tf-w30));
-  border:1px solid color-mix(in srgb,var(--rv-acc) 26%,transparent);
-  box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 26px -18px var(--rv-acc)}
-.rvBoxT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
-/* la card di uno step: era riscritta 10 volte, e l'ombra del tema chiaro
-   (--rv-shadow) era finita su UNA sola — le altre nove restavano piatte */
-/* il sotto-riquadro neutro: raggruppa domande dentro una sezione. Non
-   prende la tinta del brand, se no si somma a quella del riquadro. */
-/* la DOMANDA (finisce col punto interrogativo): non e' un'etichetta di
-   campo, quindi non va in maiuscolo — si legge come una frase */
-.rvDom{font-size:12.5px;font-weight:700;color:var(--tf-f8fafc);margin-bottom:8px}
-/* il campo stretto: stessa faccia di .rvIn, taglia da griglia fitta */
-.rvIn-sm{padding:7px 10px;font-size:13px;border-radius:8px}
-.rvSub{background:var(--tf-w30);border:1px solid var(--tf-w100);border-radius:12px;padding:10px 12px}
-.rvCard{background:var(--tf-w20);border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:var(--rv-shadow)}
-.rvCardT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:12px;text-transform:uppercase;letter-spacing:.7px}
-/* la griglia dei campi: si adatta da sola invece di spezzarsi sui portatili */
-/* le griglie dei campi: erano 56 copie a mano con quattro spaziature
-   diverse (8px, 10px, 12px, 16px) e le colonne FISSE — su uno schermo
-   stretto due colonne schiacciano il campo e un ICCID da 19 cifre non ci
-   sta piu'. Stessa resa sui monitor del negozio, si apre solo dove serve. */
-.rvG2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,255px),1fr));gap:10px 14px}
-.rvG3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:10px 14px}
-.rvG21{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:10px 14px}
-.rvG1{display:grid;grid-template-columns:1fr;gap:10px 14px}
-/* gli stati del campo, prima ripetuti a mano dentro ogni ternario */
-/* gli stati battono il :focus (revisore 28/08): il rosso dell'errore deve
-   restare mentre lo stai correggendo — l'anello indigo del focus resta lo
-   stesso, cosi' si vedono tutti e due */
-.rvIn.rvIn-ok{border-color:rgba(52,211,153,.6);border-width:1.5px;background:rgba(40,167,69,.10)}
-.rvIn.rvIn-err{border-color:#ef4444;border-width:1.5px;background:rgba(239,68,68,.10)}
-.rvIn.rvIn-lock{border-color:rgba(34,211,238,.45);border-width:1.5px;background:rgba(23,162,184,.10);color:var(--tf-7dd3fc);font-style:italic}
-.rvIn.rvIn-alt{border-color:rgba(139,92,246,.6);border-width:1.5px;background:rgba(111,66,193,.10)}
-.rvHint{font-size:11px;color:var(--tf-64748b);margin-top:3px;line-height:1.45}
-.rvHint-lock{color:var(--tf-67e8f9)}
-.rvErr{font-size:11px;color:var(--tf-f87171);margin-top:3px;font-weight:700}
-/* ── LE PASTIGLIE: UNA LINGUA SOLA ────────────────────────────────────
-   C'erano tre modi diversi di chiedere la stessa cosa: il Si'/No verde e
-   rosso con l'angolo a 6px, le scelte piccole blu fisso #2E75B6 (che non
-   era il colore di nessun brand) e le pastiglie tonde del carrello. Sono
-   rimaste le pastiglie tonde: le altre due prendono la stessa faccia,
-   cambia solo il colore quando sono accese. */
-.rvPill{padding:9px 20px;border-radius:999px;border:1px solid var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0);font-size:13px;font-weight:700;cursor:pointer;line-height:1.2;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s,color .15s}
-.rvPill:hover{border-color:color-mix(in srgb,var(--rv-acc) 45%,transparent);background:color-mix(in srgb,var(--rv-acc) 9%,transparent);color:var(--tf-e2e8f0)}
-.rvPill:disabled{cursor:not-allowed;opacity:.75;border-color:var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0)}
-.rvPill.rvPill-on{border:1.5px solid var(--rv-acc);background:var(--rv-acc);color:var(--rv-ink);box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 35%,transparent)}
-.rvPill.rvPill-si{border:1.5px solid #34d399;background:linear-gradient(135deg,#1a9c53,#28a745);color:#fff;box-shadow:0 4px 14px rgba(40,167,69,.32)}
-.rvPill.rvPill-no{border:1.5px solid #f87171;background:linear-gradient(135deg,#b02a37,#dc3545);color:#fff;box-shadow:0 4px 14px rgba(220,53,69,.30)}
-.rvPill-sm{padding:6px 15px;font-size:11.5px}
-.rvPill:active{transform:scale(.96)}
-.rvPillRow{display:flex;gap:8px;flex-wrap:wrap}
-.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:var(--rv-menu);border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px var(--rv-menu-sh);max-height:280px;overflow-y:auto}
-.rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:var(--tf-f8fafc)}
-.rvOpt:hover{background:rgba(99,102,241,.18)}
-.rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--tf-94a3b8);background:var(--rv-menu-grp);text-transform:uppercase;position:sticky;top:0}
-.crmFab{position:fixed;bottom:18px;right:18px;z-index:4300;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:999px;border:none;cursor:pointer;color:#fff;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.45)}
-@media(min-width:1100px){.crmFab{display:none}}`}</style>
+      {/* Il foglio di stile di questa pagina sta in globals.css, sezione
+    «REGISTRA VENDITA»: stava qui dentro, ma il ramo del carrello
+    esce prima di montarlo e i suoi bottoni restavano senza stile. */}
       {/* SIDEBAR CARRELLO LIVE (desktop) + DRAWER su richiesta (ogni schermo) */}
       {drawerCarrello&&<div onClick={()=>setDrawerCarrello(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(2px)",zIndex:4400}}/>}
       {/* stessa pelle delle card del CRM (glass-panel): niente piu' grigio
@@ -6782,7 +6707,7 @@ select.rvIn{cursor:pointer}
           )}
         </div>
         <div style={{padding:14,borderTop:"1px solid var(--tf-w60)"}}>
-          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Riepilogo carrello →</button>
+          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:inchiostroSu(bC),fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Riepilogo carrello →</button>
         </div>
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
@@ -7017,7 +6942,7 @@ select.rvIn{cursor:pointer}
               </>
               :<>
                 {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
-                <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":bG,color:anaMissing.length>0?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+                <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":bG,color:anaMissing.length>0?"var(--tf-64748b)":inchiostroSu(bC),fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
               </>}
           </div>
         </div>
@@ -7160,8 +7085,8 @@ select.rvIn{cursor:pointer}
           brand (aggancio 27/07). Il blocco resta come riferimento storico. */}
       {showAna&&showStep4&&brand==="__sky_legacy__"&&(()=>{
         const SKY_COLOR="var(--tf-8b5cf6)";   // Sky è VIOLA (Luca 21/08)
-        const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:active?SKY_COLOR:"var(--tf-w40)",color:active?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
-        const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:val===v?SKY_COLOR:"var(--tf-w40)",color:val===v?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
+        const btnSky=(label,active,onClick)=><button onClick={onClick} className={cn("rvPill",active&&"rvPill-on")} style={{whiteSpace:"nowrap"}}>{active?"✓ ":""}{label}</button>;
+        const ynSky=(val,onYes,onNo)=><div className="rvPillRow" style={{gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} className={cn("rvPill","rvPill-sm",val===v&&(v==="Sì"?"rvPill-si":"rvPill-no"))}>{val===v?(v==="Sì"?"✓ ":"✕ "):""}{v}</button>)}</div>;
         const dBox=(children)=><div className="rvBox" style={{marginTop:10,padding:"12px 13px"}}><div className="rvBoxT" style={{color:SKY_COLOR,marginBottom:8}}>📄 Dati contratto</div>{children}</div>;
         const venditeBar=(si,bd)=>{return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,fontWeight:700,color:SKY_COLOR}}>Vendita #{si+1}</span>{bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:bd.bg,color:bd.fg,whiteSpace:"nowrap"}}>{bd.l}</span>}</div>
@@ -7183,7 +7108,7 @@ select.rvIn{cursor:pointer}
               {sale.tvSel&&dBox(
                 <div className="rvG2">
                   <div><div className="rvLab">Codice contratto <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
-                  <input value={sale.tvCC||""} onChange={e=>uSkyF(si,"tvCC",e.target.value)} placeholder="es. 1679428185586" className="rvIn rvIn-sm"/></div>
+                  <input value={sale.tvCC||""} onChange={e=>uSkyF(si,"tvCC",e.target.value)} placeholder="es. 1679428185586" className="rvIn"/></div>
                   <SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.tvCodIns||""} onCh={v=>uSkyF(si,"tvCodIns",v)}/>
                 </div>
               )}
@@ -7200,16 +7125,16 @@ select.rvIn{cursor:pointer}
               </div>
               {sale.fibraSel&&dBox(<div className="rvG2">
                 <div><div className="rvLab">Codice contratto <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
-                <input value={sale.fibraCC||""} onChange={e=>uSkyF(si,"fibraCC",e.target.value)} placeholder="es. 1679428185586" className="rvIn rvIn-sm"/></div>
+                <input value={sale.fibraCC||""} onChange={e=>uSkyF(si,"fibraCC",e.target.value)} placeholder="es. 1679428185586" className="rvIn"/></div>
                 <SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.fibraCodIns||""} onCh={v=>uSkyF(si,"fibraCodIns",v)}/>
-                <div><div className="rvDom">GNP?</div>
+                <div><div className="rvLab">GNP?</div>
                 {ynSky(sale.fibraGnp,()=>uSkyF(si,"fibraGnp","Sì"),()=>{uSkyF(si,"fibraGnp","No");uSkyF(si,"fibraGnpBrand","");uSkyF(si,"fibraGnpNum","");})}</div>
                 {sale.fibraGnp==="Sì"&&<>
                   <div><div className="rvLab">Brand GNP</div>
                   <SelectOpzioni value={sale.fibraGnpBrand||""} onChange={v=>uSkyF(si,"fibraGnpBrand",v)}
                     opzioni={SKY_BRAND_FIBRA} placeholder="— Seleziona —" className="rvIn" /></div>
                   <div><div className="rvLab">Numero fisso in portabilità</div>
-                  <input value={sale.fibraGnpNum||""} onChange={e=>uSkyF(si,"fibraGnpNum",e.target.value)} placeholder="es. 060000000" className="rvIn rvIn-sm"/></div>
+                  <input value={sale.fibraGnpNum||""} onChange={e=>uSkyF(si,"fibraGnpNum",e.target.value)} placeholder="es. 060000000" className="rvIn"/></div>
                 </>}
               </div>)}
             </div>)}
@@ -7387,7 +7312,7 @@ select.rvIn{cursor:pointer}
           <div className="rvCardT" style={{color:"var(--tf-28a745)",marginBottom:14}}>🏪 Attribuzione</div>
           <div className="rvG3">
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn rvIn-sm"/></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn"/></div>
           </div>
         </div>}
         {vistaStep==="note"&&((margFlow&&!brand)||(showAna&&showStep4))&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} scelta={notaScelta} setScelta={setNotaScelta} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
