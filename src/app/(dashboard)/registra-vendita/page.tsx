@@ -474,6 +474,19 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
 });
 
 
+// Il testo sopra una pastiglia accesa: bianco sui brand scuri (Vodafone,
+// TIM, Iliad), quasi-nero su quelli chiari (WindTre, Fastweb, Kena, S4).
+// I colori dei brand sono scritti come var(--tf-<esadecimale>): l'esadecimale
+// si legge dal nome della variabile.
+const inchiostroSu=(c)=>{
+  const m=String(c||"").match(/([0-9a-fA-F]{6})/);
+  if(!m)return "#fff";
+  const n=parseInt(m[1],16);
+  const lin=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+  const L=0.2126*lin((n>>16)&255)+0.7152*lin((n>>8)&255)+0.0722*lin(n&255);
+  return L>0.19?"#10131c":"#fff";
+};
+
 const BRANDS = [
   { id: "windtre", logo: "/windtre.png", label: "WindTre", short: "W3", color: "var(--tf-ff6b00)", gradient: "linear-gradient(135deg, #C24A00 0%, #FF6B00 100%)", icon: "📶", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
   { id: "sky", logo: "/sky.png", label: "Sky", short: "SKY", color: "var(--tf-8b5cf6)", gradient: "linear-gradient(135deg, #3b0764 0%, #8b5cf6 100%)", icon: "📺", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
@@ -1279,7 +1292,7 @@ const getVF = (tc) => {
 // Si'/No — stessa pastiglia di tutte le altre scelte (Luca 28/08): prima
 // era l'unico posto con l'angolo a 6px e il bordo a 2px
 const YN = ({val,onCh,label}) => (
-  <div className="rvBox rvBox-sm" style={{marginTop:8}}>
+  <div className="rvSub" style={{marginTop:8}}>
     <div style={{fontSize:12.5,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:8}}>{label}</div>
     <div className="rvPillRow">
       <button onClick={()=>onCh(true)} className={cn("rvPill","rvPill-sm",val===true&&"rvPill-si")}>{val===true?"✓ ":""}Sì</button>
@@ -1454,7 +1467,6 @@ const SCd = ({session,codici,val,onCh}) => {
 // ACCENTO DEL BRAND ATTIVO (Luca 03/08): i componenti di modulo (RB, header
 // "Dati Contratto"…) leggono da qui il colore del brand in corso — prima i
 // dettagli restavano BLU (o rosso Vodafone) dentro qualsiasi operatore.
-let _brandAccento = "var(--tf-6366f1)";
 
 const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
   const exp = expI[gi+"_"+ii];
@@ -1678,7 +1690,7 @@ const MiniC = ({label,val,opts,onCh,locked,lockVal}) => {
           const isActive=locked?(o===(lockVal===true?"Sì":lockVal===false?"No":lockVal)):val===o||val===(o==="Sì"?true:o==="No"?false:o);
           return (
             <button key={o} onClick={()=>!locked&&onCh(val===o?null:o)} disabled={locked}
-              className={cn("rvPill","rvPill-sm",isActive&&"rvPill-on",locked&&"rvPill-lock")}>
+              className={cn("rvPill","rvPill-sm",isActive&&"rvPill-on")}>
               {isActive?"✓ ":""}{o}
             </button>
           );
@@ -2877,7 +2889,7 @@ const TIMMobile = ({sd, uP, sc}) => {
           )}
           {sd.timMnp&&<RB label="TNP?" val={sd.timTnp} opts={["Sì","No"]} onCh={v=>{upv("timTnp",v);if(v==="No"){upv("timModello","");upv("timSpedizione",null);upv("timFinanziato",null);upv("timCodPratica","");upv("timImei","");}}}/>}
           {sd.timTnp==="Sì"&&(
-            <div style={{background:VF_LIGHT,border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14,marginBottom:12}}>
+            <div style={{background:VF_LIGHT,border:"1px solid color-mix(in srgb, var(--rv-acc) 34%, transparent)",borderRadius:8,padding:14,marginBottom:12}}>
               <div className="rvG2" style={{marginBottom:10}}>
                 <DD l="Modello terminale" r v={sd.timModello||""} o={v=>upv("timModello",v)} vals={TIM_SMARTPHONES_GROUPED}/>
               </div>
@@ -3481,7 +3493,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
     {(offerte.length===0||off)&&campi.length>0&&(
       /* DATI CONTRATTO — la classe condivisa, ma con la tinta della CATEGORIA
          invece che del brand: qui il colore lo porta il prodotto scelto */
-      <div className="rvBox" style={{marginTop:12,"--rv-acc":color}}>
+      <div className="rvBox" style={{marginTop:12,"--rv-acc":color,"--rv-ink":inchiostroSu(color)}}>
         <div className="rvBoxT">Dati contratto</div>
         <div className="rvG2">
           {campi.map(cmp=>{
@@ -3838,7 +3850,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                         )}
                       </div>
                       {sd.tnpCount&&[...Array(sd.tnpCount)].map((_,idx)=>(
-                        <div key={idx} className="rvSub" className="rvG2" style={{marginBottom:8}}>
+                        <div key={idx} className="rvSub rvG2" style={{marginBottom:8}}>
                           <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:2}}>Terminale {sd.tnpCount>1?idx+1:""}</div>
                           <DD l="Modello Terminale" r v={(sd.tnpModelli&&sd.tnpModelli[idx])||""} o={v=>{const m=[...(sd.tnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"tnpModelli",m)}} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.tnpImeis&&sd.tnpImeis[idx])||""} o={v=>{const im=[...(sd.tnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"tnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
@@ -4139,7 +4151,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                         )}
                       </div>
                       {sd.cbTnpCount&&[...Array(sd.cbTnpCount)].map((_,idx)=>(
-                        <div key={idx} className="rvSub" className="rvG2" style={{marginBottom:8}}>
+                        <div key={idx} className="rvSub rvG2" style={{marginBottom:8}}>
                           <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:2}}>Terminale {sd.cbTnpCount>1?idx+1:""}</div>
                           <DD l="Modello Terminale" r v={(sd.cbTnpModelli&&sd.cbTnpModelli[idx])||""} o={v=>{const m=[...(sd.cbTnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"cbTnpModelli",m)}} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.cbTnpImeis&&sd.cbTnpImeis[idx])||""} o={v=>{const im=[...(sd.cbTnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"cbTnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
@@ -6324,7 +6336,6 @@ function CRM() {
   // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
   // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
   const bC=bObj?bObj.color:"var(--tf-6366f1)";
-  _brandAccento=bC;   // i dettagli dei flussi seguono il brand (Luca 03/08)
   const bG=bObj?bObj.gradient:"linear-gradient(135deg,#4f46e5,#6366f1)";
   // CF/P.IVA SEMPRE OBBLIGATORIO su qualsiasi brand (Luca 02/08): senza,
   // la vendita non si registra. Il campo sta nell'anagrafica, cosi' anche
@@ -6591,7 +6602,7 @@ function CRM() {
   const formContent = (
     /* la tinta del brand scelto scende a TUTTE le sezioni (Luca 28/08):
    i riquadri "Dati contratto" erano azzurro Vodafone anche in Fastweb */
-    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,"--rv-acc":bC}}>
+    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,"--rv-acc":bC,"--rv-ink":inchiostroSu(bC)}}>
       {/* ═══════════════════════════════════════════════════════════════════
           RIEPILOGO VENDITE — SIDEBAR DESKTOP
           Per gli SVILUPPATORI: questa sidebar (className "crmSidebar") è
@@ -6602,8 +6613,8 @@ function CRM() {
             sempre a destra. Su schermi piccoli/anteprima resta nascosto.
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
-      <style>{`:root{--rv-acc:var(--tf-6366f1);--rv-menu:#161a2c;--rv-menu-grp:#1b2030}
-html.light{--rv-menu:#ffffff;--rv-menu-grp:#eef1f8}
+      <style>{`:root{--rv-acc:var(--tf-6366f1);--rv-ink:#fff;--rv-menu:#161a2c;--rv-menu-grp:#1b2030;--rv-menu-sh:rgba(0,0,0,.65)}
+html.light{--rv-menu:#ffffff;--rv-menu-sh:rgba(30,41,82,.18)}
 @media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
 .rvLab{font-size:11.5px;font-weight:800;color:var(--tf-8892b0);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
 .rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:var(--tf-w40);border:1px solid var(--tf-w120);color:var(--tf-f8fafc);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
@@ -6617,8 +6628,8 @@ select.rvIn{cursor:pointer}
    arriva dal codice inserimento, ambra quando è stato cambiato a mano. */
 .rvSel > div{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;background:var(--tf-w40);border:1px solid var(--tf-w120);color:var(--tf-f8fafc);transition:border-color .15s,box-shadow .15s,background .15s}
 .rvSel > div:hover{border-color:rgba(129,140,248,.45);background:rgba(99,102,241,.05)}
-.rvSel-ok > div{border:1.5px solid rgba(52,211,153,.55);background:rgba(40,167,69,.10)}
-.rvSel-mod > div{border:1.5px solid rgba(251,146,60,.55);background:rgba(251,146,60,.08)}
+.rvSel.rvSel-ok > div{border-color:rgba(52,211,153,.6);border-width:1.5px;background:rgba(40,167,69,.10)}
+.rvSel.rvSel-mod > div{border-color:rgba(251,146,60,.6);border-width:1.5px;background:rgba(251,146,60,.08)}
 /* ═══ LA CASSETTA DEGLI ATTREZZI (Luca 28/08) ══════════════════════════
    «ci sono sezioni rimaste un pochettino all style»: il motivo e' che ogni
    riquadro era ridisegnato a mano dove serviva. Il "Dati contratto" era
@@ -6634,8 +6645,7 @@ select.rvIn{cursor:pointer}
    (--rv-shadow) era finita su UNA sola — le altre nove restavano piatte */
 /* il sotto-riquadro neutro: raggruppa domande dentro una sezione. Non
    prende la tinta del brand, se no si somma a quella del riquadro. */
-.rvSub{background:var(--tf-w20);border:1px solid var(--tf-w100);border-radius:12px;padding:10px 12px}
-.rvBox-sm{padding:11px 13px;border-radius:11px}
+.rvSub{background:var(--tf-w30);border:1px solid var(--tf-w100);border-radius:12px;padding:10px 12px}
 .rvCard{background:var(--tf-w20);border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:var(--rv-shadow)}
 .rvCardT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:12px;text-transform:uppercase;letter-spacing:.7px}
 /* la griglia dei campi: si adatta da sola invece di spezzarsi sui portatili */
@@ -6643,17 +6653,18 @@ select.rvIn{cursor:pointer}
    diverse (8px, 10px, 12px, 16px) e le colonne FISSE — su uno schermo
    stretto due colonne schiacciano il campo e un ICCID da 19 cifre non ci
    sta piu'. Stessa resa sui monitor del negozio, si apre solo dove serve. */
-.rvG2{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
-.rvG3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px}
-.rvG21{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px 14px}
+.rvG2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,255px),1fr));gap:10px 14px}
+.rvG3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:10px 14px}
+.rvG21{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:10px 14px}
 .rvG1{display:grid;grid-template-columns:1fr;gap:10px 14px}
-@media(max-width:1000px){.rvG3{grid-template-columns:1fr 1fr}.rvG21{grid-template-columns:2fr 1fr}}
-@media(max-width:700px){.rvG2,.rvG3,.rvG21{grid-template-columns:1fr}}
 /* gli stati del campo, prima ripetuti a mano dentro ogni ternario */
-.rvIn-ok{border:1.5px solid rgba(52,211,153,.55);background:rgba(40,167,69,.10)}
-.rvIn-err{border:1.5px solid #ef4444;background:rgba(239,68,68,.10)}
-.rvIn-lock{border:1.5px solid rgba(34,211,238,.45);background:rgba(23,162,184,.10);color:var(--tf-7dd3fc);font-style:italic}
-.rvIn-alt{border:1.5px solid rgba(139,92,246,.55);background:rgba(111,66,193,.10)}
+/* gli stati battono il :focus (revisore 28/08): il rosso dell'errore deve
+   restare mentre lo stai correggendo — l'anello indigo del focus resta lo
+   stesso, cosi' si vedono tutti e due */
+.rvIn.rvIn-ok{border-color:rgba(52,211,153,.6);border-width:1.5px;background:rgba(40,167,69,.10)}
+.rvIn.rvIn-err{border-color:#ef4444;border-width:1.5px;background:rgba(239,68,68,.10)}
+.rvIn.rvIn-lock{border-color:rgba(34,211,238,.45);border-width:1.5px;background:rgba(23,162,184,.10);color:var(--tf-7dd3fc);font-style:italic}
+.rvIn.rvIn-alt{border-color:rgba(139,92,246,.6);border-width:1.5px;background:rgba(111,66,193,.10)}
 .rvHint{font-size:11px;color:var(--tf-64748b);margin-top:3px;line-height:1.45}
 .rvHint-lock{color:var(--tf-67e8f9)}
 .rvErr{font-size:11px;color:var(--tf-f87171);margin-top:3px;font-weight:700}
@@ -6665,14 +6676,14 @@ select.rvIn{cursor:pointer}
    cambia solo il colore quando sono accese. */
 .rvPill{padding:9px 20px;border-radius:999px;border:1px solid var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0);font-size:13px;font-weight:700;cursor:pointer;line-height:1.2;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s,color .15s}
 .rvPill:hover{border-color:color-mix(in srgb,var(--rv-acc) 45%,transparent);background:color-mix(in srgb,var(--rv-acc) 9%,transparent);color:var(--tf-e2e8f0)}
-.rvPill.rvPill-on{border:1.5px solid var(--rv-acc);background:var(--rv-acc);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 35%,transparent)}
+.rvPill:disabled{cursor:not-allowed;opacity:.75;border-color:var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0)}
+.rvPill.rvPill-on{border:1.5px solid var(--rv-acc);background:var(--rv-acc);color:var(--rv-ink);box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 35%,transparent)}
 .rvPill.rvPill-si{border:1.5px solid #34d399;background:linear-gradient(135deg,#1a9c53,#28a745);color:#fff;box-shadow:0 4px 14px rgba(40,167,69,.32)}
 .rvPill.rvPill-no{border:1.5px solid #f87171;background:linear-gradient(135deg,#b02a37,#dc3545);color:#fff;box-shadow:0 4px 14px rgba(220,53,69,.30)}
 .rvPill-sm{padding:6px 15px;font-size:11.5px}
-.rvPill-lock{cursor:not-allowed;opacity:.8;pointer-events:none}
 .rvPill:active{transform:scale(.96)}
 .rvPillRow{display:flex;gap:8px;flex-wrap:wrap}
-.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:var(--rv-menu);border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
+.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:var(--rv-menu);border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px var(--rv-menu-sh);max-height:280px;overflow-y:auto}
 .rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:var(--tf-f8fafc)}
 .rvOpt:hover{background:rgba(99,102,241,.18)}
 .rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--tf-94a3b8);background:var(--rv-menu-grp);text-transform:uppercase;position:sticky;top:0}
@@ -6848,7 +6859,7 @@ select.rvIn{cursor:pointer}
 
 
 
-      {vistaStep==="brand"&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:20,marginBottom:12}}>
+      {vistaStep==="brand"&&<div className="rvCard" style={{padding:20}}>
         <div className="rvCardT" style={{color:"var(--tf-8892b0)",marginBottom:14}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
           {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>

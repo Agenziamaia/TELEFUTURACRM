@@ -645,6 +645,14 @@ html.light .rvOpt{color:#1e2952 !important;}
 html.light .rvOpt:hover{background:rgba(99,102,241,.10) !important;}
 html.light .rvGrp{color:#5a6b84 !important;background:#f1f4f9 !important;}
 html.light .rvIn{background:#ffffff !important;border-color:rgba(15,23,42,.16) !important;color:#0f172a !important;}
+/* ...ma con !important spegneva anche i quattro stati del campo: verde
+   "arriva dall'anagrafica", rosso errore, azzurro bloccato, viola "Altro".
+   Sul tema chiaro non ne esisteva nessuno (revisore 28/08). */
+html.light .rvIn.rvIn-ok{border-color:rgba(16,150,90,.6) !important;background:rgba(22,163,74,.08) !important;}
+html.light .rvIn.rvIn-err{border-color:#dc2626 !important;background:rgba(239,68,68,.07) !important;}
+html.light .rvIn.rvIn-lock{border-color:rgba(14,165,233,.55) !important;background:rgba(14,165,233,.08) !important;color:#0369a1 !important;}
+html.light .rvIn.rvIn-alt{border-color:rgba(124,58,237,.55) !important;background:rgba(124,58,237,.07) !important;}
+html.light .rvIn:focus{box-shadow:0 0 0 3px rgba(99,102,241,.14) !important;}
 html.light .rvIn::placeholder{color:#94a3b8 !important;}
 html.light .rvLab{color:#64748b !important;}
 /* header di pagina: bianco, con bordo/ombra netti — non piu' una barra "sospesa" */
