@@ -1267,7 +1267,8 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    Le decisioni discrete si fanno con `clamp(0px, calc(EXPR * 9999), 1px)`,
    che vale 0px o 1px, e poi si moltiplica.                                */
 .tf-rb {
-    --HEAD: 38px;        /* testata compatta: logo 30 + margine 8            */
+    --HEAD: 46px;        /* testata: logo 38 + margine 8 — dentro ci sono anche
+                            le pastiglie, che prima si mangiavano una riga a parte */
     --SEP: 8px;          /* stacco sopra la barra                           */
     --BOX: 86px;         /* corpo della SogliaBar senza la riga dei valori   */
     --GAPB: 12px;        /* stacco fra anelli e barra                       */
@@ -1288,9 +1289,10 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
        fondo, e su una card con due file di anelli sparivano: ma «quanti KPI
        sono in target» è il motivo per cui si apre la pagina, mentre l'anello
        un po' più piccolo non toglie niente. I 37px si tolgono sempre. */
+    /* i chip sono saliti nella testata: qui non costano più niente, e i 37px
+       che occupavano tornano agli anelli */
     --hR0: calc(var(--H) - var(--barTot));
-    --chipsOn: 1px;
-    --hR: calc(var(--hR0) - 37px);
+    --hR: var(--hR0);
 
     --rowH: calc((var(--hR) - (var(--righe) - 1) * var(--GY)) / var(--righe));
     --slack: calc(var(--rowH) - var(--cellW));
@@ -1330,13 +1332,7 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
     display: flex; flex-direction: column; justify-content: center;
     height: 100%; min-height: 0; overflow: hidden;
 }
-.tf-rb-chips { flex: 0 0 auto; height: calc(var(--chipsOn) * 25); margin-bottom: calc(var(--chipsOn) * 12);
-    overflow: hidden; display: flex; align-items: flex-start; flex-wrap: nowrap; white-space: nowrap; gap: 8px; }
-.tf-rb-chips > span { flex: 0 0 auto; height: 25px; }
 /* i chip secondari si spengono per larghezza, uno alla volta */
-.tf-rb-chips .c2 { max-width: calc(var(--c2On) * 9999); padding-inline: calc(var(--c2On) * 8); border-width: var(--c2On); overflow: hidden; }
-.tf-rb-chips .c3 { max-width: calc(var(--c3On) * 9999); padding-inline: calc(var(--c3On) * 8); border-width: var(--c3On); overflow: hidden; }
-.tf-rb-chips .c4 { max-width: calc(var(--c4On) * 9999); padding-inline: calc(var(--c4On) * 8); border-width: var(--c4On); overflow: hidden; }
 
 /* file UGUALI: mai align-content, che distribuisce il vuoto invece di far
    crescere gli anelli */

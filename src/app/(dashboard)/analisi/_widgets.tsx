@@ -1922,6 +1922,49 @@ export function maxHRete(ctx, brand, w) {
     return Math.max(minHRete(ctx, brand), Math.floor((righe * (1.5 * D + piede) + (righe - 1) * 10 + 37 + 120 + 104) / RIGA_PX));
 }
 
+// LE PASTIGLIE STANNO NELLA TESTATA, accanto al marchio (Luca 28/08: «le
+// metterei alla destra del brand, ingrandendo un pochettino il brand: così
+// recuperi spazio e puoi allargare gli anelli»). Erano una riga dentro il
+// corpo e si mangiavano 37px a ogni card.
+export function ChipsRete({ ctx, brand }) {
+    const b = (ctx.brandRete || []).find((x) => x.brand === brand);
+    if (!b) return null;
+    const n = b.piste.length;
+    const conQuota = !!b.quotaAttiva;
+    return (
+        <span className="flex items-center gap-1.5 flex-wrap text-[10px] min-w-0">
+            {b.conTarget > 0 ? (
+                <>
+                    {/* la proiezione viene PRIMA: è il dato che guida, ed è
+                        l'unico che si vede fino al 20 del mese */}
+                    <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                        🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget} in target
+                    </span>
+                    {!ctx.primaDel20 && (
+                        <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap">
+                            <b className="text-white tabular-nums">{b.inTarget}</b>/{b.conTarget} in target adesso
+                        </span>
+                    )}
+                </>
+            ) : (
+                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap">
+                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} in soglia
+                </span>
+            )}
+            {b.appesi > 0 && (
+                <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap hidden @3xl:inline" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                    🔮 <b className="tabular-nums">{b.appesi}</b> scaglion{b.appesi > 1 ? "i" : "e"} al passo
+                </span>
+            )}
+            {conQuota && b.pzMio != null && b.pzRete > 0 && (
+                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400 whitespace-nowrap hidden @5xl:inline">
+                    il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>
+                </span>
+            )}
+        </span>
+    );
+}
+
 function BloccoBrandRete({ ctx, brand }) {
     // il dettaglio nasce APERTO sul primo contatore (Luca 28/08: «altrimenti
     // non si vede, non se lo immaginano che si può cliccare»): "__def__" è lo
@@ -1958,39 +2001,6 @@ function BloccoBrandRete({ ctx, brand }) {
             "--c3On": "clamp(0px, calc((100cqw - 530px) * 9999), 1px)",
             "--c4On": "clamp(0px, calc((100cqw - 700px) * 9999), 1px)",
         }}>
-            <div className="tf-rb-chips text-[10px]">
-                {b.conTarget > 0 ? (
-                    <>
-                        {/* la proiezione viene PRIMA: è il dato che guida, ed è
-                            l'unico che si vede fino al 20 del mese */}
-                        <span className="px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                            🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget} in target
-                        </span>
-                        {!ctx.primaDel20 && (
-                            <span className="c2 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-                                <b className="text-white tabular-nums">{b.inTarget}</b>/{b.conTarget} in target adesso
-                            </span>
-                        )}
-                    </>
-                ) : (
-                    // nessun target impostato su questo brand: si ripiega sulle
-                    // soglie, altrimenti la testata non direbbe niente
-                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-                        <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} in soglia
-                    </span>
-                )}
-                {b.appesi > 0 && (
-                    <span className="c3 px-2 py-1 rounded-lg border text-white" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                        🔮 <b className="tabular-nums">{b.appesi}</b> scaglion{b.appesi > 1 ? "i" : "e"} al passo
-                    </span>
-                )}
-                {conQuota && b.pzMio != null && b.pzRete > 0 && (
-                    <span className="c4 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
-                        il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>
-                    </span>
-                )}
-            </div>
-
             <div className="tf-rb-area">
                 {b.piste.map((x, i) => {
                     const k = `${brand}:${x.chiave}`;
@@ -2086,11 +2096,11 @@ export const REGISTRO = {
     // schermata sola, senza scrollare
     "mix:persone": { nome: "Mix persone del negozio", emoji: "🧑‍🤝‍🧑", gruppo: "squadra", def: 8, h: 6, solo: "negozio", render: (ctx) => <WidgetMixPersone ctx={ctx} /> },
     // ── RETE: un widget per operatore, ridimensionabile come gli altri ────
-    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: (ctx) => minWRete(ctx, "w3"), minH: (ctx) => minHRete(ctx, "w3"), maxH: (ctx, w) => maxHRete(ctx, "w3", w), logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
-    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: (ctx) => minWRete(ctx, "vf"), minH: (ctx) => minHRete(ctx, "vf"), maxH: (ctx, w) => maxHRete(ctx, "vf", w), logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
-    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", minW: (ctx) => minWRete(ctx, "sky"), minH: (ctx) => minHRete(ctx, "sky"), maxH: (ctx, w) => maxHRete(ctx, "sky", w), logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
-    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 6, solo: "rete", minW: (ctx) => minWRete(ctx, "fw"), minH: (ctx) => minHRete(ctx, "fw"), maxH: (ctx, w) => maxHRete(ctx, "fw", w), logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
-    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", minW: (ctx) => minWRete(ctx, "s4"), minH: (ctx) => minHRete(ctx, "s4"), maxH: (ctx, w) => maxHRete(ctx, "s4", w), logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
+    "rete:w3": { nome: "WindTre · rete", emoji: "🟠", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: (ctx) => minWRete(ctx, "w3"), minH: (ctx) => minHRete(ctx, "w3"), maxH: (ctx, w) => maxHRete(ctx, "w3", w), logoChiave: "windtre", logoColore: HEX_BRAND.windtre, nomeBreve: "", testata: (ctx) => <ChipsRete ctx={ctx} brand="w3" />, render: (ctx) => <BloccoBrandRete ctx={ctx} brand="w3" /> },
+    "rete:vf": { nome: "Vodafone · rete", emoji: "🔴", gruppo: "rete", def: 4, h: 7, solo: "rete", minW: (ctx) => minWRete(ctx, "vf"), minH: (ctx) => minHRete(ctx, "vf"), maxH: (ctx, w) => maxHRete(ctx, "vf", w), logoChiave: "vodafone", logoColore: HEX_BRAND.vodafone, nomeBreve: "", testata: (ctx) => <ChipsRete ctx={ctx} brand="vf" />, render: (ctx) => <BloccoBrandRete ctx={ctx} brand="vf" /> },
+    "rete:sky": { nome: "Sky · rete", emoji: "🟣", gruppo: "rete", def: 4, h: 5, solo: "rete", minW: (ctx) => minWRete(ctx, "sky"), minH: (ctx) => minHRete(ctx, "sky"), maxH: (ctx, w) => maxHRete(ctx, "sky", w), logoChiave: "sky", logoColore: HEX_BRAND.sky, nomeBreve: "", testata: (ctx) => <ChipsRete ctx={ctx} brand="sky" />, render: (ctx) => <BloccoBrandRete ctx={ctx} brand="sky" /> },
+    "rete:fw": { nome: "Fastweb T2 · rete", emoji: "🟡", gruppo: "rete", def: 2, h: 6, solo: "rete", minW: (ctx) => minWRete(ctx, "fw"), minH: (ctx) => minHRete(ctx, "fw"), maxH: (ctx, w) => maxHRete(ctx, "fw", w), logoChiave: "fastweb", logoColore: HEX_BRAND.fastweb, nomeBreve: "", testata: (ctx) => <ChipsRete ctx={ctx} brand="fw" />, render: (ctx) => <BloccoBrandRete ctx={ctx} brand="fw" /> },
+    "rete:s4": { nome: "S4 Energia · rete", emoji: "🟢", gruppo: "rete", def: 2, h: 5, solo: "rete", minW: (ctx) => minWRete(ctx, "s4"), minH: (ctx) => minHRete(ctx, "s4"), maxH: (ctx, w) => maxHRete(ctx, "s4", w), logoChiave: "s4", logoColore: HEX_BRAND.s4, nomeBreve: "", testata: (ctx) => <ChipsRete ctx={ctx} brand="s4" />, render: (ctx) => <BloccoBrandRete ctx={ctx} brand="s4" /> },
 };
 export const GRUPPI = ["operatori", "marginalità", "squadra", "obiettivi", "andamento", "rete"];
 export const DEFAULT_LAYOUT = {

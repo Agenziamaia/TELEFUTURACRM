@@ -25,7 +25,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento, PARALLELE_SOLO_AZIENDA } from "@/lib/commissioning";
+import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento, matchRigheGaraParallela } from "@/lib/commissioning";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
@@ -47,6 +47,8 @@ const PISTE_FW = ["mobile", "fisso", "luce", "gas"];
 // fianco (Partnership, assicurazioni, smartphone CB): là il motore vale 0 per
 // costruzione, e la verità sta sull'item arricchito
 const PISTE_DA_ITEMS = new Set(["cb", "assicurazioni", "smartphone_cb"]);
+// gare parallele che vivono solo sulla lettera azienda: i punti si contano a mano
+const PISTE_PARALLELE_AZ = new Set(["business_piva"]);
 const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "energia", "lucegas", "cb", "smartphone_cb", "device",
     "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "protetti", "sky", "t2"];
 
@@ -650,7 +652,7 @@ function AnalisiInner() {
         // Fastweb resta l'eccezione: un lato ragazzi non ce l'ha proprio (zero
         // piste), quindi la sua unica fonte è la lettera T2.
         const conf = [
-            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: righeGara.tw3, rows: righeGara.w3 },
+            { id: "w3", label: "WindTre", chiave: "windtre", colore: GARA.w3.colore, tab: righeGara.tw3, az: dati?.aw3 || null, rows: righeGara.w3 },
             { id: "vf", label: "Vodafone", chiave: "vodafone", colore: GARA.vf.colore, tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
             { id: "sky", label: "Sky", chiave: "sky", colore: GARA.sky.colore, tab: righeGara.tsky, rows: righeGara.sky },
             // FASTWEB (Luca 28/08: «su Fastweb continui a non contarmi, hai
@@ -710,19 +712,18 @@ function AnalisiInner() {
                 const avMio = mieRows.length ? calcolaAvanzamento(c.tab, mieRows) : null;
                 for (const p of c.tab.piste) {
                     if (c.soloPiste && !c.soloPiste.includes(p.chiave)) continue;
-                    // «i ragazzi non devono averne PER NIENTE visibilità, è un
-                    // bonus dedicato all'azienda» (Luca, su Extra Gara P.IVA):
-                    // la Rete la vedranno tutti, quindi qui non entra
-                    if (PARALLELE_SOLO_AZIENDA.has(p.chiave)) continue;
+
                     const st = av.piste[p.chiave]; if (!st) continue;
-                    const scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
+                    // le soglie: se il lato ragazzi non ne ha per questa pista si
+                    // guarda la lettera azienda (è il caso di Business P.IVA)
+                    let scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
+                    if (!scala.length && c.az) scala = (c.az.soglie || []).filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                     const tg = targetDi(c.id, p.chiave);
-                    const fuoriMotore = (daItems.get(p.chiave) || 0) > 0;
-                    // niente soglie E niente produzione: si mostra lo stesso se
-                    // c'è un target dal pannello (Luca 28/08: «Protecta e i
-                    // punti business non hanno una soglia, quel target lo metto
-                    // io dalla sezione target»)
-                    if (!scala.length && !st.punti && !tg && !fuoriMotore) continue;
+                    // NIENTE PIÙ SCARTI (Luca 28/08: «sulla card di WindTre manca
+                    // Protecta e manca il business — dentro Gare, nei target, ci
+                    // sono»). Quello che si può targettare si deve vedere: dare
+                    // un obiettivo a una pista invisibile non ha senso, e una
+                    // pista a zero è un'informazione, non un buco.
                     // FONTE DICHIARATA, non «quella che non è zero»: su queste
                     // piste il motore del tabellare non conta per costruzione
                     // (salta le righe delle gare parallele) e i punti arrivano
@@ -730,13 +731,24 @@ function AnalisiInner() {
                     // Col vecchio «se il motore è a zero» sarebbe bastata una
                     // riga da 0,5 punti per far sparire in silenzio i 1.173
                     // della Customer Base.
+                    // gara PARALLELA sulla lettera azienda (Business P.IVA): il
+                    // motore la salta per costruzione, i punti si contano come
+                    // fa il Master, riga per riga
+                    const paral = c.az && PISTE_PARALLELE_AZ.has(p.chiave)
+                        ? Math.round(c.rows.reduce((sm, r) => sm + matchRigheGaraParallela(c.az.righe || [], r, p.chiave)
+                            .reduce((a, x) => a + (Number(x.punti) || 0), 0), 0) * 100) / 100
+                        : 0;
+                    const paralMio = paral > 0
+                        ? Math.round(c.rows.filter((r) => èMio(r.negozio)).reduce((sm, r) => sm + matchRigheGaraParallela(c.az.righe || [], r, p.chiave)
+                            .reduce((a, x) => a + (Number(x.punti) || 0), 0), 0) * 100) / 100
+                        : 0;
                     const daFianco = PISTE_DA_ITEMS.has(p.chiave)
                         ? (daItems.get(p.chiave) || 0) > 0
                         : (!st.punti && (daItems.get(p.chiave) || 0) > 0);
                     piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt",
-                        punti: daFianco ? arrot(daItems.get(p.chiave)) : st.punti,
+                        punti: paral > 0 ? paral : (daFianco ? arrot(daItems.get(p.chiave)) : st.punti),
                         pezzi: st.pezzi, gate: st.gate || null, scala,
-                        mio: daFianco ? arrot(daItemsMio.get(p.chiave) || 0) : (avMio?.piste?.[p.chiave]?.punti ?? 0),
+                        mio: paral > 0 ? paralMio : (daFianco ? arrot(daItemsMio.get(p.chiave) || 0) : (avMio?.piste?.[p.chiave]?.punti ?? 0)),
                         target: tg });
                 }
             }
@@ -1178,9 +1190,11 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata =
                                     {/* il LOGO è il titolo dello schema: grande, subito a destra
                                         del grip (Luca 21/08) — niente nomi brand scritti */}
                                     {def.senzaTitolo ? null : def.logoChiave
-                                        ? <span className="flex items-center gap-1.5 min-w-0">
+                                        ? <span className="flex items-center gap-2 min-w-0">
                                             {def.nomeBreve !== "" && <span className="truncate">{def.emoji} {def.nomeBreve || def.nome}</span>}
-                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? (def.gruppo === "rete" ? 30 : 44) : 20} origine="left" />
+                                            <LogoBrand chiave={def.logoChiave} colore={def.logoColore} h={def.nomeBreve === "" ? (def.gruppo === "rete" ? 38 : 44) : 20} origine="left" />
+                                            {/* le pastiglie del brand vivono qui, alla destra del marchio */}
+                                            {def.testata?.(ctx)}
                                         </span>
                                         : <span className="truncate">{def.emoji} {def.nome}</span>}
                                 </p>
