@@ -352,7 +352,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
           {/* TELEFONO CASH: modello dalla lista condivisa + IMEI libero (nessun collegamento
               al magazzino usato) + importo di vendita (base del 4%). */}
           {selProd.isTelCash&&<div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:6,textTransform:"uppercase"}}>IMEI Dispositivo</div>
+            <div className="rvBoxT" style={{color:"var(--tf-6f42c1)",marginBottom:6}}>IMEI Dispositivo</div>
             <div style={{padding:10,borderRadius:10,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)"}}>
               <div style={{marginBottom:8}}><DD l="Modello" r v={model} o={v=>setModel(v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/></div>
               <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>IMEI</div>
@@ -361,7 +361,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
             </div>
           </div>}
           {selProd.needsImei&&<div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
+            <div className="rvBoxT" style={{color:"var(--tf-6f42c1)",marginBottom:6}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
             {magUsati.length===0&&<div style={{fontSize:11,color:"var(--tf-fd7e14)",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"}: per venderlo, l'usato deve prima essere In Vendita su Gestione Usati.</div>}
             {usatoUnits.map((u,i)=>{
               const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;
@@ -465,7 +465,7 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
           </div>
         </div>
       ))}
-      {items.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(0,114,198,0.10)",borderRadius:10,display:"flex",justifyContent:"space-between"}}>
+      {items.length>0&&<div className="rvBox" style={{marginTop:12,padding:"12px 13px",display:"flex",justifyContent:"space-between"}}>
         <span style={{fontWeight:700}}>Totale prodotti</span>
         <span style={{fontWeight:900,fontSize:18,color:"var(--tf-6f42c1)"}}>{items.length}</span>
       </div>}
@@ -1276,12 +1276,14 @@ const getVF = (tc) => {
 
 // ── Small components (no return keyword needed with arrow implicit) ──────
 
+// Si'/No — stessa pastiglia di tutte le altre scelte (Luca 28/08): prima
+// era l'unico posto con l'angolo a 6px e il bordo a 2px
 const YN = ({val,onCh,label}) => (
-  <div style={{marginTop:8,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
-    <div style={{fontSize:12,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:6}}>{label}</div>
-    <div style={{display:"flex",gap:8}}>
-      <button onClick={()=>onCh(true)} style={{padding:"6px 20px",borderRadius:6,border:val===true?"2px solid #28a745":"2px solid var(--tf-w100)",background:val===true?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:val===true?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
-      <button onClick={()=>onCh(false)} style={{padding:"6px 20px",borderRadius:6,border:val===false?"2px solid #dc3545":"2px solid var(--tf-w100)",background:val===false?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:val===false?"var(--tf-f87171)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
+  <div className="rvBox rvBox-sm" style={{marginTop:8}}>
+    <div style={{fontSize:12.5,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:8}}>{label}</div>
+    <div className="rvPillRow">
+      <button onClick={()=>onCh(true)} className={cn("rvPill","rvPill-sm",val===true&&"rvPill-si")}>{val===true?"✓ ":""}Sì</button>
+      <button onClick={()=>onCh(false)} className={cn("rvPill","rvPill-sm",val===false&&"rvPill-no")}>{val===false?"✕ ":""}No</button>
     </div>
   </div>
 );
@@ -1316,11 +1318,8 @@ const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
   <div>
     <div className="rvLab">{l} {r&&<span style={{color:"var(--tf-f87171)"}}>*</span>}</div>
     <input value={v||""} onChange={e=>onCh(e.target.value)} placeholder={p} disabled={dis} readOnly={dis}
-      className="rvIn"
-      style={bad?{border:"1.5px solid #ef4444",background:"rgba(239,68,68,0.10)"}
-        :dis?{border:"1.5px solid rgba(34,211,238,0.45)",background:"rgba(23,162,184,0.10)",color:"var(--tf-7dd3fc)",fontStyle:"italic"}
-        :pf?{border:"1.5px solid rgba(52,211,153,0.55)",background:"rgba(40,167,69,0.10)"}:undefined} />
-    {bad?<div style={{fontSize:11,color:"var(--tf-f87171)",marginTop:3,fontWeight:700}}>⚠ {vErr}</div>:(nt&&<div style={{fontSize:11,color:dis?"var(--tf-67e8f9)":"var(--tf-64748b)",marginTop:3}}>{nt}</div>)}
+      className={cn("rvIn", bad&&"rvIn-err", !bad&&dis&&"rvIn-lock", !bad&&!dis&&pf&&"rvIn-ok")} />
+    {bad?<div className="rvErr">⚠ {vErr}</div>:(nt&&<div className={cn("rvHint",dis&&"rvHint-lock")}>{nt}</div>)}
   </div>
   );
   return content;
@@ -1332,7 +1331,7 @@ const TFVia = ({v,o,pf,onPick}) => (
   <div>
     <div className="rvLab">Via</div>
     <IndirizzoAutocomplete value={v||""} onChange={o} onPick={onPick} placeholder="Via Roma 12"
-      inputStyle={{width:"100%",padding:"10px 12px",borderRadius:10,border:pf?"1.5px solid rgba(52,211,153,0.55)":"1px solid var(--tf-w120)",fontSize:13,boxSizing:"border-box",background:pf?"rgba(40,167,69,0.10)":"var(--tf-w40)",color:"var(--tf-f8fafc)",outline:"none"}} />
+      className={cn("rvIn", pf&&"rvIn-ok")} />
   </div>
 );
 
@@ -1379,8 +1378,8 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
         onFocus={()=>{setOpen(true);setQ("");}}
         onChange={e=>{setQ(e.target.value);setOpen(true);}}
         onBlur={()=>setTimeout(()=>setOpen(false),180)}
-        className="rvIn"
-        style={v?{border:"1.5px solid rgba(52,211,153,0.55)",background:open?undefined:"rgba(40,167,69,0.10)"}:undefined}/>
+        className={cn("rvIn", v&&!open&&"rvIn-ok")}
+        style={v&&open?{borderColor:"rgba(52,211,153,0.55)"}:undefined}/>
       {open&&(
         <div className="rvMenu">
           {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"8px 12px",fontSize:12,color:"var(--tf-f87171)",cursor:"pointer",borderBottom:"1px solid var(--tf-w60)",fontWeight:700}}>✕ Deseleziona</div>}
@@ -1415,13 +1414,13 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
           }).join("  ·  ")}
         </div>
       )}
-      {nt&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{nt}</div>}
+      {nt&&<div className="rvHint">{nt}</div>}
       {/* Se e' selezionato "Altro", compare un campo per inserire il modello non in lista.
           Il valore viene salvato come "Altro: <modello>" cosi' il campo resta visibile. */}
       {typeof v==="string"&&(v==="Altro"||v.startsWith("Altro:"))&&(
         <input autoFocus value={v.replace(/^Altro:?\s*/,"")} placeholder="Inserisci il modello non in lista…"
           onChange={e=>{const t=e.target.value;o&&o(t?("Altro: "+t):"Altro");}}
-          className="rvIn" style={{marginTop:6,border:"1.5px solid rgba(139,92,246,0.55)",background:"rgba(111,66,193,0.10)"}}/>
+          className="rvIn rvIn-alt" style={{marginTop:6}}/>
       )}
     </div>
   );
@@ -1535,7 +1534,7 @@ const FWMobile = ({sd, uP, sc, biz}) => {
       {/* DATI e SMART HOME (richieste Francesco): selezionata l'offerta si va
           dritti al box "Dati Contratto" — niente MNP, domiciliazione,
           convergenza, TNP o Security, che per una SIM dati non hanno senso. */}
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {offerList.map(offer=>{
           const isActive=sd.fwOffer===offer;
@@ -1554,17 +1553,17 @@ const FWMobile = ({sd, uP, sc, biz}) => {
         <div>
           {hasMNP&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase"}}>Portabilità (MNP)</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Portabilità (MNP)</div>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.fwMnpBrand||""} o={v=>upv("fwMnpBrand",v)} vals={FW_BRANDS_MNP}/>
                 <TF l="Numero Portabilità" r v={sd.fwMnpNum||""} o={v=>upv("fwMnpNum",v)} p="3XXXXXXXXX"/>
               </div>
             </div>
           )}
 
-          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+          <div className="rvBox">
+            <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+            <div className="rvG2">
               <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwCodIns||""} onCh={v=>upv("fwCodIns",v)}/>
               {hasMNP?(
                 <TF l="Numero Provvisorio" r v={sd.fwNumProv||""} o={v=>upv("fwNumProv",v)} p="393XXXXXXX"/>
@@ -1593,7 +1592,7 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
       <RB label="GNP?" val={sd.fwFGnp} opts={["Sì","No"]} onCh={v=>{upv("fwFGnp",v);if(v==="No"){upv("fwFGnpBrand","");upv("fwFGnpNum","");upv("fwFSecLineCount",0);upv("fwFSecLines",[]);}}}/>
       {sd.fwFGnp==="Sì"&&(
         <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:8,padding:12,marginBottom:12}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+          <div className="rvG2">
             <DD l="Operatore GNP" r v={sd.fwFGnpBrand||""} o={v=>upv("fwFGnpBrand",v)} vals={FW_GNP_BRANDS}/>
             {/* Segnalazione 78: il numero fisso GNP E' il numero definitivo, quindi
                 lo riportiamo da solo su N. Fisso Definitivo e non lo richiediamo
@@ -1602,7 +1601,7 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
           </div>
           {hasSecLines&&(
             <div style={{marginTop:12,borderTop:"1px solid var(--tf-w100)",paddingTop:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:6,textTransform:"uppercase"}}>Seconde linee da migrare</div>
+              <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:6}}>Seconde linee da migrare</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                 {[0,1,2,3,4,5].map(n=>(
                   <button key={n} onClick={()=>setSecCount(n)} style={{width:36,height:34,borderRadius:8,border:secCount===n?"2px solid "+FW_C:"2px solid var(--tf-w100)",background:secCount===n?FW_C:"var(--tf-w40)",color:secCount===n?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer"}}>{n}</button>
@@ -1618,9 +1617,9 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
         </div>
       )}
       {sd.fwFGnp&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+        <div className="rvBox">
+          <div className="rvBoxT" style={{marginBottom:12}}>📋 Dati Contratto</div>
+          <div className="rvG2">
             <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwFCodIns||""} onCh={v=>upv("fwFCodIns",v)}/>
             {sd.fwFGnp==="Sì"?(
               <TF l="N. Fisso Provvisorio" r v={sd.fwFNumProv||""} o={v=>upv("fwFNumProv",v)} p="06XXXXXXXX"/>
@@ -1649,9 +1648,9 @@ const FWEnergia = ({sd, uP, sc, subTitle, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const isGas = subTitle === "GAS";
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+    <div className="rvBox">
+      <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+      <div className="rvG2">
         <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwEnCodIns||""} onCh={v=>upv("fwEnCodIns",v)}/>
         <DD l="Operatore provenienza" r v={sd.fwEnProv||""} o={v=>upv("fwEnProv",v)} vals={opProv}/>
         {isGas
@@ -1673,14 +1672,14 @@ const emTnpSlot=()=>({tipo:null,tnpCount:null,tnpItems:[],compassTipo:null,compa
 const MiniC = ({label,val,opts,onCh,locked,lockVal}) => {
   const content = (
     <div style={{marginBottom:10}}>
-      <div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
-      <div style={{display:"flex",gap:6}}>
+      <div className="rvLab">{label}</div>
+      <div className="rvPillRow" style={{gap:6}}>
         {opts.map(o=>{
           const isActive=locked?(o===(lockVal===true?"Sì":lockVal===false?"No":lockVal)):val===o||val===(o==="Sì"?true:o==="No"?false:o);
           return (
             <button key={o} onClick={()=>!locked&&onCh(val===o?null:o)} disabled={locked}
-              style={{padding:"5px 16px",borderRadius:6,border:isActive?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:isActive?"var(--tf-2e75b6)":"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:locked?"not-allowed":"pointer",opacity:locked?0.8:1}}>
-              {o}
+              className={cn("rvPill","rvPill-sm",isActive&&"rvPill-on",locked&&"rvPill-lock")}>
+              {isActive?"✓ ":""}{o}
             </button>
           );
         })}
@@ -1694,10 +1693,9 @@ const RB = ({label,val,opts,onCh}) => {
   const content = (
     <div style={{marginBottom:12}}>
       <div className="rvLab">{label}</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <div className="rvPillRow">
         {opts.map(o=>(
-          <button key={o} onClick={()=>onCh(val===o?null:o)}
-            style={{padding:"9px 22px",borderRadius:999,border:val===o?"1.5px solid "+_brandAccento:"1px solid var(--tf-w120)",background:val===o?_brandAccento:"var(--tf-w40)",color:val===o?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s",boxShadow:val===o?"0 4px 14px "+_brandAccento+"55":"none"}}>
+          <button key={o} onClick={()=>onCh(val===o?null:o)} className={cn("rvPill",val===o&&"rvPill-on")}>
             {val===o?"✓ ":""}{o}
           </button>
         ))}
@@ -1801,7 +1799,7 @@ const CompassDatiTNP = ({sd, upv}) => {
 
   const content = (
     <div style={{marginTop:12,background:"var(--tf-w20)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12}}>
-      <div style={{fontSize:11,fontWeight:800,color:VF_C,marginBottom:10,textTransform:"uppercase"}}>Dati TNP</div>
+      <div className="rvBoxT" style={{color:VF_C,marginBottom:10}}>Dati TNP</div>
       {items.map((item,i)=>{
         const bundleOn=item.bundleOn||false;
         const accessorioOn=item.accessorioOn||false;
@@ -1809,7 +1807,7 @@ const CompassDatiTNP = ({sd, upv}) => {
         return (
           <div key={i} style={{marginBottom:i<items.length-1?16:0}}>
             {items.length>1&&<div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",marginBottom:6}}>Compass #{i+1}</div>}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8}}>
+            <div className="rvG2" style={{marginBottom:8}}>
               <DD l="Modello terminale" v={item.modello||""} o={v=>updItem(i,"modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
               <TF l="IMEI" v={item.imei||""} o={v=>updItem(i,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
             </div>
@@ -1896,7 +1894,7 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
           <button onClick={()=>onRemoveSlot(idx)} style={{background:"none",border:"1px solid #dc3545",borderRadius:6,padding:"2px 10px",color:"var(--tf-dc3545)",fontSize:10,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>
         </div>
       )}
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase"}}>Tipologia dispositivo</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Tipologia dispositivo</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
         {allOpts.map(t=>{
           const isOn=slot.tipo===t;
@@ -1912,8 +1910,8 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
 
       {isTnpTaglia&&(
         <div style={{background:"var(--tf-w20)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12,marginBottom:8}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase"}}>Dati TNP</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+          <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Dati TNP</div>
+          <div className="rvG2">
             <DD l="Modello terminale" r v={slot.modello||""} o={v=>set("modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
             <TF l="IMEI" r v={slot.imei||""} o={v=>set("imei",v)} p="15 cifre" nt="Barcode 📷"/>
           </div>
@@ -1962,7 +1960,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
   };
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {VF_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.vfOffer===offer;
@@ -1993,7 +1991,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
           )}
           {!isDV&&!isDati&&sd.vfMnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.vfMnpBrand||""} o={v=>upv("vfMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfMnpNum||""} o={v=>upv("vfMnpNum",v)} p="3XXXXXXXXX"/>
               </div>
@@ -2044,7 +2042,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       {/* Security */}
                       {sd.vfTnp&&!isDV&&!isDati&&sd.vfOffer!=="MOBILE START UNDER 18"&&(
                         <div style={{marginTop:12,background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:6,textTransform:"uppercase"}}>Security</div>
+                          <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:6}}>Security</div>
                           <div style={{display:"flex",gap:8}}>
                             {["Sì","No"].map(o=>(
                               <button key={o} onClick={()=>upv("vfSecurity",sd.vfSecurity===o?null:o)}
@@ -2057,9 +2055,9 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       )}
                       {/* Dati Contratto */}
                       {(sd.vfTnp||isDV||isDati)&&(
-                        <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+                        <div className="rvBox" style={{marginTop:12}}>
+                          <div className="rvBoxT" style={{marginBottom:12}}>📋 Dati Contratto</div>
+                          <div className="rvG2">
                             {sd.vfMnp==="Sì"?(
                               <TF l="Numero Provvisorio" r v={sd.dcNumProv||""} o={v=>upv("dcNumProv",v)} p="393XXXXXXX"/>
                             ):(
@@ -2121,7 +2119,7 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
               {sd.vfFGnp&&(
                 <div>
                   <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12,marginBottom:12}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:8,textTransform:"uppercase"}}>Add-on Fisso</div>
+                    <div className="rvBoxT" style={{color:"var(--tf-8892b0)",marginBottom:8}}>Add-on Fisso</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                       {VF_ADDON_FISSO.map(a=>{
                         const on=(sd.vfFAddons||{})[a];
@@ -2136,9 +2134,9 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
                   </div>
 
                   {/* Dati Contratto */}
-                  <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-                    <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+                  <div className="rvBox">
+                    <div className="rvBoxT" style={{marginBottom:12}}>📋 Dati Contratto</div>
+                    <div className="rvG2">
                       <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfFCodIns||""} onCh={v=>upv("vfFCodIns",v)}/>
                       {sd.vfFGnp==="Sì"?(
                         <TF l="N. Fisso Provvisorio" r v={sd.vfFNumProvVisorio||""} o={v=>upv("vfFNumProvVisorio",v)} p="06XXXXXXXX"/>
@@ -2204,7 +2202,7 @@ const VFCB = ({sd, uP, sc, dupCheck}) => {
           <div style={{background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14,marginBottom:10}}>
             {/* Segnalazione 44: nel primo box il codice contratto non va chiesto,
                 servono solo il cellulare del cliente e il codice inserimento. */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:"10px 14px",marginBottom:10}}>
+            <div className="rvG1" style={{marginBottom:10}}>
               <TF l="Cellulare cliente" r v={sd.cbCellulare||""} o={v=>upv("cbCellulare",v)} p="3XXXXXXXXX"/>
             </div>
             <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.cbCodIns2||""} onCh={v=>upv("cbCodIns2",v)}/>
@@ -2240,7 +2238,7 @@ const VFCB = ({sd, uP, sc, dupCheck}) => {
       )}
       {sd.cbSecurity&&(
         <div style={{background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14,marginTop:0}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:10,textTransform:"uppercase"}}>Dati Rete Sicura CB</div>
+          <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:10}}>Dati Rete Sicura CB</div>
           <TF l="Numero di cellulare" r v={sd.cbSecurityCell||""} o={v=>upv("cbSecurityCell",v)} p="3XXXXXXXXX"/>
           <div style={{marginTop:10}}>
             <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.cbSecurityCodIns||""} onCh={v=>upv("cbSecurityCodIns",v)}/>
@@ -2263,7 +2261,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
   const deviceList=isTablet?[...VFB_SMARTPHONES_GROUPED,{group:"Tablet",items:VFB_MOBILE_TABLETS}]:VFB_SMARTPHONES_GROUPED;
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {offers.map(offer=>{
           const isActive=sd.vfbOffer===offer;
@@ -2280,7 +2278,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
           <RB label="MNP?" val={sd.vfbMnp} opts={["Sì","No"]} onCh={v=>{upv("vfbMnp",v);if(v==="No"){upv("vfbMnpBrand","");upv("vfbMnpNum","")}}}/>
           {sd.vfbMnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.vfbMnpBrand||""} o={v=>upv("vfbMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfbMnpNum||""} o={v=>upv("vfbMnpNum",v)} p="3XXXXXXXXX"/>
               </div>
@@ -2291,7 +2289,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
               <RB label="TNP?" val={sd.vfbTnp} opts={["Sì","No"]} onCh={v=>{upv("vfbTnp",v);if(v==="No"){upv("vfbModello","");upv("vfbImei","");upv("vfbEasyRent",null);upv("vfbRataPiva",null);}}}/>
               {sd.vfbTnp==="Sì"&&(
                 <div style={{background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14,marginBottom:12}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px",marginBottom:10}}>
+                  <div className="rvG2" style={{marginBottom:10}}>
                     <DD l="Modello terminale" r v={sd.vfbModello||""} o={v=>upv("vfbModello",v)} vals={deviceList}/>
                     <TF l="IMEI" r v={sd.vfbImei||""} o={v=>upv("vfbImei",v)} p="15 cifre" nt="Barcode 📷"/>
                   </div>
@@ -2321,9 +2319,9 @@ const VFBizMobile = ({sd,uP,sc}) => {
                   )}
                 </div>
               )}
-              <div style={{marginTop:8,background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+              <div className="rvBox" style={{marginTop:8}}>
+                <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+                <div className="rvG2">
                   <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbCodIns||""} onCh={v=>upv("vfbCodIns",v)}/>
                   <TF l="Numero" v={sd.vfbNum||""} o={v=>upv("vfbNum",v)} p="3XXXXXXXXX"/>
                   <TF l="ICCID" r v={sd.vfbIccid||""} o={v=>upv("vfbIccid",v)} p="8939..." nt="Barcode 📷"/>
@@ -2349,8 +2347,8 @@ const VFBizMobileCB = ({sd,uP,sc}) => {
         </button>
       </div>
       {sd.vfbCbOn&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+        <div className="rvBox">
+          <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
           <div style={{marginBottom:10}}>
             <TF l="Numero di cellulare" r v={sd.vfbCbCell||""} o={v=>upv("vfbCbCell",v)} p="3XXXXXXXXX"/>
           </div>
@@ -2371,7 +2369,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
           <RB label="MNP?" val={sd.vfbFMnp} opts={["Sì","No"]} onCh={v=>{upv("vfbFMnp",v);if(v==="No"){upv("vfbFMnpBrand","");upv("vfbFMnpNum","");}}}/>
           {sd.vfbFMnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.vfbFMnpBrand||""} o={v=>upv("vfbFMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfbFMnpNum||""} o={v=>upv("vfbFMnpNum",v)} p="3XXXXXXXXX"/>
               </div>
@@ -2382,7 +2380,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
       <RB label="GNP?" val={sd.vfbFGnp} opts={["Sì","No"]} onCh={v=>{upv("vfbFGnp",v);if(v==="No"){upv("vfbFGnpBrand","");upv("vfbFGnpNum","");}}}/>
       {sd.vfbFGnp==="Sì"&&(
         <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:8,padding:12,marginBottom:12}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+          <div className="rvG2">
             <DD l="Operatore GNP" r v={sd.vfbFGnpBrand||""} o={v=>upv("vfbFGnpBrand",v)} vals={VF_GNP_BRANDS}/>
             {/* Segnalazione 78: il numero fisso GNP e' anche il definitivo, quindi lo
                 riportiamo da solo e non lo si richiede una seconda volta. */}
@@ -2392,9 +2390,9 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
       )}
       {sd.vfbFGnp&&(
         <div>
-          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+          <div className="rvBox">
+            <div className="rvBoxT" style={{marginBottom:12}}>📋 Dati Contratto</div>
+            <div className="rvG2">
               <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbFCodIns||""} onCh={v=>upv("vfbFCodIns",v)}/>
               {sd.vfbFGnp==="Sì"?(
                 <TF l="N. Fisso Provvisorio" r v={sd.vfbFNumProv||""} o={v=>upv("vfbFNumProv",v)} p="06XXXXXXXX"/>
@@ -2447,7 +2445,7 @@ const ILMobile = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {IL_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.ilOffer===offer;
@@ -2464,7 +2462,7 @@ const ILMobile = ({sd, uP, sc}) => {
           <RB label="MNP?" val={sd.ilMnp} opts={["Sì","No"]} onCh={v=>{upv("ilMnp",v);if(v==="No"){upv("ilMnpBrand","");upv("ilMnpNum","");}}}/>
           {sd.ilMnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.ilMnpBrand||""} o={v=>upv("ilMnpBrand",v)} vals={IL_GNP_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.ilMnpNum||""} o={v=>upv("ilMnpNum",v)} p="3XXXXXXXXX"/>
               </div>
@@ -2472,9 +2470,9 @@ const ILMobile = ({sd, uP, sc}) => {
           )}
           {sd.ilMnp&&<RB label="Domiciliata?" val={sd.ilDom} opts={["Sì","No"]} onCh={v=>upv("ilDom",v)}/>}
           {sd.ilDom&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+            <div className="rvBox">
+              <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+              <div className="rvG2">
                 <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilCodIns||""} onCh={v=>upv("ilCodIns",v)}/>
                 {sd.ilMnp==="Sì"?(
                   <TF l="Numero Provvisorio" r v={sd.ilNumProv||""} o={v=>upv("ilNumProv",v)} p="393XXXXXXX"/>
@@ -2498,9 +2496,9 @@ const ILFisso = ({sd, uP, sc}) => {
     <div>
       <RB label="GNP?" val={sd.ilFGnp} opts={["Sì","No"]} onCh={v=>{upv("ilFGnp",v);if(v==="No"){upv("ilFGnpBrand","");upv("ilFGnpNum","");}}}/>
       {sd.ilFGnp&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+        <div className="rvBox">
+          <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+          <div className="rvG2">
             <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFCodIns||""} onCh={v=>upv("ilFCodIns",v)}/>
             {sd.ilFGnp==="Sì"?(
               <TF l="Numero Fisso Provvisorio" r v={sd.ilFNumProv||""} o={v=>upv("ilFNumProv",v)} p="06XXXXXXXX"/>
@@ -2521,9 +2519,9 @@ const ILFisso = ({sd, uP, sc}) => {
 const ILFwa = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+    <div className="rvBox">
+      <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+      <div className="rvG2">
         <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFwaCodIns||""} onCh={v=>upv("ilFwaCodIns",v)}/>
         <TF l="ICCID" r v={sd.ilFwaIccid||""} o={v=>upv("ilFwaIccid",v)} p="8939..." nt="Barcode 📷"/>
       </div>
@@ -2856,7 +2854,7 @@ const TIMMobile = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {TIM_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.timOffer===offer;
@@ -2871,7 +2869,7 @@ const TIMMobile = ({sd, uP, sc}) => {
           <RB label="MNP?" val={sd.timMnp} opts={["Sì","No"]} onCh={v=>{upv("timMnp",v);if(v==="No"){upv("timMnpBrand","");upv("timMnpNum","");}}}/>
           {sd.timMnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.timMnpBrand||""} o={v=>upv("timMnpBrand",v)} vals={brandMNP}/>
                 <TF l="Numero Portabilità" r v={sd.timMnpNum||""} o={v=>upv("timMnpNum",v)} p="3XXXXXXXXX"/>
               </div>
@@ -2880,13 +2878,13 @@ const TIMMobile = ({sd, uP, sc}) => {
           {sd.timMnp&&<RB label="TNP?" val={sd.timTnp} opts={["Sì","No"]} onCh={v=>{upv("timTnp",v);if(v==="No"){upv("timModello","");upv("timSpedizione",null);upv("timFinanziato",null);upv("timCodPratica","");upv("timImei","");}}}/>}
           {sd.timTnp==="Sì"&&(
             <div style={{background:VF_LIGHT,border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px",marginBottom:10}}>
+              <div className="rvG2" style={{marginBottom:10}}>
                 <DD l="Modello terminale" r v={sd.timModello||""} o={v=>upv("timModello",v)} vals={TIM_SMARTPHONES_GROUPED}/>
               </div>
               <RB label="Spedizione?" val={sd.timSpedizione} opts={["Sì","No"]} onCh={v=>upv("timSpedizione",v)}/>
               <RB label="Finanziato?" val={sd.timFinanziato} opts={["Sì","No"]} onCh={v=>{upv("timFinanziato",v);if(v==="No")upv("timCodPratica","");}}/>
               {sd.timFinanziato==="Sì"&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginTop:4}}>
+                <div className="rvG2" style={{marginTop:4}}>
                   <TF l="Codice Pratica" r v={sd.timCodPratica||""} o={v=>upv("timCodPratica",v)} p="es. PR123456"/>
                 </div>
               )}
@@ -2895,19 +2893,19 @@ const TIMMobile = ({sd, uP, sc}) => {
           {sd.timTnp&&<RB label="Box TIM Vision?" val={sd.timVisionBox} opts={["Sì","No"]} onCh={v=>{upv("timVisionBox",v);if(v==="No"){upv("timVisionTaglia",null);upv("timVisionNumContr","");}}}/>}
           {sd.timVisionBox==="Sì"&&(
             <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid rgba(111,66,193,0.3)",borderRadius:8,padding:14,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+              <div className="rvBoxT" style={{color:"var(--tf-6f42c1)",marginBottom:8}}>TIM Vision <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 {TIM_VISION_TAGLIE.map(t=>{const on=sd.timVisionTaglia===t;return <button key={t} onClick={()=>upv("timVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:on?"var(--tf-6f42c1)":"var(--tf-w40)",color:on?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <TF l="Numero Contratto" r v={sd.timVisionNumContr||""} o={v=>upv("timVisionNumContr",v)} p="N. contratto Vision"/>
               </div>
             </div>
           )}
           {sd.timTnp&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+            <div className="rvBox">
+              <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+              <div className="rvG2">
                 <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timCodIns||""} onCh={v=>upv("timCodIns",v)}/>
                 {sd.timMnp==="Sì"?(
                   <TF l="Numero Provvisorio" r v={sd.timNumProv||""} o={v=>upv("timNumProv",v)} p="393XXXXXXX"/>
@@ -2930,7 +2928,7 @@ const TIMFisso = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Prodotto Fisso</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Prodotto Fisso</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {TIM_FISSO_OFFERS.map(offer=>{const isActive=sd.timFOffer===offer;return (
           <button key={offer} onClick={()=>{upv("timFOffer",isActive?null:offer);if(isActive){upv("timFGnp",null);upv("timFGnpBrand","");upv("timFGnpNum","");upv("timFNumProv","");upv("timFCodIns","");upv("timFVision",null);upv("timFVisionTaglia",null);upv("timFVisionNumContr","");}}}
@@ -2942,16 +2940,16 @@ const TIMFisso = ({sd, uP, sc}) => {
           <RB label="GNP?" val={sd.timFGnp} opts={["Sì","No"]} onCh={v=>{upv("timFGnp",v);if(v==="No"){upv("timFGnpBrand","");upv("timFGnpNum","");}}}/>
           {sd.timFGnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore GNP" r v={sd.timFGnpBrand||""} o={v=>upv("timFGnpBrand",v)} vals={GNP_FISSO_BRANDS}/>
                 <TF l="Numero Fisso Portabilità" r v={sd.timFGnpNum||""} o={v=>upv("timFGnpNum",v)} p="06XXXXXXXX"/>
               </div>
             </div>
           )}
           {sd.timFGnp&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+            <div className="rvBox" style={{marginBottom:12}}>
+              <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+              <div className="rvG2">
                 <TF l="Numero Fisso Provvisorio" r v={sd.timFNumProv||""} o={v=>upv("timFNumProv",v)} p="06XXXXXXXX"/>
                 <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timFCodIns||""} onCh={v=>upv("timFCodIns",v)}/>
               </div>
@@ -2960,11 +2958,11 @@ const TIMFisso = ({sd, uP, sc}) => {
           {sd.timFGnp&&<RB label="TIM Vision?" val={sd.timFVision} opts={["Sì","No"]} onCh={v=>{upv("timFVision",v);if(v==="No"){upv("timFVisionTaglia",null);upv("timFVisionNumContr","");}}}/>}
           {sd.timFVision==="Sì"&&(
             <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid rgba(111,66,193,0.3)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+              <div className="rvBoxT" style={{color:"var(--tf-6f42c1)",marginBottom:8}}>TIM Vision <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 {TIM_VISION_TAGLIE.map(t=>{const on=sd.timFVisionTaglia===t;return <button key={t} onClick={()=>upv("timFVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:on?"var(--tf-6f42c1)":"var(--tf-w40)",color:on?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <TF l="Numero Contratto" r v={sd.timFVisionNumContr||""} o={v=>upv("timFVisionNumContr",v)} p="N. contratto Vision"/>
               </div>
             </div>
@@ -2982,9 +2980,9 @@ const TIMTelepass = ({sd, uP, sc}) => {
     <div>
       <RB label="Twin?" val={sd.timTpTwin} opts={["Sì","No"]} onCh={v=>upv("timTpTwin",v)}/>
       {sd.timTpTwin&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+        <div className="rvBox">
+          <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+          <div className="rvG2">
             <TF l="Seriale Telepass" r v={sd.timTpSeriale||""} o={v=>upv("timTpSeriale",v)} p="Seriale"/>
             <TF l="Recapito Cliente" r v={sd.timTpRecapito||""} o={v=>upv("timTpRecapito",v)} p="Tel/Email"/>
             <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timTpCodIns||""} onCh={v=>upv("timTpCodIns",v)}/>
@@ -3027,7 +3025,7 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
   const offSel=sd[K("Offer")];
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Tipologia offerta</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Tipologia offerta</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         <button onClick={()=>{const on=offSel==="MOBILE";upv(K("Offer"),on?null:"MOBILE");if(on){upv(K("Mnp"),null);upv(K("MnpBrand"),"");upv(K("MnpNum"),"");upv(K("RicaricaAuto"),null);upv(K("Fascia"),null);upv(K("CodIns"),"");upv(K("NumProv"),"");upv(K("Num"),"");upv(K("Iccid"),"");}}}
           style={{padding:"8px 22px",borderRadius:10,border:offSel==="MOBILE"?"2px solid "+accent:"2px solid var(--tf-w100)",background:offSel==="MOBILE"?accent:"var(--tf-w40)",color:offSel==="MOBILE"?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>MOBILE</button>
@@ -3037,7 +3035,7 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
           <RB label="MNP?" val={sd[K("Mnp")]} opts={["Sì","No"]} onCh={v=>{upv(K("Mnp"),v);if(v==="No"){upv(K("MnpBrand"),"");upv(K("MnpNum"),"");}}}/>
           {sd[K("Mnp")]==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd[K("MnpBrand")]||""} o={v=>upv(K("MnpBrand"),v)} vals={brandMNP}/>
                 <TF l="Numero Portabilità" r v={sd[K("MnpNum")]||""} o={v=>upv(K("MnpNum"),v)} p="3XXXXXXXXX"/>
               </div>
@@ -3050,9 +3048,9 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
             </div>
           )}
           {sd[K("RicaricaAuto")]&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+            <div className="rvBox">
+              <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+              <div className="rvG2">
                 <SCd session={sc} codici={codici} val={sd[K("CodIns")]||""} onCh={v=>upv(K("CodIns"),v)}/>
                 {sd[K("Mnp")]==="Sì"?(
                   <TF l="Numero Provvisorio" r v={sd[K("NumProv")]||""} o={v=>upv(K("NumProv"),v)} p="393XXXXXXX"/>
@@ -3075,7 +3073,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div className="rvBoxT" style={{color:"var(--tf-64748b)",marginBottom:8}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {IL_BIZ_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.ilBizOffer===offer;
@@ -3092,7 +3090,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
           <RB label="MNP?" val={sd.ilBizMnp} opts={["Sì","No"]} onCh={v=>{upv("ilBizMnp",v);if(v==="No"){upv("ilBizMnpBrand","");}}}/>
           {sd.ilBizMnp==="Sì"&&(
             <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Operatore provenienza" r v={sd.ilBizMnpBrand||""} o={v=>upv("ilBizMnpBrand",v)} vals={IL_GNP_BRANDS}/>
                 <TF l="Numero Definitivo" r v={sd.ilBizNumDef||""} o={v=>upv("ilBizNumDef",v)} p="3XXXXXXXXX"/>
               </div>
@@ -3102,9 +3100,9 @@ const ILBizMobile = ({sd, uP, sc}) => {
             <div>
               <RB label="Domiciliata?" val={sd.ilBizDom} opts={["Sì","No"]} onCh={v=>upv("ilBizDom",v)}/>
               {sd.ilBizDom&&(
-                <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14,marginTop:8}}>
-                  <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+                <div className="rvBox" style={{marginTop:8}}>
+                  <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
+                  <div className="rvG2">
                     <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilBizCodIns||""} onCh={v=>upv("ilBizCodIns",v)}/>
                     <TF l="Numero Provvisorio" r v={sd.ilBizNum||""} o={v=>upv("ilBizNum",v)} p="3XXXXXXXXX"/>
                     <TF l="ICCID" r v={sd.ilBizIccid||""} o={v=>upv("ilBizIccid",v)} p="8939..." nt="Barcode 📷"/>
@@ -3123,9 +3121,9 @@ const ILBizMobile = ({sd, uP, sc}) => {
 const W3SostSim = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+    <div className="rvBox">
+      <div className="rvBoxT" style={{marginBottom:10}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div className="rvG2">
         <TF l="Numero" r v={sd.w3SostCell||""} o={v=>upv("w3SostCell",v)} p="3XXXXXXXXX"/>
         <TF l="ICCID" r v={sd.w3SostIccid||""} o={v=>upv("w3SostIccid",v)} p="19 cifre" nt="Barcode 📷"/>
         <TF l="Codice Contratto" r v={sd.w3SostCodContr||""} o={v=>upv("w3SostCodContr",v)} p="Codice contratto"/>
@@ -3141,8 +3139,8 @@ const FWSostSim = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   return (
     <div style={{background:"rgba(204,153,0,0.10)",border:"1px solid rgba(204,153,0,0.25)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-cc9900)",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+      <div className="rvBoxT" style={{color:"var(--tf-cc9900)",marginBottom:10}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div className="rvG2">
         <TF l="Numero" r v={sd.fwSostCell||""} o={v=>upv("fwSostCell",v)} p="3XXXXXXXXX"/>
         <TF l="ICCID" r v={sd.fwSostIccid||""} o={v=>upv("fwSostIccid",v)} p="8939..." nt="Barcode 📷"/>
         <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwSostCodIns||""} onCh={v=>upv("fwSostCodIns",v)}/>
@@ -3154,9 +3152,9 @@ const FWSostSim = ({sd, uP, sc, dupCheck}) => {
 const VFSostSim = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+    <div className="rvBox">
+      <div className="rvBoxT" style={{marginBottom:10}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div className="rvG2">
         <TF l="Numero" r v={sd.vfSostCell||""} o={v=>upv("vfSostCell",v)} p="3XXXXXXXXX"/>
         <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfSostCodIns||""} onCh={v=>upv("vfSostCodIns",v)}/>
       </div>
@@ -3169,9 +3167,9 @@ const ENLuceGas = ({sd, uP, sub, dupCheck, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const isLuce = sub.enProd==="Luce"||sub.enProd==="LuceRID";
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+    <div className="rvBox">
+      <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
+      <div className="rvG2">
         <SCd session={sc} codici={EN_CODICI_NEGOZIO} val={sd.enCodIns||""} onCh={v=>upv("enCodIns",v)}/>
         <DD l="Operatore provenienza" r v={sd.enProv||""} o={v=>upv("enProv",v)} vals={opProv}/>
         {isLuce?(
@@ -3481,14 +3479,11 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
       </div>
     )}
     {(offerte.length===0||off)&&campi.length>0&&(
-      /* DATI CONTRATTO — vestito come il resto (Luca 28/08): fondo sfumato,
-         filetto del brand a sinistra, campi più larghi e aria fra le righe */
-      <div style={{marginTop:12,padding:"13px 14px",borderRadius:14,
-        background:`linear-gradient(160deg, color-mix(in srgb, ${color} 9%, transparent), var(--tf-w30))`,
-        border:`1px solid color-mix(in srgb, ${color} 26%, transparent)`,
-        boxShadow:`0 1px 0 rgba(255,255,255,.03) inset, 0 8px 26px -18px ${color}`}}>
-        <div className="rvSez" style={{fontSize:11.5,fontWeight:800,color,marginBottom:11,textTransform:"uppercase",letterSpacing:".7px"}}>Dati contratto</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:"12px 14px"}}>
+      /* DATI CONTRATTO — la classe condivisa, ma con la tinta della CATEGORIA
+         invece che del brand: qui il colore lo porta il prodotto scelto */
+      <div className="rvBox" style={{marginTop:12,"--rv-acc":color}}>
+        <div className="rvBoxT">Dati contratto</div>
+        <div className="rvG2">
           {campi.map(cmp=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
             if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
@@ -3799,7 +3794,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           )}
           {/* Security when Easy Pay = No (after Offerta Mobile) */}
           {mobDone&&(sd.easyPay==="No"||sd.easyPay===false)&&(
-            <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+            <div className="rvSub" style={{marginTop:8}}>
               <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security</div>
               <div style={{display:"flex",gap:6}}>
                 {["Security","Security PRO"].map(s=>
@@ -3815,15 +3810,15 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <div style={{marginTop:8}}>
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v=>{uP(group.id,si,sub.id,"tnpGa",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"tnpTipo","");uP(group.id,si,sub.id,"tnpModello","");uP(group.id,si,sub.id,"tnpImei","");uP(group.id,si,sub.id,"tnpGaReload",null);uP(group.id,si,sub.id,"tnpGaReloadSel",{})}}} opts={["Sì","No"]}/>
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&(
-                <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginTop:4}}>
-                  <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Dati TNP GA</div>
+                <div className="rvBox" style={{padding:"10px 12px",marginTop:4}}>
+                  <div className="rvBoxT" style={{color:"var(--tf-2e75b6)",marginBottom:8}}>Dati TNP GA</div>
                   <div style={{display:"flex",gap:6,marginBottom:sd.tnpTipo?8:0}}>
                     {["Rata 5G","Finanziamento > 600€","Finanziamento < 600€"].map(opt=>
                       <button key={opt} onClick={()=>uP(group.id,si,sub.id,"tnpTipo",opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.tnpTipo===opt?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.tnpTipo===opt?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.tnpTipo===opt?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
                     )}
                   </div>
                   {sd.tnpTipo&&(
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+                    <div className="rvG2">
                       {!sd.tnpTipo.startsWith("Finanziamento")&&<DD l="Modello Terminale" r v={sd.tnpModello||""} o={v=>uP(group.id,si,sub.id,"tnpModello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>}
                       {!sd.tnpTipo.startsWith("Finanziamento")&&<TF l="IMEI" r v={sd.tnpImei||""} o={v=>uP(group.id,si,sub.id,"tnpImei",v)} p="15 cifre" nt="Barcode 📷"/>}
                     </div>
@@ -3843,14 +3838,14 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                         )}
                       </div>
                       {sd.tnpCount&&[...Array(sd.tnpCount)].map((_,idx)=>(
-                        <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                        <div key={idx} className="rvSub" className="rvG2" style={{marginBottom:8}}>
                           <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:2}}>Terminale {sd.tnpCount>1?idx+1:""}</div>
                           <DD l="Modello Terminale" r v={(sd.tnpModelli&&sd.tnpModelli[idx])||""} o={v=>{const m=[...(sd.tnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"tnpModelli",m)}} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.tnpImeis&&sd.tnpImeis[idx])||""} o={v=>{const im=[...(sd.tnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"tnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
                         </div>
                       ))}
                       {sd.tnpCount&&(
-                        <div style={{marginTop:4,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                        <div className="rvSub" style={{marginTop:4}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <YN val={sd.packAccessori} onCh={v=>uP(group.id,si,sub.id,"packAccessori",v)} label="Pack Accessori?"/>
                             {(sd.packAccessori===true)&&(
@@ -3874,7 +3869,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                   )}
                   {/* Reload inside TNP GA */}
                   {sd.tnpTipo&&(
-                    <div style={{marginTop:10,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                    <div className="rvSub" style={{marginTop:10}}>
                       <YN val={sd.tnpGaReload} onCh={v=>{uP(group.id,si,sub.id,"tnpGaReload",v);if(!v)uP(group.id,si,sub.id,"tnpGaReloadSel",{})}} label="Reload?"/>
                       {(sd.tnpGaReload===true)&&(
                         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6}}>
@@ -3891,7 +3886,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               )}
               {/* Security for TNP GA = Sì: OUTSIDE blue box, before dati contratto */}
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&(
-                <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                <div className="rvSub" style={{marginTop:8}}>
                   <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security</div>
                   <div style={{display:"flex",gap:6}}>
                     {["Security","Security PRO"].map(s=>
@@ -3909,7 +3904,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <div style={{marginTop:6}}>
               <YN val={sd.reloadForever} onCh={v=>uP(group.id,si,sub.id,"reloadForever",v)} label="Reload Forever?"/>
               {/* Security when TNP GA = No (after Reload Forever) */}
-              <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+              <div className="rvSub" style={{marginTop:8}}>
                 <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security</div>
                 <div style={{display:"flex",gap:6}}>
                   {["Security","Security PRO"].map(s=>
@@ -3974,15 +3969,15 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v=>{uP(group.id,si,sub.id,"tnpGa",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"tnpTipo","");uP(group.id,si,sub.id,"tnpModello","");uP(group.id,si,sub.id,"tnpImei","");uP(group.id,si,sub.id,"tnpGaReload",null);uP(group.id,si,sub.id,"tnpGaReloadSel",{})}}} opts={["Sì","No"]}/>
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&(
                 <div style={{marginTop:8}}>
-                  <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginBottom:8}}>
-                    <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Tipologia TNP GA</div>
+                  <div className="rvBox" style={{padding:"10px 12px",marginBottom:8}}>
+                    <div className="rvBoxT" style={{color:"var(--tf-2e75b6)",marginBottom:8}}>Tipologia TNP GA</div>
                     <div style={{display:"flex",gap:6}}>
                       {["Rata P.IVA","Rata P.IVA 5G"].map(opt=>
                         <button key={opt} onClick={()=>uP(group.id,si,sub.id,"tnpTipo",sd.tnpTipo===opt?"":opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.tnpTipo===opt?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.tnpTipo===opt?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.tnpTipo===opt?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
                       )}
                     </div>
                   </div>
-                  <div style={{padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                  <div className="rvSub">
                     <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security / Reload</div>
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       <button onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel["Security"]?{}:{"Security":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel["Security"]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel["Security"]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel["Security"]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
@@ -3998,7 +3993,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                 </div>
               )}
               {(sd.tnpGa==="No"||sd.tnpGa===false)&&(
-                <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                <div className="rvSub" style={{marginTop:8}}>
                   <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security / Reload</div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                     <button onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel["Security"]?{}:{"Security":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel["Security"]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel["Security"]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel["Security"]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
@@ -4048,17 +4043,17 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isVFFisso&&<VFMobileGAFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
       {sub.isVFFissoBiz&&<VFBizFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} isCombo={!!sub.isCombinatoFissoBiz} sc={sessionCode}/>}
       {sub.isVFSolDig&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+        <div className="rvBox" style={{padding:"12px 13px"}}>
+          <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto</div>
           <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.vfSolDigCodIns||""} onCh={v=>uP(group.id,si,sub.id,"vfSolDigCodIns",v)}/>
         </div>
       )}
 
       {/* Kasko Facile */}
       {sub.isKaskoFacile&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Kasko Facile</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+        <div className="rvBox" style={{padding:"12px 13px"}}>
+          <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto — Kasko Facile</div>
+          <div className="rvG2">
             <TF l="IMEI" r v={f.kfImei||""} o={v=>uF(group.id,si,sub.id,"kfImei",v)} p="15 cifre" nt="Barcode 📷"/>
             <TF l="Numero di telefono" r v={f.kfTelefono||""} o={v=>uF(group.id,si,sub.id,"kfTelefono",v)} p="3XXXXXXXXX"/>
             <TF l="Seriale Kasko" r v={f.kfSeriale||""} o={v=>uF(group.id,si,sub.id,"kfSeriale",v)} p="es. KF-000123"/>
@@ -4075,9 +4070,9 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Vodafone Care */}
       {sub.isVFCare&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Vodafone Care</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+        <div className="rvBox" style={{padding:"12px 13px"}}>
+          <div className="rvBoxT" style={{marginBottom:10}}>📋 Dati Contratto — Vodafone Care</div>
+          <div className="rvG2">
             <TF l="Numero di telefono" r v={f.vcTelefono||""} o={v=>uF(group.id,si,sub.id,"vcTelefono",v)} p="3XXXXXXXXX"/>
             <TF l="IMEI" r v={f.vcImei||""} o={v=>uF(group.id,si,sub.id,"vcImei",v)} p="15 cifre" nt="Barcode 📷"/>
             <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.vcCodIns||""} onCh={v=>uP(group.id,si,sub.id,"vcCodIns",v)}/>
@@ -4108,15 +4103,15 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
           {/* TNP CB section */}
           {sd.cbTnp&&(
-            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Dati TNP CB</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px",marginBottom:8}}>
+            <div className="rvBox" style={{padding:"10px 12px",marginBottom:8}}>
+              <div className="rvBoxT" style={{color:"var(--tf-2e75b6)",marginBottom:8}}>Dati TNP CB</div>
+              <div className="rvG3" style={{marginBottom:8}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbTnpCodIns||""} onCh={v=>uP(group.id,si,sub.id,"cbTnpCodIns",v)}/>
                 <TF l="Cellulare" r v={sd.cbTnpCell||""} o={v=>{uP(group.id,si,sub.id,"cbTnpCell",v);if(sd.cbCambio)uP(group.id,si,sub.id,"cbCambioCell",v)}} p="3XXXXXXXXX" nt={sd.cbTnpCell===anaCel&&anaCel?"Da anagrafica":""}/>
                 <TF l="Codice Contratto" r v={sd.cbTnpCC||""} o={v=>{uP(group.id,si,sub.id,"cbTnpCC",v);if(sd.cbCambio)uP(group.id,si,sub.id,"cbCambioCC",v)}} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",sd.cbTnpCC)?"Codice contratto già usato in un altro prodotto":""}/>
               </div>
               {sub.isCBBiz&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8}}>
+                <div className="rvG2" style={{marginBottom:8}}>
                   <DD l="Modello Terminale" r v={sd.cbTnpModello||""} o={v=>uP(group.id,si,sub.id,"cbTnpModello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                   <TF l="IMEI" r v={sd.cbTnpImei||""} o={v=>uP(group.id,si,sub.id,"cbTnpImei",v)} p="15 cifre" nt="Barcode 📷"/>
                 </div>
@@ -4128,7 +4123,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               </div>
               {!sub.isCBBiz&&sd.cbTnpTipo&&(
                 <div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+                  <div className="rvG2">
                     {!sd.cbTnpTipo.startsWith("Finanziamento")&&<DD l="Modello Terminale" r v={sd.cbTnpModello||""} o={v=>uP(group.id,si,sub.id,"cbTnpModello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>}
                     {!sd.cbTnpTipo.startsWith("Finanziamento")&&<TF l="IMEI" r v={sd.cbTnpImei||""} o={v=>uP(group.id,si,sub.id,"cbTnpImei",v)} p="15 cifre" nt="Barcode 📷"/>}
                   </div>
@@ -4144,14 +4139,14 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                         )}
                       </div>
                       {sd.cbTnpCount&&[...Array(sd.cbTnpCount)].map((_,idx)=>(
-                        <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                        <div key={idx} className="rvSub" className="rvG2" style={{marginBottom:8}}>
                           <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:2}}>Terminale {sd.cbTnpCount>1?idx+1:""}</div>
                           <DD l="Modello Terminale" r v={(sd.cbTnpModelli&&sd.cbTnpModelli[idx])||""} o={v=>{const m=[...(sd.cbTnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"cbTnpModelli",m)}} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.cbTnpImeis&&sd.cbTnpImeis[idx])||""} o={v=>{const im=[...(sd.cbTnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"cbTnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
                         </div>
                       ))}
                       {sd.cbTnpCount&&(
-                        <div style={{marginTop:4,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                        <div className="rvSub" style={{marginTop:4}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <YN val={sd.cbPackAccessori} onCh={v=>uP(group.id,si,sub.id,"cbPackAccessori",v)} label="Pack Accessori?"/>
                             {(sd.cbPackAccessori===true)&&(
@@ -4176,7 +4171,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                 </div>
               )}
               {/* Reload inside TNP CB */}
-              <div style={{marginTop:8,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+              <div className="rvSub" style={{marginTop:8}}>
                 <YN val={sd.cbTnpReload} onCh={v=>{uP(group.id,si,sub.id,"cbTnpReload",v);if(!v)uP(group.id,si,sub.id,"cbTnpReloadSel",{})}} label="Reload?"/>
                 {(sd.cbTnpReload===true)&&(
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6}}>
@@ -4194,7 +4189,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           {/* Cambio Offerta section */}
           {sd.cbCambio&&(
             <div style={{padding:10,background:"rgba(111,66,193,0.10)",borderRadius:8,border:"1px solid rgba(111,66,193,0.3)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:8,textTransform:"uppercase"}}>Cambio Offerta</div>
+              <div className="rvBoxT" style={{color:"var(--tf-6f42c1)",marginBottom:8}}>Cambio Offerta</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbCambioCodIns||""} onCh={v=>uP(group.id,si,sub.id,"cbCambioCodIns",v)}/>
               </div>
@@ -4217,7 +4212,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           {/* Add-on section inside CB */}
           {sub.cbAddonVals&&sd.cbAddon&&(
             <div style={{padding:10,background:"rgba(40,167,69,0.10)",borderRadius:8,border:"1px solid rgba(40,167,69,0.3)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-28a745)",marginBottom:8,textTransform:"uppercase"}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</div>
+              <div className="rvBoxT" style={{color:"var(--tf-28a745)",marginBottom:8}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbAddonCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbAddonCodIns",v)}/>
               </div>
@@ -4239,7 +4234,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                 </div>
               )}
               {sd.cbAddonSel&&sd.cbAddonSel["Reload Open"]&&(
-                <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+                <div className="rvG2" style={{marginTop:10}}>
                   <TF l="Cellulare" r v={sd.cbAddonRoCell||""} o={v=>uP(group.id,si,sub.id,"cbAddonRoCell",v)} p="3XXXXXXXXX" nt={sd.cbAddonRoCell===anaCel&&anaCel?"Da anagrafica":""}/>
                   <TF l="IMEI" r v={sd.cbAddonRoImei||""} o={v=>uP(group.id,si,sub.id,"cbAddonRoImei",v)} p="15 cifre" nt="Barcode 📷"/>
                 </div>
@@ -4247,12 +4242,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             </div>
           )}
           {!sub.isCBBiz&&sd.cbRf&&(
-            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Dati Reload Forever</div>
+            <div className="rvBox" style={{padding:"10px 12px",marginBottom:8}}>
+              <div className="rvBoxT" style={{color:"var(--tf-2e75b6)",marginBottom:8}}>Dati Reload Forever</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbRfCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbRfCodIns",v)}/>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              <div className="rvG2">
                 <DD l="Modello Terminale" r v={sd.rfModello||""} o={v=>uP(group.id,si,sub.id,"rfModello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                 <TF l="IMEI" r v={sd.rfImei||""} o={v=>uP(group.id,si,sub.id,"rfImei",v)} p="15 cifre" nt="Barcode 📷"/>
               </div>
@@ -4293,18 +4288,18 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* GNP */}
       {sub.hasGnpQ&&<><YN val={sd.gnp} onCh={v=>uP(group.id,si,sub.id,"gnp",v)} label="C'è una GNP?"/>
-        {sd.gnp&&<div style={{padding:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+        {sd.gnp&&<div className="rvG2" style={{padding:10}}>
           <TF l="N. Fisso Definitivo da portare" r v={sd.gnpNum||""} o={v=>uP(group.id,si,sub.id,"gnpNum",v)} p="Numero"/>
           <DD l="Op. provenienza GNP" r v={sd.gnpOp||""} o={v=>uP(group.id,si,sub.id,"gnpOp",v)} vals={GNP_FISSO_BRANDS}/>
         </div>}</>}
 
       {sub.has2LQ&&<YN val={sd.secondaLinea} onCh={v=>uP(group.id,si,sub.id,"secondaLinea",v)} label="C'è una seconda linea?"/>}
       {sub.has2LQ&&(sd.secondaLinea===true||sd.secondaLinea==="Sì")&&(
-        <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginTop:4}}>
-          <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>2° Linea</div>
+        <div className="rvBox" style={{padding:"10px 12px",marginTop:4}}>
+          <div className="rvBoxT" style={{color:"var(--tf-2e75b6)",marginBottom:8}}>2° Linea</div>
           <MiniC label="GNP 2° Linea" val={sd.gnp2L} onCh={v=>{uP(group.id,si,sub.id,"gnp2L",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"gnp2LBrand","");uP(group.id,si,sub.id,"gnp2LNum","")}}} opts={["Sì","No"]}/>
           {(sd.gnp2L==="Sì"||sd.gnp2L===true)&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginTop:6}}>
+            <div className="rvG2" style={{marginTop:6}}>
               <DD l="Brand MNP 2° Linea" r v={sd.gnp2LBrand||""} o={v=>uP(group.id,si,sub.id,"gnp2LBrand",v)} vals={["TIM","Vodafone","Fastweb","Sky","Tiscali","WINDTRE","BT Enia","Ehiweb","Infratel","Vianova","Isiline","Convergenze","Full Telecom","Optima","Fibra.tn"]}/>
               <TF l="N. Fisso Portabilità 2° Linea" r v={sd.gnp2LNum||""} o={v=>uP(group.id,si,sub.id,"gnp2LNum",v)} p="06XXXXXXXX"/>
             </div>
@@ -4314,7 +4309,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Addon/Checklist checkboxes (hidden for Voce Casa) */}
       {sub.hasAddons&&sub.addonList&&!isVCMode&&(
-        <div style={{marginTop:10,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
+        <div className="rvSub" style={{marginTop:10}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:8}}>{sub.isFisso?"Add-on Fisso":"Seleziona prodotti"}</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {sub.addonList.map(ad=>
@@ -4330,7 +4325,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* LG Convergente */}
       {sub.hasConvLG&&(
-        <div style={{marginTop:8,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
+        <div className="rvSub" style={{marginTop:8}}>
           <div style={{fontSize:12,fontWeight:700,color:lgConvLocked?"var(--tf-64748b)":"var(--tf-f8fafc)",marginBottom:6}}>Convergente?</div>
           {lgConvLocked?<div style={{display:"flex",alignItems:"center",gap:8}}><button disabled style={{padding:"6px 20px",borderRadius:6,border:"2px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-f87171)",fontSize:12,fontWeight:700,cursor:"not-allowed",opacity:.7}}>No</button><span style={{fontSize:10,color:"var(--tf-64748b)",fontStyle:"italic"}}>Già selezionato altrove</span></div>
           :<div style={{display:"flex",gap:8}}>
@@ -4355,12 +4350,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<DD l="Modello Terminale" r v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>}
             {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<TF l="IMEI" r v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>}
           </div>}
-          {sub.ct==="tnp_ga"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          {sub.ct==="tnp_ga"&&<div className="rvG3">
             <TF l="Codice Contratto" r v={gaOn?(gaC.codice_contratto||""):(c.codice_contratto||"")} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p={gaOn?"← da Mobile GA":"es. 167942"} dis={gaOn} nt={gaOn?"Auto da Mobile GA":""} err={dupCheck&&dupCheck("CODCONTR",gaOn?gaC.codice_contratto:c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
             <DD l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
           </div>}
-          {sub.ct==="tnp_cb"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          {sub.ct==="tnp_cb"&&<div className="rvG3">
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
             <DD l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
@@ -4370,12 +4365,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <TF l="N. Fisso Provvisorio" r v={c.num_fisso_prov||""} o={v=>uC(group.id,si,sub.id,"num_fisso_prov",v)} p="06XXXX"/>
             {sub.hasFwaImei&&<TF l="IMEI" r v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>}
           </div>}
-          {sub.ct==="fisso"&&isVCMode&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          {sub.ct==="fisso"&&isVCMode&&<div className="rvG3">
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
             <TF l="N. Fisso Provvisorio" r v={c.num_fisso_prov||""} o={v=>uC(group.id,si,sub.id,"num_fisso_prov",v)} p="06XXXX"/>
             <TF l="IMEI" r v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
           </div>}
-          {sub.ct==="lg"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          {sub.ct==="lg"&&<div className="rvG3">
             <DD l="Operatore provenienza" r v={sd.opProvenienza||""} o={v=>uP(group.id,si,sub.id,"opProvenienza",v)} vals={opProvNoW3}/>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
             {sub.id==="luce"&&<TF l="POD" r v={c.pod||""} o={v=>uC(group.id,si,sub.id,"pod",v.toUpperCase().replace(/[^A-Z0-9]/g,""))} p="IT001E..." nt="IT + 14-15 caratteri" err={dupCheck&&dupCheck("POD",c.pod)?"POD già inserito in questo contratto":""}/>}
@@ -4408,8 +4403,8 @@ const NoteStep = ({store,show,setShow,scelta,setScelta,nota,setNota,pData,setPDa
   useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
   const si=scelta==="si", no=scelta==="no";
   const content = (
-    <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c",boxShadow:"var(--rv-shadow)"}}>
-      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e83e8c)",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
+    <div className="rvCard" style={{borderLeft:"4px solid #e83e8c"}}>
+      <div className="rvCardT" style={{color:"var(--tf-e83e8c)",marginBottom:14}}>📝 Step 7 — Note / Promemoria</div>
       <div style={{textAlign:"center",marginBottom:show?16:0}}>
         <div style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",marginBottom:10}}>Vuoi aggiungere delle note?</div>
         <div style={{display:"flex",gap:10,justifyContent:"center"}}>
@@ -4418,10 +4413,10 @@ const NoteStep = ({store,show,setShow,scelta,setScelta,nota,setNota,pData,setPDa
         </div>
         {!scelta&&<div style={{fontSize:11,color:"var(--tf-64748b)",marginTop:8}}>Scegli Sì o No per completare lo step</div>}
       </div>
-      {show&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      {show&&<div className="rvG2">
         <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div></div>
+          <div className="rvG2" style={{gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div></div>
           {/* Negozio: si auto-compila dal login ma resta modificabile a mano. */}
           <div style={{marginTop:8}}><DD l="Negozio" v={negozioPro} o={v=>setNegozioPro(v)} vals={negozi} nt="Dal login — modificabile"/></div>
           <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
@@ -6594,7 +6589,9 @@ function CRM() {
 
   // ═══════════ FORM ═══════════
   const formContent = (
-    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0}}>
+    /* la tinta del brand scelto scende a TUTTE le sezioni (Luca 28/08):
+   i riquadri "Dati contratto" erano azzurro Vodafone anche in Fastweb */
+    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,"--rv-acc":bC}}>
       {/* ═══════════════════════════════════════════════════════════════════
           RIEPILOGO VENDITE — SIDEBAR DESKTOP
           Per gli SVILUPPATORI: questa sidebar (className "crmSidebar") è
@@ -6605,29 +6602,80 @@ function CRM() {
             sempre a destra. Su schermi piccoli/anteprima resta nascosto.
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
-      <style>{`@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
-.rvLab{font-size:11.5px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
-.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:var(--tf-w40);border:1px solid var(--tf-w120);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+      <style>{`:root{--rv-acc:var(--tf-6366f1);--rv-menu:#161a2c;--rv-menu-grp:#1b2030}
+html.light{--rv-menu:#ffffff;--rv-menu-grp:#eef1f8}
+@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
+.rvLab{font-size:11.5px;font-weight:800;color:var(--tf-8892b0);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:var(--tf-w40);border:1px solid var(--tf-w120);color:var(--tf-f8fafc);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
 .rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
-.rvIn::placeholder{color:#586174}
+.rvIn::placeholder{color:var(--tf-586174)}
 select.rvIn{cursor:pointer}
 /* ── I CAMPI, VESTITI COME IL CARRELLO (Luca 28/08: «ci sono sezioni in uno
    stile che non è più adatto a quello che abbiamo evoluto»). Le tendine di
    sistema sono sparite: al loro posto il selettore del CRM, che qui prende
    la stessa faccia degli altri campi e i suoi stati — verde quando il dato
    arriva dal codice inserimento, ambra quando è stato cambiato a mano. */
-.rvSel > div{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;background:var(--tf-w40);border:1px solid var(--tf-w120);color:#f8fafc;transition:border-color .15s,box-shadow .15s,background .15s}
+.rvSel > div{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;background:var(--tf-w40);border:1px solid var(--tf-w120);color:var(--tf-f8fafc);transition:border-color .15s,box-shadow .15s,background .15s}
 .rvSel > div:hover{border-color:rgba(129,140,248,.45);background:rgba(99,102,241,.05)}
 .rvSel-ok > div{border:1.5px solid rgba(52,211,153,.55);background:rgba(40,167,69,.10)}
 .rvSel-mod > div{border:1.5px solid rgba(251,146,60,.55);background:rgba(251,146,60,.08)}
-/* la testata di una sezione: filetto colorato a sinistra, come nelle card
-   della Home — si capisce dove comincia un blocco senza leggerne il titolo */
-.rvSez{position:relative;padding-left:11px}
-.rvSez::before{content:"";position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:3px;background:linear-gradient(180deg,rgba(129,140,248,.9),rgba(99,102,241,.25))}
-.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:#161a2c;border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
-.rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:#f8fafc}
+/* ═══ LA CASSETTA DEGLI ATTREZZI (Luca 28/08) ══════════════════════════
+   «ci sono sezioni rimaste un pochettino all style»: il motivo e' che ogni
+   riquadro era ridisegnato a mano dove serviva. Il "Dati contratto" era
+   scritto 20 volte uguale a se stesso e SEMPRE azzurro Vodafone — dentro
+   Fastweb, dentro Sky, dentro WindTre. Da qui in poi e' una classe sola e
+   il colore arriva da --rv-acc, che il form cambia col brand scelto. */
+.rvBox{position:relative;padding:14px 15px;border-radius:14px;box-sizing:border-box;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 9%,transparent),var(--tf-w30));
+  border:1px solid color-mix(in srgb,var(--rv-acc) 26%,transparent);
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 26px -18px var(--rv-acc)}
+.rvBoxT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
+/* la card di uno step: era riscritta 10 volte, e l'ombra del tema chiaro
+   (--rv-shadow) era finita su UNA sola — le altre nove restavano piatte */
+/* il sotto-riquadro neutro: raggruppa domande dentro una sezione. Non
+   prende la tinta del brand, se no si somma a quella del riquadro. */
+.rvSub{background:var(--tf-w20);border:1px solid var(--tf-w100);border-radius:12px;padding:10px 12px}
+.rvBox-sm{padding:11px 13px;border-radius:11px}
+.rvCard{background:var(--tf-w20);border-radius:14px;padding:18px;margin-bottom:12px;box-shadow:var(--rv-shadow)}
+.rvCardT{font-size:11.5px;font-weight:800;color:var(--rv-acc);margin-bottom:12px;text-transform:uppercase;letter-spacing:.7px}
+/* la griglia dei campi: si adatta da sola invece di spezzarsi sui portatili */
+/* le griglie dei campi: erano 56 copie a mano con quattro spaziature
+   diverse (8px, 10px, 12px, 16px) e le colonne FISSE — su uno schermo
+   stretto due colonne schiacciano il campo e un ICCID da 19 cifre non ci
+   sta piu'. Stessa resa sui monitor del negozio, si apre solo dove serve. */
+.rvG2{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.rvG3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px}
+.rvG21{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px 14px}
+.rvG1{display:grid;grid-template-columns:1fr;gap:10px 14px}
+@media(max-width:1000px){.rvG3{grid-template-columns:1fr 1fr}.rvG21{grid-template-columns:2fr 1fr}}
+@media(max-width:700px){.rvG2,.rvG3,.rvG21{grid-template-columns:1fr}}
+/* gli stati del campo, prima ripetuti a mano dentro ogni ternario */
+.rvIn-ok{border:1.5px solid rgba(52,211,153,.55);background:rgba(40,167,69,.10)}
+.rvIn-err{border:1.5px solid #ef4444;background:rgba(239,68,68,.10)}
+.rvIn-lock{border:1.5px solid rgba(34,211,238,.45);background:rgba(23,162,184,.10);color:var(--tf-7dd3fc);font-style:italic}
+.rvIn-alt{border:1.5px solid rgba(139,92,246,.55);background:rgba(111,66,193,.10)}
+.rvHint{font-size:11px;color:var(--tf-64748b);margin-top:3px;line-height:1.45}
+.rvHint-lock{color:var(--tf-67e8f9)}
+.rvErr{font-size:11px;color:var(--tf-f87171);margin-top:3px;font-weight:700}
+/* ── LE PASTIGLIE: UNA LINGUA SOLA ────────────────────────────────────
+   C'erano tre modi diversi di chiedere la stessa cosa: il Si'/No verde e
+   rosso con l'angolo a 6px, le scelte piccole blu fisso #2E75B6 (che non
+   era il colore di nessun brand) e le pastiglie tonde del carrello. Sono
+   rimaste le pastiglie tonde: le altre due prendono la stessa faccia,
+   cambia solo il colore quando sono accese. */
+.rvPill{padding:9px 20px;border-radius:999px;border:1px solid var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0);font-size:13px;font-weight:700;cursor:pointer;line-height:1.2;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s,color .15s}
+.rvPill:hover{border-color:color-mix(in srgb,var(--rv-acc) 45%,transparent);background:color-mix(in srgb,var(--rv-acc) 9%,transparent);color:var(--tf-e2e8f0)}
+.rvPill.rvPill-on{border:1.5px solid var(--rv-acc);background:var(--rv-acc);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 35%,transparent)}
+.rvPill.rvPill-si{border:1.5px solid #34d399;background:linear-gradient(135deg,#1a9c53,#28a745);color:#fff;box-shadow:0 4px 14px rgba(40,167,69,.32)}
+.rvPill.rvPill-no{border:1.5px solid #f87171;background:linear-gradient(135deg,#b02a37,#dc3545);color:#fff;box-shadow:0 4px 14px rgba(220,53,69,.30)}
+.rvPill-sm{padding:6px 15px;font-size:11.5px}
+.rvPill-lock{cursor:not-allowed;opacity:.8;pointer-events:none}
+.rvPill:active{transform:scale(.96)}
+.rvPillRow{display:flex;gap:8px;flex-wrap:wrap}
+.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:var(--rv-menu);border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
+.rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:var(--tf-f8fafc)}
 .rvOpt:hover{background:rgba(99,102,241,.18)}
-.rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:#94a3b8;background:#1b2030;text-transform:uppercase;position:sticky;top:0}
+.rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--tf-94a3b8);background:var(--rv-menu-grp);text-transform:uppercase;position:sticky;top:0}
 .crmFab{position:fixed;bottom:18px;right:18px;z-index:4300;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:999px;border:none;cursor:pointer;color:#fff;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.45)}
 @media(min-width:1100px){.crmFab{display:none}}`}</style>
       {/* SIDEBAR CARRELLO LIVE (desktop) + DRAWER su richiesta (ogni schermo) */}
@@ -6801,7 +6849,7 @@ select.rvIn{cursor:pointer}
 
 
       {vistaStep==="brand"&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:20,marginBottom:12}}>
-        <div style={{fontSize:12.5,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
+        <div className="rvCardT" style={{color:"var(--tf-8892b0)",marginBottom:14}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
           {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
@@ -6843,8 +6891,8 @@ select.rvIn{cursor:pointer}
       </div>}
 
 
-      {vistaStep==="cliente"&&(brand||(margFlow&&!brand))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:12,textTransform:"uppercase"}}>👥 Cliente — tipo e ricerca</div>
+      {vistaStep==="cliente"&&(brand||(margFlow&&!brand))&&<div className="rvCard" style={{borderLeft:"4px solid #6f42c1"}}>
+        <div className="rvCardT" style={{color:"var(--tf-6f42c1)",marginBottom:12}}>👥 Cliente — tipo e ricerca</div>
         {margFlow&&!brand&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:8,background:"rgba(111,66,193,0.10)",border:"1px dashed rgba(111,66,193,0.5)",fontSize:12,color:"var(--tf-a78bfa)",fontWeight:600}}>
           💰 Vendita a marginalità: bastano anche <b>solo nome</b>, <b>solo cognome</b> o <b>solo il CF</b>. Se il cliente non vuole lasciare nulla puoi saltare, ma la scelta viene registrata.
         </div>}
@@ -6921,24 +6969,24 @@ select.rvIn{cursor:pointer}
 
 
 
-      {vistaStep==="cliente"&&showAna&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #1B3A5C"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8fb4dd)",marginBottom:14,textTransform:"uppercase"}}>📝 Anagrafica</div>
-        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"var(--tf-f59e0b)"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--tf-w60)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
+      {vistaStep==="cliente"&&showAna&&<div className="rvCard" style={{borderLeft:"4px solid #1B3A5C"}}>
+        <div className="rvCardT" style={{color:"var(--tf-8fb4dd)",marginBottom:14}}>📝 Anagrafica</div>
+        {tipoCliente==="privato"?<><div className="rvG2"><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"var(--tf-f59e0b)"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div className="rvG21" style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--tf-w60)"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div className="rvG1" style={{marginTop:10}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--tf-8892b0)"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
           Diverso intestatario
         </label>
-        {ana.intDiverso&&<div style={{marginTop:8,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px",background:"rgba(111,66,193,0.08)",border:"1px solid rgba(111,66,193,0.25)",borderRadius:8,padding:12}}>
+        {ana.intDiverso&&<div className="rvG3" style={{marginTop:8,background:"rgba(111,66,193,0.08)",border:"1px solid rgba(111,66,193,0.25)",borderRadius:8,padding:12}}>
           <TF l="Nome intestatario" r v={ana.intNome} o={v=>uA("intNome",v)} p="Mario"/>
           <TF l="Cognome intestatario" r v={ana.intCognome} o={v=>uA("intCognome",v)} p="Rossi"/>
           <TF l="Codice Fiscale intestatario" r v={ana.intCf} o={v=>uA("intCf",v.toUpperCase())} p="RSSMRA80A01H501Z"/>
         </div>}</>
-        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Partita IVA" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="12345678901" pf={clienteFound&&!!ana.cf}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="CF Ref." r v={ana.cfRef} o={v=>uA("cfRef",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501B" pf={clienteFound&&!!ana.cfRef}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Telefono Fisso" v={ana.fisso} o={v=>uA("fisso",v)} p="06..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--tf-w60)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
+        :<><div className="rvG2"><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Partita IVA" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="12345678901" pf={clienteFound&&!!ana.cf}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="CF Ref." r v={ana.cfRef} o={v=>uA("cfRef",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501B" pf={clienteFound&&!!ana.cfRef}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Telefono Fisso" v={ana.fisso} o={v=>uA("fisso",v)} p="06..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div className="rvG21" style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--tf-w60)"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div className="rvG1" style={{marginTop:10}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--tf-8892b0)"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
           Diverso intestatario
         </label>
-        {ana.intDiverso&&<div style={{marginTop:8,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px",background:"rgba(111,66,193,0.08)",border:"1px solid rgba(111,66,193,0.25)",borderRadius:8,padding:12}}>
+        {ana.intDiverso&&<div className="rvG3" style={{marginTop:8,background:"rgba(111,66,193,0.08)",border:"1px solid rgba(111,66,193,0.25)",borderRadius:8,padding:12}}>
           <TF l="Nome intestatario" r v={ana.intNome} o={v=>uA("intNome",v)} p="Mario"/>
           <TF l="Cognome intestatario" r v={ana.intCognome} o={v=>uA("intCognome",v)} p="Rossi"/>
           <TF l="Codice Fiscale intestatario" r v={ana.intCf} o={v=>uA("intCf",v.toUpperCase())} p="RSSMRA80A01H501Z"/>
@@ -6964,18 +7012,18 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-      {vistaStep==="prodotti"&&margFlow&&!brand&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:14,textTransform:"uppercase"}}>📦 Prodotti & Marginalità</div>
+      {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #6f42c1"}}>
+        <div className="rvCardT" style={{color:"var(--tf-6f42c1)",marginBottom:14}}>📦 Prodotti & Marginalità</div>
         <MargPOS inline show onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>
       </div>}
 
-      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+bC}}>
-        <div style={{fontSize:12.5,fontWeight:700,color:bC,marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
+      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div className="rvCard" style={{borderLeft:"4px solid "+bC}}>
+        <div className="rvCardT" style={{marginBottom:14}}>📂 Prodotti e Contratto</div>
         {/* S4/energia NON ha codici di inserimento (Luca 25/08, screenshot):
             calderone unico — conta solo il negozio. Il banner di sessione
             resta per gli altri brand; il campo per-vendita è già spento
             dalla regola campi brand=s4. */}
-        {brand!=="energy"&&<div style={{background:"rgba(0,114,198,0.10)",borderRadius:10,padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10,border:"1px solid var(--tf-w120)"}}>
+        {brand!=="energy"&&<div className="rvBox" style={{padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
           <span style={{fontSize:12,fontWeight:800,color:"var(--tf-8892b0)",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
           {/* RIQUADRI negozio a selezione SINGOLA (Luca 03/08): via la tendina
               nativa — un click sceglie, ricliccando lo stesso si toglie */}
@@ -7103,7 +7151,7 @@ select.rvIn{cursor:pointer}
         const SKY_COLOR="var(--tf-8b5cf6)";   // Sky è VIOLA (Luca 21/08)
         const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:active?SKY_COLOR:"var(--tf-w40)",color:active?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
         const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:val===v?SKY_COLOR:"var(--tf-w40)",color:val===v?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
-        const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.10)",borderRadius:8,padding:12,border:"1px solid var(--tf-w120)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;
+        const dBox=(children)=><div className="rvBox" style={{marginTop:10,padding:"12px 13px"}}><div className="rvBoxT" style={{color:SKY_COLOR,marginBottom:8}}>📄 Dati contratto</div>{children}</div>;
         const venditeBar=(si,bd)=>{return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,fontWeight:700,color:SKY_COLOR}}>Vendita #{si+1}</span>{bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:bd.bg,color:bd.fg,whiteSpace:"nowrap"}}>{bd.l}</span>}</div>
           <div style={{display:"flex",gap:6}}>
@@ -7114,15 +7162,15 @@ select.rvIn{cursor:pointer}
         </div>;};
         return (<div>
           {/* ── BOX TV ── */}
-          <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
-            <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>📺 TV</div>
+          <div className="rvCard" style={{borderLeft:"4px solid "+SKY_COLOR}}>
+            <div className="rvCardT" style={{color:SKY_COLOR,marginBottom:12}}>📺 TV</div>
             {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"var(--tf-w30)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyTv(sale)))}
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {(tipoCliente==="business"?SKY_BIZ_TV:SKY_TV).map(pr=>btnSky(pr,sale.tvSel===pr,()=>togSky(si,pr)))}
               </div>
               {sale.tvSel&&dBox(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
+                <div className="rvG2">
                   <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Codice contratto <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
                   <input value={sale.tvCC||""} onChange={e=>uSkyF(si,"tvCC",e.target.value)} placeholder="es. 1679428185586" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
                   <SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.tvCodIns||""} onCh={v=>uSkyF(si,"tvCodIns",v)}/>
@@ -7132,14 +7180,14 @@ select.rvIn{cursor:pointer}
           </div>
 
           {/* ── BOX FIBRA ── */}
-          <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
-            <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>🌐 Fibra</div>
+          <div className="rvCard" style={{borderLeft:"4px solid "+SKY_COLOR}}>
+            <div className="rvCardT" style={{color:SKY_COLOR,marginBottom:12}}>🌐 Fibra</div>
             {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"var(--tf-w30)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyFib(sale)))}
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {(tipoCliente==="business"?SKY_BIZ_FIBRA:SKY_FIBRA).map(pr=>btnSky(pr,sale.fibraSel===pr,()=>togSky(si,pr)))}
               </div>
-              {sale.fibraSel&&dBox(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
+              {sale.fibraSel&&dBox(<div className="rvG2">
                 <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Codice contratto <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
                 <input value={sale.fibraCC||""} onChange={e=>uSkyF(si,"fibraCC",e.target.value)} placeholder="es. 1679428185586" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
                 <SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.fibraCodIns||""} onCh={v=>uSkyF(si,"fibraCodIns",v)}/>
@@ -7157,8 +7205,8 @@ select.rvIn{cursor:pointer}
           </div>
 
           {/* ── BOX MOBILE — solo privato ── */}
-          {tipoCliente!=="business"&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
-            <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>📱 Mobile</div>
+          {tipoCliente!=="business"&&<div className="rvCard" style={{borderLeft:"4px solid "+SKY_COLOR}}>
+            <div className="rvCardT" style={{color:SKY_COLOR,marginBottom:12}}>📱 Mobile</div>
             {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"var(--tf-w30)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyMob(sale)))}
               <div style={{display:"flex",gap:6}}>
@@ -7168,7 +7216,7 @@ select.rvIn{cursor:pointer}
                 <div style={{marginBottom:10,maxWidth:240}}><SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.mobCodIns||""} onCh={v=>uSkyF(si,"mobCodIns",v)}/></div>
                 <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:4}}>MNP? <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
                 {ynSky(sale.mobMnp,()=>uSkyF(si,"mobMnp","Sì"),()=>{uSkyF(si,"mobMnp","No");uSkyF(si,"mobNumProv","");uSkyF(si,"mobNumDef","");uSkyF(si,"mobBrandMnp","");uSkyF(si,"mobIccid","");})}
-                {sale.mobMnp==="Sì"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px",marginTop:8}}>
+                {sale.mobMnp==="Sì"&&<div className="rvG2" style={{marginTop:8}}>
                   <TF l="Numero provvisorio" r v={sale.mobNumProv||""} o={v=>uSkyF(si,"mobNumProv",v)} p="es. 393XXXXXXX"/>
                   <TF l="Numero definitivo" r v={sale.mobNumDef||""} o={v=>uSkyF(si,"mobNumDef",v)} p="Numero da portare"/>
                   <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Brand MNP <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
@@ -7177,7 +7225,7 @@ select.rvIn{cursor:pointer}
                     placeholder="— Seleziona —" className="rvSel" /></div>
                   <TF l="ICCID" r v={sale.mobIccid||""} o={v=>uSkyF(si,"mobIccid",v)} p="893XXXXXXXXXXXXXXXX"/>
                 </div>}
-                {sale.mobMnp==="No"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px",marginTop:8}}>
+                {sale.mobMnp==="No"&&<div className="rvG2" style={{marginTop:8}}>
                   <TF l="Numero" r v={sale.mobNum||""} o={v=>uSkyF(si,"mobNum",v)} p="es. 393XXXXXXX"/>
                   <TF l="ICCID" r v={sale.mobIccidNo||""} o={v=>uSkyF(si,"mobIccidNo",v)} p="893XXXXXXXXXXXXXXXX"/>
                 </div>}
@@ -7232,8 +7280,8 @@ select.rvIn{cursor:pointer}
             (piu' offerte dello stesso brand = piu' contratti = piu' upload).
             Le righe solo-marginalita' non hanno gruppo. ECCEZIONE SKY: il
             gruppo c'e' ma il contratto e' FACOLTATIVO (Sky non lo rilascia). */}
-        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-17a2b8)",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
+        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div className="rvCard" style={{borderLeft:"4px solid #17a2b8",marginTop:12}}>
+          <div className="rvCardT" style={{color:"var(--tf-17a2b8)",marginBottom:14}}>📎 Allegati</div>
           {(margFlow&&!brand)?(<>
             {/* SOLO MARGINALITÀ (Luca 06/08): niente riquadro Contratto — solo
                 Documento e Altro, ENTRAMBI facoltativi (per un accessorio
@@ -7324,9 +7372,9 @@ select.rvIn{cursor:pointer}
             </>)}
           </div>
         </div>, document.body)}
-        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-28a745)",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
+        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div className="rvCard" style={{borderLeft:"4px solid #28a745"}}>
+          <div className="rvCardT" style={{color:"var(--tf-28a745)",marginBottom:14}}>🏪 Attribuzione</div>
+          <div className="rvG3">
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
             <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
