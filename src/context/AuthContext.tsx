@@ -292,6 +292,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = () => {
         azzeraTokenTf();   // il lasciapassare non sopravvive all'utente
+        // e il permesso di sessione si annulla DAVVERO, anche lato server
+        try { fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => { }); } catch { /* offline */ }
         clearAiChat(user?.id);
         // #118: la bozza della vendita in corso (Registra Vendita) non sopravvive
         // al logout esplicito — al nuovo login il form riparte vuoto.

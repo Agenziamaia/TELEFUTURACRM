@@ -6,7 +6,12 @@ import crypto from "crypto";
 
 const chiave = () => crypto.createHash("sha256").update("tf-sessione:" + (process.env.EMAIL_ENC_KEY || "")).digest();
 
-export type SessioneTf = { id: string; role: string; exp: number };
+export type SessioneTf = {
+    id: string; role: string; exp: number;
+    /** il contatore con cui il permesso è stato emesso: se sul database è
+     *  avanzato (uscita, licenziamento, sospensione) questo non vale più */
+    ep?: number;
+};
 
 export const SESSIONE_COOKIE = "tf_s";
 export const SESSIONE_GIORNI = 7;

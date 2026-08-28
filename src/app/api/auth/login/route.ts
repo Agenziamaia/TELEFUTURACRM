@@ -19,9 +19,16 @@ export const dynamic = "force-dynamic";
 //   { stage:"totp", email, error? }        -> inserire il codice
 //   { stage:"enroll", email, otpauth, qr } -> scansionare il QR + codice
 // risposta autenticata + cookie di sessione firmato (Blindatura fase A)
-function okConSessione(row: { id: string; role?: string | null }) {
+async function okConSessione(row: { id: string; role?: string | null }) {
+    // il contatore NON arriva da verify_login: si rilegge, altrimenti il
+    // permesso nascerebbe già "superato" e la persona non entrerebbe più
+    let ep = 0;
+    try {
+        const { data } = await supabase.from("app_users").select("session_epoch").eq("id", row.id).maybeSingle();
+        ep = Number(data?.session_epoch) || 0;
+    } catch { /* alla peggio 0: il permesso vale comunque */ }
     const res = NextResponse.json({ ok: true, user: row });
-    res.cookies.set(SESSIONE_COOKIE, firmaSessione({ id: String(row.id), role: String(row.role || ""), exp: Date.now() + SESSIONE_GIORNI * 864e5 }),
+    res.cookies.set(SESSIONE_COOKIE, firmaSessione({ id: String(row.id), role: String(row.role || ""), exp: Date.now() + SESSIONE_GIORNI * 864e5, ep }),
         { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: SESSIONE_GIORNI * 86400 });
     return res;
 }
@@ -76,7 +83,7 @@ export async function POST(request: Request) {
 
         if (!enabled) {
             // chi non e' (ancora) obbligato entra senza 2FA
-            if (!required2fa) return okConSessione(row);
+            if (!required2fa) return await okConSessione(row);
             // ── ISCRIZIONE OBBLIGATORIA ──
             if (!code || !enrolling) {
                 // genera un nuovo segreto, lo salva cifrato (non ancora attivo) e manda il QR
@@ -95,7 +102,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ stage: "enroll", email: row.email, otpauth: uri, qr, error: "Codice non valido, riprova." });
             }
             await supabase.from("app_users").update({ totp_enabled: true }).eq("id", row.id);
-            return okConSessione(row);
+            return await okConSessione(row);
         }
 
         // ── 2FA GIA' ATTIVA: serve il codice ──
@@ -103,7 +110,7 @@ export async function POST(request: Request) {
         let secret = "";
         try { secret = sec?.totp_secret ? decifraSegreto(sec.totp_secret) : ""; } catch { secret = ""; }
         if (!secret || !verificaCodice(code, secret)) return NextResponse.json({ stage: "totp", email: row.email, error: "Codice non valido." });
-        return okConSessione(row);
+        return await okConSessione(row);
     } catch (e) {
         return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Errore interno" }, { status: 500 });
     }

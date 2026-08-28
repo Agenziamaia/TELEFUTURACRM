@@ -18,8 +18,12 @@ export async function GET(request: Request) {
     // il ruolo si rilegge dal DB: quello nel cookie potrebbe essere vecchio
     let role = sess.role || "";
     try {
-        const { data } = await supabase.from("app_users").select("role, active").eq("id", sess.id).maybeSingle();
+        const { data } = await supabase.from("app_users").select("role, active, session_epoch").eq("id", sess.id).maybeSingle();
         if (data && data.active === false) return NextResponse.json({ attivo: false, motivo: "disattivato" });
+        // uscita, licenziamento o sospensione: il permesso vecchio non vale più
+        if (data && Number(data.session_epoch || 0) !== Number(sess.ep || 0)) {
+            return NextResponse.json({ attivo: false, motivo: "sessione" });
+        }
         if (data?.role) role = String(data.role);
     } catch {
         // se non riusciamo a verificare che l'utente sia ancora attivo, NON
