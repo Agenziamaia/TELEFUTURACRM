@@ -1168,7 +1168,16 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         // all'esigenza dei PUNTI MOBILE (i target della direzione)
         const mobConsigli = !scelto ? consigliaCodici(dir, "mobile", negozio, strategiaDi(dir, "mobile")) : [];
         const mobScelto = mobConsigli.find((k) => k.mancano > 0) || mobConsigli[0] || null;
-        return { scelto, ordinati, mobScelto, faseLabel, obiettivo };
+        /* QUANTO CI STA ANCORA (Luca 28/08). «Se su Mazzini mancano ancora
+           tre mobili alla S1 non franchigiata è inutile che me ne fai caricare
+           uno di qua e uno di là: tanto Mazzini deve comunque arrivarci, è la
+           priorità zero.» Quindi la coda si mostra SOLO quando il codice
+           consigliato si chiude col primo pezzo: dal secondo in poi si
+           cambierebbe davvero. Se ne assorbe ancora due o più, si carica
+           tutto lì e non si dice niente. */
+        const traguardo = sottoPaletto.length ? dir.palettoBusiness : obiettivo;
+        const capienza = scelto ? Math.max(0, traguardo - scelto.fatti) : 0;
+        return { scelto, ordinati, mobScelto, faseLabel, obiettivo, capienza };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pista, dir, negozio]);
 
@@ -1184,9 +1193,13 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
         : pistaDiGruppo
             ? (tipGruppo?.testo ? tipGruppo.testo.replace(/^📍 Caricala su /, "").replace(/^🏠 /, "") : null)
             : (consigliato?.negozio || null);
+    // la coda REGISTRATA è la stessa che l'utente vede: compare solo quando il
+    // codice consigliato si chiude col primo pezzo (regola della capienza)
     const codaMostrata = pista === BIZMOB
-        ? (biz?.scelto ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
-        : pistaDiGruppo ? [] : /fisso/i.test(pista) ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
+        ? (biz?.scelto && biz.capienza <= 1 ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
+        : pistaDiGruppo ? []
+            : (/fisso/i.test(pista) && consigliato && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1)
+                ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
 
     /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
        non si è potuto sapere se chi ha caricato avesse davvero guardato la
@@ -1339,7 +1352,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 <div className="text-lg font-black text-emerald-300">🏠 Caricala sul codice del tuo negozio</div>
                             </div>
                         )}
-                        {scelto && ordinati.length > 1 && <CodaCodici prossimi={ordinati.slice(1, 3).map((x) => x.nome)} />}
+                        {scelto && biz.capienza <= 1 && ordinati.length > 1 && <CodaCodici prossimi={ordinati.slice(1, 3).map((x) => x.nome)} />}
                     </>);
                 })()}
                 {pista !== BIZMOB && pistaDiGruppo && tipGruppo && (
@@ -1349,16 +1362,11 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         {tipGruppo.sub ? <div className="text-[10px] text-slate-400 mt-1">{tipGruppo.sub}</div> : null}
                     </div>
                 )}
-                {/* assicurazioni & co.: la coda ha senso quando la politica è la
-                    BILANCIA (si carica il più scarico) — con la priorità della
-                    direzione o l'«ognuno sul suo» il codice è uno e resta quello */}
-                {pista !== BIZMOB && pistaDiGruppo && tipGruppo && dir
-                    && dir.politiche[pista]?.modo === "bilancia" && !prioritaDi(dir, pista).length && (
-                    <CodaCodici prossimi={[...dir.codici.filter((k) => !k.multibrand && !k.catchAll)]
-                        .sort((a, b) => (a.piste[pista]?.punti || 0) - (b.piste[pista]?.punti || 0))
-                        .filter((k) => !tipGruppo.testo.includes(k.negozio))
-                        .slice(0, 2).map((k) => k.negozio)} />
-                )}
+                {/* niente coda sulle piste di GRUPPO (Luca 28/08): con «ognuno
+                    sul suo» il codice è il proprio e non cambia mai; con la
+                    bilancia la scelta resta bloccata fino alla data decisa
+                    dalla direzione — in entrambi i casi la seconda va dove è
+                    andata la prima, e una coda direbbe il falso. */}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato && (
                     <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
                         style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
@@ -1373,7 +1381,8 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     target per codice, e finiva anche sulla Customer Base e sul
                     mobile, dove un codice ne assorbe decine: lì «una per codice»
                     non è la regola. Resta dove i pezzi sono pochi e contano. */}
-                {pista !== BIZMOB && !pistaDiGruppo && consigliato && /fisso/i.test(pista) && (
+                {pista !== BIZMOB && !pistaDiGruppo && consigliato && /fisso/i.test(pista)
+                    && (consigliato.mancanoS1 > 0 ? consigliato.mancanoS1 : consigliato.mancano) <= 1 && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}
 
