@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
-import { puoVederePassword } from "@/lib/passwordPermessi";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
@@ -32,9 +31,6 @@ export async function PATCH(
         const _g = await accesso(request, "passwords/credentials/[id]");
         if (!_g.ok) return _g.risposta;
         const _s = _g.sess;
-        // 🔒 il caveau è riservato ai ruoli previsti, non a tutti i loggati
-        const _p = await puoVederePassword(_s.id);
-        if (!_p.ok) return NextResponse.json({ error: "Non hai i permessi per le password aziendali" }, { status: 403 });
     }
 
     try {
@@ -104,9 +100,6 @@ export async function DELETE(
         const _g = await accesso(request, "passwords/credentials/[id]");
         if (!_g.ok) return _g.risposta;
         const _s = _g.sess;
-        // 🔒 il caveau è riservato ai ruoli previsti, non a tutti i loggati
-        const _p = await puoVederePassword(_s.id);
-        if (!_p.ok) return NextResponse.json({ error: "Non hai i permessi per le password aziendali" }, { status: 403 });
     }
 
     try {
