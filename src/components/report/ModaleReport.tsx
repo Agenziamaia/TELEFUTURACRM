@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Send, Download, RefreshCw } from "lucide-react";
 import ReportGiornaliero from "./ReportGiornaliero";
+import { SelectOpzioni } from "@/components/SelectPersona";
 
 /* ============================================================================
    IL REPORT DELLA SERA (Luca 28/08)
@@ -23,9 +24,15 @@ const W = 1080;
 const H = 1620;
 const MAX_BYTES = 7 * 1024 * 1024;   // sotto il tetto del canale, con margine
 
-type Props = { negozio: string; giorno: string; onClose: () => void };
+type Props = { negozio: string; giorno: string; negozi?: string[]; onClose: () => void };
 
-export default function ModaleReport({ negozio, giorno, onClose }: Props) {
+export default function ModaleReport({ negozio, giorno, negozi = [], onClose }: Props) {
+    /* CHI VEDE PIÙ NEGOZI DEVE SCEGLIERE. Per un venditore il negozio è uno solo
+       e non c'è niente da decidere; per l'amministrazione, che li vede tutti,
+       partire dal primo della lista vorrebbe dire mandare sul canale il report
+       di un negozio a caso — e nel canale ci finisce col suo nome sopra. */
+    const [scelto, setScelto] = useState(negozio);
+    const negoziVeri = negozi.length > 1 ? negozi : [];
     const [dati, setDati] = useState<Record<string, unknown> | null>(null);
     const [errore, setErrore] = useState<string | null>(null);
     const [commento, setCommento] = useState("");
@@ -41,7 +48,7 @@ export default function ModaleReport({ negozio, giorno, onClose }: Props) {
         setErrore(null);
         setDati(null);
         try {
-            const r = await fetch(`/api/report/giornaliero?negozio=${encodeURIComponent(negozio)}&giorno=${giorno}`);
+            const r = await fetch(`/api/report/giornaliero?negozio=${encodeURIComponent(scelto)}&giorno=${giorno}`);
             const j = await r.json();
             if (j?.error) { setErrore(j.error); return; }
             setDati(j.dati);
@@ -49,9 +56,9 @@ export default function ModaleReport({ negozio, giorno, onClose }: Props) {
         } catch (e) {
             setErrore("Non riesco a leggere la giornata: " + ((e as Error)?.message || "rete"));
         }
-    }, [negozio, giorno]);
+    }, [scelto, giorno]);
 
-    useEffect(() => { void carica(); }, [carica]);
+    useEffect(() => { void carica(); setStato("pronto"); setEsito(null); }, [carica]);
 
     /* ── il rimpicciolimento: il foglio è 1080x1620, lo schermo no ────────
        Si misura lo spazio disponibile e si scala, invece di fissare una
@@ -117,7 +124,7 @@ export default function ModaleReport({ negozio, giorno, onClose }: Props) {
             const r = await fetch("/api/report/invia", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ png, negozio, data: String(dati?.data || giorno) }),
+                body: JSON.stringify({ png, negozio: scelto, data: String(dati?.data || giorno) }),
             });
             const j = await r.json();
             if (j?.error) { setEsito(j.error); setStato("pronto"); return; }
@@ -134,7 +141,7 @@ export default function ModaleReport({ negozio, giorno, onClose }: Props) {
             const url = await scatta();
             const a = document.createElement("a");
             a.href = url;
-            a.download = `report-${negozio.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${giorno}.jpg`;
+            a.download = `report-${scelto.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${giorno}.jpg`;
             a.click();
         } catch (e) {
             setEsito((e as Error)?.message || "Non riesco a salvare l'immagine.");
@@ -148,9 +155,19 @@ export default function ModaleReport({ negozio, giorno, onClose }: Props) {
     return (
         <div className="fixed inset-0 z-[120] bg-[#07080d]/95 backdrop-blur-md flex flex-col">
             <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-white/5 shrink-0">
-                <div className="min-w-0">
-                    <h2 className="text-base sm:text-lg font-bold text-white truncate">Report della giornata</h2>
-                    <p className="text-xs text-slate-500 truncate">{negozio} · {String(dati?.data || giorno)}</p>
+                <div className="min-w-0 flex items-center gap-3">
+                    <div className="min-w-0">
+                        <h2 className="text-base sm:text-lg font-bold text-white truncate">Report della giornata</h2>
+                        <p className="text-xs text-slate-500 truncate">
+                            {negoziVeri.length ? String(dati?.data || giorno) : `${scelto} · ${String(dati?.data || giorno)}`}
+                        </p>
+                    </div>
+                    {negoziVeri.length ? (
+                        <div className="w-48 shrink-0">
+                            <SelectOpzioni value={scelto} onChange={setScelto} opzioni={negoziVeri}
+                                placeholder="Negozio" disabled={stato !== "pronto"} />
+                        </div>
+                    ) : null}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <button onClick={() => void carica()} title="Ricarica i numeri"

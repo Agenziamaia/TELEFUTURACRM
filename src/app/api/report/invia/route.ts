@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { puoVedereNegozio } from "@/lib/visibleStoresServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,14 @@ export async function POST(request: Request) {
     const jpeg = png.startsWith("data:image/jpeg;base64,");
     if (!jpeg && !png.startsWith("data:image/png;base64,")) {
         return NextResponse.json({ error: "L'immagine non è arrivata: riprova a generare il report." });
+    }
+
+    /* Anche qui il negozio arriva dal browser, e qui pesa il doppio: finisce
+       scritto nel messaggio che tutta l'azienda legge. Mandare un report a nome
+       di un negozio che non è il proprio non deve essere possibile. */
+    if (!negozio) return NextResponse.json({ error: "Manca il negozio." });
+    if (!(await puoVedereNegozio(_s.id, negozio))) {
+        return NextResponse.json({ error: "Questo negozio non è fra quelli che vedi." }, { status: 403 });
     }
 
     const bytes = Buffer.from(png.split(",")[1] || "", "base64");

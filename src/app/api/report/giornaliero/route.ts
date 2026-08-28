@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { datiGiornata } from "@/lib/report/datiGiornata";
+import { puoVedereNegozio } from "@/lib/visibleStoresServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,14 @@ export async function GET(request: Request) {
     const giorno = String(url.searchParams.get("giorno") || "").trim()
         || new Date().toISOString().slice(0, 10);
     if (!negozio) return NextResponse.json({ error: "Manca il negozio." });
+
+    /* ⚠️ IL NEGOZIO ARRIVA DAL BROWSER, quindi non ci si crede sulla parola.
+       Senza questo controllo bastava cambiare l'indirizzo per leggere la
+       giornata del negozio di un collega: la schermata filtra bene, ma una
+       schermata protegge lo schermo — non il dato. */
+    if (!(await puoVedereNegozio(_g.sess.id, negozio))) {
+        return NextResponse.json({ error: "Questo negozio non è fra quelli che vedi." }, { status: 403 });
+    }
 
     try {
         const dati = await datiGiornata(negozio, giorno);
