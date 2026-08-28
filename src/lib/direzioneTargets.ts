@@ -314,6 +314,26 @@ export type VocePunti = { id: string; nome: string; punti: number; base: boolean
    business si riconosce dal NOME della voce — P.IVA, Microbusiness e, in
    casa WindTre, tutta la linea «Professional». */
 const PAROLE_BIZ = /(business|p\.?\s?iva|micro|professional)/i;
+
+/* Le due parole che identificano una voce, troncate: serve a riconoscere che
+   «Telefono finanziato · GA» e «Telefono in finanziamento» sono la stessa
+   cosa. Fuori le paroline di servizio e le sigle corte. */
+const STOP = new Set(["in", "di", "il", "la", "lo", "e", "ed", "con", "su", "per", "da", "del", "della", "al", "alla", "un", "una", "a", "ga", "gnp", "cb", "vs"]);
+function chiaveVoce(nome: string): string {
+    // via QUALSIASI parentesi: «Telefono finanziato · GA (+1,25 in soglia)» e
+    // «Telefono in finanziamento» sono la stessa voce, e la parentesi bastava
+    // a farle sembrare diverse
+    return nome.replace(/\([^)]*\)/g, " ").toLowerCase()
+        .replace(/[^a-zàèéìòù0-9\s]/g, " ")
+        .split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w))
+        // QUATTRO parole, non due: con due, «Cambio offerta MIA Easy Pay» e
+        // «Cambio offerta Mobile Microbusiness» — stesso valore, 4 punti —
+        // finivano fuse in una sola voce, e sul business spariva la prima
+        // TRE parole: con due «Cambio offerta MIA Easy Pay» e «Cambio offerta
+        // Mobile Microbusiness» (stesso valore) si fondevano; con quattro
+        // tornava il doppione del telefono finanziato
+        .map((w) => w.slice(0, 6)).slice(0, 3).join("|");
+}
 function vaCol(nome: string, tipoRiga: string | null | undefined, tc: string): boolean {
     if (!tc) return true;
     const t = String(tipoRiga || "").toLowerCase();
@@ -327,7 +347,7 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
     const tc = (tipoCliente || "").toLowerCase();
     const righe = (dir.tab?.righe || [])
         .filter((r) => String(r.pista || "") === pistaRighe && r.attivo !== false && Number(r.punti || 0) > 0);
-    const viste = new Set<string>();
+    const viste = new Map<string, number>();
     const out: VocePunti[] = [];
     for (const r of righe) {
         const base = String(r.componente || "") === "base";
@@ -340,11 +360,24 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
            le opzioni che accrescono il valore». Restava anche il rischio di
            sommare due basi (GA base + GA base Underground = 1,5 punti, che
            non esiste). Il suo valore entra comunque nel conto, da solo. */
-        if (base) continue;
+        // ⚠️ TUTTE le basi, non solo quella principale: «GA base Underground»
+        //    è componente `base_underground` e restava in lista, sommabile
+        //    alla base vera (Luca 28/08)
+        if (base || /^base/.test(String(r.componente || ""))) continue;
         if (!vaCol(nome, r.tipo_cliente, tc)) continue;
-        const chiave = `${nome}|${r.punti}`;
-        if (viste.has(chiave)) continue;      // le varianti con lo stesso valore si fondono
-        viste.add(chiave);
+        /* DOPPIONI (Luca 28/08: «telefono finanziato è doppione»). Il
+           tabellare ha più righe per la stessa cosa — «Telefono finanziato ·
+           GA» e «Telefono in finanziamento», tutte e due 1,25 — perché al
+           motore servono ancore diverse. A chi carica serve UNA voce. La
+           chiave è il valore più le prime due parole che contano, troncate:
+           così «finanziato» e «finanziamento» si riconoscono uguali. */
+        const chiave = `${r.punti}|${chiaveVoce(nome)}`;
+        const gia = viste.get(chiave);
+        if (gia !== undefined) {
+            if (nome.length < out[gia].nome.length) out[gia] = { ...out[gia], nome };  // vince il nome più corto
+            continue;
+        }
+        viste.set(chiave, out.length);
         /* DUE SCAFFALI SULLA CUSTOMER BASE (Luca 28/08): «differenziamo i
            cambi piano dai telefoni, altrimenti è una sbrodolata di opzioni
            che nessuno seleziona». */
