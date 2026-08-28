@@ -21,7 +21,12 @@ export const dynamic = "force-dynamic";
    · la mail viene portata via dall'INBOX: tre di queste caselle sono di
      negozio e i colleghi le aprono tutti i giorni. */
 
-const MINUTI_VALIDI = 20;       // più vecchia di così, non è il codice di adesso
+/* CINQUE MINUTI (Luca 28/08 sera): «un'email che può essere arrivata massimo
+   cinque minuti prima». Più vecchia di così non è il codice di adesso — è
+   quello di un tentativo precedente, e consegnarlo farebbe fallire l'accesso
+   facendo credere che il sistema funzioni. Meglio dire «non è ancora
+   arrivato» che dare un numero scaduto. */
+const MINUTI_VALIDI = 5;
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
     // 🔒 stesso permesso della password: chi può vedere la credenziale può
@@ -72,9 +77,11 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     }
 
     if (!codice) {
+        // non c'è ancora: si dice quanto aspettare, e il CRM ci riprova da solo
         return NextResponse.json({
             attesa: true,
-            error: `Nessun codice arrivato negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}. Fai partire la richiesta dal portale e riprova tra qualche secondo.`,
+            riprovaTra: 15,
+            error: `Non è ancora arrivato niente su ${acc.email_address}. Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
         });
     }
 

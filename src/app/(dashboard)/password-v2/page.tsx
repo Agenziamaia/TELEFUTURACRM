@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, ShieldCheck, Info, Loader2, History } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -170,6 +170,7 @@ export default function PasswordV2Page() {
        minuto. Il codice non resta da nessuna parte: né qui né nel database. */
     const [otpAperto, setOtpAperto] = useState<Record<number, { codice: string; scadeA: number }>>({});
     const [otpInCorso, setOtpInCorso] = useState<number | null>(null);
+    const [otpAttesa, setOtpAttesa] = useState<Record<number, number>>({});   // i secondi che restano prima del prossimo giro
     const [otpMsg, setOtpMsg] = useState<Record<number, string>>({});
     const [adesso, setAdesso] = useState(Date.now());
     useEffect(() => {
@@ -186,20 +187,57 @@ export default function PasswordV2Page() {
         }
     }, [adesso, otpAperto]);
 
-    const chiediCodice = async (c: Credential) => {
+    /* IL CODICE QUASI MAI C'È AL PRIMO COLPO (Luca 28/08 sera).
+       Il collaboratore preme «invia codice» sul portale Fastweb e subito dopo
+       chiede il codice qui: la mail è ancora per strada. Dirgli «riprova tra
+       40 secondi» significa che deve stare lì a contare e ricliccare, con le
+       mani già occupate dal portale davanti.
+       Quindi il CRM RIPROVA DA SOLO — tre giri a distanza di 15 secondi, con
+       il conto alla rovescia a schermo — e si ferma appena il codice arriva.
+       Una pressione sola, e si torna a guardare il portale. */
+    const attesaRef = useRef<Record<number, number>>({});
+    const chiediCodice = async (c: Credential, giro = 0) => {
         setOtpInCorso(c.id);
-        setOtpMsg((m) => ({ ...m, [c.id]: "" }));
+        if (giro === 0) setOtpMsg((m) => ({ ...m, [c.id]: "" }));
+        let r: { codice?: string; secondi?: number; error?: string; attesa?: boolean; riprovaTra?: number };
         try {
-            const r = await fetch(`/api/passwords/credentials/${c.id}/otp`, {
+            r = await fetch(`/api/passwords/credentials/${c.id}/otp`, {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
             }).then((x) => x.json()).catch(() => ({ error: "Connessione non riuscita" }));
-            if (r?.codice) {
-                setOtpAperto((m) => ({ ...m, [c.id]: { codice: String(r.codice), scadeA: Date.now() + (Number(r.secondi) || 60) * 1000 } }));
-                setAdesso(Date.now());
-            } else {
-                setOtpMsg((m) => ({ ...m, [c.id]: String(r?.error || "Codice non trovato") }));
-            }
         } finally { setOtpInCorso(null); }
+
+        if (r?.codice) {
+            setOtpAperto((m) => ({ ...m, [c.id]: { codice: String(r.codice), scadeA: Date.now() + (Number(r.secondi) || 60) * 1000 } }));
+            setOtpMsg((m) => ({ ...m, [c.id]: "" }));
+            setOtpAttesa((m) => { const n = { ...m }; delete n[c.id]; return n; });
+            setAdesso(Date.now());
+            return;
+        }
+
+        // non è arrivato: se è solo questione di tempo, ci riprovo io
+        if (r?.attesa && giro < 2) {
+            const secondi = Number(r.riprovaTra) || 15;
+            setOtpMsg((m) => ({ ...m, [c.id]: String(r.error || "") }));
+            setOtpAttesa((m) => ({ ...m, [c.id]: secondi }));
+            window.clearInterval(attesaRef.current[c.id]);
+            attesaRef.current[c.id] = window.setInterval(() => {
+                setOtpAttesa((m) => {
+                    const restano = (m[c.id] ?? 0) - 1;
+                    if (restano > 0) return { ...m, [c.id]: restano };
+                    window.clearInterval(attesaRef.current[c.id]);
+                    const n = { ...m }; delete n[c.id];
+                    chiediCodice(c, giro + 1);          // il giro successivo, da solo
+                    return n;
+                });
+            }, 1000);
+            return;
+        }
+
+        // dopo tre giri: il problema non è il tempo
+        setOtpAttesa((m) => { const n = { ...m }; delete n[c.id]; return n; });
+        setOtpMsg((m) => ({ ...m, [c.id]: r?.attesa
+            ? "Non è arrivato niente in 45 secondi. Controlla di aver premuto «invia codice» sul portale — quando l'hai fatto, richiedilo qui."
+            : String(r?.error || "Codice non trovato") }));
     };
 
     // Gestione credenziali (creazione/modifica/eliminazione).
@@ -780,18 +818,22 @@ export default function PasswordV2Page() {
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => chiediCodice(c)}
-                                                                        disabled={otpInCorso === c.id}
+                                                                        disabled={otpInCorso === c.id || otpAttesa[c.id] > 0}
                                                                         className={cn(
                                                                             "px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1.5",
-                                                                            otpInCorso === c.id
-                                                                                ? "bg-white/5 border-white/10 text-slate-500"
+                                                                            otpInCorso === c.id || otpAttesa[c.id] > 0
+                                                                                ? "bg-white/5 border-white/10 text-slate-400"
                                                                                 : "bg-amber-500/15 border-amber-400/40 text-amber-200 hover:bg-amber-500/25 hover:-translate-y-px active:scale-95",
                                                                         )}
                                                                         title="Vai a prendere il codice appena arrivato via email"
                                                                     >
+                                                                        {/* mentre aspetta NON sta fermo: riprova da solo, e il conto
+                                                                            dice quanto manca al prossimo giro */}
                                                                         {otpInCorso === c.id
-                                                                            ? <><Loader2 className="w-3 h-3 animate-spin" /> Cerco…</>
-                                                                            : <><KeyRound className="w-3 h-3" /> Chiedi il codice</>}
+                                                                            ? <><Loader2 className="w-3 h-3 animate-spin" /> Cerco nella posta…</>
+                                                                            : otpAttesa[c.id] > 0
+                                                                                ? <><Loader2 className="w-3 h-3 animate-spin" /> Riprovo fra {otpAttesa[c.id]}s</>
+                                                                                : <><KeyRound className="w-3 h-3" /> Chiedi il codice</>}
                                                                     </button>
                                                                     {otpMsg[c.id] && (
                                                                         <span className="text-[10px] text-amber-300/80 max-w-[210px] text-center leading-snug">{otpMsg[c.id]}</span>
