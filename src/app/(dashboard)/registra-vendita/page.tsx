@@ -5583,6 +5583,19 @@ function CRM() {
      si può mostrare PRIMA di premere, e ogni riga ci porta. */
   const cosaManca = () => {
     const out = [];
+    // ── il ramo SOLA MARGINALITÀ ha guardie tutte sue (dentro saveMargOnly):
+    //    era rimasto fuori, quindi il suo bottone restava verde comunque
+    if (margFlow && !brand) {
+      margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
+      if (margItems.some(_usatoFinanziato)) {
+        if (margSkipCli) out.push({ ico: "💳", testo: "usato con finanziamento: i dati del cliente sono obbligatori, non si può saltare", dove: "cliente" });
+        else if (!margCliSel && !_anaStep2Ok()) out.push({ ico: "💳", testo: "usato con finanziamento: servono CF, nome o ragione sociale e cellulare", dove: "cliente" });
+        if (!attachments.some(a => a.type === "documento")) out.push({ ico: "🪪", testo: "usato con finanziamento: manca il documento del cliente", dove: "allegati" });
+        if (!attachments.some(a => a.type === "contratti")) out.push({ ico: "📄", testo: "usato con finanziamento: manca il contratto di finanziamento", dove: "allegati" });
+      }
+      if (String(ana.via || "").trim() && civicoMancante(ana.via)) out.push({ ico: "🏠", testo: "numero civico nell'indirizzo", dove: "cliente" });
+      return out;
+    }
     // 1. i prodotti lasciati a metà, con nome e cognome
     cats.forEach(g => (sales[g.id] || []).forEach((row, si) => {
       if (!row) return;
@@ -5598,8 +5611,13 @@ function CRM() {
     if (hasDupPodPdr) out.push({ ico: "🔁", testo: "un POD o un PDR è ripetuto", dove: "prodotti" });
     if (hasInvalidNumIccid) out.push({ ico: "⚠", testo: "un numero o un ICCID non ha le cifre giuste", dove: "prodotti" });
     // 3. il prezzo dei prodotti a marginalità
-    margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
-    // 4. documento, contratti, attribuzione, note, civico
+    margPriceMissing(bObj ? computeAutoMarg(margItems, brand, bObj.label, colItems()) : margItems)
+      .forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
+    // 4. l'anagrafica: mancava all'appello, e blocca il salvataggio con un
+    //    solo avviso volante — il bottone tornava a mentire (revisore 28/08)
+    anaMissing.forEach(t => out.push({ ico: "👤", testo: `${t} (anagrafica)`, dove: "cliente" }));
+    if ((ana.iban || "").trim() && erroreIbanIT(ana.iban)) out.push({ ico: "🏦", testo: "IBAN non valido", dove: "cliente" });
+    // 5. documento, contratti, attribuzione, note, civico
     mancanzeVendita().forEach(t => {
       const dove = /Allegati|attribuzione/.test(t) ? "allegati" : /civico/.test(t) ? "cliente" : "note";
       out.push({ ico: t.slice(0, 2).trim(), testo: t.replace(/^\S+\s*/, "").replace(/\s*\(step [^)]+\)$/, ""), dove });
@@ -5620,7 +5638,7 @@ function CRM() {
     finally { if (!ok) { submitLock.current = false; setSubmitting(false); } }
   };
   const _finalSubmitInner = async (margList = margItems) => {
-    if(blockSaveAll){sT("⚠ Completa tutti i prodotti (Incompleto) prima di salvare");return;}
+    if(blockSaveAll){sT(hasIncomplete?"⚠ Ci sono prodotti Incompleti: completali prima di salvare":(hasDupPodPdr?"⚠ POD/PDR duplicato: correggi prima di salvare":(hasDupCodContr?"⚠ Codice contratto duplicato: correggi prima di salvare":"⚠ Un numero o un ICCID non ha le cifre giuste")));setShowCart(false);setVistaStep("prodotti");return;}
     {
       // il gate vale per il ramo BRAND (la marginalità pura passa da saveMargOnly)
       const _manca = mancanzeVendita();
@@ -6062,11 +6080,13 @@ function CRM() {
       // pieno e un altro clic risalverebbe tutto.
       const _scRows = buildScontrinoItems(margList);
       if (_scRows.length && posScontrinoAbilitato(selNeg)) {
+        clearDraft("crm_v9");
         setScontrino({ items: _scRows, negozio: selNeg });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
         // niente più reset a orologeria: la conferma resta finché non la
         // chiude il venditore, e il blocco cade con lei
+        clearDraft("crm_v9");   // la vendita è salvata: la bozza non serve più
         setVenditaFatta({
           brands: fc.map((x) => x.brandLabel || x.brandId).filter(Boolean),
           prodotti: contractRows.length,
@@ -6268,13 +6288,12 @@ function CRM() {
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
       setMargSkipCli(false);
       setShowMargSave(false);
-      showToast(`Vendita salvata! ${rows.length} prodott${rows.length===1?"o":"i"} registrat${rows.length===1?"o":"i"}`);
       // POS: apri Incasso & Scontrino sulle voci prezzate (solo negozi abilitati); fullReset alla chiusura.
       const _scRows = buildScontrinoItems(margItems);
-      if (_scRows.length && posScontrinoAbilitato(selNeg)) setScontrino({ items: _scRows, negozio: selNeg });
-      else setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length,
+      if (_scRows.length && posScontrinoAbilitato(selNeg)) { clearDraft("crm_v9"); setScontrino({ items: _scRows, negozio: selNeg }); }
+      else { clearDraft("crm_v9"); setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length,
         cliente: (margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim(),
-        negozio: selNeg, venditore: selVend });
+        negozio: selNeg, venditore: selVend }); }
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
     }finally{setMargSaving(false);}
@@ -6503,6 +6522,7 @@ function CRM() {
     if(curI.length>0&&bObj)allG.push({brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:curI,isCurrent:true});
     const tp=allG.reduce((s,g)=>s+g.items.length,0)+margItems.length;
     const onlyMarg=allG.length===0&&margItems.length>0;
+    const _manca = cosaManca();
     const cartContent = (
       <div style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:16,maxWidth:1100,margin:"0 auto"}}>
         {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
@@ -6590,19 +6610,17 @@ function CRM() {
             posto dove si rimedia — un clic e ci sei. Prima il bottone era
             VERDE anche con prodotti incompleti o prezzi mancanti: si
             premeva, usciva un avviso e si restava fermi lì. */}
-        {!onlyMarg&&tp>0&&(()=>{const mm=cosaManca();
+        {(onlyMarg?margItems.length>0:tp>0)&&(()=>{const mm=_manca;
           if(!mm.length)return <div className="rvPronto">✓ Tutto pronto — puoi salvare la vendita</div>;
           const vai=(d)=>{if(d==="carrello")return;setShowCart(false);setVistaStep(d);};
           return (
           <div className="rvPrima">
             <div className="rvPrima-t">⚠️ Prima di salvare manca {mm.length===1?"una cosa":mm.length+" cose"}</div>
             <div style={{display:"flex",flexDirection:"column",gap:2}}>
-              {mm.map((x,i)=>(
-                <button key={i} onClick={()=>vai(x.dove)} className="rvManca">
-                  <i>{x.ico}</i><span>{x.testo}</span>
-                  {x.dove!=="carrello"&&<u>portami →</u>}
-                </button>
-              ))}
+              {mm.map((x,i)=>x.dove==="carrello"
+                ? <div key={i} className="rvManca rvManca-qui"><i>{x.ico}</i><span>{x.testo}</span><u>qui sotto</u></div>
+                : <button key={i} onClick={()=>vai(x.dove)} className="rvManca"><i>{x.ico}</i><span>{x.testo}</span><u>portami →</u></button>
+              )}
             </div>
           </div>);})()}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
@@ -6610,8 +6628,8 @@ function CRM() {
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
           <button onClick={()=>setConfirmReset(true)} className="rvPill" style={{borderColor:"rgba(220,53,69,.5)",background:"rgba(220,53,69,.08)",color:"var(--tf-f87171)"}}>🗑️ Reset form</button>
           {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} className="rvPill" style={{borderColor:"rgba(139,92,246,.55)",background:"rgba(111,66,193,.10)",color:"var(--tf-a78bfa)"}}>+ Altro brand</button>}
-          {onlyMarg&&<button onClick={()=>setShowMargSave(true)} className="rvAzione rvAzione-viola" style={{marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
-          {!onlyMarg&&(()=>{const _m=cosaManca();const _ok=tp>0&&!submitting&&_m.length===0;
+          {onlyMarg&&<button onClick={()=>setShowMargSave(true)} className={cn("rvAzione",_manca.length?"rvAzione-att":"rvAzione-viola")} style={{marginLeft:"auto"}} title={_manca.length?"Manca: "+_manca.map(x=>x.testo).join(" · "):""}>{_manca.length?`🔒 Manca ${_manca.length===1?"una cosa":_manca.length+" cose"}`:`💾 Salva Marginalità (${margItems.length})`}</button>}
+          {!onlyMarg&&(()=>{const _m=_manca;const _ok=tp>0&&!submitting&&_m.length===0;
             // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
             // il click chiude il riepilogo e porta dritto allo step mancante
             // (lo fa la guardia dentro finalSubmit, col toast di cosa manca)
@@ -6937,7 +6955,7 @@ function CRM() {
                  CF italiano — attiva il flag e apre l'anagrafica; ricliccando si spegne */
               <button onClick={()=>{if(turista){setTurista(false);}else{setTurista(true);if(!showAna)skipLookup();}}}
                 title="Cliente turista senza Codice Fiscale italiano: CF non richiesto, vendita limitata a WindTre privato (Mobile Wallet e CB) o Marginalità"
-                className="rvPill" style={{whiteSpace:"nowrap",...(turista?{borderColor:"rgba(245,158,11,.7)",background:"rgba(245,158,11,.14)",color:"var(--tf-fbbf24)"}:{}),fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                className="rvPill" style={{...(turista?{borderColor:"rgba(245,158,11,.7)",background:"rgba(245,158,11,.14)",color:"var(--tf-fbbf24)"}:{}),whiteSpace:"nowrap",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                 🌍 Turista{turista?" ✓":""}
               </button>
             )}
