@@ -22,7 +22,7 @@ import { supabase } from "@/lib/supabaseClient";
 import {
     caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice,
     finestraBilancia, codiceBilancia, codiceAssociato,
-    DIR_BRANDS, type DirBrandId, type Direzione,
+    DIR_BRANDS, W3_PALETTO_BUSINESS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
@@ -604,6 +604,31 @@ export function DirezioneInserimentoAdmin() {
                                 const sigla = t <= 0 ? "" : tierScelto == null ? "✎" : (cbSem ? (tierScelto === 1 ? "80%" : "100%") : `S${tierScelto}`);
                                 return { chiave: p.chiave, nome: p.nome, t, f, stato, sigla };
                             });
+                        /* ══ IL PALETTO, ACCANTO AL MOBILE (Luca 28/08) ═══════════
+                           Le P.IVA mobile che tengono in piedi il premio della gara
+                           mobile: sotto la soglia il premio viene decurtato del 30%.
+                           Non è un target della direzione — è una CONDIZIONE, e va
+                           letta dove si legge il mobile, non solo nel Master.
+
+                           Regole del pallino, diverse dalle altre perché diverso è il
+                           rischio: VERDE solo col cuscinetto pieno (soglia + sfrido),
+                           AMBRA quando il paletto è salvo ma il cuscinetto no, ROSSO
+                           sotto il paletto — lì ci sono i soldi che se ne vanno.
+                           La proiezione non c'entra: o i pezzi ci sono, o non ci sono. */
+                        if (dir.brand === "windtre" && !PISTE_FUORI.has("business_piva")) {
+                            const fatti = k.businessPezzi || 0;
+                            const sfridoPal = Math.max(0, Math.round(Number(dir.sfridi["__paletto_business__"]) || 0));
+                            // ⚠️ dalla LETTERA del mese (dir.palettoBusiness), non dalla
+                            // costante: se WindTre cambia il paletto, cambia da solo
+                            const paletto = Number(dir.palettoBusiness) || W3_PALETTO_BUSINESS;
+                            const obiettivo = paletto + sfridoPal;
+                            const stato = fatti >= obiettivo ? "verde" : fatti >= paletto ? "giallo" : "rosso";
+                            const iMobile = semafori.findIndex((x) => x.chiave === "mobile");
+                            semafori.splice(iMobile < 0 ? 0 : iMobile + 1, 0, {
+                                chiave: "__paletto__", nome: "Paletto", t: obiettivo, f: fatti, stato,
+                                sigla: `${fatti}/${obiettivo}`,
+                            });
+                        }
                         const semCompatti = semafori.filter((x) => x.stato !== "vuoto");
                         const stilePallino = (stato: string) => stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
                             : stato === "viola" ? { background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }
@@ -611,7 +636,14 @@ export function DirezioneInserimentoAdmin() {
                                     : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
                                         : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
                                             : { background: "transparent", border: "1px solid rgba(148,163,184,.3)" };
-                        const tipPallino = (x: { nome: string; f: number; t: number; stato: string; sigla?: string }) =>
+                        const palettoW3 = Number(dir.palettoBusiness) || W3_PALETTO_BUSINESS;
+                        const tipPallino = (x: { chiave?: string; nome: string; f: number; t: number; stato: string; sigla?: string }) =>
+                            x.chiave === "__paletto__"
+                                ? `Paletto Business — P.IVA mobile: ${x.f} su ${x.t}\n\n${x.stato === "verde"
+                                    ? "✅ paletto preso e cuscinetto pieno: il premio della gara mobile è al sicuro"
+                                    : x.stato === "giallo"
+                                        ? `paletto salvo, ma ne ${x.t - x.f === 1 ? "manca 1" : `mancano ${x.t - x.f}`} al cuscinetto di sicurezza`
+                                        : `⚠️ ne ${palettoW3 - x.f === 1 ? "manca 1" : `mancano ${palettoW3 - x.f}`} al paletto: sotto le ${palettoW3} il premio della gara mobile viene decurtato del 30%`}` :
                             x.stato === "vuoto" ? `${x.nome}: nessun target dato` :
                                 `${x.nome}${x.sigla ? ` (${x.sigla === "✎" ? "target a mano" : "soglia " + x.sigla})` : ""}: ${it(x.f)} / ${it(x.t)} — ${x.stato === "verde" ? "🎯 target preso" : x.stato === "viola" ? "in proiezione lo SUPERA di oltre il 15%: margine da spostare sui rossi" : x.stato === "giallo" ? "in proiezione lo prende" : x.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione: serve una spinta"}`;
                         return (
@@ -637,7 +669,13 @@ export function DirezioneInserimentoAdmin() {
                                                 const solaQui = on && pistaSola === sm.chiave;
                                                 return (
                                                     <button key={sm.chiave} type="button"
-                                                        onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            // il paletto non è una pista del tabellare: non ha
+                                                            // un pannello suo, quindi apre il codice intero
+                                                            if (sm.chiave === "__paletto__") { apriTutto(k.cod_gara, false); return; }
+                                                            apriSolaPista(k.cod_gara, sm.chiave);
+                                                        }}
                                                         title={`${tipPallino(sm)}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
                                                         className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
                                                             solaQui
