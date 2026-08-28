@@ -43,15 +43,16 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
    i NOMI — mai target né avanzamenti: il widget dei ragazzi resta riservato. */
 function CodaCodici({ prossimi }: { prossimi: string[] }) {
     if (!prossimi.length) return null;
-    /* Visibile ma in secondo piano: fondo appena acceso e una banda a
-       sinistra, così si legge senza rubare la scena al codice grande. */
+    /* È UN'ECCEZIONE, e va vestita da eccezione (Luca 28/08): con la regola
+       della capienza il codice cambia di rado — quando succede deve far
+       fermare un attimo, quindi ambra e ⚠️, non un'informazione qualsiasi. */
     return (
-        <div className="mt-3 rounded-xl border border-indigo-400/25 border-l-[3px] border-l-indigo-400/70 bg-indigo-500/[0.09] px-3 py-2 flex items-start gap-2 text-left">
-            <span className="text-base leading-none shrink-0 mt-0.5">🔀</span>
+        <div className="mt-3 rounded-xl border border-amber-400/40 border-l-[3px] border-l-amber-400 bg-amber-500/[0.12] px-3 py-2 flex items-start gap-2 text-left">
+            <span className="text-base leading-none shrink-0 mt-0.5">⚠️</span>
             <div className="text-[11px] leading-snug text-slate-300">
-                <span className="font-bold text-indigo-200">Ne carichi più di una?</span>{" "}
-                <span className="text-slate-400">Una per codice:</span>{" "}
-                la seconda su <b className="text-white">{prossimi[0]}</b>
+                <span className="font-bold text-amber-200">Qui ci sta solo questa.</span>{" "}
+                <span className="text-slate-400">Se ne hai altre:</span>{" "}
+                la prossima su <b className="text-white">{prossimi[0]}</b>
                 {prossimi[1] ? <>, poi <b className="text-white">{prossimi[1]}</b></> : null}.
             </div>
         </div>
