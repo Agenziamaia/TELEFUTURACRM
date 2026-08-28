@@ -81,6 +81,9 @@ interface CalendarTask {
     outcomeNote?: string; // Final note when closing/updating task
     /** quando è stata assegnata: da qui partono i due giorni (Luca 28/08) */
     creataIl?: string;
+    /** quando è stata (ri)messa in mano a chi la deve fare: una task tornata
+     *  al mittente e riassegnata riparte da qui, non dalla creazione */
+    assegnataIl?: string;
     esitoAt?: string;
     clientRef?: string; // CF or Name + Phone
     createdBy: string;
@@ -290,6 +293,7 @@ function mapTaskRow(r: Record<string, unknown>): CalendarTask {
         createdBy: r.created_by as string,
         createdByUserId: (r.created_by_user_id as string | null) ?? undefined,
         creataIl: (r.created_at as string | null) ?? undefined,
+        assegnataIl: (r.assegnata_il as string | null) ?? undefined,
         esitoAt: (r.esito_at as string | null) ?? undefined,
         assignedTo: (r.assigned_to as string) ?? "",
         assignedToStore: r.assigned_to_store as string | undefined,
@@ -422,6 +426,7 @@ export default function Calendario() {
     // MOD-26: il pannello ricerca dedicato non esiste più — i filtri sono unificati
     // pannello elenco TASK ARRETRATE (Luca 04/08, riporto stile Google)
     const [showArretrate, setShowArretrate] = useState(false);
+    const [showRimandate, setShowRimandate] = useState(false);
     // 📤 SOLO PER L'AMMINISTRAZIONE (Luca 27/08): un click e il calendario
     // mostra solo le task che HO ASSEGNATO IO ad altri — per governare il giro
     // AMBITO DELLE TASK (Luca 27/08): «voglio poter filtrare per task che ho
@@ -905,6 +910,7 @@ export default function Calendario() {
     /* Le ARRETRATE partono chiuse (Luca 28/08): si vede che ci sono e che si
        aprono, ma non mangiano il giorno di oggi. */
     const [arretrateAperte, setArretrateAperte] = useState(false);
+    const [rimandateAperte, setRimandateAperte] = useState(false);
     const treDays = Array.from({ length: 3 }, (_, i) => addDays(treStart, i));
     const treLabel = (() => {
         const a = new Date(treStart + "T12:00:00"), b = new Date(addDays(treStart, 2) + "T12:00:00");
@@ -1179,8 +1185,11 @@ export default function Calendario() {
     };
     /** la scadenza: assegnazione + 2 giorni utili, a fine giornata */
     const scadenzaDi = (t: CalendarTask): Date | null => {
-        if (!t.creataIl) return null;
-        const d = new Date(t.creataIl);
+        // il cronometro riparte dalla RIASSEGNAZIONE: una task tornata al
+        // mittente e rilanciata non porta con sé il ritardo di prima
+        const partenza = t.assegnataIl || t.creataIl;
+        if (!partenza) return null;
+        const d = new Date(partenza);
         if (isNaN(d.getTime())) return null;
         let restanti = Math.max(1, regolaPatto.giorni);
         while (restanti > 0) {
@@ -1205,7 +1214,7 @@ export default function Calendario() {
         const scad = scadenzaDi(t);
         if (!scad) return null;
         const ora = new Date();
-        const nato = new Date(t.creataIl as string);
+        const nato = new Date((t.assegnataIl || t.creataIl) as string);
         const totale = scad.getTime() - nato.getTime();
         const passato = ora.getTime() - nato.getTime();
         const percentuale = Math.max(0, Math.min(100, Math.round((passato / Math.max(1, totale)) * 100)));
@@ -1524,6 +1533,17 @@ export default function Calendario() {
     //    riportano (decisione Luca). Nessuna riga duplicata: la task resta
     //    sulla sua data e a mezzanotte il riporto si sposta da solo (todayStr).
     const CHIUSE_TASK = ["fatta", "abbandonata"];
+    /* ══ RIMANDATE AL MITTENTE (Luca 28/08) ═══════════════════════════════
+       «Quell'esito deve essere una categoria che esiste sempre attiva sulla
+       visualizzazione giornaliera, così come le arretrate; ognuno vede le
+       sue, solo l'admin le vede tutte. Finché non vengono lavorate dal
+       mittente non generano malus e restano sospese.»
+       Il malus è già fermo: `problema` sta fra le LAVORATE, quindi il patto
+       non conta. Qui si tratta di non farle sparire dagli occhi di chi le
+       ha date: sono in mano SUA, adesso. */
+    const rimandateMie = tasks.filter((t) => t.status === "problema"
+        && (isTaskTutte || (t.createdByUserId && t.createdByUserId === user?.id) || t.createdBy === user?.name))
+        .sort((a, b) => String(b.esitoAt || b.date).localeCompare(String(a.esitoAt || a.date)));
     const tasksArretrate = tasks
         .filter(t => t.date < todayStr && !CHIUSE_TASK.includes(t.status) && taskVisibile(t))
         .sort((a, b) => a.date === b.date ? minutiDi(a.time) - minutiDi(b.time) : a.date.localeCompare(b.date));
@@ -1973,6 +1993,20 @@ export default function Calendario() {
                             ⏰ Arretrate ({tasksArretrate.length})
                         </button>
                     )}
+                    {rimandateMie.length > 0 && (
+                        <button
+                            onClick={() => setShowRimandate(v => !v)}
+                            title="Task che hai assegnato e che ti sono tornate indietro: sono ferme in mano tua finché non le rilanci o le chiudi"
+                            className={cn(
+                                "h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border",
+                                showRimandate
+                                    ? "bg-orange-500/25 text-orange-100 border-orange-500/60"
+                                    : "bg-orange-500/10 text-orange-300 border-orange-500/40 hover:bg-orange-500/20"
+                            )}
+                        >
+                            ↩️ Rimandate ({rimandateMie.length})
+                        </button>
+                    )}
                     <button
                         onClick={() => openCreateTaskModal()}
                         className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
@@ -2407,6 +2441,36 @@ export default function Calendario() {
                 </div>
             )}
 
+            {/* ── RIMANDATE AL MITTENTE (Luca 28/08): stanno in mano a chi le ha
+                date, con la risposta di chi non è riuscito a farle. Da qui si
+                riapre la task: dentro ci sono i due bottoni per rilanciarla o
+                chiuderla. ── */}
+            {showRimandate && rimandateMie.length > 0 && (
+                <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
+                    <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                        ↩️ Rimandate al mittente
+                        <span className="text-sm font-bold text-orange-300">({rimandateMie.length})</span>
+                        <span className="ml-auto text-xs font-normal text-slate-500">ferme: nessun malus finché non le rilanci o le chiudi</span>
+                    </h3>
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                        {rimandateMie.map((t) => (
+                            <div key={`rim-${t.id}`} role="button" tabIndex={0}
+                                onClick={() => setTaskDettaglio(t)}
+                                onKeyDown={(e) => e.key === "Enter" && setTaskDettaglio(t)}
+                                title="Apri la task: puoi rilanciarla o chiuderla"
+                                className="w-full text-left p-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.06] hover:bg-orange-500/[0.12] transition-colors cursor-pointer select-none">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                    <span className="text-xs font-mono font-bold text-orange-300 shrink-0">{ggMm(t.date)}</span>
+                                    <span className="text-sm font-semibold text-white truncate flex-1 min-w-[160px]">{t.title}</span>
+                                    <span className="text-xs text-slate-400 truncate max-w-[220px]">↩️ da {t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || "—")}</span>
+                                </div>
+                                {t.outcomeNote && <p className="text-xs text-orange-100/90 mt-1 truncate">«{t.outcomeNote}»</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* ── TASK ARRETRATE, MODALE SOVRAPPOSTO (Luca 05/08): per chi vede
                 task altrui — «si deve aprire una finestra in sovrapposizione,
                 NON un'altra tendina che esplode dentro il calendario» — con i
@@ -2660,6 +2724,29 @@ export default function Calendario() {
                                                         >
                                                             <div className="font-semibold text-amber-200 truncate">{ggMm(t.date)} · {t.title}</div>
                                                             <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {/* RIMANDATE AL MITTENTE (Luca 28/08): sempre a vista sul
+                                                giorno corrente, come le arretrate — sono ferme in mano
+                                                a chi le ha date e nessuno le sta lavorando. */}
+                                            {dateStr === todayStr && rimandateMie.length > 0 && (
+                                                <div className="mb-1 space-y-1">
+                                                    <button type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setRimandateAperte((v) => !v); }}
+                                                        title={rimandateAperte ? "Richiudi le rimandate" : "Task che ti sono tornate indietro"}
+                                                        className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-orange-500/40 bg-orange-500/10 text-[9px] font-bold uppercase tracking-wider text-orange-300 hover:bg-orange-500/20 transition-colors">
+                                                        {rimandateAperte ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                        ↩️ Rimandate ({rimandateMie.length})
+                                                    </button>
+                                                    {rimandateAperte && rimandateMie.map((t) => (
+                                                        <button key={`rimc-${t.id}`}
+                                                            onClick={() => { selectDate(dateStr); setTaskDettaglio(t); }}
+                                                            title={`Tornata indietro da ${t.assignedTo || t.assignedToStore || "—"} — apri per rilanciarla o chiuderla`}
+                                                            className="w-full text-left px-1.5 py-1 rounded-lg border border-orange-500/40 bg-orange-500/10 text-[10px] leading-tight hover:bg-orange-500/20 transition-colors">
+                                                            <div className="font-semibold text-orange-100 truncate">{t.title}</div>
+                                                            <div className="text-slate-400 truncate">↩️ {t.assignedToStore || t.assignedTo}</div>
                                                         </button>
                                                     ))}
                                                 </div>
@@ -4223,6 +4310,8 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
     /** me la sono data da solo: non c'è nessuno a cui rispondere, quindi una
      *  nota sola e lo stato resta la tendina qui sopra (Luca 28/08) */
     const autoAssegnata = soLaMia && laDevoFareIo;
+    /** il mittente la rilancia: torna «da fare» e il patto riparte da adesso */
+    const [rilancia, setRilancia] = useState(false);
     const [addPersone, setAddPersone] = useState<string[]>([]);
     const [addNegozi, setAddNegozi] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
@@ -4231,8 +4320,12 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
         if (busy) return;
         setBusy(true);
         const patch: Record<string, unknown> = { status: stato };
-        // la risposta di chi esegue si salva sempre: è la traccia del giro
-        if (rispostaEsito.trim() !== String(t.outcomeNote || "").trim()) {
+        /* La risposta la scrive SOLO chi esegue (Luca 28/08). Prima la
+           casella del mittente partiva vuota ma veniva comunque salvata: al
+           primo salvataggio di chi aveva assegnato, la risposta dell'altro
+           veniva azzerata — ed era il motivo per cui «lei non vede nulla». */
+        const scrivoIoLaRisposta = assegnataDaAltri || autoAssegnata;
+        if (scrivoIoLaRisposta && rispostaEsito.trim() !== String(t.outcomeNote || "").trim()) {
             patch.outcome_note = rispostaEsito.trim() || null;
             // e se a scriverla è chi ESEGUE, chi ha assegnato deve rivederla
             // accesa anche se lo stato non cambia (revisore 27/08: il giro di
@@ -4251,6 +4344,15 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                 patch.esito_at = new Date().toISOString();
                 patch.esito_visto = String(t.createdBy || "").trim().toLowerCase() === String(mioNome || "").trim().toLowerCase();
             }
+        }
+        /* IL RILANCIO (Luca 28/08): «finché non viene lavorata dal mittente
+           non deve generare alcun malus… quando la riassegna» — il conto dei
+           due giorni riparte da adesso, non dal giorno in cui l'aveva data la
+           prima volta, e il giro di ritorno si chiude. Va DOPO il blocco degli
+           stati, che altrimenti riaccenderebbe il richiamo al mittente. */
+        if (rilancia) {
+            patch.assegnata_il = new Date().toISOString();
+            patch.esito_visto = true;
         }
         if (puoGestire) {
             patch.title = titolo.trim() || t.title;
@@ -4369,7 +4471,43 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                             task, qui quella di chi la sta facendo. Scegliendo
                             «Problema» la task torna a chi l'ha assegnata con
                             questa nota attaccata — è il giro di ritorno. */}
-                        {!autoAssegnata && (
+                        {/* CHI HA ASSEGNATO legge la risposta, non la scrive
+                            (Luca 28/08: «io vedo che gli ho lasciato una nota
+                            per lei mentre lei non vede nulla»). Prima la casella
+                            di chi assegna partiva vuota e, salvando, sovrascriveva
+                            la risposta dell'altro con il nulla. */}
+                        {!assegnataDaAltri && !autoAssegnata && (
+                            <div className={cn("mt-3 rounded-xl border p-3 space-y-2",
+                                t.status === "problema" ? "border-orange-400/50 bg-orange-500/10" : "border-white/10 bg-white/[0.02]")}>
+                                <label className="block text-xs font-medium text-slate-300">
+                                    {t.status === "problema"
+                                        ? <>↩️ Rimandata indietro da <b>{t.assignedTo || t.assignedToStore || "chi la doveva fare"}</b></>
+                                        : <>💬 La risposta di <b>{t.assignedTo || t.assignedToStore || "chi la sta facendo"}</b></>}
+                                </label>
+                                <p className={cn("text-sm rounded-lg px-3 py-2 border",
+                                    t.outcomeNote ? "text-slate-100 bg-black/30 border-white/10" : "text-slate-500 bg-white/[0.02] border-white/5 italic")}>
+                                    {t.outcomeNote || "Non ha ancora scritto niente."}
+                                </p>
+                                {t.status === "problema" && (
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                        <button type="button" disabled={busy}
+                                            onClick={() => { setStato("da_fare" as TaskStatus); setRilancia(true); }}
+                                            className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors",
+                                                rilancia ? "border-indigo-400/60 bg-indigo-500/25 text-indigo-100" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]")}>
+                                            ↪️ Rilanciala {rilancia ? "— salva per confermare" : ""}
+                                        </button>
+                                        <button type="button" disabled={busy}
+                                            onClick={() => { setStato("fatta" as TaskStatus); setRilancia(false); }}
+                                            className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors",
+                                                stato === "fatta" ? "border-emerald-400/60 bg-emerald-500/25 text-emerald-100" : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]")}>
+                                            ✅ Chiudila io {stato === "fatta" ? "— salva per confermare" : ""}
+                                        </button>
+                                        <span className="text-[11px] text-slate-500 self-center">finché resta qui non conta nessun malus</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {assegnataDaAltri && (
                         <div className={cn("mt-3 rounded-xl border p-3 space-y-2",
                             stato === "problema" ? "border-orange-400/50 bg-orange-500/10" : "border-white/10 bg-white/[0.02]")}>
                             {/* GLI STATI SOPRA LA RISPOSTA (Luca 28/08): chi ha
@@ -4406,11 +4544,6 @@ function TaskDettaglioModal({ t, patto, puoGestire, mioNome, persone, negozi, es
                                 <p className="text-[11px] text-orange-200/90">
                                     Salvando, la task torna a <b>{t.createdBy || "chi l'ha assegnata"}</b> segnata come da rivedere:
                                     la trova evidenziata nel suo calendario, con questa nota.
-                                </p>
-                            )}
-                            {t.outcomeNote && t.status === "problema" && soLaMia && (
-                                <p className="text-[11px] text-orange-200 bg-orange-500/10 border border-orange-400/30 rounded-lg px-2.5 py-1.5">
-                                    ⚠️ Ti è tornata indietro: <b>{t.assignedTo || t.assignedToStore}</b> ha scritto «{t.outcomeNote}»
                                 </p>
                             )}
                         </div>
