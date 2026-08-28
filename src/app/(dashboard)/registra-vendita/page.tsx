@@ -3375,9 +3375,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
   };
   return (<div>
     {isKipointSped&&(
-      <div style={{marginTop:6,padding:"10px 12px",background:"rgba(10,88,202,0.08)",borderRadius:8,border:"1px dashed rgba(10,88,202,0.55)"}}>
-        <div style={{fontSize:12,fontWeight:700,color:"var(--tf-60a5fa)",marginBottom:6}}>⚖️ Simulatore peso volumetrico <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(H×L×P ÷ 6000 vs peso reale: vince il maggiore)</span></div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(70px,1fr))",gap:"8px 12px",maxWidth:520}}>
+      <div className="rvNota rvNota-info" style={{marginTop:6}}>
+        <div className="rvNota-t">⚖️ Simulatore peso volumetrico <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(H×L×P ÷ 6000 vs peso reale: vince il maggiore)</span></div>
+        <div className="rvG3" style={{maxWidth:560}}>
           <TF l="Altezza (cm)" v={sp.h||""} o={v=>upSped("h",v)} p="es. 30"/>
           <TF l="Larghezza (cm)" v={sp.l||""} o={v=>upSped("l",v)} p="es. 40"/>
           <TF l="Profondità (cm)" v={sp.p||""} o={v=>upSped("p",v)} p="es. 20"/>
@@ -3399,11 +3399,11 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
          Wallet e GA Ric. Auto hanno 13-14 offerte e devono mostrare i bottoni
          come MNP Ric. Auto; i muri da 24-36 offerte — W3 MNP — restano tendina) */
       offerte.length>14
-        ? <div style={{marginTop:6,maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div>
-        : <div style={{marginTop:6}}>
-            <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Offerta <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-              {offerte.map(o=><button key={o.nome} onClick={()=>pickOff(off===o.nome?"":o.nome)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",border:off===o.nome?"2px solid "+color:"2px solid var(--tf-w100)",background:off===o.nome?color:"var(--tf-w40)",color:off===o.nome?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:600}}>{o.nome}</button>)}
+        ? <div className="rvBox" style={{marginTop:6}}><div style={{maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div></div>
+        : <div className="rvBox" style={{marginTop:6}}>
+            <div className="rvBoxT">Offerta <span style={{color:"var(--tf-f87171)"}}>*</span></div>
+            <div className="rvPillRow">
+              {offerte.map(o=><button key={o.nome} onClick={()=>pickOff(off===o.nome?"":o.nome)} className={cn("rvPill",off===o.nome&&"rvPill-on")}>{off===o.nome?"✓ ":""}{o.nome}</button>)}
             </div>
           </div>
     )}
@@ -3414,10 +3414,10 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
         const bloccata=!on&&(_opzBundle(o.nome)||_opzAccessorio(o.nome))&&_vinc>=MAX_BUNDLE_ACC;
         return(
         <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
-          <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:bloccata?"not-allowed":"pointer",opacity:bloccata?0.35:1,border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo&&!o.obb?" ¹":""}</button>
+          <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={cn("rvPill","rvPill-sm",on&&"rvPill-on")}>{on?"✓ ":""}{o.nome}{o.gruppo&&!o.obb?" ¹":""}</button>
           {on&&(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
             if(_opzBundle(o.nome)||_opzAccessorio(o.nome)){const altre=_vinc-_qtaOpz(opz[o.nome]);q=Math.max(1,Math.min(q,MAX_BUNDLE_ACC-altre));}
-            setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
+            setF("__opzioni",{...opz,[o.nome]:q});}} className="rvQta"/>}
         </span>);};
       // RIGHE DEDICATE per i gruppi a scelta obbligatoria (Luca 25/08 sera,
       // fisso W3: «prima scelta GA o GNP, seconda FTTC/FTTH/FTTH Extra, poi
@@ -3427,35 +3427,36 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
       const grpObb=[...new Set(offSel.opzioni.filter(o=>o.obb&&o.gruppo).map(o=>o.gruppo))];
       const libere=offSel.opzioni.filter(o=>!(o.obb&&o.gruppo));
       return(
-      <div style={{marginTop:10}}>
+      <div className="rvBox" style={{marginTop:10}}>
+        <div className="rvBoxT">Opzioni</div>
         {grpObb.map(g=>{
           const scelte=offSel.opzioni.filter(o=>o.gruppo===g&&o.obb);
           // stessa semantica del gate di salvataggio: QUALUNQUE opzione del
           // gruppo soddisfa (anche una non-obb dello stesso gruppo)
           const fatta=offSel.opzioni.some(o=>o.gruppo===g&&opz[o.nome]);
           return(
-          <div key={g} style={{marginBottom:8}}>
-            <div style={{fontSize:11,fontWeight:700,color:fatta?"var(--tf-28a745)":"var(--tf-f59e0b)",marginBottom:4}}>
-              ✱ <span style={{textTransform:"capitalize"}}>{g}</span> <span style={{fontWeight:400}}>{fatta?"✓":"— scegli una"}</span>
+          <div key={g} style={{marginBottom:10}}>
+            <div className={cn("rvReq",fatta?"rvReq-ok":"rvReq-todo")}>
+              <span>{fatta?"✓":"✱"}</span><span>{g}</span><em>{fatta?"scelta fatta":"scegline una"}</em>
             </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{scelte.map(pillOpz)}</div>
+            <div className="rvPillRow" style={{gap:6}}>{scelte.map(pillOpz)}</div>
           </div>);})}
         {libere.length>0&&(
           <>
-            <div className="rvLab">Opzioni <span className="rvLabX" style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{libere.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>
+            <div className="rvLab" style={grpObb.length?{marginTop:12}:undefined}>Facoltative <span className="rvLabX" style={{fontWeight:400,color:"var(--tf-64748b)"}}>{libere.some(o=>o.gruppo)?"(¹ una sola per gruppo)":""}</span>
               {_haVincolabili&&<span className="rvLabX" style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{libere.map(pillOpz)}</div>
+            <div className="rvPillRow" style={{gap:6}}>{libere.map(pillOpz)}</div>
           </>
         )}
       </div>);})()}
     {sub.catCategoria==="Telefono a Rate"&&!/\bCB\b/i.test(sub.catProdotto)&&(mobili||[]).length>0&&(!_NE(f["Codice Contratto"])||!_NE(f["Numero di Cellulare"]))&&(
-      <div style={{marginTop:10,padding:"10px 12px",background:"rgba(111,66,193,0.08)",borderRadius:8,border:"1px dashed rgba(111,66,193,0.55)"}}>
-        <div style={{fontSize:12,fontWeight:700,color:"var(--tf-a78bfa)",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
-        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Codice contratto, numero e codice inserimento si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+      <div className="rvNota rvNota-scelta">
+        <div className="rvNota-t">📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
+        <div className="rvNota-s">Codice contratto, numero e codice inserimento si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
+        <div className="rvPillRow" style={{gap:6}}>
           {(mobili||[]).map((m,mi)=>(
             <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);if(m.codIns)setF("Codice Inserimento",m.codIns);}}
-              style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(111,66,193,0.7)",background:"rgba(111,66,193,0.18)",color:"var(--tf-c4b5fd)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              className="rvPill rvPill-sm" style={{borderColor:"rgba(139,92,246,.6)",color:"var(--tf-c4b5fd)"}}>
               ✓ Aggancia a {m.etichetta}
             </button>
           ))}
@@ -3466,22 +3467,22 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
         carrello = gettone +50 sulla sim. Si chiede qui e la conferma spunta
         l'opzione SULLA SIM (il pay sta sulla sim, non sul fisso). */}
     {(simConv||[]).length===0&&simConvCart&&(
-      <div style={{marginTop:10,padding:"9px 12px",background:"rgba(245,158,11,0.06)",borderRadius:8,border:"1px dashed rgba(245,158,11,0.4)",fontSize:11,color:"var(--tf-fbbf24)"}}>
+      <div className="rvNota rvNota-att" style={{fontSize:11,color:"var(--tf-fbbf24)"}}>
         🔗 C'è una sim business già nel carrello: se questo fisso è in convergenza, riaprila e spunta «Wireline contestuale» — vale il gettone di gara.
       </div>
     )}
     {(simConv||[]).length>0&&(
-      <div style={{marginTop:10,padding:"10px 12px",background:"rgba(245,158,11,0.08)",borderRadius:8,border:"1px dashed rgba(245,158,11,0.55)"}}>
-        <div style={{fontSize:12,fontWeight:700,color:"var(--tf-fbbf24)",marginBottom:6}}>🔗 Questo fisso è in convergenza con la sim business che stai registrando?</div>
-        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Se sì, alla sim spetta il gettone di gara per la vendita contestuale: lo segno io sulla sim, tu non devi fare altro.</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+      <div className="rvNota rvNota-att">
+        <div className="rvNota-t">🔗 Questo fisso è in convergenza con la sim business che stai registrando?</div>
+        <div className="rvNota-s">Se sì, alla sim spetta il gettone di gara per la vendita contestuale: lo segno io sulla sim, tu non devi fare altro.</div>
+        <div className="rvPillRow" style={{gap:6}}>
           {(simConv||[]).map((s,ix)=>s.gia?(
-            <span key={ix} style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(40,167,69,0.6)",background:"rgba(40,167,69,0.15)",color:"var(--tf-34d399)",fontSize:12,fontWeight:700}}>
+            <span key={ix} className="rvPill rvPill-sm rvPill-si">
               ✓ Convergenza segnata su {s.etichetta}
             </span>
           ):(
             <button key={ix} onClick={()=>onConvergenza&&onConvergenza(s)}
-              style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(245,158,11,0.7)",background:"rgba(245,158,11,0.18)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              className="rvPill rvPill-sm" style={{borderColor:"rgba(245,158,11,.7)",color:"var(--tf-fbbf24)"}}>
               ✓ Sì, in convergenza con {s.etichetta}
             </button>
           ))}
@@ -3500,7 +3501,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
             if(/^operatore gnp$/i.test(cmp.nome)&&hasCampoGnp&&(f["GNP"]||"")!=="Sì")return null;
             // CAT-02: se la regola porta i suoi valori (jsonb valori:[…]) vincono quelli, altrimenti il lookup storico
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={Array.isArray(cmp.valori)&&cmp.valori.length?cmp.valori:_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
-            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} className="rvIn"/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
+            if(cmp.tipo==="data")return (<div key={cmp.nome}><div className="rvLab">{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-f87171)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} className="rvIn"/>{cmp.nota&&<div className="rvHint">{cmp.nota}</div>}</div>);
             if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);
               // extra gara telefoni FW: il modello preseleziona la fascia
               // (opzione del gruppo «fascia» — resta correggibile a mano).
@@ -3774,13 +3775,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
   const _reqApiSub=useContext(ReqCtx);
   const _subKey=group.id+"-"+si+"-"+sub.id;
-  const _bd = subBadge(sd, dupCheck, sub, _reqApiSub?_reqApiSub.reqMissing(_subKey):false);
   const _inner = (
-    <div style={{marginBottom:10,padding:10,background:"var(--tf-w20)",borderRadius:8,border:"1px solid "+group.color+"30"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-        <div style={{fontSize:11,fontWeight:700,color:group.color}}>{sub.title}</div>
-        {_bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:_bd.bg,color:_bd.fg,whiteSpace:"nowrap"}}>{_bd.label}</span>}
-      </div>
+    <div className="rvProd" style={{"--rv-acc":group.color,"--rv-ink":inchiostroSu(group.color)}}>
 
       {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color} mobili={sub.catCategoria==="Telefono a Rate"?(mobiliRate||[]):[]}
         simConv={sub.catCategoria==="Fisso"?(simConv||[]):[]} onConvergenza={onConvergenza} simConvCart={sub.catCategoria==="Fisso"?simConvCart:false}/>}
@@ -7032,22 +7028,22 @@ function CRM() {
         const d=sale[sub.id];if(!(d&&d.active))return null;
         const b=subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+prodModal.si+"-"+sub.id));
         return <div onClick={()=>setProdModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"var(--tf-12141f)",border:"1px solid "+bC+"55",borderRadius:16,boxShadow:"0 18px 50px rgba(0,0,0,.55)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"var(--tf-12141f)",border:"1px solid "+group.color+"55",borderRadius:18,boxShadow:"0 18px 50px rgba(0,0,0,.55)","--rv-acc":group.color,"--rv-ink":inchiostroSu(group.color)}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid var(--tf-w80)",position:"sticky",top:0,background:"var(--tf-12141f)",zIndex:1}}>
               <span style={{fontSize:21}}>{iconW3Cat(group)}</span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:15,fontWeight:800,color:"var(--tf-f8fafc)"}}>{sub.title}</div>
-                <div style={{fontSize:10.5,color:group.color,fontWeight:800,textTransform:"uppercase",letterSpacing:.5}}>{group.title} · Vendita #{prodModal.si+1}</div>
+                <div style={{fontSize:15.5,fontWeight:800,color:"var(--tf-f8fafc)",letterSpacing:.1}}>{sub.title}</div>
+                <div className="rvCardT" style={{color:group.color,marginBottom:0,fontSize:10.5}}>{group.title} · Vendita #{prodModal.si+1}</div>
               </div>
-              {b&&<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,background:b.bg,color:b.fg,whiteSpace:"nowrap"}}>{b.label}</span>}
+              {b&&<span className={cn("rvBadge","rvBadge-"+b.st)}>{b.label}</span>}
               <button onClick={()=>setProdModal(null)} style={{background:"transparent",border:"none",color:"var(--tf-64748b)",fontSize:20,cursor:"pointer",lineHeight:1,padding:0}}>✕</button>
             </div>
             <div style={{padding:"16px 20px"}}>
               <SubCard sub={sub} rawSd={d||{}} group={group} si={prodModal.si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate} simConv={simConvergenza} onConvergenza={segnaConvergenza} simConvCart={simConvCarrello}/>
             </div>
             <div style={{display:"flex",gap:10,padding:"13px 20px",borderTop:"1px solid var(--tf-w80)",position:"sticky",bottom:0,background:"var(--tf-12141f)"}}>
-              <button onClick={()=>{togSub(prodModal.gid,prodModal.si,prodModal.subId,null);setProdModal(null);}} style={{padding:"11px 16px",borderRadius:10,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.08)",color:"var(--tf-f87171)",fontSize:12.5,fontWeight:800,cursor:"pointer"}}>🗑 Rimuovi</button>
-              <button onClick={()=>setProdModal(null)} style={{flex:1,padding:"11px 16px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",fontSize:13.5,fontWeight:900,cursor:"pointer"}}>✔️ Fatto — torna ai prodotti</button>
+              <button onClick={()=>{togSub(prodModal.gid,prodModal.si,prodModal.subId,null);setProdModal(null);}} className="rvPill" style={{borderColor:"rgba(220,53,69,.5)",background:"rgba(220,53,69,.08)",color:"var(--tf-f87171)"}}>🗑 Rimuovi</button>
+              <button onClick={()=>setProdModal(null)} className={cn("rvPill",b&&b.st==="ok"&&"rvPill-si")} style={{flex:1,fontSize:13.5,fontWeight:900,padding:"11px 16px"}}>{b&&b.st==="ok"?"✓ Fatto — torna ai prodotti":"Torna ai prodotti"}</button>
             </div>
           </div>
         </div>;
