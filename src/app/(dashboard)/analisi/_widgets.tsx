@@ -1903,8 +1903,12 @@ const formaRete = (ctx, brand) => {
     const col = n <= 5 ? Math.max(1, n) : Math.ceil(n / 2);
     return { n, col, righe: Math.ceil(n / col), ultima: n - col * (Math.ceil(n / col) - 1) };
 };
-// la griglia gira a 12 colonne (~100px l'una) e righe da 150 + 10 di margine
-const COL_PX = 100, RIGA_PX = 160;
+// la griglia gira a 12 colonne e righe da 150 + 10 di margine. Su uno schermo
+// pieno una colonna vale ~150px, non 100: con 100 il massimo di WindTre e
+// Vodafone usciva h4 mentre la disposizione dell'azienda e' h5, e bastava
+// sfiorare la maniglia per farle collassare (Vodafone perdeva 3 righe di piede
+// su 4 e l'anello scendeva da 221 a 190).
+const COL_PX = 150, RIGA_PX = 160;
 export function minWRete(ctx, brand) {
     const { col } = formaRete(ctx, brand);
     return Math.max(2, Math.ceil((82 * col + 40) / COL_PX));   // 72px di anello + 10 di gap
@@ -1919,7 +1923,9 @@ export function maxHRete(ctx, brand, w) {
     const D = Math.min(cellW, 480);
     const piede = 18 + (cellW >= 56 ? 15 : 0) + (cellW >= 78 ? 15 : 0) + (cellW >= 76 ? 14 : 0);
     // 1.5 come nel CSS (--areaMax), non 1.35: le due stime erano scollate
-    return Math.max(minHRete(ctx, brand), Math.floor((righe * (1.5 * D + piede) + (righe - 1) * 10 + 37 + 120 + 104) / RIGA_PX));
+    // 80 = testata 42 + padding 32 + bordi 2. Niente piu' 37: la riga dei
+    // chip dentro la card non esiste piu', e' salita accanto al marchio.
+    return Math.max(minHRete(ctx, brand), Math.floor((righe * (1.5 * D + piede) + (righe - 1) * 10 + 120 + 80) / RIGA_PX));
 }
 
 // LE PASTIGLIE STANNO NELLA TESTATA, accanto al marchio (Luca 28/08: «le
@@ -1932,7 +1938,7 @@ export function ChipsRete({ ctx, brand }) {
     const n = b.piste.length;
     const conQuota = !!b.quotaAttiva;
     return (
-        <span className="flex items-center gap-1.5 flex-wrap text-[10px] min-w-0">
+        <span className="flex items-center gap-1.5 flex-nowrap overflow-hidden text-[10px] min-w-0">
             {b.conTarget > 0 ? (
                 <>
                     {/* la proiezione viene PRIMA: è il dato che guida, ed è
@@ -1941,7 +1947,7 @@ export function ChipsRete({ ctx, brand }) {
                         🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget} in target
                     </span>
                     {!ctx.primaDel20 && (
-                        <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap">
+                        <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap hidden @lg:inline">
                             <b className="text-white tabular-nums">{b.inTarget}</b>/{b.conTarget} in target adesso
                         </span>
                     )}

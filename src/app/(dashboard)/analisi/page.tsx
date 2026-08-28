@@ -25,7 +25,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, hubByHref, hubChildKey } from "@/lib/nav";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { caricaTutte } from "@/lib/fetchTutte";
-import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento, matchRigheGaraParallela } from "@/lib/commissioning";
+import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrattiMese, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaPartnership, puntiPerRighe, brandIdDaLabel, contestoVfFw, calcolaAvanzamento } from "@/lib/commissioning";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
@@ -47,9 +47,17 @@ const PISTE_FW = ["mobile", "fisso", "luce", "gas"];
 // fianco (Partnership, assicurazioni, smartphone CB): là il motore vale 0 per
 // costruzione, e la verità sta sull'item arricchito
 const PISTE_DA_ITEMS = new Set(["cb", "assicurazioni", "smartphone_cb"]);
-// gare parallele che vivono solo sulla lettera azienda: i punti si contano a mano
-const PISTE_PARALLELE_AZ = new Set(["business_piva"]);
-const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "energia", "lucegas", "cb", "smartphone_cb", "device",
+// PISTE SENZA CORSA (Luca 29/08: «Telefoni & device non ha nessun target e
+// non capisco da dove l'hai preso»). Una pista senza soglie e senza target
+// non e' una gara: «Telefoni & device» vive in pay_piste solo perche' il seed
+// della lettera la usa per contare i TNP. E' la stessa regola con cui il
+// Master e la Direzione le nascondono — «via la barra senza corsa».
+// Eccezione: le piste che vivono di GATE invece che di corsa. W3 Protetti
+// non ha soglie e non ha un target sommabile (vale «almeno uno per punto
+// vendita, pena il malus»), ma Luca l'ha voluta a video: e' un obbligo, e
+// un obbligo a zero e' l'informazione piu' importante che ci sia.
+const PISTE_GATE = new Set(["protetti"]);
+const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "energia", "lucegas", "cb", "smartphone_cb",
     "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "protetti", "sky", "t2"];
 
 const ymLocale = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
@@ -321,7 +329,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete, kpiRes] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes, tReteRes, layRete, kpiRes, letteraRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0]).catch(() => null), caricaTabellareAzienda("s4", mesiISO[0]).catch(() => null)]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -352,6 +360,11 @@ function AnalisiInner() {
                     supabase.from("layout_condiviso").select("valore").eq("chiave", "analisi_rete").maybeSingle(),
                     // KPI in evidenza + soglia di allarme (Gare → Target → Rete)
                     supabase.from("layout_condiviso").select("valore").eq("chiave", "rete_kpi").maybeSingle(),
+                    // PARAMETRI DELLA LETTERA W3 del mese. Serve il paletto
+                    // business (pezzi P.IVA mobile per codice): «ogni mese,
+                    // aggiornando la lettera, si aggiorna anche questo»
+                    // (Luca 29/08) — il target non si scrive a mano.
+                    soloMese ? supabase.from("pay_regole_lettera").select("chiave, valore").eq("brand", "windtre").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -404,6 +417,7 @@ function AnalisiInner() {
                     targetRete: tReteRes?.data || [],
                     layoutRete: Array.isArray(layRete?.data?.valore) ? layRete.data.valore : null,
                     kpiRete: kpiRes?.data?.valore || null,
+                    letteraW3: Object.fromEntries((letteraRes?.data || []).map((r) => [String(r.chiave), Number(r.valore)])),
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -714,42 +728,57 @@ function AnalisiInner() {
                     if (c.soloPiste && !c.soloPiste.includes(p.chiave)) continue;
 
                     const st = av.piste[p.chiave]; if (!st) continue;
-                    // le soglie: se il lato ragazzi non ne ha per questa pista si
-                    // guarda la lettera azienda (è il caso di Business P.IVA)
+                    // le soglie: se il lato ragazzi non ne ha per questa pista
+                    // si guarda la lettera azienda (e' il caso di Smartphone CB)
                     let scala = c.tab.soglie.filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                     if (!scala.length && c.az) scala = (c.az.soglie || []).filter((x) => x.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                     const tg = targetDi(c.id, p.chiave);
-                    // NIENTE PIÙ SCARTI (Luca 28/08: «sulla card di WindTre manca
-                    // Protecta e manca il business — dentro Gare, nei target, ci
-                    // sono»). Quello che si può targettare si deve vedere: dare
-                    // un obiettivo a una pista invisibile non ha senso, e una
-                    // pista a zero è un'informazione, non un buco.
-                    // FONTE DICHIARATA, non «quella che non è zero»: su queste
+                    // VIA LE PISTE SENZA CORSA (Luca 29/08). Niente soglie e
+                    // niente target = niente gara: e' il caso di «Telefoni &
+                    // device», che vive in pay_piste solo per il conteggio TNP
+                    // del seed lettera. Restano le piste-obbligo (PISTE_GATE).
+                    if (!scala.length && !tg && !PISTE_GATE.has(p.chiave)) continue;
+                    // FONTE DICHIARATA, non «quella che non e' zero»: su certe
                     // piste il motore del tabellare non conta per costruzione
                     // (salta le righe delle gare parallele) e i punti arrivano
                     // dal conteggio a fianco che `arricchisci` porta sull'item.
-                    // Col vecchio «se il motore è a zero» sarebbe bastata una
+                    // Col vecchio «se il motore e' a zero» sarebbe bastata una
                     // riga da 0,5 punti per far sparire in silenzio i 1.173
                     // della Customer Base.
-                    // gara PARALLELA sulla lettera azienda (Business P.IVA): il
-                    // motore la salta per costruzione, i punti si contano come
-                    // fa il Master, riga per riga
-                    const paral = c.az && PISTE_PARALLELE_AZ.has(p.chiave)
-                        ? Math.round(c.rows.reduce((sm, r) => sm + matchRigheGaraParallela(c.az.righe || [], r, p.chiave)
-                            .reduce((a, x) => a + (Number(x.punti) || 0), 0), 0) * 100) / 100
-                        : 0;
-                    const paralMio = paral > 0
-                        ? Math.round(c.rows.filter((r) => èMio(r.negozio)).reduce((sm, r) => sm + matchRigheGaraParallela(c.az.righe || [], r, p.chiave)
-                            .reduce((a, x) => a + (Number(x.punti) || 0), 0), 0) * 100) / 100
-                        : 0;
                     const daFianco = PISTE_DA_ITEMS.has(p.chiave)
                         ? (daItems.get(p.chiave) || 0) > 0
                         : (!st.punti && (daItems.get(p.chiave) || 0) > 0);
                     piste.push({ chiave: p.chiave, nome: p.nome, unit: "pt",
-                        punti: paral > 0 ? paral : (daFianco ? arrot(daItems.get(p.chiave)) : st.punti),
+                        punti: daFianco ? arrot(daItems.get(p.chiave)) : st.punti,
                         pezzi: st.pezzi, gate: st.gate || null, scala,
-                        mio: paral > 0 ? paralMio : (daFianco ? arrot(daItemsMio.get(p.chiave) || 0) : (avMio?.piste?.[p.chiave]?.punti ?? 0)),
+                        mio: daFianco ? arrot(daItemsMio.get(p.chiave) || 0) : (avMio?.piste?.[p.chiave]?.punti ?? 0),
                         target: tg });
+                }
+                // ── PALETTO BUSINESS W3 (Luca 29/08) ──────────────────────
+                // «Telefoni & device va sostituito con Business Mobile, lo
+                // stesso dato per il quale abbiamo il paletto per evitare il
+                // malus». La definizione e' quella del motore e del Master:
+                // attivazioni della pista MOBILE con cliente business —
+                // contare i business di QUALSIASI pista dava falsi verdi su
+                // una penale del 30%.
+                // Il target non si scrive a mano: e' il paletto della LETTERA
+                // del mese (pay_regole_lettera.paletto_piva_mobile, 6 ad
+                // agosto) per i codici che ce l'hanno. I multibrand (MB-*)
+                // restano fuori: il paletto e' del franchising. Cambia la
+                // lettera, cambia il target da solo.
+                if (c.id === "w3") {
+                    // il conteggio non lo rifaccio io: `calcolaAvanzamento` lo
+                    // tiene gia' come `pivaMobile` — attivazioni della pista
+                    // MOBILE con cliente business — ed e' LA definizione del
+                    // malus30Mobile. Contare i business di qualsiasi pista
+                    // darebbe falsi verdi su una penale del 30%.
+                    const codici = (dati?.targetW3 || []).filter((r) => !String(r.cod_gara || "").startsWith("MB-")).length;
+                    const paletto = Number(dati?.letteraW3?.paletto_piva_mobile) || 0;
+                    const tg = targetDi("w3", "business_mobile")
+                        || (paletto > 0 && codici > 0 ? { v: paletto * codici, fonte: "lettera" } : null);
+                    piste.push({ chiave: "business_mobile", nome: "Business mobile", unit: "pz",
+                        punti: av.pivaMobile, pezzi: av.pivaMobile, gate: null, scala: [],
+                        mio: avMio?.pivaMobile ?? 0, target: tg, sub: true });
                 }
             }
             for (const p of (c.pezzi || [])) {
@@ -794,7 +823,10 @@ function AnalisiInner() {
             });
             // QUOTA DEL BRAND IN PEZZI, mai in punti: sommare punti fra piste
             // diverse è vietato quanto sommarli fra operatori (regola cardine)
-            const pzRete = piste.reduce((sm, x) => sm + x.pezzi, 0);
+            // il Business mobile e' un SOTTOINSIEME del mobile (le sue stesse
+            // attivazioni, filtrate sul cliente business): sommarlo qui
+            // conterebbe due volte gli stessi pezzi
+            const pzRete = piste.reduce((sm, x) => sm + (x.sub ? 0 : x.pezzi), 0);
             const pzMio = piste.reduce((sm, x) => sm + (x.unit === "pz" ? x.mio : 0), 0);
             // IN TARGET, non «in soglia» (Luca 28/08: «qui ci interessa più che
             // altro capire i target»). Il denominatore sono le piste che un

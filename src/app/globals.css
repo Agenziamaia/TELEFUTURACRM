@@ -1267,12 +1267,15 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    Le decisioni discrete si fanno con `clamp(0px, calc(EXPR * 9999), 1px)`,
    che vale 0px o 1px, e poi si moltiplica.                                */
 .tf-rb {
-    --HEAD: 46px;        /* testata: logo 38 + margine 8 — dentro ci sono anche
-                            le pastiglie, che prima si mangiavano una riga a parte */
+    --HEAD: 42px;        /* testata MISURATA: logo 38 + mb-2 8 − -mt-1 4. Dentro
+                            ci stanno anche le pastiglie, che prima si mangiavano
+                            una riga a parte dentro la card (37px + 12 di stacco) */
     --SEP: 8px;          /* stacco sopra la barra                           */
-    --BOX: 86px;         /* corpo della SogliaBar senza la riga dei valori   */
+    --BOX: 87px;         /* corpo della SogliaBar senza la riga dei valori: 86
+                            + 1 di border-top, che con box-sizing:border-box
+                            mangiava mezzo pixel alla riga dei chip           */
     --GAPB: 12px;        /* stacco fra anelli e barra                       */
-    --GX: 10px; --GY: 10px;
+    --GX: 6px; --GY: 10px;
     --nS: 1;
     --W: 100cqw;
     --H: calc(100cqh - var(--HEAD));
@@ -1318,7 +1321,15 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
        che serve (una corona libera di 60px), poi si guarda se l'arco le regge:
        rinunciarci subito era il motivo per cui su Fastweb non comparivano mai */
     --Dlab: calc(min(var(--D0), var(--cellW) - 84px) - 28px);
-    --labOnN: clamp(0, calc((var(--Dlab) - var(--nSl) * 14px) / 1px * 9999), 1);
+    /* … MA NON A QUALUNQUE PREZZO (Luca 29/08: «Francesco con un monitor più
+       piccolo vede bene Vodafone e male WindTre»). Col solo test sull'arco la
+       regola era ROVESCIATA: WindTre ha 3 soglie, le etichette ci stavano e
+       l'anello si dimezzava (221 → 109); Vodafone ne ha 6, non ci stavano e
+       l'anello restava intero. Due card gemelle, anelli uno il doppio
+       dell'altro — e chi ha meno soglie veniva punito. Adesso le etichette si
+       accendono solo se costano al massimo il 20% del diametro. */
+    --labOnN: clamp(0, calc(min(var(--Dlab) - var(--nSl) * 14px,
+                                var(--Dlab) - var(--D0) * .8) / 1px * 9999), 1);
     --labOn: calc(var(--labOnN) * 1px);
     --D: calc(var(--D0) - var(--labOnN) * (var(--D0) - var(--Dlab)));
 

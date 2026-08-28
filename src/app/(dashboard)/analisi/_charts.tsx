@@ -399,13 +399,26 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
     const rif = proj ?? punti;   // le valutazioni si fanno sul prospect
     const presaProj = [...soglie].reverse().find((s) => rif >= s.soglia_da) || null;
     const prossimaProj = soglie.find((s) => s.soglia_da > rif) || null;
+    // il tier della soglia su cui cade il target: «vicino» si misura in PIXEL
+    // della barra, non in valore — a scala grande 20 punti sono mezzo pixel
+    const tSuSoglia = (() => {
+        if (targetDir == null || targetDir <= 0 || !soglie.length) return null;
+        const L = larg || 400;
+        const vicina = soglie.find((s) => Math.abs(pct(s.soglia_da) - pct(targetDir)) / 100 * L < 14);
+        return vicina ? vicina.tier : null;
+    })();
     return (
         <div className={cn("rounded-xl px-3 py-2.5 bg-white/[.04] border border-white/[.06] transition-colors", onClick && "cursor-pointer hover:bg-white/[.08] hover:border-white/15")}
             onClick={onClick} title={onClick ? "Clicca per l'elenco contratti" : undefined}>
             <div className="flex items-baseline justify-between gap-2 mb-1.5">
                 <span className="text-xs font-bold text-slate-200 truncate">{emoji} {label}</span>
+                {/* STESSO PESO AL FATTO E ALLA PROIEZIONE (Luca 29/08: «hanno
+                    la stessa importanza, il colore diverso va bene, la sfera mi
+                    piace, ma dagli la stessa visibilita'»). La proiezione era
+                    scritta a 10px accanto a un 14px: si leggeva come una nota a
+                    margine, mentre e' il numero su cui si decide. */}
                 <span className="text-sm font-black text-white tabular-nums shrink-0">{fmtPt(punti)} <span className="text-[9px] font-normal text-slate-500">{unit}</span>
-                    {proj && <span className="ml-1 text-[10px] font-bold tabular-nums" style={{ color: colore }}>🔮 {fmtPt(proj)}</span>}
+                    {proj && <span className="ml-1.5 text-sm font-black tabular-nums" style={{ color: colore }}>🔮 {fmtPt(proj)}</span>}
                     {pezzi != null && <span className="ml-1.5 text-[10px] font-normal text-slate-500 tabular-nums">{fmtN(pezzi)} pz</span>}</span>
             </div>
             <div ref={rif2} className="relative h-3.5 rounded-full bg-white/[.06]">
@@ -436,6 +449,12 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
                     const raggiunta = punti >= s.soglia_da;
                     const inProj = !raggiunta && rif >= s.soglia_da;
                     const èProssima = prossimaProj && s.tier === prossimaProj.tier;
+                    // TARGET SULLA STESSA TACCA (Luca 29/08: «quando il target
+                    // e' uguale a una soglia esteticamente appare bruttissimo»):
+                    // due segni sovrapposti a mezzo pixel di distanza fanno una
+                    // crosta. Se coincidono diventano UN segno solo, bianco
+                    // sopra e smeraldo sotto — dice le due cose in una volta.
+                    const conTarget = tSuSoglia === s.tier;
                     return (
                         <Tip key={s.tier} className="absolute -inset-y-1 w-4 -translate-x-1/2 items-center justify-center z-10" style={{ left: `${pct(s.soglia_da)}%` }} tip={
                             <div>
@@ -443,20 +462,31 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
                                 <TipRiga l="scatta a" r={fmtN(s.soglia_da)} colore={colore} />
                                 <TipRiga l={raggiunta ? "presa" : "mancano (reali)"} r={raggiunta ? "✓" : fmtPt(s.soglia_da - punti)} />
                                 {inProj && <TipRiga l="in proiezione" r="✓ ci arrivi" />}
+                                {conTarget && <TipRiga l="🎯 qui cade anche il target" r={fmtN(targetDir)} colore="#34d399" />}
                             </div>
                         }>
-                            <span className={cn("block w-[3px] h-full rounded-full", èProssima && "animate-pulse")}
-                                style={{ background: raggiunta ? "#fff" : inProj ? `${colore}` : "rgba(255,255,255,.28)", boxShadow: raggiunta || inProj ? `0 0 6px ${colore}` : undefined }} />
+                            <span className={cn("block h-full rounded-full", èProssima && "animate-pulse", conTarget || raggiunta ? "w-[5px]" : "w-[3px]")}
+                                style={{
+                                    background: conTarget ? "linear-gradient(180deg, #fff 0 45%, #34d399 55% 100%)"
+                                        : raggiunta ? "#fff" : inProj ? `${colore}` : "rgba(255,255,255,.28)",
+                                    // SOGLIA PRESA = LUCE (Luca 29/08: «il momento in cui la
+                                    // raggiungo e' semplicemente un bianco sul grigio; fai che
+                                    // mi invogli a prendere la successiva»)
+                                    boxShadow: raggiunta ? `0 0 4px #fff, 0 0 12px ${colore}, 0 0 22px ${colore}88`
+                                        : conTarget ? "0 0 8px #34d399" : inProj ? `0 0 6px ${colore}` : undefined,
+                                }} />
                         </Tip>
                     );
                 })}
                 {/* 🎯 TARGET DIREZIONE (sfrido incluso, Luca 27/08): tacca
                     smeraldo distinta — le soglie di lettera restano bianche */}
-                {targetDir != null && targetDir > 0 && (
+                {targetDir != null && targetDir > 0 && tSuSoglia == null && (
                     <Tip className="absolute -inset-y-1.5 w-4 -translate-x-1/2 items-center justify-center z-20" style={{ left: `${pct(targetDir)}%` }} tip={
                         <div>
                             <TipTitolo>🎯 {targetFonte === "pannello" ? "Target di rete" : "Target direzione"}</TipTitolo>
-                            <TipRiga l={targetFonte === "pannello" ? "impostato in Gare → Target" : "sfrido incluso"} r={fmtN(targetDir)} colore="#34d399" />
+                            <TipRiga l={targetFonte === "pannello" ? "impostato in Gare → Target"
+                                : targetFonte === "lettera" ? "dal paletto della lettera del mese"
+                                    : "sfrido incluso"} r={fmtN(targetDir)} colore="#34d399" />
                             <TipRiga l={punti >= targetDir ? "raggiunto" : "mancano"} r={punti >= targetDir ? "✓" : fmtPt(targetDir - punti)} />
                         </div>
                     }>
@@ -479,11 +509,19 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
                             const x = (pct(s.soglia_da) / 100) * larghezza;
                             if (x - ultimo < 32) return false;
                             ultimo = x; return true;
-                        }).map((s) => (
-                            <span key={s.tier} className="absolute -translate-x-1/2 text-[8px] text-slate-500 tabular-nums whitespace-nowrap" style={{ left: `${pct(s.soglia_da)}%` }}>{fmtN(s.soglia_da)}</span>
-                        ));
+                        }).map((s) => {
+                            const raggiunta = punti >= s.soglia_da;
+                            const conTarget = tSuSoglia === s.tier;
+                            return (
+                                <span key={s.tier} className={cn("absolute -translate-x-1/2 text-[8px] tabular-nums whitespace-nowrap",
+                                    conTarget ? "font-bold text-emerald-400" : raggiunta ? "font-bold text-white" : "text-slate-500")}
+                                    style={{ left: `${pct(s.soglia_da)}%`, textShadow: raggiunta && !conTarget ? `0 0 8px ${colore}` : undefined }}>
+                                    {conTarget ? "🎯" : ""}{fmtN(s.soglia_da)}
+                                </span>
+                            );
+                        });
                     })()}
-                    {targetDir != null && targetDir > 0 && (
+                    {targetDir != null && targetDir > 0 && tSuSoglia == null && (
                         <span className="absolute -translate-x-1/2 text-[8px] font-bold text-emerald-400 tabular-nums whitespace-nowrap" style={{ left: `${pct(targetDir)}%` }}>🎯{fmtN(targetDir)}</span>
                     )}
                 </div>
@@ -575,6 +613,14 @@ export function AnelloScaglioni({
     const rif = proj;
     const prossimaProj = soglie.find((s) => s.soglia_da > rif) || null;
     const quota = mio != null && punti > 0 ? cl01(mio / punti) : 0;
+    // POSIZIONE ANGOLARE del target e della soglia su cui eventualmente cade:
+    // due segni a mezzo grado di distanza fanno una crosta, e le due etichette
+    // si scrivono addosso (Luca 29/08: «quando il target e' uguale a una
+    // soglia esteticamente appare bruttissimo»). Se coincidono si fondono in
+    // UN segno solo, che porta il mirino nella sua etichetta.
+    const fT = target > 0 ? fDi(sec, target) : null;
+    const angDi = (i) => sec[i].f1 + 0.0062;
+    const tierT = fT == null ? null : (soglie.find((s, i) => Math.abs(angDi(i) - fT) < 0.016)?.tier ?? null);
     const fatti = sec.map((g) => [g.f0, g.f0 + cl01((punti - g.v0) / (g.v1 - g.v0)) * (g.f1 - g.f0)]).filter(([a, b]) => b - a > 0.0009);
     const lungo = fatti.reduce((s, [a, b]) => s + (b - a), 0);
     // «prendi la fetta iniziale dell'arco già disegnato»: serve alla quota del
@@ -625,7 +671,11 @@ export function AnelloScaglioni({
                             <path d={arco(cc, r, g.f0, g.f1)} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={sw} />
                             {kp > ka && <path d={arco(cc, r, g.f0 + ka * d, g.f0 + (on ? kp : ka) * d)} fill="none" stroke={`url(#hs${uid})`} strokeWidth={sw} />}
                             {ka > 0 && !fette2.length && <path d={arco(cc, r, g.f0, g.f0 + (on ? ka : 0) * d)} fill="none" stroke={`url(#gs${uid})`} strokeWidth={sw}
-                                style={{ filter: `drop-shadow(0 0 6px ${colore}99)` }} />}
+                                style={{ filter: ka >= 1 ? `drop-shadow(0 0 11px ${colore})` : `drop-shadow(0 0 6px ${colore}99)` }} />}
+                            {/* SCAGLIONE CHIUSO = lucidato: un filo di luce sul
+                                bordo esterno. Serve a far vedere da lontano
+                                QUANTO hai gia' in mano, non solo dove sei */}
+                            {ka >= 1 && on && <path d={arco(cc, r + sw / 2 - 2, g.f0, g.f1)} fill="none" stroke="#fff" strokeOpacity=".38" strokeWidth={1.5} strokeLinecap="round" />}
                         </g>
                     );
                 })}
@@ -649,36 +699,67 @@ export function AnelloScaglioni({
                 {/* SOGLIE: la tacca vive nel taglio fra due scaglioni */}
                 {soglie.map((s, i) => {
                     const st = punti >= s.soglia_da ? "presa" : rif >= s.soglia_da ? "proj" : "futura";
-                    const a = sec[i].f1 + 0.0062;
+                    const a = angDi(i);
+                    const conT = tierT === s.tier;
+                    const prox = prossimaProj && s.tier === prossimaProj.tier;
                     const col = st === "presa" ? "#ffffff" : st === "proj" ? colore : "rgba(255,255,255,.30)";
-                    return <path key={`t${s.tier}`} d={radiale(cc, r - sw / 2 - 2, r + sw / 2 + 2, a)} stroke={col} strokeWidth={3.2} strokeLinecap="round"
-                        className={prossimaProj && s.tier === prossimaProj.tier ? "animate-pulse" : undefined}
-                        style={st !== "futura" ? { filter: `drop-shadow(0 0 4px ${colore})` } : undefined} />;
+                    // SOGLIA PRESA = LUCE (Luca 29/08: «il momento in cui la
+                    // raggiungo e' semplicemente un bianco sul grigio; fai che
+                    // questi anelli mi invoglino a prendere la successiva»).
+                    // Presa: tacca piu' lunga, alone doppio e una perla accesa
+                    // sulla punta. Prossima: la stessa perla, ma vuota e che
+                    // respira — il posto dove manca ancora qualcosa.
+                    const [px, py] = polo(cc, r + sw / 2 + 7, a);
+                    return (
+                        <g key={`t${s.tier}`} className={prox ? "animate-pulse" : undefined}>
+                            <path d={radiale(cc, r - sw / 2 - (st === "presa" ? 4 : 2), r + sw / 2 + (st === "presa" ? 4 : 2), a)}
+                                stroke={conT ? "#34d399" : col} strokeWidth={st === "presa" || conT ? 4.4 : 3.2} strokeLinecap="round"
+                                style={st === "presa" ? { filter: `drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px ${colore})` }
+                                    : st !== "futura" || conT ? { filter: `drop-shadow(0 0 4px ${conT ? "#34d399" : colore})` } : undefined} />
+                            {st === "presa" && !conT && <circle cx={px} cy={py} r={2.9} fill="#fff" style={{ filter: `drop-shadow(0 0 6px ${colore})` }} />}
+                            {st !== "presa" && prox && <circle cx={px} cy={py} r={2.6} fill="none" stroke={colore} strokeWidth={1.6} />}
+                        </g>
+                    );
                 })}
                 {/* TARGET: forma diversa, non un colore diverso */}
                 {target > 0 && (() => {
-                    const f = fDi(sec, target), r0 = r - sw / 2 - 4, r1 = r + sw / 2 + 4;
-                    const [dx, dy] = polo(cc, r1 + 5, f), s2 = 4.4;
+                    const f = fT, r0 = r - sw / 2 - 4, r1 = r + sw / 2 + 4;
+                    const [dx, dy] = polo(cc, r1 + (tierT != null ? 9 : 5), f), s2 = 4.4;
                     return (
                         <g>
-                            <path d={radiale(cc, r0, r1, f)} stroke="#34d399" strokeWidth={3.2} strokeLinecap="round" style={{ filter: "drop-shadow(0 0 5px #34d399)" }} />
+                            {/* col target sulla soglia il gambo non si ridisegna:
+                                la tacca c'e' gia', e sovrapporgliene un secondo
+                                a mezzo grado faceva la crosta. Resta il rombo,
+                                spinto un filo piu' fuori. */}
+                            {tierT == null && <path d={radiale(cc, r0, r1, f)} stroke="#34d399" strokeWidth={3.2} strokeLinecap="round" style={{ filter: "drop-shadow(0 0 5px #34d399)" }} />}
                             <path d={`M${dx.toFixed(1)},${(dy - s2).toFixed(1)} L${(dx + s2).toFixed(1)},${dy.toFixed(1)} L${dx.toFixed(1)},${(dy + s2).toFixed(1)} L${(dx - s2).toFixed(1)},${dy.toFixed(1)} Z`}
                                 fill="#34d399" stroke="#0f111a" strokeWidth={1.2} style={{ filter: "drop-shadow(0 0 6px #34d399)" }} />
                         </g>
                     );
                 })()}
             </svg>
+            {/* DENTRO L'ANELLO NON ESISTONO DECIMALI (Luca 29/08: «mai numeri
+                con la virgola, arrotonda per difetto, tanto il dato preciso
+                ce l'abbiamo cliccando sulla barra sotto»). Per DIFETTO, non
+                al piu' vicino: 439,8 punti non sono la soglia 440, e un
+                arrotondamento per eccesso direbbe che l'hai presa. */}
             <div className="tf-anello-centro">
-                <span className="num">{unit === "pz" ? fmtN(punti) : fmtPt(punti)}</span>
+                <span className="num">{fmtN(Math.floor(punti))}</span>
                 <span className="cap">{unit === "pz" ? "pezzi rete" : "punti rete"}</span>
-                {mio != null && punti > 0 && <span className="mio" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}%&nbsp;mio</span>}
+                {mio != null && punti > 0 && <span className="mio" style={{ color: chiaro }}>{fmtN(Math.floor(quota * 100))}%&nbsp;mio</span>}
             </div>
             {/* etichette dei valori: le accende il CSS quando ci stanno davvero */}
             {soglie.map((s, i) => {
                 const st = punti >= s.soglia_da ? "presa" : rif >= s.soglia_da ? "proj" : "futura";
-                return <span key={`l${s.tier}`} className="tf-lab" style={{ ...posLab(sec[i].f1 + 0.0062), color: st === "presa" ? "#fff" : st === "proj" ? colore : "#64748b" }}>S{s.tier}·{fmtN(s.soglia_da)}</span>;
+                const conT = tierT === s.tier;
+                return <span key={`l${s.tier}`} className="tf-lab" style={{
+                    ...posLab(angDi(i)),
+                    color: conT ? "#34d399" : st === "presa" ? "#fff" : st === "proj" ? colore : "#64748b",
+                    fontWeight: st === "presa" || conT ? 800 : undefined,
+                    textShadow: st === "presa" && !conT ? `0 0 9px ${colore}` : undefined,
+                }}>{conT ? "🎯" : ""}S{s.tier}·{fmtN(Math.floor(s.soglia_da))}</span>;
             })}
-            {target > 0 && <span className="tf-lab" style={{ ...posLab(fDi(sec, target)), color: "#34d399" }}>🎯{fmtN(target)}</span>}
+            {target > 0 && tierT == null && <span className="tf-lab" style={{ ...posLab(fT), color: "#34d399" }}>🎯{fmtN(Math.floor(target))}</span>}
             {/* il glifo dice l'allarme anche senza movimento e senza colore */}
             {allarme && <span className="tf-bang" title="Proiezione sotto il target">!</span>}
         </div>
