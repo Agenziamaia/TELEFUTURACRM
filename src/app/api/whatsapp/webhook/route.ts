@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { scaricaMedia } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
 import { contenutoMessaggio } from "@/lib/waContenuto";

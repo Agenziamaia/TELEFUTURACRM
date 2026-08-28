@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { firmaSessione, SESSIONE_COOKIE, SESSIONE_GIORNI } from "@/lib/sessioneServer";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { cifraSegreto, decifraSegreto, generaSegreto, otpauthUri, verificaCodice } from "@/lib/totp";
 import QRCode from "qrcode";
 

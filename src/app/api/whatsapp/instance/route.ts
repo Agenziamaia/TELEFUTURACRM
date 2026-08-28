@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoContatti, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
 import { contenutoMessaggio } from "@/lib/waContenuto";

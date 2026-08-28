@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaTesto, inviaMedia } from "@/lib/evolution";
 
 export const dynamic = "force-dynamic";
