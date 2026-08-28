@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,12 @@ async function logAudit(credentialId: number | null, userId: string | null, acti
 }
 
 export async function GET(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const { searchParams } = new URL(request.url);
         const brandId = searchParams.get("brandId");
@@ -56,6 +63,12 @@ export async function GET(request: Request) {
 
 // Segnalazione 73: creazione credenziale (Direttore Commerciale in su, gate lato UI).
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const body = await request.json();
         const { brandId, categoryId, storeId, accessType, username, password } = body ?? {};

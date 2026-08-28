@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { agentAuthorized } from "@/lib/printAuth";
 
@@ -8,6 +9,12 @@ export const dynamic = "force-dynamic";
 // L'agente riporta l'esito di un job dopo averlo inviato alla stampante.
 //   POST { id, ok:boolean, response?:string }
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
   const auth = agentAuthorized(req);
   if (auth === null) return NextResponse.json({ error: "PRINT_AGENT_TOKEN non configurato" }, { status: 503 });
   if (!auth) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });

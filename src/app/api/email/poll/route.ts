@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiNuove, leggiSentNuove, EmailInAtt, oggettoRadice, pareRisposta, nonLetteInbox } from "@/lib/email";
 
@@ -255,6 +256,12 @@ async function pollAccount(accId: string, force = false): Promise<any> {
 let pollTutteInCorso = false;
 
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const b = await request.json().catch(() => ({}));
         if (b?.accountId) return NextResponse.json(await pollAccount(b.accountId, b?.force === true));

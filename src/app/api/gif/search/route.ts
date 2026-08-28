@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +9,12 @@ export const dynamic = "force-dynamic";
 // messaggio, così il picker mostra un avviso invece di rompersi.
 //   GET /api/gif/search?q=<testo>   (q vuoto = tendenza)
 export async function GET(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
   const key = process.env.GIPHY_API_KEY;
   const sp = new URL(req.url).searchParams;
   // check leggero (no chiamata Giphy): il client mostra il tasto GIF solo se attivo

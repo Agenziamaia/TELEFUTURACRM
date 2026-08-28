@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { aircallGet, aircallPost } from "@/lib/aircall";
 import { normalizzaE164, msgNumeroNonValido } from "@/lib/telefono";
@@ -11,6 +12,12 @@ export const dynamic = "force-dynamic";
 // il tasto verde lo preme lui. (Richiesta Luca 30/07: prima c'era solo il
 // pre-compila, conferma 26/07 superata.) Credenziali SOLO server.
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         if (!process.env.AIRCALL_API_ID || !process.env.AIRCALL_API_TOKEN) {
             return NextResponse.json({ error: "Credenziali Aircall non configurate sul server" }, { status: 500 });

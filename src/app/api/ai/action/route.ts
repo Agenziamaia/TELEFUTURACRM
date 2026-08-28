@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { getScope } from "@/lib/ai/scope";
 import { WRITE_TOOL_NAMES } from "@/lib/ai/tools";
@@ -12,6 +13,12 @@ export const runtime = "nodejs";
  * L'endpoint /api/ai/chat non esegue mai scritture: le propone soltanto.
  */
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON non valido" }, { status: 400 }); }
 

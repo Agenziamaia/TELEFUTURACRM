@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { buildRequestXml } from "@/lib/fiscalprint";
 
@@ -14,6 +15,12 @@ const DEFAULT_RT = process.env.RT_DEVICE_URL || "http://192.168.1.219";
 // all'Agenzia delle Entrate. Va protetta lato UI (admin + conferma esplicita).
 //   POST { negozio, azienda?, deviceUrl? }
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const b: any = await req.json().catch(() => ({}));
     const negozio = b.negozio ?? null;
     if (!negozio && !b.deviceUrl) return NextResponse.json({ error: "negozio o deviceUrl richiesto" }, { status: 400 });

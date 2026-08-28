@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { arrotonda5 } from "@/lib/pos";
 
@@ -11,6 +12,12 @@ export const dynamic = "force-dynamic";
 // poi poll-a print_jobs finché done/error.
 //   POST { negozio, amount, cashIp? }
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
   const b: any = await req.json().catch(() => ({}));
   const amount = arrotonda5(Number(b.amount));
   if (!(amount > 0)) return NextResponse.json({ error: "importo non valido" }, { status: 400 });

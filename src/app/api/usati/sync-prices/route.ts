@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { fetchRefurbedPrices } from "@/lib/pricing/refurbed";
 import { computeBuyback, type CategoriaDispositivo } from "@/lib/pricing/grades";
@@ -24,6 +25,12 @@ const REFURBED_BRANDS = new Set([
 ]);
 
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
   const t0 = Date.now();
   let logId: number | null = null;
   try {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, estimateCost, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
 import { getScope } from "@/lib/ai/scope";
@@ -39,6 +40,12 @@ function systemPrompt(scope: any) {
 }
 
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
   const started = Date.now();
   if (!hasKey()) {
     return NextResponse.json({ error: "DEEPSEEK_API_KEY non configurata sul server" }, { status: 500 });

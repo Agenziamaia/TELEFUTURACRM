@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { flagLetteImap } from "@/lib/email";
 
@@ -12,6 +13,12 @@ export const dynamic = "force-dynamic";
 // Fire-and-forget dal client: l'errore IMAP non blocca la lettura nel CRM
 // (il poll riallineerà al giro dopo).
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const b = await request.json().catch(() => ({}));
         const convId = String(b?.conversationId || "");

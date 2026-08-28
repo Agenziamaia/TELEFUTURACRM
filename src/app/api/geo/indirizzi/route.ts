@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,12 @@ export const dynamic = "force-dynamic";
  * anagrafica. Coi risultati a livello di CIVICO il CAP resta affidabile.
  */
 export async function GET(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const q = new URL(request.url).searchParams.get("q")?.trim() || "";
     if (q.length < 4) return NextResponse.json({ risultati: [] });
     try {

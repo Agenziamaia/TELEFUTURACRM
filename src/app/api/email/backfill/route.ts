@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiBloccoStorico, CartellaBackfill, EmailIn, EmailInAtt, oggettoRadice } from "@/lib/email";
 
@@ -208,6 +209,12 @@ async function backfillAccount(acc: any, block: number, scadenza: number) {
 }
 
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const b = await request.json().catch(() => ({}));
         const block = Math.min(200, Math.max(50, Number(b?.block) || 100));

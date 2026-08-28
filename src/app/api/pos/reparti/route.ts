@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -28,6 +29,12 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const b: any = await req.json().catch(() => ({}));
     const rows: any[] = Array.isArray(b.reparti) ? b.reparti : (b.reparto != null ? [b] : []);
     const payload = rows

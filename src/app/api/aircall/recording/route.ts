@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { aircallGet, puoAscoltareRegistrazioniServer } from "@/lib/aircall";
 import { capKey, capAllowed, CAP_CLIENTI_REGISTRAZIONI, CAP_CALLER_REG_STORICO } from "@/lib/capabilities";
@@ -12,6 +13,12 @@ export const dynamic = "force-dynamic";
 // Luca 31/07). Qui si chiede ad Aircall un URL fresco AD OGNI ascolto e si fa
 // redirect: il player <audio> lo segue da solo. Credenziali SOLO server.
 export async function GET(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         if (!process.env.AIRCALL_API_ID || !process.env.AIRCALL_API_TOKEN) {
             return NextResponse.json({ error: "Credenziali Aircall non configurate sul server" }, { status: 500 });

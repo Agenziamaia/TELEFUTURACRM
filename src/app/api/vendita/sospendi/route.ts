@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -11,6 +12,12 @@ export const dynamic = "force-dynamic";
 
 // POST { negozio, cliente?, items:[...], totale?, azienda?, note?, createdBy? }
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const b: any = await req.json().catch(() => ({}));
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length) return NextResponse.json({ error: "nessuna voce da sospendere" }, { status: 400 });
@@ -30,6 +37,12 @@ export async function POST(req: Request) {
 
 // GET ?negozio=Donna → conti in sospeso aperti del negozio (per il pulsante rosso).
 export async function GET(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const { searchParams } = new URL(req.url);
     const negozio = searchParams.get("negozio");
     let q = supabase.from("vendite_sospese")
@@ -43,6 +56,12 @@ export async function GET(req: Request) {
 
 // PATCH { id, stato: "completata" | "annullata" } → chiude il conto in sospeso.
 export async function PATCH(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const b: any = await req.json().catch(() => ({}));
     if (!b.id) return NextResponse.json({ error: "id richiesto" }, { status: 400 });
     const stato = b.stato === "annullata" ? "annullata" : "completata";

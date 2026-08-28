@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +8,12 @@ export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const { id } = await params;
         const numericId = parseInt(id, 10);

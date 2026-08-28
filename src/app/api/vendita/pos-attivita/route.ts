@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -9,6 +10,12 @@ export const dynamic = "force-dynamic";
 // più i dispositivi configurati (RT per negozio/azienda da pos_rt). Sola lettura.
 //   GET ?negozio=&kind=&limit=
 export async function GET(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const { searchParams } = new URL(req.url);
     const negozio = searchParams.get("negozio");
     const kind = searchParams.get("kind");

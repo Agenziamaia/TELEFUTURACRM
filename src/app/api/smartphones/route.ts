@@ -1,3 +1,5 @@
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { headers } from "next/headers";
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
@@ -5,6 +7,12 @@ import path from 'path';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(new Request("http://x", { headers: { cookie: (await headers()).get("cookie") || "" } }));
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         // Read directly from the file system to avoid build-time caching
         const filePath = path.join(process.cwd(), 'src/data/smartphones.json');

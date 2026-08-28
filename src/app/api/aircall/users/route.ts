@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
+import { headers } from "next/headers";
 import { aircallGet } from "@/lib/aircall";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +9,12 @@ export const dynamic = "force-dynamic";
 // (Amministrazione → Utenti). Credenziali SOLO server; si paginano al massimo
 // 10 pagine da 50 (l'account ne ha poche decine).
 export async function GET() {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(new Request("http://x", { headers: { cookie: (await headers()).get("cookie") || "" } }));
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         if (!process.env.AIRCALL_API_ID || !process.env.AIRCALL_API_TOKEN) {
             return NextResponse.json({ error: "Credenziali Aircall non configurate sul server" }, { status: 500 });

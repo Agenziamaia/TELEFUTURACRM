@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { buildRequestXml } from "@/lib/fiscalprint";
 import { formaPagamento } from "@/lib/pos";
@@ -18,6 +19,12 @@ const DEFAULT_RT = process.env.RT_DEVICE_URL || "http://192.168.1.219";
 //   POST { negozio?, deviceUrl?, items:[{productId?,description,unitPrice,qty?,reparto?}],
 //          paymentType?, paymentDescription?, paidAmount?, dryRun? }
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const b: any = await req.json().catch(() => ({}));
     const righe: any[] = Array.isArray(b.items) ? b.items : [];
     if (!righe.length) return NextResponse.json({ error: "carrello vuoto" }, { status: 400 });

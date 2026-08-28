@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaEmail, appendSuSent } from "@/lib/email";
 
@@ -10,6 +11,12 @@ export const dynamic = "force-dynamic";
 // APPENDE la copia sulla cartella Sent IMAP (EML-01): l'inviata dal CRM compare
 // anche in webmail. L'append e' best-effort: se fallisce l'invio resta valido.
 export async function POST(request: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(request);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     try {
         const { conversationId, accountId, to, subject, text, userId } = await request.json();
         let convId = conversationId, accId = accountId, dest = to, subj = subject, inReplyTo: string | null = null;

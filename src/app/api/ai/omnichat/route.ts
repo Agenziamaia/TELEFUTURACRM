@@ -10,6 +10,7 @@
 // poter leggere niente che l'utente non stesse già guardando.
 
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { chat, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,12 @@ const SISTEMA = [
 ].join("\n");
 
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     if (!hasKey()) {
         return NextResponse.json({ ok: false, error: "AI non configurata su questo ambiente" }, { status: 200 });
     }

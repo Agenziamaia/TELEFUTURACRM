@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { generaCoupon, validaCoupon } from "@/lib/coupons";
 
@@ -9,6 +10,12 @@ export const dynamic = "force-dynamic";
 // GET ?negozio=  (facoltativo) → tutti i coupon (max 500, recenti prima) con `scaduto`
 // derivato (attivo + scadenza superata). Filtri/stat li fa la vista.
 export async function GET(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const { searchParams } = new URL(req.url);
     const negozio = searchParams.get("negozio");
     let q = supabase.from("coupons")
@@ -30,6 +37,12 @@ export async function GET(req: Request) {
 //   POST { action:"genera", valore, negozio?, cliente?, usato_id?, origine?, createdBy? }
 //   POST { action:"valida", code }
 export async function POST(req: Request) {
+    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
+    {
+        const _s = richiedeSessione(req);
+        if (!_s) return rispostaSessioneNonValida();
+    }
+
     const b: any = await req.json().catch(() => ({}));
     const action = String(b.action || "");
 
