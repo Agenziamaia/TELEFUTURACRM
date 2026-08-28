@@ -954,7 +954,9 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 .tf-griglia .react-grid-item > .react-resizable-handle { opacity: .35; transition: opacity .15s; }
 .tf-griglia .react-grid-item:hover > .react-resizable-handle { opacity: .9; }
 .tf-griglia .react-grid-item > .react-resizable-handle::after { border-color: rgba(148, 163, 184, .85) !important; }
-.tf-griglia .react-grid-item.react-draggable-dragging { z-index: 40; box-shadow: 0 26px 70px rgba(0, 0, 0, .6); }
+/* 30, non 40: la topbar sticky sta a 40 e a parità vince l'ordine del DOM —
+   il widget trascinato le passava sopra (revisore 28/08) */
+.tf-griglia .react-grid-item.react-draggable-dragging { z-index: 30; box-shadow: 0 26px 70px rgba(0, 0, 0, .6); }
 /* CHI STAI USANDO STA SOPRA (segnalazione di Francesco via Luca, 28/08).
    Gli item della griglia sono position:absolute e non hanno z-index: a
    deciderne l'impilamento resta l'ordine del DOM, quindi un widget in alto
@@ -964,7 +966,7 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    peggiora le cose. Il widget con cui si sta lavorando passa davanti. */
 .tf-griglia .react-grid-item:hover { z-index: 12; }
 .tf-griglia .react-grid-item:focus-within { z-index: 13; }
-.tf-griglia .react-grid-item.react-resizable-resizing { z-index: 40; }
+.tf-griglia .react-grid-item.react-resizable-resizing { z-index: 30; }
 
 /* niente "lift" hover dentro la griglia Analisi (Luca 24/08: saltello
    fastidioso): il -translate-y della glass-card confligge col

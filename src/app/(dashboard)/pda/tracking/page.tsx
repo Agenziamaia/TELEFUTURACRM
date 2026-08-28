@@ -101,6 +101,19 @@ function parseDataRiga(val: string | undefined | null): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/* LE RIGHE DI UNA PRATICA — una definizione sola, usata dalla tabella e dal
+   salvataggio (revisore 28/08: erano due, e la seconda si limitava a guardare
+   se il rowKey conteneva un «#», che c'è sempre). */
+function categorieDellaPratica(
+  categoria: string, brand: string, prodotto: string, tipoCliente: string, controlli: string[],
+): string[] {
+  if (categoria === "tv") return ["sky"];
+  // 3P SKY: un contratto solo che contiene TV + fibra → due righe
+  if (categoria === "fisso" && String(brand || "").toLowerCase().includes("sky") && /\b3\s*P\b/i.test(String(prodotto || ""))) return ["fisso", "sky"];
+  if (categoria === "mobile" && String(tipoCliente || "").toLowerCase() === "business") return ["piva"];
+  return righeTracking(categoria as never, (controlli || []) as never);
+}
+
 function mapContractToTrackingRow(
   c: RawRow,
   client?: Record<string, unknown> | null,
@@ -1777,19 +1790,7 @@ export default function TrackingPdaPage() {
     const out: TrackingRow[] = [];
     rawList.forEach((r) => {
       const base = mapContractToTrackingRow(r, r.clients as Record<string, unknown> | null, (r.dettagli as Record<string, unknown>) || null);
-      const cats = (() => {
-        // Sky TV usa le regole "sky"; i fissi Sky sono già macro fisso.
-        if (base.categoria === "tv") return ["sky"];
-        // 3P SKY (Luca 02/08): un contratto solo che contiene TV + fibra.
-        // SOLO qui nel Tracking si divide in DUE righe esitabili
-        // separatamente: "fisso" (la fibra, regole fisso) e "sky" (la TV,
-        // regole Sky). L'eventuale mobile Sky viaggia gia' come pratica a
-        // parte. Copre anche il prodotto legacy "3P 35,80".
-        if (base.categoria === "fisso" && String(r.brand || "").toLowerCase().includes("sky") && /\b3\s*P\b/i.test(String(r.prodotto || ""))) return ["fisso", "sky"];
-        // contratti P.IVA: il mobile business segue le regole "piva"
-        if (base.categoria === "mobile" && String(r.tipo_cliente || "").toLowerCase() === "business") return ["piva"];
-        return righeTracking(base.categoria as never, (base.controlli || []) as never);
-      })();
+      const cats = categorieDellaPratica(base.categoria, String(r.brand || ""), String(r.prodotto || ""), String(r.tipo_cliente || ""), (base.controlli || []) as string[]);
       // Segnalazione 66: ogni riga ha il proprio esito. Quello della categoria e'
       // in stati_categoria; se manca si eredita da stato_negozio, cosi' le
       // pratiche gia' lavorate non perdono lo stato.
@@ -2215,13 +2216,28 @@ export default function TrackingPdaPage() {
       // Se la pratica ha piu' controlli (MNP + finanziamento), l'esito va scritto
       // sulla sua categoria e non sulla colonna condivisa, altrimenti si
       // sovrascrivono a vicenda (segnalazione 66).
-      const rigaEspansa = !!updated.rowKey && updated.rowKey.includes("#");
       const cat = updated.categoria;
       // #119: lo stato per-categoria ATTUALE va letto FRESCO dal DB, non da rawList:
       // questo callback ha deps [] e nel suo closure `rawList` e' quello del primo
       // render (vuoto), quindi il merge partiva da {} e CANCELLAVA le altre categorie
       // gia' salvate (corruzione della riga sorella allo "Salva esito negozio").
-      const { data: _cur } = await supabase.from("contracts").select("stati_categoria, stati_admin_categoria, dettagli").eq("id", updated.id).maybeSingle();
+      /* SCISSA DAVVERO, non «ha un rowKey» (revisore 28/08). Ogni riga ha un
+         rowKey `id#categoria`, anche quando la pratica è una sola: col vecchio
+         test `rigaEspansa` era SEMPRE vero, e le colonne condivise non si
+         scrivevano più per nessuno — `stato_admin` è rimasto fermo su tutte
+         le pratiche, mentre Ricerca Vendite continua a leggerlo. Le categorie
+         si ricalcolano sul dato FRESCO: questo callback ha le dipendenze
+         vuote, quindi la lista in memoria qui dentro è quella del primo
+         render. */
+      const { data: _cur } = await supabase.from("contracts")
+        .select("stati_categoria, stati_admin_categoria, dettagli, brand, prodotto, tipo_cliente, categoria_macro, categoria, controlli")
+        .eq("id", updated.id).maybeSingle();
+      const _catsOra = _cur ? categorieDellaPratica(
+        String(_cur.categoria_macro || categoriaDi(_cur.brand as string, _cur.categoria as string, _cur.prodotto as string)),
+        String(_cur.brand || ""), String(_cur.prodotto || ""), String(_cur.tipo_cliente || ""),
+        (Array.isArray(_cur.controlli) ? _cur.controlli : controlliDi((_cur.dettagli || {}) as Record<string, unknown>)) as string[],
+      ) : [];
+      const rigaEspansa = _catsOra.length > 1;
       const attuali = ((_cur?.stati_categoria as Record<string, string>) || {});
       const nuoviStati = { ...attuali, [cat]: updated.statoNegozio };
       // idem per l'ADMIN, sulla sua casella (Luca 28/08)

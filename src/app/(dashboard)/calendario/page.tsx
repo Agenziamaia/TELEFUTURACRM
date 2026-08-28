@@ -1319,13 +1319,23 @@ export default function Calendario() {
        quindi ogni riunione era di dominio pubblico — invitati, link della
        videochiamata e risposte comprese. Ora la vede chi la riguarda. */
     const vedoRiunione = (m: CalendarMeeting) => {
-        if (isCallCenter || seesAllStores(ruolo)) return true;              // direzione
+        // la vista completa arriva dalla CAPABILITY, non da una lista di ruoli
+        // fissa: a chi la direzione l'ha tolta a mano, resta tolta
+        // (revisore 28/08: Sandra ha `calendario:tutti = false` e le riunioni
+        // le vedeva lo stesso)
+        if (isCallCenter) return true;
         if (nomeUguale(m.createdBy, user?.name)) return true;               // l'ho fissata io
         const invitati = Array.isArray(m.recipients) ? m.recipients : [];
         if (invitati.some((r) => r.id === user?.id || nomeUguale(r.name, user?.name))) return true;
-        // il responsabile vede le riunioni dei suoi: gli servono per sapere
-        // chi è occupato e quando
-        if (seesWholeStore(ruolo) && invitati.some((r) => r.store && mieiNegozi.some((n) => sameStore(r.store!, n)))) return true;
+        /* Il RESPONSABILE vede le riunioni dei suoi — ma responsabile davvero:
+           `seesWholeStore` comprende back office, supervisori e amministrativi,
+           che non dirigono nessuno. E il confronto sul negozio dev'essere
+           ESATTO: `sameStore` confronta per prefisso, quindi «Ufficio
+           Commerciale» (8 persone) leggeva le riunioni di «Ufficio» (2). */
+        const soloNome = (x?: string | null) => String(x || "").trim().toLowerCase();
+        const mioNegozio = soloNome(user?.negozio);
+        if (/store_manager/i.test(ruolo) && mioNegozio
+            && invitati.some((r) => soloNome(r.store) === mioNegozio)) return true;
         return false;
     };
     const meetingsByDate = (dateStr: string) => catOn("meeting") ? meetings.filter(m => m.date === dateStr && vedoRiunione(m)) : [];
@@ -1677,9 +1687,11 @@ export default function Calendario() {
         // 1. riunioni di oggi — la cosa che non si può perdere
         // riunioni: quelle che mi riguardano davvero — invitato o creatore.
         // Chi vede tutta la rete le vede tutte, come nel resto della pagina.
-        const mieRiunioni = meetings.filter((m) => m.date === oggi && (isTaskTutte
-            || String(m.createdBy || "").trim().toLowerCase() === mio
-            || (m.recipients || []).some((r) => r.id === user?.id || String(r.name || "").trim().toLowerCase() === mio)));
+        // STESSA regola della griglia (revisore 28/08): la barra usava la
+        // capability delle TASK per decidere delle riunioni, e al responsabile
+        // mancava il ramo del suo negozio — sei persone vedevano la riunione
+        // in calendario e non fra le priorità
+        const mieRiunioni = meetings.filter((m) => m.date === oggi && vedoRiunione(m));
         for (const m of mieRiunioni) {
             const passata = m.endTime && m.endTime < ora;
             if (passata) continue;

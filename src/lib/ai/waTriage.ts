@@ -66,7 +66,7 @@ Regole d'oro (gli errori da non fare):
 
 /** La nostra ultima frase chiede qualcosa al cliente? Le stesse parole che
  *  il widget usa da sempre per le attese azzurre. */
-function chiediamoQualcosa(riga: string): boolean {
+export function chiediamoQualcosa(riga: string): boolean {
     return /mi mandi|mi invii|mi giri|mandami|inviami|girami|mi pu[oò]|mi serve|mi servirebbe|ci serve|fammi sapere|mi faccia sapere|facci sapere|fatemi sapere|attendo|aspetto|resto in attesa|restiamo in attesa|mi confermi|ci confermi|mi dica|mi dici|appena (pu[oò]|puoi|riesce|riesci)|quando (pu[oò]|puoi|riesce|riesci)|le chiedo|ti chiedo|serve che|servirebbe che|\?/i.test(riga);
 }
 
@@ -188,7 +188,10 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
        cliente non sta aspettando niente. Diventa un'attesa se gli abbiamo
        chiesto qualcosa, altrimenti la conversazione è chiusa. */
     if (stato === "rispondere" && tr.ultimaNostra) {
-        const nostraFinale = tr.testo.split("\n").filter((r) => r.startsWith("NOI")).pop() || "";
+        // ⚠️ le righe della trascrizione cominciano con «[28/08 13:26] NOI: …»,
+        //    non con «NOI»: con startsWith questa riga era sempre vuota e il
+        //    ramo dell'attesa non scattava MAI (revisore 28/08)
+        const nostraFinale = tr.testo.split("\n").filter((r) => /\]\s*NOI/.test(r)).pop() || "";
         if (chiediamoQualcosa(nostraFinale)) {
             stato = "attesa_cliente";
             azione = azione.replace(/^rispondere\s*:?\s*/i, "").trim() || "aspettiamo la risposta del cliente";

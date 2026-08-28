@@ -41,6 +41,7 @@ import { trkBrandKey, TRK_BRAND_COLORS, TRK_BRAND_LOGOS } from "@/lib/brandAsset
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa } from "@/lib/waVisibilita";
+import { chiediamoQualcosa } from "@/lib/ai/waTriage";
 import { matchNegozi, sameStore } from "@/lib/visibleStores";
 import { cn } from "@/utils";
 import {
@@ -1789,8 +1790,12 @@ function WidgetWhatsApp({ ctx, size }) {
                        copre le classificazioni già scritte, senza aspettare che
                        il cron rigiri tutte le chat. */
                     if (tri.stato === "rispondere" && ultimo.direction === "out") {
-                        if (!ccIds.has(c?.instance_id) && /\?|attendo|aspetto|mi mandi|mi invii|mi confermi|fammi sapere|mi faccia sapere|mi serve/i.test(String(ultimo.body || ""))) {
+                        // STESSA regola del motore, non una sua copia più corta
+                        // (revisore 28/08: due regole per la stessa domanda)
+                        if (!ccIds.has(c?.instance_id) && chiediamoQualcosa(String(ultimo.body || ""))) {
                             attesa.push({ id: cid, nome: nomeChat, da: ultimo.t, fine: ultimo.t, azione: tri.azione });
+                        } else if (!ccIds.has(c?.instance_id)) {
+                            concluse++;   // niente derive contabili: la chat esce, ma nel conto
                         }
                         return;
                     }
@@ -3229,7 +3234,7 @@ const FISSI = {
        Da 6 a 8 colonne su 16 — con il passo «Cosa c'e' dentro?» le pastiglie
        andavano a capo e il consiglio finiva schiacciato. minW = maxW = 8:
        non si puo' piu' rimpicciolire, perche' sotto non e' leggibile. */
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], minW: 8, maxW: 8, minH: 4, defW: 8, defH: 4 },
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], minW: 8, maxW: 8, minH: 4, maxH: 4, defW: 8, defH: 4 },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
