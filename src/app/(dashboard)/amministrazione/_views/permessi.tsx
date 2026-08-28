@@ -422,7 +422,8 @@ export function PermessiView() {
                                                         <div key={cg.sectionLabel} className="rounded-lg border border-indigo-500/25 bg-indigo-500/[0.04] overflow-hidden">
                                                             <CapOptions g={cg} ruolo={ruolo} righe={permsEff} busy={busy}
                                                                 onChoice={(id) => setCapChoice(cg as CapGroupChoice, id)}
-                                                                onFlag={(id, att) => toggleCapFlag(cg, id, att)} />
+                                                                onFlag={(id, att) => toggleCapFlag(cg, id, att)}
+                                                                ecc={eccezioniDi} />
                                                         </div>
                                                     ))}
                                                 </div>
@@ -443,14 +444,25 @@ export function PermessiView() {
 
 /* Opzioni di comportamento di una sezione (choice = radio; flags = interruttori),
    esplose sotto la riga della sezione al click sull'ingranaggio ⚙️. */
-function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
+function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag, ecc }: {
     g: CapGroup; ruolo: string; righe: PermMap; busy: string | null;
     onChoice: (id: string) => void; onFlag: (id: string, attuale: boolean) => void;
+    // chi, dentro questo ruolo, fa eccezione su una chiave (vuoto nelle viste
+    // per grado/persona, dove l'interruttore parla già di loro)
+    ecc?: (permKey: string) => { chi: string; vale: boolean; teste: number }[];
 }) {
     if (g.mode === "choice") {
         const attivaId = capChoice(ruolo, g, righe);
+        // su una scelta a pallini l'eccezione non è "il contrario": è «per
+        // costoro vale un'altra opzione». Si avvisa in testa al gruppo.
+        const diversi = [...g.caps, g.fallback].flatMap((c) => ecc?.(capKey(g.section, c.id)) ?? []);
         return (
             <div className="divide-y divide-white/5">
+                {diversi.length > 0 && (
+                    <div className="px-3 py-2 text-[11px] text-amber-300/90 bg-amber-500/[0.07]">
+                        ⚠️ Non vale per tutti: {diversi.map((d) => d.chi).join(", ")} — scegli il grado o la persona qui sopra per vedere la loro impostazione.
+                    </div>
+                )}
                 {/* il fallback compare come voce SOLO se non coincide già con
                     una scelta esplicita (caso «Solo le sue cose», Luca 27/08:
                     stesso id due volte = due pallini accesi insieme) */}
@@ -482,6 +494,8 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
                 // es. i destinatari delle Comunicazioni senza "puo' creare".
                 const req = c.requires ? g.caps.find((x) => x.id === c.requires) : undefined;
                 const reqOff = !!req && !capAllowed(ruolo, g.section, req, righe);
+                const contro = (ecc?.(capKey(g.section, c.id)) ?? []).filter((e) => e.vale !== eff);
+                const teste = contro.reduce((s, e) => s + e.teste, 0);
                 return (
                     <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 ${reqOff ? "opacity-40" : ""}`}>
                         <div className="flex-1 min-w-0">
@@ -495,6 +509,13 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
                             ruolo intero non avrebbe senso. */}
                         {c.id === "codice" && g.section === "/chat" && ruolo.startsWith("user:") && eff && (
                             <AzzeraCodiceWa userId={ruolo.slice(5)} />
+                        )}
+                        {contro.length > 0 && (
+                            <span
+                                title={`Attenzione: questa opzione NON vale per tutti.\n\n${contro.map((e) => `• ${e.chi}: ${e.vale ? "ce l'ha lo stesso" : "NON ce l'ha"}`).join("\n")}\n\nScegli il grado (o la persona) qui sopra per regolarli.`}
+                                className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 border border-amber-400/40 text-amber-300 cursor-help">
+                                ≠ {teste || contro.length}
+                            </span>
                         )}
                         <button onClick={() => { if (!reqOff) onFlag(c.id, eff); }} disabled={busy === "cap:" + g.section + c.id || reqOff}
                             className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${reqOff ? "cursor-not-allowed" : ""}`}
