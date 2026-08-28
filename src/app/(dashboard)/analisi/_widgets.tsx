@@ -342,7 +342,10 @@ export function TimelineHero({ ctx, tecnico = false }) {
             const m = out.get("marg");
             if (m) m.euro = true;
         }
-        const ordine = ["w3", "vf", "fw", "sky", "marg"];
+        // l'ordine vale anche per gli ALTRI operatori: ordinarli per volume
+        // li faceva scambiare di posto da un mese all'altro
+        const ordine = ["w3", "vf", "fw", "sky", "alt:s4", "alt:tim", "alt:verymobile",
+            "alt:homobile", "alt:iliad", "alt:kena", "alt:dojo", "marg"];
         return [...out.values()].sort((a, b) => {
             const ia = ordine.indexOf(a.key), ib = ordine.indexOf(b.key);
             if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
@@ -418,7 +421,15 @@ export function TimelineHero({ ctx, tecnico = false }) {
                 v[g - 1].tot += gg.val;
             }
         }
-        for (const g of v) g.parti.sort((a, b) => b.val - a.val);
+        // ORDINE FISSO DEGLI OPERATORI NELLA PILA (Luca 28/08: «se decidiamo
+        // che la prima è WindTre, la seconda Vodafone, la terza Fastweb, a
+        // primo impatto vedo subito i giorni in cui abbiamo lavorato di più o
+        // di meno un operatore»). Prima si ordinava per VALORE dentro ogni
+        // giorno: la stessa fascia cambiava colore da un giorno all'altro e
+        // l'occhio non poteva seguire un brand lungo il mese. Ora l'ordine è
+        // quello di `serie` — w3, vf, fw, sky, poi gli altri — e le fette si
+        // impilano sempre uguali. Vale per Io, Negozio e Rete: il grafico è
+        // lo stesso componente.
         return { giorni: v, legenda: null };
     }, [serie, spenti, soloKey, pisteSpente, margAccesa, ctx.nG, ctx.labels, tecnico]);
     // «isola poi aggiungi» anche per le piste: dal drill completo il click
