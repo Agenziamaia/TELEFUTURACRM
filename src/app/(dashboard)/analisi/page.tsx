@@ -40,6 +40,10 @@ const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Lug
 const norm = (s) => String(s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 
+// l'ordine in cui le piste si presentano dentro il blocco del brand
+const ORDINE_PISTE = ["mobile", "fisso", "luce", "gas", "lucegas", "cb", "smartphone_cb",
+    "business_mobile", "business_fisso", "business_piva", "soluzioni_digitali", "vas", "assicurazioni", "sky", "t2"];
+
 const ymLocale = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
 const ymISO = ({ y, m }) => `${y}-${String(m).padStart(2, "0")}`;
 const ymPrec = ({ y, m }) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 });
@@ -635,13 +639,20 @@ function AnalisiInner() {
                 x.proiezione = prj(x.punti);
                 const rif = x.proiezione ?? x.punti;
                 const pr = x.scala.find((v) => v.soglia_da > rif) || null;
-                // ORDINE PER URGENZA: prima le piste su cui si può ancora
-                // incidere, in fondo quelle già chiuse
-                x.urgenza = pr ? (pr.soglia_da - rif) / Math.max(1, pr.soglia_da) : 3;
+                x.prossima = pr;
                 x.presa = [...x.scala].reverse().find((v) => x.punti >= v.soglia_da) || null;
                 x.presaProj = [...x.scala].reverse().find((v) => rif >= v.soglia_da) || null;
             }
-            piste.sort((a, b) => a.urgenza - b.urgenza);
+            // ORDINE FISSO (Luca 28/08: «lo lasci fisso così, deve rimanere
+            // fatto per forza così»): consumer prima, poi energia, poi
+            // business, poi gli accessori. Prima si riordinava da solo per
+            // urgenza e le carte ballavano da un giorno all'altro; l'urgenza
+            // ora la dice il contatore «scaglioni appesi al passo», senza
+            // spostare niente.
+            piste.sort((a, b) => {
+                const ia = ORDINE_PISTE.indexOf(a.chiave), ib = ORDINE_PISTE.indexOf(b.chiave);
+                return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || String(a.nome).localeCompare(String(b.nome), "it");
+            });
             // QUOTA DEL BRAND IN PEZZI, mai in punti: sommare punti fra piste
             // diverse è vietato quanto sommarli fra operatori (regola cardine)
             const pzRete = piste.reduce((sm, x) => sm + x.pezzi, 0);

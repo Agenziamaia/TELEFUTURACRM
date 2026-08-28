@@ -1886,9 +1886,12 @@ function BloccoBrandRete({ ctx, brand }) {
     const b = (ctx.brandRete || []).find((x) => x.brand === brand);
     if (!b) return <p className="text-xs text-slate-500 py-6 text-center">Nessuna produzione nel periodo.</p>;
     const n = b.piste.length;
-    // gli anelli scalano con la card; oltre le quattro piste le etichette dei
-    // valori uscirebbero addosso al vicino, e restano nel tooltip
-    const cella = "clamp(94px, 26cqw, 178px)";
+    // MAI PIÙ DI QUATTRO PER RIGA (Luca 28/08): con otto piste vengono le due
+    // righe da quattro che ha chiesto, e allargando la card non ne compare una
+    // quinta a rompere la struttura. Su card stretta si scende a due colonne.
+    const colonne = Math.min(4, Math.max(1, n));
+    // oltre le quattro piste le etichette dei valori uscirebbero addosso al
+    // vicino: restano nel tooltip
     const compatto = n > 4;
     const conQuota = (ctx.mieiNegozi || []).length > 0;
     return (
@@ -1909,11 +1912,11 @@ function BloccoBrandRete({ ctx, brand }) {
                     </span>
                 )}
             </div>
-            <div className="flex flex-wrap justify-center gap-x-7 gap-y-6 px-3">
+            <div className="tf-rete-anelli px-3" style={{ "--tf-col": colonne }}>
                 {b.piste.map((x) => {
                     const k = `${brand}:${x.chiave}`;
                     return (
-                        <div key={k} style={{ width: cella }}>
+                        <div key={k} className="w-full max-w-[178px] min-w-0">
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} pezzi={x.pezzi}
                                 soglie={x.scala} target={x.target?.v ?? null} mio={conQuota ? x.mio : null}

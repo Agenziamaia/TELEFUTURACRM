@@ -1116,6 +1116,16 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
   .tf-mix-anello { width: auto; height: 100%; flex: 0 1 auto; }
 }
 
+/* ── RETE: gli anelli di un brand su una griglia a colonne FISSE (Luca
+   28/08: «prima riga mobile fisso luce gas, seconda mobile business fisso
+   business soluzioni digitali VAS, e lo lasci fisso così»). Il numero di
+   colonne lo decide il widget (--tf-col, mai più di 4): allargando la card
+   gli anelli crescono, non se ne aggiunge un quinto. Card stretta → due. ─ */
+.tf-rete-anelli { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem 1rem; justify-items: center; align-items: start; }
+@container (min-width: 30rem) {
+  .tf-rete-anelli { grid-template-columns: repeat(var(--tf-col, 4), minmax(0, 1fr)); gap: 1.5rem 1.75rem; }
+}
+
 /* ── MIX PERSONE (Luca 28/08): stessa scocca del Mix operatori — card
    panoramica → anello a sinistra e righe a destra, card stretta → in
    colonna. Qui la soglia è sulla LARGHEZZA e non sul rapporto: sotto agli
