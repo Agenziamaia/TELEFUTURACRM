@@ -652,6 +652,7 @@ html.light .rvIn.rvIn-ok{border-color:rgba(16,150,90,.6) !important;background:r
 html.light .rvIn.rvIn-err{border-color:#dc2626 !important;background:rgba(239,68,68,.07) !important;}
 html.light .rvIn.rvIn-lock{border-color:rgba(14,165,233,.55) !important;background:rgba(14,165,233,.08) !important;color:#0369a1 !important;}
 html.light .rvIn.rvIn-alt{border-color:rgba(124,58,237,.55) !important;background:rgba(124,58,237,.07) !important;}
+html.light .rvIn.rvIn-mod{border-color:rgba(217,119,6,.6) !important;background:rgba(251,146,60,.10) !important;}
 html.light .rvIn:focus{box-shadow:0 0 0 3px rgba(99,102,241,.14) !important;}
 html.light .rvIn::placeholder{color:#94a3b8 !important;}
 html.light .rvLab{color:#64748b !important;}
