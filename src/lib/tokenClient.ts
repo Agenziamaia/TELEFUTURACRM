@@ -1,4 +1,7 @@
-"use client";
+// (niente "use client": questo modulo viene importato ANCHE dalle route del
+//  server tramite supabaseClient — con la direttiva ogni chiamata moriva.
+//  Lato server la funzione esce subito con `null`, che è il comportamento
+//  giusto: il server usa la sua chiave, non il lasciapassare dell'utente.)
 // IL LASCIAPASSARE, LATO BROWSER (Blindatura fase B, Luca 28/08).
 // Tiene in memoria il token rilasciato da /api/auth/token e lo rinnova da
 // solo prima che scada. Se il server non lo rilascia (secret non ancora
