@@ -1944,9 +1944,13 @@ export function ChipsRete({ ctx, brand }) {
                     {/* la proiezione viene PRIMA: è il dato che guida, ed è
                         l'unico che si vede fino al 20 del mese */}
                     <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                        🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget} in target
+                        🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget}<span className="hidden @lg:inline"> in target</span>
                     </span>
-                    {!ctx.primaDel20 && (
+                    {/* la seconda pastiglia solo se dice qualcosa di DIVERSO:
+                        su tre card su cinque stampava lo stesso identico numero
+                        due volte, e su una card stretta la faceva tagliare a
+                        meta' parola («0/7 IN TARGE|T») */}
+                    {!ctx.primaDel20 && b.inTarget !== b.inTargetProj && (
                         <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap hidden @lg:inline">
                             <b className="text-white tabular-nums">{b.inTarget}</b>/{b.conTarget} in target adesso
                         </span>
@@ -1954,7 +1958,10 @@ export function ChipsRete({ ctx, brand }) {
                 </>
             ) : (
                 <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap">
-                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n} in soglia
+                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n}<span className="hidden @lg:inline"> in soglia</span>
+                    {/* e si DICE che i target non ci sono, invece di far
+                        degradare in silenzio la pastiglia (Vodafone, agosto) */}
+                    <span className="hidden @3xl:inline text-slate-500"> · nessun target di rete</span>
                 </span>
             )}
             {b.appesi > 0 && (
@@ -1996,12 +2003,14 @@ function BloccoBrandRete({ ctx, brand }) {
     const nome = (x) => PISTA_LABEL_RETE[x.chiave] || x.nome;
     const emo = (x) => PISTA_EMOJI_RETE[x.chiave] || "▫️";
     return (
-        <div className="tf-rb" style={{
+        <div className={cn("tf-rb", n === 1 && "tf-uno")} style={{
             "--col": col, "--righe": righe, "--ultima": ultima, "--nSbar": Math.max(1, nS),
             "--nS": Math.max(1, ...b.piste.map((x) => x.scala.length)),
+            "--tinta": b.colore,
             // con più di un anello l'etichetta della pista è obbligatoria:
-            // senza, non sai quale stai guardando
-            "--t1": n > 1 ? "-9999px" : "18px",
+            // senza, non sai quale stai guardando. Con UNA pista sola invece il
+            // nome sta gia' nella barra, e quella riga sarebbe una ripetizione.
+            "--t1": n > 1 ? "1px" : "-9999px",
             // i chip si spengono da destra man mano che la card si stringe
             "--c2On": "clamp(0px, calc((100cqw - 330px) * 9999), 1px)",
             "--c3On": "clamp(0px, calc((100cqw - 530px) * 9999), 1px)",
@@ -2014,7 +2023,7 @@ function BloccoBrandRete({ ctx, brand }) {
                     const prossima = x.scala.find((s) => s.soglia_da > rif) || null;
                     const spaiata = righe > 1 && i === col * (righe - 1);
                     return (
-                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer")} onClick={() => tocca(k)}
+                        <div key={k} className={cn("tf-pista", spaiata && "spaiata", "cursor-pointer", inDrill === x && "sel")} onClick={() => tocca(k)}
                             title={`${emo(x)} ${nome(x)}`}>
                             <AnelloScaglioni
                                 punti={x.punti} proiezione={x.proiezione} soglie={x.scala}

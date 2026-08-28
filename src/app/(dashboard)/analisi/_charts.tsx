@@ -575,26 +575,46 @@ const radiale = (cc, r0, r1, f) => {
 };
 const ancoraT = (f) => { const a = ((f % 1) + 1) % 1; if (a < .035 || a > .965 || Math.abs(a - .5) < .035) return "middle"; return a < .5 ? "start" : "end"; };
 const dyT = (f) => { const a = ((f % 1) + 1) % 1; if (a < .07 || a > .93) return -1.5; if (Math.abs(a - .5) < .07) return 8.5; return 3; };
-const esa = (h) => [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16));
+/* IL COLORE DEL BRAND ARRIVA COME `var(--tf-f97316)`, non come `#f97316`.
+   In CSS funziona lo stesso — la sostituzione della variabile e' testuale, per
+   questo `var(--tf-f97316)cc` diventa `#f97316cc` ed e' valido — ma qui siamo
+   in JavaScript, e `parseInt("ar", 16)` fa NaN. Risultato: `schiarisci` ha
+   sempre restituito `#NaNNaNNaN`, cioe' un colore invalido, e l'anello della
+   QUOTA DEL MIO PUNTO VENDITA non si e' mai visto. Il nome della variabile
+   porta il codice esadecimale dentro: basta pescarlo. */
+const hexDi = (c) => String(c || "").match(/#?\b([0-9a-f]{6})\b/i)?.[1] || null;
+const esa = (h) => [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
 const schiarisci = (c, t = 0.6) => {
-    try { return "#" + esa(c).map((v) => Math.round(v + (255 - v) * t).toString(16).padStart(2, "0")).join(""); }
-    catch { return "#cbd5e1"; }
+    const h = hexDi(c);
+    if (!h) return "#cbd5e1";
+    return "#" + esa(h).map((v) => Math.round(v + (255 - v) * t).toString(16).padStart(2, "0")).join("");
 };
 
-/** settori uguali per scaglione: [{v0, v1, tier, f0, f1}] */
+/** settori uguali per scaglione: [{v0, v1, tier, f0, f1}].
+ *  LA CODA NON E' UNO SCAGLIONE. Prima il settore «oltre» si autoscalava su
+ *  `punti · 1,06`: qualunque numero riempiva sempre la stessa fetta, e una
+ *  pista con una soglia sola disegnava il 92% del giro con 8 pezzi come con
+ *  300. L'anello piu' luminoso della card era la pista piu' piccola.
+ *  Adesso: se il target sta oltre l'ultima soglia, la coda arriva al target ed
+ *  e' una corsa vera; altrimenti e' BINARIA — o hai passato l'ultima soglia e
+ *  il giro e' pieno, o no. «Tutto preso» e' un'informazione, «il 92% di un
+ *  fondo scala inventato» non lo e'. */
 function settoriScaglioni(perni, punti, proiezione, target) {
     const out = []; let prev = 0;
     for (const v of perni) { out.push({ v0: prev, v1: v, w: 1 }); prev = v; }
-    // il settore «oltre» è più stretto: è una coda, non uno scaglione da prendere
-    const oltre = Math.max(prev * 1.25, (proiezione || punti) * 1.06, punti * 1.06, (target || 0) * 1.08, prev + 1);
-    out.push({ v0: prev, v1: oltre, tier: null, w: 0.6 });
+    const oltreTarget = target > 0 && target > prev;
+    out.push(oltreTarget
+        ? { v0: prev, v1: Math.max(target * 1.06, prev + 1), tier: null, w: 0.6 }
+        : { v0: prev, v1: prev + 1, tier: null, w: 0.6, coda: true });
     const GAP = 0.0125, totW = out.reduce((a, x) => a + x.w, 0), utile = 1 - GAP * out.length;
     let f = GAP / 2;
     for (const s of out) { s.f0 = f; s.f1 = f + utile * s.w / totW; f = s.f1 + GAP; }
     return out;
 }
+/** quanto e' pieno un settore per un valore: la coda binaria non si interpola */
+const riemp = (g, v) => g.coda ? (v > g.v0 ? 1 : 0) : cl01((v - g.v0) / (g.v1 - g.v0));
 const fDi = (sec, v) => {
-    for (let i = 0; i < sec.length; i++) { const s = sec[i]; if (v <= s.v1 || i === sec.length - 1) return s.f0 + cl01((v - s.v0) / (s.v1 - s.v0)) * (s.f1 - s.f0); }
+    for (let i = 0; i < sec.length; i++) { const s = sec[i]; if (v <= s.v1 || i === sec.length - 1) return s.f0 + riemp(s, v) * (s.f1 - s.f0); }
     return 0;
 };
 
@@ -607,21 +627,23 @@ export function AnelloScaglioni({
     const uid = useId().replace(/:/g, "");
     const V = 220, cc = V / 2, r = 84, sw = 16;             // geometria in viewBox fisso
     const perni = soglie.length ? soglie.map((x) => x.soglia_da) : (target > 0 ? [target] : []);
+    // SENZA CORSA: niente soglie e niente target. Un anello di avanzamento
+    // senza traguardo e' una bugia — disegnava il 93% del giro con 1 punto
+    // come con 1.200. Qui diventa un cerchio tratteggiato neutro, e il numero
+    // al centro resta l'unica cosa che parla.
+    const senzaCorsa = perni.length === 0;
     const sec = settoriScaglioni(perni, punti, proiezione, target);
     const proj = proiezione != null && proiezione > punti ? proiezione : punti;
     const chiaro = schiarisci(colore);
     const rif = proj;
     const prossimaProj = soglie.find((s) => s.soglia_da > rif) || null;
+    const prossima = soglie.find((s) => s.soglia_da > punti) || null;
     const quota = mio != null && punti > 0 ? cl01(mio / punti) : 0;
-    // POSIZIONE ANGOLARE del target e della soglia su cui eventualmente cade:
-    // due segni a mezzo grado di distanza fanno una crosta, e le due etichette
-    // si scrivono addosso (Luca 29/08: «quando il target e' uguale a una
-    // soglia esteticamente appare bruttissimo»). Se coincidono si fondono in
-    // UN segno solo, che porta il mirino nella sua etichetta.
     const fT = target > 0 ? fDi(sec, target) : null;
     const angDi = (i) => sec[i].f1 + 0.0062;
+    // TARGET SULLA STESSA TACCA: due segni a mezzo grado fanno una crosta
     const tierT = fT == null ? null : (soglie.find((s, i) => Math.abs(angDi(i) - fT) < 0.016)?.tier ?? null);
-    const fatti = sec.map((g) => [g.f0, g.f0 + cl01((punti - g.v0) / (g.v1 - g.v0)) * (g.f1 - g.f0)]).filter(([a, b]) => b - a > 0.0009);
+    const fatti = sec.map((g) => [g.f0, g.f0 + riemp(g, punti) * (g.f1 - g.f0)]).filter(([a, b]) => b - a > 0.0009);
     const lungo = fatti.reduce((s, [a, b]) => s + (b - a), 0);
     // «prendi la fetta iniziale dell'arco già disegnato»: serve alla quota del
     // mio PV e alle parti colorate (S4: luce e gas dentro lo stesso anello)
@@ -643,39 +665,52 @@ export function AnelloScaglioni({
         acc2 += Number(p.v) || 0;
         return { ...p, tratti: fetta(q0, q1 - q0) };
     }) : [];
-    const rM = r - sw / 2 - 7, swM = 5.4;
-    // le etichette dei valori sono HTML in overlay, ancorate VERSO L'ESTERNO:
-    // centrarle sul raggio ne metterebbe metà sopra il tratto
-    const posLab = (f) => {
-        const a = f * TAU - Math.PI / 2, cx = Math.cos(a), cy = Math.sin(a);
-        const tx = cx > 0.25 ? "6px" : cx < -0.25 ? "calc(-100% - 6px)" : "-50%";
-        const ty = cy > 0.25 ? "6px" : cy < -0.25 ? "calc(-100% - 6px)" : "-50%";
-        return { left: `${50 + 50 * cx}%`, top: `${50 + 50 * cy}%`, transform: `translate(${tx}, ${ty})` };
-    };
+    const rM = r - sw / 2 - 7, swM = 4.2;
+    // LA RIGA DI STATO AL CENTRO, al posto di «punti rete» ripetuto in 8px
+    // sotto ogni numero: l'unita' torna come suffisso della cifra, e lo spazio
+    // recuperato dice a che punto sei — che e' la domanda a cui la geometria,
+    // con tre piste a 5 gradi di distanza fra loro, non riesce a rispondere.
+    const perc = (v, su) => Math.floor(cl01(v / su) * 100);
+    const stato = senzaCorsa ? "senza soglie"
+        : prossima ? `${perc(punti, prossima.soglia_da)}% → S${prossima.tier}`
+            : soglie.length ? "tutto preso 👑"
+                : punti >= target ? "target preso 🎯" : `${perc(punti, target)}% → 🎯`;
+    // L'ARCO CHE MANCA: dalla proiezione al target, sul filo esterno
+    const rA = r + sw / 2 + 5;
+    const gap = allarme && target > 0 && proj < target ? [fDi(sec, proj), fT] : null;
+    const [bx, by] = gap ? polo(cc, rA, (gap[0] + gap[1]) / 2) : [0, 0];
     const anello = (
         <div className={cn("tf-anello", importante && "tf-imp", allarme && "tf-alert")} onClick={onClick}>
             <svg viewBox={`0 0 ${V} ${V}`}>
                 <defs>
-                    <linearGradient id={`gs${uid}`} x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stopColor={colore} stopOpacity=".58" /><stop offset="100%" stopColor={colore} />
+                    {/* userSpaceOnUse: col riquadro di default il gradiente
+                        ripartiva a ogni settore e faceva un dente di sega di
+                        brillantezza che non significava niente */}
+                    <linearGradient id={`gs${uid}`} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2={V} y2={V}>
+                        <stop offset="0%" stopColor={colore} stopOpacity=".62" /><stop offset="100%" stopColor={colore} />
                     </linearGradient>
                     <pattern id={`hs${uid}`} width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                         <rect width="9" height="9" fill={colore} fillOpacity=".13" /><rect width="4.4" height="9" fill={colore} fillOpacity=".55" />
                     </pattern>
                 </defs>
-                {sec.map((g, i) => {
+                {senzaCorsa ? (
+                    <circle cx={cc} cy={cc} r={r} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth={sw / 2}
+                        strokeDasharray="5 9" strokeLinecap="round" />
+                ) : sec.map((g, i) => {
                     const d = g.f1 - g.f0;
-                    const ka = cl01((punti - g.v0) / (g.v1 - g.v0)), kp = cl01((proj - g.v0) / (g.v1 - g.v0));
+                    const ka = riemp(g, punti), kp = riemp(g, proj);
+                    // IL FRONTE E' ACCESO, IL PASSATO E' OPACO. Con il glow su
+                    // ogni settore chiuso, chi aveva finito la corsa urlava piu'
+                    // di chi la stava correndo: su Fastweb l'anello piu'
+                    // luminoso era il gas con 8 pezzi, sopra al mobile con 60.
+                    const chiuso = ka >= 1;
                     return (
                         <g key={`s${i}`}>
                             <path d={arco(cc, r, g.f0, g.f1)} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={sw} />
                             {kp > ka && <path d={arco(cc, r, g.f0 + ka * d, g.f0 + (on ? kp : ka) * d)} fill="none" stroke={`url(#hs${uid})`} strokeWidth={sw} />}
-                            {ka > 0 && !fette2.length && <path d={arco(cc, r, g.f0, g.f0 + (on ? ka : 0) * d)} fill="none" stroke={`url(#gs${uid})`} strokeWidth={sw}
-                                style={{ filter: ka >= 1 ? `drop-shadow(0 0 11px ${colore})` : `drop-shadow(0 0 6px ${colore}99)` }} />}
-                            {/* SCAGLIONE CHIUSO = lucidato: un filo di luce sul
-                                bordo esterno. Serve a far vedere da lontano
-                                QUANTO hai gia' in mano, non solo dove sei */}
-                            {ka >= 1 && on && <path d={arco(cc, r + sw / 2 - 2, g.f0, g.f1)} fill="none" stroke="#fff" strokeOpacity=".38" strokeWidth={1.5} strokeLinecap="round" />}
+                            {ka > 0 && !fette2.length && <path d={arco(cc, r, g.f0, g.f0 + (on ? ka : 0) * d)} fill="none"
+                                stroke={chiuso ? colore : `url(#gs${uid})`} strokeOpacity={chiuso ? 0.42 : 1} strokeWidth={sw}
+                                style={chiuso ? undefined : { filter: `drop-shadow(0 0 8px ${colore}cc)` }} />}
                         </g>
                     );
                 })}
@@ -688,12 +723,13 @@ export function AnelloScaglioni({
                         ))}
                     </g>
                 ))}
-                {/* LA MIA QUOTA: anello interno, stessa tinta più chiara */}
-                {quota > 0 && (
+                {/* LA MIA QUOTA: anello interno, stessa tinta più chiara. Senza
+                    alone: con il bagliore era l'oggetto piu' luminoso di tutto
+                    il disegno, cioe' il dato secondario in cima alla gerarchia */}
+                {quota > 0 && !senzaCorsa && (
                     <g>
-                        {sec.map((g, i) => { const d = g.f1 - g.f0, ka = cl01((punti - g.v0) / (g.v1 - g.v0)); return ka > 0 ? <path key={`m${i}`} d={arco(cc, rM, g.f0, g.f0 + ka * d)} fill="none" stroke="rgba(255,255,255,.09)" strokeWidth={swM} /> : null; })}
-                        {miei.map(([a, b], i) => <path key={`q${i}`} d={arco(cc, rM, a, on ? b : a)} fill="none" stroke={chiaro} strokeWidth={swM} strokeLinecap="round"
-                            style={{ filter: `drop-shadow(0 0 4px ${chiaro}bb)` }} />)}
+                        {sec.map((g, i) => { const d = g.f1 - g.f0, ka = riemp(g, punti); return ka > 0 ? <path key={`m${i}`} d={arco(cc, rM, g.f0, g.f0 + ka * d)} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={swM} /> : null; })}
+                        {miei.map(([a, b], i) => <path key={`q${i}`} d={arco(cc, rM, a, on ? b : a)} fill="none" stroke={chiaro} strokeOpacity=".75" strokeWidth={swM} strokeLinecap="round" />)}
                     </g>
                 )}
                 {/* SOGLIE: la tacca vive nel taglio fra due scaglioni */}
@@ -703,26 +739,23 @@ export function AnelloScaglioni({
                     const conT = tierT === s.tier;
                     const prox = prossimaProj && s.tier === prossimaProj.tier;
                     const col = st === "presa" ? "#ffffff" : st === "proj" ? colore : "rgba(255,255,255,.30)";
-                    // SOGLIA PRESA = LUCE (Luca 29/08: «il momento in cui la
-                    // raggiungo e' semplicemente un bianco sul grigio; fai che
-                    // questi anelli mi invoglino a prendere la successiva»).
-                    // Presa: tacca piu' lunga, alone doppio e una perla accesa
-                    // sulla punta. Prossima: la stessa perla, ma vuota e che
-                    // respira — il posto dove manca ancora qualcosa.
+                    // SOGLIA PRESA = LUCE: tacca piu' lunga, alone doppio e una
+                    // perla accesa sulla punta. Prossima: la stessa perla, ma
+                    // vuota e che respira — il posto dove manca ancora qualcosa.
                     const [px, py] = polo(cc, r + sw / 2 + 7, a);
                     return (
-                        <g key={`t${s.tier}`} className={prox ? "animate-pulse" : undefined}>
+                        <g key={`t${s.tier}`} className={prox && !conT ? "animate-pulse" : undefined}>
                             <path d={radiale(cc, r - sw / 2 - (st === "presa" ? 4 : 2), r + sw / 2 + (st === "presa" ? 4 : 2), a)}
                                 stroke={conT ? "#34d399" : col} strokeWidth={st === "presa" || conT ? 4.4 : 3.2} strokeLinecap="round"
                                 style={st === "presa" ? { filter: `drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px ${colore})` }
                                     : st !== "futura" || conT ? { filter: `drop-shadow(0 0 4px ${conT ? "#34d399" : colore})` } : undefined} />
                             {st === "presa" && !conT && <circle cx={px} cy={py} r={2.9} fill="#fff" style={{ filter: `drop-shadow(0 0 6px ${colore})` }} />}
-                            {st !== "presa" && prox && <circle cx={px} cy={py} r={2.6} fill="none" stroke={colore} strokeWidth={1.6} />}
+                            {st !== "presa" && prox && !conT && <circle cx={px} cy={py} r={2.6} fill="none" stroke={colore} strokeWidth={1.6} />}
                         </g>
                     );
                 })}
                 {/* TARGET: forma diversa, non un colore diverso */}
-                {target > 0 && (() => {
+                {target > 0 && !senzaCorsa && (() => {
                     const f = fT, r0 = r - sw / 2 - 4, r1 = r + sw / 2 + 4;
                     const [dx, dy] = polo(cc, r1 + (tierT != null ? 9 : 5), f), s2 = 4.4;
                     return (
@@ -737,31 +770,23 @@ export function AnelloScaglioni({
                         </g>
                     );
                 })()}
+                {/* ⚠︎ QUELLO CHE MANCA: dalla proiezione al target, tratteggiato */}
+                {gap && <path className="tf-manca" d={arco(cc, rA, gap[0], gap[1])} fill="none"
+                    stroke="#fbbf24" strokeWidth={3} strokeDasharray="4 5" strokeLinecap="round"
+                    style={{ filter: "drop-shadow(0 0 6px #fbbf24)" }} />}
             </svg>
-            {/* DENTRO L'ANELLO NON ESISTONO DECIMALI (Luca 29/08: «mai numeri
-                con la virgola, arrotonda per difetto, tanto il dato preciso
-                ce l'abbiamo cliccando sulla barra sotto»). Per DIFETTO, non
-                al piu' vicino: 439,8 punti non sono la soglia 440, e un
-                arrotondamento per eccesso direbbe che l'hai presa. */}
             <div className="tf-anello-centro">
-                <span className="num">{fmtN(Math.floor(punti))}</span>
-                <span className="cap">{unit === "pz" ? "pezzi rete" : "punti rete"}</span>
+                {/* DENTRO L'ANELLO NON ESISTONO DECIMALI (Luca 29/08: «mai numeri
+                    con la virgola, arrotonda per difetto, tanto il dato preciso
+                    ce l'abbiamo cliccando sulla barra sotto»). Per DIFETTO, non
+                    al piu' vicino: 439,8 punti non sono la soglia 440, e un
+                    arrotondamento per eccesso direbbe che l'hai presa. */}
+                <span className="num">{fmtN(Math.floor(punti))}<span className="u">{unit === "pz" ? "pz" : "pt"}</span></span>
+                <span className="cap">{stato}</span>
                 {mio != null && punti > 0 && <span className="mio" style={{ color: chiaro }}>{fmtN(Math.floor(quota * 100))}%&nbsp;mio</span>}
             </div>
-            {/* etichette dei valori: le accende il CSS quando ci stanno davvero */}
-            {soglie.map((s, i) => {
-                const st = punti >= s.soglia_da ? "presa" : rif >= s.soglia_da ? "proj" : "futura";
-                const conT = tierT === s.tier;
-                return <span key={`l${s.tier}`} className="tf-lab" style={{
-                    ...posLab(angDi(i)),
-                    color: conT ? "#34d399" : st === "presa" ? "#fff" : st === "proj" ? colore : "#64748b",
-                    fontWeight: st === "presa" || conT ? 800 : undefined,
-                    textShadow: st === "presa" && !conT ? `0 0 9px ${colore}` : undefined,
-                }}>{conT ? "🎯" : ""}S{s.tier}·{fmtN(Math.floor(s.soglia_da))}</span>;
-            })}
-            {target > 0 && tierT == null && <span className="tf-lab" style={{ ...posLab(fT), color: "#34d399" }}>🎯{fmtN(Math.floor(target))}</span>}
             {/* il glifo dice l'allarme anche senza movimento e senza colore */}
-            {allarme && <span className="tf-bang" title="Proiezione sotto il target">!</span>}
+            {gap && <span className="tf-bang" style={{ left: `${(bx / V) * 100}%`, top: `${(by / V) * 100}%` }} title="Proiezione sotto il target">!</span>}
         </div>
     );
     return tip ? <Tip className="block" tip={tip}>{anello}</Tip> : anello;

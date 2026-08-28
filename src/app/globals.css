@@ -1302,36 +1302,30 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 
     /* piede sotto l'anello, a scalini: ogni riga si accende solo se l'avanzo
        la paga E la cella è larga abbastanza perché si legga */
-    --f1: clamp(0px, calc(min(var(--slack) - var(--t1), var(--cellW) - 48px, var(--rowH) - 62px) * 9999), 1px);
-    --f2: clamp(0px, calc(min(var(--slack) - 33px, var(--cellW) - 56px, var(--rowH) - 96px) * 9999), 1px);
-    --f3: clamp(0px, calc(min(var(--slack) - 48px, var(--cellW) - 78px, var(--rowH) - 120px) * 9999), 1px);
-    --f4: clamp(0px, calc(min(var(--slack) - 62px, var(--cellW) - 76px, var(--rowH) - 140px) * 9999), 1px);
+    /* L'AVANZO SI MISURA SULL'ANELLO, NON SULLA CELLA. Con `--slack = rowH −
+       cellW` una card con UNA pista sola aveva sempre slack negativo (la cella
+       e' larga quanto la card), e il piede spariva proprio dove c'era piu'
+       spazio: su Sky e S4 non si vedeva ne' l'emoji, ne' il nome della pista,
+       ne' il target — misurato −324px su Sky. L'anello e' largo `--D`, non
+       `--cellW`: quello che avanza in altezza lo dice `--rowH − --D`. */
+    --f1: clamp(0px, calc(min(var(--t1), var(--cellW) - 48px, var(--rowH) - 62px) * 9999), 1px);
+    --f2: clamp(0px, calc(min(var(--cellW) - 56px, var(--rowH) - 96px) * 9999), 1px);
+    --f3: clamp(0px, calc(min(var(--cellW) - 78px, var(--rowH) - 120px) * 9999), 1px);
+    --f4: clamp(0px, calc(min(var(--cellW) - 76px, var(--rowH) - 140px) * 9999), 1px);
     --foot: calc(var(--f1) * 18 + var(--f2) * 15 + var(--f3) * 15 + var(--f4) * 14);
 
     /* LA MISURA DELL'ANELLO, in una riga: il minore fra la larghezza della
        cella e l'altezza della fila meno il piede. Zero costanti inventate. */
     --D0: clamp(40px, min(var(--cellW), var(--rowH) - var(--foot) - 2px), 480px);
 
-    /* le etichette dei valori attorno all'anello non dipendono da QUANTE
-       piste ci sono ma dai PIXEL: servono ~16px di arco per etichetta e una
-       corona libera di 64px in larghezza. Se ci stanno, l'anello paga 28px
-       di diametro per aprirle. */
-    --nSl: calc(var(--nS) + 1);
-    /* PRIMA si prova a far stare le etichette restringendo l'anello quel tanto
-       che serve (una corona libera di 60px), poi si guarda se l'arco le regge:
-       rinunciarci subito era il motivo per cui su Fastweb non comparivano mai */
-    --Dlab: calc(min(var(--D0), var(--cellW) - 84px) - 28px);
-    /* … MA NON A QUALUNQUE PREZZO (Luca 29/08: «Francesco con un monitor più
-       piccolo vede bene Vodafone e male WindTre»). Col solo test sull'arco la
-       regola era ROVESCIATA: WindTre ha 3 soglie, le etichette ci stavano e
-       l'anello si dimezzava (221 → 109); Vodafone ne ha 6, non ci stavano e
-       l'anello restava intero. Due card gemelle, anelli uno il doppio
-       dell'altro — e chi ha meno soglie veniva punito. Adesso le etichette si
-       accendono solo se costano al massimo il 20% del diametro. */
-    --labOnN: clamp(0, calc(min(var(--Dlab) - var(--nSl) * 14px,
-                                var(--Dlab) - var(--D0) * .8) / 1px * 9999), 1);
-    --labOn: calc(var(--labOnN) * 1px);
-    --D: calc(var(--D0) - var(--labOnN) * (var(--D0) - var(--Dlab)));
+    /* LE ETICHETTE PERIMETRALI NON CI SONO PIU'. Erano 81 nodi, di cui 75 con
+       font-size 0: si accendevano solo con celle sopra i 560px — cioe' mai,
+       sulle card a piu' anelli — e quando si accendevano costavano 28px di
+       diametro, col risultato che ALLARGANDO la card l'anello rimpiccioliva.
+       Le stesse cifre le porta la barra sotto, che c'e' sempre; e il target,
+       che era l'unico dato solo loro, e' nel piede. L'anello si prende tutto
+       lo spazio della cella, senza salti. */
+    --D: var(--D0);
 
     /* avanzo verticale incomprimibile: un cerchio non può essere più largo
        della sua colonna. Invece di spalmare il vuoto attorno a ogni anello
@@ -1357,6 +1351,12 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    centrata. Va scritto con lo shorthand start/span: il solo grid-column-start
    azzererebbe lo span e la cella si dimezzerebbe. */
 .tf-pista.spaiata { grid-column: calc(var(--col) - var(--ultima) + 1) / span 2; }
+/* LA PISTA APERTA NELLA BARRA (Luca: «ci deve sempre essere una barra esplosa»).
+   C'era la barra, ma nessun segno diceva DI CHI fosse: si leggeva «Mobile» in
+   basso e nessuno degli otto anelli sopra era marcato. */
+.tf-pista { border-radius: 12px; transition: background .18s ease, box-shadow .18s ease; }
+.tf-pista.sel { background: color-mix(in srgb, var(--tinta) 7%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tinta) 26%, transparent); }
 
 .tf-anello { width: var(--D); height: var(--D); position: relative; flex: 0 0 auto; }
 /* ═══ KPI IN EVIDENZA E ALLARME (Luca 28/08) ═════════════════════════════
@@ -1380,34 +1380,39 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    Sta DENTRO il box dell'anello (inset 7%): il tratto arriva all'83,6% del
    raggio, quindi il filo cade appena fuori senza mai debordare — prima con
    inset negativo la corona veniva tagliata dritta dai fianchi della cella. */
+/* LA DISTANZA CONTA QUANTO IL COLORE: a inset 7% il filo cadeva a 2,7px dal
+   bordo del tratto (su un anello da 225) e non si leggeva come un alone ma
+   come una seconda traccia del quadrante. A inset 1% sta 16px piu' in fuori,
+   dove non c'e' nient'altro: la' un filo e' un filo. */
 .tf-anello.tf-imp::before {
-    content: ""; position: absolute; inset: 7%; border-radius: 50%; pointer-events: none;
-    border: 2px solid rgba(226, 232, 240, .55);
-    box-shadow: 0 0 7px rgba(226, 232, 240, .30), inset 0 0 7px rgba(226, 232, 240, .22);
+    content: ""; position: absolute; inset: 1%; border-radius: 50%; pointer-events: none;
+    border: 1.5px solid rgba(226, 232, 240, .30);
+    box-shadow: 0 0 14px rgba(226, 232, 240, .22);
 }
-/* ALLARME: stesso segno, ambra, più spesso — e BATTE invece di respirare.
-   Un respiro sinusoidale è la grammatica dello «sto caricando», ed è già usata
-   a pochi pixel di distanza dalla tacca della prossima soglia. Il battito è
-   asimmetrico — salita in 6 centesimi, decadimento lungo — che è il modo in cui
-   si accende un allarme e non un'attesa. */
-.tf-anello.tf-alert::before {
-    border: 2.5px solid rgba(251, 146, 60, .95);
-    box-shadow: 0 0 12px rgba(251, 146, 60, .6), inset 0 0 10px rgba(251, 146, 60, .35);
-    animation: tfAuraAllarme 2.6s linear infinite;
-}
+/* ALLARME: NON un cerchio colorato, ma IL PEZZO CHE MANCA. L'ambra del
+   contorno distava 2,4 gradi di tinta dall'arancio WindTre e 18 dal giallo
+   Fastweb: su due marchi su cinque l'allarme aveva il colore del brand, e
+   «ovunque significa una cosa sola» era vero solo per gli altri tre.
+   Adesso il segno e' un ARCO TRATTEGGIATO sul filo esterno, che va dalla
+   proiezione al target: dice quanto manca, e sta dove sta il problema. La
+   forma non si confonde con nessuna tinta. Batte, non respira: salita in 6
+   centesimi e decadimento lungo, che e' come si accende un allarme. */
+.tf-anello .tf-manca { animation: tfAuraAllarme 2.6s linear infinite; }
 @keyframes tfAuraAllarme {
     0% { opacity: .42 } 6% { opacity: 1 } 20% { opacity: .55 }
     30% { opacity: .92 } 48%, 100% { opacity: .42 }
 }
 /* IL GLIFO regge il significato dove il movimento non arriva: chi ha chiesto
    meno animazioni, chi non distingue l'ambra, e le misure piccole. */
-.tf-anello .tf-bang { position: absolute; top: 3%; right: 3%; border-radius: 50%;
+.tf-anello .tf-bang { position: absolute; transform: translate(-50%, -50%); border-radius: 50%;
     width: clamp(13px, calc(var(--D) * .13), 26px); height: clamp(13px, calc(var(--D) * .13), 26px);
     display: grid; place-items: center; background: rgba(251, 146, 60, .95); color: #0f111a;
     font-weight: 900; font-size: clamp(9px, calc(var(--D) * .075), 15px); line-height: 1;
-    box-shadow: 0 0 8px rgba(251, 146, 60, .55); pointer-events: none; }
+    /* il glifo sta SOPRA l'arco: il filo scuro lo stacca dal tratto invece di
+       spingerlo fuori dalla cella, che a misura minima lo faceva tagliare */
+    box-shadow: 0 0 0 2px #0f111a, 0 0 10px rgba(251, 146, 60, .55); pointer-events: none; z-index: 2; }
 @media (prefers-reduced-motion: reduce) {
-    .tf-anello.tf-alert::before { animation: none; opacity: 1; }
+    .tf-anello .tf-manca { animation: none; opacity: 1; }
     /* anche la tacca della prossima soglia smette di pulsare: senza questa
        riga restava l'informazione neutra a muoversi e spariva l'allarme */
     .tf-anello .animate-pulse { animation: none; }
@@ -1417,18 +1422,20 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
     justify-content: center; text-align: center; pointer-events: none; white-space: nowrap; padding: 0 17%; }
 .tf-anello-centro .num { font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; line-height: 1;
     font-size: clamp(11px, calc(var(--D) * .15), 44px); }
-/* la didascalia e la quota esistono solo se ci stanno davvero */
-.tf-anello-centro .cap { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: .08em;
-    line-height: 1.3; margin-top: 2px; overflow: hidden;
-    height: calc(clamp(0px, calc((var(--D) - 80px) * 9999), 1px) * 11); }
+/* l'unita' come suffisso della cifra: prima era una riga a se', in maiuscoletto
+   8px, ripetuta 22 volte in pagina per dire sempre la stessa cosa */
+.tf-anello-centro .num .u { font-size: .42em; font-weight: 700; color: #64748b; margin-left: .18em;
+    letter-spacing: .02em; }
+/* al posto suo, LO STATO: a che punto sei della corsa. E' la domanda a cui la
+   geometria non riesce a rispondere — tre piste di WindTre si disegnano a 5
+   gradi di distanza fra loro e sembrano tutte «non abbiamo fatto niente»,
+   mentre sono al 79, 75 e 74% della prima soglia. */
+.tf-anello-centro .cap { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .01em;
+    line-height: 1.3; margin-top: 3px; overflow: hidden;
+    height: calc(clamp(0px, calc((var(--D) - 80px) * 9999), 1px) * 13); }
 .tf-anello-centro .mio { font-size: 9px; font-weight: 900; font-variant-numeric: tabular-nums; margin-top: 3px;
     line-height: 14px; overflow: hidden;
     height: calc(clamp(0px, calc((var(--D) - 104px) * 9999), 1px) * 14); }
-/* etichette dei valori: overlay HTML a px FISSI. Come testo dentro il viewBox
-   venivano scalate — a 100px di anello rendevano 4px, invisibili. */
-.tf-lab { position: absolute; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
-    white-space: nowrap; pointer-events: none; font-size: calc(var(--labOn) * 9); }
-
 .tf-foot { width: 100%; height: var(--foot); overflow: hidden; display: flex; flex-direction: column; align-items: center; }
 .tf-foot .l1 { height: calc(var(--f1) * 18); overflow: hidden; font-size: 11px; font-weight: 700; color: #e2e8f0;
     line-height: 18px; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; }
@@ -1444,8 +1451,23 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 /* dentro la Rete la riga di stato della barra non va MAI a capo: il suo
    budget in altezza è fisso (--BOX), e una seconda riga la taglierebbe —
    cioè romperebbe la regola «la barra resta intera» */
+/* UNA PISTA SOLA: LA BARRA VA A FIANCO. Con un anello solo la cella e' larga
+   quanto la card e l'anello resta limitato dall'ALTEZZA: su Sky avanzavano
+   370px di larghezza vuota. Affiancando la barra, l'anello cresce e quello
+   spazio diventa la scala delle soglie. Sotto i 520px si torna impilati. */
+@container (min-width: 520px) {
+    .tf-rb.tf-uno { flex-direction: row; align-items: center; gap: var(--GAPB);
+        --W: calc(50cqw - var(--GAPB)); --barTot: 0px; }
+    .tf-rb.tf-uno .tf-rb-area { flex: 0 0 auto; width: var(--W); }
+    .tf-rb.tf-uno .tf-rb-bar { flex: 1 1 auto; min-width: 0; height: auto; margin-top: 0;
+        padding-top: 0; padding-left: var(--SEP); border-top: none;
+        border-left: 1px solid rgba(255, 255, 255, .1); }
+}
 .tf-rb-bar .sb-chips { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
 .tf-rb-bar .sb-chips > * { flex: 0 0 auto; }
+/* …tranne l'ultima frase, che si accorcia coi puntini invece di essere
+   tagliata a meta' parola (misurato 245px di contenuto in 145 di spazio) */
+.tf-rb-bar .sb-chips > :last-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── MIX PERSONE (Luca 28/08): stessa scocca del Mix operatori — card
    panoramica → anello a sinistra e righe a destra, card stretta → in
