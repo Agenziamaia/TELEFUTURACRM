@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { codaNumero, soloCifre, eventoAnyTime, eventoHeySuite, trovaClientePerNumero } from "@/lib/aircall";
 import { numeroNazionale } from "@/lib/telefono";
 import { areaOf } from "@/lib/roles";

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { generaCoupon, validaCoupon } from "@/lib/coupons";
 
 export const runtime = "nodejs";

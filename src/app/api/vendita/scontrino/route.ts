@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { buildRequestXml } from "@/lib/fiscalprint";
 import { formaPagamento } from "@/lib/pos";
 import { validaCoupon, redimiCoupon } from "@/lib/coupons";

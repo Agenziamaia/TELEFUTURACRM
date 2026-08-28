@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { aircallGet, aircallPost } from "@/lib/aircall";
 import { normalizzaE164, msgNumeroNonValido } from "@/lib/telefono";
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { aircallGet, puoAscoltareRegistrazioniServer } from "@/lib/aircall";
 import { capKey, capAllowed, CAP_CLIENTI_REGISTRAZIONI, CAP_CALLER_REG_STORICO } from "@/lib/capabilities";
 import type { PermMap } from "@/lib/nav";

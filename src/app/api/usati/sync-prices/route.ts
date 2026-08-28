@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { fetchRefurbedPrices } from "@/lib/pricing/refurbed";
 import { computeBuyback, type CategoriaDispositivo } from "@/lib/pricing/grades";
 

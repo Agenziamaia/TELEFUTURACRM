@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiBloccoStorico, CartellaBackfill, EmailIn, EmailInAtt, oggettoRadice } from "@/lib/email";
 
 export const runtime = "nodejs";

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { getScope } from "@/lib/ai/scope";
 import { WRITE_TOOL_NAMES } from "@/lib/ai/tools";
 import { areaOf, isAdminOrAbove } from "@/lib/roles";
