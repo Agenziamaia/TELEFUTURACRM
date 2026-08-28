@@ -70,11 +70,11 @@ const decodeLayout = (arr, versione = 0) => {
         if (!REGISTRO[k]) return null;
         if (versione >= 9) {
             const [x, y, w, h] = String(resto || "").split(",").map(Number);
-            const ss = w >= 1 && w <= 8 ? Math.round(w) : (REGISTRO[k].def || 2);
+            const ss = w >= 1 && w <= COLONNE ? Math.round(w) : (REGISTRO[k].def || 2);
             // x dentro le 8 colonne: nel salvato ci sono coordinate come 9 o
             // 6+3=12 che react-grid-layout ricollocava in silenzio, spostando
             // le card da dove l'utente le aveva lasciate
-            return { k, s: ss, x: Number.isFinite(x) ? Math.max(0, Math.min(8 - ss, Math.round(x))) : 0,
+            return { k, s: ss, x: Number.isFinite(x) ? Math.max(0, Math.min(COLONNE - ss, Math.round(x))) : 0,
                 y: Number.isFinite(y) ? Math.max(0, Math.round(y)) : 0,
                 h: h >= 2 && h <= 12 ? Math.round(h) : hDef(k) };
         }
@@ -87,7 +87,7 @@ const decodeLayout = (arr, versione = 0) => {
     if (versione < 9) {
         let x = 0, y = 0, rigaH = 0;
         for (const w of items) {
-            if (x + w.s > 8) { x = 0; y += rigaH; rigaH = 0; }
+            if (x + w.s > COLONNE) { x = 0; y += rigaH; rigaH = 0; }
             w.x = x; w.y = y; x += w.s; rigaH = Math.max(rigaH, w.h);
         }
     }
@@ -100,6 +100,10 @@ const decodeLayout = (arr, versione = 0) => {
 // coda, dove la griglia le compatta) e il primo salvataggio porta il layout
 // alla versione corrente. Un widget rimosso a mano NON torna: la versione è
 // già salita.
+// LE COLONNE SONO 12: è il default di react-grid-layout 2.x, e tutte le
+// disposizioni salvate finora sono state fatte con quelle. Il `cols={8}` che
+// passavamo era una prop della v1, ignorata in silenzio.
+const COLONNE = 12;
 const LAYOUT_V = 10;
 // `su: true` = nasce IN CIMA all'area (Luca 28/08: «aggiungi questo widget di
 // default a tutti, in tutte le visualizzazioni di analisi di negozio») — in
@@ -1099,6 +1103,19 @@ function AnalisiInner() {
 function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata = false }) {
     const [galleria, setGalleria] = useState(false);
     const { width, containerRef, mounted } = useContainerWidth();
+    // react-grid-layout 2.x vuole gli oggetti di configurazione, e li usa come
+    // dipendenze di useMemo: vanno memoizzati o la griglia si ricostruisce a
+    // ogni render. Le misure restano quelle di default (12 colonne, righe da
+    // 150) perché sono quelle con cui tutti i layout salvati sono stati fatti:
+    // passare 8 colonne adesso smonterebbe le disposizioni di tutti.
+    const dragCfg = useMemo(() => ({ enabled: !bloccata, handle: ".tf-drag", cancel: "button" }), [bloccata]);
+    const resCfg = useMemo(() => ({ enabled: !bloccata }), [bloccata]);
+    // SI SALVA SOLO QUELLO CHE L'UTENTE HA FATTO. RGL emette onLayoutChange
+    // già al montaggio: senza questa guardia bastava APRIRE la pagina perché
+    // la disposizione condivisa venisse riscritta con la versione normalizzata
+    // — ed è il motivo per cui a Luca cambiava da sola a ogni rientro.
+    const toccato = useRef(false);
+    const segnaTocco = () => { toccato.current = true; };
     // MISURE MINIME (Luca 28/08: «più piccola di così le informazioni non si
     // leggono»): il widget le dichiara nel REGISTRO, altrimenti valgono quelle
     // storiche. Sotto quella misura la maniglia non scende più.
@@ -1106,14 +1123,14 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata =
         const d = REGISTRO[k] || {};
         const val = (v, ...a) => (typeof v === "function" ? v(ctx, ...a) : v);
         const minW = val(d.minW) || 1;
-        const larg = Math.max(minW, Math.min(8, w));
+        const larg = Math.max(minW, Math.min(COLONNE, w));
         const minH = val(d.minH) || 2;
         const maxH = val(d.maxH, larg) || 12;
         return { minW, minH, maxH: Math.max(minH, maxH) };
     };
     const rglLayout = lista.map((w) => {
         const v = vinc(w.k, w.s);
-        const larg = Math.max(v.minW, Math.min(8, w.s));
+        const larg = Math.max(v.minW, Math.min(COLONNE, w.s));
         // il vincolo si applica QUI, sulla lista: RGL lo userebbe solo per la
         // maniglia e un'altezza salvata sotto il minimo resterebbe lì (è il
         // motivo per cui alcune card continuavano a scrollare)
@@ -1124,7 +1141,7 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata =
         const mappa = new Map(l.map((it) => [it.i, it]));
         const next = lista.map((w) => { const it = mappa.get(w.k); return it ? { ...w, x: it.x, y: it.y, s: it.w, h: it.h } : w; });
         const uguale = next.length === lista.length && next.every((w, i2) => { const pr = lista[i2]; return pr.k === w.k && pr.x === w.x && pr.y === w.y && pr.s === w.s && pr.h === w.h; });
-        if (!uguale) setLista(next);
+        if (!uguale && toccato.current) setLista(next);
     };
     const rimuovi = (k) => setLista(lista.filter((w) => w.k !== k));
     const aggiungi = (k) => { setLista([...lista, { k, s: REGISTRO[k].def || 2, h: hDef(k), x: 0, y: Infinity }]); setGalleria(false); };
@@ -1144,9 +1161,9 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione, bloccata =
                 card si trascina dalla TESTATA e va dove la molli, le altre si
                 compattano in verticale; resize dall'angolo in basso a destra */}
             <div ref={containerRef}>
-            {mounted && <GridLayout className="tf-griglia" layout={rglLayout} width={width} cols={8} rowHeight={96} margin={[16, 16]} containerPadding={[0, 0]}
-                draggableHandle=".tf-drag" draggableCancel="button" compactType="vertical" onLayoutChange={onLayout}
-                isDraggable={!bloccata} isResizable={!bloccata}>
+            {mounted && <GridLayout className="tf-griglia" layout={rglLayout} width={width}
+                dragConfig={dragCfg} resizeConfig={resCfg} onLayoutChange={onLayout}
+                onDragStop={segnaTocco} onResizeStop={segnaTocco}>
                 {lista.map((w) => {
                     const def = REGISTRO[w.k]; if (!def) return null;
                     return (

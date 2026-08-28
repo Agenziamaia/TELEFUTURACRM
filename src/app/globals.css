@@ -1316,8 +1316,9 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
        che serve (una corona libera di 60px), poi si guarda se l'arco le regge:
        rinunciarci subito era il motivo per cui su Fastweb non comparivano mai */
     --Dlab: calc(min(var(--D0), var(--cellW) - 84px) - 28px);
-    --labOn: clamp(0px, calc((var(--Dlab) - var(--nSl) * 14px) * 9999), 1px);
-    --D: calc(var(--D0) - var(--labOn) * (var(--D0) - var(--Dlab)));
+    --labOnN: clamp(0, calc((var(--Dlab) - var(--nSl) * 14px) / 1px * 9999), 1);
+    --labOn: calc(var(--labOnN) * 1px);
+    --D: calc(var(--D0) - var(--labOnN) * (var(--D0) - var(--Dlab)));
 
     /* avanzo verticale incomprimibile: un cerchio non può essere più largo
        della sua colonna. Invece di spalmare il vuoto attorno a ogni anello

@@ -1903,20 +1903,23 @@ const formaRete = (ctx, brand) => {
     const col = n <= 5 ? Math.max(1, n) : Math.ceil(n / 2);
     return { n, col, righe: Math.ceil(n / col), ultima: n - col * (Math.ceil(n / col) - 1) };
 };
+// la griglia gira a 12 colonne (~100px l'una) e righe da 150 + 10 di margine
+const COL_PX = 100, RIGA_PX = 160;
 export function minWRete(ctx, brand) {
     const { col } = formaRete(ctx, brand);
-    return Math.max(2, Math.ceil((82 * col + 48) / 135));   // 72px di anello + 10 di gap
+    return Math.max(2, Math.ceil((82 * col + 40) / COL_PX));   // 72px di anello + 10 di gap
 }
 export function minHRete(ctx, brand) {
     const { righe } = formaRete(ctx, brand);
-    return righe >= 3 ? 5 : righe === 2 ? 4 : 3;
+    return righe >= 3 ? 4 : righe === 2 ? 3 : 2;
 }
 export function maxHRete(ctx, brand, w) {
     const { col, righe } = formaRete(ctx, brand);
-    const cellW = Math.max(40, (135 * (w || 4) - 48) / col - 10);
+    const cellW = Math.max(40, (COL_PX * (w || 4) - 40) / col - 10);
     const D = Math.min(cellW, 480);
     const piede = 18 + (cellW >= 56 ? 15 : 0) + (cellW >= 78 ? 15 : 0) + (cellW >= 76 ? 14 : 0);
-    return Math.max(minHRete(ctx, brand), Math.floor((righe * (1.35 * D + piede) + (righe - 1) * 10 + 37 + 120 + 104) / 112));
+    // 1.5 come nel CSS (--areaMax), non 1.35: le due stime erano scollate
+    return Math.max(minHRete(ctx, brand), Math.floor((righe * (1.5 * D + piede) + (righe - 1) * 10 + 37 + 120 + 104) / RIGA_PX));
 }
 
 function BloccoBrandRete({ ctx, brand }) {
