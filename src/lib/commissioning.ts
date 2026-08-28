@@ -826,9 +826,18 @@ export function fasciaDaPrezzo(p: number | null): string | null {
     return p < 200 ? FASCIA_SP.basso : (p < 600 ? FASCIA_SP.medio : FASCIA_SP.alto);
 }
 
-export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: string): Promise<ContrattoPay[]> {
+export async function caricaContrattiMese(
+    brandLabelPrefix: string, monthISO: string,
+    /* PRODUZIONE ADESSO (Luca 28/08 sera): normalmente le vendite di OGGI
+       entrano solo dopo l'ora di scatto (le 19) — è il dato consolidato con cui
+       si ragiona sui compensi. Ma chi decide DOVE inserire le attivazioni deve
+       vedere la giornata mentre si forma, o continua a inserire sui codici
+       sbagliati perché guarda i numeri di ieri sera. Con `includiOggi` il
+       taglio salta e la giornata entra nel conto, punti compresi. */
+    opts?: { includiOggi?: boolean },
+): Promise<ContrattoPay[]> {
     const { primo, ultimo } = estremiMese(monthISO);
-    const escludiOggi = await cutoffProduzione(monthISO);
+    const escludiOggi = opts?.includiOggi ? null : await cutoffProduzione(monthISO);
     type Raw = ContrattoPay & { dettagli?: Record<string, unknown> | null };
     const { data } = await caricaTutte<Raw>((from, to) =>
         supabase.from("contracts")
@@ -933,12 +942,13 @@ export const CONTESTI_LABEL: Record<string, string> = {
  */
 export async function caricaContrattiContesto(
     contesto: string, monthISO: string, prefixAltriBrand?: string,
+    opts?: { includiOggi?: boolean },
 ): Promise<{ contratti: ContrattoPay[]; nonAllocate: number; escluseVodafone: number }> {
     // il contesto vodafone (lettera A) include anche l'ENERGIA Fastweb dei VS
     const fonti: string[] =
         contesto === "vodafone" ? ["Vodafone", "Fastweb"] :
         contesto === "fastweb" ? ["Fastweb"] : [prefixAltriBrand || contesto];
-    const tutti = (await Promise.all(fonti.map(p => caricaContrattiMese(p, monthISO)))).flat();
+    const tutti = (await Promise.all(fonti.map(p => caricaContrattiMese(p, monthISO, opts)))).flat();
     let escluseVodafone = 0;
     const contratti = tutti.filter(c => {
         // REGOLE LETTERE (agosto): Fastweb T2 — MNP/OLO di provenienza

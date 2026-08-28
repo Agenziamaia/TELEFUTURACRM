@@ -37,7 +37,7 @@ const stessoNome = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y
 const PISTA_LABEL = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", cb: "Customer Base", business_piva: "Business (eventi)", business_mobile: "Business mobile", business_fisso: "Business fisso", soluzioni_digitali: "Soluzioni digitali", vas: "VAS", luce: "Luce", gas: "Gas" };
 const PISTA_EMOJI = { mobile: "📱", fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", sky: "🟣", cb: "🔁", business_piva: "💼", business_mobile: "💼", business_fisso: "💼", soluzioni_digitali: "🧩", vas: "✨", luce: "💡", gas: "🔥" };
 
-export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, meseCorrente }) {
+export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, meseCorrente, istantanea, onIstantanea }) {
     const [lente, setLente] = useState("codici");
     const [codSel, setCodSel] = useState({ w3: [], vf: [], sky: [], fw: [] });
     const [negSel, setNegSel] = useState([]);
@@ -78,7 +78,26 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
         <div className="space-y-4">
             {/* barra descrittiva ELIMINATA (Luca 24/08: «non ha senso di
                 esistere») — resta solo lo switch, a destra sotto il periodo */}
-            <div className="an-in flex justify-end items-center gap-2 -mt-1">
+            <div className="an-in flex justify-end items-center gap-2 -mt-1 flex-wrap">
+                {/* ADESSO ↔ IERI SERA (Luca 28/08 sera): la produzione si muove
+                    solo dopo l'ora di scatto, e chi dirige gli inserimenti stava
+                    scegliendo i codici sui numeri della sera prima. */}
+                {typeof onIstantanea === "function" && (
+                    <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10 mr-auto">
+                        {[
+                            { v: false, l: "🌙 Ieri sera", t: "Produzione consolidata: la giornata di oggi entra dopo l'ora di scatto. È il dato con cui si ragiona sui compensi." },
+                            { v: true, l: "⚡ Adesso", t: "Comprese le vendite registrate oggi, punti inclusi. È il dato con cui scegliere su quale codice inserire." },
+                        ].map((x) => (
+                            <button key={String(x.v)} onClick={() => onIstantanea(x.v)} title={x.t}
+                                className={cn("px-3.5 py-2 rounded-lg text-xs font-black transition-all",
+                                    !!istantanea === x.v
+                                        ? (x.v ? "bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30" : "bg-slate-500/60 text-white")
+                                        : "text-slate-400 hover:text-white")}>
+                                {x.l}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {/* con la lente NEGOZI torna la multiselezione dei PV (Luca
                     25/08: era sparita insieme alla barra descrittiva) */}
                 {lente === "negozi" && (

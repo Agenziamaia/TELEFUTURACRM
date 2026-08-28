@@ -233,6 +233,25 @@ function AnalisiInner() {
     // domeniche del periodo (i festivi arrivano da gl quando è un mese solo)
     const domeniche = useMemo(() => giorniPeriodo.map((g) => new Date(g.iso + "T12:00:00").getDay() === 0), [chiaveP]);
 
+    /* PRODUZIONE ADESSO ↔ CONSOLIDATA (Luca 28/08 sera).
+       I numeri della produzione si muovono solo dopo l'ora di scatto (le 19):
+       è il dato con cui si ragiona sui compensi, perché la giornata non è
+       ancora chiusa. Ma chi decide SU QUALE CODICE inserire le attivazioni sta
+       guardando i numeri di ieri sera, e continua a inserire dove non serve.
+       Da qui l'interruttore nel Master: «Adesso» rimette dentro la giornata in
+       corso — punti compresi, perché le vendite passano dallo stesso motore.
+       La scelta resta a chi l'ha fatta: la direzione inserimenti lavora tutto
+       il giorno su «Adesso» e non deve rimetterlo a ogni apertura. */
+    const [istantanea, setIstantanea] = useState(false);
+    useEffect(() => {
+        if (!user?.id) return;
+        try { setIstantanea(localStorage.getItem("tf_analisi_istantanea_" + user.id) === "1"); } catch { /* niente memoria: parte consolidata */ }
+    }, [user?.id]);
+    const cambiaIstantanea = (v) => {
+        setIstantanea(v);
+        try { if (user?.id) localStorage.setItem("tf_analisi_istantanea_" + user.id, v ? "1" : "0"); } catch { /* privata: vale per questa sessione */ }
+    };
+
     const [dati, setDati] = useState(null);
     const [loading, setLoading] = useState(true);
     const [errore, setErrore] = useState(null);
@@ -245,6 +264,8 @@ function AnalisiInner() {
         setErrore(null);
         (async () => {
             try {
+                // PRODUZIONE ADESSO ↔ CONSOLIDATA (Luca 28/08 sera)
+                const optOggi = { includiOggi: istantanea };
                 const daISO = giorniPeriodo[0].iso, aISO = giorniPeriodo[giorniPeriodo.length - 1].iso;
                 const mesiISO = [...new Set(giorniPeriodo.map((g) => g.iso.slice(0, 7)))].map((m) => `${m}-01`);
                 const soloMese = mesiISO.length === 1;
@@ -260,8 +281,8 @@ function AnalisiInner() {
                 // ogni mese matcha col suo tabellare
                 const caricaPacchetto = async (mISO) => {
                     const [rw3, rvf, rfw, rsky, tw3, tvf, tsky, taw3] = await Promise.all([
-                        caricaContrattiMese("WindTre", mISO), caricaContrattiMese("Vodafone", mISO),
-                        caricaContrattiMese("Fastweb", mISO), caricaContrattiMese("Sky", mISO),
+                        caricaContrattiMese("WindTre", mISO, optOggi), caricaContrattiMese("Vodafone", mISO, optOggi),
+                        caricaContrattiMese("Fastweb", mISO, optOggi), caricaContrattiMese("Sky", mISO, optOggi),
                         caricaTabellare("windtre", mISO), caricaTabellare("vodafone", mISO), caricaTabellare("sky", mISO),
                         // righe PARTNERSHIP (gara CB a punti) — vivono sul lato
                         // AZIENDA: servono alla carta per i punti degli eventi CB
@@ -310,7 +331,9 @@ function AnalisiInner() {
                 // sommarle ancora le conterebbe DUE volte (revisore 26/08).
                 // cutoffProduzione torna null se il mese non è quello corrente
                 // o se l'ora è passata: lì `oggiGara` resta vuoto.
-                const tagliato = (await Promise.all(mesiISO.map(cutoffProduzione))).find(Boolean) || null;
+                // con la PRODUZIONE ADESSO la giornata è già dentro `items`:
+                // tenerla anche qui la conterebbe due volte (rilievo revisore 26/08)
+                const tagliato = istantanea ? null : ((await Promise.all(mesiISO.map(cutoffProduzione))).find(Boolean) || null);
                 const mapAltro = (r) => ({ id: r.id, brand: r.brand || "—", negozio: r.negozio || "—", venditore: r.venditore || "—", cod_ins: r.cod_ins || "—", categoria: r.categoria, prodotto: r.prodotto, offerta: r.offerta, tipo: r.tipo_cliente, punti: 0, g: idxDi.get(String(r.data || "").slice(0, 10)) || 0 });
                 const oggiGara = !tagliato ? [] : (altRes?.data || [])
                     // stesso PERIMETRO di items: sostituzioni, Easy Control e
@@ -339,7 +362,7 @@ function AnalisiInner() {
             } finally { if (alive) setLoading(false); }
         })();
         return () => { alive = false; };
-    }, [chiaveP, user?.id, tentativo]);
+    }, [chiaveP, user?.id, tentativo, istantanea]);
 
     const items = useMemo(() => !dati ? [] : dati.pacchi.flatMap((p) => arricchisci(p.rw3, p.rvf, p.rfw, p.rsky, p.tw3, p.tvf, p.tsky, p.prW3, p.assW3, idxDi)), [dati, idxDi]);
     const itemsPrev = useMemo(() => dati?.prev ? arricchisci(dati.prev.rw3, dati.prev.rvf, dati.prev.rfw, dati.prev.rsky, dati.prev.tw3, dati.prev.tvf, dati.prev.tsky, dati.prev.prW3, dati.prev.assW3, null) : [], [dati]);
@@ -717,7 +740,7 @@ function AnalisiInner() {
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
                     {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [], oggiGara: dati?.oggiGara || [] }} />}
-                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente }} />}
+                    {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente, istantanea, onIstantanea: cambiaIstantanea }} />}
                 </>
             )}
         </div>
