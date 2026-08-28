@@ -1210,6 +1210,19 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
                                 <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
                                 <div className="text-3xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
+                                {/* UNA SIM PER CODICE (Luca 28/08). Il 27/08 due P.IVA
+                                    sono entrate nello stesso ordine — stesso secondo —
+                                    e sono finite tutte e due su Libia: il consiglio ne
+                                    guardava una sola, e la seconda ha sfondato nello
+                                    sfrido mentre un altro codice era ancora a zero.
+                                    Qui la coda dice dove va la successiva. Solo i NOMI:
+                                    niente target né avanzamenti (riservatezza). */}
+                                {ordinati.length > 1 && (
+                                    <div className="mt-2 text-[11px] text-slate-300 leading-snug">
+                                        📦 Più di una? Una per codice: la seconda su <b className="text-white">{ordinati[1].nome}</b>
+                                        {ordinati[2] ? <>, poi <b className="text-white">{ordinati[2].nome}</b></> : null}.
+                                    </div>
+                                )}
                             </div>
                         ) : mobScelto ? (
                             <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
