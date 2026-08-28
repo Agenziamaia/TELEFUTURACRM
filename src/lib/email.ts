@@ -388,19 +388,21 @@ export type MailOtp = { uid: number; cartella: string; fromAddr: string; subject
 export async function cercaESpostaMailOtp(
     a: Account,
     opts: { mittenteOk: (from: string) => boolean; cartellaOtp: string; daMinuti?: number; max?: number },
-): Promise<{ trovate: MailOtp[]; spostate: number; errore: string | null }> {
+): Promise<{ trovate: MailOtp[]; spostate: number; nonSpostate: number; motivoMancatoSpostamento: string | null; errore: string | null }> {
     const daMinuti = opts.daMinuti ?? 20;
     const max = opts.max ?? 15;
     const since = new Date(Date.now() - daMinuti * 60_000);
     const client = imapClient(a);
     const trovate: MailOtp[] = [];
     let spostate = 0;
+    let nonSpostate = 0;
+    let motivoMancatoSpostamento: string | null = null;
     try {
         await client.connect();
     } catch (e: unknown) {
         const err = e as { authenticationFailed?: boolean; responseText?: string; message?: string };
         return {
-            trovate: [], spostate: 0,
+            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null,
             errore: err?.authenticationFailed
                 ? "la casella non accetta più la password salvata (per Gmail/Outlook serve una «password per le app»)"
                 : (err?.responseText || err?.message || "connessione alla casella non riuscita"),
@@ -430,14 +432,23 @@ export async function cercaESpostaMailOtp(
                     try {
                         await client.messageMove(daSpostare.join(","), opts.cartellaOtp, { uid: true });
                         spostate = daSpostare.length;
-                    } catch { /* niente permessi di spostamento: il codice si legge lo stesso */ }
+                    } catch (e) {
+                        /* NON SI INGOIA (28/08 sera): se lo spostamento fallisce
+                           il codice si legge lo stesso, ma la mail RESTA nella
+                           posta — e su una casella di negozio quello è
+                           esattamente il problema che volevamo togliere. Deve
+                           risultare, o un giorno smette di funzionare e nessuno
+                           se ne accorge. */
+                        nonSpostate = daSpostare.length;
+                        motivoMancatoSpostamento = String((e as Error)?.message || e).slice(0, 140);
+                    }
                 }
             } finally { lock?.release(); }
         }
     } finally { try { await client.logout(); } catch { /* già chiusa */ } }
     // la più recente per prima: è quella che l'utente sta aspettando
     trovate.sort((x, y) => (y.date?.getTime() || 0) - (x.date?.getTime() || 0));
-    return { trovate, spostate, errore: null };
+    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null };
 }
 
 export async function inviaEmail(a: Account, opts: { to: string; subject: string; text?: string; html?: string; inReplyTo?: string | null; attachments?: { filename: string; content: Buffer; contentType?: string }[] }): Promise<{ messageId: string; raw: Buffer }> {

@@ -95,6 +95,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
             profilo: profilo.id,
             mail_del: quando,
             mail_spostate: esito.spostate,
+            // se la mail NON è stata portata via resta nella posta: va scritto,
+            // o su una casella di negozio il codice resta lì sotto gli occhi
+            ...(esito.nonSpostate ? { mail_rimaste_in_posta: esito.nonSpostate, perche: esito.motivoMancatoSpostamento } : {}),
         },
     }).then(undefined, () => { /* l'audit non deve mai far fallire la consegna */ });
 
