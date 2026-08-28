@@ -480,6 +480,191 @@ export function SogliaBar({ label, emoji, punti, pezzi, soglie = [], colore = "#
     );
 }
 
+/* ═══ ANELLO A SCAGLIONI (Rete, 28/08) ══════════════════════════════════
+   La sezione Rete non risponde a «quanti punti abbiamo fatto» — quello è un
+   numero e si scrive — ma a «quale scaglione stiamo prendendo, quale ci
+   scappa, siamo sopra o sotto il target». Su una scala lineare quella
+   domanda è illeggibile proprio quando conta: con soglie a 80/140/300/620
+   il salto S1→S2 vale il 10% del giro e S3→S4 il 52%, così le due soglie
+   che si rincorrono a inizio mese diventano due trattini appiccicati.
+   Qui il cerchio è diviso in SETTORI UGUALI, uno per scaglione (0→S1,
+   S1→S2, … , «oltre»), separati da un taglio in cui vive la tacca della
+   soglia: dentro il settore la posizione è lineare, ma ogni scaglione pesa
+   uguale. Il prezzo — l'angolo non è più proporzionale ai punti — si paga
+   tenendo il NUMERO VERO al centro e aprendo la SogliaBar lineare nel
+   drill: la barra del Master non si butta, cambia mestiere.
+   · arco pieno = fatto · coda a righe = proiezione fine mese
+   · tacche nei tagli = soglie (bianca presa, colore in proiezione, spenta)
+   · TARGET = segno di FORMA DIVERSA (stelo + rombo smeraldo), libero di
+     cadere dentro un settore: n soglie e 1 target non competono mai
+   · anello interno più chiaro = LA QUOTA DEL MIO PUNTO VENDITA sul totale
+     di rete di quel KPI (regola unica: tinta piena = rete, chiara = io)  */
+const TAU = Math.PI * 2;
+const cl01 = (v) => Math.max(0, Math.min(1, v));
+const polo = (cc, r, f) => { const a = f * TAU - Math.PI / 2; return [cc + r * Math.cos(a), cc + r * Math.sin(a)]; };
+const arco = (cc, r, f0, f1) => {
+    let d = f1 - f0;
+    if (d <= 0.0009) return "";
+    if (d >= 0.9995) d = 0.9995;
+    const [x0, y0] = polo(cc, r, f0), [x1, y1] = polo(cc, r, f0 + d);
+    return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${d > 0.5 ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
+};
+const radiale = (cc, r0, r1, f) => {
+    const [x0, y0] = polo(cc, r0, f), [x1, y1] = polo(cc, r1, f);
+    return `M${x0.toFixed(2)},${y0.toFixed(2)} L${x1.toFixed(2)},${y1.toFixed(2)}`;
+};
+const ancoraT = (f) => { const a = ((f % 1) + 1) % 1; if (a < .035 || a > .965 || Math.abs(a - .5) < .035) return "middle"; return a < .5 ? "start" : "end"; };
+const dyT = (f) => { const a = ((f % 1) + 1) % 1; if (a < .07 || a > .93) return -1.5; if (Math.abs(a - .5) < .07) return 8.5; return 3; };
+const esa = (h) => [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16));
+const schiarisci = (c, t = 0.6) => {
+    try { return "#" + esa(c).map((v) => Math.round(v + (255 - v) * t).toString(16).padStart(2, "0")).join(""); }
+    catch { return "#cbd5e1"; }
+};
+
+/** settori uguali per scaglione: [{v0, v1, tier, f0, f1}] */
+function settoriScaglioni(soglie, punti, proiezione, target) {
+    const out = []; let prev = 0;
+    for (const s of soglie) { out.push({ v0: prev, v1: s.soglia_da, tier: s.tier, w: 1 }); prev = s.soglia_da; }
+    // il settore «oltre» è più stretto: è una coda, non uno scaglione da prendere
+    const oltre = Math.max(prev * 1.25, (proiezione || punti) * 1.06, punti * 1.06, (target || 0) * 1.08, prev + 1);
+    out.push({ v0: prev, v1: oltre, tier: null, w: 0.6 });
+    const GAP = 0.0125, totW = out.reduce((a, x) => a + x.w, 0), utile = 1 - GAP * out.length;
+    let f = GAP / 2;
+    for (const s of out) { s.f0 = f; s.f1 = f + utile * s.w / totW; f = s.f1 + GAP; }
+    return out;
+}
+const fDi = (sec, v) => {
+    for (let i = 0; i < sec.length; i++) { const s = sec[i]; if (v <= s.v1 || i === sec.length - 1) return s.f0 + cl01((v - s.v0) / (s.v1 - s.v0)) * (s.f1 - s.f0); }
+    return 0;
+};
+
+export function AnelloScaglioni({
+    punti = 0, proiezione = null, pezzi = null, soglie = [], target = null, mio = null,
+    colore = "#818cf8", size = 130, etichetta, logo, gate, nota, onClick, unit = "pt", tip,
+}) {
+    const [on, setOn] = useState(false);
+    useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
+    const uid = useId().replace(/:/g, "");
+    const piccolo = size < 150;
+    const V = 220, cc = V / 2, r = 84, sw = 16;             // geometria in viewBox fisso
+    const sec = settoriScaglioni(soglie, punti, proiezione, target);
+    const proj = proiezione != null && proiezione > punti ? proiezione : punti;
+    const chiaro = schiarisci(colore);
+    const presa = [...soglie].reverse().find((s) => punti >= s.soglia_da) || null;
+    const rif = proj;
+    const presaProj = [...soglie].reverse().find((s) => rif >= s.soglia_da) || null;
+    const prossimaProj = soglie.find((s) => s.soglia_da > rif) || null;
+    const quota = mio != null && punti > 0 ? cl01(mio / punti) : 0;
+    // tratti già disegnati dell'arco «fatto», settore per settore: la quota si
+    // prende dai PRIMI tratti, così è una frazione dell'arco vero e non una
+    // posizione sulla scala delle soglie (l'errore di lettura da evitare)
+    const fatti = sec.map((g) => [g.f0, g.f0 + cl01((punti - g.v0) / (g.v1 - g.v0)) * (g.f1 - g.f0)]).filter(([a, b]) => b - a > 0.0009);
+    const miei = [];
+    if (quota > 0) {
+        let resto = fatti.reduce((s, [a, b]) => s + (b - a), 0) * quota;
+        for (const [a, b] of fatti) { if (resto <= 0.0009) break; const p = Math.min(b - a, resto); miei.push([a, a + p]); resto -= p; }
+    }
+    const rM = r - sw / 2 - 7, swM = 5.4;
+    const anello = (
+        <div className="relative" style={{ width: size, height: size }}>
+            <svg viewBox={`0 0 ${V} ${V}`} width={size} height={size} style={{ overflow: "visible" }}>
+                <defs>
+                    <linearGradient id={`gs${uid}`} x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor={colore} stopOpacity=".58" /><stop offset="100%" stopColor={colore} />
+                    </linearGradient>
+                    <pattern id={`hs${uid}`} width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <rect width="9" height="9" fill={colore} fillOpacity=".13" /><rect width="4.4" height="9" fill={colore} fillOpacity=".55" />
+                    </pattern>
+                </defs>
+                {sec.map((g, i) => {
+                    const d = g.f1 - g.f0;
+                    const ka = cl01((punti - g.v0) / (g.v1 - g.v0)), kp = cl01((proj - g.v0) / (g.v1 - g.v0));
+                    return (
+                        <g key={`s${i}`}>
+                            <path d={arco(cc, r, g.f0, g.f1)} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={sw} />
+                            {kp > ka && <path d={arco(cc, r, g.f0 + ka * d, g.f0 + (on ? kp : ka) * d)} fill="none" stroke={`url(#hs${uid})`} strokeWidth={sw}
+                                style={{ transition: "d .9s .2s cubic-bezier(.22,1,.36,1)" }} />}
+                            {ka > 0 && <path d={arco(cc, r, g.f0, g.f0 + (on ? ka : 0) * d)} fill="none" stroke={`url(#gs${uid})`} strokeWidth={sw}
+                                style={{ filter: `drop-shadow(0 0 ${piccolo ? 4 : 7}px ${colore}99)`, transition: "d .9s cubic-bezier(.22,1,.36,1)" }} />}
+                        </g>
+                    );
+                })}
+                {/* LA MIA QUOTA: anello interno, stessa tinta più chiara */}
+                {quota > 0 && (
+                    <g>
+                        {sec.map((g, i) => { const d = g.f1 - g.f0, ka = cl01((punti - g.v0) / (g.v1 - g.v0)); return ka > 0 ? <path key={`m${i}`} d={arco(cc, rM, g.f0, g.f0 + ka * d)} fill="none" stroke="rgba(255,255,255,.09)" strokeWidth={swM} /> : null; })}
+                        {miei.map(([a, b], i) => <path key={`q${i}`} d={arco(cc, rM, a, on ? b : a)} fill="none" stroke={chiaro} strokeWidth={swM} strokeLinecap="round"
+                            style={{ filter: `drop-shadow(0 0 5px ${chiaro}bb)`, transition: "d 1s .35s cubic-bezier(.22,1,.36,1)" }} />)}
+                    </g>
+                )}
+                {/* SOGLIE: la tacca vive nel taglio fra due scaglioni */}
+                {soglie.map((s, i) => {
+                    const st = punti >= s.soglia_da ? "presa" : rif >= s.soglia_da ? "proj" : "futura";
+                    const a = sec[i].f1 + 0.0062;
+                    const col = st === "presa" ? "#ffffff" : st === "proj" ? colore : "rgba(255,255,255,.30)";
+                    return <path key={`t${s.tier}`} d={radiale(cc, r - sw / 2 - 2, r + sw / 2 + 2, a)} stroke={col} strokeWidth={3.2} strokeLinecap="round"
+                        className={prossimaProj && s.tier === prossimaProj.tier ? "animate-pulse" : undefined}
+                        style={st !== "futura" ? { filter: `drop-shadow(0 0 4px ${colore})` } : undefined} />;
+                })}
+                {/* TARGET: forma diversa, non un colore diverso */}
+                {target > 0 && (() => {
+                    const f = fDi(sec, target), r0 = r - sw / 2 - 4, r1 = r + sw / 2 + 4;
+                    const [dx, dy] = polo(cc, r1 + 5, f), s2 = 4.4;
+                    return (
+                        <g>
+                            <path d={radiale(cc, r0, r1, f)} stroke="#34d399" strokeWidth={3.2} strokeLinecap="round" style={{ filter: "drop-shadow(0 0 5px #34d399)" }} />
+                            <path d={`M${dx.toFixed(1)},${(dy - s2).toFixed(1)} L${(dx + s2).toFixed(1)},${dy.toFixed(1)} L${dx.toFixed(1)},${(dy + s2).toFixed(1)} L${(dx - s2).toFixed(1)},${dy.toFixed(1)} Z`}
+                                fill="#34d399" stroke="#0f111a" strokeWidth={1.2} style={{ filter: "drop-shadow(0 0 6px #34d399)" }} />
+                        </g>
+                    );
+                })()}
+                {/* etichette dei valori solo se c'è spazio */}
+                {!piccolo && soglie.map((s, i) => {
+                    const st = punti >= s.soglia_da ? "presa" : rif >= s.soglia_da ? "proj" : "futura";
+                    const a = sec[i].f1 + 0.0062, [x, y] = polo(cc, r + sw / 2 + 11, a);
+                    return <text key={`l${s.tier}`} x={x.toFixed(1)} y={(y + dyT(a)).toFixed(1)} textAnchor={ancoraT(a)} fontSize="9.5" fontWeight="700"
+                        fill={st === "presa" ? "#ffffff" : st === "proj" ? colore : "#64748b"}>S{s.tier}·{fmtN(s.soglia_da)}</text>;
+                })}
+                {!piccolo && target > 0 && (() => {
+                    const a = fDi(sec, target), [x, y] = polo(cc, r + sw / 2 + 24, a);
+                    return <text x={x.toFixed(1)} y={(y + dyT(a)).toFixed(1)} textAnchor={ancoraT(a)} fontSize="9.5" fontWeight="900" fill="#34d399">🎯{fmtN(target)}</text>;
+                })()}
+            </svg>
+            {/* il centro tiene il NUMERO VERO: è il prezzo dichiarato della scala
+                a scaglioni — la forma conta gli scaglioni, il numero i punti */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none" style={{ paddingLeft: size * 0.24, paddingRight: size * 0.24 }}>
+                {logo}
+                <span className="font-black text-white tabular-nums leading-none" style={{ fontSize: piccolo ? 16 : 21 }}>{fmtPt(punti)}</span>
+                <span className="text-[8px] text-slate-500 uppercase tracking-wider leading-tight mt-0.5">{unit === "pz" ? "pezzi rete" : "punti rete"}</span>
+                {quota > 0 && <span className="text-[9px] font-black tabular-nums mt-1" style={{ color: chiaro }}>{fmtN(quota * 100, 1)}% mio</span>}
+            </div>
+        </div>
+    );
+    return (
+        <div className={cn("flex flex-col items-center gap-1.5", onClick && "cursor-pointer")} onClick={onClick} title={onClick ? "Apri il dettaglio" : undefined}>
+            {tip ? <Tip tip={tip}>{anello}</Tip> : anello}
+            {etichetta && <p className="text-[11px] font-bold text-slate-200 -mt-0.5">{etichetta}</p>}
+            <div className="flex flex-wrap items-center justify-center gap-1 max-w-[230px]">
+                {presa ? <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{presa.tier} presa</span>
+                    : soglie.length > 0 && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-400 bg-white/5">sotto la S1</span>}
+                {proiezione != null && presaProj && (!presa || presaProj.tier > presa.tier) && (
+                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-white border border-white/20"
+                        style={{ background: `repeating-linear-gradient(45deg, ${colore}aa 0 4px, ${colore}55 4px 8px)` }}>🔮 S{presaProj.tier} in proiezione</span>
+                )}
+                {target > 0 && (
+                    <span className={cn("px-1.5 py-0.5 rounded-md text-[9px] font-bold border", rif >= target ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/30" : "text-slate-300 bg-white/5 border-white/10")}>
+                        🎯 {fmtN(target)}{rif >= target ? " ✓" : ` · −${fmtPt(target - rif)}`}
+                    </span>
+                )}
+                {gate && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-amber-300 bg-amber-400/10 border border-amber-400/25">⛔ {gate}</span>}
+                {nota && <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-300 bg-white/5 border border-white/10">{nota}</span>}
+            </div>
+            {prossimaProj && <p className="text-[10px] text-slate-400 text-center">{proiezione != null ? "in proiezione " : ""}mancano <b className="text-white tabular-nums">{fmtPt(prossimaProj.soglia_da - rif)}</b> alla S{prossimaProj.tier}</p>}
+            {!prossimaProj && presaProj && soglie.length > 0 && <p className="text-[10px] text-emerald-300 font-semibold text-center">{proiezione != null ? "in proiezione " : ""}ultima soglia presa 👑</p>}
+        </div>
+    );
+}
+
 /* ── scala delle soglie (S1..Sn) ───────────────────────────────────────── */
 export function ScalaSoglie({ soglie, punti, colore }) {
     return (

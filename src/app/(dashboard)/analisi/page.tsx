@@ -29,9 +29,8 @@ import { giorniLavorativiMese, cutoffProduzione, esclusaDalleGare, caricaContrat
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { Loader2, ChevronLeft, ChevronRight, Lock, Plus, X, RotateCcw, GripVertical } from "lucide-react";
-import { Num, TipRiga, TipTitolo, Ring, BarStack, RaceBars, ScalaSoglie, fmtPt, fmtN } from "./_charts";
-import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero, HEX_BRAND } from "./_widgets";
-import { trkBrandKey } from "@/lib/brandAssets";
+import { TipRiga, TipTitolo, AnelloScaglioni, SogliaBar, fmtPt, fmtN } from "./_charts";
+import { REGISTRO, GRUPPI, DEFAULT_LAYOUT, GARA, LogoBrand, TimelineHero } from "./_widgets";
 import { CoronaOro } from "@/components/IconaCorona";
 import { GridLayout, useContainerWidth } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -301,7 +300,7 @@ function AnalisiInner() {
                     const assW3 = (taw3?.righe || []).filter((r) => r.pista === "assicurazioni" && r.attivo);
                     return { mISO, rw3, rvf, rfw, rsky, tw3, tvf, tsky, prW3, assW3 };
                 };
-                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes] = await Promise.all([
+                const [pacchi, azienda, gl, extRes, extPrevRes, altRes, mCats, mItems, layRes, prevPack, targetRes, tecRes, dirRes] = await Promise.all([
                     Promise.all(mesiISO.map(caricaPacchetto)),
                     soloMese ? Promise.all([caricaTabellareAzienda("windtre", mesiISO[0]), caricaTabellareAzienda("vodafone", mesiISO[0]), caricaTabellareAzienda("sky", mesiISO[0]), caricaTabellareAzienda("fastweb", mesiISO[0])]) : Promise.resolve(null),
                     soloMese ? giorniLavorativiMese(mesiISO[0]) : Promise.resolve(null),
@@ -316,6 +315,12 @@ function AnalisiInner() {
                     soloMese ? supabase.from("pay_target_pdv").select("cod_gara, negozio, soglie_mobile, soglie_fisso, soglie_piva, extra").eq("brand", "windtre").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
                     // chi è TECNICO: la timeline per loro parla in € (Luca 24/08)
                     supabase.from("app_users").select("full_name, match_name").eq("role", "tecnico"),
+                    // TARGET DI RETE (28/08): per ora sono i target della
+                    // direzione per codice di inserimento — sommati per pista
+                    // danno il target dell'intera rete su quel KPI. È la stessa
+                    // fonte della tacca 🎯 nelle barre del Master: una verità
+                    // sola. L'ambito «Rete» in Gare → Target arriverà dopo.
+                    soloMese ? supabase.from("direzione_targets").select("brand, pista, target").eq("month", mesiISO[0]) : Promise.resolve({ data: [] }),
                 ]);
                 if (!alive) return;
                 // caricaTutte restituisce { data, error }, NON l'array (lezione 21/08)
@@ -362,6 +367,7 @@ function AnalisiInner() {
                     aw3: azienda?.[0] || null, avf: azienda?.[1] || null, asky: azienda?.[2] || null, afw: azienda?.[3] || null,
                     prev: prevPack, ext: perExt(extRes, true), extPrev: perExt(extPrevRes, false), margMap, margIcone, altri, oggiGara,
                     tecnici: [...new Set((tecRes?.data || []).flatMap((u) => [u.full_name, u.match_name]).filter(Boolean))],
+                    targetRete: dirRes?.data || [],
                 });
             } catch (e) {
                 if (alive) setErrore(String(e?.message || e));
@@ -549,6 +555,29 @@ function AnalisiInner() {
             etichettaScope: collab ? `di ${collab}` : (negozi.length > 1 ? `${negozi.length} negozi` : negozio),
         };
     }, [items, itemsPrev, negozi.join("|"), collab, persona, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
+
+    // ── contesto della RETE (testata + area) ──────────────────────────────
+    // «IL MIO PUNTO VENDITA» nell'area Rete: i negozi dove l'UTENTE COLLEGATO
+    // ha prodotto nel periodo — chi ne presidia due li somma (caso Magliana
+    // W3 + Multi) — con ripiego sul negozio del profilo per chi non vende
+    // (direzione, amministrativi). Non si usa la VISIBILITÀ: per un direttore
+    // commerciale comprenderebbe tutta la rete e la quota direbbe 100%.
+    const mieiNegoziUtente = useMemo(() => {
+        const per = new Map();
+        const conta = (arr) => { for (const r of arr) { if (norm(r.venditore) !== norm(user?.name) || !r.negozio || r.negozio === "—") continue; per.set(r.negozio, (per.get(r.negozio) || 0) + 1); } };
+        conta(items); conta(dati?.altri || []);
+        const v = [...per.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+        if (v.length) return v;
+        const casa = negoziAttivi.find((n) => user?.negozio && sameStore(n, user.negozio));
+        return casa ? [casa] : [];
+    }, [items, dati, user?.name, user?.negozio, negoziAttivi]);
+    const ctxRete = useMemo(() => ({
+        ...base, areaKey: "rete",
+        items, itemsPrev: [], ext: [], extPrev: [],
+        altri: dati?.altri || [], oggiGara: dati?.oggiGara || [],
+        persona: "", negozio: "tutta la rete", negozi: negoziVisibili, negozioCasa: "",
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [items, dati, nG, labels, oggi, meseCorrente, negoziVisibili]);
 
     // ── layout per area (app_users.analisi_layout) ────────────────────────
 
@@ -762,8 +791,9 @@ function AnalisiInner() {
                 </div>
                 {/* TIMELINE DI PRODUZIONE nell'header (Luca 24/08): tutta la
                     produzione giorno per giorno, brand cliccabili per filtrare */}
-                {!loading && !errore && (area === "io" || area === "negozio") && (
-                    <TimelineHero ctx={area === "io" ? ctxIo : ctxNegozio} tecnico={eTecnico(area === "io" ? persona : collab)} />
+                {!loading && !errore && (area === "io" || area === "negozio" || area === "rete") && (
+                    <TimelineHero ctx={area === "io" ? ctxIo : area === "negozio" ? ctxNegozio : ctxRete}
+                        tecnico={area === "rete" ? false : eTecnico(area === "io" ? persona : collab)} />
                 )}
             </div>
 
@@ -785,7 +815,7 @@ function AnalisiInner() {
                         <GrigliaWidget key={`ng-${negozi.join("|")}-${collab}-${chiaveP}`} areaKey="negozio" ctx={ctxNegozio} lista={layoutNeg}
                             setLista={(l) => { setLayoutNeg(l); salva("negozio", l); }} intestazione={collab ? `🏪 ${negozio} · 👤 ${collab} (individuale)` : `🏪 ${negozio} · tutta la squadra`} />
                     )}
-                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [], oggiGara: dati?.oggiGara || [] }} />}
+                    {area === "rete" && <AreaRete key={`rt-${chiaveP}`} {...{ items, righeGara, labels, nG, oggi, gl: dati.gl, gLav, meseCorrente, altri: dati?.altri || [], oggiGara: dati?.oggiGara || [], mieiNegozi: mieiNegoziUtente, targetRete: dati?.targetRete || [] }} />}
                     {area === "regia" && areePermesse.has("regia") && <Master key={`rg-${chiaveP}`} {...{ items, righeGara, dati, labels, nG, oggi, idxDi, gl: dati.gl, meseCorrente, lente: lenteMaster, negSel: negSelMaster }} />}
                 </>
             )}
@@ -885,133 +915,162 @@ function GrigliaWidget({ areaKey, ctx, lista, setLista, intestazione }) {
     );
 }
 
-/* ═══ AREA RETE (v1 — in attesa delle direttive di Luca) ═══════════════ */
-function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, altri, oggiGara = [] }) {
-    const giorniRete = useMemo(() => {
-        const v = Array.from({ length: nG }, (_, i) => ({ n: i + 1, label: labels?.[i] || `giorno ${i + 1}`, tot: 0, _p: new Map() }));
-        for (const it of items) {
-            if (it.g < 1 || it.g > nG) continue;
-            const g = v[it.g - 1]; const G = GARA[it.brandGara];
-            const e = g._p.get(G.label) || { label: G.label, colore: G.colore, val: 0 };
-            e.val++; g._p.set(G.label, e); g.tot++;
-        }
-        // anche gli altri operatori: la rete produce pure S4, TIM… (24/08)
-        for (const it of (altri || [])) {
-            if (it.g < 1 || it.g > nG) continue;
-            const kk = trkBrandKey(it.brand); if (!kk) continue;
-            const g = v[it.g - 1];
-            const e = g._p.get(it.brand) || { label: it.brand, colore: HEX_BRAND[kk] || "#64748b", val: 0 };
-            e.val++; g._p.set(it.brand, e); g.tot++;
-        }
-        // OGGI dei brand in gara (Luca 26/08): il cutoff dell'ora di scatto li
-        // tiene fuori da `items` — corretto per soglie e proiezioni, sbagliato
-        // qui, dove il negozio vuole vedere subito quello che ha fatto
-        for (const it of (oggiGara || [])) {
-            if (it.g < 1 || it.g > nG) continue;
-            const kk = trkBrandKey(it.brand); if (!kk) continue;
-            const g = v[it.g - 1];
-            const e = g._p.get(it.brand) || { label: it.brand, colore: HEX_BRAND[kk] || "#64748b", val: 0 };
-            e.val++; g._p.set(it.brand, e); g.tot++;
-        }
-        return v.map((g) => ({ n: g.n, label: g.label, tot: g.tot, parti: [...g._p.values()].sort((a, b) => b.val - a.val) }));
-    }, [items, altri, oggiGara, nG, labels]);
-    const mediaRete = useMemo(() => {
-        // la media è per GIORNO LAVORATO: oggi entra nel grafico ma non è
-        // ancora un giorno contato (lo diventa allo scatto), quindi i suoi
-        // pezzi non devono gonfiare il numeratore (revisore 26/08)
-        const tot = giorniRete.reduce((s, g, i) => s + (oggiGara?.length && i === (oggi > 0 ? oggi - 1 : -1) ? 0 : g.tot), 0);
-        return tot > 0 ? Math.round((tot / Math.max(1, gLav || 1)) * 10) / 10 : null;
-    }, [giorniRete, gLav, oggiGara, oggi]);
+/* ═══ AREA RETE (rifatta 28/08 sul dettato di Luca) ═════════════════════
+   «Dobbiamo dare a tutti la visibilità di come sta andando ogni brand
+   rispetto a quelle che possono essere delle soglie o un target che ho
+   impostato io». Tre mosse:
+   ① la produzione giorno per giorno sale nella TESTATA, identica a Io e
+     Negozio (la card in fondo non c'è più);
+   ② via la corsa dei negozi: il confronto fra punti vendita è roba della
+     fase 2, riservata ai manager;
+   ③ i contatori si RAGGRUPPANO PER OPERATORE e diventano anelli a
+     SCAGLIONI, che portano insieme le quattro cose che contano —
+     produzione, proiezione, le n soglie, l'UNICO target — più la quota
+     del mio punto vendita su quel KPI («quanto sta impattando il mio
+     negozio rispetto alla produzione di rete del mobile WindTre»).
+   Il click su un anello apre sotto la SogliaBar lineare del Master: la
+   scala a scaglioni risponde a «quale scaglione», la barra a «quanti
+   punti» — due domande diverse, due strumenti. ═══════════════════════ */
+function AreaRete({ items, righeGara, labels, nG, oggi, gl, gLav, meseCorrente, altri, oggiGara = [], mieiNegozi = [], targetRete = [] }) {
+    const [apri, setApri] = useState(null);   // `${brand}:${pista}` con la barra aperta
+    const chiaveMiei = mieiNegozi.join("|");
+    // proiezione fine mese sul ritmo dei giorni lavorativi trascorsi: STESSA
+    // formula del Master, una sola verità sulla proiezione in tutto il CRM
+    const prj = (v) => (meseCorrente && gl?.mostraProiezione !== false && gl?.trascorsi > 0 && v > 0) ? Math.round((v / gl.trascorsi) * gl.totali * 100) / 100 : null;
 
-    const negoziPezzi = useMemo(() => {
-        const per = new Map();
-        for (const it of items) { if (it.negozio === "—") continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
-        for (const it of (altri || [])) { if (it.negozio === "—" || !trkBrandKey(it.brand)) continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
-        // anche oggi (revisore 26/08): senza, la somma delle barre e la corsa
-        // dei negozi dicevano numeri diversi nella stessa schermata
-        for (const it of (oggiGara || [])) { if (it.negozio === "—") continue; (per.get(it.negozio) || per.set(it.negozio, []).get(it.negozio)).push(it); }
-        return [...per.entries()].map(([k, its]) => ({ k, its })).sort((a, b) => b.its.length - a.its.length);
-    }, [items, altri, oggiGara]);
-
-    const soglieBrand = useMemo(() => {
+    const brandRete = useMemo(() => {
         if (!righeGara) return [];
-        const out = [];
+        const mio = (n) => mieiNegozi.some((m) => norm(m) === norm(n));
+        const targetDi = (b, pista) => {
+            const idDir = b === "w3" ? "windtre" : b === "vf" ? "vodafone" : b === "fw" ? "fastweb" : "sky";
+            const t = (targetRete || []).filter((r) => r.brand === idDir && r.pista === pista)
+                .reduce((s, r) => s + (Number(r.target) || 0), 0);
+            return t > 0 ? Math.round(t * 100) / 100 : null;
+        };
         const conf = [
             { id: "w3", tab: righeGara.tw3, rows: righeGara.w3 },
             { id: "vf", tab: righeGara.tvf, rows: [...righeGara.vf, ...righeGara.fw.filter((c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone")].filter((c) => !(/mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(String(c.provenienza || "")))) },
             { id: "sky", tab: righeGara.tsky, rows: righeGara.sky },
         ];
+        const out = [];
         for (const c of conf) {
             if (!c.tab) continue;
             const av = calcolaAvanzamento(c.tab, c.rows);
+            // stesso motore sulle SOLE righe dei miei negozi: la quota esce dai
+            // punti veri della pista, mai da una proporzione a occhio
+            const mieRows = c.rows.filter((r) => mio(r.negozio));
+            const avMio = mieRows.length ? calcolaAvanzamento(c.tab, mieRows) : null;
+            const piste = [];
             for (const p of c.tab.piste) {
                 const st = av.piste[p.chiave]; if (!st) continue;
                 const scala = c.tab.soglie.filter((s) => s.pista === p.chiave).sort((a, b) => a.tier - b.tier);
                 if (!scala.length && !st.punti) continue;
-                out.push({ brand: c.id, pista: p.chiave, nome: p.nome, st, scala });
+                const proiezione = prj(st.punti);
+                const rif = proiezione ?? st.punti;
+                const prossima = scala.find((s) => s.soglia_da > rif) || null;
+                piste.push({
+                    pista: p.chiave, nome: p.nome, st, scala, proiezione,
+                    mio: avMio?.piste?.[p.chiave]?.punti ?? 0,
+                    target: targetDi(c.id, p.chiave),
+                    // ORDINE PER URGENZA: prima le piste su cui si può ancora
+                    // incidere (soglia vicina), in fondo quelle già chiuse
+                    urgenza: prossima ? (prossima.soglia_da - rif) / Math.max(1, prossima.soglia_da) : 3,
+                    presa: [...scala].reverse().find((s) => st.punti >= s.soglia_da) || null,
+                    presaProj: [...scala].reverse().find((s) => rif >= s.soglia_da) || null,
+                });
             }
+            if (!piste.length) continue;
+            piste.sort((a, b) => a.urgenza - b.urgenza);
+            // QUOTA DEL BRAND IN PEZZI, mai in punti: sommare punti fra piste
+            // diverse è vietato quanto sommarli fra operatori (regola cardine)
+            const suoi = items.filter((it) => it.brandGara === c.id);
+            const pzRete = suoi.length, pzMio = suoi.filter((it) => mio(it.negozio)).length;
+            out.push({
+                brand: c.id, piste, pzRete, pzMio,
+                inSoglia: piste.filter((x) => x.presa).length,
+                appesi: piste.filter((x) => x.presaProj && (!x.presa || x.presaProj.tier > x.presa.tier)).length,
+            });
         }
         return out;
-    }, [righeGara]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [righeGara, chiaveMiei, targetRete, items, meseCorrente, gl]);
+
+    if (!righeGara) return (
+        <div className="glass-card an-card rounded-2xl p-8 an-in text-center">
+            <p className="text-sm font-bold text-slate-300">🚦 Le soglie della rete sono mensili</p>
+            <p className="mt-1 text-xs text-slate-500">Scegli un periodo dentro un solo mese per vedere a che punto siamo.</p>
+        </div>
+    );
+    if (!brandRete.length) return <div className="glass-card an-card rounded-2xl p-8 an-in text-center"><p className="text-xs text-slate-500">Nessun tabellare per questo mese.</p></div>;
 
     return (
         <div className="space-y-4">
-            <div className="glass-card an-card rounded-2xl p-4 an-in">
-                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🚦 Le soglie si prendono INSIEME — a che punto è la rete</p>
-                {!righeGara ? <p className="text-xs text-slate-500 py-4 text-center">Le gare sono mensili: per vedere le soglie scegli un periodo dentro un solo mese.</p> : (
-                    <div className="flex flex-wrap justify-around gap-x-6 gap-y-5">
-                        {soglieBrand.map(({ brand, pista, nome, st, scala }) => {
-                            const colore = GARA[brand].colore;
-                            const prossima = st.prossima?.soglia_da ?? null;
-                            const kMax = prossima ?? st.soglia?.soglia_da ?? Math.max(1, st.punti);
-                            let eta = null;
-                            if (meseCorrente && prossima && gl?.trascorsi > 0 && st.punti > 0) {
-                                const gServono = Math.ceil((prossima - st.punti) / (st.punti / gl.trascorsi));
-                                if (gl.trascorsi + gServono <= gl.totali) eta = gServono;
-                            }
-                            return (
-                                <Ring key={`${brand}-${pista}`} value={st.punti} max={kMax} colore={colore} size={140}
-                                    centro={<>
-                                        <LogoBrand chiave={GARA[brand].chiave} h={14} />
-                                        <span className="text-2xl font-black text-white tabular-nums leading-tight"><Num v={st.punti} punti /></span>
-                                        <span className="text-[9px] text-slate-400">{PISTA_LABEL[pista] || nome}</span>
-                                        {st.tier > 0 && <span className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white" style={{ background: `${colore}cc` }}>S{st.tier} presa</span>}
-                                    </>}
-                                    sotto={<div className="text-center max-w-[190px]">
-                                        {st.gate ? <p className="text-[10px] text-amber-300 font-semibold">⛔ {st.gate}</p>
-                                            : prossima ? <p className="text-[10px] text-slate-400">mancano <b className="text-white tabular-nums">{fmtPt(st.mancano ?? prossima - st.punti)}</b> alla S{st.prossima.tier}{eta ? <> · di questo passo <b className="text-emerald-300">~{eta} gg lavorativi</b></> : ""}</p>
-                                                : <p className="text-[10px] text-emerald-300 font-semibold">ultima soglia presa 👑</p>}
-                                        <div className="mt-1.5"><ScalaSoglie soglie={scala} punti={st.punti} colore={colore} /></div>
-                                    </div>}
-                                    tip={<div><TipTitolo>{GARA[brand].label} · {PISTA_LABEL[pista] || nome}</TipTitolo>
-                                        <TipRiga l="punti rete (periodo)" r={fmtPt(st.punti)} colore={colore} />
-                                        <TipRiga l="pezzi in pista" r={fmtN(st.pezzi)} />
-                                        {scala.map((s) => <TipRiga key={s.tier} l={`Soglia ${s.tier}`} r={`da ${fmtN(s.soglia_da)}${st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
-                                    </div>}
-                                />
-                            );
-                        })}
-                        {!soglieBrand.length && <p className="text-xs text-slate-500 py-6">Nessun tabellare per questo mese.</p>}
+            <p className="text-[11px] text-slate-500">
+                🚦 <b className="text-slate-300">Le soglie si prendono INSIEME.</b> Ogni anello è una pista: l&apos;arco pieno è quello che la rete ha fatto,
+                la coda a righe dove arriva di questo passo, le tacche sono le soglie e il rombo verde il target.
+                {mieiNegozi.length > 0 && <> L&apos;anello chiaro dentro è <b className="text-slate-300">il tuo punto vendita</b> ({mieiNegozi.join(" + ")}).</>}
+                {" "}Clicca un anello per la barra dei punti.
+            </p>
+            {brandRete.map(({ brand, piste, pzRete, pzMio, inSoglia, appesi }) => {
+                const G = GARA[brand];
+                return (
+                    <div key={brand} className="glass-card an-card rounded-2xl p-4 an-in">
+                        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                            <LogoBrand chiave={G.chiave} colore={G.colore} alt={G.label} h={30} origine="left" />
+                            <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+                                    <b className="text-white tabular-nums">{inSoglia}</b>/{piste.length} piste in soglia
+                                </span>
+                                {appesi > 0 && (
+                                    <span className="px-2 py-1 rounded-lg border text-white" style={{ background: `${G.colore}22`, borderColor: `${G.colore}55` }}>
+                                        🔮 <b className="tabular-nums">{appesi}</b> {appesi > 1 ? "scaglioni appesi" : "scaglione appeso"} al passo
+                                    </span>
+                                )}
+                                {pzRete > 0 && mieiNegozi.length > 0 && (
+                                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400">
+                                        il mio PV <b className="tabular-nums" style={{ color: G.colore }}>{fmtN((pzMio / pzRete) * 100, 1)}%</b> dei pezzi
+                                        <span className="text-slate-600"> ({fmtN(pzMio)}/{fmtN(pzRete)})</span>
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-x-9 gap-y-6">
+                            {piste.map((x) => {
+                                const k = `${brand}:${x.pista}`;
+                                return (
+                                    <AnelloScaglioni key={k}
+                                        punti={x.st.punti} proiezione={x.proiezione} pezzi={x.st.pezzi}
+                                        soglie={x.scala} target={x.target} mio={mieiNegozi.length ? x.mio : null}
+                                        colore={G.colore} size={150} etichetta={PISTA_LABEL[x.pista] || x.nome}
+                                        gate={x.st.gate || null}
+                                        onClick={() => setApri((v) => (v === k ? null : k))}
+                                        tip={<div>
+                                            <TipTitolo>{G.label} · {PISTA_LABEL[x.pista] || x.nome}</TipTitolo>
+                                            <TipRiga l="punti rete" r={fmtPt(x.st.punti)} colore={G.colore} />
+                                            {x.proiezione != null && <TipRiga l="🔮 di questo passo" r={fmtPt(x.proiezione)} />}
+                                            <TipRiga l="pezzi in pista" r={fmtN(x.st.pezzi)} />
+                                            {mieiNegozi.length > 0 && <TipRiga l="il mio punto vendita" r={`${fmtPt(x.mio)} · ${fmtN(x.st.punti > 0 ? (x.mio / x.st.punti) * 100 : 0, 1)}%`} />}
+                                            {x.target && <TipRiga l="🎯 target direzione" r={fmtN(x.target)} colore="#34d399" />}
+                                            {x.scala.map((s) => <TipRiga key={s.tier} l={`Soglia ${s.tier}`} r={`da ${fmtN(s.soglia_da)}${x.st.punti >= s.soglia_da ? " ✓" : ""}`} />)}
+                                        </div>}
+                                    />
+                                );
+                            })}
+                        </div>
+                        {/* DRILL: la barra lineare, dove l'angolo torna a essere punti */}
+                        {piste.filter((x) => apri === `${brand}:${x.pista}`).map((x) => (
+                            <div key={`b${x.pista}`} className="mt-4 pt-3 border-t border-white/10">
+                                <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                    📏 {PISTA_LABEL[x.pista] || x.nome} — sulla scala dei punti
+                                </p>
+                                <SogliaBar label={PISTA_LABEL[x.pista] || x.nome} emoji="▫️" punti={x.st.punti} pezzi={x.st.pezzi}
+                                    soglie={x.scala} colore={G.colore} proiezione={x.proiezione} gate={x.st.gate || null}
+                                    targetDir={x.target} onClick={() => setApri(null)} />
+                            </div>
+                        ))}
                     </div>
-                )}
-            </div>
-
-            <div className="grid lg:grid-cols-3 gap-4">
-                <div className="glass-card an-card rounded-2xl p-4 an-in lg:col-span-2">
-                    <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">🏁 La corsa dei negozi (per pezzi; i punti brand per brand nel dettaglio)</p>
-                    <RaceBars unit="pz" righe={negoziPezzi.map(({ k, its }) => ({
-                        k, label: k, val: its.length, colore: "#818cf8",
-                        det: [
-                            ...Object.entries(GARA).map(([b, g]) => { const sue = its.filter((it) => it.brandGara === b); return sue.length ? { l: g.label, r: `${sue.length} pz · ${fmtPt(sue.reduce((s, x) => s + x.punti, 0))} pt`, colore: g.colore } : null; }).filter(Boolean),
-                            ...(() => { const m = new Map(); for (const it of its) { if (it.brandGara) continue; const kk = trkBrandKey(it.brand); if (!kk) continue; const e = m.get(kk) || { l: it.brand, n: 0, c: HEX_BRAND[kk] || "#64748b" }; e.n++; m.set(kk, e); } return [...m.values()].map((e) => ({ l: e.l, r: `${fmtN(e.n)} pz`, colore: e.c })); })(),
-                        ],
-                    }))} />
-                </div>
-                <div className="glass-card an-card rounded-2xl p-4 an-in">
-                    <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-3">📊 La rete giorno per giorno (pezzi, per operatore)</p>
-                    <BarStack giorni={giorniRete} oggi={oggi > 0 ? oggi - 1 : -1} media={mediaRete} unit="pz" h={200} oraScatto={gl?.oraScatto ?? null} />
-                </div>
-            </div>
+                );
+            })}
         </div>
     );
 }
