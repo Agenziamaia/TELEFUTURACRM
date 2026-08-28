@@ -15,6 +15,7 @@
     "aircall-everywhere": "^2.0.6",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "html-to-image": "^1.11.13",
     "imapflow": "^1.6.1",
     "lucide-react": "^0.575.0",
     "mailparser": "^3.9.14",

@@ -4,11 +4,16 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
-import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
+import { RotateCcw, Download, Eye, ArrowLeft, FileBarChart } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { SelectOpzioni } from "@/components/SelectPersona";
+// il report serale: sta dentro la Chiusura perché è lo stesso momento della
+// giornata. Caricato solo quando si apre — html-to-image pesa e non serve a
+// chi entra qui per allegare le fatture.
+import dynamic from "next/dynamic";
+const ModaleReport = dynamic(() => import("@/components/report/ModaleReport"), { ssr: false });
 
 //  Types ─
 type DocKey = "cassa" | "pos" | "ddt_w3" | "ddt_vf" | "fatture";
@@ -253,6 +258,7 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
         return null;
     };
     const [validErr, setValidErr] = useState<string | null>(null);
+    const [report, setReport] = useState(false);
     const handleSend = async () => {
         const err = validate();
         if (err) { setValidErr(err); return; }
@@ -335,12 +341,26 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
                         <p className="text-xs text-slate-500 hidden sm:block">Seleziona la società e allega i documenti</p>
                     </div>
                 </div>
-                <button onClick={handleSend} disabled={totalAllFiles === 0 || sending}
-                    className={cn("flex items-center gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all",
-                        totalAllFiles === 0 || sending ? "bg-white/5 text-slate-600 cursor-not-allowed border border-white/5" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30")}>
-                    {sending ? "Invio..." : `Invia ${totalAllFiles > 0 ? `(${totalAllFiles})` : ""}`}
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* IL REPORT DELLA SERA (Luca 28/08): sta QUI, a fianco
+                        dell'invio, perché è lo stesso gesto — il negozio chiude
+                        e racconta la giornata. Non dipende dai documenti
+                        allegati: si può mandare anche da solo. */}
+                    <button onClick={() => setReport(true)} disabled={!storeInvio}
+                        className={cn("flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                            !storeInvio ? "bg-white/5 text-slate-600 cursor-not-allowed border border-white/5"
+                                : "bg-indigo-500/15 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/25")}>
+                        <FileBarChart size={15} /> Report
+                    </button>
+                    <button onClick={handleSend} disabled={totalAllFiles === 0 || sending}
+                        className={cn("flex items-center gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all",
+                            totalAllFiles === 0 || sending ? "bg-white/5 text-slate-600 cursor-not-allowed border border-white/5" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30")}>
+                        {sending ? "Invio..." : `Invia ${totalAllFiles > 0 ? `(${totalAllFiles})` : ""}`}
+                    </button>
+                </div>
             </div>
+
+            {report ? <ModaleReport negozio={storeInvio} giorno={today} onClose={() => setReport(false)} /> : null}
 
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
                 <div className="flex gap-3 flex-wrap">

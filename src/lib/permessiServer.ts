@@ -32,6 +32,9 @@ export const SEZIONE_DI: Record<string, string> = {
     "usati": "/usati",
     "dispositivi": "/magazzino",
     "smartphones": "/magazzino",
+    // il report serale è un pulsante DENTRO la Chiusura Negozio: chi può
+    // chiudere il negozio può mandarne il report, senza un secondo permesso
+    "report": "/chiusura",
     // eccezioni più precise del primo segmento: queste due servono le
     // schermate di Amministrazione (Reparti, Marginalità, Catalogo), non le
     // sezioni operative da cui prendono il nome

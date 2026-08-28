@@ -12,6 +12,7 @@ export const TRK_BRAND_COLORS: Record<string, string> = {
   // Sky è VIOLA ovunque (Luca 21/08)
   sky: "var(--tf-8b5cf6)", dojo: "var(--tf-14b8a6)", verymobile: "var(--tf-84cc16)", homobile: "var(--tf-9b26b6)",
   kenamobile: "var(--tf-e4002b)", kena: "var(--tf-e4002b)",
+  kipoint: "var(--tf-0072c6)",
 };
 
 // I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
@@ -20,6 +21,7 @@ export const TRK_BRAND_COLORS: Record<string, string> = {
 export const TRK_LOGO_SCALE: Record<string, number> = {
   windtre: 1.7, vodafone: 1.95, fastweb: 1.75, sky: 1.3, iliad: 1.35,
   tim: 1.35, dojo: 1.3, homobile: 1.35, kenamobile: 1.35, verymobile: 1.15,
+  kipoint: 1.35,
 };
 
 // BADGE dei conteggi "attaccato al logo" (Luca 04/08): offset orizzontale dal
@@ -39,6 +41,7 @@ export const TRK_BRAND_LOGOS: Record<string, string> = {
   s4: "/energy - Copy.png", energy: "/energy - Copy.png", sky: "/sky.png",
   dojo: "/dojo-round.png", verymobile: "/very-mobile.png", homobile: "/ho-mobile.png",
   kenamobile: "/kena-mobile-v2.png", kena: "/kena-mobile-v2.png",
+  kipoint: "/kipoint.png",
   // la Marginalità è "brand di casa": il suo logo è quello Telefutura, come
   // nel Registra Prodotto (Luca 21/08 — niente scritte, parla il logo)
   marginalita: "/logo-crm.png", marginalit: "/logo-crm.png",
