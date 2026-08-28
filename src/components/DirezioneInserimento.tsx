@@ -615,7 +615,13 @@ export function DirezioneInserimentoAdmin() {
                            AMBRA quando il paletto è salvo ma il cuscinetto no, ROSSO
                            sotto il paletto — lì ci sono i soldi che se ne vanno.
                            La proiezione non c'entra: o i pezzi ci sono, o non ci sono. */
-                        if (dir.brand === "windtre" && !PISTE_FUORI.has("business_piva")) {
+                        // ⚠️ niente guardia PISTE_FUORI qui (mio errore del primo
+                        // giro: quella lista contiene SEMPRE business_piva, quindi la
+                        // pastiglia non compariva mai). Non serve: queste righe vivono
+                        // solo in `DirezioneInserimentoAdmin`, cioè in Gare →
+                        // Direzione e in Amministrazione. Il widget dei ragazzi è un
+                        // altro componente (`BussolaWidget`) e dà solo il codice.
+                        if (dir.brand === "windtre") {
                             const fatti = k.businessPezzi || 0;
                             const sfridoPal = Math.max(0, Math.round(Number(dir.sfridi["__paletto_business__"]) || 0));
                             // ⚠️ dalla LETTERA del mese (dir.palettoBusiness), non dalla
