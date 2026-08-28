@@ -1651,6 +1651,38 @@ function WidgetMixPersone({ ctx }) {
 
     return (
         <div className="w-full select-none flex flex-col gap-3">
+            {/* BARRA DI COMANDO IN CIMA (Luca 28/08: «i brand posizionali sopra
+                da qualche parte, così come il button per lo switch tra pz e
+                pt»): filtro per marchio e unità comandano TUTTO il widget —
+                l'anello grande, le righe e gli anelli di sotto — quindi stanno
+                in testa, non in fondo a quello che governano. */}
+            <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
+                <div className="flex items-center gap-1 flex-wrap min-w-0">
+                    <button onClick={() => setBrandSel(null)} title="Tutti i marchi"
+                        className={cn("px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-colors",
+                            bSel ? "border-white/10 bg-white/[0.03] text-slate-500 hover:bg-white/[0.06]" : "border-white/25 bg-white/15 text-white")}>
+                        Tutti
+                    </button>
+                    {brands.map((b) => (
+                        <button key={b.k} onClick={() => setBrandSel((v) => (v === b.k ? null : b.k))} title={`Solo ${b.label}`}
+                            className={cn("px-2 py-1 rounded-lg border transition-all flex items-center",
+                                brandSel === b.k ? "border-white/30 bg-white/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07] opacity-70 hover:opacity-100")}>
+                            {b.chiave ? <LogoBrand chiave={b.chiave} colore={brandSel === b.k ? b.colore : null} alt={b.label} h={17} />
+                                : <span className="text-[10px] font-bold text-slate-300 px-1">{b.label}</span>}
+                        </button>
+                    ))}
+                </div>
+                {conPunti && (
+                    <span className="shrink-0 inline-flex rounded-lg border border-white/10 overflow-hidden">
+                        {["pezzi", "punti"].map((u) => (
+                            <button key={u} onClick={() => setUnita(u)} title={u === "pezzi" ? "A pezzi" : "A punti (dove esistono)"}
+                                className={cn("px-2.5 py-1 text-[10px] font-bold transition-colors", unita === u ? "bg-white/15 text-white" : "text-slate-500 hover:text-slate-300")}>
+                                {u === "pezzi" ? "pz" : "pt"}
+                            </button>
+                        ))}
+                    </span>
+                )}
+            </div>
             <div className="tf-mixp">
                 <div className="tf-mixp-anello">
                     <div className="relative aspect-square w-full mx-auto">
@@ -1755,37 +1787,9 @@ function WidgetMixPersone({ ctx }) {
             {/* ── SOTTO: gli anelli. Senza filtro uno per BRAND (al centro chi
                 comanda), con un marchio scelto uno per PERSONA ────────────── */}
             <div className="shrink-0">
-                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate">
-                        {bSel ? `chi fa ${bSel.label}` : "chi comanda su ogni brand"}
-                    </p>
-                    <div className="flex items-center gap-1 flex-wrap justify-end">
-                        {/* FILTRO BRAND: i marchi del punto vendita, «Tutti» per tornare */}
-                        <button onClick={() => setBrandSel(null)} title="Tutti i marchi"
-                            className={cn("px-2 py-1 rounded-lg border text-[9px] font-bold transition-colors",
-                                bSel ? "border-white/10 bg-white/[0.03] text-slate-500 hover:bg-white/[0.06]" : "border-white/25 bg-white/15 text-white")}>
-                            Tutti
-                        </button>
-                        {brands.map((b) => (
-                            <button key={b.k} onClick={() => setBrandSel((v) => (v === b.k ? null : b.k))} title={`Solo ${b.label}`}
-                                className={cn("px-1.5 py-1 rounded-lg border transition-colors flex items-center",
-                                    brandSel === b.k ? "border-white/30 bg-white/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07] opacity-70 hover:opacity-100")}>
-                                {b.chiave ? <LogoBrand chiave={b.chiave} colore={brandSel === b.k ? b.colore : null} alt={b.label} h={15} />
-                                    : <span className="text-[9px] font-bold text-slate-300 px-1">{b.label}</span>}
-                            </button>
-                        ))}
-                        {conPunti && (
-                            <span className="ml-1 shrink-0 inline-flex rounded-lg border border-white/10 overflow-hidden">
-                                {["pezzi", "punti"].map((u) => (
-                                    <button key={u} onClick={() => setUnita(u)} title={u === "pezzi" ? "A pezzi" : "A punti (dove esistono)"}
-                                        className={cn("px-2 py-1 text-[9px] font-bold transition-colors", unita === u ? "bg-white/15 text-white" : "text-slate-500 hover:text-slate-300")}>
-                                        {u === "pezzi" ? "pz" : "pt"}
-                                    </button>
-                                ))}
-                            </span>
-                        )}
-                    </div>
-                </div>
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold truncate mb-2">
+                    {bSel ? `chi fa ${bSel.label}` : "chi comanda su ogni brand"}
+                </p>
                 <div className="flex flex-wrap justify-center gap-3">
                     {bSel
                         // ── un anello per PERSONA del marchio scelto ──────────
