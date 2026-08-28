@@ -49,9 +49,21 @@ function chiudeIlCodice(capienza: number, punti: number): boolean {
     return capienza > 0 && capienza <= (punti > 0 ? punti : 1);
 }
 
-function capienzaDi(k: { mancanoS1: number; mancanoS1Sfr: number; mancano: number }): number {
-    if (k.mancanoS1 > 0) return k.mancanoS1;
+/* QUANTO CI STA ANCORA QUI PRIMA CHE CONVENGA CAMBIARE CODICE.
+   Non è «quanto manca alla S1»: chiusa la S1 il codice non esce di scena,
+   passa alla ⓪·1 e resta prioritario fino allo sfrido (Luca 28/08: «dopo
+   aver chiuso la soglia 1 di Mazzini la priorità non continua a essere lo
+   sfrido di Mazzini, visto che è l'unico che non ha ancora raggiunto lo
+   0.1?» — sì, e l'avviso diceva il contrario).
+   L'unico caso in cui ci si ferma alla S1 nuda è quando QUALCUN ALTRO è
+   ancora sotto la sua: lì, appena questo chiude, passa avanti l'altro. */
+function capienzaDi(
+    k: { mancanoS1: number; mancanoS1Sfr: number; mancano: number; sottoS1?: boolean },
+    altriSottoS1 = false,
+): number {
+    if (k.sottoS1 && altriSottoS1 && k.mancanoS1 > 0) return k.mancanoS1;
     if (k.mancanoS1Sfr > 0) return k.mancanoS1Sfr;
+    if (k.mancanoS1 > 0) return k.mancanoS1;
     return k.mancano;
 }
 
@@ -1217,6 +1229,9 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
     const bMeta = DIR_BRANDS.find((b) => b.id === brandSel);
     const altre = consigliato ? lista.filter((k) => k.cod_gara !== consigliato.cod_gara) : [];
+    // c'è qualcun ALTRO ancora sotto la sua S1 nuda? allora il codice
+    // consigliato tiene il posto solo fino alla sua S1, non fino allo sfrido
+    const altriSottoS1 = altre.some((k) => k.sottoS1);
 
     // il consiglio che l'utente sta VEDENDO, qualunque sia il ramo
     const mostrato = pista === BIZMOB
@@ -1229,7 +1244,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     const codaMostrata = pista === BIZMOB
         ? (biz?.scelto && biz.capienza <= 1 ? biz.ordinati.slice(1, 3).map((x) => x.nome) : [])
         : pistaDiGruppo ? []
-            : (consigliato && chiudeIlCodice(capienzaDi(consigliato), puntiAttivazione))
+            : (consigliato && chiudeIlCodice(capienzaDi(consigliato, altriSottoS1), puntiAttivazione))
                 ? altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio) : [];
 
     /* IL REGISTRO DEI CONSIGLI (Luca 28/08). Nel caso del paletto di Libia
@@ -1448,7 +1463,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     chiude col prossimo serve eccome (oggi il mobile di Mazzini
                     è a mezzo punto dalla S1). */}
                 {pista !== BIZMOB && !pistaDiGruppo && consigliato
-                    && chiudeIlCodice(capienzaDi(consigliato), puntiAttivazione) && (
+                    && chiudeIlCodice(capienzaDi(consigliato, altriSottoS1), puntiAttivazione) && (
                     <CodaCodici prossimi={altre.filter((k) => k.mancano > 0).slice(0, 2).map((k) => k.negozio)} />
                 )}
 
