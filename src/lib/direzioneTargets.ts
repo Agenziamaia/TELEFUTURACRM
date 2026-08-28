@@ -335,6 +335,12 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         const nome = String(r.nome || "voce")
             .replace(/^\+\s*/, "").replace(/\s*×canone\s*/i, "")
             .replace(/\s*\((?:incl\.|conteggio)[^)]*\)/gi, "").trim();
+        /* LA BASE NON SI SCEGLIE (Luca 28/08): «togli GA base e dalla per
+           scontata, tanto meno di 0,75 non c'è niente — loro selezionano solo
+           le opzioni che accrescono il valore». Restava anche il rischio di
+           sommare due basi (GA base + GA base Underground = 1,5 punti, che
+           non esiste). Il suo valore entra comunque nel conto, da solo. */
+        if (base) continue;
         if (!vaCol(nome, r.tipo_cliente, tc)) continue;
         const chiave = `${nome}|${r.punti}`;
         if (viste.has(chiave)) continue;      // le varianti con lo stesso valore si fondono
@@ -347,8 +353,19 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
                 : "🔄 Cambio piano e add-on";
         out.push({ id: String(r.id), nome, punti: Number(r.punti || 0), base, gruppo });
     }
-    // la base per prima, poi le altre dalla più pesante
-    return out.sort((a, b) => (Number(b.base) - Number(a.base)) || (b.punti - a.punti) || a.nome.localeCompare(b.nome, "it"));
+    // dalla più pesante: quello che vale di più si vede per primo
+    return out.sort((a, b) => (b.punti - a.punti) || a.nome.localeCompare(b.nome, "it"));
+}
+
+/** I punti che l'attivazione vale COMUNQUE, senza scegliere niente: la riga
+ *  base della pista (0,75 sul mobile W3, 1 sul fisso). Zero dove una base non
+ *  esiste — la Customer Base, dove ogni voce è un evento a sé. */
+export function puntiBase(dir: Direzione, pista: string): number {
+    if (dir.brand !== "windtre") return 0;
+    const pistaRighe = pista === "cb" ? "partnership" : pista;
+    const b = (dir.tab?.righe || []).find((r) => String(r.pista || "") === pistaRighe
+        && r.attivo !== false && String(r.componente || "") === "base" && Number(r.punti || 0) > 0);
+    return Number(b?.punti || 0);
 }
 
 export type Strategia = "vicino" | "scoperto";

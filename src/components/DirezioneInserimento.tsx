@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import {
-    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice, vociPunti,
+    caricaDirezione, consigliaCodici, targetConSfrido, proiezioneDir, strategiaDi, prioritaDi, èMioCodice, vociPunti, puntiBase,
     finestraBilancia, codiceBilancia, codiceAssociato,
     DIR_BRANDS, W3_PALETTO_BUSINESS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
@@ -1217,19 +1217,19 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
     }, [pista, dir, negozio]);
 
     const voci = useMemo(() => (dir && pista && pista !== BIZMOB ? vociPunti(dir, pista === BIZFISSO ? "fisso" : pista, tipoCli) : []), [dir, pista, tipoCli]);
+    // la BASE è data per scontata e non si sceglie (Luca 28/08): al conto si
+    // aggiungono solo le opzioni spuntate
+    const base = useMemo(() => (dir && pista && pista !== BIZMOB ? puntiBase(dir, pista === BIZFISSO ? "fisso" : pista) : 0), [dir, pista]);
     const puntiAttivazione = useMemo(() => {
-        if (!voci.length) return 0;
-        const base = voci.find((v) => v.base);
-        const scelte = voci.filter((v) => vociSel.includes(v.id) || (v.base && !vociSel.some((x) => voci.find((y) => y.id === x)?.base)));
-        const set = scelte.length ? scelte : (base ? [base] : []);
-        return Math.round(set.reduce((t, v) => t + v.punti, 0) * 100) / 100;
-    }, [voci, vociSel]);
+        const extra = voci.filter((v) => vociSel.includes(v.id)).reduce((t, v) => t + v.punti, 0);
+        return Math.round((base + extra) * 100) / 100;
+    }, [base, voci, vociSel]);
     /* NIENTE CODICE SENZA SELEZIONE (Luca 28/08): «fino a quando non viene
        selezionato nulla non gli devi dare il codice, gli devi dire che devono
        effettuare le selezioni, altrimenti non c'è il punteggio». Vale dove le
        voci non hanno una base implicita — la Customer Base: lì un'attivazione
        senza voci vale zero, e un consiglio senza punti è una scommessa. */
-    const serveScelta = voci.length > 0 && !voci.some((v) => v.base) && puntiAttivazione <= 0;
+    const serveScelta = voci.length > 0 && base <= 0 && puntiAttivazione <= 0;
     const pistaCons = pista === BIZFISSO ? "fisso" : pista;
     const lista = dir && !pistaDiGruppo && pista !== BIZMOB ? consigliaCodici(dir, pistaCons, negozio, strategiaDi(dir, pistaCons), puntiAttivazione).slice(0, 5) : [];
     const consigliato = lista.find((k) => k.mancano > 0) || lista[0];
@@ -1381,7 +1381,10 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                 {voci.length > 0 && pista !== BIZMOB && (
                     <div className="space-y-1.5">
                         <div className="flex items-baseline gap-2">
-                            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa c&apos;è dentro?</span>
+                            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                                Cosa c&apos;è dentro?
+                                {base > 0 && <span className="ml-1.5 normal-case tracking-normal font-normal text-slate-600">l&apos;attivazione base ({base}) è già contata</span>}
+                            </span>
                             {puntiAttivazione > 0 && (
                                 <span className="ml-auto text-[11px] font-black tabular-nums" style={{ color: bMeta?.color || "#38bdf8" }}>
                                     vale {puntiAttivazione.toLocaleString("it-IT", { maximumFractionDigits: 2 })} {puntiAttivazione === 1 ? "punto" : "punti"}
@@ -1389,8 +1392,8 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             )}
                         </div>
                         {(() => {
-                            const pastiglia = (v: { id: string; nome: string; punti: number; base: boolean }) => {
-                                const acceso = v.base ? !vociSel.some((x) => voci.find((y) => y.id === x)?.base) || vociSel.includes(v.id) : vociSel.includes(v.id);
+                            const pastiglia = (v: { id: string; nome: string; punti: number }) => {
+                                const acceso = vociSel.includes(v.id);
                                 return (
                                     <button key={v.id} type="button"
                                         onClick={() => setVociSel((p2) => p2.includes(v.id) ? p2.filter((x) => x !== v.id) : [...p2, v.id])}
