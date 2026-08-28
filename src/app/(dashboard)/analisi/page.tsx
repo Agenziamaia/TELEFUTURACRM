@@ -857,7 +857,11 @@ function AnalisiInner() {
                     {/* MASTER: i suoi filtri stanno qui con gli altri (Luca 28/08
                         sera) — la riga che avevano sopra le carte era spazio buttato */}
                     {area === "regia" && areePermesse.has("regia") && (
-                        <>
+                        /* TUTTI I COMANDI A DESTRA (Luca 28/08 sera): «così so che
+                           sulla destra ho tutti i settings». Un blocco solo,
+                           spinto a fine riga, invece di comandi sparsi che
+                           costringono a cercarli. */
+                        <div className="ml-auto flex flex-wrap items-center gap-2 justify-end">
                             <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
                                 {[
                                     { v: false, l: "🌙 Ieri sera", t: "Produzione consolidata: la giornata di oggi entra dopo l'ora di scatto. È il dato con cui si ragiona sui compensi." },
@@ -885,7 +889,7 @@ function AnalisiInner() {
                                 <SelectMulti values={negSelMaster} onChange={setNegSelMaster} opzioni={negoziMaster}
                                     placeholder="tutti i negozi…" maxVoci={100} className="min-w-[220px]" />
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
                 {/* TIMELINE DI PRODUZIONE nell'header (Luca 24/08): tutta la
