@@ -1373,9 +1373,9 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
                             <input value={imapHost} onChange={e => setImapHost(e.target.value)} className="glass-input w-full text-sm" placeholder="IMAP host (auto: mail.tuodominio)" />
                             <input value={smtpHost} onChange={e => setSmtpHost(e.target.value)} className="glass-input w-full text-sm" placeholder="SMTP host (auto: mail.tuodominio)" />
                         </div>)}
-                        {/* PASSWORD PER LE APP (28/08): Gmail e Outlook non accettano
-                            più la password normale da programmi esterni. Senza dirlo
-                            qui, il collegamento fallisce e sembra un guasto del CRM. */}
+                        {/* PASSWORD PER LE APP (28/08): Gmail non accetta più la
+                            password normale da programmi esterni. Senza dirlo qui, il
+                            collegamento fallisce e sembra un guasto del CRM. */}
                         {provider === "google" && (
                             <div className="rounded-xl border border-sky-400/25 bg-sky-500/[0.06] px-3 py-2.5 text-[11px] text-sky-100/90 leading-relaxed space-y-1">
                                 <div className="font-bold text-sky-200">È una casella Google: serve una «password per le app»</div>
@@ -1383,11 +1383,21 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
                                     cerca <b>Password per le app</b>, creane una (nome: «CRM Telefutura») e incolla qui le <b>16 lettere</b> che ti dà — non la password con cui entri in Gmail.</div>
                             </div>
                         )}
+                        {/* ⛔ NON C'È UNA PASSWORD CHE FUNZIONI (verificato il 29/08).
+                            Microsoft, sulle caselle personali, dopo il saluto annuncia
+                            «AUTH=XOAUTH2 LOGINDISABLED»: rifiuta PRIMA di guardare le
+                            credenziali — provato con un indirizzo inventato, stesso
+                            errore. Il riquadro di prima diceva di creare una «password
+                            per le app»: un'ora buttata ad attivare IMAP e generare
+                            password che il server non avrebbe mai letto. */}
                         {provider === "microsoft" && (
-                            <div className="rounded-xl border border-sky-400/25 bg-sky-500/[0.06] px-3 py-2.5 text-[11px] text-sky-100/90 leading-relaxed space-y-1">
-                                <div className="font-bold text-sky-200">È una casella Microsoft (hotmail/outlook/live)</div>
-                                <div>Se sull&apos;account c&apos;è la verifica in due passaggi, su <span className="font-mono">account.microsoft.com/security</span> crea una
-                                    <b> password per le app</b> e incolla quella. Serve anche che <b>IMAP</b> sia attivo nelle impostazioni della posta.</div>
+                            <div className="rounded-xl border border-amber-400/30 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] text-amber-100/90 leading-relaxed space-y-1.5">
+                                <div className="font-bold text-amber-200">⛔ Le caselle Microsoft personali non si collegano</div>
+                                <div>Su hotmail/outlook/live Microsoft ha <b>chiuso l&apos;accesso con utente e password</b>: accetta solo OAuth2,
+                                    che il CRM non parla ancora. Attivare IMAP o creare una «password per le app» <b>non serve a niente</b> —
+                                    il server rifiuta prima ancora di leggerla.</div>
+                                <div className="text-amber-200/80">Due strade che funzionano oggi: far <b>inoltrare</b> in automatico la posta di questa
+                                    casella a una Gmail già collegata, oppure <b>cambiare l&apos;indirizzo</b> registrato sul portale che manda i codici.</div>
                             </div>
                         )}
                         <div className="text-[11px] text-slate-500 leading-relaxed">

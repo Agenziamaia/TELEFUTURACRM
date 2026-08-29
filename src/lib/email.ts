@@ -98,14 +98,27 @@ export async function testConnessione(a: Account, opts?: { soloLettura?: boolean
            spento: tre problemi diversi, tre soluzioni diverse. */
         const risposta = String(e?.responseText || e?.response || e?.message || "");
         let consiglio = "";
-        if (/application-specific|app password|app-specific/i.test(risposta)) {
+        /* ⛔ MICROSOFT HA CHIUSO L'ACCESSO CON PASSWORD (verificato il 29/08).
+           Su hotmail/outlook/live personali il server, dopo il saluto,
+           annuncia «AUTH=XOAUTH2 LOGINDISABLED»: rifiuta PRIMA di guardare le
+           credenziali — provato con un indirizzo inventato, stesso errore.
+           La password per le app NON serve a niente, e il vecchio messaggio
+           («per Gmail/Outlook serve una password per le app») mandava su una
+           strada chiusa: Luca ci ha perso un'ora ad attivare IMAP e generare
+           password che il server non avrebbe comunque mai letto.
+           L'unica via è OAuth2, che il CRM oggi non parla. */
+        if (/login is disabled|logindisabled/i.test(risposta)) {
+            consiglio = " → Microsoft ha CHIUSO l'accesso con utente e password su hotmail/outlook/live personali:"
+                + " accetta solo OAuth2, che il CRM non parla ancora. Attivare IMAP e creare una «password per le app» NON serve a niente."
+                + " Le strade: far arrivare la posta di questa casella a una Gmail (inoltro automatico), oppure cambiare l'indirizzo registrato sul portale che manda i codici.";
+        } else if (/application-specific|app password|app-specific/i.test(risposta)) {
             consiglio = " → Serve la «password per le app»: quella normale Google non l'accetta. Su myaccount.google.com → Sicurezza, attiva la verifica in due passaggi, poi cerca «Password per le app» e creane una.";
         } else if (/imap.*(disabled|not enabled)|not enabled for imap/i.test(risposta)) {
             consiglio = " → IMAP è spento su questa casella. In Gmail: ⚙️ → Visualizza tutte le impostazioni → Inoltro e POP/IMAP → Attiva IMAP.";
         } else if (/invalid credentials|authentication fail|login failed|bad username/i.test(risposta)) {
-            consiglio = " → Utente o password non accettati. Se è Gmail o Outlook, dev'essere la «password per le app» di 16 lettere, non quella con cui entri nella posta.";
+            consiglio = " → Utente o password non accettati. Se è Gmail dev'essere la «password per le app» di 16 lettere, non quella con cui entri nella posta.";
         } else if (e?.authenticationFailed) {
-            consiglio = " → Credenziali rifiutate. Per Gmail/Outlook serve una «password per le app» e IMAP attivo; per le caselle @telefuturasrl.com la password della casella.";
+            consiglio = " → Credenziali rifiutate. Per Gmail serve una «password per le app» e IMAP attivo; per le caselle @telefuturasrl.com la password della casella. Le hotmail/outlook personali non si collegano proprio: Microsoft accetta solo OAuth2.";
         }
         throw new Error("IMAP: " + (risposta || "connessione non riuscita") + consiglio);
     }
@@ -113,7 +126,7 @@ export async function testConnessione(a: Account, opts?: { soloLettura?: boolean
     try { await smtpTransport(a).verify(); }
     catch (e: any) {
         const d = /invalid|auth|credential|username|password|5\.7\.8/i.test(String(e?.message || ""))
-            ? "credenziali rifiutate (per Gmail/Outlook serve una 'password per le app')."
+            ? "credenziali rifiutate (per Gmail serve una 'password per le app'; le hotmail/outlook personali non si collegano, Microsoft vuole OAuth2)."
             : (e?.response || e?.message || String(e));
         throw new Error("SMTP: " + d);
     }
@@ -404,7 +417,7 @@ export async function cercaESpostaMailOtp(
         return {
             trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null,
             errore: err?.authenticationFailed
-                ? "la casella non accetta più la password salvata (per Gmail/Outlook serve una «password per le app»)"
+                ? "la casella non accetta più la password salvata (per Gmail serve una «password per le app»; Microsoft ha chiuso l'accesso con password su hotmail/outlook personali)"
                 : (err?.responseText || err?.message || "connessione alla casella non riuscita"),
         };
     }
