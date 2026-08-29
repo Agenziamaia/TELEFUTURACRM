@@ -102,6 +102,14 @@ const SIM_BRAND_ORDER=["windtre","vodafone","fastweb","tim","iliad","sky","ho","
 //    I comportamenti speciali (magazzino usato, Telefono Cash, quantita',
 //    modello) restano agganciati per nome alla voce storica.
 let MARG_PRODUCTS = MARG_PRODUCTS_LEGACY;
+/* IL LISTINO INTERO, PULSANTI O NO. `MARG_PRODUCTS` sono i PULSANTI, e da
+   quando esiste `mostra_in_cassa` non contiene più tutto: le voci Vodafone
+   vecchie sono nascoste perché i tasti ora sono i quattro articoli veri, ma
+   restano i nomi con cui il CRM genera da sé la riga di provvigione quando si
+   registra un'attivazione. Se la ricerca per nome guardasse solo i pulsanti,
+   quelle righe perderebbero reparto e codice di magazzino — cioè si
+   romperebbe in silenzio proprio il flusso che le voci nascoste servono. */
+let MARG_TUTTE = MARG_PRODUCTS_LEGACY;
 let _margCatAttesa = null;
 const _margNorm = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const _MARG_BRAND_MAP = { WINDTRE: "windtre", VODAFONE: "vodafone", FASTWEB: "fastweb", TIM: "tim", ILIAD: "iliad", SKY: "sky", S4: "s4", VERYMOBILE: "very", HOMOBILE: "ho", KENAMOBILE: "kena", DOJO: "dojo" };
@@ -112,6 +120,8 @@ const caricaMargCatalogo = () => {
     try {
       const [rc, ri] = await Promise.all([
         supabase.from("marg_categories").select("*").order("sort_order"),
+        // `mostra_in_cassa = false` = la voce serve al flusso di brand (le righe
+        // di provvigione che il CRM genera da sé) ma non è un pulsante rapido
         supabase.from("marg_items").select("*").eq("active", true).order("sort_order"),
       ]);
       const cats = (rc.data || []).filter(c => c.active !== false);
@@ -148,12 +158,21 @@ const caricaMargCatalogo = () => {
                codice_magazzino) la scorciatoia scarica il pezzo vero. */
             codiceMagazzino: i.codice_magazzino || null,
             reparto: i.reparto ?? null,
+            mostraInCassa: i.mostra_in_cassa !== false,
             ...margine,
           };
         });
         if (voci.length) gruppi.push({ cat: (c.icon || _MARG_CAT_EMOJI[_margNorm(c.name)] || "🏷️") + " " + c.name, grouped: _margNorm(c.name) === "SIM" || _margNorm(c.name) === "ESIM", items: voci });
       });
-      if (gruppi.length) MARG_PRODUCTS = gruppi;
+      if (gruppi.length) {
+        // il listino intero serve alla ricerca per nome (reparto, codice di
+        // magazzino, margine); i PULSANTI sono solo quelli non nascosti
+        MARG_TUTTE = gruppi;
+        const daPulsante = gruppi
+          .map(g => ({ ...g, items: g.items.filter(it => it.mostraInCassa !== false) }))
+          .filter(g => g.items.length);
+        MARG_PRODUCTS = daPulsante.length ? daPulsante : gruppi;
+      }
     } catch { /* pannello irraggiungibile: resta il catalogo storico */ }
     return MARG_PRODUCTS;
   })();
@@ -168,7 +187,7 @@ const caricaMargCatalogo = () => {
    dentro il componente `cats` sono i BRAND, non la marginalità. */
 const _voceMarg = (nome) => {
   const n = String(nome || "").trim().toLowerCase();
-  for (const g of (MARG_PRODUCTS || [])) for (const it of (g.items || []))
+  for (const g of (MARG_TUTTE || [])) for (const it of (g.items || []))
     if (String(it.name || "").trim().toLowerCase() === n) return it;
   return null;
 };
