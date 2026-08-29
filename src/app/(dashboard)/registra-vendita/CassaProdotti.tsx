@@ -319,7 +319,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        guadagna va alla merce: la barra di ricerca si alza di una riga. */
     const indietro = () => { setNatura(null); setQ(""); setPezzo(null); setGruppoAperto(null); };
     const intestazione = (
-        <div className="rvCardT" style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14, flexWrap: "wrap" }}>
+        <div className="rvCardT rvCardT-riga">
             {natura && (
                 <button onClick={indietro} className="rvTorna" title="Torna alla scelta fra prodotto e servizio"
                     aria-label="Torna alla scelta fra prodotto e servizio">←</button>
@@ -366,7 +366,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 una sola che scaricava il magazzino. */}
             {(gruppi.length > 0 || scorciatoie) && (
                 <div style={{ marginBottom: 14 }}>
-                    <div className="rvPillRow" style={{ gap: 6 }}>
+                    <div className="rvPillRow rvPillRow-fitta" style={{ gap: 6 }}>
                         {gruppi.map((g) => (
                             <button key={g.id} onClick={() => setGruppoAperto(gruppoAperto === g.id ? null : g.id)}
                                 className={cn("rvPill", gruppoAperto === g.id && "rvPill-on")}>

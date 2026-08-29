@@ -620,7 +620,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
             <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
             {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{pezziDi(p)}</i>}
           </button>))}
-        </div>)):(<div style={_inFila?{flex:"0 0 100%"}:undefined}>
+        </div>)):(<div className={_inFila?"rvSub":undefined} style={_inFila?{flex:"0 0 100%",marginTop:8}:undefined}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
             <button onClick={()=>setSelProd(null)} style={{background:"none",border:"none",color:"var(--tf-6f42c1)",fontSize:13,cursor:"pointer",fontWeight:600}}>← Indietro</button>
             {selProd.brand&&SIM_BRANDS[selProd.brand]?<img src={SIM_BRANDS[selProd.brand].logo} alt="" style={{height:24,width:"auto",maxWidth:90,objectFit:"contain"}}/>:<span style={{fontSize:22}}>{selProd.icon}</span>}
@@ -7774,7 +7774,6 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget){setShowMargPOS(false);setMargEditItem(null);}}}>
           <div className="rvCard" style={{width:"min(900px,94vw)",maxHeight:"88vh",overflowY:"auto",marginBottom:0,borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
-              <div className="rvCardT" style={{marginBottom:0}}>🧾 Prodotti e servizi</div>
               <button onClick={()=>{setShowMargPOS(false);setMargEditItem(null);}} className="rvPill rvPill-sm">✕ Chiudi</button>
             </div>
             <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} serialiInCarrello={serialiInCarrello} fiscale={posScontrinoAbilitato(selNeg)}
