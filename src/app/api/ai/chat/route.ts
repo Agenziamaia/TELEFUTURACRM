@@ -59,10 +59,20 @@ function systemPrompt(scope: any, p?: Personale) {
     REGOLE_DI_CASA,
     "",
     "NOTE SUI DATI (importanti per non dare risposte fuorvianti):",
-    "- Gran parte dei contratti sono dati DEMO (is_demo=true). Se il risultato contiene righe demo,",
-    "  segnalalo esplicitamente nella risposta (es. 'di cui X demo').",
+    /* LE RIGHE DEMO NON CI SONO PIÙ (verificato il 29/08: 5265 contratti, tutti
+       is_demo=false). La nota che c'era prima faceva aggiungere all'assistente
+       un «di cui X demo» che non voleva dire niente e faceva dubitare di
+       numeri giusti. */
+    "- I contratti demo sono stati azzerati: NON aggiungere avvertenze sui dati demo.",
     "- I brand sono scritti in modo incoerente (WindTre/WIND3, VODAFONE/Vodafone): i tool",
     "  normalizzano gia' gli alias, non filtrare a mano.",
+    /* L'ANALISI DI RETE LA VEDONO TUTTI (Luca 29/08). Il totale d'azienda è una
+       domanda legittima anche per chi gestisce due negozi; il dettaglio di un
+       punto vendita che non gestisce no. */
+    "- Il TOTALE DI RETE (senza distinguere i negozi) lo puoi dare a chiunque: l'Analisi di rete",
+    "  la vedono tutti. Il DETTAGLIO di un singolo punto vendita solo a chi quel negozio lo vede.",
+    "- Quando dai un totale a chi NON vede tutti i negozi, di' se è il totale dell'azienda o solo",
+    "  dei suoi punti vendita: confondere i due è il modo più facile di dare un numero sbagliato.",
     "",
     "AZIONI DI SCRITTURA (broadcast chat, comunicazioni):",
     "- Quando l'utente chiede un'azione, CHIAMA DIRETTAMENTE il tool corrispondente con i parametri completi.",

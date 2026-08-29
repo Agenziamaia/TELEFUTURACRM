@@ -121,6 +121,16 @@ caller_malus — le PENALI dei caller
 
 app_users — le persone: id, full_name, role, primary_store, active
 
+pay_soglie — le SOGLIE delle gare
+  brand · month (il mese della gara) · pista · tier (1,2,3… = la soglia)
+  soglia_da · soglia_a · lato ('azienda' o 'ragazzi') · bonus
+pay_righe — quanto vale ogni voce: brand · month · pista · nome · categoria ·
+  prodotto · punti · pay_base · pay_tiers · gettone · attivo · lato
+pay_piste — le piste di una gara: brand · month · chiave · nome · um ·
+  perc_ragazzi · soglie_pct
+⚠️ «month» è il MESE della gara, non un giorno: per «la gara di agosto» filtra
+   sul mese, non su una data esatta.
+
 ⚠️ GLI ORARI SONO IN UTC. In Italia d'estate sono DUE ORE avanti (d'inverno una):
    un «09:49Z» nel database sono le 11:49 per chi lavora. Quando racconti un
    orario a una persona, convertilo — altrimenti sembra che le cose siano
@@ -167,6 +177,42 @@ export async function descriviTabella(tabella: string): Promise<unknown> {
     return { tabella: t, aCosaServe: A_COSA_SERVE[t] || undefined, colonne: data };
 }
 
+/** Questo negozio è fra quelli che vede? */
+function suo(nome: string, scope: Scope): boolean {
+    const n = String(nome || "");
+    return scope.negozi.some((x) => sameStore(x, n)) || scope.stores.some((x) => sameStore(x, n));
+}
+
+/* I NOMI DEI NEGOZI SCRITTI DENTRO LA QUERY.
+   Un filtro come «where negozio ilike '%magliana%'» non lascia traccia nei
+   risultati: il nome sta solo nella domanda. Quindi si guarda anche lì —
+   ogni testo fra apici viene confrontato con l'elenco dei punti vendita.
+
+   ⚠️ ONESTÀ SUI LIMITI: questo chiude la strada diretta, quella che uno
+   imbocca senza nemmeno pensarci. Una query costruita apposta per aggirarlo
+   (per esempio escludendo tutti gli altri negozi invece di nominare quello che
+   interessa) passerebbe. Contro qualcuno che sta DELIBERATAMENTE cercando di
+   ingannare l'assistente non basta: per quello servirebbero viste separate per
+   ruolo, che è un lavoro a sé. */
+let _negoziNoti: string[] | null = null;
+async function rifiutaSeNominaNegoziAltrui(q: string, scope: Scope): Promise<void> {
+    if (!_negoziNoti) {
+        const { data } = await supabase.from("stores").select("name");
+        _negoziNoti = ((data || []) as { name: string }[]).map((r) => String(r.name || "")).filter(Boolean);
+    }
+    const testi = [...q.matchAll(/'([^']{2,60})'/g)].map((m) => m[1].replace(/%/g, "").trim()).filter(Boolean);
+    for (const t of testi) {
+        const combacia = _negoziNoti.filter((n) => sameStore(n, t));
+        if (!combacia.length) continue;                       // non è un negozio
+        if (combacia.every((n) => !suo(n, scope))) {
+            throw new Error(
+                `Questa persona non ha visibilità su «${combacia.join(", ")}», quindi non puoi chiedere i suoi dati. `
+                + `I punti vendita che vede sono: ${(scope.stores.length ? scope.stores : scope.negozi).join(", ") || "nessuno"}. `
+                + `Puoi invece rispondere su quelli, o dare il totale di rete senza distinguere i negozi.`);
+        }
+    }
+}
+
 /** INTERROGA — la domanda vera, con i filtri applicati ai RISULTATI. */
 export async function interroga(sql: string, scope: Scope): Promise<unknown> {
     const q = String(sql || "").trim();
@@ -184,27 +230,30 @@ export async function interroga(sql: string, scope: Scope): Promise<unknown> {
     let righe = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
     const totaleGrezzo = righe.length;
 
-    /* LE RIGHE: chi non vede tutti i negozi vede solo i suoi.
-       ⚠️ Se la risposta non porta con sé una colonna del negozio non si può
-       filtrare — e allora NON si tira a indovinare: si rifiuta e si dice al
-       modello di rifare la domanda includendo il negozio. Meglio una domanda
-       in più che una riga di un altro punto vendita. */
+    /* LE RIGHE — e qui la prima versione sbagliava regola (corretto il 29/08
+       dopo la prova di Gianluca).
+       Avevo scritto: «se non c'è la colonna del negozio, rifiuta». Ma nel CRM
+       l'ANALISI DI RETE la vedono tutti: chiedere «quanti fissi WindTre sono
+       stati attivati oggi» è una domanda legittima anche per chi gestisce due
+       negozi. A non essere legittimo è il DETTAGLIO di un punto vendita che
+       non gestisce.
+       Quindi la regola vera è il contrario:
+         · il totale di rete, senza nomi di negozio → si può;
+         · la ripartizione per negozio → solo i suoi, gli altri spariscono;
+         · e una domanda che NOMINA un negozio fuori dal suo ambito → si
+           rifiuta, anche se la risposta sarebbe un numero solo. Perché
+           «quanti fissi ha fatto Magliana» si scrive benissimo senza far
+           comparire «Magliana» fra le colonne del risultato: se guardassi solo
+           i risultati, quel dato passerebbe. */
     let fuoriAmbito = 0;
     if (!scope.seesAll) {
+        await rifiutaSeNominaNegoziAltrui(q, scope);
         const campo = righe.length
             ? Object.keys(righe[0]).find((k) => COLONNE_NEGOZIO.includes(k.toLowerCase()))
             : null;
-        if (righe.length && !campo) {
-            throw new Error(
-                "Questa persona vede solo alcuni punti vendita, quindi la risposta deve poter essere filtrata per negozio: "
-                + "rifai l'interrogazione includendo la colonna del negozio (es. `negozio`) fra quelle selezionate, "
-                + "e se stai contando raggruppa per negozio.");
-        }
         if (campo) {
             const prima = righe.length;
-            righe = righe.filter((r) =>
-                scope.negozi.some((n) => sameStore(n, String(r[campo] ?? ""))) ||
-                scope.stores.some((n) => sameStore(n, String(r[campo] ?? ""))));
+            righe = righe.filter((r) => suo(String(r[campo] ?? ""), scope));
             fuoriAmbito = prima - righe.length;
         }
     }
