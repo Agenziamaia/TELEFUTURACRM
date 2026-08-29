@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { cercaESpostaMailOtp } from "@/lib/email";
-import { profiloOtp, mittenteAtteso, codiceDaMessaggio, CARTELLA_OTP } from "@/lib/otpProfili";
+import { profiloOtp, mailAccettabile, codiceDaMessaggio, CARTELLA_OTP } from "@/lib/otpProfili";
 import { decifraSegreto, generaCodice, secondiResidui } from "@/lib/totp";
 
 export const runtime = "nodejs";
@@ -90,7 +90,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     let esito: Awaited<ReturnType<typeof cercaESpostaMailOtp>>;
     try {
         esito = await cercaESpostaMailOtp(acc as Parameters<typeof cercaESpostaMailOtp>[0], {
-            mittenteOk: (from) => mittenteAtteso(from, profilo),
+            mittenteOk: (m) => mailAccettabile(m, profilo),
             cartellaOtp: CARTELLA_OTP,
             daMinuti: MINUTI_VALIDI,
         });
@@ -118,14 +118,21 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
            negozio, nessuno può guardare i log: deve dire da sé dove ha cercato e
            che cosa ha visto, altrimenti si finisce a scambiarsi screenshot. */
         const dove = esito.cartelleViste.length ? ` Ho guardato in: ${esito.cartelleViste.join(", ")}.` : "";
+        /* QUANDO È ARRIVATA L'ULTIMA. Se il messaggio c'è ma risulta di due ore
+           fa, il problema non è la posta: sono gli orologi. Senza questo dato
+           non c'è modo di distinguerlo da «non è arrivato niente». */
+        const quando = esito.ultimoArrivo
+            ? ` L'ultima che ho visto è arrivata alle ${new Date(esito.ultimoArrivo).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" })}`
+                + ` (adesso sono le ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" })}).`
+            : "";
         return NextResponse.json({
             attesa: true,
             riprovaTra: 30,          // Luca: mezzo minuto fra un giro e l'altro
             error: estranei.length
                 ? `Su ${acc.email_address} negli ultimi ${MINUTI_VALIDI} minuti è arrivata posta, ma da mittenti che non mi aspetto: ${estranei.slice(0, 3).join(", ")}.`
                     + ` Il codice si accetta solo se arriva davvero dal fornitore — se questa casella riceve la posta INOLTRATA da un'altra,`
-                    + ` l'inoltro sta riscrivendo il mittente e va sistemato.` + dove
-                : `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}.` + dove
+                    + ` l'inoltro sta riscrivendo il mittente e va sistemato.` + dove + quando
+                : `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}.` + dove + quando
                     + ` Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
         });
     }

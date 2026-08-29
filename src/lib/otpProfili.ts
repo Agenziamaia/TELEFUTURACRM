@@ -55,6 +55,50 @@ export function mittenteAtteso(from: string, p: ProfiloOtp): boolean {
     return p.mittenti.some((m) => (m.startsWith("@") ? f.endsWith(m) : f === m));
 }
 
+/* ── QUANDO LA MAIL ARRIVA INOLTRATA ────────────────────────────────────
+   Alcune caselle non si collegano (Microsoft ha chiuso l'accesso con password)
+   e la loro posta si fa INOLTRARE a una casella leggibile. Ma l'inoltro di
+   Outlook RISCRIVE IL MITTENTE: la mail arriva da «Telefutura SRL» con oggetto
+   «FW: OTP di autenticazione…», e il controllo del mittente la scartava —
+   giustamente, perché non veniva più da Fastweb.
+
+   Qui si accetta anche l'inoltro, ma SOLO se dentro al messaggio c'è ancora la
+   prova che l'originale veniva dal fornitore: negli inoltri di Outlook le
+   intestazioni originali restano scritte nel corpo («From: Fastweb
+   <info@fastweb.it>»). Due condizioni insieme, non una:
+     · l'oggetto dice che è un inoltro (FW:, Fwd:, I:)
+     · nel corpo compare uno degli indirizzi attesi
+
+   ⚠️ SI ABBASSA LA GUARDIA? Un po', ed è una scelta consapevole. Chi conoscesse
+   l'indirizzo della casella potrebbe confezionare un finto inoltro e far
+   comparire un codice sbagliato a un collega — che semplicemente non
+   funzionerebbe. Non gli farebbe LEGGERE niente: il verso pericoloso è
+   l'opposto, e quello resta chiuso. Il fastidio vale la casella sbloccata.
+
+   Resta comunque meglio configurare l'inoltro come REINDIRIZZAMENTO, che il
+   mittente lo conserva: in quel caso non si passa nemmeno di qui. */
+const SEMBRA_INOLTRO = /^\s*(fw|fwd|i|r|tr)\s*:/i;
+
+export function mittenteInoltrato(
+    m: { fromAddr?: string | null; subject?: string | null; text?: string | null; html?: string | null },
+    p: ProfiloOtp,
+): boolean {
+    if (!SEMBRA_INOLTRO.test(String(m.subject || ""))) return false;
+    const corpo = `${m.text || ""} ${m.html || ""}`.toLowerCase();
+    // solo gli indirizzi PIENI: un dominio da solo («@fastweb.it») comparirebbe
+    // in troppi posti e non proverebbe niente
+    return p.mittenti.some((x) => !x.startsWith("@") && corpo.includes(x.toLowerCase()));
+}
+
+/** Il mittente va bene: diretto dal fornitore, oppure inoltrato con la prova
+ *  dell'originale dentro. */
+export function mailAccettabile(
+    m: { fromAddr?: string | null; subject?: string | null; text?: string | null; html?: string | null },
+    p: ProfiloOtp,
+): boolean {
+    return mittenteAtteso(String(m.fromAddr || ""), p) || mittenteInoltrato(m, p);
+}
+
 /** Pesca il codice dal testo della mail. `null` se non c'è nulla di credibile:
  *  meglio dire «non l'ho trovato» che consegnare un numero a caso. */
 export function estraiCodice(testo: string, p: ProfiloOtp): string | null {
