@@ -8,6 +8,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { Scope, applyStoreScope } from "./scope";
 import { redact } from "./guard";
 import type { ToolDef } from "./deepseek";
+import { elencoTabelle, descriviTabella, interroga } from "./interroga";
 
 const MAX_ROWS = 200;
 
@@ -136,6 +137,55 @@ export const TOOL_DEFS: ToolDef[] = [
       parameters: { type: "object", properties: { q: { type: "string" }, limit: { type: "number" } } },
     },
   },
+  /* ── I TRE STRUMENTI PER GUARDARE DAVVERO NEL DATABASE (Luca 29/08) ──
+     Gli altri qui sopra rispondono a domande PREVISTE. Questi tre servono a
+     rispondere a quelle che non abbiamo previsto, che sono la maggior parte.
+     Si usano in fila, come farebbe una persona: che tabelle ci sono, cosa c'è
+     dentro quella che mi serve, e poi la domanda vera. */
+  {
+    type: "function",
+    function: {
+      name: "elenco_tabelle",
+      description:
+        "Elenca le tabelle del database con quante righe hanno e, per le principali, a cosa servono. "
+        + "Usalo come PRIMA mossa quando la domanda riguarda dati che gli altri strumenti non coprono "
+        + "(call center, appuntamenti, malus, magazzino, gare…).",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "descrivi_tabella",
+      description:
+        "Le colonne di una tabella, con il tipo. Usalo PRIMA di scrivere un'interrogazione, "
+        + "così non inventi nomi di colonne che non esistono.",
+      parameters: {
+        type: "object",
+        properties: { tabella: { type: "string", description: "il nome esatto della tabella" } },
+        required: ["tabella"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "interroga",
+      description:
+        "Esegue UNA interrogazione SQL di sola lettura (SELECT o WITH) sul database del CRM e restituisce le righe. "
+        + "Scrivi SQL PostgreSQL normale. Non puoi modificare niente: solo leggere. "
+        + "Se chi fa la domanda non vede tutti i punti vendita, includi SEMPRE la colonna del negozio fra quelle "
+        + "selezionate (e raggruppa per negozio quando conti), altrimenti la richiesta viene rifiutata: senza quella "
+        + "colonna non si può togliere ciò che non gli spetta. "
+        + "La risposta ti dice anche se sono state nascoste righe o colonne: se è successo, dillo a chi ha chiesto.",
+      parameters: {
+        type: "object",
+        properties: { sql: { type: "string", description: "l'interrogazione, che deve cominciare con SELECT o WITH" } },
+        required: ["sql"],
+      },
+    },
+  },
+
 ];
 
 // Tool di SCRITTURA: dichiarati al modello ma MAI eseguiti qui.
@@ -182,6 +232,9 @@ function ilikeAny(q: any, col: string, variants: string[]) {
 
 export async function runTool(name: string, args: any, scope: Scope): Promise<any> {
   switch (name) {
+    case "elenco_tabelle": return await elencoTabelle();
+    case "descrivi_tabella": return await descriviTabella(String(args?.tabella || ""));
+    case "interroga": return await interroga(String(args?.sql || ""), scope);
     case "search_contracts": {
       let q = supabase.from("contracts").select(CONTRACT_COLS, { count: "exact" });
       q = applyStoreScope(q, scope, "negozio");

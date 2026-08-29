@@ -7,6 +7,7 @@ import { tettoPer, costoChiamata, MODELLO_DI_SISTEMA } from "@/lib/ai/modelli";
 import { getScope } from "@/lib/ai/scope";
 import { canUseAI } from "@/lib/roles";
 import { TOOL_DEFS, WRITE_TOOL_DEFS, WRITE_TOOL_NAMES, runTool } from "@/lib/ai/tools";
+import { REGOLE_DI_CASA } from "@/lib/ai/interroga";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,6 +38,18 @@ function systemPrompt(scope: any, p?: Personale) {
     "- Per domande di conteggio usa contracts_breakdown, non elencare i contratti uno per uno.",
     "- Se un tool torna 0 risultati, dillo chiaramente invece di ipotizzare.",
     "- Non puoi accedere a credenziali, password, IBAN o dati retributivi: se richiesti, rifiuta.",
+    /* GLI STRUMENTI PER GUARDARE DAVVERO (Luca 29/08). Gli altri tool
+       rispondono a domande previste; queste tre servono a tutte le altre. */
+    "- Se la domanda riguarda dati che gli altri tool non coprono — call center, appuntamenti,",
+    "  malus, magazzino, gare, o qualunque cosa tu non trovi altrove — NON dire che non puoi:",
+    "  usa `elenco_tabelle`, poi `descrivi_tabella` sulla tabella che ti serve, poi `interroga`.",
+    "- Prima di scrivere un'interrogazione GUARDA SEMPRE le colonne con `descrivi_tabella`:",
+    "  inventare un nome di colonna fa fallire la query e fa perdere un giro.",
+    "- La risposta di `interroga` ti dice se sono state nascoste righe o colonne perché fuori",
+    "  dai permessi di chi ha chiesto: se è successo, DILLO invece di far finta di niente.",
+    "- Quando dai un numero che viene da `interroga`, di' in una riga come l'hai contato.",
+    "",
+    REGOLE_DI_CASA,
     "",
     "NOTE SUI DATI (importanti per non dare risposte fuorvianti):",
     "- Gran parte dei contratti sono dati DEMO (is_demo=true). Se il risultato contiene righe demo,",
