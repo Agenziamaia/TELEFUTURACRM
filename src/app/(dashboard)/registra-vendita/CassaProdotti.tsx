@@ -201,7 +201,6 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     );
 
     // ── PRODOTTI: la ricerca del magazzino ─────────────────────────────────
-    const senzaMagazzino = giac.size === 0;
     return (
         <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
@@ -209,16 +208,14 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 <span className="rvLab" style={{ marginBottom: 0 }}>📦 Prodotti — magazzino di {negozio || "—"}</span>
             </div>
 
+            {/* SELEZIONE RAPIDA sopra la ricerca (Luca 29/08): sono le voci
+                che al banco si vendono di più — SIM, ESIM, accessori. La
+                ricerca del magazzino viene dopo, per tutto il resto. */}
+            {scorciatoie && <div style={{ marginBottom: 14 }}>{scorciatoie}</div>}
+
             <input ref={ricerca} value={q} onChange={(e) => setQ(e.target.value)}
                 placeholder="Spara il codice a barre o l'IMEI, oppure scrivi il nome dell'articolo…"
                 className="rvIn" style={{ fontSize: 15.5, padding: "13px 15px" }} />
-
-            {senzaMagazzino && (
-                <div className="rvNota rvNota-att">
-                    <div className="rvNota-t">📭 Il magazzino di questo negozio è ancora vuoto</div>
-                    <div className="rvNota-s">Gli articoli si trovano lo stesso, ma finché non c&apos;è la giacenza risultano tutti «non in negozio» e lo scontrino non parte.</div>
-                </div>
-            )}
 
             {/* il pezzo trovato dal seriale: è QUELLO, non l'articolo generico */}
             {pezzo && (
@@ -237,11 +234,6 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                     </div>
                 </div>
             )}
-
-            {/* LE SCORCIATOIE: SIM, ESIM, accessori a marginalità. Stanno
-                sotto la ricerca perché la ricerca è la strada principale — ma
-                sono lì, senza doverle cercare. */}
-            {scorciatoie && <div style={{ marginTop: 12 }}>{scorciatoie}</div>}
 
             {/* i filtri rapidi del magazzino */}
             {famiglie.length > 1 && (
