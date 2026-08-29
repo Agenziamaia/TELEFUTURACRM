@@ -714,6 +714,20 @@ export default function PasswordV2Page() {
                                                     opzioni={otpCaselle.map((x) => x.email)}
                                                     placeholder="nessuna casella — niente codice"
                                                 />
+                                                {/* ⚠️ UNA CASELLA NORMALE ARCHIVIA LA POSTA NEL CRM (29/08).
+                                                    Il poll non scarica le «caselle dei codici» proprio per
+                                                    non tenere i codici in chiaro nel database; una casella
+                                                    normale invece li salva, e chi vede quella posta nella
+                                                    sezione Email si legge il secondo fattore di un'utenza
+                                                    che magari non gli spetta. Il selettore le offriva tutte
+                                                    senza dire niente. */}
+                                                {credForm.otpAccountId && !otpCaselle.find((x) => x.id === credForm.otpAccountId)?.sistema && (
+                                                    <div className="rounded-lg border border-amber-400/30 bg-amber-500/[0.07] px-2.5 py-2 text-[10px] text-amber-100/90 leading-relaxed">
+                                                        <b>Questa non è una casella dei codici.</b> Il CRM ne archivia la posta: i codici
+                                                        resterebbero salvati e leggibili da chiunque veda quella casella nella sezione Email.
+                                                        Meglio una casella dedicata (Amministrazione → Email → 🔑 Caselle dei codici).
+                                                    </div>
+                                                )}
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Formato della mail</label>
