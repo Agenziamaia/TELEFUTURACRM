@@ -29,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import {
-    caricaCatalogo, caricaGiacenze, famiglieDi, cerca, cercaSeriale, sembraSeriale,
+    caricaCatalogo, caricaGiacenze, cerca, cercaSeriale, sembraSeriale,
     marginePct, perchéSenzaMargine,
     type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale,
 } from "@/lib/cassaCatalogo";
@@ -57,7 +57,6 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     const [voci, setVoci] = useState<VoceCassa[] | null>(null);
     const [giac, setGiac] = useState<Map<string, Giacenza>>(new Map());
     const [q, setQ] = useState("");
-    const [famiglia, setFamiglia] = useState<string | null>(null);
     const [pezzo, setPezzo] = useState<PezzoSeriale | null>(null);
     /* IL PEZZO CHE NON C'È (Luca 29/08, correzione secca): «se il prodotto
        non c'è in magazzino non deve andare nemmeno nel carrello, deve darmi un
@@ -86,18 +85,19 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
         return () => { vivo = false; };
     }, [q, natura]);
 
-    const famiglie = useMemo(() => voci ? famiglieDi(voci, "prodotto") : [], [voci]);
+    /* L'elenco compare SOLO quando si cerca (Luca 29/08: i filtri per famiglia
+       non servivano, «sopra ho i pulsanti rapidi e sotto scrivo il codice»).
+       Senza ricerca, centocinquanta articoli a caso sono rumore: la strada è
+       scrivere o sparare, e la risposta arriva. */
     const risultati = useMemo(() => {
-        if (!voci || natura !== "prodotto") return [];
-        let v = voci.filter((x) => x.natura === "prodotto");
-        if (famiglia) v = v.filter((x) => x.famiglia === famiglia);
-        if (q.trim()) v = cerca(v, q);
+        if (!voci || natura !== "prodotto" || !q.trim()) return [];
+        const v = cerca(voci.filter((x) => x.natura === "prodotto"), q);
         /* CHI CE L'HA IN NEGOZIO VIENE PRIMA (Luca 29/08: «mentre io scrivo lui
            mi dà la disponibilità degli articoli»): a parità di ricerca il pezzo
            che è sullo scaffale conta più di uno che va ordinato. */
         const n = (x: VoceCassa) => x.codice ? (giac.get(x.codice)?.quantita ?? 0) : 0;
         return [...v].sort((a, b) => (n(b) > 0 ? 1 : 0) - (n(a) > 0 ? 1 : 0)).slice(0, 150);
-    }, [voci, natura, famiglia, q, giac]);
+    }, [voci, natura, q, giac]);
 
     /** Quanti se ne possono ancora vendere: quelli a magazzino MENO quelli
      *  che il venditore ha già messo nel carrello. */
@@ -204,7 +204,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     return (
         <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <button onClick={() => { setNatura(null); setQ(""); setFamiglia(null); }} className="rvPill rvPill-sm">← Prodotto o servizio</button>
+                <button onClick={() => { setNatura(null); setQ(""); }} className="rvPill rvPill-sm">← Prodotto o servizio</button>
                 <span className="rvLab" style={{ marginBottom: 0 }}>📦 Prodotti — magazzino di {negozio || "—"}</span>
             </div>
 
@@ -235,23 +235,11 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 </div>
             )}
 
-            {/* i filtri rapidi del magazzino */}
-            {famiglie.length > 1 && (
-                <div className="rvPillRow" style={{ gap: 6, marginTop: 12 }}>
-                    <button onClick={() => setFamiglia(null)} className={cn("rvPill", "rvPill-sm", !famiglia && "rvPill-on")}>Tutti</button>
-                    {famiglie.slice(0, 18).map((f) => (
-                        <button key={f.nome} onClick={() => setFamiglia(famiglia === f.nome ? null : f.nome)}
-                            className={cn("rvPill", "rvPill-sm", famiglia === f.nome && "rvPill-on")}>
-                            {f.nome} <span style={{ opacity: .55 }}>{f.n}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-
             {/* l'elenco: alto quanto la griglia dei brand, si scorre dentro */}
             <div style={{ marginTop: 12, maxHeight: "46vh", minHeight: 240, overflowY: "auto", paddingRight: 4 }}>
                 {voci === null ? <div className="rvVuoto"><b>Carico il magazzino…</b></div>
-                    : risultati.length === 0 ? <div className="rvVuoto">🔍<b>Nessun articolo</b><small>prova con un&apos;altra parola o togli il filtro</small></div>
+                    : !q.trim() ? <div className="rvVuoto">🔎<b>Cerca un articolo</b><small>spara il codice a barre o l&apos;IMEI, oppure scrivi il nome</small></div>
+                        : risultati.length === 0 ? <div className="rvVuoto">🔍<b>Nessun articolo</b><small>prova con un&apos;altra parola</small></div>
                         : (
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,250px),1fr))", gap: 8 }}>
                                 {risultati.map((v) => {

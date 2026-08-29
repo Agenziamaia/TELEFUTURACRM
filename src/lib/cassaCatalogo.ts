@@ -82,10 +82,30 @@ export function perchéSenzaMargine(v: { prezzo: number | null; costo: number | 
 
 const PAGINA = 1000;   // il server taglia OGNI risposta a 1000 righe
 
+/* IL CATALOGO SI SCARICA UNA VOLTA SOLA (revisore 29/08). Sono 2.267 righe,
+   circa 630 KB in tre chiamate in fila: scaricarle a ogni apertura della
+   schermata — e la finestra dal carrello si riapre a ogni prodotto aggiunto —
+   sono uno o due secondi di attesa ogni volta, sulla wifi di un centro
+   commerciale. Resta in memoria finché la pagina è aperta. */
+let _catalogo: VoceCassa[] | null = null;
+let _inCorso: Promise<VoceCassa[]> | null = null;
+
+/** Da chiamare quando il magazzino cambia davvero (un'importazione, un
+ *  carico): la prossima lettura ripartirà dal database. */
+export function scordaCatalogo() { _catalogo = null; _inCorso = null; }
+
 /** Tutto il catalogo vendibile. Il tetto di 1000 righe per risposta è una
  *  trappola nota del PostgREST (già costata i brand «fino ad Azza» sui
  *  dispositivi): qui si pagina fino in fondo. */
 export async function caricaCatalogo(): Promise<VoceCassa[]> {
+    if (_catalogo) return _catalogo;
+    // due aperture ravvicinate non devono scaricarlo due volte in parallelo
+    if (_inCorso) return _inCorso;
+    _inCorso = _leggiCatalogo().then((v) => { _catalogo = v; _inCorso = null; return v; });
+    return _inCorso;
+}
+
+async function _leggiCatalogo(): Promise<VoceCassa[]> {
     const out: VoceCassa[] = [];
     for (let da = 0; ; da += PAGINA) {
         const { data, error } = await supabase.from("cassa_catalogo")
