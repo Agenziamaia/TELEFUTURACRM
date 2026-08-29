@@ -620,7 +620,7 @@ const fDi = (sec, v) => {
 
 export function AnelloScaglioni({
     punti = 0, proiezione = null, soglie = [], target = null, mio = null,
-    colore = "#818cf8", parti = null, unit = "pt", tip, onClick, importante = false, allarme = false,
+    colore = "#818cf8", parti = null, unit = "pt", tip, onClick, importante = false, allarme = false, grave = false,
 }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 80); return () => clearTimeout(t); }, []);
@@ -680,7 +680,7 @@ export function AnelloScaglioni({
     const gap = allarme && target > 0 && proj < target ? [fDi(sec, proj), fT] : null;
     const [bx, by] = gap ? polo(cc, rA, (gap[0] + gap[1]) / 2) : [0, 0];
     const anello = (
-        <div className={cn("tf-anello", importante && "tf-imp", allarme && "tf-alert")} onClick={onClick}>
+        <div className={cn("tf-anello", importante && "tf-imp")} onClick={onClick}>
             <svg viewBox={`0 0 ${V} ${V}`}>
                 <defs>
                     {/* userSpaceOnUse: col riquadro di default il gradiente
@@ -786,7 +786,11 @@ export function AnelloScaglioni({
                 {mio != null && punti > 0 && <span className="mio" style={{ color: chiaro }}>{fmtN(Math.floor(quota * 100))}%&nbsp;mio</span>}
             </div>
             {/* il glifo dice l'allarme anche senza movimento e senza colore */}
-            {gap && <span className="tf-bang" style={{ left: `${(bx / V) * 100}%`, top: `${(by / V) * 100}%` }} title="Proiezione sotto il target">!</span>}
+            {/* IL GLIFO SOLO DOVE IL BUCO E' SERIO. L'arco dice gia' quanto
+                manca con la sua lunghezza; il segno rosso era identico per chi
+                sta 2,7 punti sotto la sbarra e per chi e' a zero, e sei badge
+                uguali su otto anelli sbiancano la carta senza ordinare niente. */}
+            {gap && grave && <span className="tf-bang" style={{ left: `${(bx / V) * 100}%`, top: `${(by / V) * 100}%` }} title="Proiezione molto sotto il target">!</span>}
         </div>
     );
     return tip ? <Tip className="block" tip={tip}>{anello}</Tip> : anello;

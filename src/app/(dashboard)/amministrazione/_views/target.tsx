@@ -1102,10 +1102,12 @@ function ReteView() {
                     Lascia vuoto per non avere target su quella pista.
                 </span>
                 <label className="flex items-center gap-2 text-[11px] text-slate-400 border-l border-white/10 pl-3">
+                    {/* LA LEGENDA DICEVA UNA COSA CHE NON E' PIU' VERA. L'allarme
+                        non e' piu' dei soli KPI in evidenza (Luca 29/08: «su
+                        Fastweb il warning non funziona»), e il cerchio ambra non
+                        esiste piu': il segno e' l'arco di quello che manca. */}
                     <span className="inline-block w-4 h-4 rounded-full border-2 border-slate-300/60 shrink-0" title="in evidenza" />
-                    <span>★ i KPI in evidenza hanno un contorno; si accende in</span>
-                    <span className="inline-block w-4 h-4 rounded-full border-2 shrink-0" style={{ borderColor: "rgba(251,146,60,.95)", boxShadow: "0 0 8px rgba(251,146,60,.6)" }} title="in allarme" />
-                    <span>ambra quando la <b className="text-slate-300">proiezione</b> scende sotto il</span>
+                    <span>★ i KPI in evidenza hanno un contorno. L&apos;<b className="text-slate-300">allarme</b> invece è di <b className="text-slate-300">ogni</b> pista con un target: sull&apos;anello compare l&apos;arco tratteggiato di quello che manca quando la <b className="text-slate-300">proiezione</b> scende sotto il</span>
                     <input inputMode="decimal" value={alertPct}
                         onChange={(e) => { const n = e.target.value.replace(/[^\d.,]/g, ""); const v = Number(n.replace(",", ".")); setAlertPct(n === "" || !isFinite(v) ? n : String(Math.max(1, Math.min(200, v)))); }}
                         className="w-14 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white text-right tabular-nums" />
@@ -1148,7 +1150,7 @@ function ReteView() {
                                         className={cn("text-sm leading-none transition-colors", imp.has(k) ? "text-amber-300" : "text-slate-500 hover:text-slate-300")}>{imp.has(k) ? "★" : "☆"}</button>
                                     <span className="text-xs text-slate-300 truncate shrink-0 w-32">
                                         {p.nome}
-                                        {imp.has(k) && !(val[k] || "").trim() && <span className="block text-[9px] text-amber-300/70 leading-tight">senza target non scatta l&apos;allarme</span>}
+                                        {!(val[k] || "").trim() && <span className="block text-[9px] text-amber-300/70 leading-tight">senza target non scatta l&apos;allarme</span>}
                                     </span>
                                     {/* LE SOGLIE DELLA LETTERA, a sinistra del campo: si clicca e il
                                         target esce da solo, soglia + sfrido. Sono i numeri veri del

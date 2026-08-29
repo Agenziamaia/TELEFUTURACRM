@@ -641,7 +641,7 @@ function AnalisiInner() {
         // ZERO E' UNA PROIEZIONE, non un dato mancante: con `v > 0` una pista
         // ferma a zero non proiettava, quindi non poteva nemmeno andare in
         // allarme — cioe' il caso peggiore era l'unico muto (W3 Protetti).
-        const prj = (v) => (meseCorrente && dati?.gl?.mostraProiezione !== false && dati?.gl?.trascorsi > 0 && v >= 0)
+        const prj = (v) => (meseCorrente && dati?.gl?.mostraProiezione !== false && dati?.gl?.trascorsi > 0 && Number.isFinite(v))
             ? Math.round((v / dati.gl.trascorsi) * dati.gl.totali * 100) / 100 : null;
         const ID_DIR = { w3: "windtre", vf: "vodafone", fw: "fastweb", sky: "sky" };
         const targetDi = (b, pista) => {
@@ -661,6 +661,14 @@ function AnalisiInner() {
         };
         const evidenza = new Set(Array.isArray(dati?.kpiRete?.importanti) ? dati.kpiRete.importanti : []);
         const alertPct = Number(dati?.kpiRete?.alertPct) > 0 ? Number(dati.kpiRete.alertPct) : 85;
+        // L'ALLARME VUOLE UN MESE CHE ABBIA GIA' CORSO. Il 1° giorno lavorativo
+        // quasi tutto proietta sotto il target — e' aritmetica, non un
+        // problema: rigiocando agosto, al giorno 1 si accendevano 8 anelli su
+        // 22, quattro dei quali fermi a zero, dove «finirai a zero» non e' una
+        // previsione ma l'assenza del dato. Una settimana di discoteca e poi
+        // nessuno guarda piu'. Si comincia a un terzo del mese: con 23 giorni
+        // lavorativi vuol dire dall'ottavo, cioe' verso il 10.
+        const mesePartito = Number(dati?.gl?.trascorsi) >= Math.max(3, Math.ceil(Number(dati?.gl?.totali || 0) / 3));
         const s4Righe = (dati?.altri || []).filter((r) => trkBrandKey(r.brand) === "s4");
         // IL TABELLARE DELLA RETE È QUELLO DEI RAGAZZI (Luca 28/08: «qui in Rete
         // ci devono essere i target ragazzi, non ti sbagliare»). Era già la
@@ -875,8 +883,14 @@ function AnalisiInner() {
                 // stia andando sotto e' vero comunque. E ora che il segnale e'
                 // l'arco di quello che manca, e non piu' un cerchio che
                 // lampeggia, mostrarlo ovunque non fa rumore.
-                x.allarme = !!(x.target?.v > 0 && x.proiezione != null
+                x.allarme = !!(mesePartito && x.target?.v > 0 && x.proiezione != null
                     && x.proiezione < x.target.v * (alertPct / 100));
+                // …e il GLIFO solo dove il buco e' serio: l'arco tratteggiato
+                // dice gia' quanto manca con la sua lunghezza (da 17° a 219°),
+                // ma il segno rosso era identico per chi sta 2,7 punti sotto la
+                // sbarra e per chi e' a zero. Sei badge uguali su otto anelli
+                // sbiancano la carta e non ordinano niente.
+                x.grave = !!(x.allarme && x.proiezione < x.target.v * 0.7);
             }
             // ORDINE FISSO (Luca 28/08: «lo lasci fisso così, deve rimanere
             // fatto per forza così»): consumer prima, poi energia, poi
@@ -942,6 +956,10 @@ function AnalisiInner() {
         // «fino al 20 solo la proiezione, dal 21 in poi aggiungiamo il dato
         // attuale» (Luca): il 20 e' compreso.
         primaDel20: meseCorrente && new Date().getDate() <= 20,
+        // …e su un mese CHIUSO la proiezione non esiste: `prj` torna sempre
+        // null e la pastiglia 🔮 stampava, per costruzione, lo stesso numero
+        // del consuntivo. Li' resta la sola casella del fatto.
+        conProiezione: meseCorrente && dati?.gl?.mostraProiezione !== false && dati?.gl?.trascorsi > 0,
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [items, dati, nG, labels, oggi, meseCorrente, negoziVisibili, brandRete, mieiNegoziUtente]);
 

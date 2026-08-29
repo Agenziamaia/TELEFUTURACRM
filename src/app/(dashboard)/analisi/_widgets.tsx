@@ -1955,14 +1955,29 @@ export function ChipsRete({ ctx, brand }) {
     const proj = suTarget ? b.inTargetProj : b.inSogliaProj;
     return (
         <span className="flex items-center gap-1.5 flex-nowrap overflow-hidden text-[10px] min-w-0">
-            {!ctx.primaDel20 && (
-                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap">
-                    <b className="text-white tabular-nums">{ora}</b>/{su}<span className="hidden @lg:inline"> {cosa}</span>
+            {/* LA SFERA NON SI STRINGE MAI, e sotto una certa larghezza il
+                consuntivo SPARISCE invece di accorciarsi: troncato diventava un
+                «0» solo, che sembra un numero e non lo e'. Con tutt'e due elastiche, sotto i
+                1.085px di pagina la pastiglia della proiezione veniva tagliata
+                in mezzo alla cifra («🔮 0/» invece di «🔮 0/1»): un numero
+                sbagliato, non solo brutto — e proprio quella che fino al 20 del
+                mese e' l'unica. Adesso a cedere e' il consuntivo. */}
+            {(!ctx.primaDel20 || !ctx.conProiezione) && (
+                <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap min-w-0 truncate hidden @xs:inline">
+                    <b className="text-white tabular-nums">{ora}</b>/{su}<span className="hidden @sm:inline"> {cosa}</span>
                 </span>
             )}
-            <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                🔮 <b className="tabular-nums">{proj}</b>/{su}<span className="hidden @lg:inline"> in proiezione</span>
-            </span>
+            {/* «a fine mese» invece di ripetere il sostantivo: rigiocando i
+                giorni in cui si vedono entrambe, le due caselle stampano lo
+                STESSO numero in 37 casi su 45 — e due bolle identiche a mezzo
+                centimetro di distanza si leggono come un errore, non come due
+                misure. La sfera dice che e' una previsione, la parola dice
+                quando. */}
+            {ctx.conProiezione && (
+                <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap shrink-0" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                    🔮 <b className="tabular-nums">{proj}</b>/{su}<span className="hidden @sm:inline"> a fine mese</span>
+                </span>
+            )}
             {conQuota && b.pzMio != null && b.pzRete > 0 && (
                 <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400 whitespace-nowrap hidden @5xl:inline">
                     il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>
@@ -2023,7 +2038,7 @@ function BloccoBrandRete({ ctx, brand }) {
                                 punti={x.punti} proiezione={x.proiezione} soglie={x.scala}
                                 target={x.target?.v ?? null} mio={conQuota ? x.mio : null}
                                 colore={b.colore} unit={x.unit} parti={x.parti?.length ? x.parti : null}
-                                importante={x.importante} allarme={x.allarme}
+                                importante={x.importante} allarme={x.allarme} grave={x.grave}
                             />
                             {/* il piede si accende a scalini: etichetta, poi lo stato,
                                 poi il target, poi quanto manca — ognuno solo se lo
