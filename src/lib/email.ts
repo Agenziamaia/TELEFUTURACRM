@@ -403,7 +403,13 @@ export type MailOtp = { uid: number; cartella: string; fromAddr: string; subject
 export async function cercaESpostaMailOtp(
     a: Account,
     opts: { mittenteOk: (from: string) => boolean; cartellaOtp: string; daMinuti?: number; max?: number },
-): Promise<{ trovate: MailOtp[]; spostate: number; nonSpostate: number; motivoMancatoSpostamento: string | null; errore: string | null }> {
+): Promise<{ trovate: MailOtp[]; spostate: number; nonSpostate: number; motivoMancatoSpostamento: string | null; errore: string | null;
+    /* CHI HA SCRITTO NELLA FINESTRA MA NON ERA ATTESO. Senza questo, una mail
+       arrivata dal mittente sbagliato è indistinguibile da nessuna mail: si
+       legge «non è arrivato niente» mentre in casella c'era eccome. È il caso
+       tipico di una casella che riceve la posta INOLTRATA da un'altra, dove
+       l'inoltro può riscrivere il mittente. */
+    scartatiPerMittente: string[] }> {
     const daMinuti = opts.daMinuti ?? 20;
     const max = opts.max ?? 15;
     const since = new Date(Date.now() - daMinuti * 60_000);
@@ -412,12 +418,13 @@ export async function cercaESpostaMailOtp(
     let spostate = 0;
     let nonSpostate = 0;
     let motivoMancatoSpostamento: string | null = null;
+    const scartatiPerMittente = new Set<string>();
     try {
         await client.connect();
     } catch (e: unknown) {
         const err = e as { authenticationFailed?: boolean; responseText?: string; message?: string };
         return {
-            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null,
+            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null, scartatiPerMittente: [],
             errore: err?.authenticationFailed
                 ? "la casella non accetta più la password salvata (per Gmail serve una «password per le app»; Microsoft ha chiuso l'accesso con password su hotmail/outlook personali)"
                 : (err?.responseText || err?.message || "connessione alla casella non riuscita"),
@@ -447,7 +454,15 @@ export async function cercaESpostaMailOtp(
                 const limite = since.getTime();
                 for await (const msg of client.fetch(uids, { uid: true, source: true }, { uid: true })) {
                     const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
-                    if (!m || !opts.mittenteOk(m.fromAddr)) continue;
+                    if (!m) continue;
+                    if (!opts.mittenteOk(m.fromAddr)) {
+                        // dentro la finestra ma dal mittente sbagliato: si annota,
+                        // perché è l'unico indizio che distingue «non è arrivato
+                        // niente» da «è arrivato, ma non da chi mi aspettavo»
+                        const q = m.date ? new Date(m.date).getTime() : 0;
+                        if (q && q >= since.getTime() && m.fromAddr) scartatiPerMittente.add(m.fromAddr.toLowerCase());
+                        continue;
+                    }
                     // fuori finestra: non è il codice di adesso, e consegnarlo
                     // farebbe fallire l'accesso facendo credere che funzioni
                     const quando = m.date ? new Date(m.date).getTime() : 0;
@@ -481,7 +496,7 @@ export async function cercaESpostaMailOtp(
     } finally { try { await client.logout(); } catch { /* già chiusa */ } }
     // la più recente per prima: è quella che l'utente sta aspettando
     trovate.sort((x, y) => (y.date?.getTime() || 0) - (x.date?.getTime() || 0));
-    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null };
+    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null, scartatiPerMittente: [...scartatiPerMittente] };
 }
 
 export async function inviaEmail(a: Account, opts: { to: string; subject: string; text?: string; html?: string; inReplyTo?: string | null; attachments?: { filename: string; content: Buffer; contentType?: string }[] }): Promise<{ messageId: string; raw: Buffer }> {

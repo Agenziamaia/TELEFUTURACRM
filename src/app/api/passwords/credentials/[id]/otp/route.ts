@@ -108,11 +108,20 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     }
 
     if (!codice) {
-        // non c'è ancora: si dice quanto aspettare, e il CRM ci riprova da solo
+        /* «NON È ARRIVATO NIENTE» E «È ARRIVATO MA NON DA CHI MI ASPETTAVO»
+           sono due problemi diversi, e prima si leggevano uguali. Il secondo
+           capita quando la casella riceve posta INOLTRATA da un'altra: se
+           l'inoltro riscrive il mittente, il controllo lo scarta — giustamente,
+           ma senza dirlo si passa il pomeriggio a chiedersi perché. */
+        const estranei = esito.scartatiPerMittente.filter((x) => x !== acc.email_address?.toLowerCase());
         return NextResponse.json({
             attesa: true,
             riprovaTra: 30,          // Luca: mezzo minuto fra un giro e l'altro
-            error: `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}. Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
+            error: estranei.length
+                ? `Su ${acc.email_address} negli ultimi ${MINUTI_VALIDI} minuti è arrivata posta, ma da mittenti che non mi aspetto: ${estranei.slice(0, 3).join(", ")}.`
+                    + ` Il codice si accetta solo se arriva davvero dal fornitore — se questa casella riceve la posta INOLTRATA da un'altra,`
+                    + ` l'inoltro sta riscrivendo il mittente e va sistemato (o va detto al CRM che per questa casella l'inoltro è quello).`
+                : `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}. Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
         });
     }
 
