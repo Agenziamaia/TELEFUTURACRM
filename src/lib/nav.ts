@@ -245,6 +245,9 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "reparti", name: "Reparti & IVA", roles: [...ADMINS, "amministrativo"], emoji: "🧮" },
                     { id: "cassascontrini", name: "Cassa & Scontrini", roles: [...ADMINS, "amministrativo"], emoji: "🧾" },
                     { id: "coupon", name: "Coupon", roles: [...ADMINS, "amministrativo"], emoji: "🎟" },
+                    // la definizione degli articoli: prezzo, costo, e se in cassa
+                    // quel prezzo si può correggere (Luca 29/08)
+                    { id: "articoli", name: "Articoli", roles: [...ADMINS, "amministrativo"], emoji: "📦" },
                 ],
             },
             // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
