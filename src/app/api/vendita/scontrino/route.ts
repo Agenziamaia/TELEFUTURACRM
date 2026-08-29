@@ -202,7 +202,15 @@ export async function POST(req: Request) {
                     "--------------------------------",
                     ...(scontoGruppo > 0 ? [`SCONTO COUPON  -EUR ${scontoGruppo.toFixed(2)}`] : []),
                     `TOTALE        EUR ${netTotale.toFixed(2)}`,
-                    `Pagamento: ${paymentDescr}`,
+                    // Dettaglio pagamenti come nel fiscale (spec Francesco D): una riga per
+                    // forma, con importo e "(non riscosso)" dove applicabile.
+                    "Pagamenti:",
+                    ...((pagamentiIn.length && nGruppi === 1)
+                        ? pagamentiIn.filter((p: any) => Number(p?.importo) > 0).map((p: any) => {
+                            const f = formaPagamento(String(p.forma));
+                            return `  ${(f?.short || "CONTANTE")}${f && f.riscosso === false ? " (non riscosso)" : ""}   EUR ${Number(p.importo).toFixed(2)}`;
+                        })
+                        : [`  ${paymentDescr}   EUR ${netTotale.toFixed(2)}`]),
                     "",
                     "Non valido ai fini fiscali",
                 ];
