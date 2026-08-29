@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { puoVedereNegozio } from "@/lib/visibleStoresServer";
 import { dataItaliana } from "@/lib/report/datiGiornata";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,10 +37,19 @@ export async function POST(request: Request) {
     if (!_g.ok) return _g.risposta;
     const _s = _g.sess;
 
-    const url = process.env.DISCORD_REPORT_WEBHOOK || "";
+    /* L'INDIRIZZO DEL CANALE — variabile del server se c'è, altrimenti la riga
+       chiusa nel database (`impostazioni_servizio`, RLS accesa senza policy:
+       dal browser non la legge nessuno). La variabile resta prioritaria, così
+       chi domani volesse tenerla nella macchina non deve toccare il codice. */
+    let url = process.env.DISCORD_REPORT_WEBHOOK || "";
+    if (!url) {
+        const { data } = await supabaseAdmin.from("impostazioni_servizio")
+            .select("discord_report_webhook").eq("id", 1).maybeSingle();
+        url = String(data?.discord_report_webhook || "");
+    }
     if (!url) {
         return NextResponse.json({
-            error: "Il canale non è ancora configurato: manca DISCORD_REPORT_WEBHOOK nelle variabili del server.",
+            error: "Il canale non è ancora configurato: manca l'indirizzo del webhook Discord.",
         });
     }
 
