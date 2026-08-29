@@ -63,17 +63,42 @@ export default function MagazzinoPage() {
 
     const [negozi, setNegozi] = useState<string[]>([]);
     const [unita, setUnita] = useState<Unita[]>([]);
+    /* LE QUANTITÀ (Luca 29/08: «il magazzino è l'unica fonte»). Fin qui questa
+       schermata contava SOLO i pezzi con un seriale — un telefono, un modem —
+       perché è una riga per pezzo. Ma venti cover uguali sono un numero, non
+       venti righe: senza queste, gli accessori non sarebbero comparsi mai,
+       nemmeno dopo averli caricati. */
+    const [quantita, setQuantita] = useState<RigaQta[]>([]);
     const [loading, setLoading] = useState(true);
 
     const carica = useCallback(async () => {
         setLoading(true);
-        const [st, un] = await Promise.all([
+        const [st, un, gi] = await Promise.all([
             supabase.from("stores").select("name, is_ufficio").order("name"),
             caricaTutte<Unita>((from, to) =>
                 supabase.from("mag_unita").select("*").order("caricato_il", { ascending: false }).range(from, to) as never),
+            caricaTutte<{ codice: string; negozio: string; azienda: string; quantita: number }>((from, to) =>
+                supabase.from("mag_giacenze").select("codice,negozio,azienda,quantita").gt("quantita", 0).range(from, to) as never),
         ]);
         setNegozi(((st.data ?? []) as { name: string; is_ufficio?: boolean | null }[]).filter(s => !s.is_ufficio).map(s => s.name));
         setUnita((un.data ?? []) as Unita[]);
+        // il nome e il valore dell'articolo stanno in anagrafica, non nella giacenza
+        const righeQ = (gi.data ?? []) as { codice: string; negozio: string; azienda: string; quantita: number }[];
+        if (righeQ.length) {
+            const codici = [...new Set(righeQ.map(r => r.codice))];
+            const anag = new Map<string, { descrizione: string; prezzo: number | null }>();
+            for (let i = 0; i < codici.length; i += 300) {
+                const { data } = await supabase.from("mag_articoli")
+                    .select("codice,descrizione,prezzo").in("codice", codici.slice(i, i + 300));
+                (data ?? []).forEach((a: { codice: string; descrizione: string; prezzo: number | null }) =>
+                    anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo }));
+            }
+            setQuantita(righeQ.map(r => ({
+                ...r,
+                descrizione: anag.get(r.codice)?.descrizione || r.codice,
+                valore: Number(anag.get(r.codice)?.prezzo || 0) * Number(r.quantita),
+            })));
+        } else setQuantita([]);
         setLoading(false);
     }, []);
     useEffect(() => { carica(); }, [carica]);
@@ -97,7 +122,7 @@ export default function MagazzinoPage() {
             {loading ? (
                 <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
             ) : tab === "giacenze" ? (
-                <Giacenze unita={unita} negozi={negozi} aziende={aziende} />
+                <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} />
             ) : tab === "ricerca" ? (
                 <RicercaSeriale unita={unita} />
             ) : tab === "articoli" ? (
@@ -110,7 +135,12 @@ export default function MagazzinoPage() {
 }
 
 /* ── 📦 GIACENZE ─────────────────────────────────────────────────────── */
-function Giacenze({ unita, negozi, aziende }: { unita: Unita[]; negozi: string[]; aziende: string[] }) {
+/** Una riga di giacenza a QUANTITÀ: gli accessori, il materiale di consumo.
+ *  Non hanno un seriale, quindi non stanno in mag_unita — ma sono magazzino
+ *  esattamente come un telefono (Luca 29/08: «il magazzino è l'unica fonte»). */
+type RigaQta = { codice: string; descrizione: string; negozio: string; azienda: string; quantita: number; valore: number };
+
+function Giacenze({ unita, quantita, negozi, aziende }: { unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[] }) {
     const [negozio, setNegozio] = useState("");
     const [azienda, setAzienda] = useState("");
     const [stato, setStato] = useState("");
@@ -145,6 +175,23 @@ function Giacenze({ unita, negozi, aziende }: { unita: Unita[]; negozi: string[]
             if (arrivo) r.inArrivo++;
             if (vivo || arrivo) m.set(k, r);
         }
+        /* le QUANTITÀ entrano nella stessa griglia: chi guarda il magazzino
+           vuole sapere cosa c'è, non in che forma è tenuto. La fotografia a
+           una data passata resta sui soli pezzi con seriale — per le quantità
+           servirebbe ricostruire dai movimenti, e finché non serve è meglio
+           non mostrare un numero che non è quello. */
+        if (!dataStorica) {
+            for (const g of quantita) {
+                if (negozio && g.negozio !== negozio) continue;
+                if (azienda && g.azienda !== azienda) continue;
+                if (stato && stato !== "disponibile") continue;
+                const k = `${g.codice}|${g.descrizione}`;
+                const r = m.get(k) || { codice: g.codice, descrizione: g.descrizione, giacenza: 0, inArrivo: 0, valore: 0 };
+                r.giacenza += Number(g.quantita);
+                r.valore += Number(g.valore || 0);
+                m.set(k, r);
+            }
+        }
         const out = Array.from(m.values());
         const val = (r: Riga, c: number) => c === 0 ? r.codice : c === 1 ? r.descrizione : c === 2 ? r.giacenza : c === 3 ? r.inArrivo : r.valore;
         out.sort((a, b) => {
@@ -153,7 +200,7 @@ function Giacenze({ unita, negozi, aziende }: { unita: Unita[]; negozi: string[]
             return sort.desc ? -cmp : cmp;
         });
         return out;
-    }, [filtrate, sort, dataStorica]);
+    }, [filtrate, sort, dataStorica, quantita, negozio, azienda, stato]);
 
     const esporta = () => {
         const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, r.giacenza, r.inArrivo, Math.round(r.valore * 100) / 100]);
@@ -207,7 +254,7 @@ function Giacenze({ unita, negozi, aziende }: { unita: Unita[]; negozi: string[]
                                 <td className="px-4 py-2 text-center tabular-nums">{eur(r.valore)}</td>
                             </tr>
                         ))}
-                        {!righe.length && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Nessuna unità a magazzino con questi filtri.{!unita.length && " Il magazzino parte vuoto: il primo carico si fa da 🚚 Trasferimenti → 📥 Carico merce."}</td></tr>}
+                        {!righe.length && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Nessuna unità a magazzino con questi filtri.{!unita.length && !quantita.length && " Il magazzino parte vuoto: il primo carico si fa da 🚚 Trasferimenti → 📥 Carico merce."}</td></tr>}
                     </tbody>
                 </table>
             </div>
