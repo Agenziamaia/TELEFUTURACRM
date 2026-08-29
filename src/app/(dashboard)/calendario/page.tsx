@@ -624,7 +624,22 @@ export default function Calendario() {
                 // server tronca a 1000 righe IN SILENZIO, e con l'ordine per
                 // data crescente i primi a sparire sarebbero stati gli
                 // appuntamenti FUTURI — cioè gli unici che servono davvero.
-                caricaTutte((da, a) => supabase.from("appointments").select("*").order("date").order("id").range(da, a))
+                /* ⛔ I RICHIAMI NON ENTRANO NEL CALENDARIO (Luca 29/08).
+                   «Non ha nessun senso riportare i richiami nel calendario:
+                   hanno tutto un loro flusso di tempistiche, warning e malus,
+                   ed è già uno dei filtri della sezione Call Center.»
+                   E soprattutto CONFONDEVANO: su Paola Urso il calendario
+                   mostrava due righe per il 24/08 — una «RICHIAMO» e una
+                   «INBOUND» — e sembrava che il cliente avesse avuto due
+                   appuntamenti, mentre uno era solo il richiamo del call center.
+                   Si escludono QUI, al caricamento: così spariscono anche dalla
+                   ricerca e dai conteggi, non solo dalla griglia.
+                   ⚠️ Il calendario continua a CREARLI (il tasto «richiamo» del
+                   negozio): sono il ponte verso la coda del caller. Semplicemente
+                   non si mostrano più qui. */
+                caricaTutte((da, a) => supabase.from("appointments").select("*")
+                    .or("type.is.null,type.neq.richiamo")
+                    .order("date").order("id").range(da, a))
                     .then((r) => ({ data: r.data, error: r.error })),
                 caricaTutte((da, a) => supabase.from("calendar_tasks").select("*").order("date").order("id").range(da, a))
                     .then((r) => ({ data: r.data, error: r.error })),
@@ -822,16 +837,12 @@ export default function Calendario() {
                 if (error) requeueErr = error.message; else inCoda++;
             }
 
-            // aggiorna la vista locale del calendario con l'evento richiamo
-            if (eventId) {
-                const nuovo: Appointment = {
-                    id: eventId, date: richiamoNegozio.date, time: oraTecnica, fascia: fasciaR || undefined,
-                    type: "richiamo", agente: "", store: undefined,
-                    customerName: a.customerName, customerPhone: a.customerPhone, cfPiva: a.cfPiva,
-                    notes: String(payload.notes || ""), status: "scheduled", createdBy: intestatario,
-                };
-                setAppointments(prev => prev.some(x => x.id === eventId) ? prev.map(x => x.id === eventId ? { ...x, ...nuovo } : x) : [...prev, nuovo]);
-            }
+            /* Il richiamo appena creato NON si aggiunge più alla vista: dal
+               29/08 i richiami non stanno nel calendario (vedi il caricamento).
+               Se restasse questa riga, comparirebbe fino al primo ricarico —
+               cioè esattamente la confusione che si voleva togliere.
+               L'evento resta creato: è il ponte verso la coda del caller, e da
+               lì lo si lavora nella sezione Call Center. */
 
             const quando = `${new Date(richiamoNegozio.date + "T12:00:00").toLocaleDateString("it-IT")}${fasciaR ? ` · ${fasciaLabel(fasciaR)}` : ""}`;
             const noNumero = !String(a.customerPhone || "").trim() ? " ⚠️ Il cliente non ha un numero in scheda: il caller lo recupera dall'anagrafica." : "";
@@ -1014,7 +1025,8 @@ export default function Calendario() {
        filtri è mostrargli due bottoni che non trovano mai niente. */
     const ruolo = String(user?.role || "");
     const areaMia = areaOf(ruolo);
-    const vedeRichiami = isCallCenter || areaMia === "cc" || seesAllStores(ruolo);
+    // `vedeRichiami` non serve più: dal 29/08 i richiami non entrano nel
+    // calendario, quindi non c'è un chip da mostrare o nascondere.
     const vedeOutbound = isCallCenter || areaMia === "cc" || areaMia === "ob" || seesAllStores(ruolo);
     /* AUTO-generati: di agenti e call center (Luca 28/08). MA nel modale di
        creazione chi non è call center è bloccato proprio su quel tipo, e a DB
@@ -2349,11 +2361,9 @@ export default function Calendario() {
                             ["incoming", "↙ Inbound", "bg-blue-400"],
                             ["outgoing", "↗ Outbound", "bg-amber-400"],
                             ["self_generated", "Auto", "bg-purple-400"],
-                            ["richiamo", "☎ Richiami", "bg-pink-400"],
                             ["task", "Task", "bg-emerald-500"],
                             ["meeting", "Riunioni", "bg-sky-400"],
                         ] as [string, string, string][]).filter(([id]) => {
-                            if (id === "richiamo") return vedeRichiami;
                             if (id === "outgoing") return vedeOutbound;
                             if (id === "self_generated") return vedeAuto;
                             return true;
