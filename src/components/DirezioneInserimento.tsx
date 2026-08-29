@@ -70,6 +70,44 @@ function capienzaDi(
 /* LA CODA DEI CODICI (Luca 28/08): «se ne carichi più di una, una per
    codice». Sta staccata dall'indicazione grande, in tono minore, e dà solo
    i NOMI — mai target né avanzamenti: il widget dei ragazzi resta riservato. */
+/* LA CARTA COL NOME DEL NEGOZIO — «Caricala su …».
+   ⚠️ QUANDO NON C'È SPAZIO L'ETICHETTA SPARISCE (Luca 29/08). Aprendo i due
+   cassetti la carta si stringe, e «📍 CARICALA SU» rubava l'altezza al nome —
+   che è l'unica cosa che serve leggere da lontano. L'etichetta è una cortesia:
+   il nome no.
+   Si misura la carta vera con un ResizeObserver invece di indovinare da una
+   dimensione del widget: a stringerla non è la larghezza della Home, sono i
+   cassetti che l'utente apre — una cosa che solo la carta stessa sa. */
+function CartaCodice({ colore, nome, mio }: { colore: string; nome: string; mio?: boolean }) {
+    const box = useRef<HTMLDivElement>(null);
+    const [stretta, setStretta] = useState(false);
+    useEffect(() => {
+        const el = box.current;
+        if (!el) return;
+        // 96px = i 40 di padding + il nome (36) + l'etichetta (14) e un filo
+        // d'aria. Sotto, o si toglie l'etichetta o il nome esce dal bordo.
+        const misura = () => setStretta(el.clientHeight < 96);
+        misura();
+        const ro = new ResizeObserver(misura);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    return (
+        <div ref={box} className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
+            style={{
+                background: `linear-gradient(160deg, color-mix(in srgb, ${colore} 18%, transparent), color-mix(in srgb, ${colore} 5%, transparent))`,
+                borderColor: `color-mix(in srgb, ${colore} 40%, transparent)`,
+                boxShadow: `0 0 26px color-mix(in srgb, ${colore} 25%, transparent)`,
+            }}>
+            {!stretta && <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>}
+            <div className="text-3xl font-black text-white leading-tight drop-shadow flex items-center justify-center gap-2 flex-wrap">
+                {nome}
+                {mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
+            </div>
+        </div>
+    );
+}
+
 function CodaCodici({ prossimi }: { prossimi: string[] }) {
     if (!prossimi.length) return null;
     /* È UN'ECCEZIONE, e va vestita da eccezione (Luca 28/08): con la regola
@@ -1514,20 +1552,9 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                             altro codice era a zero. La coda sta STACCATA dalla
                             card, e dà solo i NOMI: niente target né avanzamenti. */}
                         {scelto ? (
-                            <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
-                                style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
-                                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
-                                <div className="text-3xl font-black text-white leading-tight drop-shadow">{scelto.nome}</div>
-                            </div>
+                            <CartaCodice colore={bMeta?.color || "#38bdf8"} nome={scelto.nome} />
                         ) : mobScelto ? (
-                            <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
-                                style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
-                                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
-                                <div className="text-3xl font-black text-white leading-tight drop-shadow flex items-center justify-center gap-2 flex-wrap">
-                                    {mobScelto.negozio}
-                                    {mobScelto.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
-                                </div>
-                            </div>
+                            <CartaCodice colore={bMeta?.color || "#38bdf8"} nome={mobScelto.negozio} mio={mobScelto.mio} />
                         ) : (
                             <div className="rounded-2xl px-4 py-5 border border-emerald-500/30 text-center flex-1 flex flex-col justify-center items-center min-h-0"
                                 style={{ background: "linear-gradient(160deg, rgba(16,185,129,0.14), rgba(16,185,129,0.04))" }}>
@@ -1557,14 +1584,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     </div>
                 )}
                 {!serveScelta && pista !== BIZMOB && !pistaDiGruppo && consigliato && (
-                    <div className="rounded-2xl px-4 py-5 border flex-1 flex flex-col justify-center items-center text-center min-h-0"
-                        style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 18%, transparent), color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 5%, transparent))`, borderColor: `color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 40%, transparent)`, boxShadow: `0 0 26px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 25%, transparent)` }}>
-                        <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">📍 Caricala su</div>
-                        <div className="text-3xl font-black text-white leading-tight drop-shadow flex items-center justify-center gap-2 flex-wrap">
-                            {consigliato.negozio}
-                            {consigliato.mio && <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-0.5">🏠 il tuo negozio</span>}
-                        </div>
-                    </div>
+                    <CartaCodice colore={bMeta?.color || "#38bdf8"} nome={consigliato.negozio} mio={consigliato.mio} />
                 )}
                 {/* Su TUTTE le piste a target per codice — mobile, fisso, CB.
                     Prima l'avevo ristretta al fisso perché sulla Customer Base
