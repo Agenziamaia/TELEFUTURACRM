@@ -307,6 +307,37 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
   // la guardia al checkout copriva solo le voci AUTO del flusso brand.
   const needImporto=!!(selProd&&(selProd.linked||selProd.type==="pct"||selProd.type==="cost"));
   const importoMissing=needImporto&&String(importo).trim()==="";
+  /* DRITTO IN CARRELLO (Luca 29/08): «non deve più chiedermi i prezzi qui,
+     deve aggiungermi il prodotto direttamente a carrello con il prezzo che ha
+     a sistema su quell'articolo». I prezzi si sistemano nel carrello, che è
+     il posto dove si guarda il conto.
+     Restano col loro pannello solo le voci che hanno bisogno di un dato che
+     nessuno può indovinare: l'IMEI di un usato, il modello di un terminale.
+     Senza quelli la riga non identifica niente. */
+  const serveAltro=(p)=>!!(p&&(p.needsImei||p.needsModel));
+  const aggiungiDiretto=(p)=>{
+    const pVal=p.price!==null&&p.price!==undefined?Number(p.price):null;
+    // la REGOLA di marginalità viaggia con la riga: nel carrello, cambiando il
+    // prezzo, il margine si rifà con la sua regola (fisso / percentuale /
+    // costo azienda) e non resta il numero calcolato adesso
+    const regola={type:p.type,fixedMargin:p.fixedMargin??null,pctMargin:p.pctMargin??null,companyCost:p.companyCost??null};
+    const mVal=pVal==null&&p.type!=="fixed"?null
+      :p.type==="fixed"?(p.fixedMargin||0)
+      :p.type==="pct"?((pVal||0)*(p.pctMargin||0)/100)
+      :p.type==="cost"?((pVal||0)-(p.companyCost||0)):0;
+    onAdd({product:p.name,productId:p.id,price:pVal,qty:1,importo:pVal,
+      margin:mVal,totalMargin:mVal,model:null,imei:null,
+      venditore,negozio,date:new Date().toISOString().slice(0,10),
+      /* Il prezzo è obbligatorio SOLO dove lo era già: quando il margine è
+         una percentuale o un costo azienda, cioè quando senza il prezzo non
+         si può calcolare niente. È la stessa regola del vecchio pannello
+         (`needImporto`), tenuta identica di proposito: le SIM hanno prezzo
+         nullo o zero perché non si vendono a un prezzo — il margine è la
+         provvigione dell'operatore — e marcarle obbligatorie avrebbe
+         costretto il venditore a inventarsi un numero per ognuna. */
+      priceRequired:!!(p.linked||p.type==="pct"||p.type==="cost"),
+      margRegola:regola});
+  };
   const handleAdd=()=>{
     if(!selProd)return;
     if(importoMissing)return;
@@ -365,20 +396,20 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
             {SIM_BRAND_ORDER.flatMap(bk=>CATALOGO[catIdx].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"var(--tf-64748b)",logo:"/logo-crm.png"};return (
-              <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+              <button key={p.id} onClick={()=>{if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
                 <img src={info.logo} alt="" style={{height:56,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>);})}
             {/* RVUI-01: in coda le voci con brand assente o fuori da SIM_BRAND_ORDER
                 (es. create dal pannello, o s4/dojo): ramo emoji, cosi' non spariscono */}
             {CATALOGO[catIdx].items.filter(p=>!SIM_BRAND_ORDER.includes(p.brand)).map(p=>(
-              <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+              <button key={p.id} onClick={()=>{if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
                 <span style={{fontSize:30}}>{p.icon||"📦"}</span>
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>))}
           </div>
         ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
-          {CATALOGO[catIdx].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+          {CATALOGO[catIdx].items.map(p=>(<button key={p.id} onClick={()=>{if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <span style={{fontSize:30}}>{p.icon}</span>
             <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
           </button>))}
@@ -613,7 +644,18 @@ const SKY_BRAND_FIBRA = ["TIM","Vodafone","Fastweb","WINDTRE","Tiscali","Sky","B
    se il costo d'acquisto lo conosciamo: senza costo resta ignoto, non zero. */
 const conPrezzo=(m,v)=>{
   const q=Number(m.qty)||1;
-  const marg=(v!=null&&m.costo!=null)?(Number(v)-Number(m.costo)):null;
+  /* Due modi di sapere il margine, e vanno tenuti tutti e due:
+     · un articolo di MAGAZZINO ha un costo d'acquisto → prezzo meno costo;
+     · una voce a MARGINALITÀ ha una REGOLA (8 € fissi, 24,59%, costo azienda)
+       → si applica quella. Senza, cambiando il prezzo in carrello il margine
+       restava quello calcolato al momento dell'aggiunta, cioè sbagliato. */
+  const r=m.margRegola;
+  const marg=(v!=null&&m.costo!=null)?(Number(v)-Number(m.costo))
+    :r?(r.type==="fixed"?(r.fixedMargin||0)
+       :v==null?null
+       :r.type==="pct"?(Number(v)*(r.pctMargin||0)/100)
+       :r.type==="cost"?(Number(v)-(r.companyCost||0)):null)
+    :null;
   // se è un usato con UN pezzo, il prezzo va anche nell'unità: è quello che
   // finisce su Gestione Usati come prezzo di vendita
   const units=(Array.isArray(m.units)&&m.units.length===1)?[{...m.units[0],prezzo:v}]:m.units;
