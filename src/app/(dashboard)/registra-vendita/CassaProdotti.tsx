@@ -71,10 +71,17 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        Il carrello è la base dello scontrino fiscale: se ci entra qualcosa che
        a magazzino non esiste, il conto non torna già in partenza. */
     const [manca, setManca] = useState<{ nome: string; dettaglio: string; titolo?: string; cosaFare?: string } | null>(null);
+    /* IL MAGAZZINO NON È ANCORA CARICATO QUI (Luca 29/08). Oggi esiste solo a
+       Donna Olimpia: negli altri negozi la ricerca trova gli articoli — il
+       catalogo è dell'azienda, non del negozio — e ogni clic risponderebbe
+       «non risulta mai entrato», che è vero ma sembra un difetto. Meglio
+       dirlo una volta sola, in cima, e mandare al banco chi deve vendere. */
+    const [caricate, setCaricate] = useState(false);
+    const senzaMagazzino = caricate && giac.size === 0;
     const ricerca = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { caricaCatalogo().then(setVoci); caricaGruppi().then(setGruppi); }, []);
-    useEffect(() => { if (negozio) caricaGiacenze(negozio).then(setGiac); }, [negozio]);
+    useEffect(() => { setCaricate(false); if (negozio) caricaGiacenze(negozio).then((g) => { setGiac(g); setCaricate(true); }); }, [negozio]);
     useEffect(() => { if (natura === "prodotto") setTimeout(() => ricerca.current?.focus(), 60); }, [natura]);
 
     /* IL SERIALE. Un IMEI ha 15 cifre, un ICCID 19: quando quello che si è
@@ -169,7 +176,11 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             const inCarrello = Number(giaInCarrello?.[v.codice || ""] || 0);
             setManca({
                 nome: v.nome,
-                dettaglio: n == null
+                titolo: senzaMagazzino ? "Il magazzino non è ancora caricato" : undefined,
+                cosaFare: senzaMagazzino ? "per ora usa i pulsanti qui sopra" : undefined,
+                dettaglio: senzaMagazzino
+                    ? `Il magazzino di ${negozio || "questo negozio"} non è ancora stato caricato nel CRM, quindi da qui non si può vendere niente. I pulsanti di selezione rapida qui sopra funzionano come sempre.`
+                    : n == null
                     ? `Questo articolo non ha nessuna giacenza nel magazzino di ${negozio || "questo negozio"}: non risulta mai entrato.`
                     : inCarrello > 0
                         ? `Ne hai già ${inCarrello} nel carrello e in magazzino non ce ne sono altri.`
@@ -328,6 +339,14 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                             </div>
                         );
                     })()}
+                </div>
+            )}
+
+            {senzaMagazzino && (
+                <div className="rvNota rvNota-att" style={{ marginBottom: 12 }}>
+                    <b>Il magazzino di {negozio || "questo negozio"} non è ancora caricato.</b> La ricerca qui sotto
+                    mostra il catalogo dell&apos;azienda, ma senza giacenze non si può vendere da lì:
+                    usa i pulsanti di selezione rapida, che funzionano come sempre.
                 </div>
             )}
 

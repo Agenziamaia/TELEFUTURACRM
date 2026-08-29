@@ -63,6 +63,9 @@ export type EsitoScarico = {
     senzaCodice?: string[];
     /** i pezzi con seriale portati a «venduto» (telefoni, modem) */
     pezziVenduti?: number;
+    /** questo negozio non ha ancora un magazzino caricato: non c'è niente da
+     *  scaricare e non c'è niente da segnalare */
+    senzaMagazzino?: boolean;
     errore?: string;
 };
 
@@ -72,7 +75,7 @@ export type EsitoScarico = {
  *  da negozio la console non esiste, e una giacenza andata sotto zero è
  *  esattamente la prova che qualcosa è sfuggito al controllo.) */
 export function avvisiScarico(e: EsitoScarico | null | undefined): string[] {
-    if (!e) return [];
+    if (!e || e.senzaMagazzino) return [];
     const a: string[] = [];
     if (e.errore) a.push("magazzino non aggiornato: " + e.errore);
     (e.sottoZero || []).forEach((s) => a.push(s.restano === 0
@@ -105,6 +108,25 @@ export async function scaricaVendita(
     if (!daFare.length || !negozio) return esito;
 
     try {
+        /* UN NEGOZIO SENZA MAGAZZINO NON HA CONTI DA FAR TORNARE (Luca 29/08,
+           domanda giusta: «gli altri negozi possono ancora metterli?»).
+           Oggi il magazzino è caricato SOLO a Donna Olimpia: negli altri 14
+           negozi non esiste una sola riga di giacenza. Senza questo controllo,
+           ogni SIM venduta a Magliana o ad Acilia — la voce arriva col codice
+           articolo, ora che scorciatoie e voci automatiche sono collegate —
+           finirebbe fra i «venduto ma NON scaricato» e farebbe comparire il
+           pannello d'allarme a ogni vendita. Un allarme che suona sempre non
+           è un allarme: è rumore, e insegna a ignorarlo.
+           Quando il magazzino di quel negozio verrà caricato, il controllo si
+           spegne da sé e lo scarico riprende — senza toccare niente. */
+        const { data: haMagazzino } = await supabase.from("mag_disponibilita")
+            .select("codice").eq("negozio", negozio).limit(1);
+        if (!haMagazzino?.length) {
+            esito.saltate = (righe || []).length;
+            esito.senzaCodice = undefined;
+            return { ...esito, scaricate: 0, senzaMagazzino: true };
+        }
+
         const falliti: string[] = [];
         const adesso = new Date().toISOString();
 
