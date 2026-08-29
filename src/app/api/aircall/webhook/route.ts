@@ -318,11 +318,42 @@ async function bridgeVersoCaller(p: {
         dettagli: null as ReturnType<typeof dettagliVoce> | null,
     };
 
-    // progressione automatica dei "non risponde" (temperatura conservata)
+    /* ── PROGRESSIONE AUTOMATICA DEI «NON RISPONDE» ──────────────────────
+       ⚠️ IL RIPIEGO «Cold NR1» ERA UN DISASTRO SILENZIOSO (Luca 29/08).
+       Prima: qualunque stato non fosse «Cold/Hot NR1..3» veniva RIPORTATO a
+       «Cold NR1» da una chiamata senza risposta. Misurato sui dati veri: 17
+       pratiche rovinate — 6 richiami programmati cancellati, 5 «Hot Sparito»
+       rimessi in coda, 3 APPUNTAMENTI FISSATI persi, e un «Non ricontattare»
+       rimesso nella lista da chiamare, cioè una persona che aveva detto di no.
+
+       La regola giusta, nelle parole di Luca: quell'esito «si autocompila solo
+       come PRIMO esito quando il cliente non è in lista».
+         · stato vuoto o «Nuovo»  → Cold NR1   (è il primo esito, ci sta)
+         · dentro la scala NR     → avanza di uno, temperatura conservata
+         · TUTTO IL RESTO         → NON SI TOCCA
+       Un appuntamento, un richiamo, un definitivo non si sovrascrivono con una
+       chiamata a vuoto: quella è un'informazione in meno, non in più.
+
+       I comportamenti si LEGGONO dal database (`caller_opzioni.comportamento`),
+       che è dove l'amministrazione li governa: la schermata del caller li legge
+       già da lì, questo webhook se li era scritti a mano — ed è per questo che
+       «Hot Sparito», che è un DEFINITIVO aggiunto dopo, gli risultava
+       sconosciuto e finiva nel ripiego. */
+    const { data: opzStato } = await supabase.from("caller_opzioni")
+        .select("voce, comportamento").eq("categoria", "stato");
+    const comportamentoDi = new Map((opzStato || []).map((o) => [String(o.voce), String(o.comportamento || "")]));
+
     const prossimoNR = (statoAttuale: string): string => {
-        const m = /^(Cold|Hot) NR([123])$/.exec(statoAttuale || "");
+        const s = String(statoAttuale || "").trim();
+        // primo esito: il cliente non era ancora stato lavorato
+        if (!s || s === "Nuovo") return "Cold NR1";
+        // dentro la scala: avanza, conservando la temperatura
+        const m = /^(Cold|Hot) NR([123])$/.exec(s);
         if (m) return `${m[1]} NR${Math.min(3, Number(m[2]) + 1)}`;
-        return "Cold NR1";
+        // uno stato «non risposto» aggiunto a mano: non ne conosciamo la scala,
+        // quindi si lascia dov'è invece di indovinare
+        if (comportamentoDi.get(s) === "non_risposto") return s;
+        return s;                       // appuntamenti, richiami, definitivi: intoccabili
     };
 
     if (esistente) {
