@@ -373,7 +373,7 @@ const NOMI_CORTI: { re: RegExp; nome: string }[] = [
     { re: /rivincol/i, nome: "Rivincolo" },
     { re: /migrazione tecnologica|wlr verso fttc/i, nome: "Migrazione tecnologica" },
     { re: /migrazione.*fibra/i, nome: "Migrazione a fibra" },
-    { re: /offerte speciali di caring/i, nome: "Offerta Caring" },
+    { re: /offerte speciali di caring|offerta caring/i, nome: "Caring" },
     { re: /add on:\s*/i, nome: "" },        // «Add on: Reload Exchange» → «Reload Exchange»
 ];
 function nomeCorto(nome: string): string {
@@ -393,6 +393,7 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         .filter((r) => String(r.pista || "") === pistaRighe && r.attivo !== false && Number(r.punti || 0) > 0);
     const viste = new Map<string, number>();
     const out: VocePunti[] = [];
+    let migrazioneGiaVista = false;    // sulla CB ne passa una sola (vedi sotto)
     for (const r of righe) {
         const base = String(r.componente || "") === "base";
         // nome corto: via il «+ » iniziale, il «×canone» e le parentesi lunghe
@@ -436,11 +437,26 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
            solo la seconda forma dice cosa è.
            ⚠️ Spariscono dalla SCELTA, non dal tabellare: i punti delle righe
            restano quelli che sono. */
+        let etichettaFinale = etichetta;
         if (pistaRighe === "partnership") {
             if (/cambio piano/i.test(etichetta) && !/\b(un)?tied\b/i.test(etichetta)) continue;
             if (/pi[uù] sicuri/i.test(etichetta)) continue;
+            /* Via il RIVINCOLO, e UNA SOLA MIGRAZIONE che si chiama solo
+               «Migrazione» (Luca 29/08: «così recuperiamo spazio e una riga»).
+               A fibra e tecnologica valgono uguale — 2 punti tutte e due — e
+               distinguerle costava una riga intera senza cambiare il conto.
+               ⚠️ Se un giorno i due valori si separassero, questa fusione
+               nasconderebbe la differenza: si tiene la PRIMA e le altre
+               cadono, quindi il numero mostrato resterebbe uno dei due veri —
+               ma a quel punto la riga va rifatta. */
+            if (/rivincol/i.test(etichetta)) continue;
+            if (/migrazione/i.test(etichetta)) {
+                if (migrazioneGiaVista) continue;
+                migrazioneGiaVista = true;
+                etichettaFinale = "Migrazione";
+            }
         }
-        const chiave = `${r.punti}|${chiaveVoce(etichetta)}`;
+        const chiave = `${r.punti}|${chiaveVoce(etichettaFinale)}`;
         const gia = viste.get(chiave);
         if (gia !== undefined) {
             if (nome.length < out[gia].nome.length) out[gia] = { ...out[gia], nome };  // vince il nome più corto
@@ -453,7 +469,7 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         const gruppo = pistaRighe !== "partnership" ? undefined
             : /telefono|device|rate|finanziam/i.test(`${r.nome} ${r.prodotto || ""}`) ? "📱 Telefono"
                 : "🔄 Cambio piano e add-on";
-        out.push({ id: String(r.id), nome: etichetta, punti: Number(r.punti || 0), base, gruppo });
+        out.push({ id: String(r.id), nome: etichettaFinale, punti: Number(r.punti || 0), base, gruppo });
     }
     // dalla più pesante: quello che vale di più si vede per primo
     return out.sort((a, b) => (b.punti - a.punti) || a.nome.localeCompare(b.nome, "it"));
