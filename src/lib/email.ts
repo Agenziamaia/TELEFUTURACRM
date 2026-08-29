@@ -400,6 +400,11 @@ export async function appendSuSent(a: Account, raw: Buffer): Promise<boolean> {
 
 export type MailOtp = { uid: number; cartella: string; fromAddr: string; subject: string; text: string; html: string | null; date: Date | null };
 
+/* Dopo quanto un codice già servito va nel cestino (Luca 29/08). Cinque minuti:
+   più della finestra in cui vale (3), abbastanza perché nessuno se lo veda
+   sparire davanti mentre lo sta copiando. */
+const MINUTI_CESTINO = 5;
+
 export async function cercaESpostaMailOtp(
     a: Account,
     opts: { mittenteOk: (from: string) => boolean; cartellaOtp: string; daMinuti?: number; max?: number },
@@ -409,7 +414,8 @@ export async function cercaESpostaMailOtp(
        legge «non è arrivato niente» mentre in casella c'era eccome. È il caso
        tipico di una casella che riceve la posta INOLTRATA da un'altra, dove
        l'inoltro può riscrivere il mittente. */
-    scartatiPerMittente: string[]; cartelleViste: string[]; vistoNellaFinestra: number }> {
+    scartatiPerMittente: string[]; cartelleViste: string[]; vistoNellaFinestra: number;
+    cestinate: number; motivoMancatoCestino: string | null }> {
     const daMinuti = opts.daMinuti ?? 20;
     const max = opts.max ?? 15;
     const since = new Date(Date.now() - daMinuti * 60_000);
@@ -421,12 +427,14 @@ export async function cercaESpostaMailOtp(
     const scartatiPerMittente = new Set<string>();
     const cartelleViste: string[] = [];
     let vistoNellaFinestra = 0;
+    let cestinate = 0;
+    let motivoMancatoCestino: string | null = null;
     try {
         await client.connect();
     } catch (e: unknown) {
         const err = e as { authenticationFailed?: boolean; responseText?: string; message?: string };
         return {
-            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null, scartatiPerMittente: [], cartelleViste: [], vistoNellaFinestra: 0,
+            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null, scartatiPerMittente: [], cartelleViste: [], vistoNellaFinestra: 0, cestinate: 0, motivoMancatoCestino: null,
             errore: err?.authenticationFailed
                 ? "la casella non accetta più la password salvata (per Gmail serve una «password per le app»; Microsoft ha chiuso l'accesso con password su hotmail/outlook personali)"
                 : (err?.responseText || err?.message || "connessione alla casella non riuscita"),
@@ -496,14 +504,16 @@ export async function cercaESpostaMailOtp(
                     if (!quando || quando < limite) {
                         // vecchia ma del mittente giusto: la si porta comunque
                         // via dalla posta, così non resta lì in chiaro
-                        if (cartella === "INBOX") daSpostare.push(m.uid);
+                        if (cartella !== opts.cartellaOtp) daSpostare.push(m.uid);
                         continue;
                     }
                     trovate.push({ uid: m.uid, cartella, fromAddr: m.fromAddr, subject: m.subject, text: m.text, html: m.html, date: m.date });
-                    if (cartella === "INBOX") daSpostare.push(m.uid);
+                    if (cartella !== opts.cartellaOtp) daSpostare.push(m.uid);
                 }
-                // via dalla posta del negozio: il codice si prende dal CRM
-                if (cartella === "INBOX" && daSpostare.length) {
+                // via dalla posta del negozio: il codice si prende dal CRM.
+                // Vale anche per la posta indesiderata: e' comunque una cartella
+                // che una persona apre, e il codice non deve restarci.
+                if (cartella !== opts.cartellaOtp && daSpostare.length) {
                     try {
                         await client.messageMove(daSpostare.join(","), opts.cartellaOtp, { uid: true });
                         spostate = daSpostare.length;
@@ -520,10 +530,64 @@ export async function cercaESpostaMailOtp(
                 }
             } finally { lock?.release(); }
         }
+
+        /* ── IL CESTINO DEI CODICI GIÀ SERVITI (Luca 29/08) ─────────────────
+           «Dopo 5 minuti i codici utilizzati dobbiamo cestinarli, così lasciamo
+           pulite le email in posta in arrivo.»
+           Un codice usa e getta dopo cinque minuti non vale più niente: tenerlo
+           è solo un numero in chiaro che resta lì.
+
+           TRE PROTEZIONI, perché qui si sta cancellando posta di qualcuno:
+           1. si tocca SOLO la cartella dei codici — mai la posta in arrivo, mai
+              altre cartelle: in quella cartella ci finisce solo ciò che ha già
+              passato il controllo del mittente;
+           2. si ricontrolla il mittente riga per riga, anche lì dentro: se per
+              qualsiasi motivo ci fosse finita altra posta, non viene toccata;
+           3. non si CANCELLA: si sposta nel CESTINO, che è recuperabile. Una
+              mail cancellata davvero non torna, e non vale la pena rischiarlo
+              per fare spazio. */
+        try {
+            const lockOtp = await client.getMailboxLock(opts.cartellaOtp).catch(() => null);
+            if (lockOtp) {
+                try {
+                    // il nome del cestino cambia con la lingua: si chiede al server
+                    let cestino: string | null = null;
+                    for (const c of await client.list()) {
+                        if (c.specialUse === "\\Trash" || /^(trash|deleted items|cestino|posta eliminata)$/i.test(String(c.name || ""))) {
+                            cestino = String(c.path); break;
+                        }
+                    }
+                    const scaduto = Date.now() - MINUTI_CESTINO * 60_000;
+                    // tutte quelle nella cartella: e' piccola per definizione, ci
+                    // finiscono solo i codici gia' passati dal controllo mittente
+                    const vecchi = await client.search({ all: true }, { uid: true });
+                    const daCestinare: number[] = [];
+                    for await (const msg of client.fetch((Array.isArray(vecchi) ? vecchi : []).slice(-200),
+                        { uid: true, source: true, internalDate: true }, { uid: true })) {
+                        const arrivo = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
+                        if (!arrivo || arrivo > scaduto) continue;           // ancora fresco: si lascia
+                        const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
+                        if (!m || !opts.mittenteOk(m.fromAddr)) continue;    // non è roba nostra: non si tocca
+                        daCestinare.push(m.uid);
+                    }
+                    if (daCestinare.length) {
+                        if (cestino) await client.messageMove(daCestinare.join(","), cestino, { uid: true });
+                        else await client.messageFlagsAdd(daCestinare.join(","), ["\\Deleted"], { uid: true });
+                        cestinate = daCestinare.length;
+                    }
+                } catch (e) {
+                    // non deve mai far fallire la consegna del codice: al massimo
+                    // le vecchie restano un giro in più. Ma deve RISULTARE: se
+                    // smette di funzionare, i codici si accumulano in silenzio.
+                    motivoMancatoCestino = String((e as Error)?.message || e).slice(0, 140);
+                    console.warn(`[otp] cestino non riuscito su ${a.email_address}:`, motivoMancatoCestino);
+                } finally { lockOtp.release(); }
+            }
+        } catch { /* la cartella non c'è ancora: niente da cestinare */ }
     } finally { try { await client.logout(); } catch { /* già chiusa */ } }
     // la più recente per prima: è quella che l'utente sta aspettando
     trovate.sort((x, y) => (y.date?.getTime() || 0) - (x.date?.getTime() || 0));
-    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null, scartatiPerMittente: [...scartatiPerMittente], cartelleViste, vistoNellaFinestra };
+    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null, scartatiPerMittente: [...scartatiPerMittente], cartelleViste, vistoNellaFinestra, cestinate, motivoMancatoCestino };
 }
 
 export async function inviaEmail(a: Account, opts: { to: string; subject: string; text?: string; html?: string; inReplyTo?: string | null; attachments?: { filename: string; content: Buffer; contentType?: string }[] }): Promise<{ messageId: string; raw: Buffer }> {
