@@ -7,12 +7,16 @@ import { tettoPer, costoChiamata, MODELLO_DI_SISTEMA } from "@/lib/ai/modelli";
 import { getScope } from "@/lib/ai/scope";
 import { canUseAI } from "@/lib/roles";
 import { TOOL_DEFS, WRITE_TOOL_DEFS, WRITE_TOOL_NAMES, runTool } from "@/lib/ai/tools";
-import { REGOLE_DI_CASA } from "@/lib/ai/interroga";
+import { REGOLE_DI_CASA, MAPPA_ESSENZIALE } from "@/lib/ai/interroga";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const MAX_STEPS = 6;
+/* Sei erano pochi da quando l'assistente può interrogare il database: una
+   domanda vera vuole un paio di tentativi (una query sbagliata, la si corregge,
+   poi si risponde). Dieci danno respiro senza far girare a vuoto — e con la
+   mappa essenziale nel prompt i giri sprecati sono molti meno. */
+const MAX_STEPS = 10;
 
 type Personale = { personalita?: string | null; memorie?: string | null; nome_assistente?: string | null; progetto?: { nome: string; istruzioni?: string | null } | null };
 
@@ -41,14 +45,17 @@ function systemPrompt(scope: any, p?: Personale) {
     /* GLI STRUMENTI PER GUARDARE DAVVERO (Luca 29/08). Gli altri tool
        rispondono a domande previste; queste tre servono a tutte le altre. */
     "- Se la domanda riguarda dati che gli altri tool non coprono — call center, appuntamenti,",
-    "  malus, magazzino, gare, o qualunque cosa tu non trovi altrove — NON dire che non puoi:",
-    "  usa `elenco_tabelle`, poi `descrivi_tabella` sulla tabella che ti serve, poi `interroga`.",
-    "- Prima di scrivere un'interrogazione GUARDA SEMPRE le colonne con `descrivi_tabella`:",
-    "  inventare un nome di colonna fa fallire la query e fa perdere un giro.",
+    "  malus, magazzino, gare — NON dire che non puoi: usa `interroga`.",
+    "- VAI DIRETTA. Per le tabelle qui sotto hai già la mappa: scrivi subito l'interrogazione,",
+    "  senza passare da `elenco_tabelle` o `descrivi_tabella`. Quelli servono SOLO per le tabelle",
+    "  che non trovi nella mappa.",
+    "- Meglio UNA interrogazione che risponde che cinque che esplorano: hai pochi passaggi, e se",
+    "  li finisci l'utente resta senza risposta.",
     "- La risposta di `interroga` ti dice se sono state nascoste righe o colonne perché fuori",
     "  dai permessi di chi ha chiesto: se è successo, DILLO invece di far finta di niente.",
     "- Quando dai un numero che viene da `interroga`, di' in una riga come l'hai contato.",
     "",
+    MAPPA_ESSENZIALE,
     REGOLE_DI_CASA,
     "",
     "NOTE SUI DATI (importanti per non dare risposte fuorvianti):",

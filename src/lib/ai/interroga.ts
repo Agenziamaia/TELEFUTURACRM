@@ -86,6 +86,53 @@ COME FUNZIONA IL CALL CENTER (regole che nei dati non si vedono):
 QUANDO SPIEGHI PERCHÉ QUALCOSA NON È SUCCESSO, ricostruisci la sequenza dallo
 «storico» della pratica con gli orari, e di' quale condizione è saltata.`;
 
+/* LE POCHE TABELLE CHE SERVONO SEMPRE, GIÀ PRONTE.
+   La prima prova è finita male proprio per colpa di questo: le avevo dato gli
+   strumenti per esplorare ma non le avevo detto DOVE andare, e ha bruciato
+   tutti i passaggi cercando — diciassette chiamate, poi si è arresa senza
+   rispondere. Cercare è giusto per le tabelle rare; per le quattro che si
+   usano ogni volta è tempo buttato. Queste stanno nel prompt: costano poco
+   più di mille caratteri e tolgono tre o quattro giri a ogni domanda. */
+export const MAPPA_ESSENZIALE = `
+LE TABELLE CHE SERVONO PIÙ SPESSO (per le altre usa elenco_tabelle):
+
+calls — le PRATICHE del call center, non le telefonate
+  id · nome cognome ragione_sociale · cf piva · numero cellulare
+  stato · caller (chi la lavora) · brand · provenienza · lista_origine
+  appointment_id → appointments.id     contract_id → contracts.id
+  data_appuntamento · data_richiamo · negozio_appuntamento · da_esitare
+  storico (JSONB): elenco di {data, caller, campo, da, a, nota}. È QUI che si
+    legge cosa è successo e quando. campo='Stato' sono i cambi di stato;
+    caller='automatico (non risposto)' è il sistema, non una persona.
+
+appointments — gli APPUNTAMENTI in negozio
+  id · date · time · type ('incoming' = vero appuntamento, 'richiamo' = NO)
+  store · status · customer_name · cf_piva · created_at (quando è stato PRESO)
+
+contracts — le VENDITE
+  id (CTR- = vendita di brand · EXT- = marginalità, NON è una vendita)
+  data · negozio · brand · categoria · prodotto · stato · venditore
+  client_id (contiene il codice fiscale: 'CL-<CF>-<numero>')
+  appointment_id → appointments.id (se il match l'ha collegata)
+
+caller_malus — le PENALI dei caller
+  call_id → calls.id · caller · importo · giorni · dal · al · stato
+  eliminato (true = annullata, non conta più)
+
+app_users — le persone: id, full_name, role, primary_store, active
+
+⚠️ GLI ORARI SONO IN UTC. In Italia d'estate sono DUE ORE avanti (d'inverno una):
+   un «09:49Z» nel database sono le 11:49 per chi lavora. Quando racconti un
+   orario a una persona, convertilo — altrimenti sembra che le cose siano
+   successe in un ordine diverso da quello vero. Nelle query puoi usare
+   «at time zone 'Europe/Rome'».
+
+⚠️ PER CAPIRE PERCHÉ UNA COOPERATION NON È SALITA servono tre orari, e vanno
+   confrontati fra loro: quando è stata REGISTRATA LA VENDITA
+   (contracts.created_at), quando è stato PRESO L'APPUNTAMENTO
+   (appointments.created_at), e i passaggi di stato dentro calls.storico.
+   Se l'appuntamento è stato preso DOPO la vendita, la risposta è quella.`;
+
 /** Le colonne che contengono un punto vendita, per il filtro delle righe. */
 const COLONNE_NEGOZIO = ["negozio", "store", "negozio_appuntamento", "negozio_provenienza",
     "negozio_pertinenza", "store_acquisto", "punto_vendita"];
