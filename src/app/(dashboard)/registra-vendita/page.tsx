@@ -28,6 +28,7 @@ import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 import { CassaProdotti } from "./CassaProdotti";
 import { scaricaVendita, avvisiScarico } from "@/lib/magazzinoScarico";
+import { caricaGiacenze, iconaArticolo } from "@/lib/cassaCatalogo";
 // il selettore del CRM, quello che si cerca scrivendo: le tendine di sistema
 // aprono il menu del sistema operativo, che non si può vestire (Luca 28/08)
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -272,6 +273,49 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
   const [,_margTick]=useState(0);
   useEffect(()=>{let vivo=true;caricaMargCatalogo().then(()=>{if(vivo)_margTick(x=>x+1);});return()=>{vivo=false};},[]);
   const [selProd,setSelProd]=useState(null);
+  /* LA DISPONIBILITÀ ANCHE QUI (Luca 29/08): «dentro la sub sezione Prodotti
+     OGNI COSA deve avere una disponibilità in corrispondenza in magazzino,
+     altrimenti non può essere aggiunto al carrello». Finora la regola valeva
+     solo per la ricerca del magazzino: i pulsanti rapidi entravano comunque,
+     e sono la strada più comoda — cioè quella che si usa.
+     Vale SOLO nella scheda Prodotti e SOLO dove il magazzino è caricato: gli
+     altri negozi devono poter selezionare come sempre finché Luca non dice di
+     farli partire. I SERVIZI non hanno magazzino per definizione e restano
+     liberi — è l'altra categoria della marginalità. */
+  const [giacMarg,setGiacMarg]=useState(new Map());
+  const [magCaricato,setMagCaricato]=useState(false);
+  const [bloccato,setBloccato]=useState(null);
+  useEffect(()=>{
+    if(filtro!=="prodotti"||!negozio){setMagCaricato(false);return;}
+    let vivo=true;
+    caricaGiacenze(negozio).then(g=>{if(vivo){setGiacMarg(g);setMagCaricato(true);}});
+    return()=>{vivo=false};
+  },[negozio,filtro]);
+  /** Quanti pezzi ha in negozio la voce, se è legata a un articolo. `null` =
+   *  non è legata a niente, quindi di suo non esiste a magazzino. */
+  const pezziDi=(p)=>p&&p.codiceMagazzino?Number(giacMarg.get(p.codiceMagazzino)?.quantita??0):null;
+  /** Si può mettere in carrello? La risposta è no solo nella scheda Prodotti,
+   *  in un negozio che il magazzino ce l'ha, per una voce che non è coperta.
+   *  «Vendita Usato» è coperta da un'altra parte: il selettore mostra solo i
+   *  telefoni davvero in vendita, quindi la disponibilità l'ha già. */
+  const senzaCopertura=(p)=>{
+    if(filtro!=="prodotti")return false;
+    if(!magCaricato||giacMarg.size===0)return false;   // negozio senza magazzino: libero
+    if(String(p&&p.id||"")==="vendita_usato"||/vendita\s*usato/i.test(String(p&&p.name||"")))return false;
+    return !((pezziDi(p)??0)>0);
+  };
+  /* SIM ED ESIM IN FILA CON GLI ALTRI (Luca 29/08): «queste due mettimele
+     dopo Telefoni Senior come altri due pulsanti rapidi». Erano due schede
+     sopra la griglia — un livello in più per arrivare alla stessa cosa. Ora
+     sono due pulsanti come gli altri: si premono e si aprono sotto, con i
+     loghi dei brand che hanno già. */
+  const espandibile=(c)=>/^(sim|esim)$/i.test(nomeCat(c));
+  const [catApertaId,setCatApertaId]=useState(null);
+  const apri=(p)=>{
+    if(senzaCopertura(p)){setBloccato(p);return;}
+    if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}
+    setSelProd(p);if(p.price!==null)setPrice(String(p.price));
+  };
   const [price,setPrice]=useState("");
   const [qty,setQty]=useState("1");
   const [importo,setImporto]=useState("");
@@ -409,18 +453,43 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
   const unitMissing=!!(selProd&&selProd.needsImei)&&!usatoUnits.some(u=>u.usatoId);
   // MOD-44: gate finanziamento (scelta obbligatoria; Si' → rate)
   const finMissing=!!(selProd&&selProd.needsImei)&&usatoUnits.some(u=>u.usatoId&&(!u.finanziato||(u.finanziato==="si"&&!(parseInt(u.rate)>0))));
+  /* PERCHÉ QUESTO PULSANTE NON ENTRA IN CARRELLO. Non basta disabilitarlo:
+     chi sta al banco deve sapere se è finito o se non è mai stato collegato,
+     perché la cosa da fare è diversa. In un portal come tutti gli altri
+     modali: le sezioni hanno un backdrop-filter, che ancora i `position:
+     fixed` discendenti al riquadro invece che alla finestra. */
+  const pannelloBloccato = bloccato && typeof document!=="undefined" && createPortal(
+    <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)setBloccato(null);}}>
+      <div className="rvFatta rvFatta-att">
+        <div className="rvFatta-o rvFatta-att-o">📭</div>
+        <h3>{bloccato.codiceMagazzino?"Non è in magazzino":"Non è collegato al magazzino"}</h3>
+        <p><b style={{color:"var(--tf-e2e8f0)"}}>{bloccato.name}</b><br/>
+          {bloccato.codiceMagazzino
+            ? `Nel magazzino di ${negozio||"questo negozio"} non ci sono pezzi di questo articolo: da qui esce uno scontrino fiscale, e quello che non c'è non si vende.`
+            : `Questo pulsante non è legato a nessun articolo di magazzino, quindi non sa quanti pezzi ci siano — e senza disponibilità non può entrare nel carrello.`}</p>
+        <div className="rvFatta-d" style={{textAlign:"left"}}>
+          <div><span>Cosa fare</span><span style={{fontWeight:600,textAlign:"right"}}>
+            {bloccato.codiceMagazzino?"caricare i pezzi a magazzino":"cercarlo nella barra qui sotto, o collegarlo in Fiscalità → Articoli"}</span></div>
+        </div>
+        <button onClick={()=>setBloccato(null)} className="rvAzione" style={{width:"100%"}}>Ho capito</button>
+      </div>
+    </div>, document.body);
+
   return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+    {pannelloBloccato}
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
     <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
       {!filtro&&<div style={{padding:"16px 20px",borderBottom:"2px solid var(--tf-w30)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div><div style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>📦 Registra Prodotto</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>{venditore||"—"} • {negozio||"—"} • {new Date().toLocaleDateString("it-IT")}</div></div>
         {!inline&&<button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>}
       </div>}
-      <div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid var(--tf-w30)"}}>
+      {/* nella scheda PRODOTTI le categorie non sono più linguette: SIM ed ESIM
+          stanno in fila con gli altri pulsanti rapidi (Luca 29/08) */}
+      {!(filtro==="prodotti")&&<div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid var(--tf-w30)"}}>
         {!filtro&&<input value={qMarg} onChange={e=>{setQMarg(e.target.value);setSelProd(null);}} placeholder="🔍 Cerca in tutto il catalogo…"
           style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid var(--tf-w120)",background:"var(--tf-w50)",color:"var(--tf-f8fafc)",fontSize:12,outline:"none"}}/>}
         {CATALOGO.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:selCat===ci?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:selCat===ci?"var(--tf-6f42c1)":"var(--tf-8892b0)"}}>{cat.cat}</button>))}
-      </div>
+      </div>}
       <div style={{flex:1,overflow:"auto",padding:16}}>
         {!selProd?(qMarg.trim()?(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
@@ -435,26 +504,71 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
               </button>))}
             {CATALOGO.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"var(--tf-64748b)",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
           </div>
+        ):filtro==="prodotti"?(
+          /* LA SCHEDA PRODOTTI, UNA FILA SOLA (Luca 29/08). Prima erano due
+             livelli per la stessa cosa: le linguette SIM/ESIM sopra e le
+             tessere sotto. Ora tutto è un pulsante rapido — le voci normali
+             aggiungono, SIM ed ESIM si aprono sotto coi loghi dei brand che
+             hanno già. E ogni pulsante dice quanti pezzi ci sono, che è la
+             cosa che serve sapere PRIMA di premerlo. */
+          <div>
+            <div className="rvRapidoG">
+              {CATALOGO.filter(c=>!espandibile(c)).flatMap(c=>c.items).map(p=>(
+                <button key={p.id} onClick={()=>apri(p)} className={cn("rvRapido",senzaCopertura(p)&&"rvRapido-off")}>
+                  <em>{p.icon||iconaArticolo(p.name)}</em>
+                  <b>{p.name}</b>
+                  {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{(pezziDi(p)||0)>0?`${pezziDi(p)} in negozio`:"non in negozio"}</i>}
+                </button>))}
+              {CATALOGO.filter(espandibile).map(c=>(
+                <button key={c.cat} onClick={()=>{setCatApertaId(catApertaId===c.cat?null:c.cat);setSelProd(null);}}
+                  className={cn("rvRapido",catApertaId===c.cat&&"rvRapido-on")}>
+                  <em>{/^esim/i.test(nomeCat(c))?"📲":"📶"}</em>
+                  <b>{nomeCat(c)}</b>
+                  <small>{c.items.length} opzioni</small>
+                </button>))}
+            </div>
+            {catApertaId&&(()=>{
+              const c=CATALOGO.find(x=>x.cat===catApertaId);
+              if(!c)return null;
+              const ordinati=[...SIM_BRAND_ORDER.flatMap(bk=>c.items.filter(x=>x.brand===bk)),
+                              ...c.items.filter(x=>!SIM_BRAND_ORDER.includes(x.brand))];
+              return (<div className="rvSub" style={{marginTop:10}}>
+                <div className="rvRapidoG">
+                  {ordinati.map(p=>{
+                    const info=SIM_BRANDS[p.brand];
+                    return (<button key={p.id} onClick={()=>apri(p)}
+                      className={cn("rvRapido",senzaCopertura(p)&&"rvRapido-off")}
+                      style={info?{["--rv-acc"]:info.color}:undefined}>
+                      {info?<img src={info.logo} alt=""/>:<em>{p.icon||iconaArticolo(p.name)}</em>}
+                      <b>{p.name}</b>
+                      {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{(pezziDi(p)||0)>0?`${pezziDi(p)} in negozio`:"non in negozio"}</i>}
+                    </button>);})}
+                </div>
+              </div>);
+            })()}
+          </div>
         ):CATALOGO[catIdx].grouped?(
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
             {SIM_BRAND_ORDER.flatMap(bk=>CATALOGO[catIdx].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"var(--tf-64748b)",logo:"/logo-crm.png"};return (
-              <button key={p.id} onClick={()=>{if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+              <button key={p.id} onClick={()=>apri(p)} style={{padding:"20px 12px",borderRadius:14,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
                 <img src={info.logo} alt="" style={{height:56,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>);})}
             {/* RVUI-01: in coda le voci con brand assente o fuori da SIM_BRAND_ORDER
                 (es. create dal pannello, o s4/dojo): ramo emoji, cosi' non spariscono */}
             {CATALOGO[catIdx].items.filter(p=>!SIM_BRAND_ORDER.includes(p.brand)).map(p=>(
-              <button key={p.id} onClick={()=>{if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+              <button key={p.id} onClick={()=>apri(p)} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6,opacity:senzaCopertura(p)?.45:1}}>
                 <span style={{fontSize:30}}>{p.icon||"📦"}</span>
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
+                {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{pezziDi(p)}</i>}
               </button>))}
           </div>
         ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
-          {CATALOGO[catIdx].items.map(p=>(<button key={p.id} onClick={()=>{if(filtro&&!serveAltro(p)){aggiungiDiretto(p);return;}setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+          {CATALOGO[catIdx].items.map(p=>(<button key={p.id} onClick={()=>apri(p)} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4,opacity:senzaCopertura(p)?.45:1}}>
             <span style={{fontSize:30}}>{p.icon}</span>
             <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
+            {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{pezziDi(p)}</i>}
           </button>))}
         </div>)):(<div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>

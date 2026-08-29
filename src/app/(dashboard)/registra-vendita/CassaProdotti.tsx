@@ -29,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import {
-    caricaCatalogo, caricaGiacenze, caricaGruppi, cerca, cercaSeriale, sembraSeriale, puoEssereSeriale, normalizzaSeriale,
+    caricaCatalogo, caricaGiacenze, caricaGruppi, cerca, cercaSeriale, sembraSeriale, puoEssereSeriale, normalizzaSeriale, iconaArticolo,
     marginePct, perchéSenzaMargine,
     type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale, type GruppoCassa,
 } from "@/lib/cassaCatalogo";
@@ -318,19 +318,28 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                         if (!g) return null;
                         return (
                             <div className="rvSub" style={{ marginTop: 8 }}>
-                                <div className="rvPillRow" style={{ gap: 6 }}>
+                                <div className="rvRapidoG">
                                     {g.voci.map((vc) => {
                                         const art = vc.codice ? (voci || []).find((x) => x.codice === vc.codice) : null;
                                         const n = art ? quanti(art) : null;
                                         const ce = (n ?? 0) > 0;
+                                        /* ANCHE QUESTE HANNO LA LORO ICONA (Luca 29/08):
+                                           «le SIM le hanno già, per le altre creale».
+                                           Un pulsante di solo testo si legge, uno con
+                                           l'icona si RICONOSCE — e al banco si va a
+                                           colpo d'occhio. L'icona si ricava dal nome
+                                           dell'articolo, l'unica cosa che di lui
+                                           sappiamo di sicuro. */
+                                        const nome = vc.etichetta || art?.nome || vc.codice;
                                         return (
                                             <button key={vc.id} onClick={() => art && metti(art)} disabled={!art}
                                                 title={art ? undefined : "articolo non più in anagrafica"}
-                                                className={cn("rvPill", "rvPill-sm")} style={{ opacity: ce ? 1 : .7 }}>
-                                                {vc.etichetta || art?.nome || vc.codice}
-                                                {art?.prezzo != null && <b style={{ marginLeft: 6 }}>{eur(art.prezzo)}</b>}
-                                                <i className={cn("rvGiac", ce ? "rvGiac-si" : "rvGiac-no")} style={{ marginLeft: 6 }}>
-                                                    {n == null ? "—" : ce ? n : "0"}
+                                                className={cn("rvRapido", !ce && "rvRapido-off")}>
+                                                <em>{iconaArticolo(nome, art?.famiglia, art?.gruppo)}</em>
+                                                <b>{nome}</b>
+                                                {art?.prezzo != null && <small>{eur(art.prezzo)}</small>}
+                                                <i className={cn("rvGiac", ce ? "rvGiac-si" : "rvGiac-no")} style={{ fontSize: 11 }}>
+                                                    {n == null ? "—" : ce ? `${n} in negozio` : "non in negozio"}
                                                 </i>
                                             </button>
                                         );

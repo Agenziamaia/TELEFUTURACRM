@@ -289,3 +289,41 @@ export async function caricaGruppi(): Promise<GruppoCassa[]> {
     return _gruppi;
 }
 export function scordaGruppi() { _gruppi = null; }
+
+/* ── UN'ICONA PER OGNI COSA (Luca 29/08) ────────────────────────────────
+   «Anche queste devono avere delle immagini o delle emoticon: le SIM le
+   hanno già, per le altre creale.»
+   Un pulsante fatto di solo testo si legge; un pulsante con un'icona si
+   RICONOSCE, e al banco si va a colpo d'occhio. Le SIM hanno il logo del
+   brand, che è meglio di qualunque emoji; per gli articoli di magazzino
+   l'icona si ricava da com'è fatto l'articolo — è l'unica cosa che sappiamo
+   di sicuro, il nome. Prima il termine più specifico: «cavo tipo C» è un
+   cavo, non un tipo. */
+const ICONE: [RegExp, string][] = [
+    [/pellicol|vetro temp|tempered|glass|screen protect/i, "🪟"],
+    [/cover|custodi|flip|bumper|guscio/i, "🛡️"],
+    [/power\s*bank|batteri|accumulator/i, "🔋"],
+    [/auricolar|cuffi|ear\s*bud|headphone|airpod|headset/i, "🎧"],
+    [/speaker|cassa bluetooth|soundbar|altoparlant/i, "🔊"],
+    [/micro\s*sd|memory|memori|usb|pen\s*drive|pendrive|flash/i, "💾"],
+    [/caricabatteri|caricator|alimentator|trasformator|charger|adattatore di rete/i, "⚡"],
+    [/cavo|cable|type\s*-?c|lightning|micro\s*usb/i, "🔌"],
+    [/adattator|adapter|adatt\b/i, "🔗"],
+    [/modem|router|fwa|internet key|hotspot/i, "📡"],
+    [/tablet|ipad/i, "🧱"],
+    [/watch|orolog|band\b|smartband/i, "⌚"],
+    [/e-?sim|esim/i, "📲"],
+    [/\bsim\b|usim|iccid/i, "📶"],
+    [/smartphone|telefon|phone|iphone|galaxy|redmi|xiaomi|motorola/i, "📱"],
+    [/support|holder|stand|treppied/i, "📎"],
+    [/car\b|auto|ventol|parabrezza/i, "🚗"],
+    [/kasko|assicuraz|garanzi/i, "🧾"],
+    [/usato|ricondizion/i, "♻️"],
+];
+
+/** L'emoji che descrive un articolo. Mai vuota: nel dubbio è una scatola. */
+export function iconaArticolo(...testi: (string | null | undefined)[]): string {
+    const t = testi.filter(Boolean).join(" ");
+    for (const [rx, ico] of ICONE) if (rx.test(t)) return ico;
+    return "📦";
+}
