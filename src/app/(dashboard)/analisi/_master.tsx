@@ -43,12 +43,32 @@ const PISTA_EMOJI = { mobile: "📱", fisso: "🌐", assicurazioni: "🛡", luce
    e filtri separati da quelli che si usano insieme. Ora arrivano da fuori —
    qui restano solo i filtri per singolo brand, che appartengono alle carte. */
 export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, meseCorrente, lente = "codici", negSel = [] }) {
-    const [codSel, setCodSel] = useState({ w3: [], vf: [], sky: [], fw: [] });
+    // `null` = «non ho ancora scelto io»: su W3 vale il valore di fabbrica
+    // qui sotto. Appena si tocca la tendina diventa un array — anche vuoto,
+    // che vuol dire «tutti i codici» — e da li' in poi comanda la scelta.
+    const [codSel, setCodSel] = useState({ w3: null, vf: [], sky: [], fw: [] });
     const [drill, setDrill] = useState(null);
+
+    // DI FABBRICA IL MASTER APRE SUL FRANCHISING (Luca 29/08: «sulla card di
+    // WindTre, di default deve darmi la visibilita' dei Franchising ogni volta
+    // che entro»). Con «tutti i codici» la carta si apriva proprio sul caso in
+    // cui non dice niente: franchising, multibrand e multibrand T2 hanno gare
+    // diverse, quindi messi insieme le soglie si spengono tutte e al loro posto
+    // resta l'avviso «scegli un PDV o un gruppo». Il franchising e' la gara che
+    // si guarda ogni giorno, ed e' quella che deve essere gia' li'.
+    // E' un valore DERIVATO, non uno stato scritto in un effetto: cosi' non
+    // c'e' un attimo in cui la carta mostra tutto e poi si corregge da sola.
+    const frW3 = useMemo(() => {
+        const fr = (dati.targetW3 || []).filter((r) => /^\d+$/.test(String(r.cod_gara || "")));
+        if (!fr.length) return [];
+        const cods = [...new Set(items.filter((it) => it.brandGara === "w3" && it.cod_ins && it.cod_ins !== "—").map((it) => it.cod_ins))];
+        return cods.filter((c) => fr.some((r) => String(r.negozio).split("+").some((x) => stessoNome(x.trim(), c)) || stessoNome(r.negozio, c)));
+    }, [dati.targetW3, items]);
+    const selDi = (b) => (b === "w3" && codSel.w3 === null ? frW3 : (codSel[b] || []));
 
     const itemsDi = (b) => items.filter((it) => it.brandGara === b);
     const filtra = (arr, b) => lente === "codici"
-        ? (codSel[b]?.length ? arr.filter((x) => codSel[b].includes(x.cod_ins)) : arr)
+        ? (selDi(b).length ? arr.filter((x) => selDi(b).includes(x.cod_ins)) : arr)
         : (negSel.length ? arr.filter((x) => negSel.some((n) => norm(n) === norm(x.negozio))) : arr);
 
     const inA = (c) => contestoVfFw("fastweb", c.cod_ins, c.negozio, c.categoria) === "vodafone";
@@ -65,7 +85,7 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
         return null;
     };
     const filtraRaw = (arr, b) => !arr ? null : lente === "codici"
-        ? (codSel[b]?.length ? arr.filter((c) => codSel[b].includes(c.cod_ins || "—")) : arr)
+        ? (selDi(b).length ? arr.filter((c) => selDi(b).includes(c.cod_ins || "—")) : arr)
         : (negSel.length ? arr.filter((c) => negSel.some((n) => norm(n) === norm(c.negozio))) : arr);
 
     const TABS = { w3: dati.aw3, vf: dati.avf, sky: dati.asky, fw: dati.afw };
@@ -86,7 +106,7 @@ export function Master({ items, righeGara, dati, labels, nG, oggi, idxDi, gl, me
                 <CartaMaster key={b} b={b} lente={lente}
                     tab={TABS[b]} raw={filtraRaw(rawDi(b), b)}
                     sue={filtra(itemsDi(b), b)} sueTutte={itemsDi(b)}
-                    codici={codSel[b]} setCodici={(v) => setCodSel((p) => ({ ...p, [b]: v }))}
+                    codici={selDi(b)} setCodici={(v) => setCodSel((p) => ({ ...p, [b]: v }))}
                     negSel={negSel} targetW3={dati.targetW3 || []}
                     gl={gl} meseCorrente={meseCorrente} idxDi={idxDi} labels={labels}
                     apri={setDrill} delay={i * 60} />
