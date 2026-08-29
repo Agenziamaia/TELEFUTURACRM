@@ -5741,6 +5741,16 @@ function CRM() {
     const chieste = new Map();
     (lista || []).forEach(m => {
       if (!m || !m.scaricaMagazzino || !m.codice || m.seriale) return;
+      /* LE VOCI AUTOMATICHE NON FERMANO UNA VENDITA (Luca 29/08, quando le
+         SIM sono state collegate al magazzino). Registrando un'attivazione
+         WindTre il CRM aggiunge da sé «Sim Wind3», che ora scarica il KIT SIM
+         WT. Se quella giacenza è a zero, il cliente è comunque lì davanti e la
+         SIM gliela stai dando: bloccare il salvataggio vorrebbe dire perdere
+         un contratto vero perché un numero non torna. Quello che non torna si
+         dice DOPO, col pannello del magazzino — e resta scritto.
+         Le righe che il venditore ha scelto lui, invece, si fermano: quelle
+         può toglierle. */
+      if (m.auto) return;
       chieste.set(m.codice, (chieste.get(m.codice) || 0) + (Number(m.qty) || 1));
     });
     chieste.forEach((n, cod) => {
