@@ -38,11 +38,15 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
 const eur = (n: number | null | undefined) =>
     n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function CassaProdotti({ negozio, venditore, onAdd, servizi, giaInCarrello }: {
+export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie, giaInCarrello }: {
     negozio?: string; venditore?: string;
     onAdd: (r: Record<string, unknown>) => void;
     /** i pulsanti dei servizi che esistono già: restano quelli */
     servizi?: React.ReactNode;
+    /** le scorciatoie dentro i PRODOTTI (Luca 29/08): SIM, ESIM e le voci a
+     *  marginalità. Non sono merce di magazzino — servono a non far cercare
+     *  niente a chi sta al banco. */
+    scorciatoie?: React.ReactNode;
     /** quanti pezzi di ogni codice sono GIÀ nel carrello. Senza questo il
      *  controllo di giacenza guarda solo il magazzino, e cliccando tre volte
      *  su un articolo che ne ha uno passano tutte e tre — che è poi l'unico
@@ -234,7 +238,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, giaInCarrell
                 </div>
             )}
 
-            {/* i filtri rapidi */}
+            {/* LE SCORCIATOIE: SIM, ESIM, accessori a marginalità. Stanno
+                sotto la ricerca perché la ricerca è la strada principale — ma
+                sono lì, senza doverle cercare. */}
+            {scorciatoie && <div style={{ marginTop: 12 }}>{scorciatoie}</div>}
+
+            {/* i filtri rapidi del magazzino */}
             {famiglie.length > 1 && (
                 <div className="rvPillRow" style={{ gap: 6, marginTop: 12 }}>
                     <button onClick={() => setFamiglia(null)} className={cn("rvPill", "rvPill-sm", !famiglia && "rvPill-on")}>Tutti</button>

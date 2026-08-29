@@ -212,20 +212,27 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
    (CassaProdotti). Qui restano le voci che un magazzino non ce l'hanno —
    servizi, SIM, ESIM, Kasko — e «Telefono Cash» sparisce come categoria:
    un telefono è un prodotto, si trova sparando il suo IMEI. */
-/* Sparisce SOLO «Telefono Cash», come ha chiesto Luca: un telefono è un
-   prodotto e si trova sparando il suo IMEI. Tutto il resto resta — compresa
-   la categoria «Prodotti», che non è merce di magazzino ma un elenco di
-   REGOLE di marginalità (Accessori 24,59%, PLX, CN/CP) e soprattutto
-   «Vendita Usato», che porta con sé il selettore dei telefoni ritirati, gli
-   allegati obbligatori e la pratica di finanziamento. Toglierla significava
-   spegnere in silenzio tutto quel flusso: è successo, ed è durato un'ora. */
-const CAT_NON_SERVIZI=[/telefono\s*cash/i];
-const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,soloServizi})=>{
+/* LE DUE FAMIGLIE (Luca 29/08). Nei SERVIZI stanno solo i servizi — se no
+   la scheda «Servizio» mostra tutto e la divisione non serve a niente. Nei
+   PRODOTTI, sotto la ricerca del magazzino, tornano i pulsanti rapidi: SIM,
+   ESIM e le voci a marginalità (Accessori, PLX, Vendita Usato…), che non
+   sono merce di magazzino ma scorciatoie per non far cercare niente a chi
+   sta al banco.
+   «Telefono Cash» non compare da nessuna parte: un telefono è un prodotto e
+   si trova sparando il suo IMEI. */
+const nomeCat=(c)=>String(c&&c.cat||"").replace(/[^\w\s]/g,"").trim();
+const CAT_FUORI=[/telefono\s*cash/i];
+const CAT_SERVIZI=[/^servizi/i,/kasko/i];
+export const filtraCat=(lista,quale)=>(lista||[]).filter(c=>{
+  const n=nomeCat(c);
+  if(CAT_FUORI.some(rx=>rx.test(n)))return false;
+  const eServizio=CAT_SERVIZI.some(rx=>rx.test(n));
+  return quale==="servizi"?eServizio:!eServizio;
+});
+const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro})=>{
   const [selCat,setSelCat]=useState(0);
   // il catalogo che questo componente mostra: tutto, oppure i soli servizi
-  const CATALOGO=soloServizi
-    ? MARG_PRODUCTS.filter(c=>!CAT_NON_SERVIZI.some(rx=>rx.test(String(c.cat||"").replace(/[^\w\s]/g,"").trim())))
-    : MARG_PRODUCTS;
+  const CATALOGO=filtro?filtraCat(MARG_PRODUCTS,filtro):MARG_PRODUCTS;
   // con meno categorie l'indice scelto può finire fuori: senza questa riga
   // CATALOGO[catIdx] è undefined e la pagina va in errore a schermo
   const catIdx=Math.min(Math.max(0,selCat),Math.max(0,CATALOGO.length-1));
@@ -331,13 +338,13 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,soloSe
   return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
     <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
-      <div style={{padding:"16px 20px",borderBottom:"2px solid var(--tf-w30)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      {!filtro&&<div style={{padding:"16px 20px",borderBottom:"2px solid var(--tf-w30)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div><div style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>📦 Registra Prodotto</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>{venditore||"—"} • {negozio||"—"} • {new Date().toLocaleDateString("it-IT")}</div></div>
         {!inline&&<button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>}
-      </div>
+      </div>}
       <div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid var(--tf-w30)"}}>
-        <input value={qMarg} onChange={e=>{setQMarg(e.target.value);setSelProd(null);}} placeholder="🔍 Cerca in tutto il catalogo…"
-          style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid var(--tf-w120)",background:"var(--tf-w50)",color:"var(--tf-f8fafc)",fontSize:12,outline:"none"}}/>
+        {!filtro&&<input value={qMarg} onChange={e=>{setQMarg(e.target.value);setSelProd(null);}} placeholder="🔍 Cerca in tutto il catalogo…"
+          style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid var(--tf-w120)",background:"var(--tf-w50)",color:"var(--tf-f8fafc)",fontSize:12,outline:"none"}}/>}
         {CATALOGO.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:selCat===ci?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:selCat===ci?"var(--tf-6f42c1)":"var(--tf-8892b0)"}}>{cat.cat}</button>))}
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
@@ -7161,7 +7168,8 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         <div className="rvCardT" style={{marginBottom:14}}>🧾 Prodotti e servizi</div>
         <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice}
           onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}}
-          servizi={<MargPOS inline show soloServizi onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
+          servizi={<MargPOS inline show filtro="servizi" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}
+          scorciatoie={<MargPOS inline show filtro="prodotti" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
       </div>}
 
       {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div className="rvCard" style={{borderLeft:"4px solid "+bC}}>
@@ -7392,7 +7400,8 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             </div>
             <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice}
               onAdd={(item)=>{addMargItem(item);setMargEditItem(null);}}
-              servizi={<MargPOS inline show soloServizi onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
+              servizi={<MargPOS inline show filtro="servizi" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}
+          scorciatoie={<MargPOS inline show filtro="prodotti" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
           </div>
         </div>, document.body)}
       <MargList items={margItems} onRemove={rmMargItem} show={showMargList} onClose={()=>setShowMargList(false)}/>
