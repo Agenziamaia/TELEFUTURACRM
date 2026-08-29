@@ -27,7 +27,7 @@ import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } 
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 import { CassaProdotti } from "./CassaProdotti";
-import { scaricaVendita } from "@/lib/magazzinoScarico";
+import { scaricaVendita, avvisiScarico } from "@/lib/magazzinoScarico";
 // il selettore del CRM, quello che si cerca scrivendo: le tendine di sistema
 // aprono il menu del sistema operativo, che non si può vestire (Luca 28/08)
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -138,6 +138,15 @@ const caricaMargCatalogo = () => {
             hasQty: legacy.hasQty, needsModel: legacy.needsModel, needsImei: legacy.needsImei,
             isTelCash: legacy.isTelCash, countsPhone: legacy.countsPhone,
             vat: i.vat_rate, visibile: i.visible_value,
+            /* IL GEMELLO A MAGAZZINO (revisore 29/08). «New Cover» e
+               «Sim Fastweb» sono pulsanti di margine, ma la stessa merce sta
+               anche a scaffale con un suo codice: il venditore preme il
+               pulsante — è lì, in alto, ed è l'abitudine di sempre — e il
+               magazzino non si muoveva. Due strade per lo stesso articolo,
+               una sola scaricava. Dove il legame c'è (marg_items.
+               codice_magazzino) la scorciatoia scarica il pezzo vero. */
+            codiceMagazzino: i.codice_magazzino || null,
+            reparto: i.reparto ?? null,
             ...margine,
           };
         });
@@ -336,6 +345,11 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
          provvigione dell'operatore — e marcarle obbligatorie avrebbe
          costretto il venditore a inventarsi un numero per ognuna. */
       priceRequired:!!(p.linked||p.type==="pct"||p.type==="cost"),
+      // dove la scorciatoia ha un gemello a magazzino, vendere lo scarica:
+      // la società la deduce `scaricaVendita` da chi ha davvero i pezzi
+      codice:p.codiceMagazzino||null,
+      scaricaMagazzino:!!p.codiceMagazzino,
+      reparto:p.reparto??null,
       margRegola:regola});
   };
   const handleAdd=()=>{
@@ -5484,6 +5498,13 @@ function CRM() {
      finché non la chiude lui, e il carrello si azzera in quel momento
      (stesso patto dello scontrino: il blocco cade solo alla chiusura). */
   const [venditaFatta, setVenditaFatta] = useState(null);
+  /* QUELLO CHE LO SCARICO HA DA DIRE (revisore 29/08). `scaricaVendita`
+     costruiva con cura `sottoZero` e `senzaCodice` e i chiamanti leggevano
+     solo `_sc.errore`, per mandarlo in `console.error`: su un monitor da
+     negozio la console non esiste. Una giacenza andata sotto zero è la prova
+     che qualcosa è sfuggito al controllo — è esattamente la cosa che il
+     negozio deve vedere. Regola §7: quello che il software sa, lo dice. */
+  const [avvisiMag, setAvvisiMag] = useState([]);
   // Conti in sospeso: contatore per rinfrescare il pulsante rosso dopo salva/completa.
   const [sospesoReload, setSospesoReload] = useState(0);
   // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
@@ -5512,6 +5533,12 @@ function CRM() {
          di marginalità il reparto lo decide marg_items lato server; per i
          prodotti di magazzino arriva da qui. */
       reparto: mi.reparto ?? null,
+      /* LA SOCIETÀ DELLA MERCE (revisore 29/08). Il magazzino Wind3 è di
+         Telefutura, il Multi di Telefutura 2: lo scontrino di un pezzo di
+         Telefutura 2 lo deve emettere Telefutura 2, non la società che
+         l'operatore ha lasciato selezionata. Il server raggruppa già per
+         azienda, quindi un carrello misto esce come due scontrini. */
+      azienda: mi.azienda ?? null,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
   const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
@@ -5687,12 +5714,23 @@ function CRM() {
      il bottone prometteva una cosa che il salvataggio poi rifiutava.
      Qui si raccoglie TUTTO, con il posto dove si rimedia — così l'elenco
      si può mostrare PRIMA di premere, e ogni riga ci porta. */
+  /* SENZA REPARTO IVA NON SI BATTE (revisore 29/08). Il reparto dice al
+     registratore telematico con che aliquota stampare la riga: senza, il
+     registratore la SCARTA. Il caso che costa è il carrello misto — una cover
+     più una SIM senza reparto: il pre-check passava perché «almeno una riga è
+     stampabile», si incassava il totale intero e usciva lo scontrino della
+     sola cover. Corrispettivo incassato e non certificato.
+     Vale solo nei negozi che emettono davvero (regola §7: una guardia al
+     salvataggio si aggiunge anche a `cosaManca`, se no il bottone mente). */
+  const senzaReparto = (lista) => (lista || []).filter(m =>
+    m && m.natura && m.reparto == null && (m.importo != null || m.price != null));
   const cosaManca = () => {
     const out = [];
     // ── il ramo SOLA MARGINALITÀ ha guardie tutte sue (dentro saveMargOnly):
     //    era rimasto fuori, quindi il suo bottone restava verde comunque
     if (margFlow && !brand) {
       margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
+      if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino non lo può stampare (Amministrazione → Fiscalità → Articoli)`, dove: "carrello" }));
       if (margItems.some(_usatoFinanziato)) {
         if (margSkipCli) out.push({ ico: "💳", testo: "usato con finanziamento: i dati del cliente sono obbligatori, non si può saltare", dove: "cliente" });
         else if (!margCliSel && !_anaStep2Ok()) out.push({ ico: "💳", testo: "usato con finanziamento: servono CF, nome o ragione sociale e cellulare", dove: "cliente" });
@@ -5719,6 +5757,7 @@ function CRM() {
     // 3. il prezzo dei prodotti a marginalità
     margPriceMissing(bObj ? computeAutoMarg(margItems, brand, bObj.label, colItems()) : margItems)
       .forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
+    if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino non lo può stampare (Amministrazione → Fiscalità → Articoli)`, dove: "carrello" }));
     // 4. l'anagrafica: mancava all'appello, e blocca il salvataggio con un
     //    solo avviso volante — il bottone tornava a mentire (revisore 28/08)
     anaMissing.forEach(t => out.push({ ico: "👤", testo: `${t} (anagrafica)`, dove: "cliente" }));
@@ -6186,8 +6225,9 @@ function CRM() {
          vendita persa no. */
       try {
         const _sc = await scaricaVendita(margList, selNeg, contractRows[0]?.id || null, selVend);
-        if (_sc.errore) console.error("scarico magazzino:", _sc.errore);
-      } catch (e) { console.error("scarico magazzino:", e); }
+        const _av = avvisiScarico(_sc);
+        if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
+      } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
 
       setUploading(false);
       sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
@@ -6415,8 +6455,9 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
       try {
         const _sc = await scaricaVendita(margItems, selNeg, rows[0]?.id || null, selVend);
-        if (_sc.errore) console.error("scarico magazzino:", _sc.errore);
-      } catch (e) { console.error("scarico magazzino:", e); }
+        const _av = avvisiScarico(_sc);
+        if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
+      } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
       setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
       setMargSkipCli(false);
@@ -6620,6 +6661,23 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         <button onClick={chiudiVenditaFatta} className="rvAzione" style={{width:"100%"}}>Registra un&apos;altra vendita</button>
       </div>
     </div>, document.body);
+  /* L'AVVISO DEL MAGAZZINO: non un toast che scivola via, ma un pannello che
+     va chiuso a mano. Chi vende deve poterlo leggere e, se serve, andare a
+     contare il pezzo. Sta in un portal per la stessa ragione di tutti gli
+     altri: le sezioni hanno un backdrop-filter, che ancora i `position:fixed`
+     discendenti al riquadro invece che alla finestra. */
+  const pannelloAvvisiMag = avvisiMag.length > 0 && createPortal(
+    <div className="rvFattaSfondo" style={{zIndex:10050}} onClick={e=>{if(e.target===e.currentTarget)setAvvisiMag([]);}}>
+      <div className="rvFatta rvFatta-att">
+        <div className="rvFatta-o rvFatta-att-o">📦</div>
+        <h3>Il magazzino non torna</h3>
+        <p>La vendita <b style={{color:"var(--tf-e2e8f0)"}}>è registrata</b> e lo scontrino è a posto. È il magazzino che va guardato:</p>
+        <div className="rvFatta-d" style={{textAlign:"left"}}>
+          {avvisiMag.map((a,i)=>(<div key={i}><span style={{minWidth:18}}>⚠️</span><span style={{fontWeight:600,textAlign:"left"}}>{a}</span></div>))}
+        </div>
+        <button onClick={()=>setAvvisiMag([])} className="rvAzione" style={{width:"100%"}}>Ho capito</button>
+      </div>
+    </div>, document.body);
   const confirmResetModal = confirmReset && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmReset(false)}}>
       <div style={{background:"var(--tf-0e1526)",border:"1px solid var(--tf-w120)",borderRadius:16,padding:"28px 30px",width:"min(420px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.55)",textAlign:"center"}}>
@@ -6727,7 +6785,15 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     className={cn("rvPrezzo",(item.importo==null||item.importo==="")?"rvPrezzo-manca":"rvPrezzo-ok")} style={{width:92}}/>
                   <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>€</span>
                 </span>}
-                {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                {/* ✏️ MODIFICA NON VALE PER LA MERCE DI MAGAZZINO (revisore
+                    29/08): toglieva la riga dal carrello e riapriva la cassa,
+                    che però rende `CassaProdotti` — un componente che di
+                    `margEditItem` non sa niente. Il vecchio pannello cercava
+                    `p.id === editItem.productId`, ma l'id qui è «p:<codice>»,
+                    che nel listino di marginalità non esiste: non si
+                    ripristinava nulla e la voce era persa. Su queste righe il
+                    prezzo si corregge in riga, e per toglierle c'è il cestino. */}
+                {item.auto||item.natura?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 :<span style={{display:"inline-flex",gap:6}}><button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button><button onClick={()=>{const it=margItems[idx];if(window.confirm("Eliminare \""+(it?.product||"voce")+"\" dal carrello?"))setMargItems(p=>p.filter((_,i)=>i!==idx));}} title="Elimina la voce" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.10)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑️</button></span>}
               </div>
             </div>
@@ -6843,7 +6909,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           </div>
         </div>}
         {/* #124: popup di conferma reset anche dentro il carrello */}
-        {pannelloVenditaFatta}{confirmResetModal}{confirmNoOpzModal}
+        {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
       </div>
     );
     return cartContent;
@@ -7609,7 +7675,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       </div>}
 
       {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
-      {pannelloVenditaFatta}{confirmResetModal}{confirmNoOpzModal}
+      {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(

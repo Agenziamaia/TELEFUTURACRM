@@ -29,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import {
-    caricaCatalogo, caricaGiacenze, caricaGruppi, cerca, cercaSeriale, sembraSeriale,
+    caricaCatalogo, caricaGiacenze, caricaGruppi, cerca, cercaSeriale, sembraSeriale, puoEssereSeriale, normalizzaSeriale,
     marginePct, perchéSenzaMargine,
     type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale, type GruppoCassa,
 } from "@/lib/cassaCatalogo";
@@ -65,7 +65,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        pop up che mi dice che il prodotto non è presente in magazzino».
        Il carrello è la base dello scontrino fiscale: se ci entra qualcosa che
        a magazzino non esiste, il conto non torna già in partenza. */
-    const [manca, setManca] = useState<{ nome: string; dettaglio: string } | null>(null);
+    const [manca, setManca] = useState<{ nome: string; dettaglio: string; titolo?: string; cosaFare?: string } | null>(null);
     const ricerca = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { caricaCatalogo().then(setVoci); caricaGruppi().then(setGruppi); }, []);
@@ -76,15 +76,26 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        digitato ha quella forma si va a cercare IL pezzo, non l'articolo. */
     useEffect(() => {
         setPezzo(null);
-        if (natura !== "prodotto" || !sembraSeriale(q)) return;
+        if (natura !== "prodotto" || !puoEssereSeriale(q)) return;
         let vivo = true;
-        const s = q.replace(/\D/g, "");
-        cercaSeriale(s).then((p) => {
-            if (!vivo) return;
-            if (p) setPezzo(p);
-            else setManca({ nome: "Seriale " + s, dettaglio: "Questo seriale non risulta a magazzino né fra gli usati in vendita. Se il telefono è qui davanti a te va prima caricato: finché non c'è, non può essere venduto." });
-        });
-        return () => { vivo = false; };
+        /* NON `replace(/\D/g,"")`: le lettere fanno parte del seriale — il
+           4S44MM dell'Apple Watch diventava «444» e non si trovava più. */
+        const s = normalizzaSeriale(q);
+        // il seriale certo (15 o 19 cifre) merita il pop-up se non c'è; una
+        // ricerca qualunque no: chi scrive «iphone 15 pro» cerca un articolo
+        const certo = sembraSeriale(q);
+        /* MEZZO SECONDO DI PAZIENZA. Ora che si prova a cercare un pezzo per
+           qualunque parola alfanumerica, senza attesa si partirebbe a ogni
+           tasto: un IMEI digitato a mano sono quindici interrogazioni. Il
+           lettore di codici incolla tutto insieme e non se ne accorge. */
+        const t = setTimeout(() => {
+            cercaSeriale(s).then((p) => {
+                if (!vivo) return;
+                if (p) setPezzo(p);
+                else if (certo) setManca({ nome: "Seriale " + s, dettaglio: "Questo seriale non risulta a magazzino né fra gli usati in vendita. Se il telefono è qui davanti a te va prima caricato: finché non c'è, non può essere venduto." });
+            });
+        }, 250);
+        return () => { vivo = false; clearTimeout(t); };
     }, [q, natura]);
 
     /* L'elenco compare SOLO quando si cerca (Luca 29/08: i filtri per famiglia
@@ -114,6 +125,22 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
      *  carrello, e solo se l'articolo lo permette. */
     const metti = (v: VoceCassa, extra: Record<string, unknown> = {}) => {
         const n = quanti(v);
+        /* SENZA REPARTO NON SI BATTE (revisore 29/08). Il reparto è l'aliquota
+           con cui la voce finisce sullo scontrino: senza, il registratore la
+           SCARTA. E il caso peggiore non è che non si stampi — è il carrello
+           misto: una cover più una SIM senza reparto passavano il pre-check
+           («almeno una riga è stampabile»), si incassava il totale intero e
+           usciva lo scontrino della sola cover. Corrispettivo incassato e non
+           certificato. Meglio dirlo qui, prima che i soldi siano sul banco. */
+        if (v.reparto == null) {
+            setManca({
+                titolo: "Manca il reparto IVA",
+                nome: v.nome,
+                dettaglio: "Questo articolo non ha un reparto IVA assegnato, quindi il registratore di cassa non può stamparlo — e battere l'incasso senza certificarlo non si può fare.",
+                cosaFare: "assegnarlo in Amministrazione → Fiscalità → Articoli",
+            });
+            return;
+        }
         // NON C'È = NON ENTRA. Nessuna eccezione: da qui esce uno scontrino
         // fiscale, e un pezzo che a magazzino non esiste non si può battere.
         if (v.scarica_magazzino && !((n ?? 0) > 0)) {
@@ -137,6 +164,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             natura: v.natura, scaricaMagazzino: v.scarica_magazzino,
             prezzoModificabile: v.prezzo_modificabile,
             reparto: v.reparto, iva: v.iva, famiglia: v.famiglia,
+            /* DI CHI È LA MERCE. La verità sta nella giacenza — è chi ha i
+               pezzi che li vende — e l'anagrafica fa da ripiego. Da qui la
+               società arriva sia allo scarico (che toglie il pezzo
+               all'inventario giusto) sia allo scontrino (che lo emette dalla
+               società giusta): prima si scaricava sempre Telefutura 1. */
+            azienda: (v.codice ? giac.get(v.codice)?.azienda : null) || v.azienda || null,
             // quanto ce n'era QUANDO è stato messo: serve al carrello per dire
             // «questo non ce l'hai» senza rileggere il magazzino a ogni tasto
             giacenzaAllAggiunta: n,
@@ -150,10 +183,27 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
         // I negozi doppi (Magliana W3/Multi, Acilia, Collatina) condividono il
         // magazzino: lì il pezzo è a casa sua anche col nome diverso.
         if (negozio && p.negozio && !stessoMagazzino(p.negozio, negozio)) {
-            setManca({ nome: p.nome + " · " + p.seriale, dettaglio: `Questo pezzo si trova a ${p.negozio}, non a ${negozio}. Va prima trasferito con un DDT: da qui non si può vendere.` });
+            setManca({ titolo: "È in un altro negozio", nome: p.nome + " · " + p.seriale, dettaglio: `Questo pezzo si trova a ${p.negozio}, non a ${negozio}.`, cosaFare: "trasferirlo con un DDT, poi rifare la ricerca" });
             return;
         }
         const usato = p.provenienza === "usato";
+        /* IL PEZZO DEVE ESSERE ANCORA LÌ. `cassa_seriali` esclude già i
+           venduti, ma fra la ricerca e il clic può passare un collega — e un
+           pezzo in transito o impegnato per un DDT non è vendibile. */
+        if (!usato && p.stato && p.stato !== "disponibile") {
+            setManca({ titolo: "Il pezzo non è disponibile", nome: p.nome + " · " + p.seriale, dettaglio: `Questo pezzo risulta «${p.stato}»: o è impegnato per un trasferimento, o qualcuno l'ha appena venduto.`, cosaFare: "controllare la scheda del pezzo in Magazzino" });
+            return;
+        }
+        // senza reparto il registratore lo scarta: vedi metti()
+        if (!usato && p.reparto == null) {
+            setManca({
+                titolo: "Manca il reparto IVA",
+                nome: p.nome + " · " + p.seriale,
+                dettaglio: "Questo pezzo non ha un reparto IVA assegnato — l'articolo non è in anagrafica, oppure non è configurato — quindi il registratore di cassa non può stamparlo.",
+                cosaFare: "assegnare il codice articolo e il reparto in Fiscalità → Articoli",
+            });
+            return;
+        }
         onAdd({
             /* L'USATO PRENDE LA FORMA CHE IL CRM CONOSCE GIÀ (revisore 29/08).
                Prima usciva con productId "ser:<imei>" e l'usatoId in cima
@@ -170,9 +220,15 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             units: usato ? [{ usatoId: p.riferimento, imei: p.seriale, model: p.nome, prezzo: p.prezzo }] : null,
             venditore, negozio, date: new Date().toISOString().slice(0, 10),
             codice: p.codice, barcode: null, costo: p.costo,
-            natura: "prodotto", scaricaMagazzino: !usato && !!p.codice,
+            /* SCARICA ANCHE SENZA CODICE ARTICOLO (revisore 29/08). Prima era
+               `!usato && !!p.codice`: i quattro telefoni caricati senza codice
+               non scaricavano nulla e non producevano nemmeno la segnalazione.
+               Un pezzo con un seriale si marca venduto per il seriale. */
+            natura: "prodotto", scaricaMagazzino: !usato,
             prezzoModificabile: p.prezzo_modificabile,
             seriale: p.seriale, provenienzaPezzo: p.provenienza,
+            reparto: p.reparto ?? null,
+            azienda: p.azienda || null,
             giacenzaAllAggiunta: 1,
         });
         setQ(""); setPezzo(null); ricerca.current?.focus();
@@ -240,7 +296,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                                                 className={cn("rvPill", "rvPill-sm")} style={{ opacity: ce ? 1 : .7 }}>
                                                 {vc.etichetta || art?.nome || vc.codice}
                                                 {art?.prezzo != null && <b style={{ marginLeft: 6 }}>{eur(art.prezzo)}</b>}
-                                                <i style={{ fontStyle: "normal", marginLeft: 6, fontWeight: 800, color: ce ? "var(--tf-34d399)" : "var(--tf-fbbf24)" }}>
+                                                <i className={cn("rvGiac", ce ? "rvGiac-si" : "rvGiac-no")} style={{ marginLeft: 6 }}>
                                                     {n == null ? "—" : ce ? n : "0"}
                                                 </i>
                                             </button>
@@ -271,7 +327,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                         </div>
                         <div style={{ textAlign: "right" }}>
                             <div style={{ fontSize: 16, fontWeight: 900, color: "var(--tf-f8fafc)" }}>{eur(pezzo.prezzo)}</div>
-                            {pezzo.costo != null && <div style={{ fontSize: 11, color: "var(--tf-34d399)", fontWeight: 700 }}>margine {eur((pezzo.prezzo || 0) - pezzo.costo)}</div>}
+                            {pezzo.costo != null && <div className="rvGiac rvGiac-si" style={{ fontSize: 11 }}>margine {eur((pezzo.prezzo || 0) - pezzo.costo)}</div>}
                         </div>
                         <button onClick={() => mettiPezzo(pezzo)} className="rvAzione">+ In carrello</button>
                     </div>
@@ -296,8 +352,8 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                                             <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3 }}>{v.nome}</span>
                                             <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
                                                 <b style={{ fontSize: 13.5 }}>{eur(v.prezzo)}</b>
-                                                {!senza && <i style={{ fontStyle: "normal", fontWeight: 800, color: (pct ?? 0) > 0 ? "var(--tf-34d399)" : "var(--tf-f87171)" }}>{(pct ?? 0) > 0 ? "+" : ""}{Math.round(pct ?? 0)}%</i>}
-                                                <i style={{ fontStyle: "normal", marginLeft: "auto", fontWeight: 800, color: ce ? "var(--tf-34d399)" : "var(--tf-fbbf24)" }}>
+                                                {!senza && <i className={cn("rvMargPct", (pct ?? 0) > 0 ? "rvMargPct-si" : "rvMargPct-no")}>{(pct ?? 0) > 0 ? "+" : ""}{Math.round(pct ?? 0)}%</i>}
+                                                <i className={cn("rvGiac", ce ? "rvGiac-si" : "rvGiac-no")} style={{ marginLeft: "auto" }}>
                                                     {ce ? `${n} in negozio` : "non in negozio"}
                                                 </i>
                                             </span>
@@ -314,12 +370,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 1200×713). */}
             {manca && typeof document !== "undefined" && createPortal(
                 <div className="rvFattaSfondo" onClick={(e) => { if (e.target === e.currentTarget) setManca(null); }}>
-                    <div className="rvFatta" style={{ borderColor: "rgba(245,158,11,.45)" }}>
-                        <div className="rvFatta-o" style={{ color: "var(--tf-fbbf24)", background: "rgba(245,158,11,.14)", borderColor: "rgba(245,158,11,.5)" }}>📭</div>
-                        <h3>Non è in magazzino</h3>
+                    <div className="rvFatta rvFatta-att">
+                        <div className="rvFatta-o rvFatta-att-o">📭</div>
+                        <h3>{manca.titolo || "Non è in magazzino"}</h3>
                         <p><b style={{ color: "var(--tf-e2e8f0)" }}>{manca.nome}</b><br />{manca.dettaglio}</p>
                         <div className="rvFatta-d" style={{ textAlign: "left" }}>
-                            <div><span>Cosa fare</span><span style={{ fontWeight: 600, textAlign: "right" }}>caricarlo a magazzino, poi rifare la ricerca</span></div>
+                            <div><span>Cosa fare</span><span style={{ fontWeight: 600, textAlign: "right" }}>{manca.cosaFare || "caricarlo a magazzino, poi rifare la ricerca"}</span></div>
                         </div>
                         <button onClick={() => { setManca(null); setQ(""); ricerca.current?.focus(); }} className="rvAzione" style={{ width: "100%" }}>Ho capito</button>
                     </div>

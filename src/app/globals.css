@@ -859,6 +859,34 @@ html.light .rvNota-scelta{--rv-nota:#5b21b6}
 /* sul fondo chiaro il colore della categoria è troppo tenue per essere
    letto: si scurisce mantenendo la tinta (revisore 28/08, misurato) */
 html.light .rvBoxT,html.light .rvCardT{color:color-mix(in srgb,var(--rv-acc) 60%,#08101f)}
+
+/* ── LA DISPONIBILITÀ E IL MARGINE, LEGGIBILI ANCHE COL TEMA CHIARO ──────
+   (revisore 29/08, misurato componendo davvero le trasparenze sul fondo
+   `#f5f4f1`.) Il verde `--tf-34d399` dava 1,91:1 e l'ambra `--tf-fbbf24`
+   1,66:1 — la soglia è 4,5. Erano i numeri scritti dentro l'elemento in
+   `CassaProdotti`: «3 in negozio», «non in negozio», il margine, il
+   contatore dei sotto-pulsanti. Cioè esattamente ciò che il venditore deve
+   leggere PRIMA di mettere qualcosa nel carrello.
+   Le regole 2 e 3 del documento lo dicevano già: quei tre colori non sono
+   rimappati nel chiaro, e un colore non si scrive dentro l'elemento. */
+.rvGiac{font-style:normal;font-weight:800}
+.rvGiac-si{color:var(--tf-34d399)}
+.rvGiac-no{color:var(--tf-fbbf24)}
+html.light .rvGiac-si{color:#0f7a4d}
+html.light .rvGiac-no{color:#9a5b00}
+.rvMargPct{font-style:normal;font-weight:800}
+.rvMargPct-si{color:var(--tf-34d399)}
+.rvMargPct-no{color:var(--tf-f87171)}
+html.light .rvMargPct-si{color:#0f7a4d}
+html.light .rvMargPct-no{color:#b91c1c}
+/* il pallone del pop-up quando NON è un successo ma un avviso: il verde di
+   `.rvFatta-o` non c'entra, e scriverlo a mano nell'elemento saltava la
+   riga chiara che quel cerchio aveva già (globals 730). */
+.rvFatta-att{border-color:rgba(245,158,11,.45)}
+.rvFatta-o.rvFatta-att-o{color:var(--tf-fbbf24);background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.5)}
+html.light .rvFatta.rvFatta-att{border-color:rgba(154,91,0,.35)}
+html.light .rvFatta-o.rvFatta-att-o{color:#9a5b00;background:rgba(154,91,0,.10);border-color:rgba(154,91,0,.4)}
+
 /* la griglia dei campi: si adatta da sola invece di spezzarsi sui portatili */
 /* le griglie dei campi: erano 56 copie a mano con quattro spaziature
    diverse (8px, 10px, 12px, 16px) e le colonne FISSE — su uno schermo

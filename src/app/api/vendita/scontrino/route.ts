@@ -77,8 +77,15 @@ export async function POST(req: Request) {
         const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
         const va = meta ? meta.va : true;
         const reparto = meta && meta.reparto != null ? meta.reparto : (r.reparto ?? null);
-        // azienda della riga: prodotto (se fissato) > scelta dell'operatore (b.azienda) > default negozio.
-        const az = (meta && meta.azienda) || b.azienda || defaultAzienda || "__def";
+        /* AZIENDA DELLA RIGA: prodotto (se fissato) > SOCIETÀ DELLA MERCE >
+           scelta dell'operatore > default negozio.
+           La società della merce (revisore 29/08) è il pezzo che mancava: un
+           articolo di magazzino porta con sé di chi è (il Wind3 è di
+           Telefutura, il Multi di Telefutura 2), e lo scontrino lo deve
+           emettere QUELLA società — non quella che l'operatore ha lasciato
+           selezionata. Le voci di un carrello misto finiscono già in gruppi
+           separati qui sotto, quindi escono due scontrini, uno per società. */
+        const az = (meta && meta.azienda) || r.azienda || b.azienda || defaultAzienda || "__def";
         const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;
@@ -96,8 +103,25 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "nessuna voce stampabile (reparto mancante o voci escluse)", esclusi }, { status: 400 });
     }
 
-    // Pre-check (dryRun): valida SENZA mettere in coda.
-    if (b.dryRun) return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), esclusi, testMode });
+    /* Pre-check (dryRun): valida SENZA mettere in coda.
+       BASTA UNA VOCE ESCLUSA PER FERMARE TUTTO (revisore 29/08). Prima il
+       pre-check diceva «ok» se almeno UNA riga era stampabile: col carrello
+       misto — una cover più una SIM senza reparto — si incassavano i contanti
+       dell'intero totale, usciva lo scontrino della sola cover e la SIM
+       finiva in una riga di coda che nessuno legge. Corrispettivo incassato e
+       non certificato, cassa e registratore che non tornano più.
+       Le voci volutamente fuori scontrino (`va_in_scontrino = false`) non
+       contano: quelle è giusto che non si stampino. */
+    const escluseVere = esclusi.filter((e) => e.motivo !== "esclusa dallo scontrino");
+    if (b.dryRun) {
+        if (escluseVere.length) {
+            return NextResponse.json({
+                error: escluseVere.map((e) => `«${e.description}»: ${e.motivo}`).join(" · "),
+                esclusi, testMode,
+            }, { status: 400 });
+        }
+        return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), esclusi, testMode });
+    }
 
     const paymentDescr = b.paymentDescription || (Number(b.paymentType) === 2 ? "CARTA" : "CONTANTE");
     const nGruppi = Object.keys(gruppi).length;

@@ -38,6 +38,9 @@ export type VoceCassa = {
     scarica_magazzino: boolean;
     /** falso = il prezzo è quello e basta: si vede, non si tocca (Luca 29/08) */
     prezzo_modificabile: boolean;
+    /** la società a cui l'articolo è intestato in anagrafica, quando c'è. La
+     *  verità però sta nella GIACENZA: è chi ha i pezzi che li vende. */
+    azienda?: string | null;
 };
 
 /** Un pezzo con un seriale: un telefono, un modem. In cassa si spara l'IMEI
@@ -53,9 +56,25 @@ export type PezzoSeriale = {
     costo: number | null;
     prezzo_modificabile: boolean;
     riferimento: string;
+    /** LA SOCIETÀ DEL PEZZO (revisore 29/08). Il magazzino Wind3 è di
+     *  Telefutura, il Multi di Telefutura 2: un pezzo appartiene a una delle
+     *  due e lo scontrino lo deve emettere QUELLA. Senza, la merce esce da un
+     *  inventario e il ricavo entra nella fattura dell'altra. */
+    azienda: string | null;
+    /** il reparto IVA: senza, il pezzo non è stampabile su scontrino */
+    reparto: number | null;
 };
 
-export type Giacenza = { codice: string; quantita: number; soglia_min: number | null };
+export type Giacenza = {
+    codice: string;
+    quantita: number;
+    soglia_min: number | null;
+    /** di chi è la merce: la società che ha i pezzi in questo negozio. Se
+     *  per assurdo ne avessero entrambe, vince quella che ne ha davvero
+     *  (`ambigua` lo dice, così la cassa non sceglie a caso). */
+    azienda: string | null;
+    ambigua?: boolean;
+};
 
 /** Il margine di una riga, in euro. `null` quando non lo sappiamo: un margine
  *  inventato è peggio di un margine assente — su questo si decidono i premi. */
@@ -109,7 +128,7 @@ async function _leggiCatalogo(): Promise<VoceCassa[]> {
     const out: VoceCassa[] = [];
     for (let da = 0; ; da += PAGINA) {
         const { data, error } = await supabase.from("cassa_catalogo")
-            .select("id,natura,codice,barcode,nome,famiglia,marca,gruppo,prezzo,costo,iva,reparto,scarica_magazzino,prezzo_modificabile")
+            .select("id,natura,codice,barcode,nome,famiglia,marca,gruppo,prezzo,costo,iva,reparto,scarica_magazzino,prezzo_modificabile,azienda")
             .order("nome").range(da, da + PAGINA - 1);
         if (error || !data?.length) break;
         out.push(...(data as VoceCassa[]));
@@ -137,10 +156,25 @@ export async function caricaGiacenze(negozio: string, azienda?: string | null): 
         if (azienda) q = q.eq("azienda", azienda);
         const { data, error } = await q.range(da, da + PAGINA - 1);
         if (error || !data?.length) break;
-        (data as { codice: string; quantita: number }[]).forEach((g) => {
+        (data as { codice: string; quantita: number; azienda: string | null }[]).forEach((g) => {
             const gia = m.get(g.codice);
-            // senza filtro di società lo stesso articolo può tornare due volte
-            m.set(g.codice, { codice: g.codice, quantita: Number(g.quantita) + Number(gia?.quantita || 0), soglia_min: null });
+            const q = Number(g.quantita) || 0;
+            /* DI CHI È LA MERCE. Senza filtro di società lo stesso articolo
+               può tornare due volte: si sommano le quantità, ma la società da
+               segnare è quella che i pezzi ce li ha davvero. Oggi a Donna
+               nessun codice sta in due società (verificato), quindi il caso
+               ambiguo non si presenta — ma se un domani si presenta la cassa
+               non deve tirare a indovinare. */
+            const primaAz = gia?.azienda ?? null;
+            const teneva = Number(gia?.quantita || 0) > 0;
+            const azienda = q > 0 ? (teneva && primaAz && primaAz !== g.azienda ? primaAz : g.azienda) : primaAz;
+            m.set(g.codice, {
+                codice: g.codice,
+                quantita: q + Number(gia?.quantita || 0),
+                soglia_min: null,
+                azienda: azienda ?? null,
+                ambigua: teneva && q > 0 && !!primaAz && primaAz !== g.azienda,
+            });
         });
         if (data.length < PAGINA) break;
     }
@@ -177,19 +211,43 @@ export function cerca(voci: VoceCassa[], testo: string): VoceCassa[] {
  *  nessuna parte: in quel caso il pezzo NON è in magazzino, e chi vende deve
  *  saperlo prima di battere lo scontrino. */
 export async function cercaSeriale(seriale: string): Promise<PezzoSeriale | null> {
-    const s = String(seriale || "").replace(/\s+/g, "");
+    const s = normalizzaSeriale(seriale);
     if (s.length < 6) return null;
     const { data } = await supabase.from("cassa_seriali")
-        .select("seriale,provenienza,codice,nome,negozio,stato,prezzo,costo,prezzo_modificabile,riferimento")
+        .select("seriale,provenienza,codice,nome,negozio,stato,prezzo,costo,prezzo_modificabile,riferimento,azienda,reparto")
         .eq("seriale", s).limit(1);
     return (data && data[0]) ? (data[0] as PezzoSeriale) : null;
 }
 
-/** Un IMEI ha 15 cifre, un ICCID 19: quando quello che si è digitato ha
- *  l'aria di un seriale si cerca prima lì, poi nel catalogo. */
+/** Ripulisce quello che si è digitato o sparato col lettore: via gli spazi e
+ *  i trattini, tutto maiuscolo. Il seriale si confronta così com'è. */
+export function normalizzaSeriale(testo: string): string {
+    return String(testo || "").replace(/[\s\-_.]/g, "").toUpperCase();
+}
+
+/** Vale la pena provare a cercarlo fra i PEZZI? Basta che sia una parola
+ *  sola di lettere e cifre: costa una query e non disturba nessuno.
+ *
+ *  IL SERIALE NON È FATTO SOLO DI CIFRE (revisore 29/08). Prima si cercava un
+ *  pezzo solo con 15 o 19 CIFRE esatte, e per giunta prima della ricerca si
+ *  buttavano via le lettere: l'Apple Watch `4S44MM` diventava «444», l'iPad
+ *  `DLXTM0FKHND6` diventava «06», i due Meta sparivano. Cinque pezzi veri per
+ *  ~1.270 € erano introvabili proprio dalla strada per cui erano stati
+ *  caricati. Un IMEI ha 15 cifre e un ICCID 19, ma il seriale di un
+ *  accessorio è alfanumerico e non ha una lunghezza sola. */
+export function puoEssereSeriale(testo: string): boolean {
+    const s = normalizzaSeriale(testo);
+    return s.length >= 6 && /^[A-Z0-9]+$/.test(s) && /\d/.test(s);
+}
+
+/** È SICURAMENTE un seriale: 15 cifre (IMEI) o 19 (ICCID). Solo qui si può
+ *  dire «questo pezzo non c'è» con un pop-up — perché è l'unico caso in cui
+ *  quello che è stato digitato non può essere altro.
+ *  Su una ricerca qualunque il pop-up sarebbe un fastidio: chi scrive
+ *  «iphone 15 pro» sta cercando un articolo, non un seriale. */
 export function sembraSeriale(testo: string): boolean {
-    const d = String(testo || "").replace(/\D/g, "");
-    return d.length === 15 || d.length === 19;
+    const d = normalizzaSeriale(testo);
+    return /^\d+$/.test(d) && (d.length === 15 || d.length === 19);
 }
 
 /* ── I GRUPPI DELLA CASSA: pulsanti a due livelli (Luca 29/08) ───────────
