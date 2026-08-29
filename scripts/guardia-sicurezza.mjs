@@ -226,6 +226,49 @@ console.log(`${B}6. Le pagine pubbliche non sovrascrivono file${X}`);
     console.log(`   ${pubbliche.length} file pubblici esaminati\n`);
 }
 
+/* ── 7. LA RIESPORTAZIONE CHE NON PORTA NIENTE NELLO SCOPE ──────────────
+   Non è sicurezza: è la trappola che il 29/08 ha aperto la Home di tutti su
+   «isCtr is not defined». `export { x } from "…"` riesporta e basta — NON crea
+   il legame locale — e se il file poi chiama `x()`, al browser manca.
+   Il build non se ne accorge quando il file ha `@ts-nocheck` in cima:
+   TypeScript non lo guarda, e un identificatore libero non rompe il bundling.
+   Serve `import` E `export`. */
+{
+    console.log(`${B}7. Riesportazioni che sembrano import${X}`);
+    const sorgenti2 = (dir, out = []) => {
+        for (const n of readdirSync(dir)) {
+            const p = join(dir, n);
+            if (statSync(p).isDirectory()) sorgenti2(p, out);
+            else if (/\.(tsx?|jsx?)$/.test(n)) out.push(p);
+        }
+        return out;
+    };
+    const tutti = existsSync("src") ? sorgenti2("src") : [];
+    let esaminati = 0;
+    for (const f of tutti) {
+        const testo = readFileSync(f, "utf8");
+        const riesporti = [...testo.matchAll(/export\s*\{([^}]+)\}\s*from\s*["'][^"']+["']/g)];
+        if (!riesporti.length) continue;
+        esaminati++;
+        // i nomi riesportati da questo file
+        const nomi = riesporti.flatMap((m) => m[1].split(",")
+            .map((x) => x.trim().split(/\s+as\s+/)[0].trim())
+            .filter((x) => x && x !== "type" && !x.startsWith("type ")));
+        // …tolti quelli che il file importa comunque per conto suo
+        const importati = new Set([...testo.matchAll(/import\s*(?:type\s*)?\{([^}]+)\}\s*from/g)]
+            .flatMap((m) => m[1].split(",").map((x) => x.trim().split(/\s+as\s+/).pop().trim())));
+        for (const nome of nomi) {
+            if (importati.has(nome)) continue;
+            // …e che il file USA come valore (chiamata o JSX), non solo riesporta
+            const usato = new RegExp(`(?<![.\\w])${nome}\\s*\\(|<${nome}[\\s/>]`).test(
+                testo.replace(riesporti.map((r) => r[0]).join("|"), ""));
+            if (usato) problema(`${f}: riesporta «${nome}» ma poi lo usa`,
+                `«export { ${nome} } from …» NON lo porta nello scope del file: aggiungi anche «import { ${nome} } from …»`);
+        }
+    }
+    console.log(`   ${esaminati} file con riesportazioni esaminati\n`);
+}
+
 /* ── esito ─────────────────────────────────────────────────────────────── */
 if (violazioni) {
     console.log(`${R}${B}✗ ${violazioni} violazion${violazioni === 1 ? "e" : "i"} di sicurezza.${X}`);
