@@ -29,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import {
-    caricaCatalogo, caricaGiacenze, caricaGruppi, cerca, cercaSeriale, sembraSeriale, puoEssereSeriale, normalizzaSeriale, iconaArticolo,
+    caricaCatalogo, caricaGiacenze, caricaGruppi, cercaArticoli, cercaSeriale, sembraSeriale, puoEssereSeriale, normalizzaSeriale, iconaArticolo,
     marginePct, perchéSenzaMargine,
     type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale, type GruppoCassa,
 } from "@/lib/cassaCatalogo";
@@ -91,7 +91,8 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     const nonSoAncora = statoMag === "sconosciuto" || statoMag === "errore";
     const ricerca = useRef<HTMLInputElement | null>(null);
 
-    useEffect(() => { caricaCatalogo().then(setVoci); caricaGruppi().then(setGruppi); }, []);
+    // la base dipende dal negozio: sono i suoi articoli con pezzi
+    useEffect(() => { caricaCatalogo(negozio).then(setVoci); caricaGruppi().then(setGruppi); }, [negozio]);
     useEffect(() => {
         setStatoMag("sconosciuto"); setGiac(new Map());
         if (!negozio) return;
@@ -137,15 +138,32 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        non servivano, «sopra ho i pulsanti rapidi e sotto scrivo il codice»).
        Senza ricerca, centocinquanta articoli a caso sono rumore: la strada è
        scrivere o sparare, e la risposta arriva. */
-    const risultati = useMemo(() => {
-        if (!voci || natura !== "prodotto" || !q.trim()) return [];
-        const v = cerca(voci.filter((x) => x.natura === "prodotto"), q);
-        /* CHI CE L'HA IN NEGOZIO VIENE PRIMA (Luca 29/08: «mentre io scrivo lui
-           mi dà la disponibilità degli articoli»): a parità di ricerca il pezzo
-           che è sullo scaffale conta più di uno che va ordinato. */
-        const n = (x: VoceCassa) => x.codice ? (giac.get(x.codice)?.quantita ?? 0) : 0;
-        return [...v].sort((a, b) => (n(b) > 0 ? 1 : 0) - (n(a) > 0 ? 1 : 0)).slice(0, 150);
-    }, [voci, natura, q, giac]);
+    /* LA RICERCA CHIEDE AL DATABASE (Luca 29/08, dopo l'import del listino:
+       da 2.223 articoli a 17.052). Filtrare una lista in memoria voleva dire
+       scaricarne prima sei megabyte a ogni apertura della cassa; ora si
+       scarica solo quello che serve senza cercare, e la ricerca va dove
+       stanno i dati. Mezzo secondo di attesa, perché ogni tasto non diventi
+       un'interrogazione. */
+    const [risultati, setRisultati] = useState<VoceCassa[]>([]);
+    const [cercando, setCercando] = useState(false);
+    useEffect(() => {
+        if (natura !== "prodotto" || !q.trim()) { setRisultati([]); setCercando(false); return; }
+        let vivo = true;
+        setCercando(true);
+        const t = setTimeout(() => {
+            cercaArticoli(q).then((v) => {
+                if (!vivo) return;
+                /* CHI CE L'HA IN NEGOZIO VIENE PRIMA (Luca 29/08: «mentre io
+                   scrivo lui mi dà la disponibilità degli articoli»): a parità
+                   di ricerca il pezzo che è sullo scaffale conta più di uno che
+                   va ordinato. */
+                const n = (x: VoceCassa) => x.codice ? (giac.get(x.codice)?.quantita ?? 0) : 0;
+                setRisultati([...v].sort((a, b) => (n(b) > 0 ? 1 : 0) - (n(a) > 0 ? 1 : 0)));
+                setCercando(false);
+            }).catch(() => { if (vivo) { setRisultati([]); setCercando(false); } });
+        }, 300);
+        return () => { vivo = false; clearTimeout(t); };
+    }, [natura, q, giac]);
 
     /** Quanti se ne possono ancora vendere: quelli a magazzino MENO quelli
      *  che il venditore ha già messo nel carrello. */
@@ -458,6 +476,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             <div style={{ marginTop: 12, maxHeight: "46vh", minHeight: 240, overflowY: "auto", paddingRight: 4 }}>
                 {voci === null ? <div className="rvVuoto"><b>Carico il magazzino…</b></div>
                     : !q.trim() ? <div className="rvVuoto">🔎<b>Cerca un articolo</b><small>spara il codice a barre o l&apos;IMEI, oppure scrivi il nome</small></div>
+                        : cercando ? <div className="rvVuoto">⏳<b>Cerco…</b></div>
                         : risultati.length === 0 ? <div className="rvVuoto">🔍<b>Nessun articolo</b><small>prova con un&apos;altra parola</small></div>
                         : (
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,250px),1fr))", gap: 8 }}>

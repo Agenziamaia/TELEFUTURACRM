@@ -109,40 +109,106 @@ export function perchéSenzaMargine(v: { prezzo: number | null; costo: number | 
 
 const PAGINA = 1000;   // il server taglia OGNI risposta a 1000 righe
 
-/* IL CATALOGO SI SCARICA UNA VOLTA SOLA (revisore 29/08). Sono 2.267 righe,
-   circa 630 KB in tre chiamate in fila: scaricarle a ogni apertura della
-   schermata — e la finestra dal carrello si riapre a ogni prodotto aggiunto —
-   sono uno o due secondi di attesa ogni volta, sulla wifi di un centro
-   commerciale. Resta in memoria finché la pagina è aperta. */
+/* NON SI SCARICA PIÙ TUTTO IL CATALOGO (Luca 29/08, dopo l'import del
+   listino generale). Gli articoli sono passati da 2.223 a 17.052: la vista
+   intera pesa **6,4 MB**, e la finestra della cassa si riapre a ogni prodotto
+   aggiunto. Scaricare sei megabyte sulla wifi di un centro commerciale, ogni
+   volta, non è una schermata lenta — è una schermata che il negozio smette di
+   usare.
+
+   Quello che serve SEMPRE è poco e si tiene in memoria: i servizi, gli
+   articoli dei pulsanti rapidi, e quelli che in QUESTO negozio hanno pezzi.
+   A Donna sono qualche centinaio, negli altri quattordici quasi nulla.
+   Il resto si cerca dove sta già: sul database, quando qualcuno scrive. */
 let _catalogo: VoceCassa[] | null = null;
+let _catalogoDi: string | null = null;
 let _inCorso: Promise<VoceCassa[]> | null = null;
 
 /** Da chiamare quando il magazzino cambia davvero (un'importazione, un
  *  carico): la prossima lettura ripartirà dal database. */
-export function scordaCatalogo() { _catalogo = null; _inCorso = null; }
+export function scordaCatalogo() { _catalogo = null; _catalogoDi = null; _inCorso = null; }
 
-/** Tutto il catalogo vendibile. Il tetto di 1000 righe per risposta è una
- *  trappola nota del PostgREST (già costata i brand «fino ad Azza» sui
- *  dispositivi): qui si pagina fino in fondo. */
-export async function caricaCatalogo(): Promise<VoceCassa[]> {
-    if (_catalogo) return _catalogo;
-    // due aperture ravvicinate non devono scaricarlo due volte in parallelo
-    if (_inCorso) return _inCorso;
-    _inCorso = _leggiCatalogo().then((v) => { _catalogo = v; _inCorso = null; return v; });
+/** Quello che serve senza cercare: servizi, pulsanti rapidi, e la merce che
+ *  in questo negozio c'è davvero. */
+export async function caricaCatalogo(negozio?: string | null): Promise<VoceCassa[]> {
+    const chiave = negozio || "";
+    if (_catalogo && _catalogoDi === chiave) return _catalogo;
+    if (_inCorso && _catalogoDi === chiave) return _inCorso;
+    _catalogoDi = chiave;
+    _inCorso = _leggiBase(chiave).then((v) => { _catalogo = v; _inCorso = null; return v; });
     return _inCorso;
 }
 
-async function _leggiCatalogo(): Promise<VoceCassa[]> {
+async function _paginato(codici: string[]): Promise<VoceCassa[]> {
     const out: VoceCassa[] = [];
-    for (let da = 0; ; da += PAGINA) {
-        const { data, error } = await supabase.from("cassa_catalogo")
-            .select("id,natura,codice,barcode,nome,famiglia,marca,gruppo,prezzo,costo,iva,reparto,scarica_magazzino,prezzo_modificabile,azienda")
-            .order("nome").range(da, da + PAGINA - 1);
-        if (error || !data?.length) break;
-        out.push(...(data as VoceCassa[]));
-        if (data.length < PAGINA) break;
+    for (let i = 0; i < codici.length; i += 300) {
+        const { data } = await supabase.from("cassa_catalogo").select(CAMPI)
+            .in("codice", codici.slice(i, i + 300));
+        if (data?.length) out.push(...(data as VoceCassa[]));
     }
     return out;
+}
+
+const CAMPI = "id,natura,codice,barcode,nome,famiglia,marca,gruppo,prezzo,costo,iva,reparto,scarica_magazzino,prezzo_modificabile,azienda";
+
+async function _leggiBase(negozio: string): Promise<VoceCassa[]> {
+    const out: VoceCassa[] = [];
+    // i servizi: sono 44, si portano dietro sempre
+    const { data: serv } = await supabase.from("cassa_catalogo").select(CAMPI).eq("natura", "servizio");
+    if (serv?.length) out.push(...(serv as VoceCassa[]));
+
+    const codici = new Set<string>();
+    // gli articoli dei pulsanti rapidi, sennò i gruppi si aprono vuoti
+    const { data: voci } = await supabase.from("cassa_gruppo_voci").select("codice").eq("attivo", true);
+    (voci || []).forEach((v: { codice: string | null }) => { if (v.codice) codici.add(v.codice); });
+    // e la merce che in questo negozio c'è davvero
+    if (negozio) {
+        for (let da = 0; ; da += PAGINA) {
+            const { data, error } = await supabase.from("mag_disponibilita")
+                .select("codice").eq("negozio", negozio).range(da, da + PAGINA - 1);
+            if (error || !data?.length) break;
+            (data as { codice: string }[]).forEach((g) => codici.add(g.codice));
+            if (data.length < PAGINA) break;
+        }
+    }
+    if (codici.size) out.push(...await _paginato([...codici]));
+    // uno stesso codice può arrivare da due strade
+    const visti = new Set<string>();
+    return out.filter((v) => (visti.has(v.id) ? false : (visti.add(v.id), true)));
+}
+
+/** LA RICERCA VA DOVE STANNO I DATI. Con diciassettemila articoli non si
+ *  filtra più una lista in memoria: si chiede al database, che ha gli indici.
+ *  Cerca su nome, codice e barcode; le parole si cercano tutte. */
+export async function cercaArticoli(testo: string, limite = 150): Promise<VoceCassa[]> {
+    const q = String(testo || "").trim();
+    if (q.length < 2) return [];
+    const esc = (t: string) => t.replace(/[%,()]/g, " ").trim();
+    const soloCifre = q.replace(/\D/g, "");
+    // un codice a barre incollato intero: se combacia, è quello e basta
+    if (soloCifre.length >= 8) {
+        const { data } = await supabase.from("cassa_catalogo").select(CAMPI)
+            .eq("natura", "prodotto").eq("barcode", soloCifre).limit(limite);
+        if (data?.length) return data as VoceCassa[];
+    }
+    const parole = esc(q).split(/\s+/).filter(Boolean).slice(0, 4);
+    if (!parole.length) return [];
+    // la prima parola la fa cercare al database, le altre affinano qui: così
+    // basta una condizione sola e l'indice serve a qualcosa
+    const p = parole[0];
+    const { data } = await supabase.from("cassa_catalogo").select(CAMPI)
+        .eq("natura", "prodotto")
+        .or(`nome.ilike.%${p}%,codice.ilike.%${p}%,barcode.ilike.%${p}%`)
+        .limit(600);
+    let v = (data || []) as VoceCassa[];
+    if (parole.length > 1) {
+        const resto = parole.slice(1).map((x) => x.toLowerCase());
+        v = v.filter((x) => {
+            const t = `${x.nome} ${x.codice || ""} ${x.barcode || ""} ${x.marca || ""}`.toLowerCase();
+            return resto.every((r) => t.includes(r));
+        });
+    }
+    return v.slice(0, limite);
 }
 
 /** Quanti pezzi ci sono, in UN negozio (e opzionalmente di UNA società).

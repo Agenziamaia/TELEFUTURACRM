@@ -10,7 +10,8 @@
     "sicurezza": "node scripts/guardia-sicurezza.mjs",
     "prebuild": "node scripts/guardia-sicurezza.mjs && node scripts/guardia-stile.mjs",
     "stile": "node scripts/guardia-stile.mjs",
-    "magazzino": "node scripts/importa-magazzino.mjs"
+    "magazzino": "node scripts/importa-magazzino.mjs",
+    "anagrafica": "node scripts/importa-anagrafica.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
