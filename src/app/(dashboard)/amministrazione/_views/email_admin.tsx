@@ -572,15 +572,33 @@ function CaselleDiServizio({ userId, puoGestire }: { userId?: string; puoGestire
                         ⏳ Utenze in attesa della loro casella
                     </div>
                     <div className="space-y-1.5">
-                        {attese.map((a) => (
-                            <div key={a.email} className="flex items-start gap-2 flex-wrap text-[12px]">
-                                <span className="font-mono text-amber-200/90">{a.email}</span>
-                                <span className="text-slate-600">←</span>
-                                <span className="text-slate-400">
-                                    {a.utenze.map((u) => `${u.accesso} (${u.username})`).join(" · ")}
-                                </span>
-                            </div>
-                        ))}
+                        {attese.map((a) => {
+                            /* ⛔ UN'ATTESA CHE NON FINIRÀ MAI (29/08). Microsoft ha
+                               chiuso l'accesso con password su hotmail/outlook/live:
+                               quelle caselle non si collegano, quindi un'utenza che
+                               aspetta un indirizzo così resta ferma per sempre — e
+                               finora restava ferma IN SILENZIO, in mezzo alle altre
+                               che invece stanno solo aspettando il loro turno.
+                               È successo a MAGLIANA: il negozio vedeva «—» al posto
+                               del pulsante e non c'era modo di capire perché. */
+                            const microsoft = /@(hotmail|outlook|live|msn)\./i.test(a.email);
+                            return (
+                                <div key={a.email} className="flex items-start gap-2 flex-wrap text-[12px]">
+                                    <span className={microsoft ? "font-mono text-rose-300/90 line-through decoration-rose-400/40" : "font-mono text-amber-200/90"}>{a.email}</span>
+                                    <span className="text-slate-600">←</span>
+                                    <span className="text-slate-400">
+                                        {a.utenze.map((u) => `${u.accesso} (${u.username})`).join(" · ")}
+                                    </span>
+                                    {microsoft && (
+                                        <span className="w-full text-[10px] text-rose-300/80 leading-snug pl-1">
+                                            ⛔ Questa casella <b>non si collegherà mai</b>: Microsoft ha chiuso l&apos;accesso con password.
+                                            Fai <b>inoltrare</b> la sua posta a una casella dei codici, poi in <b>Password</b> apri l&apos;utenza
+                                            e scegli quella casella in «Il codice arriva su» — l&apos;aggancio automatico qui non scatterà.
+                                        </span>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                     <p className="text-[10px] text-slate-500 mt-2">
                         Collega questi indirizzi qui sopra: le utenze si agganciano da sole e il pulsante «Chiedi il codice» comincia a funzionare.
