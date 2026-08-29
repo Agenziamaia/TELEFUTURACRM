@@ -48,7 +48,21 @@ export async function sincronizzaEsitoSuPratica(apptId: number | string, daLabel
             });
             const nuovo = STATO_CALL_DA_ESITO[chiaveEsito];
             const upd: Record<string, unknown> = { storico };
-            if (nuovo && p.stato !== nuovo) upd.stato = nuovo;
+            /* ⚠️ UN ESITO NON CANCELLA UN'ATTIVAZIONE (Luca 29/08).
+               La regola qui sopra dice che «Attivato» lo scrive solo il match
+               vendita↔appuntamento. Mancava l'altra metà: che nessun esito
+               possa TOGLIERLO. Successo davvero — Espedito D'addio, 25/08: il
+               match attiva alle 17:34, il giorno dopo un «No Show» dal
+               calendario riporta la pratica a «Non andato», con la vendita Sky
+               regolarmente collegata all'appuntamento.
+               Una vendita collegata è un FATTO; un «non si è presentato» è
+               un'impressione, e spesso è solo il calendario messo in ordine
+               giorni dopo. Vince il fatto.
+               L'esito resta comunque scritto nello storico: non si perde
+               niente, semplicemente non si sovrascrive lo stato. */
+            const giaAttivata = /^attivat/i.test(String(p.stato || ""));
+            const nuovoEAttivazione = /^attivat/i.test(String(nuovo || ""));
+            if (nuovo && p.stato !== nuovo && !(giaAttivata && !nuovoEAttivazione)) upd.stato = nuovo;
             await supabase.from("calls").update(upd).eq("id", p.id);
         }
     } catch { /* best-effort */ }
