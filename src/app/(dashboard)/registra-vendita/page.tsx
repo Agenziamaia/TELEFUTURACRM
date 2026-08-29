@@ -212,7 +212,14 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
    (CassaProdotti). Qui restano le voci che un magazzino non ce l'hanno —
    servizi, SIM, ESIM, Kasko — e «Telefono Cash» sparisce come categoria:
    un telefono è un prodotto, si trova sparando il suo IMEI. */
-const CAT_NON_SERVIZI=[/telefono\s*cash/i,/^prodotti/i];
+/* Sparisce SOLO «Telefono Cash», come ha chiesto Luca: un telefono è un
+   prodotto e si trova sparando il suo IMEI. Tutto il resto resta — compresa
+   la categoria «Prodotti», che non è merce di magazzino ma un elenco di
+   REGOLE di marginalità (Accessori 24,59%, PLX, CN/CP) e soprattutto
+   «Vendita Usato», che porta con sé il selettore dei telefoni ritirati, gli
+   allegati obbligatori e la pratica di finanziamento. Toglierla significava
+   spegnere in silenzio tutto quel flusso: è successo, ed è durato un'ora. */
+const CAT_NON_SERVIZI=[/telefono\s*cash/i];
 const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,soloServizi})=>{
   const [selCat,setSelCat]=useState(0);
   // il catalogo che questo componente mostra: tutto, oppure i soli servizi
@@ -600,7 +607,10 @@ const SKY_BRAND_FIBRA = ["TIM","Vodafone","Fastweb","WINDTRE","Tiscali","Sky","B
 const conPrezzo=(m,v)=>{
   const q=Number(m.qty)||1;
   const marg=(v!=null&&m.costo!=null)?(Number(v)-Number(m.costo)):null;
-  return {...m,importo:v,price:v,margin:marg,totalMargin:marg==null?null:marg*q};
+  // se è un usato con UN pezzo, il prezzo va anche nell'unità: è quello che
+  // finisce su Gestione Usati come prezzo di vendita
+  const units=(Array.isArray(m.units)&&m.units.length===1)?[{...m.units[0],prezzo:v}]:m.units;
+  return {...m,importo:v,price:v,units,margin:marg,totalMargin:marg==null?null:marg*q};
 };
 const emS = () => ({active:true,fields:{},contract:{},gnp:false,gnpNum:"",gnpOp:"",secondaLinea:false,gnp2L:null,gnp2LBrand:"",gnp2LNum:"",domiciliazione:false,opProvenienza:"",codiceOverride:"",addons:{},domiciliato:null,convergente:null,tipMob:null,mnp:null,easyPay:null,tnpGa:null,tnpTipo:"",tnpModello:"",tnpImei:"",tnpCount:null,tnpModelli:[],tnpImeis:[],packAccessori:null,packAccessoriVal:"",packAccessoriQta:"",cbTnp:false,cbTnpTipo:"",cbTnpModello:"",cbTnpImei:"",cbTnpCount:null,cbTnpModelli:[],cbTnpImeis:[],cbPackAccessori:null,cbPackAccessoriVal:"",cbPackAccessoriQta:"",cbTnpCell:"",cbTnpCC:"",cbTnpCodIns:"",cbTnpReload:null,cbTnpReloadSel:{},cbCambio:false,cbCambioVal:"",cbCambioCell:"",cbCambioCC:"",cbCambioCodIns:"",cbAddon:false,cbAddonSel:{},rfModello:"",rfImei:"",cbRf:false,cbAddonCodIns:"",cbAddonSecCell:"",cbAddonRoCell:"",cbAddonRoImei:"",cbRfCodIns:"",tnpGaReload:null,tnpGaReloadSel:{},reloadForever:null,securitySel:{},voceCasaCb:null,protectaCodIns:"",vfOffers:{},vfContratti:{},vfOffer:null,vfMnp:null,vfMnpBrand:"",vfMnpNum:"",vfDomicilio:null,vfConvergenza:null,vfNumFisso:"",vfTnp:null,vfTnpList:[],dcNumProv:"",dcNum:"",dcIccid:"",dcCodIns:"",dcRicaricaAuto:null,vfSecurity:null,cbTnpList:[],cbTraslochi:false,cbTraslochiNum:"",cbTraslochiCodIns:"",cbSecurityCodIns:"",vfFIccid:"",cbCellulare:"",cbCodContratto:"",cbCodIns2:"",cbTaglia:null,dcCbNumProv:"",dcCbIccid:"",cbCambio2:false,cbCambioCell:"",cbCambioNumMod:"",cbCambioCodIns2:"",cbSecurity:false,cbSecurityCell:"",vfFLockIn:null,vfFConvergenza:null,vfFGnp:null,vfFGnpBrand:"",vfFGnpNum:"",vfFAddons:{},vfFCodIns:"",vfFNumProvVisorio:"",vfFNumDef:"",vfbOffer:null,vfbMnp:null,vfbMnpBrand:"",vfbMnpNum:"",vfbTnp:null,vfbModello:"",vfbImei:"",vfbRataPiva:null,vfbKaskoSel:{},vfbCodIns:"",vfbCbOn:false,vfbCbCell:"",vfbCbCodIns:"",vfbFGnp:null,vfbFGnpBrand:"",vfbFGnpNum:"",vfbFCodIns:"",vfbFNumProv:"",vfbFNumDef:"",vfbFMnp:null,vfbFMnpBrand:"",vfbFMnpNum:"",vfbFCombNumProv:"",vfbFCombIccid:"",vfbNum:"",vfbIccid:"",vfbFIccid:"",vfSolDigCodIns:"",verisureCodIns:"",kfCodIns:"",vcCodIns:"",fwOffer:null,fwMnp:null,fwFSecLineCount:0,fwFSecLines:[],fwMnpBrand:"",fwMnpNum:"",fwCodIns:"",fwNumProv:"",fwNumDef:"",fwIccid:"",fwFGnp:null,fwFGnpBrand:"",fwFGnpNum:"",fwFCodIns:"",fwFNumProv:"",fwFNumDef:"",fwPod:"",fwPdr:"",fwEnCodIns:"",ilOffer:null,ilMnp:null,ilDom:null,ilMnpBrand:"",ilMnpNum:"",ilCodIns:"",ilNumProv:"",ilNumDef:"",ilIccid:"",ilFGnp:null,ilFCodIns:"",ilFNumProv:"",ilFNumDef:"",ilFwaCodIns:"",ilFwaIccid:"",ilBizOffer:null,ilBizMnp:null,ilBizMnpBrand:"",ilBizDom:null,ilBizNum:"",ilBizIccid:"",ilBizNumDef:"",ilBizCodIns:"",enCodIns:"",enPod:"",enPdr:"",enProv:"",fwEnProv:"",w3SostCell:"",w3SostIccid:"",w3SostCodContr:"",w3SostCodIns:"",fwSostCell:"",fwSostIccid:"",fwSostCodContr:"",fwSostCodIns:"",vfSostCell:"",vfSostCodIns:"",timOffer:null,timMnp:null,timMnpBrand:"",timMnpNum:"",timTnp:null,timModello:"",timSpedizione:null,timFinanziato:null,timCodPratica:"",timVisionBox:null,timVisionTaglia:null,timVisionNumContr:"",timImei:"",timNumProv:"",timNum:"",timIccid:"",timCodIns:"",timFOffer:null,timFGnp:null,timFGnpBrand:"",timFGnpNum:"",timFNumProv:"",timFCodIns:"",timFVision:null,timFVisionTaglia:null,timFVisionNumContr:"",timTpTwin:null,timTpSeriale:"",timTpRecapito:"",timTpCodIns:"",veryOffer:null,veryMnp:null,veryMnpBrand:"",veryMnpNum:"",veryRicaricaAuto:null,veryFascia:null,veryCodIns:"",veryNumProv:"",veryNum:"",veryIccid:"",hoOffer:null,hoMnp:null,hoMnpBrand:"",hoMnpNum:"",hoRicaricaAuto:null,hoFascia:null,hoCodIns:"",hoNumProv:"",hoNum:"",hoIccid:"",kenaOffer:null,kenaMnp:null,kenaMnpBrand:"",kenaMnpNum:"",kenaRicaricaAuto:null,kenaFascia:null,kenaCodIns:"",kenaNumProv:"",kenaNum:"",kenaIccid:""});
 
@@ -5178,7 +5188,11 @@ function CRM() {
   // Blocca il salvataggio se manca il prezzo di vendita: voci AUTO obbligatorie
   // (priceRequired), voci manuali marcate priceRequired dal pannello, e — per le
   // bozze salvate prima di questo flag — qualsiasi voce di brand (linked: SIM/Sost).
-  const margPriceMissing=(list)=>list.filter(m=>(m.priceRequired||m.linked)&&!m.priceLocked&&(m.importo==null||m.importo===""));
+  /* `m.natura` = riga che arriva dalla cassa (prodotto o servizio): il prezzo
+     è obbligatorio anche lì. Senza, i 155 articoli attivi col prezzo vuoto
+     entravano in carrello, il magazzino li scaricava e lo scontrino li
+     buttava via — merce uscita e riga assente dal fiscale (revisore 29/08). */
+  const margPriceMissing=(list)=>list.filter(m=>(m.priceRequired||m.linked||m.natura)&&!m.priceLocked&&(m.importo==null||m.importo===""));
   // live: le voci auto seguono in tempo reale la selezione dei prodotti del brand corrente
   useEffect(()=>{
     if(!bObj)return;
@@ -5443,6 +5457,12 @@ function CRM() {
       description: mi.product,
       unitPrice: (mi.importo != null ? mi.importo : mi.price),
       qty: mi.qty || 1,
+      /* IL REPARTO IVA. Senza, il registratore telematico non sa dove mettere
+         la riga: in modalità fiscale finiva fra le «escluse» e un carrello di
+         soli prodotti riceveva un rifiuto secco (revisore 29/08). Per le voci
+         di marginalità il reparto lo decide marg_items lato server; per i
+         prodotti di magazzino arriva da qui. */
+      reparto: mi.reparto ?? null,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
   const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
@@ -6004,7 +6024,10 @@ function CRM() {
           codice_attivazione: "VENDITA-DIRETTA",
           data_registrazione: dateStr,
           data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
-          dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null },
+          /* cosa serviva al magazzino: senza questi, se lo scarico fallisce
+             non si può più ricostruire cosa andava tolto (revisore 29/08) */
+          dettagli: { codice: mi.codice ?? null, costo: mi.costo ?? null, natura: mi.natura ?? null, scaricaMagazzino: mi.scaricaMagazzino ?? null, reparto: mi.reparto ?? null, barcode: mi.barcode ?? null,
+            product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null },
           is_demo: false
         }, mi));
       });
@@ -6190,10 +6213,20 @@ function CRM() {
   // Il cellulare deve essere VERO (11/08: un numero a caso passava): 9-13 cifre.
   const _celMargOk=(()=>{const d=(ana.cellulare||"").replace(/\D/g,"");return d.length>=9&&d.length<=13;})();
   const margMinOk=!!(_celMargOk&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
+  const margLock=useRef(false);
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
-    if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
-    if(margSaving)return;
+    if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); margLock.current=false;return; }
+    /* IL BLOCCO SUL RIFERIMENTO, NON SULLO STATO (revisore 29/08). È lo
+       stesso difetto che questo file racconta di aver già pagato sui
+       contratti: due clic nello stesso istante leggono entrambi `margSaving`
+       ancora falso — React aggiorna lo stato dopo — e la vendita si salva DUE
+       VOLTE. Con la cassa costerebbe due scontrini e due scarichi di
+       magazzino, e mag_movimenti non ha nulla che li rifiuti. Un riferimento
+       cambia subito, nello stesso istante. */
+    if(margLock.current)return;
+    margLock.current=true;
+    if(margSaving){margLock.current=false;return;}
     // MOD-44c: i dati cliente vengono SOLO dallo step Cliente; "anonimo" = skip
     // esplicito confermato dal popup (tracciato sulla vendita)
     const anon=margSkipCli;
@@ -6201,14 +6234,14 @@ function CRM() {
     // e allegati documento + contratto obbligatori
     const _conFin=margItems.some(_usatoFinanziato);
     if(_conFin){
-      if(anon){setShowMargSave(false);setMargSkipCli(false);setVistaStep("cliente");setShowAna(true);sT("💳 Usato con finanziamento: i dati del cliente sono OBBLIGATORI, non si possono saltare — compilali nello step Cliente");return;}
+      if(anon){setShowMargSave(false);setMargSkipCli(false);setVistaStep("cliente");setShowAna(true);sT("💳 Usato con finanziamento: i dati del cliente sono OBBLIGATORI, non si possono saltare — compilali nello step Cliente");margLock.current=false;return;}
       if(!margCliSel&&!_anaStep2Ok()){
         setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
         sT("💳 Usato con finanziamento: compila l'anagrafica del cliente nello step Cliente (CF, nome/ragione sociale e cellulare), poi torna a salvare");
-        return;
+        margLock.current=false;return;
       }
-      if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setShowMargSave(false);setVistaStep("allegati");return;}
-      if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setShowMargSave(false);setVistaStep("allegati");return;}
+      if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setShowMargSave(false);setVistaStep("allegati");margLock.current=false;return;}
+      if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setShowMargSave(false);setVistaStep("allegati");margLock.current=false;return;}
     }
     if(!anon&&!margCliSel){
       const f=_anaComeForm();
@@ -6219,10 +6252,10 @@ function CRM() {
       if(!haId){
         setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
         sT("👤 Compila almeno un dato del cliente nello step Cliente (basta anche solo nome, cognome o CF) — oppure salta da lì in modo esplicito");
-        return;
+        margLock.current=false;return;
       }
       // Bug indirizzo (Luca 04/08): via facoltativa, ma se compilata il civico va messo
-      if(f.via.trim()&&civicoMancante(f.via)){showToast("⚠️ Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo o lascia il campo vuoto");return;}
+      if(f.via.trim()&&civicoMancante(f.via)){showToast("⚠️ Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo o lascia il campo vuoto");margLock.current=false;return;}
     }
     setMargSaving(true);
     try{
@@ -6261,7 +6294,7 @@ function CRM() {
         if(!existing&&tel){
           // stesso tipo = blocco; coppia consumer+business ammessa (Luca 01/08)
           const dup=await trovaDuplicati({cellulare:tel,tipoNuovo:business?"business":"consumer"});
-          if(dup.cellulare){showToast(`⚠️ Cellulare già associato a “${dup.cellulare.label}” (stesso tipo): usa un altro numero o registra dalla sua scheda`);setMargSaving(false);return;}
+          if(dup.cellulare){showToast(`⚠️ Cellulare già associato a “${dup.cellulare.label}” (stesso tipo): usa un altro numero o registra dalla sua scheda`);setMargSaving(false);margLock.current=false;return;}
         }
         let prev={};
         if(existing&&existing.id){const {data:full}=await supabase.from("clients").select("*").eq("id",existing.id).maybeSingle();if(full)prev=full;}
@@ -6273,7 +6306,7 @@ function CRM() {
           const eCli=business?verificaCoerenzaCF(keep(f.nomeRef,"nome_ref"),keep(f.cognomeRef,"cognome_ref"),keep(f.cfRef,"cf_ref")||null):verificaCoerenzaCF(keep(f.nome,"nome"),keep(f.cognome,"cognome"),cfPiva);
           if(!eCli.ok){
             const ok=window.confirm(`⚠️ Il codice fiscale non torna coi dati scritti:\n— ${eCli.motivi.join("\n— ")}\n\nOK = salva comunque (te ne assumi l'errore).\nAnnulla = torna a correggere.`);
-            if(!ok){setMargSaving(false);return;}
+            if(!ok){setMargSaving(false);margLock.current=false;return;}
           }
         }
         const {error:ce}=await supabase.from("clients").upsert({
@@ -6301,7 +6334,9 @@ function CRM() {
         prodotto:mi.product,stato:"Attivo",stato_negozio:"attivato",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
         codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
         // MOD-44c: lo skip dei dati cliente resta TRACCIATO sulla vendita
-        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
+        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null,/* cosa serviva al magazzino: senza questi, se lo scarico fallisce non
+   si può più ricostruire cosa andava tolto (revisore 29/08) */
+codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazzino:mi.scaricaMagazzino??null,reparto:mi.reparto??null,barcode:mi.barcode??null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
         is_demo:false,
       },mi));
       const {error}=await supabase.from("contracts").insert(rows);
@@ -6345,7 +6380,7 @@ function CRM() {
         negozio: selNeg, venditore: selVend }); }
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
-    }finally{setMargSaving(false);}
+    }finally{setMargSaving(false);margLock.current=false;}
   };
 
   // Ricerca REALE del cliente. Prima questa funzione non interrogava nulla:
@@ -6451,6 +6486,13 @@ function CRM() {
   };
 
 
+  /* Quanti pezzi di ogni articolo sono già nel carrello: serve alla cassa per
+     non far cliccare tre volte un articolo che ne ha uno solo (revisore 29/08). */
+  const inCarrelloPerCodice=useMemo(()=>{
+    const m={};
+    margItems.forEach(x=>{ if(x&&x.codice&&x.scaricaMagazzino) m[x.codice]=(m[x.codice]||0)+(Number(x.qty)||1); });
+    return m;
+  },[margItems]);
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
   // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
   // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
@@ -7117,7 +7159,7 @@ function CRM() {
           pulsanti di sempre, passati dentro. Vedi docs/REGOLE_REGISTRA_VENDITA.md */}
       {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}}>
         <div className="rvCardT" style={{marginBottom:14}}>🧾 Prodotti e servizi</div>
-        <CassaProdotti negozio={selNeg} venditore={selVend}
+        <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice}
           onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}}
           servizi={<MargPOS inline show soloServizi onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
       </div>}
@@ -7348,7 +7390,7 @@ function CRM() {
               <div className="rvCardT" style={{marginBottom:0}}>🧾 Prodotti e servizi</div>
               <button onClick={()=>{setShowMargPOS(false);setMargEditItem(null);}} className="rvPill rvPill-sm">✕ Chiudi</button>
             </div>
-            <CassaProdotti negozio={selNeg} venditore={selVend}
+            <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice}
               onAdd={(item)=>{addMargItem(item);setMargEditItem(null);}}
               servizi={<MargPOS inline show soloServizi onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
           </div>

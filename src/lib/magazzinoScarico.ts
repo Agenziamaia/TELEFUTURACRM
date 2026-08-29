@@ -7,10 +7,12 @@
 //
 // Due regole che vengono dal negozio, non dal codice:
 //
-//  1. UNA VENDITA NON SI FERMA PER UN DATO INDIETRO. Se la giacenza dice zero
-//     ma il pezzo è lì in mano al cliente, si vende lo stesso e la giacenza va
-//     in negativo: il negativo è un'informazione («qui il conto non torna»),
-//     il blocco sarebbe un incasso perso.
+//  1. QUELLO CHE NON C'È NON SI VENDE (Luca 29/08, decisione secca). Da qui
+//     esce uno scontrino fiscale: un pezzo che a magazzino non esiste non si
+//     può battere. Il rifiuto avviene PRIMA, in cassa, con un pop-up — qui
+//     arriva solo roba già controllata. Se una giacenza va comunque in
+//     negativo è il segno che qualcosa è sfuggito al controllo: si registra,
+//     non si nasconde.
 //
 //  2. LO SCARICO NON PUÒ FAR FALLIRE IL SALVATAGGIO. La vendita è già scritta
 //     e lo scontrino può essere già stampato: se il movimento non parte si
@@ -36,6 +38,9 @@ export type EsitoScarico = {
     /** le righe che hanno portato la giacenza sotto zero: il negozio le deve
      *  contare. Non è un errore del software, è un conto che non torna. */
     sottoZero: { prodotto: string; codice: string; restano: number }[];
+    /** pezzi da scaricare che non hanno un codice articolo: non si possono
+     *  togliere da nessuna giacenza, e va detto invece che ingoiarlo */
+    senzaCodice?: string[];
     errore?: string;
 };
 
@@ -50,6 +55,12 @@ export async function scaricaVendita(
     const esito: EsitoScarico = { scaricate: 0, saltate: 0, sottoZero: [] };
     const daFare = (righe || []).filter((r) => r.scaricaMagazzino && r.codice);
     esito.saltate = (righe || []).length - daFare.length;
+    /* Un pezzo che DOVEVA scaricare ma non ha un codice articolo: in
+       mag_unita il codice è facoltativo, quindi capita. Prima finiva fra le
+       «saltate» che nessuno legge — un telefono nuovo venduto e mai
+       scaricato. Ora lo si dice. */
+    const senzaCodice = (righe || []).filter((r) => r.scaricaMagazzino && !r.codice);
+    if (senzaCodice.length) esito.senzaCodice = senzaCodice.map((r) => String(r.product || "senza nome"));
     if (!daFare.length || !negozio) return esito;
 
     try {
@@ -76,9 +87,17 @@ export async function scaricaVendita(
             };
         });
 
-        const { error } = await supabase.from("mag_movimenti").insert(movimenti);
-        if (error) return { ...esito, scaricate: 0, errore: error.message };
-        esito.scaricate = movimenti.length;
+        /* UNA RIGA PER VOLTA, non un blocco solo: con l'insert in blocco un
+           codice sbagliato faceva fallire TUTTO il lotto per violazione della
+           chiave esterna, e quattro articoli su cinque restavano non
+           scaricati senza che nessuno lo sapesse (revisore 29/08). */
+        const falliti: string[] = [];
+        for (const m of movimenti) {
+            const { error } = await supabase.from("mag_movimenti").insert(m);
+            if (error) falliti.push(`${m.codice} (${error.message})`);
+            else esito.scaricate++;
+        }
+        if (falliti.length) esito.errore = "non scaricati: " + falliti.join(" · ");
     } catch (e) {
         return { ...esito, scaricate: 0, errore: (e as Error)?.message || "scarico non riuscito" };
     }

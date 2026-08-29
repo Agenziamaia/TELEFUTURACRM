@@ -38,11 +38,16 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
 const eur = (n: number | null | undefined) =>
     n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
+export function CassaProdotti({ negozio, venditore, onAdd, servizi, giaInCarrello }: {
     negozio?: string; venditore?: string;
     onAdd: (r: Record<string, unknown>) => void;
     /** i pulsanti dei servizi che esistono già: restano quelli */
     servizi?: React.ReactNode;
+    /** quanti pezzi di ogni codice sono GIÀ nel carrello. Senza questo il
+     *  controllo di giacenza guarda solo il magazzino, e cliccando tre volte
+     *  su un articolo che ne ha uno passano tutte e tre — che è poi l'unico
+     *  modo di venderne due uguali, quindi la strada normale (revisore 29/08). */
+    giaInCarrello?: Record<string, number>;
 }) {
     const [natura, setNatura] = useState<NaturaCassa | null>(null);
     const [voci, setVoci] = useState<VoceCassa[] | null>(null);
@@ -90,7 +95,14 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
         return [...v].sort((a, b) => (n(b) > 0 ? 1 : 0) - (n(a) > 0 ? 1 : 0)).slice(0, 150);
     }, [voci, natura, famiglia, q, giac]);
 
-    const quanti = (v: VoceCassa) => v.codice ? (giac.get(v.codice)?.quantita ?? null) : null;
+    /** Quanti se ne possono ancora vendere: quelli a magazzino MENO quelli
+     *  che il venditore ha già messo nel carrello. */
+    const quanti = (v: VoceCassa) => {
+        if (!v.codice) return null;
+        const g = giac.get(v.codice)?.quantita;
+        if (g == null) return null;
+        return Number(g) - Number(giaInCarrello?.[v.codice] || 0);
+    };
 
     /** In carrello, subito. Il prezzo è quello dell'articolo: si corregge nel
      *  carrello, e solo se l'articolo lo permette. */
@@ -99,11 +111,14 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
         // NON C'È = NON ENTRA. Nessuna eccezione: da qui esce uno scontrino
         // fiscale, e un pezzo che a magazzino non esiste non si può battere.
         if (v.scarica_magazzino && !((n ?? 0) > 0)) {
+            const inCarrello = Number(giaInCarrello?.[v.codice || ""] || 0);
             setManca({
                 nome: v.nome,
                 dettaglio: n == null
                     ? `Questo articolo non ha nessuna giacenza nel magazzino di ${negozio || "questo negozio"}: non risulta mai entrato.`
-                    : `Nel magazzino di ${negozio || "questo negozio"} la giacenza è ${n}. Non ci sono pezzi da vendere.`,
+                    : inCarrello > 0
+                        ? `Ne hai già ${inCarrello} nel carrello e in magazzino non ce ne sono altri.`
+                        : `Nel magazzino di ${negozio || "questo negozio"} non ci sono pezzi da vendere.`,
             });
             return;
         }
@@ -132,16 +147,26 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
             setManca({ nome: p.nome + " · " + p.seriale, dettaglio: `Questo pezzo si trova a ${p.negozio}, non a ${negozio}. Va prima trasferito con un DDT: da qui non si può vendere.` });
             return;
         }
+        const usato = p.provenienza === "usato";
         onAdd({
-            product: p.nome, productId: "ser:" + p.seriale,
+            /* L'USATO PRENDE LA FORMA CHE IL CRM CONOSCE GIÀ (revisore 29/08).
+               Prima usciva con productId "ser:<imei>" e l'usatoId in cima
+               all'oggetto: `scaricaUsatiVenduti` cerca invece
+               productId==="vendita_usato" e l'usatoId DENTRO `units`, quindi
+               non combaciava niente e il telefono restava «in vendita» per
+               sempre — rivendibile da un altro negozio il giorno dopo.
+               Usando la forma di sempre si riusa tutto il flusso già provato:
+               passaggio a venduto, prezzo, cliente collegato, storico. */
+            product: usato ? "Vendita Usato" : p.nome,
+            productId: usato ? "vendita_usato" : "ser:" + p.seriale,
             price: p.prezzo, importo: p.prezzo, qty: 1,
             margin: null, totalMargin: null, model: p.nome, imei: p.seriale,
+            units: usato ? [{ usatoId: p.riferimento, imei: p.seriale, model: p.nome, prezzo: p.prezzo }] : null,
             venditore, negozio, date: new Date().toISOString().slice(0, 10),
             codice: p.codice, barcode: null, costo: p.costo,
-            natura: "prodotto", scaricaMagazzino: p.provenienza === "nuovo",
+            natura: "prodotto", scaricaMagazzino: !usato && !!p.codice,
             prezzoModificabile: p.prezzo_modificabile,
             seriale: p.seriale, provenienzaPezzo: p.provenienza,
-            usatoId: p.provenienza === "usato" ? p.riferimento : null,
             giacenzaAllAggiunta: 1,
         });
         setQ(""); setPezzo(null); ricerca.current?.focus();
