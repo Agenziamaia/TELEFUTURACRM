@@ -19,15 +19,21 @@
 
    «Telefono Cash» sparisce come categoria: un telefono è un prodotto, si
    trova sparando il suo IMEI.
+
+   ⚠️  Questa schermata segue  docs/REGOLE_REGISTRA_VENDITA.md : solo classi
+   `.rv*`, nessuno stile scritto a mano, il colore dal contenitore, i modali
+   in un portal. Se la modifichi, resta dentro quelle regole.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import {
     caricaCatalogo, caricaGiacenze, famiglieDi, cerca, cercaSeriale, sembraSeriale,
     marginePct, perchéSenzaMargine,
     type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale,
 } from "@/lib/cassaCatalogo";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 
 const eur = (n: number | null | undefined) =>
     n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -44,7 +50,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
     const [q, setQ] = useState("");
     const [famiglia, setFamiglia] = useState<string | null>(null);
     const [pezzo, setPezzo] = useState<PezzoSeriale | null>(null);
-    const [serialeVuoto, setSerialeVuoto] = useState<string | null>(null);
+    /* IL PEZZO CHE NON C'È (Luca 29/08, correzione secca): «se il prodotto
+       non c'è in magazzino non deve andare nemmeno nel carrello, deve darmi un
+       pop up che mi dice che il prodotto non è presente in magazzino».
+       Il carrello è la base dello scontrino fiscale: se ci entra qualcosa che
+       a magazzino non esiste, il conto non torna già in partenza. */
+    const [manca, setManca] = useState<{ nome: string; dettaglio: string } | null>(null);
     const ricerca = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { caricaCatalogo().then(setVoci); }, []);
@@ -54,13 +65,14 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
     /* IL SERIALE. Un IMEI ha 15 cifre, un ICCID 19: quando quello che si è
        digitato ha quella forma si va a cercare IL pezzo, non l'articolo. */
     useEffect(() => {
-        setPezzo(null); setSerialeVuoto(null);
+        setPezzo(null);
         if (natura !== "prodotto" || !sembraSeriale(q)) return;
         let vivo = true;
         const s = q.replace(/\D/g, "");
         cercaSeriale(s).then((p) => {
             if (!vivo) return;
-            if (p) setPezzo(p); else setSerialeVuoto(s);
+            if (p) setPezzo(p);
+            else setManca({ nome: "Seriale " + s, dettaglio: "Questo seriale non risulta a magazzino né fra gli usati in vendita. Se il telefono è qui davanti a te va prima caricato: finché non c'è, non può essere venduto." });
         });
         return () => { vivo = false; };
     }, [q, natura]);
@@ -84,6 +96,17 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
      *  carrello, e solo se l'articolo lo permette. */
     const metti = (v: VoceCassa, extra: Record<string, unknown> = {}) => {
         const n = quanti(v);
+        // NON C'È = NON ENTRA. Nessuna eccezione: da qui esce uno scontrino
+        // fiscale, e un pezzo che a magazzino non esiste non si può battere.
+        if (v.scarica_magazzino && !((n ?? 0) > 0)) {
+            setManca({
+                nome: v.nome,
+                dettaglio: n == null
+                    ? `Questo articolo non ha nessuna giacenza nel magazzino di ${negozio || "questo negozio"}: non risulta mai entrato.`
+                    : `Nel magazzino di ${negozio || "questo negozio"} la giacenza è ${n}. Non ci sono pezzi da vendere.`,
+            });
+            return;
+        }
         onAdd({
             product: v.nome, productId: v.id,
             price: v.prezzo, importo: v.prezzo, qty: 1,
@@ -102,6 +125,13 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
     };
 
     const mettiPezzo = (p: PezzoSeriale) => {
+        // il pezzo esiste, ma è di un altro negozio: da qui non si vende.
+        // I negozi doppi (Magliana W3/Multi, Acilia, Collatina) condividono il
+        // magazzino: lì il pezzo è a casa sua anche col nome diverso.
+        if (negozio && p.negozio && !stessoMagazzino(p.negozio, negozio)) {
+            setManca({ nome: p.nome + " · " + p.seriale, dettaglio: `Questo pezzo si trova a ${p.negozio}, non a ${negozio}. Va prima trasferito con un DDT: da qui non si può vendere.` });
+            return;
+        }
         onAdd({
             product: p.nome, productId: "ser:" + p.seriale,
             price: p.prezzo, importo: p.prezzo, qty: 1,
@@ -178,12 +208,6 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
                     </div>
                 </div>
             )}
-            {serialeVuoto && (
-                <div className="rvNota rvNota-att">
-                    <div className="rvNota-t">⚠️ Nessun pezzo con questo seriale</div>
-                    <div className="rvNota-s">Il seriale <b style={{ fontFamily: "monospace" }}>{serialeVuoto}</b> non risulta a magazzino né fra gli usati in vendita. Se il telefono è qui davanti a te, va prima caricato.</div>
-                </div>
-            )}
 
             {/* i filtri rapidi */}
             {famiglie.length > 1 && (
@@ -226,6 +250,23 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi }: {
                             </div>
                         )}
             </div>
+
+            {/* IN UN PORTAL: le sezioni hanno un backdrop-blur, e un elemento
+                a schermo intero reso lì dentro verrebbe ancorato al riquadro
+                invece che alla finestra (misurato ieri: 420×130 al posto di
+                1200×713). */}
+            {manca && typeof document !== "undefined" && createPortal(
+                <div className="rvFattaSfondo" onClick={(e) => { if (e.target === e.currentTarget) setManca(null); }}>
+                    <div className="rvFatta" style={{ borderColor: "rgba(245,158,11,.45)" }}>
+                        <div className="rvFatta-o" style={{ color: "var(--tf-fbbf24)", background: "rgba(245,158,11,.14)", borderColor: "rgba(245,158,11,.5)" }}>📭</div>
+                        <h3>Non è in magazzino</h3>
+                        <p><b style={{ color: "var(--tf-e2e8f0)" }}>{manca.nome}</b><br />{manca.dettaglio}</p>
+                        <div className="rvFatta-d" style={{ textAlign: "left" }}>
+                            <div><span>Cosa fare</span><span style={{ fontWeight: 600, textAlign: "right" }}>caricarlo a magazzino, poi rifare la ricerca</span></div>
+                        </div>
+                        <button onClick={() => { setManca(null); setQ(""); ricerca.current?.focus(); }} className="rvAzione" style={{ width: "100%" }}>Ho capito</button>
+                    </div>
+                </div>, document.body)}
         </div>
     );
 }

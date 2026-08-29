@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "sicurezza": "node scripts/guardia-sicurezza.mjs",
-    "prebuild": "node scripts/guardia-sicurezza.mjs"
+    "prebuild": "node scripts/guardia-sicurezza.mjs && node scripts/guardia-stile.mjs",
+    "stile": "node scripts/guardia-stile.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",

@@ -1,4 +1,18 @@
 // @ts-nocheck
+// ═══════════════════════════════════════════════════════════════════════════
+//  PRIMA DI TOCCARE QUESTO FILE: leggi  docs/REGOLE_REGISTRA_VENDITA.md
+//
+//  Il 28/08/2026 questa sezione è stata riportata a una lingua sola: gli stili
+//  NON si scrivono più a mano, si usano le classi `.rv*` che stanno in
+//  globals.css (blocco «REGISTRA VENDITA»). Le regole sono poche e scritte lì.
+//
+//  Se aggiungi una `style={{ background… border… padding… }}` a mano, stai
+//  ricominciando il problema che quel giorno è costato una giornata intera.
+//  Se ti serve qualcosa che non c'è, si aggiunge ALLA CASSETTA.
+//
+//  Le regole si possono cambiare — ma si cambiano nel documento, e si riadegua
+//  quello che le seguiva. Una regola valida a metà è peggio di nessuna regola.
+// ═══════════════════════════════════════════════════════════════════════════
 "use client";
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import { createPortal } from "react-dom";
