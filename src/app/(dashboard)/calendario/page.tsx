@@ -452,19 +452,27 @@ export default function Calendario() {
     const [erroreCarico, setErroreCarico] = useState<string | null>(null);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
 
-    // Deep link dai tag in chat: /calendario?appuntamento=<id> apre l'appuntamento
+    /* Deep link dai tag in chat: /calendario?appuntamento=<id> apre l'appuntamento.
+       ⚠️ SE NON LO TROVA DEVE DIRLO (29/08). Prima non faceva NIENTE: nessun
+       modale, nessun avviso — sembrava un bottone rotto. Da quando i richiami
+       non entrano più nel calendario il caso è diventato frequente: i tag
+       scritti nei messaggi VECCHI puntano ancora a quei richiami, e restano
+       validi per sempre. Almeno si spiega dove è finito. */
     const deepLinked = useRef(false);
+    const [deepLinkPerso, setDeepLinkPerso] = useState<string | null>(null);
     useEffect(() => {
         if (deepLinked.current || appointments.length === 0) return;
         const id = new URLSearchParams(window.location.search).get("appuntamento");
         if (!id) return;
+        deepLinked.current = true;      // un solo tentativo, trovato o no
         const hit = appointments.find((a: any) => String(a.id) === id);
         if (hit) {
             setSelectedAppointment(hit);
             if ((hit as any).date) setSelectedDate((hit as any).date);
             setShowModal(true);
-            deepLinked.current = true;
+            return;
         }
+        setDeepLinkPerso(id);
     }, [appointments]);
 
     // Tasks State
@@ -810,8 +818,18 @@ export default function Calendario() {
             };
             const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
 
+            /* SENZA UNA PRATICA COLLEGATA NON SI CREA NIENTE (29/08).
+               L'evento richiamo serve come ponte verso la coda del caller: se
+               non c'è nessuna pratica da rimettere in coda, quel ponte non
+               porta da nessuna parte. Restava una riga che NESSUNA schermata
+               mostra (verificate tutte: calendario, agenda del giorno, scheda
+               cliente, caller, amministrazione), e ricliccando se ne creava
+               un'altra — il dedup passa da `calls`, che qui è vuoto. A DB ce
+               n'erano già quattro così. */
             let eventId = existingEvt;
-            if (existingEvt) {
+            if (!calls.length && !existingEvt) {
+                eventId = null;
+            } else if (existingEvt) {
                 let { error } = await supabase.from("appointments").update(payload).eq("id", existingEvt);
                 if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existingEvt));
                 if (error) throw error;
@@ -846,12 +864,19 @@ export default function Calendario() {
 
             const quando = `${new Date(richiamoNegozio.date + "T12:00:00").toLocaleDateString("it-IT")}${fasciaR ? ` · ${fasciaLabel(fasciaR)}` : ""}`;
             const noNumero = !String(a.customerPhone || "").trim() ? " ⚠️ Il cliente non ha un numero in scheda: il caller lo recupera dall'anagrafica." : "";
+            /* ⚠️ IL MESSAGGIO DEVE DIRE LA VERITÀ (29/08).
+               Diceva «fissato in calendario»: da quando i richiami non entrano
+               più nel calendario, per un cliente SENZA pratica collegata quella
+               frase era falsa due volte — non era in calendario e non era in
+               coda. Restava un oggetto che nessuna schermata mostrava, e
+               ricliccando se ne creava un altro (il dedup passa da `calls`, che
+               lì è vuoto). Ora si dice com'è, e si dice cosa fare. */
             if (calls.length === 0) {
-                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando} in calendario per ${intestatario || "il call center"}. Nessuna pratica del centralino era collegata a questo appuntamento, quindi non compare nella coda chiamate.${noNumero}`);
+                setRichiamoNegozioEsito(`⚠️ Richiamo segnato per il ${quando}, ma NON è finito in nessuna coda: a questo appuntamento non è collegata nessuna pratica del centralino. Apri la scheda del cliente in Call Center e fissa il richiamo da lì, altrimenti non lo chiamerà nessuno.${noNumero}`);
             } else if (requeueErr) {
                 setRichiamoNegozioEsito(`⚠️ Evento creato, ma ${calls.length - inCoda} pratica/e NON è tornata nella coda del caller: ${requeueErr}`);
             } else {
-                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando}. La pratica è tornata nella coda di ${intestatario || "il call center"}.${noNumero}`);
+                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando}. La pratica è tornata nella coda di ${intestatario || "il call center"} — la trovi in Call Center, stato «Da richiamare».${noNumero}`);
             }
         } catch (e) {
             setRichiamoNegozioEsito("❌ Errore: " + ((e as Error).message || "richiamo non creato"));
@@ -2348,6 +2373,21 @@ export default function Calendario() {
                 {/* SEMPRE VISIBILE: la ricerca, le categorie e il pulsante che
                     apre il resto. Tutto il resto sta dietro, perché quattro
                     righe di filtri fissi spingevano la griglia sotto la piega. */}
+                {/* IL TAG DELLA CHAT CHE NON TROVA NIENTE (29/08): quasi sempre
+                    è un richiamo, che da oggi si lavora in Call Center. Prima
+                    la pagina restava muta e sembrava un bottone rotto. */}
+                {deepLinkPerso && (
+                    <div className="mx-2.5 mt-2.5 rounded-xl border border-amber-400/30 bg-amber-500/[0.07] px-3 py-2.5 flex items-start gap-2 text-[12px] text-amber-100/90">
+                        <span className="shrink-0">☎</span>
+                        <span className="leading-relaxed">
+                            L&apos;appuntamento <b>#{deepLinkPerso}</b> non è in questo calendario: quasi sempre è un
+                            <b> richiamo del call center</b>, che dal 29/08 si lavora nella sezione <b>Call Center</b>
+                            {" "}(filtro «Da richiamare»). Se invece era un appuntamento vero, potrebbe essere stato eliminato.
+                        </span>
+                        <button onClick={() => setDeepLinkPerso(null)}
+                            className="ml-auto shrink-0 text-amber-200/70 hover:text-amber-100 px-1">✕</button>
+                    </div>
+                )}
                 <div className="p-2.5 flex flex-wrap items-center gap-2">
                     <CercaCliente className="flex-1 min-w-[200px] max-w-sm"
                         value={cliente} onChange={setCliente}

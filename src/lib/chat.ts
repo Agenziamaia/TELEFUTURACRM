@@ -289,7 +289,12 @@ export async function recentEntities(): Promise<ChatRef[]> {
       .order("created_at", { ascending: false }).limit(5).then((r) => r.data || [], () => []),
     supabase.from("contracts").select("id, brand, prodotto, categoria, stato, negozio")
       .order("data_registrazione", { ascending: false }).limit(5).then((r) => r.data || [], () => []),
+    /* ⛔ NIENTE RICHIAMI FRA I TAG (29/08). Dal calendario i richiami sono
+       stati tolti, e il tag `@appuntamento` porta proprio lì: proporli qui
+       significherebbe scrivere in chat un link che non apre niente. Fra i
+       quattro più recenti erano tre su quattro. */
     supabase.from("appointments").select("id, date, time, customer_name, store")
+      .neq("type", "richiamo")
       .order("date", { ascending: false }).limit(4).then((r) => r.data || [], () => []),
   ]);
   return [
@@ -346,6 +351,9 @@ export async function searchEntities(kind: RefKind, q: string): Promise<ChatRef[
   const { data } = await supabase
     .from("appointments")
     .select("id, date, time, customer_name, agente, store, status")
+    // come sopra: i richiami non stanno più nel calendario, quindi non si
+    // taggano (nella ricerca erano 13 dei primi 15)
+    .neq("type", "richiamo")
     .or(`customer_name.ilike.${like},agente.ilike.${like},store.ilike.${like},notes.ilike.${like}`)
     .order("date", { ascending: false })
     .limit(15);
