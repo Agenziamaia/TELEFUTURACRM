@@ -118,15 +118,30 @@ async function _leggiCatalogo(): Promise<VoceCassa[]> {
     return out;
 }
 
-/** Le giacenze di UN negozio, come mappa codice → quantità. */
-export async function caricaGiacenze(negozio: string): Promise<Map<string, Giacenza>> {
+/** Quanti pezzi ci sono, in UN negozio (e opzionalmente di UNA società).
+ *
+ *  Legge da `mag_disponibilita`, che è LA disponibilità del magazzino: somma
+ *  i pezzi tenuti a quantità (gli accessori) e quelli con un seriale (i
+ *  telefoni, i modem). Sono due forme della stessa merce, e chi vende non
+ *  deve sapere in quale delle due è tenuta — Luca 29/08: «il magazzino è
+ *  l'unica fonte, Registra Vendita attinge a quello».
+ *
+ *  Il magazzino è separato per società (T1 = Telefutura, T2 = Telefutura 2):
+ *  senza `azienda` si somma tutto quello che c'è in negozio. */
+export async function caricaGiacenze(negozio: string, azienda?: string | null): Promise<Map<string, Giacenza>> {
     const m = new Map<string, Giacenza>();
     if (!negozio) return m;
     for (let da = 0; ; da += PAGINA) {
-        const { data, error } = await supabase.from("mag_giacenze")
-            .select("codice,quantita,soglia_min").eq("negozio", negozio).range(da, da + PAGINA - 1);
+        let q = supabase.from("mag_disponibilita")
+            .select("codice,quantita,azienda").eq("negozio", negozio);
+        if (azienda) q = q.eq("azienda", azienda);
+        const { data, error } = await q.range(da, da + PAGINA - 1);
         if (error || !data?.length) break;
-        (data as Giacenza[]).forEach((g) => m.set(g.codice, g));
+        (data as { codice: string; quantita: number }[]).forEach((g) => {
+            const gia = m.get(g.codice);
+            // senza filtro di società lo stesso articolo può tornare due volte
+            m.set(g.codice, { codice: g.codice, quantita: Number(g.quantita) + Number(gia?.quantita || 0), soglia_min: null });
+        });
         if (data.length < PAGINA) break;
     }
     return m;
@@ -176,3 +191,33 @@ export function sembraSeriale(testo: string): boolean {
     const d = String(testo || "").replace(/\D/g, "");
     return d.length === 15 || d.length === 19;
 }
+
+/* ── I GRUPPI DELLA CASSA: pulsanti a due livelli (Luca 29/08) ───────────
+   «Alcuni di questi devono avere dei sotto pulsanti, in quanto sono delle
+   sotto categorie che contengono altri prodotti.»
+   Premi «Accessori» e trovi dentro i pezzi che vendi davvero, già pronti —
+   senza cercarli. Stanno a database perché i negozi cambiano assortimento:
+   aggiungere un pulsante non deve voler dire toccare il programma. */
+export type GruppoCassa = {
+    id: string; nome: string; icona: string | null; ordine: number;
+    voci: { id: string; codice: string | null; margItemId: string | null; etichetta: string | null }[];
+};
+
+let _gruppi: GruppoCassa[] | null = null;
+
+export async function caricaGruppi(): Promise<GruppoCassa[]> {
+    if (_gruppi) return _gruppi;
+    const { data: g } = await supabase.from("cassa_gruppi")
+        .select("id,nome,icona,ordine").eq("attivo", true).order("ordine");
+    if (!g?.length) { _gruppi = []; return _gruppi; }
+    const { data: v } = await supabase.from("cassa_gruppo_voci")
+        .select("id,gruppo_id,codice,marg_item_id,etichetta,ordine").eq("attivo", true).order("ordine");
+    _gruppi = (g as { id: string; nome: string; icona: string | null; ordine: number }[]).map((x) => ({
+        ...x,
+        voci: (v || []).filter((y: { gruppo_id: string }) => y.gruppo_id === x.id)
+            .map((y: { id: string; codice: string | null; marg_item_id: string | null; etichetta: string | null }) =>
+                ({ id: y.id, codice: y.codice, margItemId: y.marg_item_id, etichetta: y.etichetta })),
+    })).filter((x) => x.voci.length > 0);
+    return _gruppi;
+}
+export function scordaGruppi() { _gruppi = null; }

@@ -29,9 +29,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import {
-    caricaCatalogo, caricaGiacenze, cerca, cercaSeriale, sembraSeriale,
+    caricaCatalogo, caricaGiacenze, caricaGruppi, cerca, cercaSeriale, sembraSeriale,
     marginePct, perchéSenzaMargine,
-    type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale,
+    type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale, type GruppoCassa,
 } from "@/lib/cassaCatalogo";
 import { stessoMagazzino } from "@/lib/negoziNomi";
 
@@ -58,6 +58,8 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     const [giac, setGiac] = useState<Map<string, Giacenza>>(new Map());
     const [q, setQ] = useState("");
     const [pezzo, setPezzo] = useState<PezzoSeriale | null>(null);
+    const [gruppi, setGruppi] = useState<GruppoCassa[]>([]);
+    const [gruppoAperto, setGruppoAperto] = useState<string | null>(null);
     /* IL PEZZO CHE NON C'È (Luca 29/08, correzione secca): «se il prodotto
        non c'è in magazzino non deve andare nemmeno nel carrello, deve darmi un
        pop up che mi dice che il prodotto non è presente in magazzino».
@@ -66,7 +68,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     const [manca, setManca] = useState<{ nome: string; dettaglio: string } | null>(null);
     const ricerca = useRef<HTMLInputElement | null>(null);
 
-    useEffect(() => { caricaCatalogo().then(setVoci); }, []);
+    useEffect(() => { caricaCatalogo().then(setVoci); caricaGruppi().then(setGruppi); }, []);
     useEffect(() => { if (negozio) caricaGiacenze(negozio).then(setGiac); }, [negozio]);
     useEffect(() => { if (natura === "prodotto") setTimeout(() => ricerca.current?.focus(), 60); }, [natura]);
 
@@ -208,9 +210,50 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 <span className="rvLab" style={{ marginBottom: 0 }}>📦 Prodotti — magazzino di {negozio || "—"}</span>
             </div>
 
-            {/* SELEZIONE RAPIDA sopra la ricerca (Luca 29/08): sono le voci
-                che al banco si vendono di più — SIM, ESIM, accessori. La
-                ricerca del magazzino viene dopo, per tutto il resto. */}
+            {/* I GRUPPI A DUE LIVELLI (Luca 29/08): si preme «Accessori» e si
+                aprono i pezzi che si vendono davvero. Dentro ogni pulsante c'è
+                un articolo VERO, con il suo prezzo e la sua giacenza: se non
+                c'è in magazzino il clic dà il pop-up come tutti gli altri. */}
+            {gruppi.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                    <div className="rvPillRow" style={{ gap: 6 }}>
+                        {gruppi.map((g) => (
+                            <button key={g.id} onClick={() => setGruppoAperto(gruppoAperto === g.id ? null : g.id)}
+                                className={cn("rvPill", gruppoAperto === g.id && "rvPill-on")}>
+                                {g.icona ? g.icona + " " : ""}{g.nome} <span style={{ opacity: .55 }}>{g.voci.length}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {gruppoAperto && (() => {
+                        const g = gruppi.find((x) => x.id === gruppoAperto);
+                        if (!g) return null;
+                        return (
+                            <div className="rvSub" style={{ marginTop: 8 }}>
+                                <div className="rvPillRow" style={{ gap: 6 }}>
+                                    {g.voci.map((vc) => {
+                                        const art = vc.codice ? (voci || []).find((x) => x.codice === vc.codice) : null;
+                                        const n = art ? quanti(art) : null;
+                                        const ce = (n ?? 0) > 0;
+                                        return (
+                                            <button key={vc.id} onClick={() => art && metti(art)} disabled={!art}
+                                                title={art ? undefined : "articolo non più in anagrafica"}
+                                                className={cn("rvPill", "rvPill-sm")} style={{ opacity: ce ? 1 : .7 }}>
+                                                {vc.etichetta || art?.nome || vc.codice}
+                                                {art?.prezzo != null && <b style={{ marginLeft: 6 }}>{eur(art.prezzo)}</b>}
+                                                <i style={{ fontStyle: "normal", marginLeft: 6, fontWeight: 800, color: ce ? "var(--tf-34d399)" : "var(--tf-fbbf24)" }}>
+                                                    {n == null ? "—" : ce ? n : "0"}
+                                                </i>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </div>
+            )}
+
+            {/* SELEZIONE RAPIDA: SIM, ESIM e le voci a marginalità */}
             {scorciatoie && <div style={{ marginBottom: 14 }}>{scorciatoie}</div>}
 
             <input ref={ricerca} value={q} onChange={(e) => setQ(e.target.value)}
