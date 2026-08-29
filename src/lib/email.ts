@@ -500,8 +500,21 @@ export async function cercaESpostaMailOtp(
                        INTERNALDATE è il momento in cui il messaggio è entrato in
                        QUESTA cassetta: è esattamente la domanda che ci stiamo
                        facendo. La `Date:` resta come ripiego se manca. */
+                    /* ⚠️ SI PRENDE LA PIÙ RECENTE FRA LE DUE DATE, non una sola.
+                       Ognuna copre un guasto che l'altra non vede:
+                       · l'ARRIVO (internalDate) salva il caso dell'inoltro, dove
+                         la `Date:` è di minuti prima e farebbe scartare un codice
+                         appena consegnato;
+                       · la `Date:` salva il caso degli OROLOGI SFASATI — un
+                         server che scrive l'ora sbagliata farebbe risultare
+                         «vecchia» una mail arrivata adesso (Luca 29/08: «l'email
+                         ha 2 ore di delta rispetto alla realtà»).
+                       Non riapre il vecchio buco dei codici scaduti: una mail
+                       davvero vecchia ha VECCHIE tutte e due le date, quindi
+                       resta fuori comunque. */
                     const arrivo = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
-                    const quando = arrivo || (m.date ? new Date(m.date).getTime() : 0);
+                    const scritta = m.date ? new Date(m.date).getTime() : 0;
+                    const quando = Math.max(arrivo, scritta);
                     // il piu' recente visto, comunque vada: se gli orologi sono
                     // sfasati e' l'unico modo per accorgersene
                     if (quando && (!ultimoArrivo || quando > ultimoArrivo.getTime())) ultimoArrivo = new Date(quando);
@@ -568,11 +581,16 @@ export async function cercaESpostaMailOtp(
                     const daCestinare: number[] = [];
                     for await (const msg of client.fetch((Array.isArray(vecchi) ? vecchi : []).slice(-200),
                         { uid: true, source: true, internalDate: true }, { uid: true })) {
+                        /* Qui vale il contrario: per CESTINARE si guarda la data
+                           più RECENTE fra le due, così nel dubbio si tiene. Una
+                           mail si butta solo quando è vecchia per entrambe. */
                         const arrivo = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
-                        if (!arrivo || arrivo > scaduto) continue;           // ancora fresco: si lascia
-                        const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
-                        if (!m || !opts.mittenteOk(m)) continue;             // non è roba nostra: non si tocca
-                        daCestinare.push(m.uid);
+                        const parsed = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
+                        const scritta = parsed?.date ? new Date(parsed.date).getTime() : 0;
+                        const eta = Math.max(arrivo, scritta);
+                        if (!eta || eta > scaduto) continue;                 // ancora fresco: si lascia
+                        if (!parsed || !opts.mittenteOk(parsed)) continue;   // non è roba nostra: non si tocca
+                        daCestinare.push(parsed.uid);
                     }
                     if (daCestinare.length) {
                         if (cestino) await client.messageMove(daCestinare.join(","), cestino, { uid: true });
