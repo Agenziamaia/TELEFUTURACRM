@@ -400,10 +400,96 @@ export async function appendSuSent(a: Account, raw: Buffer): Promise<boolean> {
 
 export type MailOtp = { uid: number; cartella: string; fromAddr: string; subject: string; text: string; html: string | null; date: Date | null };
 
-/* Dopo quanto un codice già servito va nel cestino (Luca 29/08). Cinque minuti:
-   più della finestra in cui vale (3), abbastanza perché nessuno se lo veda
-   sparire davanti mentre lo sta copiando. */
-const MINUTI_CESTINO = 5;
+/* Dopo quanto un codice va nel cestino (Luca 29/08: «dopo 10-15 minuti tanti
+   codici non sono più validi»). Quindici minuti: molto più della finestra in
+   cui vale (3), quindi non si rischia di far sparire un codice mentre qualcuno
+   lo sta ancora usando. */
+const MINUTI_CESTINO = 15;
+
+/** Il nome del cestino cambia con la lingua: si chiede al server invece di
+ *  indovinarlo. `null` se non ce n'è uno. */
+async function cartellaCestino(client: ImapFlow): Promise<string | null> {
+    try {
+        for (const c of await client.list()) {
+            if (c.specialUse === "\\Trash" || /^(trash|deleted items|cestino|posta eliminata)$/i.test(String(c.name || ""))) {
+                return String(c.path);
+            }
+        }
+    } catch { /* niente elenco: si ripiega sul flag \Deleted */ }
+    return null;
+}
+
+/* ══ LA PULIZIA CHE GIRA DA SOLA (Luca 29/08) ══════════════════════════════
+   «Deve girare, deve leggere la tempistica, deve sapere che sono passati 10-15
+   minuti e spostare quelle email nel cestino per lasciare la casella pulita.»
+
+   ⚠️ PERCHÉ NON BASTAVA QUELLA DI PRIMA. Il cestino l'avevo messo dentro la
+   ricerca del codice: girava SOLO quando qualcuno premeva «Chiedi il codice».
+   Se nessuno lo chiedeva, non puliva niente — e infatti le mail restavano
+   nella posta in arrivo. Peggio: guardava solo nella cartella «Codici OTP»,
+   dove le mail finiscono proprio *perché* qualcuno ha chiesto un codice. Le
+   altre non le vedeva nemmeno.
+   Questa invece parte da un cron e guarda dove le mail stanno davvero: posta
+   in arrivo, indesiderata, e la cartella dei codici.
+
+   ⚠️ SI TOCCA SOLO CIÒ CHE VIENE DAI MITTENTI ATTESI. Queste caselle le usano
+   anche i punti vendita per lavorare: la posta di un cliente non si sfiora. */
+export async function cestinaCodiciScaduti(
+    a: Account,
+    opts: { mittenteOk: (m: { fromAddr?: string | null; subject?: string | null; text?: string | null; html?: string | null }) => boolean;
+            cartellaOtp: string; minuti?: number },
+): Promise<{ cestinate: number; guardate: string[]; errore: string | null }> {
+    const scaduto = Date.now() - (opts.minuti ?? MINUTI_CESTINO) * 60_000;
+    const client = imapClient(a);
+    const guardate: string[] = [];
+    let cestinate = 0;
+    try {
+        await client.connect();
+    } catch (e) {
+        return { cestinate: 0, guardate: [], errore: String((e as Error)?.message || e).slice(0, 160) };
+    }
+    try {
+        const cestino = await cartellaCestino(client);
+        const dove = ["INBOX", opts.cartellaOtp];
+        try {
+            for (const c of await client.list()) {
+                const nome = String(c.path || "");
+                if ((c.specialUse === "\\Junk" || /^(junk|spam|posta indesiderata|bulk)/i.test(String(c.name || nome)))
+                    && !dove.includes(nome)) dove.push(nome);
+            }
+        } catch { /* restano le due di sempre */ }
+
+        for (const cartella of dove) {
+            const lock = await client.getMailboxLock(cartella).catch(() => null);
+            if (!lock) continue;
+            guardate.push(cartella);
+            try {
+                // solo la posta di oggi e ieri: più indietro non serve, e la
+                // cartella dei codici resta piccola
+                const uids = await client.search({ since: new Date(Date.now() - 2 * 86_400_000) }, { uid: true });
+                const lista = (Array.isArray(uids) ? uids : []).slice(-300);
+                if (!lista.length) continue;
+                const daButtare: number[] = [];
+                for await (const msg of client.fetch(lista, { uid: true, source: true, internalDate: true }, { uid: true })) {
+                    const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
+                    if (!m || !opts.mittenteOk(m)) continue;         // non è roba nostra
+                    const arrivo = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
+                    const scritta = m.date ? new Date(m.date).getTime() : 0;
+                    // vecchia per ENTRAMBE le date: nel dubbio si tiene
+                    if (Math.max(arrivo, scritta) > scaduto) continue;
+                    daButtare.push(m.uid);
+                }
+                if (!daButtare.length) continue;
+                if (cestino && cartella !== cestino) await client.messageMove(daButtare.join(","), cestino, { uid: true });
+                else await client.messageFlagsAdd(daButtare.join(","), ["\\Deleted"], { uid: true });
+                cestinate += daButtare.length;
+            } catch (e) {
+                console.warn(`[otp-pulizia] ${a.email_address} · ${cartella}:`, (e as Error)?.message);
+            } finally { lock.release(); }
+        }
+    } finally { try { await client.logout(); } catch { /* già chiusa */ } }
+    return { cestinate, guardate, errore: null };
+}
 
 export async function cercaESpostaMailOtp(
     a: Account,
@@ -548,64 +634,10 @@ export async function cercaESpostaMailOtp(
             } finally { lock?.release(); }
         }
 
-        /* ── IL CESTINO DEI CODICI GIÀ SERVITI (Luca 29/08) ─────────────────
-           «Dopo 5 minuti i codici utilizzati dobbiamo cestinarli, così lasciamo
-           pulite le email in posta in arrivo.»
-           Un codice usa e getta dopo cinque minuti non vale più niente: tenerlo
-           è solo un numero in chiaro che resta lì.
-
-           TRE PROTEZIONI, perché qui si sta cancellando posta di qualcuno:
-           1. si tocca SOLO la cartella dei codici — mai la posta in arrivo, mai
-              altre cartelle: in quella cartella ci finisce solo ciò che ha già
-              passato il controllo del mittente;
-           2. si ricontrolla il mittente riga per riga, anche lì dentro: se per
-              qualsiasi motivo ci fosse finita altra posta, non viene toccata;
-           3. non si CANCELLA: si sposta nel CESTINO, che è recuperabile. Una
-              mail cancellata davvero non torna, e non vale la pena rischiarlo
-              per fare spazio. */
-        try {
-            const lockOtp = await client.getMailboxLock(opts.cartellaOtp).catch(() => null);
-            if (lockOtp) {
-                try {
-                    // il nome del cestino cambia con la lingua: si chiede al server
-                    let cestino: string | null = null;
-                    for (const c of await client.list()) {
-                        if (c.specialUse === "\\Trash" || /^(trash|deleted items|cestino|posta eliminata)$/i.test(String(c.name || ""))) {
-                            cestino = String(c.path); break;
-                        }
-                    }
-                    const scaduto = Date.now() - MINUTI_CESTINO * 60_000;
-                    // tutte quelle nella cartella: e' piccola per definizione, ci
-                    // finiscono solo i codici gia' passati dal controllo mittente
-                    const vecchi = await client.search({ all: true }, { uid: true });
-                    const daCestinare: number[] = [];
-                    for await (const msg of client.fetch((Array.isArray(vecchi) ? vecchi : []).slice(-200),
-                        { uid: true, source: true, internalDate: true }, { uid: true })) {
-                        /* Qui vale il contrario: per CESTINARE si guarda la data
-                           più RECENTE fra le due, così nel dubbio si tiene. Una
-                           mail si butta solo quando è vecchia per entrambe. */
-                        const arrivo = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
-                        const parsed = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
-                        const scritta = parsed?.date ? new Date(parsed.date).getTime() : 0;
-                        const eta = Math.max(arrivo, scritta);
-                        if (!eta || eta > scaduto) continue;                 // ancora fresco: si lascia
-                        if (!parsed || !opts.mittenteOk(parsed)) continue;   // non è roba nostra: non si tocca
-                        daCestinare.push(parsed.uid);
-                    }
-                    if (daCestinare.length) {
-                        if (cestino) await client.messageMove(daCestinare.join(","), cestino, { uid: true });
-                        else await client.messageFlagsAdd(daCestinare.join(","), ["\\Deleted"], { uid: true });
-                        cestinate = daCestinare.length;
-                    }
-                } catch (e) {
-                    // non deve mai far fallire la consegna del codice: al massimo
-                    // le vecchie restano un giro in più. Ma deve RISULTARE: se
-                    // smette di funzionare, i codici si accumulano in silenzio.
-                    motivoMancatoCestino = String((e as Error)?.message || e).slice(0, 140);
-                    console.warn(`[otp] cestino non riuscito su ${a.email_address}:`, motivoMancatoCestino);
-                } finally { lockOtp.release(); }
-            }
-        } catch { /* la cartella non c'è ancora: niente da cestinare */ }
+        /* Il cestino NON si fa più qui: girava solo quando qualcuno chiedeva
+           un codice, quindi se nessuno lo chiedeva la casella non si puliva
+           mai. Ora c'è un giro automatico — `cestinaCodiciScaduti`, chiamato
+           dal cron di /api/passwords/pulizia-otp. */
     } finally { try { await client.logout(); } catch { /* già chiusa */ } }
     // la più recente per prima: è quella che l'utente sta aspettando
     trovate.sort((x, y) => (y.date?.getTime() || 0) - (x.date?.getTime() || 0));
