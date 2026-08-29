@@ -1090,6 +1090,9 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
        punti, e i punti cambiano con quello che si vende. Qui si spuntano le
        voci del tabellare; la somma decide anche DOVE conviene caricarla. */
     const [vociSel, setVociSel] = useState<string[]>([]);
+    /* Quali cassetti sono aperti. Uno con dentro una scelta resta aperto
+       comunque: chiuderlo nasconderebbe punti che stanno contando. */
+    const [cassetti, setCassetti] = useState<string[]>([]);
     // 🔔 notifica cambi (Luca 26/08 notte-5): l'ultimo updated_at della
     // direzione confrontato con l'ultima visita (localStorage per dispositivo)
     const [novita, setNovita] = useState<string | null>(null);
@@ -1360,7 +1363,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                         const scala = TRK_LOGO_SCALE[m.id] || 1;
                         const attivo = brandSel === d.id;
                         return (
-                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); setVociSel([]); }} title={m.label} aria-label={m.label}
+                            <button key={d.id} onClick={() => { setBrandSel(d.id); setPista(""); setVociSel([]); setCassetti([]); }} title={m.label} aria-label={m.label}
                                 // più spazio al brand (Luca 28/08): la tessera è il
                                 // gesto principale, il logo deve leggersi da lontano
                                 className={cn("flex-1 min-w-0 h-16 flex items-center justify-center rounded-xl border px-2 transition-all",
@@ -1380,7 +1383,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     {!brandLibero && (
                         <div className="flex gap-1.5 shrink-0 self-stretch">
                             {([["consumer", "👤", "Consumer"], ["business", "💼", "Business"]] as const).map(([v, icona, titolo]) => (
-                                <button key={v} onClick={() => { setTipoCli(v); setPista(""); setVociSel([]); }} title={titolo} aria-label={titolo}
+                                <button key={v} onClick={() => { setTipoCli(v); setPista(""); setVociSel([]); setCassetti([]); }} title={titolo} aria-label={titolo}
                                     className={cn("w-11 rounded-xl text-base border flex items-center justify-center transition-colors",
                                         tipoCli === v
                                             ? "border-white/40 bg-white/[0.16] text-white"
@@ -1405,7 +1408,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                     <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Cosa stai vendendo?</div>
                     <div className="flex flex-wrap gap-1.5">
                         {pisteBussola.map((p) => (
-                            <button key={p.chiave} onClick={() => { setPista(p.chiave); setVociSel([]); }}
+                            <button key={p.chiave} onClick={() => { setPista(p.chiave); setVociSel([]); setCassetti([]); }}
                                 className={cn("px-3 py-1.5 rounded-xl text-xs font-bold border transition-all",
                                     pista === p.chiave ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
                                 style={pista === p.chiave ? { background: bMeta?.color || "#38bdf8", boxShadow: `0 0 12px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 50%, transparent)` } : undefined}>
@@ -1446,19 +1449,55 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                     </button>
                                 );
                             };
-                            // sulla Customer Base le voci stanno su due scaffali
-                            // (cambio piano / telefono): tutte in fila erano una
-                            // sbrodolata che nessuno leggeva (Luca 28/08)
+                            /* SULLA CUSTOMER BASE LE VOCI STANNO IN DUE CASSETTI
+                               (Luca 28/08, rifiniti il 29/08): «una con telefono,
+                               una con cambio piano — clicchi quella e mi dà le
+                               opzioni sotto». Tutte in fila erano una sbrodolata
+                               che nessuno leggeva.
+                               ⚠️ I DUE CASSETTI SI SOMMANO: «posso fare anche un
+                               cambio piano con un telefono incluso». Non sono
+                               un'alternativa — si aprono e si spuntano tutti e
+                               due, e ognuno mostra quanto sta portando. */
                             const gruppi = [...new Set(voci.map((v) => v.gruppo).filter(Boolean))] as string[];
                             if (!gruppi.length) return <div className="flex flex-wrap gap-1.5">{voci.map(pastiglia)}</div>;
                             return (
                                 <div className="space-y-1.5">
-                                    {gruppi.map((g) => (
-                                        <div key={g} className="flex flex-wrap items-center gap-1.5">
-                                            <span className="text-[10px] font-bold text-slate-500 w-full sm:w-auto sm:mr-1">{g}</span>
-                                            {voci.filter((v) => v.gruppo === g).map(pastiglia)}
-                                        </div>
-                                    ))}
+                                    {gruppi.map((g) => {
+                                        const dentro = voci.filter((v) => v.gruppo === g);
+                                        const presi = dentro.filter((v) => vociSel.includes(v.id));
+                                        const suoiPunti = Math.round(presi.reduce((t, v) => t + v.punti, 0) * 100) / 100;
+                                        /* Il cassetto si chiude sempre, anche con una scelta
+                                           dentro: forzarlo aperto sembra rotto. Quello che sta
+                                           portando resta scritto nell'intestazione, quindi
+                                           chiuderlo non nasconde punti a nessuno. */
+                                        const aperto = cassetti.includes(g);
+                                        return (
+                                            <div key={g} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                                                <button type="button"
+                                                    onClick={() => setCassetti((p2) => p2.includes(g) ? p2.filter((x) => x !== g) : [...p2, g])}
+                                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-white/[0.04] transition-colors">
+                                                    <span className="text-[11px] font-bold text-slate-300">{g}</span>
+                                                    {presi.length > 0 && (
+                                                        <span className="text-[10px] font-black tabular-nums px-1.5 py-0.5 rounded-md bg-white/10 text-white">
+                                                            {presi.length} · +{suoiPunti.toLocaleString("it-IT", { maximumFractionDigits: 2 })}
+                                                        </span>
+                                                    )}
+                                                    <span className="ml-auto text-[10px] text-slate-600">
+                                                        {aperto ? "" : `${dentro.length} opzioni`}
+                                                    </span>
+                                                    <span className={cn("text-slate-500 text-[10px] transition-transform", aperto && "rotate-180")}>▾</span>
+                                                </button>
+                                                {aperto && (
+                                                    <div className="flex flex-wrap gap-1.5 px-2.5 pb-2 pt-0.5">{dentro.map(pastiglia)}</div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {gruppi.length > 1 && (
+                                        <p className="text-[10px] text-slate-600 px-0.5">
+                                            Si sommano: un cambio piano con dentro un telefono si spunta da tutti e due.
+                                        </p>
+                                    )}
                                 </div>
                             );
                         })()}

@@ -426,6 +426,20 @@ export function vociPunti(dir: Direzione, pista: string, tipoCliente?: "consumer
         // la firma si fa sul nome CORTO: due voci della lettera che diventano
         // la stessa cosa a schermo devono comparire una volta sola
         const etichetta = nomeCorto(nome);
+        /* LA CUSTOMER BASE HA DUE SOLI CAMBI PIANO (Luca 29/08): vincolato
+           (Tied) e non vincolato (Untied). Il tabellare ne porta altri — «cambio
+           piano fisso + Netflix», «Microbusiness» — che sul banco non si
+           scelgono mai e allungano una lista già lunga. E «Più Sicuri
+           Casa&Ufficio» esce del tutto: non si vende.
+           ⚠️ Si filtra sull'ETICHETTA, non sul nome della lettera: «Cambio
+           offerta MIA Easy Pay…» diventa «Cambio piano vincolato (Tied)», e
+           solo la seconda forma dice cosa è.
+           ⚠️ Spariscono dalla SCELTA, non dal tabellare: i punti delle righe
+           restano quelli che sono. */
+        if (pistaRighe === "partnership") {
+            if (/cambio piano/i.test(etichetta) && !/\b(un)?tied\b/i.test(etichetta)) continue;
+            if (/pi[uù] sicuri/i.test(etichetta)) continue;
+        }
         const chiave = `${r.punti}|${chiaveVoce(etichetta)}`;
         const gia = viste.get(chiave);
         if (gia !== undefined) {
