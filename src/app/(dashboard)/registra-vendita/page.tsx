@@ -26,6 +26,8 @@ import { storeRoot as _storeRoot } from "@/lib/storeRoot";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
+import { CassaProdotti } from "./CassaProdotti";
+import { scaricaVendita } from "@/lib/magazzinoScarico";
 // il selettore del CRM, quello che si cerca scrivendo: le tendine di sistema
 // aprono il menu del sistema operativo, che non si può vestire (Luca 28/08)
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -206,8 +208,20 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
     }
   }
 }
-const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
+/* soloServizi (Luca 29/08): da oggi i PRODOTTI vengono dal magazzino
+   (CassaProdotti). Qui restano le voci che un magazzino non ce l'hanno —
+   servizi, SIM, ESIM, Kasko — e «Telefono Cash» sparisce come categoria:
+   un telefono è un prodotto, si trova sparando il suo IMEI. */
+const CAT_NON_SERVIZI=[/telefono\s*cash/i,/^prodotti/i];
+const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,soloServizi})=>{
   const [selCat,setSelCat]=useState(0);
+  // il catalogo che questo componente mostra: tutto, oppure i soli servizi
+  const CATALOGO=soloServizi
+    ? MARG_PRODUCTS.filter(c=>!CAT_NON_SERVIZI.some(rx=>rx.test(String(c.cat||"").replace(/[^\w\s]/g,"").trim())))
+    : MARG_PRODUCTS;
+  // con meno categorie l'indice scelto può finire fuori: senza questa riga
+  // CATALOGO[catIdx] è undefined e la pagina va in errore a schermo
+  const catIdx=Math.min(Math.max(0,selCat),Math.max(0,CATALOGO.length-1));
   const [qMarg,setQMarg]=useState("");   // ricerca libera su TUTTO il catalogo (Luca 03/08)
   // catalogo dal PANNELLO (03/08): al primo render il modulo potrebbe avere
   // ancora il ripiego storico — quando la lettura dal DB arriva si ridisegna
@@ -253,10 +267,10 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
   },[usatoUnits,selProd,show]);
   useEffect(()=>{
     if(show&&editItem){
-      const found=MARG_PRODUCTS.flatMap(c=>c.items).find(p=>p.id===editItem.productId);
+      const found=CATALOGO.flatMap(c=>c.items).find(p=>p.id===editItem.productId);
       if(found){
-        const catIdx=MARG_PRODUCTS.findIndex(c=>c.items.some(p=>p.id===found.id));
-        setSelCat(catIdx>=0?catIdx:0);
+        const catDellaVoce=CATALOGO.findIndex(c=>c.items.some(p=>p.id===found.id));
+        setSelCat(catDellaVoce>=0?catDellaVoce:0);
         setSelProd(found);
         setQty(String(editItem.qty||1));
         setImporto(editItem.importo!=null?String(editItem.importo):"");
@@ -317,12 +331,12 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
       <div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid var(--tf-w30)"}}>
         <input value={qMarg} onChange={e=>{setQMarg(e.target.value);setSelProd(null);}} placeholder="🔍 Cerca in tutto il catalogo…"
           style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid var(--tf-w120)",background:"var(--tf-w50)",color:"var(--tf-f8fafc)",fontSize:12,outline:"none"}}/>
-        {MARG_PRODUCTS.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:selCat===ci?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:selCat===ci?"var(--tf-6f42c1)":"var(--tf-8892b0)"}}>{cat.cat}</button>))}
+        {CATALOGO.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:selCat===ci?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:selCat===ci?"var(--tf-6f42c1)":"var(--tf-8892b0)"}}>{cat.cat}</button>))}
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
         {!selProd?(qMarg.trim()?(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
-            {MARG_PRODUCTS.flatMap((c)=>c.items.map(pr=>({pr,catNome:c.cat}))).filter(x=>x.pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).slice(0,60).map(({pr,catNome})=>(
+            {CATALOGO.flatMap((c)=>c.items.map(pr=>({pr,catNome:c.cat}))).filter(x=>x.pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).slice(0,60).map(({pr,catNome})=>(
               <button key={catNome+"_"+pr.id} onClick={()=>{setSelProd(pr);if(pr.price!==null)setPrice(String(pr.price));setQMarg("");}}
                 style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
                 {/* RVUI-01: stesso lookup logo dell'header dettaglio — condizione STRETTA su
@@ -331,26 +345,26 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{pr.name}</span>
                 <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>{catNome}</span>
               </button>))}
-            {MARG_PRODUCTS.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"var(--tf-64748b)",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
+            {CATALOGO.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"var(--tf-64748b)",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
           </div>
-        ):MARG_PRODUCTS[selCat].grouped?(
+        ):CATALOGO[catIdx].grouped?(
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
-            {SIM_BRAND_ORDER.flatMap(bk=>MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"var(--tf-64748b)",logo:"/logo-crm.png"};return (
+            {SIM_BRAND_ORDER.flatMap(bk=>CATALOGO[catIdx].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"var(--tf-64748b)",logo:"/logo-crm.png"};return (
               <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
                 <img src={info.logo} alt="" style={{height:56,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>);})}
             {/* RVUI-01: in coda le voci con brand assente o fuori da SIM_BRAND_ORDER
                 (es. create dal pannello, o s4/dojo): ramo emoji, cosi' non spariscono */}
-            {MARG_PRODUCTS[selCat].items.filter(p=>!SIM_BRAND_ORDER.includes(p.brand)).map(p=>(
+            {CATALOGO[catIdx].items.filter(p=>!SIM_BRAND_ORDER.includes(p.brand)).map(p=>(
               <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
                 <span style={{fontSize:30}}>{p.icon||"📦"}</span>
                 <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>))}
           </div>
         ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
-          {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+          {CATALOGO[catIdx].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <span style={{fontSize:30}}>{p.icon}</span>
             <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
           </button>))}
@@ -579,6 +593,15 @@ const SKY_FIBRA = ["Fibra","3P","3P 35,80","4P"];
 const SKY_BIZ_TV = ["TV Uffici"];
 const SKY_BIZ_FIBRA = ["Sky Business"];
 const SKY_BRAND_FIBRA = ["TIM","Vodafone","Fastweb","WINDTRE","Tiscali","Sky","BT Enia","Ehiweb","Open Fiber","Infratel","Vianova","Isiline","Convergenze","Full Telecom","Optima","Fibra.tn"];
+/* IL PREZZO IN CARRELLO (Luca 29/08: «possiamo sfruttare benissimo il
+   carrello, io metto tutte le cose a carrello poi vado a carrello e metto
+   tutti i prezzi»). Cambiando il prezzo il margine si rifà da sé — ma solo
+   se il costo d'acquisto lo conosciamo: senza costo resta ignoto, non zero. */
+const conPrezzo=(m,v)=>{
+  const q=Number(m.qty)||1;
+  const marg=(v!=null&&m.costo!=null)?(Number(v)-Number(m.costo)):null;
+  return {...m,importo:v,price:v,margin:marg,totalMargin:marg==null?null:marg*q};
+};
 const emS = () => ({active:true,fields:{},contract:{},gnp:false,gnpNum:"",gnpOp:"",secondaLinea:false,gnp2L:null,gnp2LBrand:"",gnp2LNum:"",domiciliazione:false,opProvenienza:"",codiceOverride:"",addons:{},domiciliato:null,convergente:null,tipMob:null,mnp:null,easyPay:null,tnpGa:null,tnpTipo:"",tnpModello:"",tnpImei:"",tnpCount:null,tnpModelli:[],tnpImeis:[],packAccessori:null,packAccessoriVal:"",packAccessoriQta:"",cbTnp:false,cbTnpTipo:"",cbTnpModello:"",cbTnpImei:"",cbTnpCount:null,cbTnpModelli:[],cbTnpImeis:[],cbPackAccessori:null,cbPackAccessoriVal:"",cbPackAccessoriQta:"",cbTnpCell:"",cbTnpCC:"",cbTnpCodIns:"",cbTnpReload:null,cbTnpReloadSel:{},cbCambio:false,cbCambioVal:"",cbCambioCell:"",cbCambioCC:"",cbCambioCodIns:"",cbAddon:false,cbAddonSel:{},rfModello:"",rfImei:"",cbRf:false,cbAddonCodIns:"",cbAddonSecCell:"",cbAddonRoCell:"",cbAddonRoImei:"",cbRfCodIns:"",tnpGaReload:null,tnpGaReloadSel:{},reloadForever:null,securitySel:{},voceCasaCb:null,protectaCodIns:"",vfOffers:{},vfContratti:{},vfOffer:null,vfMnp:null,vfMnpBrand:"",vfMnpNum:"",vfDomicilio:null,vfConvergenza:null,vfNumFisso:"",vfTnp:null,vfTnpList:[],dcNumProv:"",dcNum:"",dcIccid:"",dcCodIns:"",dcRicaricaAuto:null,vfSecurity:null,cbTnpList:[],cbTraslochi:false,cbTraslochiNum:"",cbTraslochiCodIns:"",cbSecurityCodIns:"",vfFIccid:"",cbCellulare:"",cbCodContratto:"",cbCodIns2:"",cbTaglia:null,dcCbNumProv:"",dcCbIccid:"",cbCambio2:false,cbCambioCell:"",cbCambioNumMod:"",cbCambioCodIns2:"",cbSecurity:false,cbSecurityCell:"",vfFLockIn:null,vfFConvergenza:null,vfFGnp:null,vfFGnpBrand:"",vfFGnpNum:"",vfFAddons:{},vfFCodIns:"",vfFNumProvVisorio:"",vfFNumDef:"",vfbOffer:null,vfbMnp:null,vfbMnpBrand:"",vfbMnpNum:"",vfbTnp:null,vfbModello:"",vfbImei:"",vfbRataPiva:null,vfbKaskoSel:{},vfbCodIns:"",vfbCbOn:false,vfbCbCell:"",vfbCbCodIns:"",vfbFGnp:null,vfbFGnpBrand:"",vfbFGnpNum:"",vfbFCodIns:"",vfbFNumProv:"",vfbFNumDef:"",vfbFMnp:null,vfbFMnpBrand:"",vfbFMnpNum:"",vfbFCombNumProv:"",vfbFCombIccid:"",vfbNum:"",vfbIccid:"",vfbFIccid:"",vfSolDigCodIns:"",verisureCodIns:"",kfCodIns:"",vcCodIns:"",fwOffer:null,fwMnp:null,fwFSecLineCount:0,fwFSecLines:[],fwMnpBrand:"",fwMnpNum:"",fwCodIns:"",fwNumProv:"",fwNumDef:"",fwIccid:"",fwFGnp:null,fwFGnpBrand:"",fwFGnpNum:"",fwFCodIns:"",fwFNumProv:"",fwFNumDef:"",fwPod:"",fwPdr:"",fwEnCodIns:"",ilOffer:null,ilMnp:null,ilDom:null,ilMnpBrand:"",ilMnpNum:"",ilCodIns:"",ilNumProv:"",ilNumDef:"",ilIccid:"",ilFGnp:null,ilFCodIns:"",ilFNumProv:"",ilFNumDef:"",ilFwaCodIns:"",ilFwaIccid:"",ilBizOffer:null,ilBizMnp:null,ilBizMnpBrand:"",ilBizDom:null,ilBizNum:"",ilBizIccid:"",ilBizNumDef:"",ilBizCodIns:"",enCodIns:"",enPod:"",enPdr:"",enProv:"",fwEnProv:"",w3SostCell:"",w3SostIccid:"",w3SostCodContr:"",w3SostCodIns:"",fwSostCell:"",fwSostIccid:"",fwSostCodContr:"",fwSostCodIns:"",vfSostCell:"",vfSostCodIns:"",timOffer:null,timMnp:null,timMnpBrand:"",timMnpNum:"",timTnp:null,timModello:"",timSpedizione:null,timFinanziato:null,timCodPratica:"",timVisionBox:null,timVisionTaglia:null,timVisionNumContr:"",timImei:"",timNumProv:"",timNum:"",timIccid:"",timCodIns:"",timFOffer:null,timFGnp:null,timFGnpBrand:"",timFGnpNum:"",timFNumProv:"",timFCodIns:"",timFVision:null,timFVisionTaglia:null,timFVisionNumContr:"",timTpTwin:null,timTpSeriale:"",timTpRecapito:"",timTpCodIns:"",veryOffer:null,veryMnp:null,veryMnpBrand:"",veryMnpNum:"",veryRicaricaAuto:null,veryFascia:null,veryCodIns:"",veryNumProv:"",veryNum:"",veryIccid:"",hoOffer:null,hoMnp:null,hoMnpBrand:"",hoMnpNum:"",hoRicaricaAuto:null,hoFascia:null,hoCodIns:"",hoNumProv:"",hoNum:"",hoIccid:"",kenaOffer:null,kenaMnp:null,kenaMnpBrand:"",kenaMnpNum:"",kenaRicaricaAuto:null,kenaFascia:null,kenaCodIns:"",kenaNumProv:"",kenaNum:"",kenaIccid:""});
 
 const DET_LABELS={gnp:"GNP",gnpNum:"N. GNP",gnpOp:"Op. GNP",secondaLinea:"2ª Linea",gnp2L:"GNP 2ª Linea",gnp2LBrand:"Brand GNP 2L",gnp2LNum:"N. GNP 2L",domiciliazione:"Domiciliazione",opProvenienza:"Op. Provenienza",domiciliato:"Domiciliato",convergente:"Convergente",tipMob:"Tipologia",mnp:"MNP",easyPay:"EasyPay",tnpGa:"TNP GA",tnpTipo:"Tipo TNP",tnpModello:"Terminale",tnpImei:"IMEI TNP",tnpCount:"Q.tà TNP",packAccessori:"Pack Accessori",packAccessoriVal:"Importo Pack",packAccessoriQta:"Q.tà Accessori",cbTnp:"TNP CB",cbTnp2:"TNP CB",cbTnpTipo:"Tipo CB",cbTnpModello:"Term. CB",cbTnpImei:"IMEI CB",cbTnpCount:"Q.tà TNP CB",cbPackAccessori:"Pack Acc. CB",cbPackAccessoriVal:"Importo Pack CB",cbPackAccessoriQta:"Q.tà Acc. CB",cbTnpCell:"Cell. CB",cbTnpCC:"Cod.Cliente CB",cbTnpCodIns:"Cod.Ins. CB",cbTnpReload:"Reload CB",cbCambio:"Cambio Offerta",cbCambio2:"Cambio Offerta",cbCambioVal:"Offerta CB",cbCambioCell:"Cell. Cambio",cbCambioCC:"Cod.Cliente Cambio",cbCambioCodIns:"Cod.Ins. Cambio",cbCambioNumMod:"Numero Cambio",cbCambioCodIns2:"Cod.Ins. Cambio",cbCellulare:"Cellulare CB",cbCodContratto:"Cod. Contratto CB",cbCodIns2:"Cod.Ins. CB",cbTaglia:"Taglia CB",dcCbNumProv:"N. Provvisorio CB",dcCbIccid:"ICCID CB",cbSecurity:"Rete Sicura CB",cbSecurityCell:"Cell. Rete Sicura",cbSecurityCodIns:"Cod.Ins. Rete Sicura",cbTraslochi:"Traslochi",cbTraslochiNum:"N. Fisso Trasloco",cbTraslochiCodIns:"Cod.Ins. Trasloco",rfModello:"Modello Reload Forever",rfImei:"IMEI RF",cbRf:"Reload Forever CB",cbRfCodIns:"Cod.Ins. RF",cbAddonCodIns:"Cod.Ins. Add-on",cbAddonSecCell:"Cell. Security",cbAddonRoCell:"Cell. Reload Open",cbAddonRoImei:"IMEI Reload Open",tnpGaReload:"Reload GA",reloadForever:"Reload Forever",voceCasaCb:"Voce Casa CB",protectaCodIns:"Cod.Ins. Protecta",vfOffer:"Offerta",vfMnp:"MNP",vfMnpBrand:"Op. MNP",vfMnpNum:"N. MNP",vfDomicilio:"Domiciliata",vfConvergenza:"Convergenza",vfNumFisso:"N. Fisso Conv.",vfTnp:"TNP",vfSecurity:"Security",dcNumProv:"N. Provvisorio",dcNum:"Numero",dcIccid:"ICCID",dcCodIns:"Cod.Ins.",dcRicaricaAuto:"Ricarica Auto",vfFLockIn:"Lock In",vfFConvergenza:"Convergenza",vfFGnp:"GNP",vfFGnpBrand:"Op. GNP",vfFGnpNum:"N. GNP",vfFCodIns:"Cod.Ins.",vfFNumProvVisorio:"N. Provvisorio",vfFNumProv:"N. Provvisorio",vfFNumDef:"N. Definitivo",vfFIccid:"ICCID",vfbOffer:"Offerta",vfbMnp:"MNP",vfbMnpBrand:"Op. MNP",vfbMnpNum:"N. MNP",vfbTnp:"TNP",vfbModello:"Modello",vfbImei:"IMEI",vfbRataPiva:"Finanz.",vfbEasyRent:"Easy Rent",vfbCodIns:"Cod.Ins.",vfbNum:"Numero",vfbIccid:"ICCID",vfbCbOn:"Cambio Offerta",vfbCbCell:"Cellulare CB",vfbCbCodIns:"Cod.Ins. CB",vfbFGnp:"GNP",vfbFGnpBrand:"Op. GNP",vfbFGnpNum:"N. GNP",vfbFCodIns:"Cod.Ins.",vfbFNumProv:"N. Provvisorio",vfbFNumDef:"N. Definitivo",vfbFIccid:"ICCID",vfbFMnp:"MNP",vfbFMnpBrand:"Op. MNP",vfbFMnpNum:"N. MNP",vfbFCombNumProv:"N. Provv. Mobile",vfbFCombIccid:"ICCID Mobile",vfSolDigCodIns:"Cod.Ins.",verisureCodIns:"Cod.Ins.",kfCodIns:"Cod.Ins.",vcCodIns:"Cod.Ins.",fwOffer:"Offerta",fwMnp:"MNP",fwMnpBrand:"Op. MNP",fwMnpNum:"N. MNP",fwCodIns:"Cod.Ins.",fwNumProv:"N. Provvisorio",fwNumDef:"Numero",fwIccid:"ICCID",fwFGnp:"GNP",fwFGnpBrand:"Op. GNP",fwFGnpNum:"N. GNP",fwFCodIns:"Cod.Ins.",fwFNumProv:"N. Provvisorio",fwFNumDef:"N. Definitivo",fwPod:"POD",fwPdr:"PDR",fwEnCodIns:"Cod.Ins.",ilOffer:"Offerta",ilMnp:"MNP",ilDom:"Domiciliata",ilMnpBrand:"Op. MNP",ilMnpNum:"N. MNP",ilCodIns:"Cod.Ins.",ilNumProv:"N. Provvisorio",ilNumDef:"Numero",ilIccid:"ICCID",ilFGnp:"GNP",ilFGnpBrand:"Op. GNP",ilFGnpNum:"N. GNP",ilFCodIns:"Cod.Ins.",ilFNumProv:"N. Provvisorio",ilFNumDef:"N. Definitivo",ilFwaCodIns:"Cod.Ins.",ilFwaIccid:"ICCID",ilBizOffer:"Offerta",ilBizMnp:"MNP",ilBizMnpBrand:"Op. MNP",ilBizDom:"Domiciliazione",ilBizNum:"Numero",ilBizIccid:"ICCID",ilBizNumDef:"N. Definitivo",ilBizCodIns:"Cod.Ins.",enPod:"POD",enPdr:"PDR",enCodIns:"Cod.Ins.",enProv:"Op. Provenienza",fwEnProv:"Op. Provenienza",w3SostCell:"Numero",w3SostIccid:"ICCID",w3SostCodContr:"Cod. Contratto",w3SostCodIns:"Cod.Ins.",fwSostCell:"Numero",fwSostIccid:"ICCID",fwSostCodContr:"Cod. Contratto",fwSostCodIns:"Cod.Ins.",vfSostCell:"Numero",vfSostCodIns:"Cod.Ins.",timOffer:"Offerta",timMnp:"MNP",timMnpBrand:"Op. MNP",timMnpNum:"N. MNP",timTnp:"TNP",timModello:"Terminale",timSpedizione:"Spedizione",timFinanziato:"Finanziato",timCodPratica:"Codice Pratica",timVisionBox:"Box TIM Vision",timVisionTaglia:"TIM Vision",timVisionNumContr:"N. Contratto Vision",timImei:"IMEI",timNumProv:"N. Provvisorio",timNum:"Numero",timIccid:"ICCID",timCodIns:"Cod.Ins.",timFOffer:"Prodotto Fisso",timFGnp:"GNP",timFGnpBrand:"Op. GNP",timFGnpNum:"N. GNP",timFNumProv:"N. Fisso Provvisorio",timFCodIns:"Codice",timFVision:"TIM Vision",timFVisionTaglia:"TIM Vision",timFVisionNumContr:"N. Contratto Vision",timTpTwin:"Twin",timTpSeriale:"Seriale Telepass",timTpRecapito:"Recapito",timTpCodIns:"Cod.Ins.",veryOffer:"Offerta",veryMnp:"MNP",veryMnpBrand:"Op. MNP",veryMnpNum:"N. MNP",veryRicaricaAuto:"Ricarica Auto",veryFascia:"Tipologia offerta",veryCodIns:"Cod.Ins.",veryNumProv:"N. Provvisorio",veryNum:"Numero",veryIccid:"ICCID",hoOffer:"Offerta",hoMnp:"MNP",hoMnpBrand:"Op. MNP",hoMnpNum:"N. MNP",hoRicaricaAuto:"Ricarica Auto",hoFascia:"Tipologia offerta",hoCodIns:"Cod.Ins.",hoNumProv:"N. Provvisorio",hoNum:"Numero",hoIccid:"ICCID",kenaOffer:"Offerta",kenaMnp:"MNP",kenaMnpBrand:"Op. MNP",kenaMnpNum:"N. MNP",kenaRicaricaAuto:"Ricarica Auto",kenaFascia:"Tipologia offerta",kenaCodIns:"Cod.Ins.",kenaNumProv:"N. Provvisorio",kenaNum:"Numero",kenaIccid:"ICCID"};
@@ -6085,6 +6108,14 @@ function CRM() {
       // scarico magazzino usati: i telefoni scelti dal magazzino passano a
       // "venduto" su Gestione Usati, con prezzo effettivo e cliente collegato
       await scaricaUsatiVenduti(margList, clientId, dateStr, selVend);
+      /* SCARICO DEL MAGAZZINO (Luca 29/08). Va DOPO: la vendita è già scritta
+         e lo scontrino può essere già stampato — se il movimento non parte si
+         annota e si prosegue. Un magazzino disallineato si sistema, una
+         vendita persa no. */
+      try {
+        const _sc = await scaricaVendita(margList, selNeg, contractRows[0]?.id || null, selVend);
+        if (_sc.errore) console.error("scarico magazzino:", _sc.errore);
+      } catch (e) { console.error("scarico magazzino:", e); }
 
       setUploading(false);
       sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
@@ -6298,6 +6329,10 @@ function CRM() {
         }
       }catch{/* allegati best-effort: la vendita e' gia' salva */}
       await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
+      try {
+        const _sc = await scaricaVendita(margItems, selNeg, rows[0]?.id || null, selVend);
+        if (_sc.errore) console.error("scarico magazzino:", _sc.errore);
+      } catch (e) { console.error("scarico magazzino:", e); }
       setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
       setMargSkipCli(false);
@@ -6591,9 +6626,13 @@ function CRM() {
                 {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"var(--tf-17a2b8)",marginLeft:8}}>listino € {Number(item.importo||0).toFixed(2)}{(item.totalMargin!=null||item.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → margine € {Number(item.totalMargin??item.margin).toFixed(2)}</span>:null}</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                {(item.auto||item.priceRequired||item.linked)&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
+                {/* prezzo bloccato dall'articolo: si vede, non si tocca */}
+                {item.prezzoModificabile===false&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:"var(--tf-e2e8f0)"}}>
+                  🔒 € {Number(item.importo??0).toFixed(2)}
+                </span>}
+                {(item.auto||item.priceRequired||item.linked||item.natura)&&!item.priceLocked&&item.prezzoModificabile!==false&&<span style={{display:"flex",alignItems:"center",gap:4}}>
                   <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
-                    onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?{...m,importo:v}:m))}}
+                    onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?conPrezzo(m,v):m))}}
                     className={cn("rvPrezzo",(item.importo==null||item.importo==="")?"rvPrezzo-manca":"rvPrezzo-ok")} style={{width:92}}/>
                   <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>€</span>
                 </span>}
@@ -6812,9 +6851,10 @@ function CRM() {
                     <div key={mi} className="rvMiniRiga" style={{justifyContent:"space-between"}}>
                       <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}{m.model&&<span style={{color:"var(--tf-94a3b8)",fontWeight:700}}> · {m.model}</span>}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
                       {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>€ {Number(m.importo||0).toFixed(2)}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
-                      :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
+                      :m.prezzoModificabile===false?<div style={{fontSize:10.5,fontWeight:800,color:"var(--tf-e2e8f0)",whiteSpace:"nowrap"}}>🔒 € {Number(m.importo??0).toFixed(2)}</div>
+                      :(m.auto||m.priceRequired||m.linked||m.natura)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
                         <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
-                          onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
+                          onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?conPrezzo(x,v):x))}}
                           className={cn("rvPrezzo",(m.importo==null||m.importo==="")?"rvPrezzo-manca":"rvPrezzo-ok")} style={{width:74}}/>
                         <span style={{fontSize:10,color:"var(--tf-8892b0)"}}>€</span>
                       </span>
@@ -7071,9 +7111,15 @@ function CRM() {
         </div>
       </div>}
 
-      {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #6f42c1"}}>
-        <div className="rvCardT" style={{color:"var(--tf-6f42c1)",marginBottom:14}}>📦 Prodotti & Marginalità</div>
-        <MargPOS inline show onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>
+      {/* PRODOTTI E SERVIZI (Luca 29/08, da CRM a software di cassa): prima
+          si sceglie la natura, poi i PRODOTTI arrivano dal magazzino — codice,
+          barcode o IMEI, con la disponibilità accanto. I SERVIZI restano i
+          pulsanti di sempre, passati dentro. Vedi docs/REGOLE_REGISTRA_VENDITA.md */}
+      {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}}>
+        <div className="rvCardT" style={{marginBottom:14}}>🧾 Prodotti e servizi</div>
+        <CassaProdotti negozio={selNeg} venditore={selVend}
+          onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}}
+          servizi={<MargPOS inline show soloServizi onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
       </div>}
 
       {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div className="rvCard" style={{borderLeft:"4px solid "+bC}}>
@@ -7295,7 +7341,18 @@ function CRM() {
 
 
       
-      <MargPOS show={showMargPOS} onClose={()=>{setShowMargPOS(false);setMargEditItem(null)}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>
+      {showMargPOS&&typeof document!=="undefined"&&createPortal(
+        <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget){setShowMargPOS(false);setMargEditItem(null);}}}>
+          <div className="rvCard" style={{width:"min(900px,94vw)",maxHeight:"88vh",overflowY:"auto",marginBottom:0,borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
+              <div className="rvCardT" style={{marginBottom:0}}>🧾 Prodotti e servizi</div>
+              <button onClick={()=>{setShowMargPOS(false);setMargEditItem(null);}} className="rvPill rvPill-sm">✕ Chiudi</button>
+            </div>
+            <CassaProdotti negozio={selNeg} venditore={selVend}
+              onAdd={(item)=>{addMargItem(item);setMargEditItem(null);}}
+              servizi={<MargPOS inline show soloServizi onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
+          </div>
+        </div>, document.body)}
       <MargList items={margItems} onRemove={rmMargItem} show={showMargList} onClose={()=>setShowMargList(false)}/>
 
       {showMargSection&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
