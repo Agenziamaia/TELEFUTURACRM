@@ -36,6 +36,23 @@ export type VoceCassa = {
     iva: number | null;
     reparto: number | null;
     scarica_magazzino: boolean;
+    /** falso = il prezzo è quello e basta: si vede, non si tocca (Luca 29/08) */
+    prezzo_modificabile: boolean;
+};
+
+/** Un pezzo con un seriale: un telefono, un modem. In cassa si spara l'IMEI
+ *  e deve uscire QUEL pezzo — non l'articolo generico, il pezzo. */
+export type PezzoSeriale = {
+    seriale: string;
+    provenienza: "nuovo" | "usato";
+    codice: string | null;
+    nome: string;
+    negozio: string | null;
+    stato: string | null;
+    prezzo: number | null;
+    costo: number | null;
+    prezzo_modificabile: boolean;
+    riferimento: string;
 };
 
 export type Giacenza = { codice: string; quantita: number; soglia_min: number | null };
@@ -72,7 +89,7 @@ export async function caricaCatalogo(): Promise<VoceCassa[]> {
     const out: VoceCassa[] = [];
     for (let da = 0; ; da += PAGINA) {
         const { data, error } = await supabase.from("cassa_catalogo")
-            .select("id,natura,codice,barcode,nome,famiglia,marca,gruppo,prezzo,costo,iva,reparto,scarica_magazzino")
+            .select("id,natura,codice,barcode,nome,famiglia,marca,gruppo,prezzo,costo,iva,reparto,scarica_magazzino,prezzo_modificabile")
             .order("nome").range(da, da + PAGINA - 1);
         if (error || !data?.length) break;
         out.push(...(data as VoceCassa[]));
@@ -119,4 +136,23 @@ export function cerca(voci: VoceCassa[], testo: string): VoceCassa[] {
         const testo = `${v.nome} ${v.codice || ""} ${v.barcode || ""} ${v.marca || ""}`.toLowerCase();
         return parole.every((p) => testo.includes(p));
     });
+}
+
+/** Cerca un pezzo dal suo seriale (IMEI). Restituisce null se non esiste da
+ *  nessuna parte: in quel caso il pezzo NON è in magazzino, e chi vende deve
+ *  saperlo prima di battere lo scontrino. */
+export async function cercaSeriale(seriale: string): Promise<PezzoSeriale | null> {
+    const s = String(seriale || "").replace(/\s+/g, "");
+    if (s.length < 6) return null;
+    const { data } = await supabase.from("cassa_seriali")
+        .select("seriale,provenienza,codice,nome,negozio,stato,prezzo,costo,prezzo_modificabile,riferimento")
+        .eq("seriale", s).limit(1);
+    return (data && data[0]) ? (data[0] as PezzoSeriale) : null;
+}
+
+/** Un IMEI ha 15 cifre, un ICCID 19: quando quello che si è digitato ha
+ *  l'aria di un seriale si cerca prima lì, poi nel catalogo. */
+export function sembraSeriale(testo: string): boolean {
+    const d = String(testo || "").replace(/\D/g, "");
+    return d.length === 15 || d.length === 19;
 }
