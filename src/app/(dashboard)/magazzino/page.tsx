@@ -61,6 +61,11 @@ export default function MagazzinoPage() {
     const puoCaricare = isAdminOrAbove(user?.role);
     const [tab, setTab] = useState<"giacenze" | "ricerca" | "trasferimenti" | "articoli">("giacenze");
 
+    /* LE DUE SOCIETÀ, COL LORO NOME (Francesco 29/08: «non è possibile
+       filtrare tra Telefutura e Telefutura 2»). Il filtro c'era, ma diceva
+       «T1» e «T2»: codici che in magazzino non significano niente. */
+    const [nomiAzienda, setNomiAzienda] = useState<Record<string, string>>({});
+
     const [negozi, setNegozi] = useState<string[]>([]);
     const [unita, setUnita] = useState<Unita[]>([]);
     /* LE QUANTITÀ (Luca 29/08: «il magazzino è l'unica fonte»). Fin qui questa
@@ -71,19 +76,30 @@ export default function MagazzinoPage() {
     const [quantita, setQuantita] = useState<RigaQta[]>([]);
     const [loading, setLoading] = useState(true);
 
+    useEffect(() => {
+        supabase.from("pos_rt").select("azienda,ragione_sociale,piva").not("piva", "is", null)
+            .then(({ data }) => {
+                const m: Record<string, string> = {};
+                (data ?? []).forEach((r: { azienda: string; ragione_sociale: string | null }) => {
+                    if (r.azienda && r.ragione_sociale) m[r.azienda] = r.ragione_sociale;
+                });
+                setNomiAzienda(m);
+            });
+    }, []);
+
     const carica = useCallback(async () => {
         setLoading(true);
         const [st, un, gi] = await Promise.all([
             supabase.from("stores").select("name, is_ufficio").order("name"),
             caricaTutte<Unita>((from, to) =>
                 supabase.from("mag_unita").select("*").order("caricato_il", { ascending: false }).range(from, to) as never),
-            caricaTutte<{ codice: string; negozio: string; azienda: string; quantita: number }>((from, to) =>
-                supabase.from("mag_giacenze").select("codice,negozio,azienda,quantita").gt("quantita", 0).range(from, to) as never),
+            caricaTutte<{ codice: string; negozio: string; azienda: string; quantita: number; in_arrivo: number }>((from, to) =>
+                supabase.from("mag_giacenze").select("codice,negozio,azienda,quantita,in_arrivo").or("quantita.gt.0,in_arrivo.gt.0").range(from, to) as never),
         ]);
         setNegozi(((st.data ?? []) as { name: string; is_ufficio?: boolean | null }[]).filter(s => !s.is_ufficio).map(s => s.name));
         setUnita((un.data ?? []) as Unita[]);
         // il nome e il valore dell'articolo stanno in anagrafica, non nella giacenza
-        const righeQ = (gi.data ?? []) as { codice: string; negozio: string; azienda: string; quantita: number }[];
+        const righeQ = (gi.data ?? []) as { codice: string; negozio: string; azienda: string; quantita: number; in_arrivo: number }[];
         if (righeQ.length) {
             const codici = [...new Set(righeQ.map(r => r.codice))];
             const anag = new Map<string, { descrizione: string; prezzo: number | null }>();
@@ -95,6 +111,7 @@ export default function MagazzinoPage() {
             }
             setQuantita(righeQ.map(r => ({
                 ...r,
+                inArrivo: Number(r.in_arrivo || 0),
                 descrizione: anag.get(r.codice)?.descrizione || r.codice,
                 valore: Number(anag.get(r.codice)?.prezzo || 0) * Number(r.quantita),
             })));
@@ -103,7 +120,12 @@ export default function MagazzinoPage() {
     }, []);
     useEffect(() => { carica(); }, [carica]);
 
-    const aziende = useMemo(() => Array.from(new Set(unita.map(u => u.azienda).filter(Boolean))) as string[], [unita]);
+    /* prima l'elenco nasceva dai soli pezzi con seriale: una società che
+       avesse solo accessori non sarebbe MAI comparsa nel filtro */
+    const aziende = useMemo(() => Array.from(new Set([
+        ...(unita.map(u => u.azienda).filter(Boolean) as string[]),
+        ...quantita.map(q => q.azienda).filter(Boolean),
+    ])).sort(), [unita, quantita]);
 
     return (
         <div className="p-6 max-w-[1500px]">
@@ -122,7 +144,7 @@ export default function MagazzinoPage() {
             {loading ? (
                 <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
             ) : tab === "giacenze" ? (
-                <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} />
+                <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda} />
             ) : tab === "ricerca" ? (
                 <RicercaSeriale unita={unita} />
             ) : tab === "articoli" ? (
@@ -138,9 +160,9 @@ export default function MagazzinoPage() {
 /** Una riga di giacenza a QUANTITÀ: gli accessori, il materiale di consumo.
  *  Non hanno un seriale, quindi non stanno in mag_unita — ma sono magazzino
  *  esattamente come un telefono (Luca 29/08: «il magazzino è l'unica fonte»). */
-type RigaQta = { codice: string; descrizione: string; negozio: string; azienda: string; quantita: number; valore: number };
+type RigaQta = { codice: string; descrizione: string; negozio: string; azienda: string; quantita: number; inArrivo: number; valore: number };
 
-function Giacenze({ unita, quantita, negozi, aziende }: { unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[] }) {
+function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda }: { unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[]; nomiAzienda: Record<string, string> }) {
     const [negozio, setNegozio] = useState("");
     const [azienda, setAzienda] = useState("");
     const [stato, setStato] = useState("");
@@ -188,6 +210,10 @@ function Giacenze({ unita, quantita, negozi, aziende }: { unita: Unita[]; quanti
                 const k = `${g.codice}|${g.descrizione}`;
                 const r = m.get(k) || { codice: g.codice, descrizione: g.descrizione, giacenza: 0, inArrivo: 0, valore: 0 };
                 r.giacenza += Number(g.quantita);
+                // la merce in arrivo NON è giacenza: non si può vendere perché
+                // sullo scaffale non c'è. Ma sapere che sta arrivando serve —
+                // per non riordinarla due volte (Francesco 29/08)
+                r.inArrivo += Number(g.inArrivo || 0);
                 r.valore += Number(g.valore || 0);
                 m.set(k, r);
             }
@@ -214,17 +240,18 @@ function Giacenze({ unita, quantita, negozi, aziende }: { unita: Unita[]; quanti
         <div className="space-y-4">
             <div className="glass-panel rounded-2xl p-4 flex items-end gap-3 flex-wrap">
                 <label className="text-xs text-slate-400">Azienda<br />
-                    <select value={azienda} onChange={e => setAzienda(e.target.value)} className={selCls}>
-                        <option value="">Tutte</option>{aziende.map(a => <option key={a}>{a}</option>)}
-                    </select></label>
+                    <div className="w-60 mt-0.5"><SelectOpzioni className="glass-input w-full text-sm"
+                        value={azienda ? (nomiAzienda[azienda] || azienda) : ""}
+                        onChange={(v) => setAzienda(v ? (Object.keys(nomiAzienda).find(k => nomiAzienda[k] === v) || v) : "")}
+                        opzioni={aziende.map(a => nomiAzienda[a] || a)} placeholder="Tutte le società" /></div></label>
                 <label className="text-xs text-slate-400">Punto vendita<br />
-                    <select value={negozio} onChange={e => setNegozio(e.target.value)} className={selCls}>
-                        <option value="">Tutti</option>{negozi.map(n => <option key={n}>{n}</option>)}
-                    </select></label>
+                    <div className="w-52 mt-0.5"><SelectOpzioni className="glass-input w-full text-sm"
+                        value={negozio} onChange={setNegozio} opzioni={negozi} placeholder="Tutti i negozi" /></div></label>
                 <label className="text-xs text-slate-400">Disponibilità<br />
-                    <select value={stato} onChange={e => setStato(e.target.value)} disabled={!!dataStorica} className={selCls}>
-                        <option value="">Tutte</option>{Object.entries(STATI_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                    </select></label>
+                    <div className="w-48 mt-0.5"><SelectOpzioni className="glass-input w-full text-sm" disabled={!!dataStorica}
+                        value={stato ? (STATI_LABEL[stato] || stato) : ""}
+                        onChange={(v) => setStato(v ? (Object.keys(STATI_LABEL).find(k => STATI_LABEL[k] === v) || "") : "")}
+                        opzioni={Object.values(STATI_LABEL)} placeholder="Tutte" /></div></label>
                 <label className="text-xs text-slate-400" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">Giacenza alla data<br />
                     <input type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className={selCls} /></label>
                 {dataStorica && <button onClick={() => setDataStorica("")} className="text-xs text-slate-400 hover:text-white pb-2">✕ oggi</button>}
