@@ -94,7 +94,12 @@ export default function MagazzinoPage() {
             caricaTutte<Unita>((from, to) =>
                 supabase.from("mag_unita").select("*").order("caricato_il", { ascending: false }).range(from, to) as never),
             caricaTutte<{ codice: string; negozio: string; azienda: string; quantita: number; in_arrivo: number }>((from, to) =>
-                supabase.from("mag_giacenze").select("codice,negozio,azienda,quantita,in_arrivo").or("quantita.gt.0,in_arrivo.gt.0").range(from, to) as never),
+                /* ANCHE LE RIGHE SOTTO ZERO (revisore 29/08). Era
+                   `.or("quantita.gt.0,in_arrivo.gt.0")`: una giacenza andata a
+                   −1 — cioè la prova che qualcosa è stato venduto senza
+                   esserci — non compariva da nessuna parte. Un magazzino che
+                   nasconde i conti che non tornano non serve a niente. */
+                supabase.from("mag_giacenze").select("codice,negozio,azienda,quantita,in_arrivo").or("quantita.neq.0,in_arrivo.gt.0").range(from, to) as never),
         ]);
         setNegozi(((st.data ?? []) as { name: string; is_ufficio?: boolean | null }[]).filter(s => !s.is_ufficio).map(s => s.name));
         setUnita((un.data ?? []) as Unita[]);
@@ -206,10 +211,18 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda }: { unita: Un
             for (const g of quantita) {
                 if (negozio && g.negozio !== negozio) continue;
                 if (azienda && g.azienda !== azienda) continue;
-                if (stato && stato !== "disponibile") continue;
+                /* IL FILTRO NON DEVE PERDERE LE QUANTITÀ (revisore 29/08).
+                   Era `if (stato && stato !== "disponibile") continue`, e
+                   scegliendo «📦 In arrivo» sparivano esattamente i 96 pezzi
+                   in arrivo di Multi — cioè la cosa che Francesco era andato a
+                   cercare. Le quantità non hanno uno stato per riga: hanno due
+                   colonne, e ogni filtro guarda la sua. */
+                if (stato === "in_transito") continue;               // solo i pezzi viaggiano
+                if (stato === "disponibile" && !(Number(g.quantita) > 0)) continue;
+                if (stato === "in_arrivo" && !(Number(g.inArrivo) > 0)) continue;
                 const k = `${g.codice}|${g.descrizione}`;
                 const r = m.get(k) || { codice: g.codice, descrizione: g.descrizione, giacenza: 0, inArrivo: 0, valore: 0 };
-                r.giacenza += Number(g.quantita);
+                r.giacenza += stato === "in_arrivo" ? 0 : Number(g.quantita);
                 // la merce in arrivo NON è giacenza: non si può vendere perché
                 // sullo scaffale non c'è. Ma sapere che sta arrivando serve —
                 // per non riordinarla due volte (Francesco 29/08)

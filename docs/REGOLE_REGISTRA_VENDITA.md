@@ -153,7 +153,50 @@ Non è grafica, è la regola che conta di più.
   si muove da sé. Così non può esistere una giacenza senza una storia che la
   spieghi.
 - **Lo scarico non fa fallire un salvataggio già andato a buon fine.** Un
-  magazzino disallineato si sistema; una vendita persa no.
+  magazzino disallineato si sistema; una vendita persa no. Ma **quello che ha
+  da dire lo dice a schermo**, non a `console.error`: su un monitor da negozio
+  la console non esiste, e una giacenza andata sotto zero è esattamente la
+  cosa che qualcuno deve andare a contare.
+
+### Le tre regole nate il 29/08, il giorno dell'apertura di Donna
+
+**a. La società segue la merce.** Il magazzino Wind3 è di Telefutura (T1), il
+Multi di Telefutura 2 (T2). Un pezzo di T2 lo scarica T2 e **lo scontrino lo
+emette T2** — non la società che l'operatore si è trovato selezionata. La
+verità sta nella **giacenza**, non nell'anagrafica: `mag_articoli.azienda` è
+NULL per tutti, la società vive su `mag_giacenze` e `mag_unita`.
+`mag_movimenti.azienda` ha `default 'T1'`, e questo rende il difetto
+**silenzioso**: la sezione Magazzino mostra solo le quantità sopra zero,
+quindi la riga a −1 che nasce alla società sbagliata non la vede nessuno.
+Misurato: vendere una SIM Fastweb (109 pezzi, tutti T2) lasciava T2 a 109 e
+creava T1 a −1.
+
+**b. Un pezzo con seriale non è una quantità.** Un telefono sta in `mag_unita`
+come oggetto singolo, non in `mag_giacenze` come numero: venderlo vuol dire
+portarlo a `stato='venduto'`. Scriverci **anche** un movimento a quantità è
+una doppia uscita, e siccome per lui una riga di giacenza non esiste, gliela
+fa nascere a −1. Finché non lo si marcava, `cassa_seriali` (che filtra
+`stato <> 'venduto'`) lo restituiva ancora: **lo stesso IMEI si poteva
+battere all'infinito**.
+
+**c. Senza reparto IVA non si vende.** Il reparto dice al registratore con
+quale aliquota stampare la riga: senza, la riga viene **scartata**. Il caso
+che costa non è lo scontrino che non esce — è il **carrello misto**: se il
+pre-check si accontenta che *una* riga sia stampabile, si incassa il totale
+intero e si certifica solo quella. Corrispettivo incassato e non certificato.
+Quindi: il pre-check fallisce se **una qualsiasi** voce è esclusa, la cassa
+non fa entrare in carrello un articolo senza reparto, e `cosaManca()` lo dice
+(regola §7: una guardia al salvataggio si aggiunge sempre anche lì).
+
+### E una trappola di disegno, che vale oltre la cassa
+
+**Due strade per lo stesso articolo: quella comoda vince.** Le voci a
+marginalità («New Cover», «Sim Fastweb») sono pulsanti in alto, mentre la
+stessa merce sta a scaffale col suo codice. Il venditore preme il pulsante —
+è lì, ed è l'abitudine di sempre — e il magazzino non si muove. Non basta che
+esista la strada giusta: finché **esiste anche quella sbagliata**, è quella
+che verrà usata. `marg_items.codice_magazzino` lega le due dove il gemello
+c'è; dove non c'è, il legame va fatto a mano in Fiscalità → Articoli.
 
 ---
 
