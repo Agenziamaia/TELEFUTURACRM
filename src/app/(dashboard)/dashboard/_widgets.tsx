@@ -58,7 +58,12 @@ import { CoronaOro } from "@/components/IconaCorona";
 // Vivono in `@/lib/produzione`, che NON e' un modulo client: cosi' le usa anche
 // il server (il report serale, senza, contava le pratiche annullate). Si
 // ri-esportano da qui perche' mezzo CRM le importa gia' da questo file.
-export { isCtr, isExt, validaProduzione, qtyDi, giornoDi } from "@/lib/produzione";
+// ⚠️ IMPORT *E* EXPORT, non `export ... from`: la riesportazione secca NON porta
+// i nomi nello scope di questo file, e qui dentro si chiamano 27 volte. Con il
+// solo `export from` la Home si apriva su «isCtr is not defined» — e il
+// @ts-nocheck in cima ha impedito al build di accorgersene (29/08, mio errore).
+import { isCtr, isExt, validaProduzione, qtyDi, giornoDi } from "@/lib/produzione";
+export { isCtr, isExt, validaProduzione, qtyDi, giornoDi };
 
 const norm = (s) => (s || "").trim().toLowerCase();
 const STATO_COLOR = (s = "") => {
