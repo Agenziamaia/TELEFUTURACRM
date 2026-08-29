@@ -275,7 +275,15 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             <div className="glass-panel w-full max-w-md p-5 space-y-4">
                 <div className="flex items-baseline justify-between">
                     <h3 className="text-lg font-bold text-white">🧾 Incasso &amp; Scontrino</h3>
-                    <span className="text-xs text-slate-400">{data.negozio || "—"}{isTest ? " · PROVA (non fiscale)" : ""}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">{data.negozio || "—"}{isTest ? " · PROVA (non fiscale)" : ""}</span>
+                        {/* X per uscire dal modale PRIMA di emettere (spec Francesco): non durante
+                            l'incasso/stampa in corso, per non lasciare un'operazione a metà. */}
+                        {fase !== "incasso" && fase !== "stampa" && (
+                            <button type="button" onClick={onDone} title="Chiudi senza emettere" aria-label="Chiudi"
+                                className="shrink-0 w-7 h-7 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 text-lg leading-none flex items-center justify-center">×</button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-40 overflow-y-auto">
