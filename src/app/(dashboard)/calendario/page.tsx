@@ -793,9 +793,9 @@ export default function Calendario() {
             // appointment_id (matchAppuntamento) → le requeue tutte.
             const { data: linkRows } = await supabase
                 .from("calls")
-                .select("id, caller, richiamo_event_id")
+                .select("id, caller, richiamo_event_id, stato, storico")
                 .eq("appointment_id", a.id);
-            const calls = (linkRows as { id: string; caller?: string | null; richiamo_event_id?: number | null }[] | null) || [];
+            const calls = (linkRows as { id: string; caller?: string | null; richiamo_event_id?: number | null; stato?: string | null; storico?: unknown[] | null }[] | null) || [];
             // dedup: se una delle pratiche ha già un evento richiamo, riusa quello
             const existingEvt = calls.find(c => c.richiamo_event_id)?.richiamo_event_id || null;
             // intestatario = il caller che lavorava la pratica; ripiego su chi ha
@@ -843,9 +843,22 @@ export default function Calendario() {
             // Rimetti OGNI pratica collegata nella coda del suo caller. Se l'update
             // fallisce NON è un successo: va segnalato (bug: prima era silenziato).
             let inCoda = 0;
+            let saltate = 0;   // pratiche già attivate: non si toccano
             let requeueErr: string | null = null;
             for (const c of calls) {
-                const upd: Record<string, unknown> = { stato: "Da richiamare", data_richiamo: richiamoNegozio.date, fascia_richiamo: fasciaR };
+                /* ⚠️ NEMMENO DA QUI SI CANCELLA UN'ATTIVAZIONE (29/08). Questa
+                   era la strada silenziosa: rimetteva «Da richiamare» su
+                   QUALUNQUE pratica collegata, senza guardia e senza scrivere
+                   nello storico — quindi nessuno se ne sarebbe mai accorto, e
+                   la pratica ricominciava a maturare malus. */
+                if (/^attivat/i.test(String(c.stato || ""))) { saltate++; continue; }
+                const voceRichiamo = {
+                    data: new Date().toISOString(), caller: intestatario || "Negozio",
+                    campo: "Stato", da: String(c.stato || ""), a: "Da richiamare", dettagli: null,
+                    nota: "richiamo richiesto dal negozio dall'esito dell'appuntamento",
+                };
+                const upd: Record<string, unknown> = { stato: "Da richiamare", data_richiamo: richiamoNegozio.date, fascia_richiamo: fasciaR,
+                    storico: [...(Array.isArray((c as { storico?: unknown[] }).storico) ? (c as { storico: unknown[] }).storico : []), voceRichiamo] };
                 if (eventId) upd.richiamo_event_id = eventId;
                 let { error } = await supabase.from("calls").update(upd).eq("id", c.id);
                 if (error && /column/i.test(error.message || "")) {
@@ -873,10 +886,12 @@ export default function Calendario() {
                lì è vuoto). Ora si dice com'è, e si dice cosa fare. */
             if (calls.length === 0) {
                 setRichiamoNegozioEsito(`⚠️ Richiamo segnato per il ${quando}, ma NON è finito in nessuna coda: a questo appuntamento non è collegata nessuna pratica del centralino. Apri la scheda del cliente in Call Center e fissa il richiamo da lì, altrimenti non lo chiamerà nessuno.${noNumero}`);
+            } else if (saltate === calls.length) {
+                setRichiamoNegozioEsito(`⛔ Non ho fissato niente: questa pratica risulta ATTIVATA da una vendita collegata. Se serve richiamare il cliente, si fa dalla sezione Call Center.`);
             } else if (requeueErr) {
                 setRichiamoNegozioEsito(`⚠️ Evento creato, ma ${calls.length - inCoda} pratica/e NON è tornata nella coda del caller: ${requeueErr}`);
             } else {
-                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando}. La pratica è tornata nella coda di ${intestatario || "il call center"} — la trovi in Call Center, stato «Da richiamare».${noNumero}`);
+                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando}. La pratica è tornata nella coda di ${intestatario || "il call center"} — la trovi in Call Center, stato «Da richiamare».${saltate ? ` (${saltate} pratica/e già attivata/e non è stata toccata.)` : ""}${noNumero}`);
             }
         } catch (e) {
             setRichiamoNegozioEsito("❌ Errore: " + ((e as Error).message || "richiamo non creato"));
@@ -3626,6 +3641,20 @@ export default function Calendario() {
                                     onChange={async e => {
                                         const s = e.target.value as AppointmentStatus;
                                         const prima = selectedAppointment.status;
+                                        /* ⚠️ UN APPUNTAMENTO ATTIVATO NON SI RIBALTA (29/08).
+                                           La pratica del caller era già protetta, questo lato no: un
+                                           «No Show» messo dopo il match lasciava «Attivato» sulla
+                                           pratica e «no_show» sull'appuntamento — due verità opposte
+                                           nella stessa schermata. E l'appuntamento tornava nel pool
+                                           del match, dove una vendita successiva poteva dirottare la
+                                           cooperation su un altro negozio.
+                                           La stessa protezione esiste già nel caller (whitelist
+                                           `riapribili`): qui mancava, ed era un'asimmetria, non una
+                                           scelta. L'attivazione la toglie solo chi l'ha messa. */
+                                        if (/^attivat/i.test(String(prima || ""))) {
+                                            alert("Questo appuntamento risulta ATTIVATO da una vendita collegata: l'esito non si può cambiare da qui.\n\nSe l'attivazione è sbagliata, va corretta la vendita (Ricerca Vendite) — è da lì che nasce.");
+                                            return;
+                                        }
                                         await supabase.from("appointments").update({ status: s }).eq("id", selectedAppointment.id);
                                         // fix 10/08: l'esito del negozio arriva ANCHE sulla pratica
                                         // caller (storico sempre + stato per gli esiti definitivi)

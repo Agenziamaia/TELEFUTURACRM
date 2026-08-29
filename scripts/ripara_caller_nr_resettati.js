@@ -40,10 +40,32 @@ const NR = /^(Cold|Hot) NR[123]$/;
       .sort((a,b) => String(a.data||"").localeCompare(String(b.data||"")))[0];
     if (!rotto) continue;
 
-    // qualcuno ci ha messo mano DOPO?
-    const umanoDopo = st.some((v) => v?.campo === "Stato" && v?.caller
-      && v.caller !== "automatico (non risposto)"
-      && String(v.data || "") > String(rotto.data || ""));
+    /* ⚠️ IL TIMESTAMP NON FA FEDE (correzione 29/08, trovata da un revisore).
+       La voce automatica era datata all'INIZIO DELLA CHIAMATA, non a quando il
+       webhook scriveva — e Aircall consegna gli eventi anche 12 ore dopo. Così
+       un avanzamento automatico risultava ANTECEDENTE a un'azione del caller
+       che in realtà era avvenuta prima, e questo confronto concludeva «ci ha
+       messo mano una persona dopo» saltando la riparazione. Cinque pratiche
+       sono rimaste rotte per questo.
+       LA PROVA CHE NON DIPENDE DALL'OROLOGIO: se la voce automatica ha
+       `da = «Hot Sparito»`, vuol dire che HA LETTO quel valore — quindi il
+       caller aveva già scritto. In quel caso l'automatismo è l'ultimo, punto.
+       Restano escluse solo le pratiche dove una persona ha scritto uno stato
+       che l'automatismo NON ha poi letto.
+       ⚠️ E si escludono anche le firme «correzione…»: sono nostre, non di una
+       persona — prima bloccavano la riesecuzione dello script su sé stesso. */
+    const suoi = st.filter((v) => String(v?.campo || "").toLowerCase() === "stato" && v?.caller
+      && !/^(automatico|correzione)/i.test(String(v.caller)))
+      .sort((a, b) => String(a.data || "").localeCompare(String(b.data || "")));
+    // ⚠️ conta SOLO L'ULTIMA voce umana: quelle prima sono già superate per
+    // definizione. Guardandole tutte, una vecchia bastava a far saltare la
+    // riparazione (tre pratiche perse così).
+    const ultimoUmano = suoi[suoi.length - 1] || null;
+    const umanoDopo = !!ultimoUmano
+      && String(ultimoUmano.data || "") > String(rotto.data || "")
+      // …a meno che l'automatismo abbia letto proprio quel valore: allora è
+      // arrivato lui per ultimo, qualunque cosa dicano gli orologi
+      && String(ultimoUmano.a || "") !== String(rotto.da || "");
     if (umanoDopo) { saltate.push({ ...r, rotto, motivo: "ci ha messo mano una persona dopo" }); continue; }
 
     // lo stato di oggi deve essere ancora quello dell'automatismo (o un suo avanzamento)

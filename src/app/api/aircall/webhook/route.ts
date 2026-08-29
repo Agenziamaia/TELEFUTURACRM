@@ -334,15 +334,16 @@ async function bridgeVersoCaller(p: {
        Un appuntamento, un richiamo, un definitivo non si sovrascrivono con una
        chiamata a vuoto: quella è un'informazione in meno, non in più.
 
-       I comportamenti si LEGGONO dal database (`caller_opzioni.comportamento`),
-       che è dove l'amministrazione li governa: la schermata del caller li legge
-       già da lì, questo webhook se li era scritti a mano — ed è per questo che
-       «Hot Sparito», che è un DEFINITIVO aggiunto dopo, gli risultava
-       sconosciuto e finiva nel ripiego. */
-    const { data: opzStato } = await supabase.from("caller_opzioni")
-        .select("voce, comportamento").eq("categoria", "stato");
-    const comportamentoDi = new Map((opzStato || []).map((o) => [String(o.voce), String(o.comportamento || "")]));
-
+       ⚠️ QUI NON SI LEGGE PIÙ `caller_opzioni` (correzione 29/08, seconda
+       passata). Ci avevo messo una query per «governare i comportamenti dal
+       database», ma i due rami che ne uscivano erano IDENTICI: era codice
+       morto che girava a ogni chiamata Aircall, e il commento prometteva una
+       cosa che il codice non faceva. La scala resta quella cablata qui sotto —
+       e va detto invece di far finta.
+       ⚠️ CONSEGUENZA DA SAPERE: se qualcuno rinomina «Cold NR1» dal pannello,
+       la progressione smette di funzionare in silenzio. Il giorno che serve
+       davvero renderla configurabile, va fatta per bene: la scala (chi viene
+       dopo chi) non è deducibile dal solo `comportamento`. */
     const prossimoNR = (statoAttuale: string): string => {
         const s = String(statoAttuale || "").trim();
         // primo esito: il cliente non era ancora stato lavorato
@@ -350,9 +351,6 @@ async function bridgeVersoCaller(p: {
         // dentro la scala: avanza, conservando la temperatura
         const m = /^(Cold|Hot) NR([123])$/.exec(s);
         if (m) return `${m[1]} NR${Math.min(3, Number(m[2]) + 1)}`;
-        // uno stato «non risposto» aggiunto a mano: non ne conosciamo la scala,
-        // quindi si lascia dov'è invece di indovinare
-        if (comportamentoDi.get(s) === "non_risposto") return s;
         return s;                       // appuntamenti, richiami, definitivi: intoccabili
     };
 
@@ -364,15 +362,31 @@ async function bridgeVersoCaller(p: {
             upd.stato = nuovoStato;
             // la progressione automatica LASCIA TRACCIA nello storico (Luca
             // 24/08: «lo stato in dashboard non esiste nello storico»)
-            if (nuovoStato !== esistente.stato) voceStatoAuto = { ...voce, caller: "automatico (non risposto)", campo: "Stato", da: String(esistente.stato || ""), a: nuovoStato, dettagli: null };
+            /* ⚠️ DATATA A QUANDO SI SCRIVE, non a quando è iniziata la chiamata
+               (correzione 29/08). Aircall consegna gli eventi anche 12 ore
+               dopo: datando la voce a `p.startedIso`, un avanzamento
+               automatico risultava ANTECEDENTE a un'azione che il caller aveva
+               fatto prima — e chiunque legga lo storico (o un backfill) ne
+               deduce l'ordine sbagliato. È successo: cinque pratiche sono
+               state saltate da una riparazione proprio per questo.
+               La chiamata ha già la sua voce «Chiamata Aircall» col suo
+               orario vero: questa qui è un'altra cosa, ed è successa adesso. */
+            if (nuovoStato !== esistente.stato) voceStatoAuto = { ...voce, data: new Date().toISOString(), caller: "automatico (non risposto)", campo: "Stato", da: String(esistente.stato || ""), a: nuovoStato, dettagli: null };
         }
         else {
             // RACE (Luca 24/08, «da esitare fantasma»): l'evento di fine
             // chiamata può arrivare DOPO che il caller ha già esitato la
             // telefonata — se lo storico ha un esito POSTERIORE all'inizio
             // della chiamata, il flag non si rialza
+            /* ⚠️ IL CONFRONTO NON PUÒ ESSERE CASE-SENSITIVE (correzione 29/08).
+               Cercava `campo === "Stato"`, ma il match vendita↔appuntamento
+               scrive `"stato"` MINUSCOLO e l'esito del negozio scrive
+               «Esito negozio» — pur cambiando lo stato. Risultato: una pratica
+               appena ATTIVATA rientrava nella coda «da esitare», che è
+               esattamente il fantasma che il fix del 24/08 doveva chiudere. */
             const vociEs = Array.isArray((esistente as { storico?: unknown }).storico) ? ((esistente as { storico: { campo?: string; data?: string }[] }).storico) : [];
-            const ultimoEsito = vociEs.filter((v) => v?.campo === "Stato" && v?.data).map((v) => String(v.data)).sort().pop() || null;
+            const cambiaStato = (c: string) => { const k = c.toLowerCase(); return k === "stato" || k === "esito negozio"; };
+            const ultimoEsito = vociEs.filter((v) => cambiaStato(String(v?.campo || "")) && v?.data).map((v) => String(v.data)).sort().pop() || null;
             if (!(ultimoEsito && new Date(ultimoEsito) > new Date(quando))) upd.da_esitare = true;
         }
         // PASSAGGIO DI POSSESSO (Luca 24/08, caso Sheekel sulle lead dei

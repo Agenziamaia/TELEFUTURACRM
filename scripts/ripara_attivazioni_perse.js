@@ -54,7 +54,15 @@ const FIRMA="correzione automatica 29/08 (attivazioni perse)";
    select app.id appt, app.date, app.store, app.customer_name, app.cf,
           array_agg(ven.id) vendite, min(ven.negozio) vneg
    from app join ven on ven.cf=app.cf
-   where ven.data::date between (app.created_at::date)-1 and (app.date::date+($1)::int)
+   /* ⚠️ LA STESSA FINESTRA DELLA REGOLA VERA, senza tolleranze.
+      Avevo messo «-1 giorno» di margine: ha agganciato l'appuntamento 1059
+      (Beltrame) che matchAppuntamento avrebbe RIFIUTATO — un appuntamento non
+      ancora avvenuto, con una vendita di un altro prodotto chiusa prima che la
+      caller contattasse il cliente. Annullato a mano il 29/08.
+      La regola live (matchAppuntamento.ts): la vendita deve stare fra la data
+      della CHIAMATA (created_at dell'appuntamento) e +N giorni dalla data
+      fissata — «il cliente in anticipo conta, prima della chiamata no». */
+   where ven.data::date between (app.created_at::date) and (app.date::date+($1)::int)
    group by 1,2,3,4,5`,[gg]);
  for (const r of b.rows) {
    const p=await c.query("select id,nome,cognome,stato,storico from calls where appointment_id=$1",[r.appt]);
@@ -88,7 +96,9 @@ const FIRMA="correzione automatica 29/08 (attivazioni perse)";
  const callIds=[...azioni.filter(x=>x.tipo==="A").map(x=>x.callId),
                 ...azioni.filter(x=>x.tipo==="B").flatMap(x=>x.pratiche.map(p=>p.id))];
  const mal=callIds.length ? await c.query(
-   "select id,call_id,caller,importo,giorni,stato,eliminato from caller_malus where call_id=any($1) and coalesce(eliminato,false)=false",[callIds])
+   /* i COMPENSATI non si toccano: un malus gia' liquidato in gara non si
+      cancella dall'archivio (matchAppuntamento.ts fa lo stesso). */
+   "select id,call_id,caller,importo,giorni,stato,eliminato from caller_malus where call_id=any($1) and coalesce(eliminato,false)=false and coalesce(stato,'') <> 'compensato'",[callIds])
    : {rows:[]};
 
  console.log("\n═══ A) ATTIVAZIONI CANCELLATE DA UN ESITO ═══");
