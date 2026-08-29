@@ -409,7 +409,7 @@ export async function cercaESpostaMailOtp(
        legge «non è arrivato niente» mentre in casella c'era eccome. È il caso
        tipico di una casella che riceve la posta INOLTRATA da un'altra, dove
        l'inoltro può riscrivere il mittente. */
-    scartatiPerMittente: string[] }> {
+    scartatiPerMittente: string[]; cartelleViste: string[]; vistoNellaFinestra: number }> {
     const daMinuti = opts.daMinuti ?? 20;
     const max = opts.max ?? 15;
     const since = new Date(Date.now() - daMinuti * 60_000);
@@ -419,12 +419,14 @@ export async function cercaESpostaMailOtp(
     let nonSpostate = 0;
     let motivoMancatoSpostamento: string | null = null;
     const scartatiPerMittente = new Set<string>();
+    const cartelleViste: string[] = [];
+    let vistoNellaFinestra = 0;
     try {
         await client.connect();
     } catch (e: unknown) {
         const err = e as { authenticationFailed?: boolean; responseText?: string; message?: string };
         return {
-            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null, scartatiPerMittente: [],
+            trovate: [], spostate: 0, nonSpostate: 0, motivoMancatoSpostamento: null, scartatiPerMittente: [], cartelleViste: [], vistoNellaFinestra: 0,
             errore: err?.authenticationFailed
                 ? "la casella non accetta più la password salvata (per Gmail serve una «password per le app»; Microsoft ha chiuso l'accesso con password su hotmail/outlook personali)"
                 : (err?.responseText || err?.message || "connessione alla casella non riuscita"),
@@ -435,9 +437,24 @@ export async function cercaESpostaMailOtp(
         // è atteso e si ignora
         try { await client.mailboxCreate(opts.cartellaOtp); } catch { /* esiste */ }
 
-        for (const cartella of ["INBOX", opts.cartellaOtp]) {
+        /* ANCHE NELLA POSTA INDESIDERATA (29/08). Una mail INOLTRATA da un'altra
+           casella è il caso tipico che i filtri antispam mettono da parte: se il
+           CRM guarda solo in INBOX, il codice è lì e lui dice che non c'è.
+           Le cartelle si chiedono al server invece di indovinarne il nome —
+           «Junk», «Posta indesiderata», «Spam» cambiano con la lingua. */
+        const cartelle = ["INBOX", opts.cartellaOtp];
+        try {
+            for (const c of await client.list()) {
+                const nome = String(c.path || "");
+                const spam = c.specialUse === "\\Junk" || /^(junk|spam|posta indesiderata|bulk)/i.test(String(c.name || nome));
+                if (spam && !cartelle.includes(nome)) cartelle.push(nome);
+            }
+        } catch { /* se non si riesce a elencare, restano le due di sempre */ }
+
+        for (const cartella of cartelle) {
             let lock: { release: () => void } | null = null;
             try { lock = await client.getMailboxLock(cartella); } catch { continue; }
+            cartelleViste.push(cartella);
             try {
                 /* ⚠️ IL «SINCE» DI IMAP RAGIONA A GIORNI, NON A MINUTI.
                    Chiedendo le mail degli ultimi 3 minuti il server restituisce
@@ -452,20 +469,30 @@ export async function cercaESpostaMailOtp(
                 if (!uids.length) continue;
                 const daSpostare: number[] = [];
                 const limite = since.getTime();
-                for await (const msg of client.fetch(uids, { uid: true, source: true }, { uid: true })) {
+                for await (const msg of client.fetch(uids, { uid: true, source: true, internalDate: true }, { uid: true })) {
                     const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
                     if (!m) continue;
                     if (!opts.mittenteOk(m.fromAddr)) {
                         // dentro la finestra ma dal mittente sbagliato: si annota,
                         // perché è l'unico indizio che distingue «non è arrivato
                         // niente» da «è arrivato, ma non da chi mi aspettavo»
-                        const q = m.date ? new Date(m.date).getTime() : 0;
-                        if (q && q >= since.getTime() && m.fromAddr) scartatiPerMittente.add(m.fromAddr.toLowerCase());
+                        const q = msg.internalDate ? new Date(msg.internalDate).getTime() : (m.date ? new Date(m.date).getTime() : 0);
+                        if (q && q >= since.getTime() && m.fromAddr) { vistoNellaFinestra += 1; scartatiPerMittente.add(m.fromAddr.toLowerCase()); }
                         continue;
                     }
-                    // fuori finestra: non è il codice di adesso, e consegnarlo
-                    // farebbe fallire l'accesso facendo credere che funzioni
-                    const quando = m.date ? new Date(m.date).getTime() : 0;
+                    /* ⚠️ LA FINESTRA SI MISURA SULL'ARRIVO, NON SULLA DATA SCRITTA
+                       NELLA MAIL (29/08). La `Date:` dice quando il fornitore l'ha
+                       SPEDITA; a noi serve quando è ARRIVATA QUI. Con una casella
+                       diretta è la stessa cosa a pochi secondi — ma quando la posta
+                       arriva INOLTRATA da un'altra casella, fra spedizione e arrivo
+                       passano minuti, e il codice appena consegnato veniva scartato
+                       come «vecchio». È il caso di MAGLIANA: il negozio vedeva il
+                       codice nella mail e il CRM diceva che non era arrivato niente.
+                       INTERNALDATE è il momento in cui il messaggio è entrato in
+                       QUESTA cassetta: è esattamente la domanda che ci stiamo
+                       facendo. La `Date:` resta come ripiego se manca. */
+                    const arrivo = msg.internalDate ? new Date(msg.internalDate).getTime() : 0;
+                    const quando = arrivo || (m.date ? new Date(m.date).getTime() : 0);
                     if (!quando || quando < limite) {
                         // vecchia ma del mittente giusto: la si porta comunque
                         // via dalla posta, così non resta lì in chiaro
@@ -496,7 +523,7 @@ export async function cercaESpostaMailOtp(
     } finally { try { await client.logout(); } catch { /* già chiusa */ } }
     // la più recente per prima: è quella che l'utente sta aspettando
     trovate.sort((x, y) => (y.date?.getTime() || 0) - (x.date?.getTime() || 0));
-    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null, scartatiPerMittente: [...scartatiPerMittente] };
+    return { trovate, spostate, nonSpostate, motivoMancatoSpostamento, errore: null, scartatiPerMittente: [...scartatiPerMittente], cartelleViste, vistoNellaFinestra };
 }
 
 export async function inviaEmail(a: Account, opts: { to: string; subject: string; text?: string; html?: string; inReplyTo?: string | null; attachments?: { filename: string; content: Buffer; contentType?: string }[] }): Promise<{ messageId: string; raw: Buffer }> {

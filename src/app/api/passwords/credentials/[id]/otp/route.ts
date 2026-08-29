@@ -114,14 +114,19 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
            l'inoltro riscrive il mittente, il controllo lo scarta — giustamente,
            ma senza dirlo si passa il pomeriggio a chiedersi perché. */
         const estranei = esito.scartatiPerMittente.filter((x) => x !== acc.email_address?.toLowerCase());
+        /* LA DIAGNOSI DEVE BASTARE DA SOLA. Quando questo messaggio arriva a un
+           negozio, nessuno può guardare i log: deve dire da sé dove ha cercato e
+           che cosa ha visto, altrimenti si finisce a scambiarsi screenshot. */
+        const dove = esito.cartelleViste.length ? ` Ho guardato in: ${esito.cartelleViste.join(", ")}.` : "";
         return NextResponse.json({
             attesa: true,
             riprovaTra: 30,          // Luca: mezzo minuto fra un giro e l'altro
             error: estranei.length
                 ? `Su ${acc.email_address} negli ultimi ${MINUTI_VALIDI} minuti è arrivata posta, ma da mittenti che non mi aspetto: ${estranei.slice(0, 3).join(", ")}.`
                     + ` Il codice si accetta solo se arriva davvero dal fornitore — se questa casella riceve la posta INOLTRATA da un'altra,`
-                    + ` l'inoltro sta riscrivendo il mittente e va sistemato (o va detto al CRM che per questa casella l'inoltro è quello).`
-                : `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}. Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
+                    + ` l'inoltro sta riscrivendo il mittente e va sistemato.` + dove
+                : `Non è ancora arrivato niente negli ultimi ${MINUTI_VALIDI} minuti su ${acc.email_address}.` + dove
+                    + ` Fai partire la richiesta dal portale Fastweb: appena la mail arriva la prendo.`,
         });
     }
 
