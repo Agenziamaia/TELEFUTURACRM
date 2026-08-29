@@ -38,8 +38,10 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
 const eur = (n: number | null | undefined) =>
     n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie, giaInCarrello, fiscale }: {
+export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie, giaInCarrello, serialiInCarrello, fiscale }: {
     negozio?: string; venditore?: string;
+    /** i seriali già nel carrello: lo stesso IMEI non ci va due volte */
+    serialiInCarrello?: Set<string>;
     /** questo negozio emette davvero lo scontrino? Se no, il reparto IVA
      *  mancante non è un motivo per rifiutare una vendita: il server lo
      *  controlla solo fuori dalla modalità di prova, e qui deve valere la
@@ -76,12 +78,31 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        catalogo è dell'azienda, non del negozio — e ogni clic risponderebbe
        «non risulta mai entrato», che è vero ma sembra un difetto. Meglio
        dirlo una volta sola, in cima, e mandare al banco chi deve vendere. */
-    const [caricate, setCaricate] = useState(false);
-    const senzaMagazzino = caricate && giac.size === 0;
+    /* TRE RISPOSTE, NON DUE (revisori 29/08). «Ce l'hai?» ha tre risposte —
+       sì, no, e NON LO SO ANCORA — e le prime due versioni ne usavano due,
+       scegliendo di default quella sbagliata: qui si bloccava finché non si
+       sapeva (e negli altri 14 negozi il modale si rimonta a ogni articolo
+       aggiunto, quindi il pop-up «non risulta mai entrato» tornava ogni
+       volta), mentre nei pulsanti rapidi si passava finché non si sapeva —
+       cioè il contrario, nella stessa schermata.
+       Finché non si sa non si decide: i pulsanti aspettano. */
+    const [statoMag, setStatoMag] = useState("sconosciuto");   // sconosciuto | vuoto | pieno | errore
+    const senzaMagazzino = statoMag === "vuoto";
+    const nonSoAncora = statoMag === "sconosciuto" || statoMag === "errore";
     const ricerca = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { caricaCatalogo().then(setVoci); caricaGruppi().then(setGruppi); }, []);
-    useEffect(() => { setCaricate(false); if (negozio) caricaGiacenze(negozio).then((g) => { setGiac(g); setCaricate(true); }); }, [negozio]);
+    useEffect(() => {
+        setStatoMag("sconosciuto"); setGiac(new Map());
+        if (!negozio) return;
+        let vivo = true;
+        caricaGiacenze(negozio).then((e) => {
+            if (!vivo) return;
+            setGiac(e.mappa);
+            setStatoMag(e.errore ? "errore" : e.mappa.size === 0 ? "vuoto" : "pieno");
+        }).catch(() => { if (vivo) setStatoMag("errore"); });
+        return () => { vivo = false; };
+    }, [negozio]);
     useEffect(() => { if (natura === "prodotto") setTimeout(() => ricerca.current?.focus(), 60); }, [natura]);
 
     /* IL SERIALE. Un IMEI ha 15 cifre, un ICCID 19: quando quello che si è
@@ -104,7 +125,9 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             cercaSeriale(s).then((p) => {
                 if (!vivo) return;
                 if (p) setPezzo(p);
-                else if (certo) setManca({ nome: "Seriale " + s, dettaglio: "Questo seriale non risulta a magazzino né fra gli usati in vendita. Se il telefono è qui davanti a te va prima caricato: finché non c'è, non può essere venduto." });
+                else if (certo) setManca(senzaMagazzino
+                ? { titolo: "Il magazzino non è ancora caricato", nome: "Seriale " + s, dettaglio: `Il magazzino di ${negozio || "questo negozio"} non è ancora nel CRM, quindi sparare l'IMEI non trova niente — non vuol dire che il telefono non ci sia.`, cosaFare: "cerca l'articolo per nome" }
+                : { nome: "Seriale " + s, dettaglio: "Questo seriale non risulta a magazzino né fra gli usati in vendita. Se il telefono è qui davanti a te va prima caricato: finché non c'è, non può essere venduto." });
             });
         }, 250);
         return () => { vivo = false; clearTimeout(t); };
@@ -181,6 +204,17 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
            loro magazzino entra, il controllo si accende da solo — non c'è
            niente da riattivare a mano, ed è il punto: nessun interruttore che
            qualcuno può dimenticare acceso o spento. */
+        if (v.scarica_magazzino && nonSoAncora) {
+            setManca({
+                titolo: statoMag === "errore" ? "Non riesco a leggere il magazzino" : "Sto leggendo il magazzino",
+                nome: v.nome,
+                dettaglio: statoMag === "errore"
+                    ? "La lettura delle giacenze non è riuscita. Non so cosa ci sia a scaffale, e tirare a indovinare su uno scontrino fiscale non si fa."
+                    : "Le giacenze non sono ancora arrivate: un istante e riprova.",
+                cosaFare: statoMag === "errore" ? "ricarica la pagina; se resta così, segnalalo" : "aspetta un istante e riprova",
+            });
+            return;
+        }
         if (v.scarica_magazzino && !senzaMagazzino && !((n ?? 0) > 0)) {
             const inCarrello = Number(giaInCarrello?.[v.codice || ""] || 0);
             setManca({
@@ -225,6 +259,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             return;
         }
         const usato = p.provenienza === "usato";
+        // LO STESSO PEZZO UNA VOLTA SOLA: fra un colpo di lettore e l'altro
+        // `mag_unita` non cambia, quindi il controllo di stato passerebbe due volte
+        if (serialiInCarrello?.has(p.seriale)) {
+            setManca({ titolo: "È già nel carrello", nome: p.nome + " · " + p.seriale, dettaglio: "Questo pezzo l'hai già aggiunto: di quel telefono ce n'è uno solo.", cosaFare: "guarda il carrello — è già lì" });
+            return;
+        }
         /* IL PEZZO DEVE ESSERE ANCORA LÌ. `cassa_seriali` esclude già i
            venduti, ma fra la ricerca e il clic può passare un collega — e un
            pezzo in transito o impegnato per un DDT non è vendibile. */
@@ -272,9 +312,26 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
         setQ(""); setPezzo(null); ricerca.current?.focus();
     };
 
+    /* LA TESTATA, UNA SOLA (Luca 29/08). Prima erano due righe: il titolo
+       della sezione sopra, e sotto una riga con il bottone «← Prodotto o
+       servizio» e «Prodotti — magazzino di X». Due righe per dire dov'eri.
+       Ora è tutto in cima — titolo, freccia e contesto — e quello che si
+       guadagna va alla merce: la barra di ricerca si alza di una riga. */
+    const indietro = () => { setNatura(null); setQ(""); setPezzo(null); setGruppoAperto(null); };
+    const intestazione = (
+        <div className="rvCardT" style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14, flexWrap: "wrap" }}>
+            {natura && (
+                <button onClick={indietro} className="rvTorna" title="Torna alla scelta fra prodotto e servizio"
+                    aria-label="Torna alla scelta fra prodotto e servizio">←</button>
+            )}
+            <span>🧾 Prodotti e servizi</span>
+            {natura && <span className="rvDove">{natura === "servizio" ? "🔧 Servizi" : `📦 Prodotti — magazzino di ${negozio || "—"}`}</span>}
+        </div>
+    );
+
     // ── la scelta iniziale: prodotto o servizio ────────────────────────────
     if (!natura) return (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div>{intestazione}<div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button onClick={() => setNatura("prodotto")} className="rvScelta" style={{ ["--rv-acc" as string]: "var(--tf-8b5cf6)", minWidth: 200 }}>
                 <em>📦</em><b>Prodotto</b>
                 <span style={{ display: "block", fontSize: 11, color: "var(--tf-8892b0)", marginTop: 3 }}>dal magazzino — codice, barcode o IMEI</span>
@@ -283,15 +340,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 <em>🔧</em><b>Servizio</b>
                 <span style={{ display: "block", fontSize: 11, color: "var(--tf-8892b0)", marginTop: 3 }}>assistenza, backup, riparazione…</span>
             </button>
-        </div>
+        </div></div>
     );
 
     if (natura === "servizio") return (
         <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <button onClick={() => setNatura(null)} className="rvPill rvPill-sm">← Prodotto o servizio</button>
-                <span className="rvLab" style={{ marginBottom: 0 }}>🔧 Servizi</span>
-            </div>
+            {intestazione}
             {servizi}
         </div>
     );
@@ -299,10 +353,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
     // ── PRODOTTI: la ricerca del magazzino ─────────────────────────────────
     return (
         <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <button onClick={() => { setNatura(null); setQ(""); }} className="rvPill rvPill-sm">← Prodotto o servizio</button>
-                <span className="rvLab" style={{ marginBottom: 0 }}>📦 Prodotti — magazzino di {negozio || "—"}</span>
-            </div>
+            {intestazione}
 
             {/* I GRUPPI A DUE LIVELLI (Luca 29/08): si preme «Accessori» e si
                 aprono i pezzi che si vendono davvero. Dentro ogni pulsante c'è
@@ -363,6 +414,13 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 </div>
             )}
 
+            {statoMag === "errore" && (
+                <div className="rvNota rvNota-att" style={{ marginBottom: 12 }}>
+                    <b>Non riesco a leggere il magazzino di {negozio || "questo negozio"}.</b> Finché è così non so
+                    cosa ci sia a scaffale, quindi da qui non si vende: ricarica la pagina, e se il messaggio resta
+                    segnalalo invece di forzare.
+                </div>
+            )}
             {senzaMagazzino && (
                 <div className="rvNota rvNota-att" style={{ marginBottom: 12 }}>
                     <b>Il magazzino di {negozio || "questo negozio"} non è ancora caricato.</b> Puoi vendere

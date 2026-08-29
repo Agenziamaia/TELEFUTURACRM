@@ -105,7 +105,7 @@ export async function scaricaVendita(
        togliere da nessuna parte, e va detto invece che ingoiarlo. */
     const senzaCodice = (righe || []).filter((r) => r.scaricaMagazzino && !r.codice && !r.seriale);
     if (senzaCodice.length) esito.senzaCodice = senzaCodice.map((r) => String(r.product || "senza nome"));
-    if (!daFare.length || !negozio) return esito;
+    if (!negozio) return esito;
 
     try {
         /* UN NEGOZIO SENZA MAGAZZINO NON HA CONTI DA FAR TORNARE (Luca 29/08,
@@ -119,13 +119,20 @@ export async function scaricaVendita(
            è un allarme: è rumore, e insegna a ignorarlo.
            Quando il magazzino di quel negozio verrà caricato, il controllo si
            spegne da sé e lo scarico riprende — senza toccare niente. */
-        const { data: haMagazzino } = await supabase.from("mag_disponibilita")
+        const { data: haMagazzino, error: erroreSonda } = await supabase.from("mag_disponibilita")
             .select("codice").eq("negozio", negozio).limit(1);
-        if (!haMagazzino?.length) {
+        /* NON SO ≠ NON C'È (revisore 29/08): se la sonda FALLISCE non si può
+           dichiarare «questo negozio non ha magazzino» — sarebbe saltare lo
+           scarico in silenzio proprio quando qualcosa non va. Si prosegue e,
+           se lo scarico non riesce, lo si dice. */
+        if (!erroreSonda && !haMagazzino?.length) {
             esito.saltate = (righe || []).length;
             esito.senzaCodice = undefined;
             return { ...esito, scaricate: 0, senzaMagazzino: true };
         }
+        // la sonda sta PRIMA di questa uscita: se no, in un negozio senza
+        // magazzino un articolo senza codice faceva comparire l'allarme
+        if (!daFare.length) return esito;
 
         const falliti: string[] = [];
         const adesso = new Date().toISOString();

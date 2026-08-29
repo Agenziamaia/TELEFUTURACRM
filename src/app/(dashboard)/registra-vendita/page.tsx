@@ -297,12 +297,28 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
      farli partire. I SERVIZI non hanno magazzino per definizione e restano
      liberi — è l'altra categoria della marginalità. */
   const [giacMarg,setGiacMarg]=useState(new Map());
-  const [magCaricato,setMagCaricato]=useState(false);
+  const [statoMag,setStatoMag]=useState("sconosciuto");   // sconosciuto | vuoto | pieno | errore
   const [bloccato,setBloccato]=useState(null);
+  /* NEL DUBBIO SI CHIUDE, NON SI APRE (revisore 29/08). Era
+     `if(!magCaricato||giacMarg.size===0)return false`: finché la risposta non
+     arrivava — e PER SEMPRE se la chiamata falliva, perché non c'era un
+     `catch` — ogni pulsante SIM passava senza controllo. E questo componente
+     si rimonta a ogni ingresso nella scheda, quindi la finestra si riapriva
+     ogni volta. `CassaProdotti`, nella stessa schermata, faceva l'opposto:
+     due regole diverse sullo stesso dubbio. Ora `magCaricato` distingue i tre
+     casi: non letto, letto vuoto (negozio senza magazzino → libero), letto
+     pieno (→ si controlla). */
   useEffect(()=>{
-    if(filtro!=="prodotti"||!negozio){setMagCaricato(false);return;}
+    /* AZZERARE PRIMA DI CHIEDERE (revisore 29/08): l'effect non ripuliva
+       nulla, quindi arrivando da un negozio senza magazzino si entrava a
+       Donna con lo stato «letto» e la mappa VUOTA — controllo spento per
+       tutta la lettura, su scontrini fiscali veri. */
+    setStatoMag("sconosciuto");setGiacMarg(new Map());
+    if(filtro!=="prodotti"||!negozio)return;
     let vivo=true;
-    caricaGiacenze(negozio).then(g=>{if(vivo){setGiacMarg(g);setMagCaricato(true);}});
+    caricaGiacenze(negozio)
+      .then(e=>{if(vivo){setGiacMarg(e.mappa);setStatoMag(e.errore?"errore":e.mappa.size===0?"vuoto":"pieno");}})
+      .catch(()=>{if(vivo)setStatoMag("errore");});
     return()=>{vivo=false};
   },[negozio,filtro]);
   /** Quanti pezzi ha in negozio la voce, se è legata a un articolo. `null` =
@@ -314,7 +330,8 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
    *  telefoni davvero in vendita, quindi la disponibilità l'ha già. */
   const senzaCopertura=(p)=>{
     if(filtro!=="prodotti")return false;
-    if(!magCaricato||giacMarg.size===0)return false;   // negozio senza magazzino: libero
+    if(statoMag==="sconosciuto"||statoMag==="errore")return true;   // non so: non decido, aspetto
+    if(statoMag==="vuoto")return false;                             // negozio senza magazzino: libero
     if(String(p&&p.id||"")==="vendita_usato"||/vendita\s*usato/i.test(String(p&&p.name||"")))return false;
     return !((pezziDi(p)??0)>0);
   };
@@ -370,6 +387,12 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
   useEffect(()=>{
     if(show&&editItem){
       const found=CATALOGO.flatMap(c=>c.items).find(p=>p.id===editItem.productId);
+      /* ✏️ MODIFICA NON È UNA PORTA DI SERVIZIO (revisore 29/08). Qui si
+         impostava `selProd` DIRETTAMENTE, saltando `apri()` e quindi il
+         controllo di disponibilità: una voce tolta dal carrello e rimessa
+         con Modifica rientrava anche se nel frattempo la giacenza era
+         finita. Si esce dalla stessa porta da cui si entra. */
+      if(found&&senzaCopertura(found)){setBloccato(found);return;}
       if(found){
         const catDellaVoce=CATALOGO.findIndex(c=>c.items.some(p=>p.id===found.id));
         setSelCat(catDellaVoce>=0?catDellaVoce:0);
@@ -435,6 +458,15 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
     if(!selProd)return;
     if(importoMissing)return;
     const p=selProd;
+    /* LA QUANTITÀ NON PUÒ SUPERARE QUELLO CHE C'È (revisore 29/08). Il
+       controllo all'ingresso diceva solo «ce n'è almeno uno»; poi qui c'è un
+       campo Quantità libero, e con un pezzo a magazzino si scriveva 50. */
+    const _ce=pezziDi(p);
+    const _chiesti=p.needsImei?1:(parseInt(qty)||1);
+    if(_ce!=null&&statoMag==="pieno"&&_chiesti>_ce){
+      setBloccato({...p,name:`${p.name} — ne stai vendendo ${_chiesti}, a magazzino ce ne sono ${_ce}`});
+      return;
+    }
     const impVal=String(importo).trim()===""?null:(parseFloat(importo)||0);
     // Telefono Cash: la base del 4% e' l'importo di VENDITA inserito.
     const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
@@ -472,27 +504,41 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
      perché la cosa da fare è diversa. In un portal come tutti gli altri
      modali: le sezioni hanno un backdrop-filter, che ancora i `position:
      fixed` discendenti al riquadro invece che alla finestra. */
+  const _staLeggendo = filtro==="prodotti" && !!negozio && (statoMag==="sconosciuto"||statoMag==="errore");
   const pannelloBloccato = bloccato && typeof document!=="undefined" && createPortal(
     <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)setBloccato(null);}}>
       <div className="rvFatta rvFatta-att">
         <div className="rvFatta-o rvFatta-att-o">📭</div>
-        <h3>{bloccato.codiceMagazzino?"Non è in magazzino":"Non è collegato al magazzino"}</h3>
+        <h3>{_staLeggendo?"Sto leggendo il magazzino":bloccato.codiceMagazzino?"Non è in magazzino":"Non è collegato al magazzino"}</h3>
         <p><b style={{color:"var(--tf-e2e8f0)"}}>{bloccato.name}</b><br/>
-          {bloccato.codiceMagazzino
+          {_staLeggendo
+            ? "Le giacenze non sono ancora arrivate: un attimo e riprova. Se il messaggio resta, il magazzino non si sta leggendo — dillo, non forzare la vendita."
+            : bloccato.codiceMagazzino
             ? `Nel magazzino di ${negozio||"questo negozio"} non ci sono pezzi di questo articolo: da qui esce uno scontrino fiscale, e quello che non c'è non si vende.`
             : `Questo pulsante non è legato a nessun articolo di magazzino, quindi non sa quanti pezzi ci siano — e senza disponibilità non può entrare nel carrello.`}</p>
         <div className="rvFatta-d" style={{textAlign:"left"}}>
           <div><span>Cosa fare</span><span style={{fontWeight:600,textAlign:"right"}}>
-            {bloccato.codiceMagazzino?"caricare i pezzi a magazzino":"cercarlo nella barra qui sotto, o collegarlo in Fiscalità → Articoli"}</span></div>
+            {_staLeggendo?"aspettare un istante e riprovare":bloccato.codiceMagazzino?"caricare i pezzi a magazzino":"cercarlo nella barra qui sotto, o collegarlo in Fiscalità → Articoli"}</span></div>
         </div>
         <button onClick={()=>setBloccato(null)} className="rvAzione" style={{width:"100%"}}>Ho capito</button>
       </div>
     </div>, document.body);
 
-  return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+  /* SIM ED ESIM SULLA STESSA RIGA DEI GRUPPI (Luca 29/08): «le categorie
+     vanno messe tutte su una linea fino a quando c'è dello spazio».
+     Andavano a capo non perché mancasse spazio, ma perché questo componente
+     si incartava in tre contenitori larghi al 100%: bastava uno per rompere
+     la riga. Con `display:contents` i contenitori spariscono dal disegno e le
+     pastiglie diventano figlie DIRETTE della riga del padre — così vanno a
+     capo solo quando lo spazio finisce davvero, e la barra di ricerca sale.
+     Quello che invece una riga sua ce l'ha (il pannello che si apre) la
+     chiede con `flex:0 0 100%`. */
+  const _inFila = inline && filtro==="prodotti";
+  const _passa = _inFila?{display:"contents"}:null;
+  return(<div style={_passa||(inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"})}>
     {pannelloBloccato}
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
-    <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
+    <div style={_passa||(inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"})}>
       {!filtro&&<div style={{padding:"16px 20px",borderBottom:"2px solid var(--tf-w30)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div><div style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>📦 Registra Prodotto</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>{venditore||"—"} • {negozio||"—"} • {new Date().toLocaleDateString("it-IT")}</div></div>
         {!inline&&<button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>}
@@ -504,7 +550,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
           style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid var(--tf-w120)",background:"var(--tf-w50)",color:"var(--tf-f8fafc)",fontSize:12,outline:"none"}}/>}
         {CATALOGO.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:selCat===ci?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:selCat===ci?"var(--tf-6f42c1)":"var(--tf-8892b0)"}}>{cat.cat}</button>))}
       </div>}
-      <div style={{flex:1,overflow:"auto",padding:16}}>
+      <div style={_passa||{flex:1,overflow:"auto",padding:16}}>
         {!selProd?(qMarg.trim()?(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
             {CATALOGO.flatMap((c)=>c.items.map(pr=>({pr,catNome:c.cat}))).filter(x=>x.pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).slice(0,60).map(({pr,catNome})=>(
@@ -525,20 +571,18 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
              diventati due pulsanti come gli altri, resi con la stessa
              pastiglia dei gruppi. Si premono e si aprono qui sotto, coi
              loghi dei brand che hanno già. */
-          <div>
-            <div className="rvPillRow" style={{gap:6}}>
-              {CATALOGO.filter(espandibile).map(c=>(
+          <>
+            {CATALOGO.filter(espandibile).map(c=>(
                 <button key={c.cat} onClick={()=>{setCatApertaId(catApertaId===c.cat?null:c.cat);setSelProd(null);}}
                   className={cn("rvPill",catApertaId===c.cat&&"rvPill-on")}>
                   {/^esim/i.test(nomeCat(c))?"📲":"📶"} {nomeCat(c)} <span style={{opacity:.55}}>{c.items.length}</span>
                 </button>))}
-            </div>
             {catApertaId&&(()=>{
               const c=CATALOGO.find(x=>x.cat===catApertaId);
               if(!c)return null;
               const ordinati=[...SIM_BRAND_ORDER.flatMap(bk=>c.items.filter(x=>x.brand===bk)),
                               ...c.items.filter(x=>!SIM_BRAND_ORDER.includes(x.brand))];
-              return (<div className="rvSub" style={{marginTop:8}}>
+              return (<div className="rvSub" style={{marginTop:8,flex:"0 0 100%"}}>
                 <div className="rvRapidoG">
                   {ordinati.map(p=>{
                     const info=SIM_BRANDS[p.brand];
@@ -552,7 +596,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
                 </div>
               </div>);
             })()}
-          </div>
+          </>
         ):CATALOGO[catIdx].grouped?(
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
@@ -576,7 +620,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
             <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
             {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{pezziDi(p)}</i>}
           </button>))}
-        </div>)):(<div>
+        </div>)):(<div style={_inFila?{flex:"0 0 100%"}:undefined}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
             <button onClick={()=>setSelProd(null)} style={{background:"none",border:"none",color:"var(--tf-6f42c1)",fontSize:13,cursor:"pointer",fontWeight:600}}>← Indietro</button>
             {selProd.brand&&SIM_BRANDS[selProd.brand]?<img src={SIM_BRANDS[selProd.brand].logo} alt="" style={{height:24,width:"auto",maxWidth:90,objectFit:"contain"}}/>:<span style={{fontSize:22}}>{selProd.icon}</span>}
@@ -5664,6 +5708,56 @@ function CRM() {
      che qualcosa è sfuggito al controllo — è esattamente la cosa che il
      negozio deve vedere. Regola §7: quello che il software sa, lo dice. */
   const [avvisiMag, setAvvisiMag] = useState([]);
+  /* LE GIACENZE DEL NEGOZIO, A LIVELLO DI PAGINA (revisore 29/08).
+     Il controllo «ce l'hai?» stava su ogni singola porta d'ingresso al
+     carrello, e le porte sono nove: quattro non controllavano niente — le
+     voci AUTO del flusso di brand (che è la vendita di tutti i giorni), la
+     bozza ripresa, il pannello del prodotto, la modifica di una riga — e sei
+     su nove non sottraevano quello che era GIÀ nel carrello. Con 281 codici
+     su 482 che a Donna hanno un pezzo solo, «ce n'è uno e ne vendo due» non
+     è un'ipotesi di scuola.
+     Chiudere una porta per volta lascia sempre la prossima aperta: qui c'è
+     la RETE, letta sul carrello finito, subito prima di salvare. */
+  const [giacNegozio, setGiacNegozio] = useState(null);   // null = non ancora letto
+  useEffect(() => {
+    let vivo = true;
+    setGiacNegozio(null);
+    if (!selNeg) return;
+    caricaGiacenze(selNeg)
+      // se la lettura fallisce si resta a `null`: non si finge di sapere
+      .then(e => { if (vivo) setGiacNegozio(e.errore ? null : e.mappa); })
+      .catch(() => { if (vivo) setGiacNegozio(null); });
+    return () => { vivo = false; };
+  }, [selNeg]);
+
+  /** Cosa il carrello promette e il magazzino non ha. Vuoto = tutto quadra,
+   *  oppure questo negozio un magazzino non ce l'ha ancora (e allora non c'è
+   *  niente da far quadrare — è la regola di Luca per gli altri 14). */
+  const mancanzeMagazzino = (lista) => {
+    const out = [];
+    if (!giacNegozio || giacNegozio.size === 0) return out;
+    // le quantità, sommate per codice: due righe dello stesso articolo
+    // pesano insieme sulla stessa giacenza
+    const chieste = new Map();
+    (lista || []).forEach(m => {
+      if (!m || !m.scaricaMagazzino || !m.codice || m.seriale) return;
+      chieste.set(m.codice, (chieste.get(m.codice) || 0) + (Number(m.qty) || 1));
+    });
+    chieste.forEach((n, cod) => {
+      const g = giacNegozio.get(cod);
+      const ce = Number(g?.quantita ?? 0);
+      const nome = (lista || []).find(m => m.codice === cod)?.product || cod;
+      if (ce <= 0) out.push({ ico: "📭", testo: `«${nome}» non c'è nel magazzino di ${selNeg}: non si può vendere`, dove: "carrello" });
+      else if (n > ce) out.push({ ico: "📦", testo: `di «${nome}» ne stai vendendo ${n} ma a magazzino ce ne sono ${ce}`, dove: "carrello" });
+    });
+    // lo stesso pezzo due volte: un IMEI è uno solo
+    const visti = new Map();
+    (lista || []).forEach(m => { if (m?.seriale) visti.set(m.seriale, (visti.get(m.seriale) || 0) + 1); });
+    visti.forEach((n, ser) => {
+      if (n > 1) out.push({ ico: "📱", testo: `il pezzo ${ser} è nel carrello ${n} volte: di quel telefono ce n'è uno solo`, dove: "carrello" });
+    });
+    return out;
+  };
   // Conti in sospeso: contatore per rinfrescare il pulsante rosso dopo salva/completa.
   const [sospesoReload, setSospesoReload] = useState(0);
   // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
@@ -5893,6 +5987,7 @@ function CRM() {
     if (margFlow && !brand) {
       margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
       if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino non lo può stampare (Amministrazione → Fiscalità → Articoli)`, dove: "carrello" }));
+      mancanzeMagazzino(margItems).forEach(x => out.push(x));
       if (margItems.some(_usatoFinanziato)) {
         if (margSkipCli) out.push({ ico: "💳", testo: "usato con finanziamento: i dati del cliente sono obbligatori, non si può saltare", dove: "cliente" });
         else if (!margCliSel && !_anaStep2Ok()) out.push({ ico: "💳", testo: "usato con finanziamento: servono CF, nome o ragione sociale e cellulare", dove: "cliente" });
@@ -5920,6 +6015,7 @@ function CRM() {
     margPriceMissing(bObj ? computeAutoMarg(margItems, brand, bObj.label, colItems()) : margItems)
       .forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
     if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino non lo può stampare (Amministrazione → Fiscalità → Articoli)`, dove: "carrello" }));
+    mancanzeMagazzino(bObj ? computeAutoMarg(margItems, brand, bObj.label, colItems()) : margItems).forEach(x => out.push(x));
     // 4. l'anagrafica: mancava all'appello, e blocca il salvataggio con un
     //    solo avviso volante — il bottone tornava a mentire (revisore 28/08)
     anaMissing.forEach(t => out.push({ ico: "👤", testo: `${t} (anagrafica)`, dove: "cliente" }));
@@ -6745,6 +6841,12 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
     margItems.forEach(x=>{ if(x&&x.codice&&x.scaricaMagazzino) m[x.codice]=(m[x.codice]||0)+(Number(x.qty)||1); });
     return m;
   },[margItems]);
+  /* I PEZZI GIÀ NEL CARRELLO (revisore 29/08): sparare due volte lo stesso
+     IMEI metteva due righe dello stesso telefono. Il controllo di stato non
+     se ne accorgeva, perché fra un colpo e l'altro `mag_unita` non cambia —
+     cambia solo al salvataggio. Lo scontrino ne batteva due e lo scarico ne
+     marcava venduto uno. Di quel telefono ce n'è UNO. */
+  const serialiInCarrello=useMemo(()=>new Set(margItems.map(x=>x&&x.seriale).filter(Boolean)),[margItems]);
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
   // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
   // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
@@ -7440,8 +7542,10 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           barcode o IMEI, con la disponibilità accanto. I SERVIZI restano i
           pulsanti di sempre, passati dentro. Vedi docs/REGOLE_REGISTRA_VENDITA.md */}
       {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}}>
-        <div className="rvCardT" style={{marginBottom:14}}>🧾 Prodotti e servizi</div>
-        <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} fiscale={posScontrinoAbilitato(selNeg)}
+        {/* il titolo lo rende CassaProdotti: dentro ci sta anche la freccia
+            per tornare indietro e il contesto («magazzino di X»), che prima
+            si prendevano una riga tutta loro (Luca 29/08) */}
+        <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} serialiInCarrello={serialiInCarrello} fiscale={posScontrinoAbilitato(selNeg)}
           onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}}
           servizi={<MargPOS inline show filtro="servizi" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}
           scorciatoie={<MargPOS inline show filtro="prodotti" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
@@ -7673,7 +7777,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
               <div className="rvCardT" style={{marginBottom:0}}>🧾 Prodotti e servizi</div>
               <button onClick={()=>{setShowMargPOS(false);setMargEditItem(null);}} className="rvPill rvPill-sm">✕ Chiudi</button>
             </div>
-            <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} fiscale={posScontrinoAbilitato(selNeg)}
+            <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} serialiInCarrello={serialiInCarrello} fiscale={posScontrinoAbilitato(selNeg)}
               onAdd={(item)=>{addMargItem(item);setMargEditItem(null);}}
               servizi={<MargPOS inline show filtro="servizi" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}
           scorciatoie={<MargPOS inline show filtro="prodotti" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>

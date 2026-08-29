@@ -155,15 +155,26 @@ async function _leggiCatalogo(): Promise<VoceCassa[]> {
  *
  *  Il magazzino è separato per società (T1 = Telefutura, T2 = Telefutura 2):
  *  senza `azienda` si somma tutto quello che c'è in negozio. */
-export async function caricaGiacenze(negozio: string, azienda?: string | null): Promise<Map<string, Giacenza>> {
+export type EsitoGiacenze = {
+    mappa: Map<string, Giacenza>;
+    /* NON SO ≠ NON C'È (revisore 29/08). Prima una lettura fallita tornava
+       una mappa vuota, indistinguibile da «questo negozio non ha magazzino»:
+       a Donna un wifi che cade accendeva il messaggio «magazzino non ancora
+       caricato», spegneva ogni controllo e la vendita successiva non
+       scaricava niente — in silenzio, su scontrino fiscale. */
+    errore?: string;
+};
+
+export async function caricaGiacenze(negozio: string, azienda?: string | null): Promise<EsitoGiacenze> {
     const m = new Map<string, Giacenza>();
-    if (!negozio) return m;
+    if (!negozio) return { mappa: m };
     for (let da = 0; ; da += PAGINA) {
         let q = supabase.from("mag_disponibilita")
             .select("codice,quantita,azienda,pezzi_con_seriale,pezzi_a_quantita").eq("negozio", negozio);
         if (azienda) q = q.eq("azienda", azienda);
         const { data, error } = await q.range(da, da + PAGINA - 1);
-        if (error || !data?.length) break;
+        if (error) return { mappa: m, errore: error.message };
+        if (!data?.length) break;
         (data as { codice: string; quantita: number; azienda: string | null; pezzi_con_seriale: number; pezzi_a_quantita: number }[]).forEach((g) => {
             const gia = m.get(g.codice);
             const q = Number(g.quantita) || 0;
@@ -188,7 +199,7 @@ export async function caricaGiacenze(negozio: string, azienda?: string | null): 
         });
         if (data.length < PAGINA) break;
     }
-    return m;
+    return { mappa: m };
 }
 
 /** I filtri rapidi di una natura: le famiglie che hanno davvero qualcosa
