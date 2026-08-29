@@ -1937,38 +1937,32 @@ export function ChipsRete({ ctx, brand }) {
     if (!b) return null;
     const n = b.piste.length;
     const conQuota = !!b.quotaAttiva;
+    // DUE CASELLINE, SEMPRE LE STESSE (Luca 29/08: «non e' omogeneo il dato —
+    // dentro una card diamo quante sarebbero in target in proiezione, dentro
+    // Vodafone quante sono in target adesso»). Prima la seconda pastiglia
+    // spariva quando ripeteva lo stesso numero, e su Vodafone — che di target
+    // non ne ha — restava solo il ripiego «in soglia»: tre card, tre misure
+    // diverse. Adesso la coppia c'e' sempre, e a cambiare e' solo COSA si
+    // conta: dove i target esistono si contano quelli, dove non esistono si
+    // contano le soglie, e la parola lo dice.
+    // Fino al 20 del mese si vede solo la proiezione: a inizio mese «quante
+    // sono gia' in target» e' un numero che dice zero e scoraggia. Dal 21 si
+    // affianca il consuntivo.
+    const suTarget = b.conTarget > 0;
+    const cosa = suTarget ? "in target" : "in soglia";
+    const su = suTarget ? b.conTarget : (b.conSoglie || n);
+    const ora = suTarget ? b.inTarget : b.inSoglia;
+    const proj = suTarget ? b.inTargetProj : b.inSogliaProj;
     return (
         <span className="flex items-center gap-1.5 flex-nowrap overflow-hidden text-[10px] min-w-0">
-            {b.conTarget > 0 ? (
-                <>
-                    {/* la proiezione viene PRIMA: è il dato che guida, ed è
-                        l'unico che si vede fino al 20 del mese */}
-                    <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                        🔮 <b className="tabular-nums">{b.inTargetProj}</b>/{b.conTarget}<span className="hidden @lg:inline"> in target</span>
-                    </span>
-                    {/* la seconda pastiglia solo se dice qualcosa di DIVERSO:
-                        su tre card su cinque stampava lo stesso identico numero
-                        due volte, e su una card stretta la faceva tagliare a
-                        meta' parola («0/7 IN TARGE|T») */}
-                    {!ctx.primaDel20 && b.inTarget !== b.inTargetProj && (
-                        <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap hidden @lg:inline">
-                            <b className="text-white tabular-nums">{b.inTarget}</b>/{b.conTarget} in target adesso
-                        </span>
-                    )}
-                </>
-            ) : (
+            {!ctx.primaDel20 && (
                 <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 whitespace-nowrap">
-                    <b className="text-white tabular-nums">{b.inSoglia}</b>/{b.conSoglie || n}<span className="hidden @lg:inline"> in soglia</span>
-                    {/* e si DICE che i target non ci sono, invece di far
-                        degradare in silenzio la pastiglia (Vodafone, agosto) */}
-                    <span className="hidden @3xl:inline text-slate-500"> · nessun target di rete</span>
+                    <b className="text-white tabular-nums">{ora}</b>/{su}<span className="hidden @lg:inline"> {cosa}</span>
                 </span>
             )}
-            {b.appesi > 0 && (
-                <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap hidden @3xl:inline" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
-                    🔮 <b className="tabular-nums">{b.appesi}</b> scaglion{b.appesi > 1 ? "i" : "e"} al passo
-                </span>
-            )}
+            <span className="px-2 py-1 rounded-lg border text-white whitespace-nowrap" style={{ background: `${b.colore}22`, borderColor: `${b.colore}55` }}>
+                🔮 <b className="tabular-nums">{proj}</b>/{su}<span className="hidden @lg:inline"> in proiezione</span>
+            </span>
             {conQuota && b.pzMio != null && b.pzRete > 0 && (
                 <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400 whitespace-nowrap hidden @5xl:inline">
                     il mio PV <b className="tabular-nums" style={{ color: b.colore }}>{fmtN((b.pzMio / b.pzRete) * 100, 1)}%</b>

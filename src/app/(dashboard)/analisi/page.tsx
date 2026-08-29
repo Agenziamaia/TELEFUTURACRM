@@ -638,7 +638,10 @@ function AnalisiInner() {
     const brandRete = useMemo(() => {
         if (!righeGara) return [];
         const èMio = (n) => mieiNegoziUtente.some((m) => norm(m) === norm(n));
-        const prj = (v) => (meseCorrente && dati?.gl?.mostraProiezione !== false && dati?.gl?.trascorsi > 0 && v > 0)
+        // ZERO E' UNA PROIEZIONE, non un dato mancante: con `v > 0` una pista
+        // ferma a zero non proiettava, quindi non poteva nemmeno andare in
+        // allarme — cioe' il caso peggiore era l'unico muto (W3 Protetti).
+        const prj = (v) => (meseCorrente && dati?.gl?.mostraProiezione !== false && dati?.gl?.trascorsi > 0 && v >= 0)
             ? Math.round((v / dati.gl.trascorsi) * dati.gl.totali * 100) / 100 : null;
         const ID_DIR = { w3: "windtre", vf: "vodafone", fw: "fastweb", sky: "sky" };
         const targetDi = (b, pista) => {
@@ -864,14 +867,22 @@ function AnalisiInner() {
                 // vecchio `rif` si ricadeva sul FATTO grezzo, e il 2 del mese
                 // ogni KPI in evidenza era in allarme perché era al 7% del
                 // target. Una settimana di discoteca, e poi nessuno guarda più.
-                x.allarme = !!(x.importante && x.target?.v > 0 && x.proiezione != null
+                // L'ALLARME APPARTIENE AL TARGET, NON ALLA STELLA (Luca 29/08:
+                // «su Fastweb il warning non funziona, il mobile e' molto piu'
+                // indietro e dovrebbe segnalarlo» — e infatti fw|mobile non era
+                // fra i KPI in evidenza, con la proiezione al 48% del target).
+                // La stella decide dove cade l'occhio; il fatto che una pista
+                // stia andando sotto e' vero comunque. E ora che il segnale e'
+                // l'arco di quello che manca, e non piu' un cerchio che
+                // lampeggia, mostrarlo ovunque non fa rumore.
+                x.allarme = !!(x.target?.v > 0 && x.proiezione != null
                     && x.proiezione < x.target.v * (alertPct / 100));
             }
             // ORDINE FISSO (Luca 28/08: «lo lasci fisso così, deve rimanere
             // fatto per forza così»): consumer prima, poi energia, poi
             // business, poi gli accessori. Prima si riordinava da solo per
             // urgenza e le carte ballavano da un giorno all'altro; l'urgenza
-            // ora la dice il contatore «scaglioni appesi al passo», senza
+            // ora la dice l'arco di quello che manca sull'anello, senza
             // spostare niente.
             piste.sort((a, b) => {
                 const ia = ORDINE_PISTE.indexOf(a.chiave), ib = ORDINE_PISTE.indexOf(b.chiave);
@@ -906,9 +917,12 @@ function AnalisiInner() {
                 // la quota di brand si può dire solo dove le piste sono a pezzi;
                 // sulle piste a punti la si legge anello per anello
                 pzMio: piste.every((x) => x.unit === "pz") ? pzMio : null,
+                // il ripiego per i brand senza target: la coppia di caselline
+                // in testata resta la stessa — adesso e in proiezione — solo
+                // che si contano le soglie prese invece dei target
                 inSoglia: piste.filter((x) => x.presa).length,
+                inSogliaProj: piste.filter((x) => x.presaProj).length,
                 conSoglie: piste.filter((x) => x.scala.length).length,
-                appesi: piste.filter((x) => x.presaProj && (!x.presa || x.presaProj.tier > x.presa.tier)).length,
             });
         }
         return out;
@@ -925,7 +939,9 @@ function AnalisiInner() {
         // «quante piste sono già in target» è un numero che dice zero e
         // scoraggia — quello che conta è dove si sta andando. Su un mese chiuso
         // la proiezione non esiste più e si mostra il consuntivo.
-        primaDel20: meseCorrente && new Date().getDate() < 20,
+        // «fino al 20 solo la proiezione, dal 21 in poi aggiungiamo il dato
+        // attuale» (Luca): il 20 e' compreso.
+        primaDel20: meseCorrente && new Date().getDate() <= 20,
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [items, dati, nG, labels, oggi, meseCorrente, negoziVisibili, brandRete, mieiNegoziUtente]);
 

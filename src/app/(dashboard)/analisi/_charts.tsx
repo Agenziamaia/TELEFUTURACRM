@@ -772,8 +772,8 @@ export function AnelloScaglioni({
                 })()}
                 {/* ⚠︎ QUELLO CHE MANCA: dalla proiezione al target, tratteggiato */}
                 {gap && <path className="tf-manca" d={arco(cc, rA, gap[0], gap[1])} fill="none"
-                    stroke="#fbbf24" strokeWidth={3} strokeDasharray="4 5" strokeLinecap="round"
-                    style={{ filter: "drop-shadow(0 0 6px #fbbf24)" }} />}
+                    stroke="#fbbf24" strokeOpacity=".8" strokeWidth={2.4} strokeDasharray="3 6" strokeLinecap="round"
+                    style={{ filter: "drop-shadow(0 0 4px #fbbf24aa)" }} />}
             </svg>
             <div className="tf-anello-centro">
                 {/* DENTRO L'ANELLO NON ESISTONO DECIMALI (Luca 29/08: «mai numeri
