@@ -17,14 +17,29 @@ export const dynamic = "force-dynamic";
    arrivo. Un giro apre ogni casella usata per i codici e butta nel cestino
    quelle vecchie dei mittenti attesi. La posta di lavoro non si tocca.
 
-   Si chiama in POST. Come le altre rotte periodiche del CRM (triage email e
-   WhatsApp) la protezione è un token nelle variabili del server: qui NON si può
-   usare `accesso()` perché non c'è nessun utente collegato — è una macchina. */
+   Si chiama in POST dal cron, come il triage: niente `accesso()`, perché non
+   c'è nessun utente collegato — è una macchina.
+   ⚠️ RESTANDO APERTA VA FRENATA. Ogni giro apre una connessione IMAP su OGNI
+   casella dei codici, e i server di posta le contano: martellandola si
+   arriverebbe al blocco, cioè i negozi senza codici. Un giro ogni cinque
+   minuti basta e avanza (il cron ne chiede uno ogni dieci). */
+const MINUTI_FRA_UN_GIRO_E_L_ALTRO = 5;
+
 export async function POST(req: Request) {
-    const atteso = process.env.TRIAGE_ADMIN_TOKEN || "";
-    if (!atteso || req.headers.get("x-triage-token") !== atteso) {
-        return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+    let corpo: { force?: boolean } = {};
+    try { corpo = await req.json(); } catch { /* corpo vuoto: è il cron */ }
+    // il «force» lo può chiedere solo chi ha il token di servizio
+    const forzato = !!corpo?.force && !!process.env.TRIAGE_ADMIN_TOKEN
+        && req.headers.get("x-triage-token") === process.env.TRIAGE_ADMIN_TOKEN;
+
+    const { data: stato } = await supabase.from("otp_pulizia_stato")
+        .select("ultima_corsa").eq("id", 1).maybeSingle();
+    const ultima = stato?.ultima_corsa ? new Date(stato.ultima_corsa).getTime() : 0;
+    if (!forzato && ultima && Date.now() - ultima < MINUTI_FRA_UN_GIRO_E_L_ALTRO * 60_000) {
+        return NextResponse.json({ ok: true, saltato: "troppo presto", ultimaCorsa: stato?.ultima_corsa });
     }
+    // si segna SUBITO: due chiamate quasi simultanee non partono in parallelo
+    await supabase.from("otp_pulizia_stato").update({ ultima_corsa: new Date().toISOString() }).eq("id", 1);
 
     /* LE CASELLE DA PULIRE SONO QUELLE CHE SERVONO DAVVERO UN'UTENZA, e per
        ognuna si guardano i mittenti dei profili che quelle utenze usano: una
@@ -63,12 +78,11 @@ export async function POST(req: Request) {
         else if (r.cestinate) console.log(`[otp-pulizia] ${acc.email_address}: ${r.cestinate} nel cestino`);
     }
 
-    return NextResponse.json({
-        ok: true,
-        caselle: esiti.length,
-        cestinate: esiti.reduce((t, e) => t + e.cestinate, 0),
-        dettaglio: esiti,
-    });
+    const cestinate = esiti.reduce((t, e) => t + e.cestinate, 0);
+    await supabase.from("otp_pulizia_stato").update({
+        ultimo_esito: `${esiti.length} caselle · ${cestinate} nel cestino`,
+    }).eq("id", 1);
+    return NextResponse.json({ ok: true, caselle: esiti.length, cestinate, dettaglio: esiti });
 }
 
 /** Stato, per capire a colpo d'occhio quali caselle il giro tocca.
