@@ -170,17 +170,22 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             });
             return;
         }
-        // NON C'È = NON ENTRA. Nessuna eccezione: da qui esce uno scontrino
-        // fiscale, e un pezzo che a magazzino non esiste non si può battere.
-        if (v.scarica_magazzino && !((n ?? 0) > 0)) {
+        /* NON C'È = NON ENTRA — MA SOLO DOVE UN MAGAZZINO C'È (Luca 29/08).
+           «Almeno per Donna Olimpia al momento: gli altri negozi devono poter
+           selezionare gli articoli anche se non esiste un magazzino, fino a
+           quando non ti dico di far partire tutti.»
+           Il magazzino oggi è importato SOLO a Donna. Finché in un negozio non
+           c'è nemmeno una riga di giacenza, la domanda «ce l'hai?» non ha una
+           risposta vera: rispondere «no» sarebbe fermare quattordici negozi
+           per un dato che non abbiamo ancora caricato. Il giorno in cui il
+           loro magazzino entra, il controllo si accende da solo — non c'è
+           niente da riattivare a mano, ed è il punto: nessun interruttore che
+           qualcuno può dimenticare acceso o spento. */
+        if (v.scarica_magazzino && !senzaMagazzino && !((n ?? 0) > 0)) {
             const inCarrello = Number(giaInCarrello?.[v.codice || ""] || 0);
             setManca({
                 nome: v.nome,
-                titolo: senzaMagazzino ? "Il magazzino non è ancora caricato" : undefined,
-                cosaFare: senzaMagazzino ? "per ora usa i pulsanti qui sopra" : undefined,
-                dettaglio: senzaMagazzino
-                    ? `Il magazzino di ${negozio || "questo negozio"} non è ancora stato caricato nel CRM, quindi da qui non si può vendere niente. I pulsanti di selezione rapida qui sopra funzionano come sempre.`
-                    : n == null
+                dettaglio: n == null
                     ? `Questo articolo non ha nessuna giacenza nel magazzino di ${negozio || "questo negozio"}: non risulta mai entrato.`
                     : inCarrello > 0
                         ? `Ne hai già ${inCarrello} nel carrello e in magazzino non ce ne sono altri.`
@@ -303,7 +308,12 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                 aprono i pezzi che si vendono davvero. Dentro ogni pulsante c'è
                 un articolo VERO, con il suo prezzo e la sua giacenza: se non
                 c'è in magazzino il clic dà il pop-up come tutti gli altri. */}
-            {gruppi.length > 0 && (
+            {/* UNA FILA SOLA (Luca 29/08): i gruppi di magazzino e SIM/ESIM
+                stanno nella stessa riga di pastiglie, e ognuno si apre sotto.
+                Prima erano due file — i gruppi sopra e undici tessere di
+                marginalità sotto — cioè due strade per la stessa merce, con
+                una sola che scaricava il magazzino. */}
+            {(gruppi.length > 0 || scorciatoie) && (
                 <div style={{ marginBottom: 14 }}>
                     <div className="rvPillRow" style={{ gap: 6 }}>
                         {gruppi.map((g) => (
@@ -312,6 +322,8 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
                                 {g.icona ? g.icona + " " : ""}{g.nome} <span style={{ opacity: .55 }}>{g.voci.length}</span>
                             </button>
                         ))}
+                        {/* SIM ed ESIM: stesse pastiglie, stessa riga */}
+                        {scorciatoie}
                     </div>
                     {gruppoAperto && (() => {
                         const g = gruppi.find((x) => x.id === gruppoAperto);
@@ -353,14 +365,14 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
 
             {senzaMagazzino && (
                 <div className="rvNota rvNota-att" style={{ marginBottom: 12 }}>
-                    <b>Il magazzino di {negozio || "questo negozio"} non è ancora caricato.</b> La ricerca qui sotto
-                    mostra il catalogo dell&apos;azienda, ma senza giacenze non si può vendere da lì:
-                    usa i pulsanti di selezione rapida, che funzionano come sempre.
+                    <b>Il magazzino di {negozio || "questo negozio"} non è ancora caricato.</b> Puoi vendere
+                    normalmente — pulsanti e ricerca funzionano come sempre — ma i numeri di disponibilità
+                    non ci sono ancora, quindi nessuno ti fermerà se un articolo è finito. Quando il magazzino
+                    verrà importato, il controllo si accende da solo.
                 </div>
             )}
 
-            {/* SELEZIONE RAPIDA: SIM, ESIM e le voci a marginalità */}
-            {scorciatoie && <div style={{ marginBottom: 14 }}>{scorciatoie}</div>}
+
 
             <input ref={ricerca} value={q} onChange={(e) => setQ(e.target.value)}
                 placeholder="Spara il codice a barre o l'IMEI, oppure scrivi il nome dell'articolo…"

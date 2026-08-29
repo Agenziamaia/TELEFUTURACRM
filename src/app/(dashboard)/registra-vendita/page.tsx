@@ -254,11 +254,25 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
 const nomeCat=(c)=>String(c&&c.cat||"").replace(/[^\w\s]/g,"").trim();
 const CAT_FUORI=[/telefono\s*cash/i];
 const CAT_SERVIZI=[/^servizi/i,/kasko/i];
+/* LA CATEGORIA «PRODOTTI» DELLA MARGINALITÀ ESCE DI SCENA (Luca 29/08).
+   Erano undici pulsanti che promettevano merce senza sapere se ci fosse:
+   PLX (ora c'è il gruppo Pellicole), CN/CP, New Cover, Mem/Pen (c'è Memorie e
+   USB), Orologio Cash ed Ear Buds (sono voci di Accessori), Mi Band 6,
+   PowerBank (ora è un gruppo suo), Accessori e Telefoni Senior (erano già
+   gruppi), Vendita Usato (si vende sparando l'IMEI).
+   Nella scheda Prodotti restano SIM ed ESIM, in fila con i gruppi di
+   magazzino: sono le uniche voci a marginalità che lì hanno senso.
+   Sette di quelle undici avevano anche un difetto che se ne va con loro:
+   margine fisso, prezzo nullo e nessun campo per darglielo — entravano nel
+   carrello senza prezzo e non finivano nemmeno sullo scontrino. */
+const CAT_PROD_MARG=[/^prodotti$/i];
 export const filtraCat=(lista,quale)=>(lista||[]).filter(c=>{
   const n=nomeCat(c);
   if(CAT_FUORI.some(rx=>rx.test(n)))return false;
   const eServizio=CAT_SERVIZI.some(rx=>rx.test(n));
-  return quale==="servizi"?eServizio:!eServizio;
+  if(quale==="servizi")return eServizio;
+  // nei PRODOTTI: né i servizi né la vecchia categoria «Prodotti»
+  return !eServizio&&!CAT_PROD_MARG.some(rx=>rx.test(n));
 });
 const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro})=>{
   const [selCat,setSelCat]=useState(0);
@@ -505,26 +519,18 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
             {CATALOGO.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"var(--tf-64748b)",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
           </div>
         ):filtro==="prodotti"?(
-          /* LA SCHEDA PRODOTTI, UNA FILA SOLA (Luca 29/08). Prima erano due
-             livelli per la stessa cosa: le linguette SIM/ESIM sopra e le
-             tessere sotto. Ora tutto è un pulsante rapido — le voci normali
-             aggiungono, SIM ed ESIM si aprono sotto coi loghi dei brand che
-             hanno già. E ogni pulsante dice quanti pezzi ci sono, che è la
-             cosa che serve sapere PRIMA di premerlo. */
+          /* SIM ED ESIM, IN FILA CON I GRUPPI DI MAGAZZINO (Luca 29/08).
+             Erano due linguette sopra una griglia di undici tessere; le
+             tessere sono sparite (vedi CAT_PROD_MARG) e questi due sono
+             diventati due pulsanti come gli altri, resi con la stessa
+             pastiglia dei gruppi. Si premono e si aprono qui sotto, coi
+             loghi dei brand che hanno già. */
           <div>
-            <div className="rvRapidoG">
-              {CATALOGO.filter(c=>!espandibile(c)).flatMap(c=>c.items).map(p=>(
-                <button key={p.id} onClick={()=>apri(p)} className={cn("rvRapido",senzaCopertura(p)&&"rvRapido-off")}>
-                  <em>{p.icon||iconaArticolo(p.name)}</em>
-                  <b>{p.name}</b>
-                  {pezziDi(p)!=null&&<i className={cn("rvGiac",(pezziDi(p)||0)>0?"rvGiac-si":"rvGiac-no")} style={{fontSize:11}}>{(pezziDi(p)||0)>0?`${pezziDi(p)} in negozio`:"non in negozio"}</i>}
-                </button>))}
+            <div className="rvPillRow" style={{gap:6}}>
               {CATALOGO.filter(espandibile).map(c=>(
                 <button key={c.cat} onClick={()=>{setCatApertaId(catApertaId===c.cat?null:c.cat);setSelProd(null);}}
-                  className={cn("rvRapido",catApertaId===c.cat&&"rvRapido-on")}>
-                  <em>{/^esim/i.test(nomeCat(c))?"📲":"📶"}</em>
-                  <b>{nomeCat(c)}</b>
-                  <small>{c.items.length} opzioni</small>
+                  className={cn("rvPill",catApertaId===c.cat&&"rvPill-on")}>
+                  {/^esim/i.test(nomeCat(c))?"📲":"📶"} {nomeCat(c)} <span style={{opacity:.55}}>{c.items.length}</span>
                 </button>))}
             </div>
             {catApertaId&&(()=>{
@@ -532,7 +538,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
               if(!c)return null;
               const ordinati=[...SIM_BRAND_ORDER.flatMap(bk=>c.items.filter(x=>x.brand===bk)),
                               ...c.items.filter(x=>!SIM_BRAND_ORDER.includes(x.brand))];
-              return (<div className="rvSub" style={{marginTop:10}}>
+              return (<div className="rvSub" style={{marginTop:8}}>
                 <div className="rvRapidoG">
                   {ordinati.map(p=>{
                     const info=SIM_BRANDS[p.brand];
