@@ -69,6 +69,14 @@ export type Giacenza = {
     codice: string;
     quantita: number;
     soglia_min: number | null;
+    /** LE DUE FORME, SEPARATE (revisore 29/08). `mag_disponibilita` somma le
+     *  quantità sfuse e i pezzi con seriale, e sommate sembrano la stessa
+     *  cosa: ma di un telefono si vende IL PEZZO, sparando l'IMEI — cliccarlo
+     *  dall'elenco creerebbe un movimento a quantità su una riga di giacenza
+     *  che per lui non esiste (nasce a −1) e lascerebbe tutti gli IMEI
+     *  disponibili, rivendibili. A Donna sono 73 codici / 135 pezzi. */
+    pezziConSeriale: number;
+    pezziAQuantita: number;
     /** di chi è la merce: la società che ha i pezzi in questo negozio. Se
      *  per assurdo ne avessero entrambe, vince quella che ne ha davvero
      *  (`ambigua` lo dice, così la cassa non sceglie a caso). */
@@ -152,11 +160,11 @@ export async function caricaGiacenze(negozio: string, azienda?: string | null): 
     if (!negozio) return m;
     for (let da = 0; ; da += PAGINA) {
         let q = supabase.from("mag_disponibilita")
-            .select("codice,quantita,azienda").eq("negozio", negozio);
+            .select("codice,quantita,azienda,pezzi_con_seriale,pezzi_a_quantita").eq("negozio", negozio);
         if (azienda) q = q.eq("azienda", azienda);
         const { data, error } = await q.range(da, da + PAGINA - 1);
         if (error || !data?.length) break;
-        (data as { codice: string; quantita: number; azienda: string | null }[]).forEach((g) => {
+        (data as { codice: string; quantita: number; azienda: string | null; pezzi_con_seriale: number; pezzi_a_quantita: number }[]).forEach((g) => {
             const gia = m.get(g.codice);
             const q = Number(g.quantita) || 0;
             /* DI CHI È LA MERCE. Senza filtro di società lo stesso articolo
@@ -174,6 +182,8 @@ export async function caricaGiacenze(negozio: string, azienda?: string | null): 
                 soglia_min: null,
                 azienda: azienda ?? null,
                 ambigua: teneva && q > 0 && !!primaAz && primaAz !== g.azienda,
+                pezziConSeriale: Number(g.pezzi_con_seriale || 0) + Number(gia?.pezziConSeriale || 0),
+                pezziAQuantita: Number(g.pezzi_a_quantita || 0) + Number(gia?.pezziAQuantita || 0),
             });
         });
         if (data.length < PAGINA) break;

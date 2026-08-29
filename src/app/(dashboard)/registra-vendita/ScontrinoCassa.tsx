@@ -161,26 +161,30 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             return;
         }
         const pagamenti = pagamentiSend();
+        /* PRE-CHECK PRIMA DI QUALUNQUE INCASSO (revisore 29/08).
+           Stava DENTRO il ramo dei contanti: pagando con carta si andava
+           dritti alla stampa, e il POS fisico l'importo intero l'aveva già
+           preso. La regola è la stessa per ogni forma di pagamento — non si
+           incassa nulla che non si possa certificare — quindi la verifica
+           esce dal ramo e si fa sempre. */
+        setFase("stampa"); setMsg("Verifico lo scontrino…");
+        let chk: any = {};
+        try {
+            const res = await fetch("/api/vendita/scontrino", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ negozio: data.negozio, items: data.items, azienda: aziendaSel, dryRun: true }),
+            });
+            chk = await res.json().catch(() => ({}));
+            if (!res.ok) chk.ok = false;
+            if (chk?.testMode) setIsTest(true);
+        } catch (e: any) { chk = { ok: false, error: String(e?.message || e) }; }
+        if (!chk.ok) {
+            setFase("errore");
+            setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
+            return;
+        }
         // Incasso contanti (una sola volta) se c'è una quota contanti e non è già fatta.
         if (cashRounded > 0 && !cashDone) {
-            // PRE-CHECK: lo scontrino è emettibile? Se no, NON si incassa (mai prendere
-            // contanti senza poter emettere lo scontrino).
-            setFase("stampa"); setMsg("Verifico lo scontrino…");
-            let chk: any = {};
-            try {
-                const res = await fetch("/api/vendita/scontrino", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ negozio: data.negozio, items: data.items, azienda: aziendaSel, dryRun: true }),
-                });
-                chk = await res.json().catch(() => ({}));
-                if (!res.ok) chk.ok = false;
-                if (chk?.testMode) setIsTest(true);
-            } catch (e: any) { chk = { ok: false, error: String(e?.message || e) }; }
-            if (!chk.ok) {
-                setFase("errore");
-                setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
-                return;
-            }
             const r = await incassaContanti(cashRounded, data.negozio);
             if (!r || !r.ok) {
                 setFase("errore");

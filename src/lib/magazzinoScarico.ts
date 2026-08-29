@@ -75,7 +75,9 @@ export function avvisiScarico(e: EsitoScarico | null | undefined): string[] {
     if (!e) return [];
     const a: string[] = [];
     if (e.errore) a.push("magazzino non aggiornato: " + e.errore);
-    (e.sottoZero || []).forEach((s) => a.push(`«${s.prodotto}» è andato sotto zero (restano ${s.restano}): il conto non torna, va contato`));
+    (e.sottoZero || []).forEach((s) => a.push(s.restano === 0
+        ? `«${s.prodotto}» (${s.codice}) non risulta mai entrato in questo magazzino: venduto ma NON scaricato`
+        : `«${s.prodotto}» è andato sotto zero (restano ${s.restano}): il conto non torna, va contato`));
     (e.senzaCodice || []).forEach((n) => a.push(`«${n}» non ha un codice articolo: venduto ma NON scaricato`));
     return a;
 }
@@ -151,7 +153,15 @@ export async function scaricaVendita(
                 if (!meglio || Number(g.quantita) > 0) diChiE.set(g.codice, g.azienda);
             });
 
-            const movimenti = aQuantita.map((r) => {
+            /* NIENTE GIACENZE FANTASMA (revisore 29/08). Se di quel codice il
+               negozio non ha NESSUNA riga — è il caso delle scorciatoie legate
+               a un articolo che lì non è mai entrato — non si può inventare un
+               movimento: finirebbe sul `default 'T1'` creando una giacenza a
+               −1 su una società scelta a caso. Si dice che non si è scaricato
+               e lo si mette fra le cose da guardare. */
+            const noteQ = aQuantita.filter((r) => !(prima || []).some((g: { codice: string }) => g.codice === String(r.codice)));
+            noteQ.forEach((r) => esito.sottoZero.push({ prodotto: String(r.product || r.codice), codice: String(r.codice), restano: 0 }));
+            const movimenti = aQuantita.filter((r) => (prima || []).some((g: { codice: string }) => g.codice === String(r.codice))).map((r) => {
                 const n = Math.max(1, Number(r.qty) || 1);
                 const cod = String(r.codice);
                 const az = r.azienda || diChiE.get(cod) || null;

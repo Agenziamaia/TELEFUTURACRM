@@ -188,6 +188,39 @@ Quindi: il pre-check fallisce se **una qualsiasi** voce è esclusa, la cassa
 non fa entrare in carrello un articolo senza reparto, e `cosaManca()` lo dice
 (regola §7: una guardia al salvataggio si aggiunge sempre anche lì).
 
+**d. Ogni riga che va in carrello porta il suo reparto.** Non basta che il
+reparto esista in anagrafica: le voci costruite al volo dal flusso di brand
+(«Telefono TNP (listino)», «Bundle N €», «Kipoint …») **non hanno un gemello
+in `marg_items`**, quindi il server non trova nulla e le scarta. Con la regola
+(c) che ferma tutto se una voce è esclusa, una vendita col telefono a rate non
+si poteva più né incassare né stampare — la stretta e il buco si sono
+incastrati e hanno prodotto una regressione peggiore di entrambi.
+**Chi aggiunge una guardia guarda anche chi la deve superare.**
+
+**e. Un pezzo con seriale si vende sparando il seriale.** La disponibilità
+somma le quantità sfuse e i pezzi singoli, e sommate sembrano la stessa cosa:
+ma cliccare «ZTE Blade A36 — 12 in negozio» dall'elenco crea un movimento a
+quantità su una riga che per quel codice non esiste (nasce a −1) e lascia
+tutti e 12 gli IMEI disponibili. A Donna sono **73 codici / 135 pezzi**. Se la
+disponibilità è tutta serializzata, la cassa deve **chiedere l'IMEI**, non
+vendere l'articolo.
+
+**f. Non si inventa una giacenza per far quadrare uno scarico.** Se di quel
+codice il negozio non ha nessuna riga, il movimento andrebbe sul `default
+'T1'` — una società scelta a caso — e creerebbe una giacenza a −1. Si dice
+che non si è scaricato, e si mette fra le cose da guardare.
+
+**g. Il pre-check vale per OGNI forma di pagamento.** Stava dentro il ramo dei
+contanti: pagando con carta si andava dritti alla stampa e il POS l'importo
+l'aveva già preso. «Non si incassa quello che non si può certificare» non è una
+regola dei contanti.
+
+**h. Un avviso non si mette davanti alla cassa.** Il pannello del magazzino
+aveva uno `z-index` più alto di Incasso & Scontrino: andava chiuso a mano
+prima di poter battere, e intanto diceva che lo scontrino era a posto quando
+non era ancora stato emesso. **Il cliente è al banco: il magazzino si guarda
+dopo.**
+
 ### E una trappola di disegno, che vale oltre la cassa
 
 **Due strade per lo stesso articolo: quella comoda vince.** Le voci a

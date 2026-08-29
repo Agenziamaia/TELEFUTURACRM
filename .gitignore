@@ -43,3 +43,7 @@ next-env.d.ts
 
 # dump diagnostici con dati reali dei clienti: restano SOLO in locale
 dump_*.json
+
+# script di lavoro temporanei: non finiscono mai nel repo
+_*.mjs
+_*.sql

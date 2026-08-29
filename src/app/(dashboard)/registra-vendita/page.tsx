@@ -158,6 +158,27 @@ const caricaMargCatalogo = () => {
   })();
   return _margCatAttesa;
 };
+/* IL REPARTO DI UNA VOCE, DAL SUO NOME. `marg_items` è la stessa tabella che
+   il server consulta per decidere con che aliquota stampare la riga: qui e là
+   si dice la stessa cosa. Dove il nome non c'è — le voci costruite al volo,
+   «Bundle N €», «Kipoint …», «Telefono TNP (listino)» — si usa il 22%, che è
+   l'aliquota ordinaria di un bene venduto in negozio.
+   Sta a livello di modulo perché serve a due componenti diversi, e perché
+   dentro il componente `cats` sono i BRAND, non la marginalità. */
+const _voceMarg = (nome) => {
+  const n = String(nome || "").trim().toLowerCase();
+  for (const g of (MARG_PRODUCTS || [])) for (const it of (g.items || []))
+    if (String(it.name || "").trim().toLowerCase() === n) return it;
+  return null;
+};
+const _repartoDi = (nome) => _voceMarg(nome)?.reparto ?? 2;
+/* IL CODICE DI MAGAZZINO DI UNA VOCE AUTOMATICA (revisore 29/08). Registrando
+   un'attivazione Fastweb la voce «Sim Fastweb» compare da sola nel carrello:
+   è la strada che il venditore usa DAVVERO, e non scaricava niente. Il
+   pulsante manuale era stato cablato ieri, ma nel flusso di brand quel
+   pulsante non lo tocca nessuno (anzi: se lo usa, la voce auto sparisce). */
+const _codiceMagDi = (nome) => _voceMarg(nome)?.codiceMagazzino || null;
+
 if (typeof window !== "undefined") caricaMargCatalogo();
 
 // ── MARGINALITÀ POS OVERLAY ──
@@ -369,9 +390,17 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
-      onAdd({product:p.name,productId:p.id,price:pVal,qty:q,importo:impVal,margin:mVal,totalMargin:mVal*q,model:units.map(u=>u.model).filter(Boolean).join(", ")||null,imei:units.map(u=>u.imei).filter(Boolean).join(", ")||null,units,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto});
+      onAdd({product:p.name,productId:p.id,price:pVal,qty:q,importo:impVal,margin:mVal,totalMargin:mVal*q,model:units.map(u=>u.model).filter(Boolean).join(", ")||null,imei:units.map(u=>u.imei).filter(Boolean).join(", ")||null,units,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto,
+        /* GLI STESSI CAMPI DI `aggiungiDiretto` (revisore 29/08): passando di
+           qui — ed è la strada di ✏️ Modifica — la riga perdeva il codice
+           articolo e smetteva di scaricare il magazzino, in silenzio. */
+        codice:p.codiceMagazzino||null,scaricaMagazzino:!!p.codiceMagazzino,reparto:p.reparto??_repartoDi(p.name)});
     }else{
-      onAdd({product:p.name,productId:p.id,price:pVal,qty:parseInt(qty)||1,importo:impVal,margin:mVal,totalMargin:mVal*(parseInt(qty)||1),model:model||null,imei:imei||null,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto});
+      onAdd({product:p.name,productId:p.id,price:pVal,qty:parseInt(qty)||1,importo:impVal,margin:mVal,totalMargin:mVal*(parseInt(qty)||1),model:model||null,imei:imei||null,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto,
+        /* GLI STESSI CAMPI DI `aggiungiDiretto` (revisore 29/08): passando di
+           qui — ed è la strada di ✏️ Modifica — la riga perdeva il codice
+           articolo e smetteva di scaricare il magazzino, in silenzio. */
+        codice:p.codiceMagazzino||null,scaricaMagazzino:!!p.codiceMagazzino,reparto:p.reparto??_repartoDi(p.name)});
     }
     setSelProd(null);setPrice("");setQty("1");setImporto("");setModel("");setImei("");setUsatoUnits([{imei:"",model:""}]);
   };
@@ -5141,7 +5170,17 @@ function CRM() {
     const _occ={};
     // niente doppioni con le voci MANUALI: ogni voce uguale aggiunta A MANO dal
     // pannello copre UNA occorrenza auto (prima ne copriva tutte: stesso collasso)
-    const push=(name,locked,extra)=>{const n=(_occ[name]=(_occ[name]||0)+1);if(n<=prev.filter(m=>!m.auto&&m.product===name).length)return;adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,autoKey:name+"#"+n,priceLocked:!!locked,priceRequired:!locked,...(extra||{})})};
+    const push=(name,locked,extra)=>{const n=(_occ[name]=(_occ[name]||0)+1);if(n<=prev.filter(m=>!m.auto&&m.product===name).length)return;adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,autoKey:name+"#"+n,priceLocked:!!locked,priceRequired:!locked,
+      /* IL REPARTO DELLE VOCI AUTO (revisore 29/08). «Telefono TNP
+         (listino)», «Bundle N €», «Kipoint …» non esistono in marg_items:
+         il server non trovava un reparto e le scartava. Da stamattina il
+         pre-check è severo — basta una voce esclusa e si ferma — quindi una
+         vendita col telefono a rate non si poteva più incassare NÉ stampare.
+         Dove marg_items conosce la voce (le SIM) il suo reparto vince
+         comunque: questo è solo il ripiego per ciò che il server non sa. */
+      reparto:_repartoDi(name),
+      codice:_codiceMagDi(name),scaricaMagazzino:!!_codiceMagDi(name),
+      ...(extra||{})})};
     // TNP dal listino (Luca 05/08): la voce auto entrava nel carrello VUOTA
     // ("Telefono TNP (listino)" e basta) — ora porta modello, prezzo di
     // listino e margine %, e il prezzo popola il valore del carrello.
@@ -5532,13 +5571,16 @@ function CRM() {
          soli prodotti riceveva un rifiuto secco (revisore 29/08). Per le voci
          di marginalità il reparto lo decide marg_items lato server; per i
          prodotti di magazzino arriva da qui. */
-      reparto: mi.reparto ?? null,
+      reparto: mi.reparto ?? _repartoDi(mi.product),
       /* LA SOCIETÀ DELLA MERCE (revisore 29/08). Il magazzino Wind3 è di
          Telefutura, il Multi di Telefutura 2: lo scontrino di un pezzo di
          Telefutura 2 lo deve emettere Telefutura 2, non la società che
          l'operatore ha lasciato selezionata. Il server raggruppa già per
          azienda, quindi un carrello misto esce come due scontrini. */
       azienda: mi.azienda ?? null,
+      // il codice serve al server per dedurre la società quando la riga non
+      // la porta: la merce è di chi i pezzi ce li ha
+      codice: mi.codice ?? null,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
   const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
@@ -6666,12 +6708,17 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
      contare il pezzo. Sta in un portal per la stessa ragione di tutti gli
      altri: le sezioni hanno un backdrop-filter, che ancora i `position:fixed`
      discendenti al riquadro invece che alla finestra. */
-  const pannelloAvvisiMag = avvisiMag.length > 0 && createPortal(
+  /* ASPETTA CHE LA CASSA ABBIA FINITO (revisore 29/08). Con `zIndex:10050`
+     l'avviso si piazzava SOPRA Incasso & Scontrino e andava chiuso a mano
+     prima di poter battere — e nel frattempo diceva che lo scontrino era a
+     posto quando non era ancora stato emesso. Il magazzino si guarda dopo:
+     il cliente è al banco. */
+  const pannelloAvvisiMag = avvisiMag.length > 0 && !scontrino && createPortal(
     <div className="rvFattaSfondo" style={{zIndex:10050}} onClick={e=>{if(e.target===e.currentTarget)setAvvisiMag([]);}}>
       <div className="rvFatta rvFatta-att">
         <div className="rvFatta-o rvFatta-att-o">📦</div>
         <h3>Il magazzino non torna</h3>
-        <p>La vendita <b style={{color:"var(--tf-e2e8f0)"}}>è registrata</b> e lo scontrino è a posto. È il magazzino che va guardato:</p>
+        <p>La vendita <b style={{color:"var(--tf-e2e8f0)"}}>è registrata</b> e non c&apos;è niente da rifare. È il magazzino che va guardato:</p>
         <div className="rvFatta-d" style={{textAlign:"left"}}>
           {avvisiMag.map((a,i)=>(<div key={i}><span style={{minWidth:18}}>⚠️</span><span style={{fontWeight:600,textAlign:"left"}}>{a}</span></div>))}
         </div>
@@ -7274,7 +7321,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           pulsanti di sempre, passati dentro. Vedi docs/REGOLE_REGISTRA_VENDITA.md */}
       {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}}>
         <div className="rvCardT" style={{marginBottom:14}}>🧾 Prodotti e servizi</div>
-        <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice}
+        <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} fiscale={posScontrinoAbilitato(selNeg)}
           onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}}
           servizi={<MargPOS inline show filtro="servizi" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}
           scorciatoie={<MargPOS inline show filtro="prodotti" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>
@@ -7506,7 +7553,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
               <div className="rvCardT" style={{marginBottom:0}}>🧾 Prodotti e servizi</div>
               <button onClick={()=>{setShowMargPOS(false);setMargEditItem(null);}} className="rvPill rvPill-sm">✕ Chiudi</button>
             </div>
-            <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice}
+            <CassaProdotti negozio={selNeg} venditore={selVend} giaInCarrello={inCarrelloPerCodice} fiscale={posScontrinoAbilitato(selNeg)}
               onAdd={(item)=>{addMargItem(item);setMargEditItem(null);}}
               servizi={<MargPOS inline show filtro="servizi" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}
           scorciatoie={<MargPOS inline show filtro="prodotti" onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>}/>

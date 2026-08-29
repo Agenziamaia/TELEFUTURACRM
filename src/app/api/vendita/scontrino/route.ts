@@ -51,6 +51,27 @@ export async function POST(req: Request) {
     }
     const rtFor = (az: string) => aziende[az]?.rt_url || b.deviceUrl || DEFAULT_RT;
 
+    /* DI CHI È LA MERCE, QUANDO LA RIGA NON LO DICE (revisore 29/08).
+       Una riga che arriva da una scorciatoia porta il codice articolo ma non
+       la società: lasciarla al default del negozio significa scaricare
+       l'inventario di una società e fatturare dall'altra — PLKasko ha 42
+       pezzi a Telefutura 1, ma il default di Donna è Telefutura 2.
+       Qui il negozio si sa, quindi la risposta si può leggere: la merce è di
+       chi i pezzi ce li ha. Una query sola per scontrino. */
+    const societaDelCodice: Record<string, string> = {};
+    if (negozio) {
+        const codici = [...new Set(righe.map((r) => String(r.codice || "")).filter(Boolean))];
+        if (codici.length) {
+            const { data } = await supabase.from("mag_giacenze")
+                .select("codice,azienda,quantita").eq("negozio", negozio).in("codice", codici);
+            (data || []).forEach((g: { codice: string; azienda: string; quantita: number }) => {
+                if (!g.azienda) return;
+                // fra due società vince quella che i pezzi ce li ha davvero
+                if (!societaDelCodice[g.codice] || Number(g.quantita) > 0) societaDelCodice[g.codice] = g.azienda;
+            });
+        }
+    }
+
     // reparto + va_in_scontrino + azienda AUTORITATIVI da marg_items (per UUID "mi_<id>" o per NOME).
     const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
     const stripId = (pid: any) => { const s = String(pid || ""); return s.startsWith("mi_") ? s.slice(3) : s; };
@@ -85,7 +106,7 @@ export async function POST(req: Request) {
            emettere QUELLA società — non quella che l'operatore ha lasciato
            selezionata. Le voci di un carrello misto finiscono già in gruppi
            separati qui sotto, quindi escono due scontrini, uno per società. */
-        const az = (meta && meta.azienda) || r.azienda || b.azienda || defaultAzienda || "__def";
+        const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")] || b.azienda || defaultAzienda || "__def";
         const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;

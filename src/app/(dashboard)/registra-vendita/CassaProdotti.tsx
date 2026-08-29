@@ -38,8 +38,13 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
 const eur = (n: number | null | undefined) =>
     n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie, giaInCarrello }: {
+export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie, giaInCarrello, fiscale }: {
     negozio?: string; venditore?: string;
+    /** questo negozio emette davvero lo scontrino? Se no, il reparto IVA
+     *  mancante non è un motivo per rifiutare una vendita: il server lo
+     *  controlla solo fuori dalla modalità di prova, e qui deve valere la
+     *  stessa regola (revisore 29/08). */
+    fiscale?: boolean;
     onAdd: (r: Record<string, unknown>) => void;
     /** i pulsanti dei servizi che esistono già: restano quelli */
     servizi?: React.ReactNode;
@@ -132,12 +137,29 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
            («almeno una riga è stampabile»), si incassava il totale intero e
            usciva lo scontrino della sola cover. Corrispettivo incassato e non
            certificato. Meglio dirlo qui, prima che i soldi siano sul banco. */
-        if (v.reparto == null) {
+        if (v.reparto == null && fiscale) {
             setManca({
                 titolo: "Manca il reparto IVA",
                 nome: v.nome,
                 dettaglio: "Questo articolo non ha un reparto IVA assegnato, quindi il registratore di cassa non può stamparlo — e battere l'incasso senza certificarlo non si può fare.",
                 cosaFare: "assegnarlo in Amministrazione → Fiscalità → Articoli",
+            });
+            return;
+        }
+        /* SE SONO PEZZI, SI SPARA L'IMEI (revisore 29/08). `mag_disponibilita`
+           somma le quantità sfuse e i pezzi con seriale: cliccando «ZTE Blade
+           A36 — 12 in negozio» dall'elenco entrava una riga SENZA seriale, che
+           allo scarico diventa un movimento a quantità su una riga di giacenza
+           che per quel codice non esiste (nasce a −1) mentre i 12 IMEI restano
+           tutti disponibili, rivendibili. A Donna sono 73 codici / 135 pezzi:
+           il primo telefono venduto avrebbe dato l'allarme «sotto zero». */
+        const g = v.codice ? giac.get(v.codice) : null;
+        if (v.scarica_magazzino && g && (g.pezziAQuantita || 0) <= 0 && (g.pezziConSeriale || 0) > 0) {
+            setManca({
+                titolo: "Questo si vende col seriale",
+                nome: v.nome,
+                dettaglio: `Di questo articolo il magazzino tiene ${g.pezziConSeriale} pezzi singoli, ognuno col suo IMEI: si vende il pezzo, non l'articolo. Così si sa quale è uscito.`,
+                cosaFare: "spara o scrivi l'IMEI del pezzo che hai in mano",
             });
             return;
         }
@@ -195,7 +217,7 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             return;
         }
         // senza reparto il registratore lo scarta: vedi metti()
-        if (!usato && p.reparto == null) {
+        if (!usato && p.reparto == null && fiscale) {
             setManca({
                 titolo: "Manca il reparto IVA",
                 nome: p.nome + " · " + p.seriale,
