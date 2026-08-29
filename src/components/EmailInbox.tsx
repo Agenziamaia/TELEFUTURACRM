@@ -1383,21 +1383,29 @@ export function ConnectModal({ onClose, ownerUserId, negozio, presetEmail, prese
                                     cerca <b>Password per le app</b>, creane una (nome: «CRM Telefutura») e incolla qui le <b>16 lettere</b> che ti dà — non la password con cui entri in Gmail.</div>
                             </div>
                         )}
-                        {/* ⛔ NON C'È UNA PASSWORD CHE FUNZIONI (verificato il 29/08).
-                            Microsoft, sulle caselle personali, dopo il saluto annuncia
-                            «AUTH=XOAUTH2 LOGINDISABLED»: rifiuta PRIMA di guardare le
-                            credenziali — provato con un indirizzo inventato, stesso
-                            errore. Il riquadro di prima diceva di creare una «password
-                            per le app»: un'ora buttata ad attivare IMAP e generare
-                            password che il server non avrebbe mai letto. */}
+                        {/* ⛔ NON C'È UNA PASSWORD CHE FUNZIONI (verificato il 29/08
+                            con un indirizzo INVENTATO, quindi non è mai una questione
+                            di credenziali sbagliate):
+                              → a4 LOGIN "…@hotmail.it" "passwordfinta"
+                              ← a4 NO Basic authentication is disabled.
+                            e la lista dei meccanismi offerti è una sola voce:
+                            AUTH=XOAUTH2.
+                            ⚠️ NON vuol dire «impossibile»: il telefono si collega
+                            proprio perché usa OAuth2 (la password la scrivi su una
+                            pagina di Microsoft, e l'app riceve un permesso). Quello
+                            manca al CRM, e si può costruire. Il riquadro di prima
+                            diceva di creare una «password per le app»: un'ora buttata
+                            su una strada che il server non guarda nemmeno. */}
                         {provider === "microsoft" && (
                             <div className="rounded-xl border border-amber-400/30 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] text-amber-100/90 leading-relaxed space-y-1.5">
-                                <div className="font-bold text-amber-200">⛔ Le caselle Microsoft personali non si collegano</div>
-                                <div>Su hotmail/outlook/live Microsoft ha <b>chiuso l&apos;accesso con utente e password</b>: accetta solo OAuth2,
-                                    che il CRM non parla ancora. Attivare IMAP o creare una «password per le app» <b>non serve a niente</b> —
-                                    il server rifiuta prima ancora di leggerla.</div>
-                                <div className="text-amber-200/80">Due strade che funzionano oggi: far <b>inoltrare</b> in automatico la posta di questa
-                                    casella a una Gmail già collegata, oppure <b>cambiare l&apos;indirizzo</b> registrato sul portale che manda i codici.</div>
+                                <div className="font-bold text-amber-200">⛔ Qui la password non basta</div>
+                                <div>Su hotmail/outlook/live Microsoft ha <b>chiuso l&apos;accesso con utente e password</b> — risponde
+                                    «Basic authentication is disabled» prima ancora di leggerla. Attivare IMAP o creare una
+                                    «password per le app» <b>non serve a niente</b>.</div>
+                                <div className="text-amber-200/80">Il telefono si collega perché usa <b>OAuth2</b>: la password la scrivi su una pagina di
+                                    Microsoft e l&apos;app riceve un permesso. Il CRM quel meccanismo non lo parla <b>ancora</b>.</div>
+                                <div className="text-amber-200/80">Intanto funzionano: far <b>inoltrare</b> in automatico la posta di questa casella a una Gmail
+                                    già collegata, oppure <b>cambiare l&apos;indirizzo</b> registrato sul portale che manda i codici.</div>
                             </div>
                         )}
                         <div className="text-[11px] text-slate-500 leading-relaxed">

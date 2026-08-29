@@ -99,18 +99,20 @@ export async function testConnessione(a: Account, opts?: { soloLettura?: boolean
         const risposta = String(e?.responseText || e?.response || e?.message || "");
         let consiglio = "";
         /* ⛔ MICROSOFT HA CHIUSO L'ACCESSO CON PASSWORD (verificato il 29/08).
-           Su hotmail/outlook/live personali il server, dopo il saluto,
-           annuncia «AUTH=XOAUTH2 LOGINDISABLED»: rifiuta PRIMA di guardare le
-           credenziali — provato con un indirizzo inventato, stesso errore.
-           La password per le app NON serve a niente, e il vecchio messaggio
-           («per Gmail/Outlook serve una password per le app») mandava su una
-           strada chiusa: Luca ci ha perso un'ora ad attivare IMAP e generare
-           password che il server non avrebbe comunque mai letto.
-           L'unica via è OAuth2, che il CRM oggi non parla. */
+           Su hotmail/outlook/live personali il server annuncia un solo
+           meccanismo — «AUTH=XOAUTH2 LOGINDISABLED» — e a un LOGIN risponde
+           testualmente «Basic authentication is disabled». Provato con un
+           indirizzo INVENTATO: stesso errore, quindi non è mai una questione
+           di credenziali sbagliate. La password per le app non serve a niente.
+           ⚠️ Non vuol dire «impossibile»: il telefono si collega proprio
+           perché usa OAuth2 (la password si scrive su una pagina di Microsoft
+           e l'app riceve un permesso). È il CRM che quel meccanismo non lo
+           parla ANCORA — imapflow lo supporta già (`auth.accessToken`), manca
+           il giro dei permessi e il rinnovo del token. */
         if (/login is disabled|logindisabled/i.test(risposta)) {
-            consiglio = " → Microsoft ha CHIUSO l'accesso con utente e password su hotmail/outlook/live personali:"
-                + " accetta solo OAuth2, che il CRM non parla ancora. Attivare IMAP e creare una «password per le app» NON serve a niente."
-                + " Le strade: far arrivare la posta di questa casella a una Gmail (inoltro automatico), oppure cambiare l'indirizzo registrato sul portale che manda i codici.";
+            consiglio = " → Microsoft ha chiuso l'accesso con utente e password su hotmail/outlook/live personali («Basic authentication is disabled»),"
+                + " quindi attivare IMAP o creare una «password per le app» non serve. Il telefono si collega perché usa OAuth2, che il CRM non parla ancora."
+                + " Intanto: far arrivare la posta di questa casella a una Gmail (inoltro automatico), oppure cambiare l'indirizzo registrato sul portale che manda i codici.";
         } else if (/application-specific|app password|app-specific/i.test(risposta)) {
             consiglio = " → Serve la «password per le app»: quella normale Google non l'accetta. Su myaccount.google.com → Sicurezza, attiva la verifica in due passaggi, poi cerca «Password per le app» e creane una.";
         } else if (/imap.*(disabled|not enabled)|not enabled for imap/i.test(risposta)) {
