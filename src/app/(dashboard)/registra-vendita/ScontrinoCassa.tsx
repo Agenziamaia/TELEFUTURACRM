@@ -56,7 +56,13 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const [couponMsg, setCouponMsg] = useState("");
     const [nuovoCoupon, setNuovoCoupon] = useState<{ code: string; valore: number } | null>(null);
 
-    // reset a ogni apertura (nuova vendita) o chiusura del modale
+    // Firma STABILE della vendita. Il reset qui sotto azzera anche la ragione sociale
+    // scelta dall'operatore: deve scattare SOLO quando cambia DAVVERO la vendita, non a
+    // ogni re-render del prop `data` (bug: la scelta Telefutura/Telefutura 2 tornava al
+    // default → lo scontrino usciva sull'RT sbagliato). Con la firma-stringa, un re-render
+    // con lo stesso contenuto NON rifa' il reset.
+    const saleSig = JSON.stringify(data);
+    // reset all'apertura di una NUOVA vendita (o alla chiusura del modale)
     useEffect(() => {
         const t = data ? totaleRighe(data.items) : 0;
         setRighe([{ forma: "CONTANTI", importo: t }]);
@@ -74,7 +80,8 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             const def = preset || list.find((x) => x.isDef) || list[0];
             setAziendaSel(def ? def.code : null);
         });
-    }, [data]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [saleSig]);
 
     // Sconto coupon (capato al totale) → quanto resta DA PAGARE con le forme.
     const scontoCoupon = coupon ? Math.min(coupon.sconto, totale) : 0;
