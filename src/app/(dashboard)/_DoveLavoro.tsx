@@ -46,6 +46,11 @@ const RUOLI_DI_NEGOZIO = [
    Franca Arduini ha lo stesso ruolo e resta fuori — lei in negozio non ci sta. */
 const ANCHE_LORO = ["7e3f04f6-f30b-4b4b-aea8-f732c45e1861"];   // Marta Perrotta
 
+/* Ha già risposto in QUESTO caricamento di pagina. È l'ultima rete: se la
+   memoria del browser non è scrivibile, almeno non si chiede due volte di
+   fila. Vive quanto la pagina, e va bene così. */
+let rispostoQui = false;
+
 /** La data di oggi come la scrive il database: la presenza è per giorno. */
 const oggiYmd = () => {
     const d = new Date();
@@ -72,17 +77,27 @@ export function DoveLavoro() {
            confronto è fra l'istante dell'accesso e quello dell'ultima risposta:
            uguali = ha già risposto per QUESTO accesso, e a ogni ricarico di
            pagina non si ripresenta. */
+        /* IL MARCATORE DEVE ESISTERE PRIMA DI POTERCI CONTARE (Luca 31/08:
+           «lo chiede anche in loop, lo continua a richiedere»).
+           `crm_accesso_il` lo scrive SOLO il login vero. Chi era già dentro —
+           sessione ripristinata dal browser, e stasera erano tutti così — non
+           ce l'aveva: la risposta veniva scritta agganciata a un istante
+           inventato lì per lì, il ricarico non ritrovava niente, e la domanda
+           tornava. Ogni volta. Qui il marcatore, se manca, si crea: da questo
+           momento c'è un «accesso» a cui agganciare la risposta.
+           Il giorno ci sta attaccato perché la presenza è per data: senza,
+           sopravvivrebbe alla mezzanotte e uno lavorerebbe senza dichiararsi. */
         let gia = false;
         try {
-            const acc = localStorage.getItem("crm_accesso_il") || "";
-            /* IL MARCATORE PORTA ANCHE IL GIORNO (revisore 31/08). Da solo,
-               l'istante del login non basta: chi resta collegato attraverso la
-               mezzanotte — o rientra da una sessione salvata — se lo ritrova
-               ancora valido il giorno dopo, e lavorerebbe tutta la giornata
-               senza una riga di presenza. La presenza è per data: il confronto
-               dev'esserlo anche lui. */
-            gia = !!acc && localStorage.getItem("crm_dove_lavoro") === `${acc}|${oggiYmd()}`;
-        } catch { /* localStorage negato: si chiede, che è il lato sicuro */ }
+            let acc = localStorage.getItem("crm_accesso_il") || "";
+            if (!acc) { acc = String(Date.now()); localStorage.setItem("crm_accesso_il", acc); }
+            gia = localStorage.getItem("crm_dove_lavoro") === `${acc}|${oggiYmd()}`;
+        } catch {
+            /* localStorage negato (finestra privata, dati di sito bloccati): non
+               c'è dove segnarlo, e senza questa memoria la schermata tornerebbe
+               a ogni pagina. Si chiede una volta per caricamento e basta. */
+            gia = rispostoQui;
+        }
         if (gia) { setServe(false); return; }
         // la presenza già dichiarata resta il valore di PARTENZA, ma la domanda
         // si fa lo stesso: confermare costa un clic, indovinare costa una vendita
@@ -143,10 +158,21 @@ export function DoveLavoro() {
             const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string }));
             if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
 
-            try { localStorage.setItem("crm_dove_lavoro", `${localStorage.getItem("crm_accesso_il") || Date.now()}|${oggiYmd()}`); } catch { }
+            /* SEGNO CHE HO RISPOSTO, e solo se ci riesco ricarico. Il
+               ricarico serve perché il resto del CRM legge la presenza al
+               montaggio; ma se la memoria non è scrivibile, ricaricare
+               rimetterebbe in piedi la stessa domanda all'infinito. Meglio
+               una pagina non aggiornata di un CRM inutilizzabile. */
+            let segnato = false;
+            try {
+                const acc = localStorage.getItem("crm_accesso_il") || String(Date.now());
+                localStorage.setItem("crm_accesso_il", acc);
+                localStorage.setItem("crm_dove_lavoro", `${acc}|${oggiYmd()}`);
+                segnato = localStorage.getItem("crm_dove_lavoro") === `${acc}|${oggiYmd()}`;
+            } catch { segnato = false; }
+            rispostoQui = true;
             setServe(false);
-            // il resto del CRM legge la presenza al montaggio: si riparte pulito
-            window.location.reload();
+            if (segnato) window.location.reload();
         } catch (e) {
             setErrore("Non sono riuscito a registrarlo: " + ((e as Error)?.message || "riprova"));
             setSalvando(false);
