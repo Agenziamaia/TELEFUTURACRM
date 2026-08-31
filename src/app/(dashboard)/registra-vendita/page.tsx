@@ -28,6 +28,7 @@ import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 import { CassaProdotti } from "./CassaProdotti";
 import { scaricaVendita, avvisiScarico } from "@/lib/magazzinoScarico";
+import PayStore from "./PayStore";
 import { caricaGiacenze, iconaArticolo } from "@/lib/cassaCatalogo";
 // il selettore del CRM, quello che si cerca scrivendo: le tendine di sistema
 // aprono il menu del sistema operativo, che non si può vestire (Luca 28/08)
@@ -830,6 +831,12 @@ const BRANDS = [
   // KIPOINT (Luca 06/08): spedizioni e ritiro pacchi — brand a matrice, spento
   // di default: lo vede solo chi ha la riga in store_brand_rules (Collatina, Libia)
   { id: "kipoint", logo: "/kipoint.png", label: "Kipoint", short: "KP", color: "#0a58ca", gradient: "linear-gradient(135deg, #043b8f 0%, #0a58ca 100%)", icon: "📦", desc: "Spedizioni e ritiro pacchi", ready: true, matrixOnly: true },
+  /* PAYSTORE (Luca 01/09): le ricariche telefoniche. Non è un brand come gli
+     altri — non ha contratto, non ha anagrafica, non ha prodotti a catalogo:
+     ha tre domande (chi, quanto, che numero) e finisce in cassa sul reparto
+     esente. Per questo `ricariche: true` lo manda su una strada sua invece
+     che sul flusso Cliente → Prodotti. */
+  { id: "paystore", logo: "/paystore.png", label: "PayStore", short: "PS", color: "#f8b516", gradient: "linear-gradient(135deg, #d99a05 0%, #f8b516 100%)", icon: "📲", desc: "Ricariche telefoniche", ready: true, ricariche: true },
 ];
 // Codici inserimento WindTre. "Garbatella" mancava (richiesta dell'ufficio):
 // era gia' presente nelle liste di Vodafone, Fastweb, Iliad, Sky e Very.
@@ -4959,6 +4966,12 @@ function CRM() {
   // MOD-44c (Luca 10/08): anche la marginalità PASSA dallo step Cliente.
   // Lo skip è una scelta esplicita (popup CRM) e viene TRACCIATA sulla vendita.
   const [margSkipCli,setMargSkipCli]=useState(false);
+  /* PAYSTORE (Luca 01/09). Viaggia insieme a `margFlow`, non al posto suo:
+     una ricarica È una voce di marginalità — stesso carrello, stesso
+     salvataggio, stesso scontrino. Questo flag cambia solo la PORTA: al posto
+     del listino Prodotti & Marginalità si apre il pannello delle ricariche,
+     dove il numero è obbligatorio. */
+  const [psFlow,setPsFlow]=useState(false);
   const [margSkipPopup,setMargSkipPopup]=useState(false);
   const [margEditItem,setMargEditItem]=useState(null);
   const [showMargList,setShowMargList]=useState(false);
@@ -5514,8 +5527,8 @@ function CRM() {
   // SCELTA/CAMBIO BRAND (estratta per il pannello "cambia brand", revamp 03/08):
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
-  const _pickBrand=(b)=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{setMargFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const _pickBrand=(b)=>{if(!b.ready)return;setPsFlow(false);if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
+  const fullReset=()=>{setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
@@ -5577,6 +5590,31 @@ function CRM() {
      Si ferma QUI, che è l'imbuto unico da cui passa tutto quello che entra nel
      carrello: le scorciatoie, i servizi, i prodotti di magazzino. */
   const _nomeSoc=(a)=>a==="T1"?"Telefutura":a==="T2"?"Telefutura 2":String(a||"");
+  /* ⚠️ LE RICARICHE SI SCRIVONO QUANDO LA VENDITA SI SCRIVE, non quando si
+     preme «salva ricarica». Nel percorso con lo scontrino la vendita è
+     DIFFERITA: si registra solo a scontrino emesso. Scrivere qui la ricarica
+     vorrebbe dire che un annullamento allo scontrino lascia in giro una
+     ricarica da eseguire per una vendita mai avvenuta — e domani, con l'API,
+     sarebbe credito regalato. Per questo la chiamata sta dentro `commitFn`,
+     insieme alle righe della vendita. Se fallisce, la vendita resta valida:
+     è un registro, non un prerequisito — ma si urla in console e all'utente,
+     perché una ricarica incassata e non registrata nessuno la ritrova. */
+  const registraRicariche=async(items,contractId)=>{
+    const voci=(items||[]).filter(m=>m&&m.paystore).map(m=>({...m.paystore,contractId}));
+    if(!voci.length)return;
+    try{
+      const r=await fetch("/api/vendita/paystore",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({negozio:selNeg,venditore:selVend,azienda:items.find(m=>m&&m.paystore)?.azienda||null,voci})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||j.scartate?.length){
+        console.error("ricariche PayStore non registrate:",j);
+        setAvvisiMag(p=>[...(p||[]),"⚠️ Ricariche PayStore: "+(j.scartate?.length?j.scartate.length+" scartate":"registro non aggiornato")+" — segnalalo all'amministrazione"]);
+      }
+    }catch(e){
+      console.error("ricariche PayStore:",e);
+      setAvvisiMag(p=>[...(p||[]),"⚠️ Le ricariche PayStore non sono state registrate: "+(e?.message||"errore")]);
+    }
+  };
   const addMargItem=(item)=>{
     const az=item?.azienda||null;
     if(az){
@@ -7100,6 +7138,11 @@ function CRM() {
           const _av = avvisiScarico(_sc);
           if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
         } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
+        /* anche qui: una ricarica può stare nello stesso carrello di un
+           contratto — cliente che attiva una SIM e intanto ricarica un altro
+           numero. Senza questa riga si registrerebbero solo le vendite di
+           sole ricariche, cioè si perderebbero proprio quelle miste. */
+        await registraRicariche(margList, contractRows[0]?.id || null);
         venditaScritta.current = true;   // e l'autosave smette di risuscitarla
         clearDraft("crm_v9");            // adesso sì: la vendita esiste
         return contractRows;
@@ -7364,6 +7407,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
       } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
+      await registraRicariche(margItems, rows[0]?.id || null);
       return rows;
       };
       const _cliLabel=(margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim();
@@ -8183,7 +8227,16 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} onCommit={runPendingCommit} />
         <div className="rvCardT" style={{color:"var(--tf-8892b0)",marginBottom:14}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-          {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?`color-mix(in srgb, ${b.color} 12%, transparent)`:"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
+          {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}/* PAYSTORE (Luca 01/09): niente step Cliente. Una ricarica al banco non
+                     ha un'anagrafica da raccogliere — è come vendere una cover — e
+                     farla passare da lì sarebbe attrito su un'operazione da trenta
+                     secondi. Lo skip è quello TRACCIATO della marginalità, non un
+                     buco: sulla vendita resta scritto che i dati sono stati saltati. */
+                  if(b.ricariche){const _lav=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lav&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: passando alle ricariche la perdi.\n\nContinuare?"))return;
+                    setBrand(null);setSales({});setSesCode("");setShowStep4(false);setShowAna(false);setCambioBrand(false);
+                    setMargFlow(true);setPsFlow(true);setMargSkipCli(true);if(!tipoCliente)setTipoCliente("privato");
+                    setVistaStep("prodotti");setStepVisti(pv=>({...pv,cliente:true,prodotti:true}));return;}
+                  const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?`color-mix(in srgb, ${b.color} 12%, transparent)`:"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08). ZOOM PER-BRAND (Luca 07/08):
@@ -8211,7 +8264,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);
             // MOD-44c (Luca 10/08): anche la marginalità passa dallo step
             // Cliente — niente salto diretto ai prodotti
-            setMargFlow(true);setVistaStep("cliente");setStepVisti(pv=>({...pv,prodotti:true}));
+            setMargFlow(true);setPsFlow(false);setVistaStep("cliente");setStepVisti(pv=>({...pv,prodotti:true}));
           }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"var(--tf-6f42c1)",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
             {/* stesso simbolo della tessera Marginalità di Ricerca Vendite: 💰
@@ -8348,7 +8401,24 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           si sceglie la natura, poi i PRODOTTI arrivano dal magazzino — codice,
           barcode o IMEI, con la disponibilità accanto. I SERVIZI restano i
           pulsanti di sempre, passati dentro. Vedi docs/REGOLE_REGISTRA_VENDITA.md */}
-      {vistaStep==="prodotti"&&margFlow&&!brand&&<div className="rvCard" style={{borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}}>
+      {/* ══ PAYSTORE — LE RICARICHE (Luca 01/09) ═══════════════════════════
+          Stessa casella del listino Prodotti & Marginalità, contenuto diverso:
+          le ricariche hanno tre domande e una regola fiscale, non un catalogo
+          da sfogliare. Quello che esce di qui è una voce di marginalità come
+          le altre, quindi carrello, cassa e salvataggio non cambiano di una
+          riga. */}
+      {vistaStep==="prodotti"&&margFlow&&!brand&&psFlow&&<div className="rvCard" style={{borderLeft:"4px solid #f8b516"}}>
+        <div className="rvCardT psTesta">
+          <Image src="/paystore.png" alt="" width={90} height={28}/>
+          PayStore — Ricariche telefoniche
+        </div>
+        <PayStore venditore={selVend} negozio={selNeg}
+          righeInCarrello={margItems.filter(m=>m&&m.paystore).length}
+          onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}}
+          onIndietro={()=>{setPsFlow(false);setMargFlow(false);setVistaStep("brand")}}/>
+      </div>}
+
+      {vistaStep==="prodotti"&&margFlow&&!brand&&!psFlow&&<div className="rvCard" style={{borderLeft:"4px solid #7c3aed","--rv-acc":"var(--tf-8b5cf6)"}}>
         {/* il titolo lo rende CassaProdotti: dentro ci sta anche la freccia
             per tornare indietro e il contesto («magazzino di X»), che prima
             si prendevano una riga tutta loro (Luca 29/08) */}
