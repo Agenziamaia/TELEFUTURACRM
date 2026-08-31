@@ -20,7 +20,15 @@ import { join } from "path";
 const R = "\x1b[31m", G = "\x1b[32m", Y = "\x1b[33m", B = "\x1b[1m", X = "\x1b[0m";
 let violazioni = 0;
 
-const SEZIONE = "src/app/(dashboard)/registra-vendita";
+/* LE SEZIONI SORVEGLIATE (revisore design 31/08). Il magazzino è stato
+   rivestito con la stessa cassetta di Registra Vendita e oggi passerebbe da
+   solo — zero stili a mano, zero className doppi. Ma la guardia non lo
+   guardava, quindi domani niente lo tratterrebbe: si aggiunge adesso, che
+   costa zero, invece che dopo aver rifatto il giro. */
+const SEZIONI = [
+    "src/app/(dashboard)/registra-vendita",
+    "src/app/(dashboard)/magazzino",
+];
 
 function file(dir, out = []) {
     for (const n of readdirSync(dir)) {
@@ -41,7 +49,7 @@ function regola(titolo, spiega, trovati) {
     if (trovati.length > 12) console.log(`   ${Y}·${X} …e altri ${trovati.length - 12}`);
 }
 
-const files = file(SEZIONE);
+const files = SEZIONI.flatMap(d => file(d));
 
 // ── 1. className scritto due volte: vince l'ultimo, il primo sparisce ─────
 //    Il file ha @ts-nocheck: né il compilatore né il lint lo vedono. È già

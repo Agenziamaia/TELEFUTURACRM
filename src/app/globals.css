@@ -1670,6 +1670,11 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
    Niente media query sul viewport (regola 5): si avvolgono da sole. */
 .rvBarra{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px 12px}
 .rvBarra-c{align-items:center}
+/* GRUPPI DI ALTEZZA DIVERSA, ETICHETTE IN RIGA. `.rvBarra` allinea in BASSO —
+   giusto per i campi, che finiscono tutti con un input della stessa altezza —
+   ma con due gruppi di pastiglie di cui uno porta una nota sotto, le etichette
+   uscivano sfalsate e i due assi non sembravano più paralleli. */
+.rvBarra-t{align-items:flex-start}
 .rvSpazio{flex:1 1 auto;min-width:0}
 .rvSep{flex:0 0 auto;align-self:stretch;width:1px;min-height:28px;margin:0 3px;border-radius:1px;background:var(--tf-w120)}
 
@@ -1922,7 +1927,9 @@ html.light .rvFrec{color:#5a6580}
 .rvSerial{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:12.5px;font-weight:700;color:var(--tf-a5b4fc);background:none;border:0;
   padding:0;cursor:pointer;text-align:left;line-height:1.4;
-  border-bottom:1px dashed color-mix(in srgb,var(--rv-acc) 55%,transparent)}
+  /* la sottolineatura misurava 2,07:1 nello scuro contro 3,24 nel chiaro: nel
+     chiaro l'IMEI diceva «cliccami» e nello scuro no */
+  border-bottom:1px dashed color-mix(in srgb,var(--rv-acc) 75%,transparent)}
 .rvSerial:hover{color:var(--tf-c7d2fe);border-bottom-style:solid}
 html.light .rvSerial:hover{color:#101c66}
 
@@ -1931,19 +1938,39 @@ html.light .rvSerial:hover{color:#101c66}
    non una domanda sì/no. Scorre da solo, perché una storia lunga non deve
    spingere il pulsante di chiusura fuori dallo schermo. */
 .rvStoria{width:100%;max-width:660px;max-height:88vh;overflow:auto;
-  background:var(--tf-12141f);border:1px solid color-mix(in srgb,var(--rv-acc) 34%,transparent);
+  background:var(--tf-12141f);border:1px solid var(--tf-w120);
   border-radius:20px;padding:22px 22px 26px;box-shadow:0 22px 60px rgba(0,0,0,.5)}
 html.light .rvStoria{box-shadow:0 18px 44px rgba(18,28,54,.16)}
-.rvStoria-t{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+/* LA TESTATA RESTA (revisore design 31/08). Il pannello scorre — 88vh — ma
+   con venti passaggi il titolo, l'IMEI e «✕ Chiudi» uscivano dallo schermo:
+   non sapevi più di che pezzo stavi leggendo la storia, né come uscirne.
+   Il fondo è la variabile del pannello, che nel tema chiaro è già bianca. */
+/* `top:-22px`, NON `top:0` (misurato allo scatto): la testata esce dai bordi
+   del pannello con un margine negativo di 22px, e con `top:0` `sticky` la
+   considerava già «attaccata» in partenza — la spingeva giù di quei 22px e
+   copriva la riga delle pastiglie. Con -22 sta ferma dov'è finché non si
+   scorre, e poi si incolla lasciando scorrere via solo la sua aria sopra. */
+.rvStoria-t{position:sticky;top:-22px;z-index:2;background:var(--tf-12141f);
+  margin:-22px -22px 12px;padding:22px 22px 12px;
+  display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .rvStoria-tit{font-size:16.5px;font-weight:800;color:var(--tf-f8fafc);line-height:1.25}
 .rvStoria-sot{margin-top:4px;font-size:12px;color:var(--tf-8892b0);line-height:1.5}
 
 /* ── LA LINEA E I NODI ─────────────────────────────────────────────────
    `padding-left` sulla lista e nodo in negativo: la linea resta dritta anche
    quando una scheda è alta il doppio delle altre. */
+/* LA LINEA (revisore design 31/08). Con `--tf-w100` misurava 1,31:1 nello
+   scuro: un fantasma, ed è proprio la linea a fare di questo una timeline —
+   che è la cosa chiesta per nome. Prende la tinta del contenitore, la stessa
+   del bordo dei nodi (regola 2), così la spina si legge come un oggetto solo.
+   E si disegna FRA i nodi: con un passaggio solo un moncone verticale
+   prometterebbe che sotto c'è dell'altro, e sotto non c'è niente. */
 .rvTml{position:relative;margin:14px 0 0 13px;padding-left:23px;
-  border-left:2px solid var(--tf-w100);display:flex;flex-direction:column;gap:13px}
+  display:flex;flex-direction:column;gap:13px}
 .rvTml-r{position:relative}
+.rvTml-r:not(:last-child)::before{content:"";position:absolute;
+  left:-24px;top:30px;bottom:-15px;width:2px;border-radius:1px;
+  background:color-mix(in srgb,var(--rv-acc) 40%,transparent)}
 .rvTml-p{position:absolute;left:-36px;top:3px;width:26px;height:26px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;
   background:color-mix(in srgb,var(--rv-acc) 14%,var(--tf-12141f));
@@ -1962,8 +1989,22 @@ html.light .rvStoria{box-shadow:0 18px 44px rgba(18,28,54,.16)}
 html.light .rvTml-q{color:#59647a}
 .rvTml-e{font-size:13.5px;font-weight:800;color:var(--tf-e2e8f0);display:flex;align-items:center;gap:7px}
 /* stessa storia della data, e per lo stesso motivo: scuro 5,14:1 · chiaro 5,16:1 */
-.rvTml-fr{color:#828da6;font-size:11px;font-weight:700}
+/* in fondo alla riga, come indicatore: a 11px accanto al titolo sembrava un
+   refuso invece di un comando */
+.rvTml-fr{color:#828da6;font-size:12px;font-weight:700;margin-left:auto;opacity:.75}
 html.light .rvTml-fr{color:#59647a}
 .rvTml-d{font-size:12px;color:var(--tf-8892b0);margin-top:2px;line-height:1.5}
 .rvTml-x{margin-top:9px;padding-top:9px;border-top:1px solid var(--tf-w60);
   display:flex;flex-direction:column;gap:5px}
+/* IL LINK AL DOCUMENTO. Dentro `.rvTml-x`, che è un flex in colonna, un figlio
+   si STIRA a tutta larghezza: `inline-block` non lo ferma perché su un flex
+   item viene blockificato — è la regola 4, la stessa trappola di `flex-nowrap`
+   su `.rvPillRow`. Era una fascia verde da 548px, la cosa più forte del
+   racconto. E non è `.rvAzione`: il verde promette un salvataggio (regola 7),
+   qui si apre soltanto un documento. */
+.rvTml-doc{align-self:flex-start}
+/* I DETTAGLI DENTRO UN PASSAGGIO non sono schede, sono le righe di quella
+   scheda: con lo stesso fondo e lo stesso bordo di `.rvTml-c` l'annidamento
+   spariva e sembravano quattro schede sorelle. */
+.rvTml-x .rvDettR{background:none;border:0;border-radius:0;padding:4px 0}
+.rvTml-x .rvDettR + .rvDettR{border-top:1px solid var(--tf-w50)}

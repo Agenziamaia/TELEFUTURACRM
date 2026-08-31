@@ -51,5 +51,4 @@ _*.sql
 # file di lavoro dei revisori: pagine di prova, scatti, generatori
 _*.html
 _*.py
-_shots/
-_revisione_design_*/
+_*/

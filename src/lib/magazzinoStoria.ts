@@ -43,6 +43,7 @@ export const NOME_EVENTO: Record<string, { et: string; ico: string }> = {
     vendita: { et: "Venduto", ico: "🧾" },
     annullato: { et: "Tolto dal magazzino", ico: "🗑" },
     correzione: { et: "Correzione", ico: "✏️" },
+    rientro: { et: "Tornato al mittente", ico: "↩️" },
     usato: { et: "Gestione Usati", ico: "♻️" },
 };
 
@@ -86,7 +87,8 @@ export async function storiaDelPezzo(seriale: string): Promise<EventoPezzo[]> {
             // chi ha fatto QUESTO passo, non chi ha fatto il DDT in generale
             if (e.evento === "trasferimento_inviato") e.operatore = x.creato_da || e.operatore;
             if (e.evento === "trasferimento_accettato") e.operatore = x.accettato_da || e.operatore;
-            e.vaiA = `/magazzino?ddt=${x.id}`;
+            // il NUMERO, non l'id: è quello che la sezione Trasferimenti sa cercare
+            e.vaiA = `/magazzino?ddt=${x.numero ?? ""}`;
         });
     }
 
@@ -109,7 +111,8 @@ export async function storiaDelPezzo(seriale: string): Promise<EventoPezzo[]> {
                 "Codice attivazione": x.codice_attivazione,
             };
             e.operatore = x.venditore || e.operatore;
-            e.vaiA = `/ricerca-vendite?contratto=${x.id}`;
+            // la pagina delle vendite legge `?id=`, non `?contratto=` (revisore 31/08)
+            e.vaiA = `/ricerca-vendite?id=${x.id}`;
         });
     }
 
@@ -131,6 +134,9 @@ async function storiaFuoriMagazzino(s: string): Promise<EventoPezzo[]> {
     const us = await supabase.from("usati")
         .select("id, model, imei, status, store, created_at, sold_date, venditore, status_history")
         .ilike("imei", t).limit(10);
+    // un errore letto è un errore che si può raccontare; ingoiarlo faceva dire
+    // «non risulta nessun passaggio» su un pezzo che una storia ce l'ha
+    if (us.error) console.warn("[storia] usati:", us.error.message);
     for (const u of (us.data ?? []) as Record<string, unknown>[]) {
         const sh = (u.status_history || {}) as Record<string, { date?: string; operatore?: string }>;
         const passaggi = Object.entries(sh);
@@ -150,8 +156,16 @@ async function storiaFuoriMagazzino(s: string): Promise<EventoPezzo[]> {
         .select("id, venditore, negozio, brand, prodotto, data_registrazione, codice_attivazione")
         .or([`dettagli->>IMEI.ilike.${t}`, `dettagli->>imei.ilike.${t}`,
         `dettagli->>"IMEI TNP".ilike.${t}`, `dettagli->>"IMEI CB".ilike.${t}`,
-        `dettagli->units.cs."[{\"imei\":\"${s}\"}]"`].join(","))
+        `dettagli->units.cs."[{\\"imei\\":\\"${s}\\"}]"`].join(","))
         .limit(10);
+    /* L'ESCAPE SI DIMEZZAVA DENTRO IL TEMPLATE (revisore 31/08): con una barra
+       sola `\"` diventa `"`, il filtro parte come JSON non valido e PostgREST
+       risponde 400 «Token imei is invalid». `data` restava vuoto e — siccome
+       l'errore non veniva letto — a schermo usciva il messaggio tranquillo
+       «non risulta nessun passaggio» su un pezzo che un contratto ce l'ha.
+       È lo stesso guasto silenzioso di `contracts.importo`, rifatto due
+       funzioni più sotto: per questo adesso l'errore si LEGGE. */
+    if (ct.error) console.warn("[storia] vendite:", ct.error.message);
     for (const c of (ct.data ?? []) as Record<string, unknown>[]) {
         out.push({
             id: `contr-${c.id}`, quando: String(c.data_registrazione || ""), evento: "vendita",
@@ -162,7 +176,7 @@ async function storiaFuoriMagazzino(s: string): Promise<EventoPezzo[]> {
                 "Brand": String(c.brand || ""), "Prodotto": String(c.prodotto || ""),
                 "Codice attivazione": String(c.codice_attivazione || ""), "Pratica": String(c.id),
             },
-            vaiA: `/ricerca-vendite?contratto=${c.id}`,
+            vaiA: `/ricerca-vendite?id=${c.id}`,
         });
     }
     return out;
@@ -188,6 +202,12 @@ export async function pezzoOra(seriale: string) {
     if (!s) return null;
     const { data } = await supabase.from("mag_unita")
         .select("id,seriale,tipo_seriale,codice,descrizione,azienda,negozio,stato,valore,prezzo_vendita,caricato_il,caricato_da,venduto_il,venduto_da,contract_id")
-        .eq("seriale", s).maybeSingle();
-    return data ?? null;
+        /* NON `maybeSingle()` (revisore 31/08): l'indice unico sul seriale è
+           PARZIALE, vale solo per i pezzi vivi. Un telefono venduto e poi
+           ricaricato — reso, permuta rimessa a scaffale — fa due righe con lo
+           stesso seriale, e `maybeSingle` avrebbe restituito un ERRORE: la
+           testata della scheda usciva vuota, senza negozio né stato. Vince la
+           più recente. */
+        .eq("seriale", s).order("caricato_il", { ascending: false }).limit(1);
+    return data?.[0] ?? null;
 }

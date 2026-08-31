@@ -59,8 +59,11 @@ type Unita = {
     id: string; seriale: string; tipo_seriale: string; codice: string | null; descrizione: string;
     azienda: string | null; negozio: string; stato: string; valore: number | null;
     caricato_il: string; caricato_da: string | null; venduto_il: string | null; venduto_da: string | null;
-    /* a quanto è uscito davvero (migrazione 20260831190000): `valore` è quello
-       che ci è costato, questo è quello che ha pagato il cliente */
+    /* a quanto è uscito davvero (migrazione 20260831190000). `valore` NON è il
+       costo — è il prezzo di LISTINO col quale il pezzo è entrato (l'import
+       scrive `x.prezzo`; verificato: 560 pezzi su 587 coincidono con
+       `mag_articoli.prezzo`, ZERO con `costo_ultimo`). Lo scostamento fra i
+       due è quindi lo sconto fatto al cliente, non il margine. */
     prezzo_vendita: number | null;
     contract_id: string | null; ddt_id: string | null;
     storia: { quando: string; evento: string; negozio?: string; operatore?: string; note?: string }[];
@@ -96,8 +99,13 @@ const STATI_LABEL: Record<string, string> = {
 const STATI_FILTRO: { id: string; et: string; spiega: string }[] = [
     { id: "disponibile", et: "🟢 Disponibili", spiega: "Quello che c'è adesso sullo scaffale" },
     { id: "in_arrivo", et: "📦 In arrivo", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
-    { id: "venduto", et: "🧾 Venduti", spiega: "Uscito con una vendita — la tabella diventa pezzo per pezzo" },
 ];
+/* IL VENDUTO NON È UNO STATO, È UN'ALTRA DOMANDA (revisore design 31/08).
+   Premendolo cambiano le colonne, il filtro di data cambia mestiere, due
+   pastiglie spariscono e l'Excel esporta un altro file: è un cambio di
+   schermata travestito da filtro. Il CRM ha già il posto giusto — la fila
+   «📄 Documenti / 📦 Merce mossa» dei Trasferimenti — e con lei arriva il
+   conteggio, che nelle Giacenze non c'era da nessuna parte. */
 const gg = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleDateString("it-IT") : "—";
 const gghh = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -109,6 +117,16 @@ export default function MagazzinoPage() {
     const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
     const puoCaricare = isAdminOrAbove(user?.role);
     const [tab, setTab] = useState<"giacenze" | "trasferimenti" | "articoli">("giacenze");
+    /* IL SECONDO CLIC DELLA CRONISTORIA ARRIVA QUI (revisore 31/08). La storia
+       di un pezzo offre «apri il documento di trasporto» con `?ddt=<numero>`,
+       ma questa pagina non leggeva nessun parametro: si ricaricava sulle
+       Giacenze e il documento restava da cercare a mano. Il numero entra nel
+       campo di ricerca dei Trasferimenti, che sa già trovarlo («n.5»). */
+    const [ddtCercato, setDdtCercato] = useState("");
+    useEffect(() => {
+        const n = new URLSearchParams(window.location.search).get("ddt");
+        if (n) { setTab("trasferimenti"); setDdtCercato("n." + n); }
+    }, []);
 
     /* LE DUE SOCIETÀ, COL LORO NOME (Francesco 29/08: «non è possibile
        filtrare tra Telefutura e Telefutura 2»). Il filtro c'era, ma diceva
@@ -223,7 +241,8 @@ export default function MagazzinoPage() {
             ) : (
                 <Trasferimenti unita={unita} quantita={quantita} negozi={negozi} aziende={aziende}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={user?.negozio || ""}
-                    gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica} />
+                    gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica}
+                    cercaIniziale={ddtCercato} />
             )}
         </div>
     );
@@ -300,7 +319,8 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        TUTTI non ha senso — sarebbe una tabella vuota — quindi l'ultimo acceso
        non si spegne. */
     const [stati, setStati] = useState<string[]>(["disponibile", "in_arrivo"]);
-    const vistaVenduto = stati.includes("venduto");
+    const [vista, setVista] = useState<"giacenze" | "venduto">("giacenze");
+    const vistaVenduto = vista === "venduto";
     /* LA VISTA DEL VENDUTO (Luca 31/08): «nel momento in cui clicco su venduto
        la giacenza non mi interessa: mi dà articolo per articolo direttamente
        con l'IMEI». E il filtro di data smette di essere una fotografia del
@@ -375,6 +395,11 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         } finally { setCestinando(false); }
     };
     const [sort, setSort] = useState<{ col: number; desc: boolean }>({ col: 1, desc: false });
+    /* ENTRANDO NEL VENDUTO SI GUARDA L'ULTIMO (revisore 31/08). L'ordinamento è
+       condiviso fra le due tabelle, che hanno colonne diverse: restando su
+       «Descrizione» il venduto si apriva in ordine alfabetico, mentre la
+       domanda è sempre «cosa è uscito per ultimo». */
+    useEffect(() => { setSort(vistaVenduto ? { col: 3, desc: true } : { col: 1, desc: false }); }, [vistaVenduto]);
 
     /* I GEMELLI SONO LO STESSO SCAFFALE (revisore 31/08). Magliana W3 e
        Magliana Multi sono due insegne in un locale solo, e la cassa già lo sa:
@@ -429,10 +454,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                    spedito la segue in Trasferimenti, che è il posto giusto. */
                 vivo = u.stato === "disponibile";
                 arrivo = u.stato === "in_transito" || u.stato === "in_arrivo";
-                if (vivo && !stati.includes("disponibile")) continue;
-                if (arrivo && !stati.includes("in_arrivo")) continue;
-                // venduto e annullato non stanno in questa griglia: il venduto
-                // ha la sua vista pezzo per pezzo, l'annullato non è più merce
+                /* SI CONTANO SEMPRE ENTRAMBE LE COLONNE: quali RIGHE compaiono
+                   si decide in fondo, guardando i pulsanti. Filtrare qui
+                   lasciava a zero la colonna che il pulsante non aveva acceso,
+                   pur restando intestata «In arrivo» — e un numero falso è
+                   peggio di una riga in meno.
+                   Venduto e annullato non stanno in questa griglia: il venduto
+                   ha la sua vista pezzo per pezzo, l'annullato non è più merce. */
                 if (!vivo && !arrivo) continue;
             }
             const k = `${u.codice || ""}|${u.descrizione}`;
@@ -461,18 +489,21 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                    quanto c'è e quanto arriva. Il pulsante acceso decide quale
                    delle due si guarda, e la riga compare se almeno una delle
                    due colonne guardate ha qualcosa dentro. */
-                const vuoleDisp = stati.includes("disponibile"), vuoleArr = stati.includes("in_arrivo");
-                const haDisp = Number(g.quantita) !== 0, haArr = Number(g.inArrivo || 0) > 0;
-                if (!((vuoleDisp && haDisp) || (vuoleArr && haArr))) continue;
                 const k = `${g.codice}|${g.descrizione}`;
                 const r = m.get(k) || nuova(g.codice, g.descrizione);
                 if (nelloScopo(g.negozio)) {
-                    r.giacenza += vuoleDisp ? Number(g.quantita) : 0;
+                    /* LE DUE COLONNE SI RIEMPIONO SEMPRE (revisore 31/08). Il
+                       pulsante decide quali RIGHE compaiono, non quali numeri
+                       si azzerano: con «solo disponibili» la colonna «In
+                       arrivo» andava a zero pur restando intestata così, e a
+                       Donna Olimpia si leggeva «0 SIM Fastweb in arrivo» con 40
+                       pezzi ordinati. Chi legge quel numero riordina. */
+                    r.giacenza += Number(g.quantita);
                     // la merce in arrivo NON è giacenza: non si vende quello che
                     // sullo scaffale non c'è. Ma sapere che arriva serve.
-                    r.inArrivo += vuoleArr ? Number(g.inArrivo || 0) : 0;
-                    r.valore += vuoleDisp ? Number(g.valore || 0) : 0;
-                } else if (vuoleDisp && Number(g.quantita) > 0) {
+                    r.inArrivo += Number(g.inArrivo || 0);
+                    r.valore += Number(g.valore || 0);
+                } else if (Number(g.quantita) > 0) {
                     r.altrove += Number(g.quantita);
                     r.altrovePer[g.negozio] = (r.altrovePer[g.negozio] || 0) + Number(g.quantita);
                 }
@@ -503,9 +534,18 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
            niente» — e «solo disponibili» le avrebbe rimesse sotto il tappeto:
            una riga a −1 è la prova che qualcosa è uscito senza esserci, ed è
            esattamente quello che si deve vedere entrando. */
-        out = out.filter(r => soloDisponibili
-            ? (r.giacenza !== 0 || r.inArrivo > 0)
-            : (r.giacenza !== 0 || r.inArrivo > 0 || r.altrove > 0));
+        /* QUI SI DECIDE CHI COMPARE — un posto solo per tutte e due le forme
+           della merce, pezzi con seriale e quantità (revisore 31/08: prima i
+           due rami filtravano in modo diverso e la stessa vista dava numeri
+           coerenti sugli accessori e zeri sui telefoni).
+           Con la fotografia a una data passata gli stati non si applicano — i
+           pulsanti sono spenti — quindi vale la giacenza e basta. */
+        const vuoleDisp = !!dataStorica || stati.includes("disponibile");
+        const vuoleArr = !dataStorica && stati.includes("in_arrivo");
+        out = out.filter(r => {
+            const qui = (vuoleDisp && r.giacenza !== 0) || (vuoleArr && r.inArrivo > 0);
+            return soloDisponibili ? qui : (qui || r.altrove > 0);
+        });
 
         const val = (r: Riga, c: number) => c === 0 ? r.codice : c === 1 ? r.descrizione
             : c === 2 ? r.giacenza : c === 3 ? r.altrove : c === 4 ? r.inArrivo : r.valore;
@@ -533,9 +573,15 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     };
     const venduti = useMemo<PezzoVenduto[]>(() => {
         if (!vistaVenduto) return [];
-        // gli estremi dell'intervallo, inclusi entrambi
-        const da = dal ? dal + "T00:00:00" : null;
-        const a = al ? al + "T23:59:59.999" : null;
+        /* GLI ESTREMI SONO ISTANTI, NON STRINGHE (revisore 31/08).
+           `venduto_il` è un `timestamptz` e arriva in UTC, mentre «dal
+           01/08» è una data di ROMA: confrontarli come testo spostava il
+           confine di due ore. Una vendita del 1° alle 00:30 spariva dal mese,
+           e una del 1° settembre all'01:00 entrava nel totale di agosto
+           mostrando «01/09». Chi somma la colonna per chiudere il mese
+           sommava un numero sbagliato. */
+        const da = dal ? new Date(dal + "T00:00:00").toISOString() : null;
+        const a = al ? new Date(al + "T23:59:59.999").toISOString() : null;
         const q = cerca.trim().toLowerCase(), qs = q.replace(/[\s./-]/g, "");
         let out = unita.filter(u => {
             if (u.stato !== "venduto") return false;
@@ -563,6 +609,11 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         out.sort((x, y) => String(y.venduto_il || "").localeCompare(String(x.venduto_il || "")));
         return out;
     }, [unita, anagrafica, vistaVenduto, dal, al, azienda, operatori, cerca, nelloScopo]);
+
+    /* quanti venduti restano fuori dall'intervallo perché la data non ce l'hanno */
+    const senzaData = useMemo(() => !vistaVenduto ? 0 : unita.filter(u =>
+        u.stato === "venduto" && !u.venduto_il && nelloScopo(u.negozio)
+        && (!azienda || u.azienda === azienda)).length, [unita, vistaVenduto, azienda, nelloScopo]);
 
     // gli operatori che hanno davvero qualcosa in questa vista
     const operatoriPresenti = useMemo(() => {
@@ -620,6 +671,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             <div className="rvBox">
                 <div className="rvBoxT">🔎 Cosa guardo</div>
                 {/* DOVE GUARDO — il mio negozio è già scelto */}
+                <div className="rvLab">Dove guardo</div>
                 <div className="rvBarra rvBarra-c">
                     {mioNegozio && negozi.includes(mioNegozio) && (
                         <button onClick={() => setScelti([mioNegozio])}
@@ -645,50 +697,70 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         `SelectMulti`: rifarle qui le raddoppiava, con due
                         grafiche diverse (revisore 31/08) */}
                 </div>
-                {/* ── COSA GUARDO: GLI STATI, COME PULSANTI (Luca 31/08) ──
-                    Si accendono e si spengono, e si sommano. L'ultimo acceso
-                    non si spegne: una tabella senza nemmeno uno stato non
-                    mostrerebbe niente, e sembrerebbe rotta. */}
-                <div className="rvBarra rvBarra-c mt-3">
-                    {STATI_FILTRO.map(x => {
-                        const on = stati.includes(x.id);
-                        return (
-                            <button key={x.id} title={x.spiega}
-                                onClick={() => setStati(p => {
-                                    /* IL VENDUTO STA DA SOLO. Non è «un altro
-                                       stato», è un'altra domanda — e la tabella
-                                       cambia colonne. Tenerlo acceso insieme ai
-                                       disponibili lascerebbe a schermo una
-                                       pastiglia che non governa niente, cioè un
-                                       comando che mente (regola 7). */
-                                    if (x.id === "venduto") return on ? ["disponibile", "in_arrivo"] : ["venduto"];
-                                    const senzaVenduto = p.filter(y => y !== "venduto");
-                                    if (on) return senzaVenduto.length > 1 ? senzaVenduto.filter(y => y !== x.id) : senzaVenduto;
-                                    return [...senzaVenduto, x.id];
+                {/* ── OGNI ASSE COL SUO NOME (revisore design 31/08) ──
+                    Erano cinque pastiglie identiche in fila, tre accese,
+                    separate da un filo che ho misurato a 1,38:1 — cioè da
+                    niente. Chi entra per la prima volta legge «Solo quello che
+                    ho qui» come un quarto stato, e a schermo stretto la coppia
+                    si spezzava lasciando il divisorio a separare le cose
+                    sbagliate. La grammatica di casa c'era già: in Registra
+                    Vendita ogni `.rvPillRow` ha sopra la sua etichetta. */}
+                {!vistaVenduto && (
+                    <div className="rvBarra rvBarra-t mt-3">
+                        <div className="rvCampo"><span className="rvLab">In che stato</span>
+                            <div className="rvPillRow">
+                                {STATI_FILTRO.map(x => {
+                                    const on = stati.includes(x.id);
+                                    return (
+                                        <button key={x.id} title={dataStorica ? "Con la fotografia a una data passata gli stati non si applicano: togli la data" : x.spiega}
+                                            /* CON LA FOTOGRAFIA ALLA DATA NON GOVERNANO NIENTE
+                                               (revisore 31/08): quel ramo non consulta gli stati e i
+                                               pulsanti davano tutti lo stesso risultato. La tendina di
+                                               prima era `disabled`; convertendola in pulsanti la
+                                               disabilitazione s'era persa. */
+                                            disabled={!!dataStorica}
+                                            /* l'ultimo acceso non si spegne: una tabella senza nemmeno
+                                               uno stato non mostra niente e sembra rotta */
+                                            onClick={() => setStati(p => on ? (p.length > 1 ? p.filter(y => y !== x.id) : p) : [...p, x.id])}
+                                            className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{x.et}</button>
+                                    );
                                 })}
-                                className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{x.et}</button>
-                        );
-                    })}
-                    {/* asse diverso dagli stati: non è «in che stato è», è «lo
-                        conto solo qui o anche dove non ce l'ho». Si chiamava
-                        «Solo disponibili» e faceva a pugni col pulsante di
-                        stato che ora ha lo stesso nome.
-                        Sul venduto SPARISCE invece di spegnersi: lì una riga è
-                        un pezzo, e «ce l'ho altrove» non vuol dire niente. */}
-                    {!vistaVenduto && (<>
-                        <span className="rvSep" />
-                        <button onClick={() => setSoloDisponibili(true)}
-                            className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo quello che ho qui</button>
-                        <button onClick={() => setSoloDisponibili(false)}
-                            className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
-                            title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Anche quello che sta altrove</button>
-                    </>)}
-                </div>
+                            </div>
+                            {/* la spiegazione non può vivere solo nel tooltip: sui monitor da
+                                negozio il passaggio del mouse non c'è (regola 7) */}
+                            <div className="rvHint">«In arrivo» è ordinato o in viaggio verso qui: non si vende ancora.</div>
+                        </div>
+                        <div className="rvCampo"><span className="rvLab">Cosa conto</span>
+                            <div className="rvPillRow">
+                                <button onClick={() => setSoloDisponibili(true)}
+                                    className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo quello che ho qui</button>
+                                <button onClick={() => setSoloDisponibili(false)}
+                                    className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
+                                    title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Anche quello che sta altrove</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {/* I FILTRI FINI */}
                 <div className="rvBarra mt-3">
                     <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
                         <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice, descrizione o IMEI — puoi spararlo col lettore"
                             className="rvIn" /></label>
+                    {/* IL SERIALE CHE A MAGAZZINO NON C'È PIÙ (revisore 31/08).
+                        La scheda «Ricerca seriale» è stata tolta, e con lei
+                        l'unico modo di cercare un pezzo che in `mag_unita` non
+                        sta: 219 telefoni di permuta e 468 vendite con un IMEI
+                        che il magazzino non ha mai visto — più i pezzi
+                        cestinati, che la griglia giustamente non mostra ma la
+                        cui storia esiste. In tutto 626 seriali che ieri si
+                        trovavano e stamattina no.
+                        La scheda della storia funziona già su un seriale che
+                        non è a magazzino: mancava solo come chiamarla. */}
+                    {cerca.trim().replace(/[\s./-]/g, "").length >= 8 && (
+                        <button onClick={() => setSeriale(cerca.trim().replace(/[\s./-]/g, ""))}
+                            className="rvPill rvPill-sm" title="Cerca questo seriale ovunque: magazzino, permute, vendite">
+                            🕰 Storia di questo seriale</button>
+                    )}
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
                         <SelectMulti className="rvIn"
                             values={operatori} onChange={setOperatori}
@@ -707,12 +779,17 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         quello che serve è «dal … al …». */}
                     {vistaVenduto ? (
                         <>
-                            <label className="rvCampo rvCampo-sm"><span className="rvLab">Venduto dal</span>
-                                <input type="date" value={dal} onChange={e => setDal(e.target.value)} className="rvIn" /></label>
-                            <label className="rvCampo rvCampo-sm"><span className="rvLab">al</span>
-                                <input type="date" value={al} onChange={e => setAl(e.target.value)} className="rvIn" /></label>
-                            {(dal || al) && <button onClick={() => { setDal(""); setAl(""); }} className="rvPill rvPill-sm"
-                                title="Tutto il venduto, da sempre">✕ tutto</button>}
+                            {/* le due date e il loro azzeramento stanno INSIEME (revisore
+                                design 31/08): andando a capo, «✕ tutto» finiva da solo su
+                                una riga sua, staccato da quello che governa */}
+                            <div className="rvCampo rvCampo-lg"><span className="rvLab">Venduto dal … al</span>
+                                <div className="rvBarra rvBarra-c">
+                                    <input type="date" value={dal} onChange={e => setDal(e.target.value)} className="rvIn rvCampo-sm" />
+                                    <input type="date" value={al} onChange={e => setAl(e.target.value)} className="rvIn rvCampo-sm" />
+                                    {(dal || al) && <button onClick={() => { setDal(""); setAl(""); }} className="rvPill rvPill-sm"
+                                        title="Tutto il venduto, da sempre">✕ tutto</button>}
+                                </div>
+                            </div>
                         </>
                     ) : (
                         <>
@@ -727,12 +804,28 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
                 </div>
-                {dataStorica && (
+                {/* la nota della fotografia sta DENTRO il ramo che la usa
+                    (revisore design 31/08): nella vista del venduto restava a
+                    schermo mentre il campo che la governa era sparito */}
+                {dataStorica && !vistaVenduto && (
                     <div className="rvNota rvNota-att">
                         <div className="rvNota-t">📅 La fotografia a una data passata</div>
                         <div className="rvNota-s">Vale sui soli pezzi con seriale: le quantità non hanno una storia per riga.</div>
                     </div>
                 )}
+            </div>
+            {/* ── LE DUE DOMANDE, COL LORO CONTEGGIO ────────────────────────
+                Non è un filtro fra i filtri: premendo «quello che ho venduto»
+                cambiano le colonne, la data cambia mestiere e l'Excel esporta
+                un altro file. Stessa forma della fila «📄 Documenti / 📦 Merce
+                mossa» dei Trasferimenti — e finalmente il conteggio, che nelle
+                Giacenze non c'era da nessuna parte. */}
+            <div className="rvPillRow">
+                <button onClick={() => setVista("giacenze")} className={cn("rvPill", !vistaVenduto && "rvPill-on")}>
+                    📦 Quello che ho<b className="rvPillN">{vistaVenduto ? "—" : righe.length}</b></button>
+                <button onClick={() => setVista("venduto")} className={cn("rvPill", vistaVenduto && "rvPill-on")}
+                    title="Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita">
+                    🧾 Quello che ho venduto{vistaVenduto && <b className="rvPillN">{venduti.length}</b>}</button>
             </div>
             {/* IN UN PORTAL (regola 6): oggi sopra non c'è nessun riquadro
                 sfocato, ma il giorno che il magazzino finisce dentro una card
@@ -745,6 +838,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         <h3>Togliere dal magazzino?</h3>
                         <p>
                             <b>{daCestinare.titolo}</b><br />
+                            {/* DI QUALE NEGOZIO (revisore 31/08): il pannello
+                                dei dettagli elenca anche gli altri punti
+                                vendita, ognuno col suo cestino — un
+                                amministratore poteva rettificare la giacenza di
+                                Promontori stando a Magliana senza accorgersene. */}
+                            <b>{daCestinare.negozio}</b><br />
                             {daCestinare.seriale
                                 ? "Il pezzo non sarà più vendibile né trasferibile, ma la sua storia resta."
                                 : "La giacenza scende con una rettifica: il movimento resta scritto."}
@@ -781,6 +880,20 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 «La giacenza non mi interessa: mi dà articolo per articolo
                 direttamente con l'IMEI.» Non è la stessa tabella filtrata
                 diversamente — è un'altra domanda, e vuole altre colonne. */}
+            {vistaVenduto && senzaData > 0 && (dal || al) && (
+                /* NON SI NASCONDE MERCE VENDUTA (revisore 31/08). Un pezzo
+                   uscito a cui manca la data non può stare dentro un
+                   intervallo, ma non deve nemmeno sparire: nella griglia non
+                   c'è (è venduto) e qui sarebbe invisibile. Il suggerimento
+                   c'era, ma usciva solo a tabella vuota. */
+                <div className="rvNota rvNota-att">
+                    <div className="rvNota-t">⚠️ {senzaData} {senzaData === 1 ? "pezzo venduto senza data di uscita" : "pezzi venduti senza data di uscita"}</div>
+                    <div className="rvNota-s">
+                        Un intervallo non può contenerli. <button onClick={() => { setDal(""); setAl(""); }}
+                            className="rvPill rvPill-sm">Mostrali</button>
+                    </div>
+                </div>
+            )}
             {vistaVenduto ? (
                 <div className="rvTabBox">
                     <table className="rvTab">
@@ -811,7 +924,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                         <td className="rvTab-min">{gg(v2.venduto_il)}</td>
                                         <td className="rvTab-min">{v2.venduto_da || "—"}</td>
                                         <td className="rvTab-n">{eur(v2.costo)}</td>
-                                        <td className={cn("rvTab-n rvGiac", v2.prezzo == null ? "rvGiac-zero" : sconto != null && sconto < 0 ? "rvGiac-ko" : "rvGiac-si")}>
+                                        {/* uno zero col colore del «tutto a posto» è un numero
+                                            che mente (regola 7): un pezzo uscito a zero euro
+                                            è la cosa che si va a cercare, non da rassicurare */}
+                                        <td className={cn("rvTab-n rvGiac", v2.prezzo == null || v2.prezzo === 0 ? "rvGiac-zero" : sconto != null && sconto < 0 ? "rvGiac-ko" : "rvGiac-si")}>
                                             {eur(v2.prezzo)}
                                             {/* quanto sopra o sotto il listino: è la domanda vera di
                                                 chi guarda il venduto di un negozio */}
@@ -942,7 +1058,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         })}
                         {!righe.length && <tr><td colSpan={6} className="rvTab-vuoto">
                             Nessun articolo con questi filtri.
-                            {soloDisponibili && " Prova «📚 Tutti gli articoli» per vedere anche quello che sta in un altro negozio."}
+                            {soloDisponibili && " Prova «📚 Anche quello che sta altrove» per vedere quello che sta in un altro negozio."}
                             {!unita.length && !quantita.length && " Il magazzino parte vuoto: il primo carico si fa da 🚚 Trasferimenti → 📥 Carico merce."}
                         </td></tr>}
                     </tbody>
@@ -1065,7 +1181,7 @@ function StoriaPezzo({ seriale, chiudi }: { seriale: string; chiudi: () => void 
                                                 {e.note && <div className="rvTab-min">{e.note}</div>}
                                                 {/* IL SECONDO CLIC PORTA AL DOCUMENTO (Luca 31/08) */}
                                                 {e.vaiA && (
-                                                    <a href={e.vaiA} className="rvAzione rvAzione-sm mt-2 inline-block"
+                                                    <a href={e.vaiA} className="rvPill rvPill-sm rvTml-doc mt-2"
                                                         onClick={(ev) => ev.stopPropagation()}>
                                                         {e.documento === "ddt" ? "🚚 Apri il documento di trasporto" : "🧾 Apri la vendita"}
                                                     </a>
@@ -1375,10 +1491,12 @@ async function chiudiDifferenza(
     return avvisi;
 }
 
-function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, gestisce, puoCaricare, utente, ricarica }: {
+function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
     mioNegozio: string; gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
+    /** il documento su cui atterrare, quando ci si arriva dalla storia di un pezzo */
+    cercaIniziale?: string;
 }) {
     const [ddt, setDdt] = useState<Ddt[]>([]);
     const [righe, setRighe] = useState<RigaDdt[]>([]);
@@ -1439,7 +1557,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
 
     /* ── I FILTRI ───────────────────────────────────────────────────────── */
     const [situazione, setSituazione] = useState<Situazione>("tutti");
-    const [cerca, setCerca] = useState("");
+    const [cerca, setCerca] = useState(cercaIniziale || "");
     const [daNeg, setDaNeg] = useState<string[]>([]);
     const [aNeg, setANeg] = useState<string[]>([]);
     const [stati, setStati] = useState<string[]>([]);
