@@ -898,6 +898,8 @@ function UserForm({
         } as typeof EMPTY_USER & AppUser;
     });
     const [saving, setSaving] = useState(false);
+    // esito delle credenziali del nuovo utente: password a video + se la mail e' partita
+    const [esitoCredenziali, setEsitoCredenziali] = useState<{ pw: string | null; email: string | null; errore: string | null } | null>(null);
     const [err, setErr] = useState("");
 
     /* «QUESTA EMAIL È GIÀ DI QUALCUNO» (Luca 28/08 sera, caso Franca).
@@ -1162,6 +1164,23 @@ function UserForm({
                 created_by: me?.name || "—",
             }).then(({ error }) => { if (error) console.warn("admin_tasks assente (mig. 085):", error.message); });
         }
+        // UTENTE NUOVO = CREDENZIALI SUBITO (Luca 31/08). Prima la scheda
+        // nasceva senza password: qualcuno doveva ricordarsi di aprirla e
+        // premere «Reset password», e poi dettare la password a voce. Adesso
+        // la password provvisoria si genera e parte per email dalla casella
+        // aziendale — amministrazione@ — insieme all'indirizzo del CRM.
+        // Resta a video comunque: se la posta non parte (utente senza email,
+        // casella scollegata) l'amministrazione la vede e la comunica a mano.
+        if (!editing && userId && String(f.email || "").trim()) {
+            const provvisoria = genPassword();
+            const r = await fetch("/api/auth/azioni", {
+                method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ azione: "reset_password", userId, nuova: provvisoria, benvenuto: true }),
+            }).then((x) => x.json()).catch(() => null);
+            setEsitoCredenziali(r?.ok
+                ? { pw: provvisoria, email: r.email || null, errore: r.emailErrore || null }
+                : { pw: null, email: null, errore: r?.error || "non è stato possibile impostare la password" });
+        }
         setSaving(false);
         onSaved();
     };
@@ -1189,6 +1208,18 @@ function UserForm({
                 {err && (
                     <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm">
                         {err}
+                    </div>
+                )}
+                {esitoCredenziali && (
+                    <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-sm">
+                        {esitoCredenziali.email ? (
+                            <p className="text-emerald-200">📧 Password provvisoria inviata a <b>{f.email}</b> da <b>{esitoCredenziali.email}</b>.</p>
+                        ) : (
+                            <p className="text-amber-200">⚠️ La password è stata impostata ma l&apos;email non è partita{esitoCredenziali.errore ? ` (${esitoCredenziali.errore})` : ""}: comunicala tu.</p>
+                        )}
+                        {esitoCredenziali.pw && (
+                            <p className="mt-1.5 text-slate-300">Password provvisoria: <b className="font-mono tracking-wider text-white">{esitoCredenziali.pw}</b> — al primo accesso dovrà cambiarla.</p>
+                        )}
                     </div>
                 )}
 
@@ -1740,6 +1771,7 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
     const [pw, setPw] = useState<string | null>(u.password);
     const [showPw, setShowPw] = useState(false);
     const [resetting, setResetting] = useState(false);
+    const [esitoMail, setEsitoMail] = useState<{ da?: string; errore?: string } | null>(null);
     const [copied, setCopied] = useState(false);
 
     const doResetPassword = async () => {
@@ -1753,6 +1785,9 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
         if (!error && data === true) {
             setPw(np);
             setShowPw(true);
+            // la password parte anche per email: qui si dice se ce l'ha fatta,
+            // perche' «l'ho resettata» e «gliel'ho recapitata» sono due cose
+            setEsitoMail(_r2?.email ? { da: _r2.email } : { errore: _r2?.emailErrore || "email non inviata" });
         }
     };
     const copyPw = () => {
@@ -1975,7 +2010,11 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                     </div>
                                     {showPw && pw && (
                                         <p className="text-[11px] text-amber-400/80">
-                                            Comunica questa password temporanea all&apos;utente: al primo accesso dovrà cambiarla. Le richieste dalla schermata di login arrivano nel fulmine ⚡.
+                                            {esitoMail?.da
+                                                ? <>📧 Inviata a <b className="text-emerald-300">{u.email}</b> da <b>{esitoMail.da}</b>: al primo accesso dovrà cambiarla. Le richieste dalla schermata di login arrivano nel fulmine ⚡.</>
+                                                : esitoMail?.errore
+                                                    ? <>⚠️ Password impostata, ma l&apos;email non è partita ({esitoMail.errore}): comunicagliela tu. Al primo accesso dovrà cambiarla.</>
+                                                    : <>Comunica questa password temporanea all&apos;utente: al primo accesso dovrà cambiarla. Le richieste dalla schermata di login arrivano nel fulmine ⚡.</>}
                                         </p>
                                     )}
                                 </div>
