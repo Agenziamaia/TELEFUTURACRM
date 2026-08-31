@@ -36,7 +36,7 @@ import { useAuth } from "@/context/AuthContext";
 import { isAdminOrAbove } from "@/lib/roles";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
-import { SelectOpzioni } from "@/components/SelectPersona";
+import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { stessoMagazzino } from "@/lib/negoziNomi";
 
@@ -251,7 +251,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        negozi contemporaneamente». Lista vuota = tutti, che è la stessa cosa
        ma si scrive una volta sola invece di spuntarne quindici. */
     const [scelti, setScelti] = useState<string[]>(mioNegozio && negozi.includes(mioNegozio) ? [mioNegozio] : []);
-    const aggiungiNegozio = (n: string) => { if (n && !scelti.includes(n)) setScelti([...scelti, n]); };
     const togliNegozio = (n: string) => setScelti(scelti.filter(x => x !== n));
     const [azienda, setAzienda] = useState("");
     const [stato, setStato] = useState("");
@@ -259,7 +258,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        tendina dell'operatore». Chi cerca «cosa ho di WindTre e Fastweb» lo
        chiede una volta, non due. Vuoto = tutti. */
     const [operatori, setOperatori] = useState<string[]>([]);
-    const aggiungiOperatore = (o: string) => { if (o && !operatori.includes(o)) setOperatori([...operatori, o]); };
     const togliOperatore = (o: string) => setOperatori(operatori.filter(x => x !== o));
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
        compaiono anche quelli che qui non ci sono ma stanno in un altro
@@ -465,18 +463,21 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             className={cn("rvPill rvPill-sm", scelti.length === 1 && scelti[0] === mioNegozio && "rvPill-on")}>🏠 {mioNegozio}</button>
                     )}
                     <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi</button>
-                    {/* SI AGGIUNGONO, NON SI SOSTITUISCONO (Luca 31/08). La tendina
-                        propone solo i negozi non ancora presi e li mette in fila
-                        come pastiglie: un elenco a spunte con quindici voci si
-                        legge peggio di tre pastiglie che dicono cosa stai
-                        guardando.
-                        La className SOSTITUISCE il default di SelectOpzioni (non
-                        si fondono): va addosso all'<input>, quindi `.rvIn` e
-                        basta — un `.rvSel > div` non aggancerebbe niente. */}
-                    <div className="rvCampo rvCampo-md"><SelectOpzioni className="rvIn"
-                        value="" onChange={aggiungiNegozio}
-                        opzioni={negozi.filter(n => !scelti.includes(n))}
-                        placeholder={scelti.length ? "…aggiungine un altro" : "…o scegli i punti vendita"} /></div>
+                    {/* PIÙ NEGOZI INSIEME (Luca 31/08). Il primo tentativo usava
+                        `SelectOpzioni` — una tendina a scelta SINGOLA — passandole
+                        `value=""` e aggiungendo la voce presa a una lista fuori.
+                        Non funzionava: il componente si tiene il testo scelto, e
+                        siccome `value` restava "" e non cambiava mai, l'effetto
+                        che lo azzera non ripartiva — dopo la prima scelta il campo
+                        restava pieno e sembrava bloccato. In questo stesso file
+                        c'era GIÀ `SelectMulti`, con le spunte e la voce «Tutti»:
+                        bastava usarlo.
+                        La className SOSTITUISCE il default (non si fondono): va
+                        addosso all'<input>, quindi `.rvIn` e basta. */}
+                    <div className="rvCampo rvCampo-lg"><SelectMulti className="rvIn"
+                        values={scelti} onChange={setScelti} opzioni={negozi}
+                        maxVoci={30} tuttiLabel="🌐 Tutti i negozi"
+                        placeholder="Scegli i punti vendita — vuoto = tutti" /></div>
                     {scelti.map(n => (
                         <button key={n} onClick={() => togliNegozio(n)} title="Togli questo punto vendita"
                             className="rvPill rvPill-sm rvPill-on">{n} ✕</button>
@@ -491,11 +492,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
                         <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice o descrizione…"
                             className="rvIn" /></label>
-                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Operatore</span>
-                        <SelectOpzioni className="rvIn"
-                            value="" onChange={aggiungiOperatore}
-                            opzioni={[...operatoriPresenti, "(nessuno)"].filter(o => !operatori.includes(o))}
-                            placeholder={operatori.length ? "…aggiungine un altro" : "Tutti"} /></div>
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
+                        <SelectMulti className="rvIn"
+                            values={operatori} onChange={setOperatori}
+                            opzioni={[...operatoriPresenti, "(nessuno)"]}
+                            maxVoci={20} tuttiLabel="Tutti gli operatori"
+                            placeholder="Tutti — scrivi per filtrare" /></div>
                     {operatori.length > 0 && (
                         <div className="rvPillRow" style={{ gap: 5 }}>
                             {operatori.map(o => (
