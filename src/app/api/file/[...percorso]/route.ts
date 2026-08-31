@@ -53,9 +53,15 @@ const REGOLE: Record<string, "sessione" | "casella" | "numero"> = {
     "avanzamenti-files": "sessione",
 };
 
-/** Il pezzo di percorso che identifica il gruppo: per la posta e per WhatsApp
- *  è la prima cartella, cioè l'id della conversazione o dell'istanza. */
-const primaCartella = (p: string) => p.split("/")[0] || "";
+/** Il pezzo di percorso che dice a quale CONVERSAZIONE appartiene il file.
+ *  ⚠️ Di solito è la prima cartella, ma i media che MANDIAMO noi finiscono
+ *  sotto «out/<conversazione>/…» — e con la prima cartella il controllo si
+ *  sarebbe messo a cercare una conversazione che si chiama «out», negando
+ *  ogni allegato in uscita. */
+const cartellaConversazione = (p: string) => {
+    const parti = p.split("/").filter(Boolean);
+    return (parti[0] === "out" ? parti[1] : parti[0]) || "";
+};
 
 export async function GET(request: Request, ctx: { params: Promise<{ percorso: string[] }> }) {
     /* ⚠️ PRIMA DI TUTTO: senza la chiave di servizio qui non si firma niente.
@@ -93,7 +99,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ percorso: s
        vorrebbe dire una seconda copia della regola che, fra qualche mese,
        diverge da quella vera — ed è esattamente come si riaprono i buchi. */
     if (regola === "casella" || regola === "numero") {
-        const id = primaCartella(dentro);
+        const id = cartellaConversazione(dentro);
         const { data, error } = await supabaseAdmin.rpc("tf_puo_vedere_file", {
             p_utente: sess.id, p_deposito: deposito, p_cartella: id,
         });
