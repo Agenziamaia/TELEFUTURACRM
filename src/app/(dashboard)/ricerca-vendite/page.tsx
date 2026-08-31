@@ -837,7 +837,18 @@ export default function RicercaContratto() {
         let query = q0;
         if (filterVenditori !== null) query = query.in("venditore", filterVenditori);
         if (filterNegozi !== null) query = query.in("negozio", filterNegozi);
-        if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
+        // CODICE CONTRATTO — IL NOSTRO **E** QUELLO DELL'OPERATORE (Luca 31/08:
+        // «se inserisco un codice contratto non me lo trova; lì posso inserire
+        // sia il codice contratto nostro del CRM sia quello dell'operatore
+        // telefonico»). Prima si guardava solo `id`, cioè il CTR-… nostro: il
+        // numero che arriva da WindTre o da Sky vive in `codice_attivazione` e
+        // non lo trovava nessuno.
+        // E si può incollarne PIÙ DI UNO — separati da virgola, spazio o a
+        // capo: chi arriva da un foglio ne ha una colonna, non uno solo.
+        if (filterCodice.trim()) {
+            const codici = filterCodice.split(/[\s,;\n]+/).map((x) => x.trim().replace(/[",()]/g, "")).filter(Boolean);
+            if (codici.length) query = query.or(codici.flatMap((c) => [`id.ilike.%${c}%`, `codice_attivazione.ilike.%${c}%`]).join(","));
+        }
         if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
         if (filterProdotti !== null) query = query.in("prodotto", filterProdotti);
         if (filterOfferte !== null) query = query.in("offerta", filterOfferte);
@@ -859,7 +870,24 @@ export default function RicercaContratto() {
         // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
         // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
         if (filterCodiciIns !== null) query = query.in('dettagli->>"Cod.Ins."', filterCodiciIns);
-        if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
+        // NUMERO DI TELEFONO — DOVUNQUE SIA SCRITTO (Luca 31/08: «ho messo un
+        // numero che non era il provvisorio ma il definitivo, quindi c'era una
+        // portabilità, e non mi ha trovato la pratica»). Prima si guardava solo
+        // il cellulare in ANAGRAFICA: ma il numero che il cliente ti detta, in
+        // una portabilità, è quello definitivo, e sta nei dettagli della
+        // pratica insieme al provvisorio e a un'altra ventina di campi.
+        // I numeri stanno su due tabelle, e PostgREST non sa metterle in OR
+        // (segnalazione 36); passa quindi dalla colonna calcolata
+        // `numeri_telefono`, che li raccoglie tutti — vedi la migrazione
+        // 20260831110000.
+        // Si confrontano SOLE CIFRE da entrambe le parti, così «333 123 4567»,
+        // «333-123-4567» e «+39 3331234567» trovano la stessa pratica.
+        // il prefisso internazionale si toglie SOLO se è scritto come tale
+        // («+39», «0039»): un 39 in mezzo alle cifre è un numero che comincia
+        // per 39, non un prefisso — e su un fisso «+39 06…» la distinzione
+        // conta, perché lì le cifre da sole non bastano a capirlo.
+        const soloCifreTel = (v: string) => v.replace(/^\s*(?:\+|00)39/, "").replace(/\D/g, "");
+        if (soloCifreTel(filterCellulare)) query = query.ilike("numeri_telefono", `%${soloCifreTel(filterCellulare)}%`);
         // Segnalazione 80: i filtri data valgono per elenco E tessere insieme.
         // Le date sono in formato AAAA-MM-GG, quindi il confronto e' diretto.
         const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
@@ -1979,7 +2007,8 @@ export default function RicercaContratto() {
                     {/* 2. Codice contratto */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Codice contratto</label>
-                        <input type="text" placeholder="Es. CTR-123" className="glass-input w-full" value={filterCodice} onChange={e => setFilterCodice(e.target.value)} />
+                        <input type="text" placeholder="CTR-… o codice operatore" title="Il codice del CRM o quello dell'operatore. Più di uno: separali con una virgola."
+                            className="glass-input w-full" value={filterCodice} onChange={e => setFilterCodice(e.target.value)} />
                     </div>
 
                     {/* 3. IMEI */}
@@ -2028,8 +2057,9 @@ export default function RicercaContratto() {
 
                     {/* 9. Numero di cellulare */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Numero di cellulare</label>
-                        <input type="text" placeholder="Es. 3331234567" className="glass-input w-full" value={filterCellulare} onChange={e => setFilterCellulare(e.target.value)} />
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Numero di telefono</label>
+                        <input type="text" placeholder="Es. 3331234567" title="Cerca fra tutti i numeri della pratica: anagrafica, provvisorio, definitivo, fisso"
+                            className="glass-input w-full" value={filterCellulare} onChange={e => setFilterCellulare(e.target.value)} />
                     </div>
                 </div>
 
