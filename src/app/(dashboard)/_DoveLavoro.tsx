@@ -45,6 +45,12 @@ const RUOLI_DI_NEGOZIO = [
    riguarda eccome. Si va per id, non per nome: i nomi si riscrivono.
    Franca Arduini ha lo stesso ruolo e resta fuori — lei in negozio non ci sta. */
 const ANCHE_LORO = ["7e3f04f6-f30b-4b4b-aea8-f732c45e1861"];   // Marta Perrotta
+
+/** La data di oggi come la scrive il database: la presenza è per giorno. */
+const oggiYmd = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const deveRispondere = (u: { id?: string; role?: string } | null) =>
     RUOLI_DI_NEGOZIO.includes(String(u?.role || "")) || ANCHE_LORO.includes(String(u?.id || ""));
 
@@ -66,10 +72,16 @@ export function DoveLavoro() {
            confronto è fra l'istante dell'accesso e quello dell'ultima risposta:
            uguali = ha già risposto per QUESTO accesso, e a ogni ricarico di
            pagina non si ripresenta. */
-        let gia = "";
+        let gia = false;
         try {
             const acc = localStorage.getItem("crm_accesso_il") || "";
-            gia = acc && localStorage.getItem("crm_dove_lavoro") === acc ? acc : "";
+            /* IL MARCATORE PORTA ANCHE IL GIORNO (revisore 31/08). Da solo,
+               l'istante del login non basta: chi resta collegato attraverso la
+               mezzanotte — o rientra da una sessione salvata — se lo ritrova
+               ancora valido il giorno dopo, e lavorerebbe tutta la giornata
+               senza una riga di presenza. La presenza è per data: il confronto
+               dev'esserlo anche lui. */
+            gia = !!acc && localStorage.getItem("crm_dove_lavoro") === `${acc}|${oggiYmd()}`;
         } catch { /* localStorage negato: si chiede, che è il lato sicuro */ }
         if (gia) { setServe(false); return; }
         // la presenza già dichiarata resta il valore di PARTENZA, ma la domanda
@@ -131,7 +143,7 @@ export function DoveLavoro() {
             const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string }));
             if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
 
-            try { localStorage.setItem("crm_dove_lavoro", localStorage.getItem("crm_accesso_il") || String(Date.now())); } catch { }
+            try { localStorage.setItem("crm_dove_lavoro", `${localStorage.getItem("crm_accesso_il") || Date.now()}|${oggiYmd()}`); } catch { }
             setServe(false);
             // il resto del CRM legge la presenza al montaggio: si riparte pulito
             window.location.reload();
