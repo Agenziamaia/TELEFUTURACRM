@@ -99,6 +99,7 @@ import {
     MessageCircle,
     Store,
     Sparkles,
+    SlidersHorizontal,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -232,11 +233,11 @@ const SEZIONI: Sezione[] = [
     { id: "altri", label: "Altri costi", icon: Tag, gruppo: "costi", desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
     // "marginalita" tolta dall'elenco (Luca 05/08): vive nel Catalogo come
     // pseudo-brand 💰; la sez resta risolvibile per i vecchi deep-link.
-    { id: "catalogo", label: "Catalogo", icon: Layers, desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni (+ Marginalità 💰) — la base del Registra Vendita." },
-    { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
-    { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
-    { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
-    { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
+    { id: "catalogo", label: "Catalogo", icon: Layers, gruppo: "setup", desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni (+ Marginalità 💰) — la base del Registra Vendita." },
+    { id: "callcenter", label: "Call Center", icon: Phone, gruppo: "setup", desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
+    { id: "ordinemerce", label: "Ordine Merce", icon: Package, gruppo: "setup", desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
+    { id: "calendario", label: "Calendario", icon: CalendarClock, gruppo: "setup", desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
+    { id: "trackingesiti", label: "Tracking PDA", icon: Radar, gruppo: "setup", desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
     // PANNELLO WHATSAPP (Luca 25/08): numeri collegati, verifica, ricollega col QR,
     // collegamento a QUALSIASI utente o negozio — sempre da selezione, mai testo libero
     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "I numeri WhatsApp del CRM: stato e verifica live, ricollega col QR, collega numeri nuovi intestati a un utente (anche caller) o a un negozio — condivisione automatica per visibilità." },
@@ -246,6 +247,14 @@ const SEZIONI: Sezione[] = [
     // SPESA E USO DELL'AI (Luca 31/08): «un resoconto dei token che stiamo
     // utilizzando, di quanto stiamo spendendo diviso per categorie, e posso
     // filtrare per utenza». Il tetto è 30 € al mese.
+    /* MINI-HUB SETUP (Luca 31/08): «creiamo un altro minihub per tenere tutto
+       in ordine». Sono le cinque sezioni che CONFIGURANO come lavora il CRM —
+       cosa si può vendere, quali esiti esistono, cosa si può ordinare — e non
+       mostrano dati. In una griglia da quindici riquadri erano indistinguibili;
+       sotto un nome si trovano.
+       ⚠️ Gli `id` non cambiano: sono la chiave dei permessi e dei link
+       salvati. Cambia dove stanno, non cosa sono. */
+    { id: "setup", label: "Setup", icon: SlidersHorizontal, desc: "Come lavora il CRM: il catalogo di quello che si vende, gli esiti del call center e del tracking, gli articoli ordinabili e i tipi di evento del calendario." },
     { id: "ai", label: "AI", icon: Sparkles, desc: "Quanto costa l'intelligenza artificiale e chi la usa: spesa del mese contro il tetto, divisa fra quello che chiede una persona e quello che gira da solo, per utenza e per sezione." },
     // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
     // nate col registratore telematico — stesso pattern del mini-hub Costi.
@@ -260,6 +269,7 @@ const SEZIONI: Sezione[] = [
 const COSTI_IDS = ["negozi", "condivisi", "altri"];
 // ordine FISSO del mini-hub Fiscalità (Luca 24/08)
 const FISC_IDS = ["reparti", "cassascontrini", "coupon"];
+const SETUP_IDS = ["catalogo", "callcenter", "ordinemerce", "calendario", "trackingesiti"];
 
 function AmministrazioneInner() {
     const { user } = useAuth();
@@ -294,6 +304,12 @@ function AmministrazioneInner() {
             const sub = fiscChild?.subs?.find((x) => x.id === id);
             return fiscChild && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, fiscChild, id), sub.roles, perms) : true;
         }
+        // e per il mini-hub SETUP (Luca 31/08), stessa forma
+        if (SETUP_IDS.includes(id)) {
+            const setupChild = hubAmm.children.find((c) => c.sez === "setup");
+            const sub = setupChild?.subs?.find((x) => x.id === id);
+            return setupChild && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, setupChild, id), sub.roles, perms) : true;
+        }
         const child = hubAmm.children.find((c) => c.sez === id);
         return child ? effectiveAllowed(user?.role, hubChildKey(hubAmm, child), child.roles ?? hubAmm.roles, perms) : true;
     };
@@ -306,14 +322,18 @@ function AmministrazioneInner() {
     // le sezioni raggruppate non stanno nella griglia principale
     const costiVisibile = COSTI_IDS.some((id) => sezOk(id));
     const fiscVisibile = FISC_IDS.some((id) => sezOk(id));
+    const setupVisibile = SETUP_IDS.some((id) => sezOk(id));
     const sezioniVisibili = SEZIONI.filter((s) =>
-        !s.gruppo && (s.id === "costi" ? costiVisibile : s.id === "fiscalita" ? fiscVisibile : sezOk(s.id)));
+        !s.gruppo && (s.id === "costi" ? costiVisibile : s.id === "fiscalita" ? fiscVisibile : s.id === "setup" ? setupVisibile : sezOk(s.id)));
     const sezioniCosti = SEZIONI.filter((s) => s.gruppo === "costi" && sezOk(s.id));
     const sezioniFisc = SEZIONI.filter((s) => s.gruppo === "fiscalita" && sezOk(s.id));
-    const current = SEZIONI.find((s) => s.id === sez && (s.id === "costi" ? costiVisibile : s.id === "fiscalita" ? fiscVisibile : sezOk(s.id)));
+    const sezioniSetup = SEZIONI.filter((s) => s.gruppo === "setup" && sezOk(s.id));
+    const current = SEZIONI.find((s) => s.id === sez && (s.id === "costi" ? costiVisibile : s.id === "fiscalita" ? fiscVisibile : s.id === "setup" ? setupVisibile : sezOk(s.id)));
     // header: dentro il mini-hub Costi il titolo resta "Costi" (come Utenti
     // resta "Utenti" su tutte le sue funzioni)
-    const vista = current?.gruppo === "costi" ? SEZIONI.find((s) => s.id === "costi")! : current?.gruppo === "fiscalita" ? SEZIONI.find((s) => s.id === "fiscalita")! : current;
+    const vista = current?.gruppo === "costi" ? SEZIONI.find((s) => s.id === "costi")!
+        : current?.gruppo === "fiscalita" ? SEZIONI.find((s) => s.id === "fiscalita")!
+        : current?.gruppo === "setup" ? SEZIONI.find((s) => s.id === "setup")! : current;
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -646,16 +666,40 @@ function AmministrazioneInner() {
                 // la voce di menù è stata tolta (vive nel Catalogo, Luca 05/08):
                 // il vecchio deep-link resta servito per i preferiti salvati
                 <MarginalitaView />
-            ) : sez === "catalogo" ? (
-                <CatalogoView />
-            ) : sez === "ordinemerce" ? (
-                <OrdineMerceArticoliView />
-            ) : sez === "callcenter" ? (
-                <CallCenterView />
-            ) : sez === "calendario" ? (
-                <CalendarioEsitiView />
-            ) : sez === "trackingesiti" ? (
-                <TrackingEsitiView />
+            ) : (sez === "setup" || SETUP_IDS.includes(sez || "")) ? (
+                (() => {
+                    /* MINI-HUB SETUP (Luca 31/08): stessa veste di Costi e
+                       Fiscalità — ?sez=setup apre la prima permessa, e i
+                       vecchi link diretti (?sez=catalogo…) continuano a
+                       funzionare, solo che ora arrivano dentro il gruppo. */
+                    const attiva = SETUP_IDS.includes(sez || "") ? (sez as string) : (sezioniSetup[0]?.id ?? "catalogo");
+                    const EMO: Record<string, string> = { catalogo: "🗂️", callcenter: "📞", ordinemerce: "📦", calendario: "🗓️", trackingesiti: "🛰️" };
+                    return (
+                        <>
+                            <div className="flex gap-2 flex-wrap">
+                                {sezioniSetup.map((x) => (
+                                    <button key={x.id} onClick={() => go(x.id)}
+                                        className={`text-sm px-4 py-2 rounded-lg border transition-colors ${attiva === x.id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-200 font-bold" : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                        {EMO[x.id]} {x.label}
+                                    </button>
+                                ))}
+                            </div>
+                            {sezioniSetup.length === 0 ? (
+                                <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna sezione di Setup abilitata per il tuo ruolo.</div>
+                            ) : attiva === "ordinemerce" ? (
+                                <OrdineMerceArticoliView />
+                            ) : attiva === "callcenter" ? (
+                                <CallCenterView />
+                            ) : attiva === "calendario" ? (
+                                <CalendarioEsitiView />
+                            ) : attiva === "trackingesiti" ? (
+                                <TrackingEsitiView />
+                            ) : (
+                                <CatalogoView />
+                            )}
+                        </>
+                    );
+                })()
             ) : sez === "whatsapp" ? (
                 <WhatsAppAdminView />
             ) : sez === "ai" ? (

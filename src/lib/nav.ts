@@ -20,7 +20,7 @@ import {
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
-    BarChart3, Receipt, User, Globe, Mail,
+    BarChart3, Receipt, User, Globe, Mail, SlidersHorizontal,
 } from "lucide-react";
 import { CoronaIcona } from "@/components/IconaCorona";
 
@@ -263,14 +263,32 @@ export const NAVIGATION: NavEntry[] = [
             // orari. La `sez` resta «orari»: e' la chiave dei permessi e degli
             // indirizzi salvati, cambiarla scollegherebbe le une e gli altri.
             { name: "Negozi", sez: "orari", icon: Store, roles: ["admin", "dev"] },
-            // "Marginalità" vive DENTRO Catalogo come pseudo-brand 💰 (Luca 05/08)
-            { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
-            { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
-            // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
-            { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
-            { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
-            // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
-            { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
+            /* MINI-HUB SETUP (Luca 31/08): «creiamo un altro minihub per tenere
+               tutto in ordine, chiamiamolo Setup». Sono le cinque sezioni che
+               CONFIGURANO come lavora il CRM — cosa si può vendere, quali esiti
+               esistono, cosa si può ordinare — invece di mostrarne i dati. In
+               una griglia da quindici riquadri erano indistinguibili dalle
+               altre; raccolte sotto un nome si trovano.
+               ⚠️ Gli `id` restano quelli di sempre (`catalogo`, `callcenter`,
+               `ordinemerce`, `calendario`, `trackingesiti`): sono la chiave dei
+               permessi in role_permissions e dei link salvati. Cambiarli
+               significherebbe azzerare in silenzio i permessi già dati e
+               rompere ogni scorciatoia che qualcuno si è messo fra i preferiti.
+               Cambia solo dove la voce si trova, non cosa è. */
+            {
+                name: "Setup", sez: "setup", icon: SlidersHorizontal,
+                roles: [...ADMINS, "amministrativo"], esplodi: true, subsSez: true,
+                subs: [
+                    // "Marginalità" vive DENTRO Catalogo come pseudo-brand 💰 (Luca 05/08)
+                    { id: "catalogo", name: "Catalogo", roles: ["admin", "dev"], emoji: "🗂️" },
+                    { id: "callcenter", name: "Call Center", roles: ["admin", "dev"], emoji: "📞" },
+                    // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
+                    { id: "ordinemerce", name: "Ordine Merce", roles: [...ADMINS, "amministrativo"], emoji: "📦" },
+                    { id: "calendario", name: "Calendario", roles: ["admin", "dev"], emoji: "🗓️" },
+                    // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
+                    { id: "trackingesiti", name: "Tracking PDA", roles: ["admin", "dev"], emoji: "🛰️" },
+                ],
+            },
             // Pannello WhatsApp (Luca 25/08): numeri, verifica, ricollega, intestazioni
             { name: "WhatsApp", sez: "whatsapp", icon: MessagesSquare, roles: ["admin", "dev"] },
             // Pannello Email (Luca 26/08): governance caselle — collega/riassegna/elimina solo da qui
