@@ -54,6 +54,17 @@ import { useAuth } from "@/context/AuthContext";
 import QRCode from "qrcode";
 const ReqCtx = createContext(null);
 const SubKeyCtx = createContext(null);
+/* IL MAGAZZINO DENTRO IL MODULO DI VENDITA (Luca 31/08).
+   «Quando vado a vendere un telefono rateizzato — che sia finanziamento o
+    telefono a rate — nel momento in cui scrivo l'IMEI me lo deve matchare nel
+    magazzino, a quel punto mi fa selezionare il prodotto. Se il prodotto non
+    c'è, non mi deve far registrare la vendita: come faccio a rateizzare un
+    telefono che non ho in magazzino?»
+   Prima l'IMEI era testo libero: si scriveva e diventava il dato di
+   riferimento, senza che nessuno controllasse che quel telefono esistesse.
+   Il contesto porta i pezzi del negozio fin dentro al campo, così il
+   venditore sceglie invece di trascrivere — e `cosaManca` sa cosa rifiutare. */
+const MagCtx = createContext(null);
 let _FUID = 0;
 const _isEmptyVal=(v)=>!(v!==undefined&&v!==null&&String(v).trim()!=="");
 
@@ -1627,6 +1638,78 @@ const YN = ({val,onCh,label}) => (
     </div>
   </div>
 );
+
+/* L'IMEI CHE VIENE DAL MAGAZZINO. Si scrive il modello o si spara il codice:
+   sotto compaiono i pezzi che questo negozio ha davvero, e si sceglie. Un
+   IMEI battuto a mano che a magazzino non c'è resta scritto in rosso e ferma
+   il salvataggio — è l'unico modo perché «rateizzato» voglia dire qualcosa. */
+const ImeiMagazzino = ({l,r,v,o,nt,onModello}) => {
+  const mag = useContext(MagCtx);
+  const _rep=useContext(ReqCtx),_sk=useContext(SubKeyCtx),_fid=useRef(0),_last=useRef(null);
+  if(_fid.current===0)_fid.current=++_FUID;
+  const [q,setQ]=useState("");
+  const scelto = mag?.perImei?.get(String(v||"").replace(/\D/g,"")) || null;
+  const mancante = !!v && String(v).replace(/\D/g,"").length===15 && !scelto;
+  const _emptyNow = (!!r && _isEmptyVal(v)) || mancante;
+  useEffect(()=>{if(!(_rep&&_sk))return;if(_last.current!==_emptyNow){_last.current=_emptyNow;_rep.report(_sk,_fid.current,_emptyNow);}},[_rep,_sk,_emptyNow]);
+  useEffect(()=>{return ()=>{if(_rep&&_sk)_rep.report(_sk,_fid.current,undefined);};},[_rep,_sk]);
+
+  const hits = useMemo(()=>{
+    const t=q.trim().toLowerCase(); if(t.length<2||!mag?.pezzi) return [];
+    const cifre=t.replace(/\D/g,"");
+    return mag.pezzi.filter(x=>
+      x.nome.toLowerCase().includes(t) || (cifre.length>=3 && x.seriale.includes(cifre))
+    ).slice(0,8);
+  },[q,mag]);
+
+  const prendi=(x)=>{ o(x.seriale); onModello?.(x.nome); setQ(""); };
+
+  return (
+    <div>
+      <div className="rvLab">{l} {r&&<span style={{color:"var(--tf-f87171)"}}>*</span>}</div>
+      {scelto ? (
+        <div className="rvSub" style={{padding:"9px 12px",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:13,fontWeight:800,color:"var(--tf-f8fafc)"}}>{scelto.nome}</div>
+            <div style={{fontSize:11.5,color:"var(--tf-8892b0)",fontFamily:"monospace"}}>{scelto.seriale} · {scelto.negozio}</div>
+          </div>
+          <button type="button" onClick={()=>{o("");onModello?.("");}} className="rvPill rvPill-sm">✕ cambia</button>
+        </div>
+      ) : (
+        <>
+          <input value={v||q} onChange={e=>{
+              const raw=e.target.value;
+              // si può ancora sparare il codice: 15 cifre esatte vanno dritte nel campo
+              const cifre=raw.replace(/\D/g,"");
+              if(cifre.length===15){o(cifre);setQ("");}
+              else{o("");setQ(raw);}
+            }}
+            placeholder={`cerca il telefono nel magazzino di ${mag?.negozio||"questo negozio"}, o spara l'IMEI`}
+            className={cn("rvIn", mancante&&"rvIn-err")} />
+          {mancante && (
+            <div className="rvErr">⛔ Questo IMEI non è nel magazzino di {mag?.negozio||"questo negozio"}: un telefono che non hai non si può rateizzare.</div>
+          )}
+          {hits.length>0 && (
+            <div className="rvSub" style={{marginTop:6,padding:6}}>
+              {hits.map(x=>(
+                <button key={x.seriale} type="button" onClick={()=>prendi(x)}
+                  style={{display:"block",width:"100%",textAlign:"left",padding:"7px 9px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer"}}>
+                  <span style={{fontSize:12.5,fontWeight:700,color:"var(--tf-f8fafc)"}}>{x.nome}</span>
+                  <span style={{fontSize:11,color:"var(--tf-8892b0)",fontFamily:"monospace",marginLeft:8}}>{x.seriale}</span>
+                  {x.negozio!==mag?.negozio && <span style={{fontSize:10,color:"var(--tf-fbbf24)",marginLeft:8}}>{x.negozio}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {!hits.length && q.trim().length>=2 && (
+            <div className="rvHint">Nessun telefono con questo nome nel magazzino di {mag?.negozio||"questo negozio"}.</div>
+          )}
+          {nt && !mancante && <div className="rvHint">{nt}</div>}
+        </>
+      )}
+    </div>
+  );
+};
 
 const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
   const _rep=useContext(ReqCtx),_sk=useContext(SubKeyCtx),_fid=useRef(0),_last=useRef(null);if(_fid.current===0)_fid.current=++_FUID;
@@ -3641,6 +3724,7 @@ const campiDinamiciOpzioni=(opz)=>{
 const campiConOpzioni=(base,opz)=>{const noti=new Set(base.map(c=>c.nome));return [...base,...campiDinamiciOpzioni(opz).filter(c=>!noti.has(c.nome))];};
 
 const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simConvCart})=>{
+  const magazzinoVincola=!!useContext(MagCtx)?.vincola;
   const f=sd.fields||{};
   const off=f["Offerta"]||"";
   const offerte=sub.catOfferte||[];
@@ -3825,6 +3909,15 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
         <div className="rvG2">
           {campi.map(cmp=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
+            /* L'IMEI DEL TELEFONO A RATE VIENE DAL MAGAZZINO (Luca 31/08).
+               Solo qui: «IMEI Dispositivo» del Kasko è il telefono che il
+               cliente ha già in tasca, non nostro, e chiederlo a magazzino
+               sarebbe un blocco senza senso. Dove il negozio non è ancora
+               vincolato (`magazzino_vincolante`) resta il campo di sempre. */
+            if(cmp.nome==="IMEI"&&sub.catCategoria==="Telefono a Rate"&&magazzinoVincola)
+              return <ImeiMagazzino key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""}
+                o={v=>setF(cmp.nome,v)} nt={cmp.nota||undefined}
+                onModello={(nome)=>{ if(nome&&campi.some(c=>c.nome==="Modello Terminale")) setF("Modello Terminale",nome); }}/>;
             if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
             if(/^operatore gnp$/i.test(cmp.nome)&&hasCampoGnp&&(f["GNP"]||"")!=="Sì")return null;
             // CAT-02: se la regola porta i suoi valori (jsonb valori:[…]) vincono quelli, altrimenti il lookup storico
@@ -5750,6 +5843,33 @@ function CRM() {
      Chiudere una porta per volta lascia sempre la prossima aperta: qui c'è
      la RETE, letta sul carrello finito, subito prima di salvare. */
   const [giacNegozio, setGiacNegozio] = useState(null);   // null = non ancora letto
+  /* I PEZZI DEL NEGOZIO, per il campo IMEI del telefono a rate (Luca 31/08).
+     Sono poche centinaia per negozio: si tengono in memoria e il campo cerca
+     lì, senza una query per tasto. `vincola` viene da `stores`: è
+     l'interruttore che Luca accende negozio per negozio. */
+  const [magVendita, setMagVendita] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    setMagVendita(null);
+    if (!selNeg) return;
+    (async () => {
+      const { data: st } = await supabase.from("stores").select("magazzino_vincolante").eq("name", selNeg).maybeSingle();
+      const vincola = st?.magazzino_vincolante === true;
+      if (!vincola) { if (vivo) setMagVendita({ vincola: false, negozio: selNeg, pezzi: [], perImei: new Map() }); return; }
+      // i gemelli condividono il locale e il magazzino: un pezzo di Magliana
+      // Multi è a due passi da chi vende a Magliana W3
+      const nomi = negozi.filter(n => stessoMagazzino(n, selNeg));
+      const { data } = await supabase.from("cassa_seriali")
+        .select("seriale,nome,negozio,stato,prezzo,provenienza,codice")
+        .in("negozio", nomi.length ? nomi : [selNeg]).eq("stato", "disponibile").limit(3000);
+      if (!vivo) return;
+      const pezzi = (data || []).map(x => ({ ...x, seriale: String(x.seriale || "") }));
+      setMagVendita({ vincola: true, negozio: selNeg, pezzi, perImei: new Map(pezzi.map(x => [x.seriale, x])) });
+    })();
+    return () => { vivo = false; };
+    // `negozi` è un array riempito IN PLACE: la sua identità non cambia mai,
+    // quindi si guarda la lunghezza — se no il gemello non si aggancia
+  }, [selNeg, negozi.length]);
   useEffect(() => {
     let vivo = true;
     setGiacNegozio(null);
@@ -6021,6 +6141,29 @@ function CRM() {
      salvataggio si aggiunge anche a `cosaManca`, se no il bottone mente). */
   const senzaReparto = (lista) => (lista || []).filter(m =>
     m && m.natura && m.reparto == null && (m.importo != null || m.price != null));
+  /** I telefoni a rate di questa vendita, nella forma che lo scarico capisce.
+   *  Vuoto dove il negozio non è vincolato: lì l'IMEI è ancora testo libero e
+   *  non corrisponde per forza a un pezzo nostro. */
+  const telefoniARate = () => {
+    if (!magVendita?.vincola) return [];
+    const out = [];
+    cats.forEach(g => (sales[g.id] || []).forEach(row => {
+      if (!row) return;
+      g.subs.forEach(sub => {
+        const d = row[sub.id];
+        if (!(d && d.active) || sub.catCategoria !== "Telefono a Rate") return;
+        const imei = String((d.fields || {})["IMEI"] || "").replace(/\D/g, "");
+        const pezzo = imei && magVendita.perImei.get(imei);
+        if (!pezzo) return;
+        out.push({
+          product: pezzo.nome, seriale: imei, codice: pezzo.codice || null,
+          scaricaMagazzino: true, qty: 1, price: pezzo.prezzo ?? null,
+        });
+      });
+    }));
+    return out;
+  };
+
   const cosaManca = () => {
     const out = [];
     // ── il ramo SOLA MARGINALITÀ ha guardie tutte sue (dentro saveMargOnly):
@@ -6048,6 +6191,23 @@ function CRM() {
         if (b && b.st !== "ok") out.push({ ico: b.st === "empty" ? "●" : "⚠", testo: `${sub.title}${(sales[g.id] || []).length > 1 ? " (vendita #" + (si + 1) + ")" : ""} — ${b.st === "empty" ? "da compilare" : "campi mancanti o non validi"}`, dove: "prodotti" });
       });
     }));
+    /* IL TELEFONO A RATE DEVE ESSERE A MAGAZZINO (Luca 31/08). Il campo si
+       segnala già da sé come incompleto — e quindi la scheda del prodotto
+       diventa gialla — ma «campi mancanti o non validi» non dice PERCHÉ.
+       Qui si dice, e si dice dove. */
+    if (magVendita?.vincola) {
+      cats.forEach(g => (sales[g.id] || []).forEach((row, si) => {
+        if (!row) return;
+        g.subs.forEach(sub => {
+          const d = row[sub.id];
+          if (!(d && d.active) || sub.catCategoria !== "Telefono a Rate") return;
+          const imei = String((d.fields || {})["IMEI"] || "").replace(/\D/g, "");
+          if (!imei) return;
+          if (!magVendita.perImei.has(imei))
+            out.push({ ico: "📵", testo: `il telefono a rate ${imei} non è nel magazzino di ${selNeg}: un telefono che non hai non si può rateizzare`, dove: "prodotti" });
+        });
+      }));
+    }
     // 2. i dati che si ripetono o non tornano: qui il salvataggio si ferma
     if (hasDupCodContr) out.push({ ico: "🔁", testo: "un codice contratto è ripetuto su due prodotti", dove: "prodotti" });
     if (hasDupPodPdr) out.push({ ico: "🔁", testo: "un POD o un PDR è ripetuto", dove: "prodotti" });
@@ -6523,7 +6683,14 @@ function CRM() {
          annota e si prosegue. Un magazzino disallineato si sistema, una
          vendita persa no. */
       try {
-        const _sc = await scaricaVendita(margList, selNeg, contractRows[0]?.id || null, selVend);
+        /* IL TELEFONO A RATE ESCE DAL MAGAZZINO (Luca 31/08). Il suo IMEI sta
+           nei dati del contratto, non fra le voci del carrello: senza questa
+           riga la vendita sarebbe registrata, la rata partita, e il telefono
+           resterebbe a scaffale nel software — vendibile una seconda volta.
+           Si passa il SERIALE: `scaricaVendita` marca il pezzo venduto e non
+           tocca nessuna quantità, che per un pezzo singolo non esiste. */
+        const _rate = telefoniARate();
+        const _sc = await scaricaVendita([...margList, ..._rate], selNeg, contractRows[0]?.id || null, selVend);
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
       } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
@@ -8031,7 +8198,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
 
     </div>
   );
-  return <ReqCtx.Provider value={_reqApi}>{formContent}</ReqCtx.Provider>;
+  return <ReqCtx.Provider value={_reqApi}><MagCtx.Provider value={magVendita}>{formContent}</MagCtx.Provider></ReqCtx.Provider>;
 }
 
 // PARACADUTE (Luca 03/08): se il render di Registra Vendita esplode, invece
