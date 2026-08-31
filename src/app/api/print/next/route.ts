@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { agentAuthorized } from "@/lib/printAuth";
+import { queueKnownEmpty, markQueueEmpty, markQueueHasWork } from "@/lib/printQueueCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,12 @@ export async function GET(req: Request) {
   if (!auth) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
 
   const negozio = new URL(req.url).searchParams.get("negozio");
+
+  // (① anti-522) Se la coda di questo negozio è stata vista VUOTA pochi secondi
+  // fa, rispondi senza toccare il DB: i poll a vuoto degli agenti non martellano
+  // più Supabase. Un job nuovo viene comunque ritirato entro il TTL della cache.
+  if (queueKnownEmpty(negozio)) return NextResponse.json({ job: null });
+
   let q = supabase.from("print_jobs").select("*").eq("status", "pending")
     .order("created_at", { ascending: true }).limit(1);
   if (negozio) q = q.eq("negozio", negozio);
@@ -22,7 +29,8 @@ export async function GET(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const job = data?.[0];
-  if (!job) return NextResponse.json({ job: null });
+  if (!job) { markQueueEmpty(negozio); return NextResponse.json({ job: null }); }
+  markQueueHasWork(negozio); // c'è lavoro: il prossimo poll ricontrolla il DB
 
   // marca "sent" SOLO se ancora pending -> evita il doppio ritiro fra due agenti
   const { data: upd } = await supabase.from("print_jobs")
