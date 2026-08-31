@@ -5512,7 +5512,29 @@ function CRM() {
   useEffect(()=>{if(tipoCliente)try{sessionStorage.setItem("crm_lastTipo",tipoCliente)}catch(e){}},[tipoCliente]);
   
   // ── Marginalità handlers ──
-  const addMargItem=(item)=>{setMargItems(p=>[...p,item]);setShowMargPOS(false)};
+  /* UN CARRELLO, UNA SOCIETÀ (Luca 31/08). «Se dentro un carrello sto mettendo
+     due prodotti che sono di due società diverse non deve farmelo mettere: mi
+     deve dire, quando inserisco il secondo, che è associato a una società
+     diversa dalla prima.»
+     Perché conta: la società segue la MERCE, e due società sono due partite
+     IVA. Un carrello misto non è uno scontrino: sono due, con due registratori
+     diversi — e succede solo dove nello stesso locale ci sono due casse
+     (Donna, Magliana, Collatina, Acilia). Negli altri undici negozi la cassa è
+     una sola e questo blocco non scatterà mai.
+     Si ferma QUI, che è l'imbuto unico da cui passa tutto quello che entra nel
+     carrello: le scorciatoie, i servizi, i prodotti di magazzino. */
+  const _nomeSoc=(a)=>a==="T1"?"Telefutura":a==="T2"?"Telefutura 2":String(a||"");
+  const addMargItem=(item)=>{
+    const az=item?.azienda||null;
+    if(az){
+      const gia=[...new Set(margItems.map(m=>m?.azienda).filter(Boolean))].filter(a=>a!==az);
+      if(gia.length){
+        sT(`⛔ «${item.product||"Questo prodotto"}» è di ${_nomeSoc(az)}, ma nel carrello c'è già merce di ${_nomeSoc(gia[0])}. Sono due società diverse: servono due scontrini. Chiudi questa vendita e falla a parte.`);
+        return;
+      }
+    }
+    setMargItems(p=>[...p,item]);setShowMargPOS(false);
+  };
   // AUTO-MARGINALITÀ dal flusso brand: GA mobile -> SIM del brand (prezzo obbligatorio al
   // checkout); Sostituzione Sim -> voce Sost; telefono TNP -> prodotto a prezzo di listino.
   const AUTO_SIM={windtre:"Sim Wind3",vodafone:"Sim Vodafone",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very",kena:"Sim Kena"};

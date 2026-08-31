@@ -95,6 +95,13 @@ export const TABELLE_VIETATE = new Set<string>([
     "app_users_2fa",
     "auth_sessions",
     "codice_accesso",           // le impronte dei lucchetti
+    /* I CONTI IN SOSPESO sono cassa, non analisi (revisore 31/08). Il filtro
+       per negozio dell'assistente scatta solo se nel RISULTATO compare una
+       colonna che si chiama «negozio»: una domanda tipo «elencami cliente e
+       totale dei conti in sospeso» non ne ha nessuna, e serviva nomi di
+       clienti e importi da incassare di tutti e quindici i punti vendita a
+       chiunque apra l'assistente — store manager compresi. */
+    "vendite_sospese",
     // LA POSTA E LE CHAT sono di qualcuno: si leggono dall'Inbox, dove hanno
     // un mittente e una faccia, non da un assistente che le riassume in blocco
     "email_accounts", "email_messages", "email_conversations", "email_drafts",

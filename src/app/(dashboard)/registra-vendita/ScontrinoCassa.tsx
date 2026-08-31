@@ -172,7 +172,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     negozio: data?.negozio ?? null,
                     deviceUrl: data?.deviceUrl,
                     items: data?.items ?? [],
-                    azienda: aziendaSel,
+                    // niente `azienda`: la decide la MERCE, riga per riga (Luca 31/08)
                     pagamenti,
                     contrattoId: data?.contrattoId ?? null,
                     coupon: couponPayload,
@@ -205,7 +205,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         try {
             const res = await fetch("/api/vendita/scontrino", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ negozio: data.negozio, items: data.items, azienda: aziendaSel, dryRun: true }),
+                body: JSON.stringify({ negozio: data.negozio, items: data.items, dryRun: true }),
             });
             chk = await res.json().catch(() => ({}));
             if (!res.ok) chk.ok = false;
@@ -286,8 +286,32 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // legge il flag e si ferma; si torna alla scelta del pagamento.
     const annullaIncasso = () => { cancelCashRef.current = true; setMsg("Annullo incasso…"); };
 
-    // "Tieni in sospeso": salva il conto per completarlo dopo (il cliente torna a pagare).
+    /* «TIENI IN SOSPESO»: salva il conto per completarlo dopo (il cliente torna
+       a pagare).
+
+       PRIMA SI REGISTRA LA VENDITA (revisore 31/08 — era il difetto più grave
+       di tutta la sezione). Nel flusso a soli PRODOTTI il salvataggio è
+       differito: contratti, magazzino e usati si scrivono solo quando lo
+       scontrino esce, e la funzione che li scrive vive in `pendingCommit`.
+       «Tieni in sospeso» faceva solo la POST del conto e non la chiamava mai;
+       alla ripresa, `riprendiSospeso` azzerava `pendingCommit`. Risultato: si
+       incassava, lo scontrino fiscale usciva davvero, e nel CRM non restava
+       NIENTE — nessun contratto, nessuna marginalità, nessuna provvigione,
+       nessuno scarico di magazzino. Il negozio non veniva pagato per quella
+       vendita, e la cassa fisica e il software divergevano.
+       Un conto in sospeso è una vendita REGISTRATA che aspetta lo scontrino:
+       è l'unico modo di registrarne una senza scontrino, e per questo pulsa
+       rosso. Se il salvataggio non riesce, non si sospende niente. */
     const tieniInSospeso = async () => {
+        if (onCommit) {
+            setFase("stampa"); setMsg("Registro la vendita…");
+            const c = await onCommit();
+            if (!c || !c.ok) {
+                setCommitFail(true); setFase("errore");
+                setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore") + "). Il conto NON è stato messo in sospeso: riprova, o annota la vendita a mano.");
+                return;
+            }
+        }
         setFase("stampa"); setMsg("Salvo il conto in sospeso…");
         try {
             const res = await fetch("/api/vendita/sospendi", {
@@ -377,18 +401,22 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
 
                 {fase === "scelta" && (
                     <>
+                                                {/* ═══ LA SOCIETÀ NON SI SCEGLIE PIÙ (Luca 31/08) ═══════════
+                            «La ragione sociale non deve più chiedermela, perché lui sa
+                            benissimo su quale società è caricato il prodotto.»
+                            È vero, e il server lo faceva già: la società di ogni riga
+                            viene dal catalogo, dalla riga stessa o dalla giacenza a
+                            magazzino, e QUESTO selettore era solo l'ultimo ripiego per
+                            le righe che una società non ce l'hanno da nessuna parte.
+                            Chiederla ogni volta significava far decidere all'operatore
+                            una cosa che il sistema sa meglio di lui — e sbagliarla vuol
+                            dire emettere uno scontrino con la partita IVA sbagliata.
+                            Il carrello misto non arriva più fin qui: si ferma quando si
+                            aggiunge il secondo prodotto (`addMargItem`). */}
                         {aziende.length > 1 && (
-                            <div>
-                                <p className="text-[11px] text-slate-500 mb-1">Ragione sociale (chi emette lo scontrino)</p>
-                                <div className="flex gap-2">
-                                    {aziende.map((a) => (
-                                        <button key={a.code} type="button" onClick={() => setAziendaSel(a.code)}
-                                            className={"flex-1 py-2 rounded-xl border text-xs font-semibold transition " + (aziendaSel === a.code ? "bg-sky-500/25 border-sky-400/60 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                                            {a.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+                            <p className="text-[11px] text-slate-500">
+                                🏢 La ragione sociale la decide la merce: ogni riga esce dalla società su cui è caricata.
+                            </p>
                         )}
 
                         {/* Coupon: sconto che abbassa l'imponibile (sostituisce "Altro") */}

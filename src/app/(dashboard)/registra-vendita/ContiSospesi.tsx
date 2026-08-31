@@ -51,7 +51,10 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stes
             const j = await res.json().catch(() => ({}));
             setList(Array.isArray(j.sospesi) ? j.sospesi : []);
         } catch { setList([]); }
-    }, []);
+        // `comeUtente` fra le dipendenze: se no, accendendo o spegnendo il
+        // «guarda come» stando sulla pagina, l'elenco continuava a rispondere
+        // alla persona di prima fino al ricarico
+    }, [comeUtente]);
 
     useEffect(() => { load(); }, [load, reloadKey]);
     // aggiornamento leggero: un altro banco può aggiungerne uno.
@@ -117,18 +120,29 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stes
                                               accodare un incasso in contanti sulla cassa di Promontori
                                               stando in ufficio, mentre in negozio non c'è nessun cliente.
                                             Chi non è al bancone giusto legge e basta. */}
-                                        {stessoBanco(s.negozio, negozio) && cassaAccesa(s.negozio) ? (
+                                        {/* ANNULLARE NON RICHIEDE UN REGISTRATORE (revisore 31/08).
+                                            Le due azioni stavano dietro alla stessa condizione: dove la
+                                            cassa fiscale non è configurata un conto restava impossibile
+                                            da chiudere in qualunque modo — è successo davvero, i due
+                                            conti di Collatina Multi sono rimasti aperti quattro giorni
+                                            e li ha dovuti chiudere l'admin. «Riprendi» ha bisogno del
+                                            registratore perché emette uno scontrino; la «×» no. */}
+                                        {stessoBanco(s.negozio, negozio) ? (
                                             <>
-                                                <button type="button" onClick={() => { setOpen(false); onRiprendi(s); }}
-                                                    className="shrink-0 primary-btn px-3 py-1.5 text-xs font-semibold">Riprendi</button>
+                                                {cassaAccesa(s.negozio) ? (
+                                                    <button type="button" onClick={() => { setOpen(false); onRiprendi(s); }}
+                                                        className="shrink-0 primary-btn px-3 py-1.5 text-xs font-semibold">Riprendi</button>
+                                                ) : (
+                                                    <span className="shrink-0 text-[10px] text-slate-500 max-w-[124px] leading-tight text-right">
+                                                        lo scontrino qui non è configurato
+                                                    </span>
+                                                )}
                                                 <button type="button" onClick={() => annulla(s.id)} title="Annulla conto"
                                                     className="shrink-0 w-7 h-7 rounded-lg border border-white/10 text-slate-500 hover:text-rose-300 hover:bg-white/10 text-base leading-none">×</button>
                                             </>
                                         ) : (
                                             <span className="shrink-0 text-[10px] text-slate-500 max-w-[132px] leading-tight text-right">
-                                                {!cassaAccesa(s.negozio)
-                                                    ? "qui lo scontrino non è ancora configurato"
-                                                    : `si riprende da ${s.negozio}`}
+                                                si riprende da {s.negozio}
                                             </span>
                                         )}
                                     </div>
