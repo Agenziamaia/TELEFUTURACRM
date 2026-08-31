@@ -1727,7 +1727,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
     /* ── LA STAMPA DEL DOCUMENTO ─────────────────────────────────────────
        `ddtHtml` esisteva ma non era attaccata a nessun pulsante: il DDT che
        usciva era la tabellina scritta a mano dentro questa pagina, senza
-       partita IVA, senza indirizzi, senza le tre copie. */
+       partita IVA, senza indirizzi, senza la firma. */
     /* I DATI DI UN DOCUMENTO PER LA STAMPA, in una funzione sola: li usano il
        pulsante «DDT» di una riga e l'archivio del periodo. Prima stavano dentro
        `stampa`, e l'archivio avrebbe dovuto rifarli — due copie della stessa
@@ -1788,7 +1788,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
         const w = window.open("", "_blank");
         if (!w) { alert("Il browser ha bloccato la finestra della stampa: sbloccala e riprova."); return; }
         // il generatore fa il documento, non chiede la stampa: la finestra di
-        // stampa è quello che si aspetta chi preme «DDT», e le copie sono tre
+        // stampa è quello che si aspetta chi preme «DDT», e la copia e' una sola
         const chiedi = "<" + "script>window.addEventListener('load',function(){window.print()})<" + "/script>";
         w.document.write(html.replace("</body>", chiedi + "</body>"));
         w.document.close();
@@ -2034,7 +2034,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                                     «Accetta» fuori dallo schermo a 1073 col menù aperto. Meglio
                                                     che vadano a capo. */}
                                                 <span className="rvPillRow mt-2">
-                                                    <button onClick={() => stampa(d)} className="rvPill rvPill-sm" title="Il documento in tre copie, pronto da firmare">🖨 DDT</button>
+                                                    <button onClick={() => stampa(d)} className="rvPill rvPill-sm" title="Il documento pronto da firmare (una copia: se ne servono altre, si ristampa)">🖨 DDT</button>
                                                     {puoAccettare(d) && <button onClick={() => apriAzione(d, "accetta")} className="rvPill rvPill-sm rvPill-si">✓ Accetta</button>}
                                                     {/* RESPINGERE IN BLOCCO è un'azione vera, non un caso di scuola:
                                                         arriva il pacco sbagliato, o arriva rotto, e chi riceve non lo

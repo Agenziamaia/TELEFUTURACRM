@@ -27,13 +27,23 @@ export type StatoDoppione =
 export type Doppione = {
     riga: number;                 // indice nella lista che si sta caricando
     nome: string;
+    chiave: string;               // il codice fiscale, o il numero se il CF non c'è
     stato: StatoDoppione;
     statoPratica: string;
     caller: string;
     giorni: number | null;        // da quanti giorni è ferma
     perNumero: boolean;           // agganciata solo dal numero: da confermare
     dentroIlFile: boolean;        // è un doppione DENTRO la lista stessa
+    /** la pratica che esiste già: assegnandola comunque si RIAPRE QUESTA, non
+     *  se ne crea una nuova (Luca 31/08: «non ci devono mai essere schede
+     *  duplicate in nessun caso») */
+    praticaId: string | null;
 };
+
+/** Che cosa fare di una riga già conosciuta. `null` = ancora da decidere: il
+ *  CRM non sceglie per conto suo (Luca 31/08: «non deve decidere in
+ *  automatico, deve chiedermi che cosa voglio fare»). */
+export type Decisione = "salta" | "riassegna" | null;
 
 export const CF_VALIDO = /^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/;
 export const normCf = (v: unknown) => String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -52,15 +62,19 @@ export function statoDi(statoPratica: string, comportamento: string): StatoDoppi
     return "chiuso";
 }
 
-export const ETICHETTA: Record<StatoDoppione, { titolo: string; spiega: string; saltaDiDefault: boolean }> = {
-    attivato: { titolo: "✅ Ha già comprato", spiega: "il cliente ha un contratto attivo: richiamarlo per vendergli la stessa cosa è una brutta figura", saltaDiDefault: true },
-    lavorazione: { titolo: "⏳ In lavorazione", spiega: "appuntamento in piedi, richiamo fissato o tentativi in corso: qualcuno ci sta già lavorando", saltaDiDefault: true },
-    chiuso: { titolo: "⛔ Chiuso di recente", spiega: "ha detto di no, o ha chiesto di non essere ricontattato", saltaDiDefault: true },
-    mai_risposto: { titolo: "📵 Mai risposto", spiega: "nessuno ha mai risposto a quel numero: cambiare voce e orario è un tentativo legittimo", saltaDiDefault: false },
-    assegnata: { titolo: "📋 Già assegnata", spiega: "è già nella lista di qualcuno e non l'ha ancora lavorata: assegnarla di nuovo fa due pratiche", saltaDiDefault: true },
+/* NESSUN VALORE DI FABBRICA: il CRM non decide, chiede. `consiglio` è solo un
+   suggerimento scritto accanto — quello che farebbe una persona esperta — ma
+   finché non si sceglie, non si va avanti. */
+export const ETICHETTA: Record<StatoDoppione, { titolo: string; spiega: string; consiglio: "salta" | "riassegna" }> = {
+    attivato: { titolo: "✅ Ha già comprato", spiega: "ha un contratto attivo: richiamarlo per vendergli la stessa cosa è una brutta figura", consiglio: "salta" },
+    lavorazione: { titolo: "⏳ In lavorazione", spiega: "appuntamento in piedi, richiamo fissato o tentativi in corso: qualcuno ci sta già lavorando", consiglio: "salta" },
+    chiuso: { titolo: "⛔ Chiuso di recente", spiega: "ha detto di no, o ha chiesto di non essere ricontattato", consiglio: "salta" },
+    mai_risposto: { titolo: "📵 Mai risposto", spiega: "nessuno ha mai risposto a quel numero: cambiare voce e orario è un tentativo legittimo", consiglio: "riassegna" },
+    assegnata: { titolo: "📋 Già assegnata", spiega: "è già nella lista di qualcuno e non l'ha ancora lavorata", consiglio: "riassegna" },
 };
 
 type PraticaEsistente = {
+    id?: string;
     cf?: string | null; piva?: string | null; numero?: string | null;
     stato?: string | null; caller?: string | null; assorbita_da?: string | null;
     nome?: string | null; cognome?: string | null; updated_at?: string | null; created_at?: string | null;
@@ -105,7 +119,7 @@ export function trovaDoppioni(
         const primaCf = cf ? vistiCf.get(cf) : undefined;
         const primaNum = nu ? vistiNum.get(nu) : undefined;
         if (primaCf != null || primaNum != null) {
-            out.push({ riga: i, nome, stato: "assegnata", statoPratica: "doppione nel file", caller: "—", giorni: null, perNumero: primaCf == null, dentroIlFile: true });
+            out.push({ riga: i, nome, chiave: cf || nu, stato: "assegnata", statoPratica: "doppione nel file", caller: "—", giorni: null, perNumero: primaCf == null, dentroIlFile: true, praticaId: null });
             return;
         }
         if (cf) vistiCf.set(cf, i);
@@ -116,13 +130,14 @@ export function trovaDoppioni(
         if (!p) return;
         const st = String(p.stato || "");
         out.push({
-            riga: i, nome,
+            riga: i, nome, chiave: cf || nu,
             stato: statoDi(st, comportamenti[st] || ""),
             statoPratica: st || "—",
             caller: p.caller || "—",
             giorni: eta(p),
             perNumero: !(cf && perCf.has(cf)),
             dentroIlFile: false,
+            praticaId: p.id ?? null,
         });
     });
     return out;

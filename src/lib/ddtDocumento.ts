@@ -18,9 +18,10 @@
    e per prassi: causale, aspetto esteriore dei beni, numero di colli, a cura
    di chi è il trasporto, le tre firme.
 
-   TRE COPIE, non una: originale al destinatario, una al mittente, una che
-   viaggia col vettore. La differenza è una riga di testo — per questo le
-   grafiche di sfondo non hanno lettere dentro.
+   UNA COPIA SOLA (Luca 31/08): dalla stampante del negozio esce l'originale
+   per il destinatario. Le altre due — mittente e accompagnamento — si
+   ristampano se servono: uscire in tre significava, di fatto, che qualcuno
+   premeva stampa e si ritrovava tre fogli senza volerlo.
 
    SE MANCA UN DATO, IL DOCUMENTO LO DICE. Un DDT con la sede legale vuota
    non è valido, e stampare uno spazio bianco al posto di un indirizzo è il
@@ -102,10 +103,13 @@ export function cosaMancaAlDdt(
     return out;
 }
 
+/* UNA COPIA SOLA (Luca 31/08): «fai uscire una sola copia, altrimenti si
+   sbagliano e stampano tutto sicuramente». La legge chiede che il documento
+   accompagni la merce, non che ne escano tre dalla stampante del negozio: chi
+   ne vuole altre ristampa, e nessuno si ritrova tre fogli in mano per errore.
+   L'elenco resta un elenco: rimettere le altre due è una riga. */
 const COPIE = [
     { et: "ORIGINALE", per: "destinatario" },
-    { et: "COPIA", per: "mittente" },
-    { et: "COPIA", per: "accompagnamento" },
 ];
 
 /* ── LA FORMA (Luca 31/08, dopo aver visto un DDT vero) ────────────────────

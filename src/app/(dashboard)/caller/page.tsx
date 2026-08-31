@@ -27,7 +27,7 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
-import { trovaDoppioni, ETICHETTA, type Doppione } from "@/lib/doppioni";
+import { trovaDoppioni, ETICHETTA, type Doppione, type Decisione } from "@/lib/doppioni";
 import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, primoGiornoBadge, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
@@ -854,9 +854,14 @@ function CallerPageInner() {
     const [listaDati, setListaDati] = useState<string[][]>([]);
     /* IL CONTROLLO DEI DOPPIONI (Luca 31/08: «abbiamo assegnato una lista con
        10 clienti già lavorati e 3 nuovi, ma non ci ha segnalato niente»).
-       `saltati` sono i gruppi che il direttore ha deciso di NON importare: le
-       righe restano nel file, semplicemente non diventano pratiche. */
-    const [gruppiSaltati, setGruppiSaltati] = useState<Record<string, boolean>>({});
+       IL CRM NON DECIDE, CHIEDE (Luca 31/08: «non deve decidere in automatico,
+       deve chiedermi che cosa voglio fare»): niente scelta di fabbrica, si va
+       avanti solo quando ogni gruppo ha una risposta. La scelta si dà per
+       categoria intera, oppure si apre il dettaglio e si decide codice fiscale
+       per codice fiscale — quella della riga vince su quella del gruppo. */
+    const [sceltaGruppo, setSceltaGruppo] = useState<Record<string, Decisione>>({});
+    const [sceltaRiga, setSceltaRiga] = useState<Record<number, Decisione>>({});
+    const [gruppoAperto, setGruppoAperto] = useState<string | null>(null);
     // tutte le righe non vuote (intestazione compresa): la spunta la esclude
     const [listaDatiFull, setListaDatiFull] = useState<string[][]>([]);
     const [listaHeaderSaltata, setListaHeaderSaltata] = useState(false);
@@ -2178,7 +2183,10 @@ function CallerPageInner() {
         setListaOpen(true);
     }
 
-    function closeLista() { setListaOpen(false); }
+    function closeLista() { setListaOpen(false); scordaScelteDoppioni(); }
+    /* le scelte sui doppioni valgono per QUEL file: restare appiccicate al
+       caricamento dopo sarebbe una decisione presa da sole */
+    function scordaScelteDoppioni() { setSceltaGruppo({}); setSceltaRiga({}); setGruppoAperto(null); }
 
     // Lettura VERA del file (25/08): righe e celle in memoria per la mappa e
     // la creazione delle pratiche. Xlsx/csv via SheetJS (pattern import
@@ -2187,6 +2195,7 @@ function CallerPageInner() {
     async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
+        scordaScelteDoppioni();
         try {
             const XLSX = await import("xlsx");
             const buf = await f.arrayBuffer();
@@ -2270,17 +2279,43 @@ function CallerPageInner() {
         for (const d of doppioni) { const k = d.dentroIlFile ? "gemelli" : d.stato; (m.get(k) || m.set(k, []).get(k)!).push(d); }
         return m;
     }, [doppioni]);
-    // le righe che verranno davvero importate
-    const righeSaltate = useMemo(() => {
+    /* LA DECISIONE. I gemelli non si votano: due schede per la stessa persona
+       non devono esistere in nessun caso, quindi la copia in più esce sempre e
+       la prima riga resta. Per tutto il resto: riga → gruppo → «da decidere». */
+    const decisioneDi = useCallback((d: Doppione): Decisione => (
+        d.dentroIlFile ? "salta" : (sceltaRiga[d.riga] ?? sceltaGruppo[d.stato] ?? null)
+    ), [sceltaRiga, sceltaGruppo]);
+    const daDecidere = useMemo(() => doppioni.filter((d) => decisioneDi(d) === null).length, [doppioni, decisioneDi]);
+
+    /* LE RIPESCATE. «Assegna comunque» non crea una scheda nuova: riapre
+       QUELLA (Luca 31/08: «deve ripescare la vecchia scheda, non ci devono mai
+       essere schede duplicate in nessun caso»). Una pratica si ripesca una
+       volta sola: se due righe diverse puntano alla stessa, la seconda esce. */
+    const riusaPerRiga = useMemo(() => {
+        const m = new Map<number, string>();
+        const gia = new Set<string>();
+        for (const d of doppioni) {
+            if (decisioneDi(d) !== "riassegna" || !d.praticaId) continue;
+            if (gia.has(d.praticaId)) continue;
+            gia.add(d.praticaId);
+            m.set(d.riga, d.praticaId);
+        }
+        return m;
+    }, [doppioni, decisioneDi]);
+    // fuori: saltate, ancora da decidere, e le «assegna comunque» che non
+    // hanno una scheda da riaprire (entrerebbero come doppioni nuovi)
+    const righeEscluse = useMemo(() => {
         const s = new Set<number>();
         for (const d of doppioni) {
-            const k = d.dentroIlFile ? "gemelli" : d.stato;
-            const salta = gruppiSaltati[k] ?? (k === "gemelli" ? true : ETICHETTA[d.stato]?.saltaDiDefault ?? false);
-            if (salta) s.add(d.riga);
+            const scelta = decisioneDi(d);
+            if (scelta === "riassegna" && riusaPerRiga.has(d.riga)) continue;
+            s.add(d.riga);
         }
         return s;
-    }, [doppioni, gruppiSaltati]);
-    const righeTenute = useMemo(() => listaDati.filter((_, i) => !righeSaltate.has(i)), [listaDati, righeSaltate]);
+    }, [doppioni, decisioneDi, riusaPerRiga]);
+    const righeSaltate = righeEscluse;
+    const righeTenuteIdx = useMemo(() => listaDati.map((_, i) => i).filter((i) => !righeEscluse.has(i)), [listaDati, righeEscluse]);
+    const righeTenute = useMemo(() => righeTenuteIdx.map((i) => listaDati[i]), [righeTenuteIdx, listaDati]);
 
     function dividiEqualmente() {
 
@@ -2396,11 +2431,42 @@ function CallerPageInner() {
         // timestamptz rifiutano la stringa vuota); numero come il flusso
         // manuale: nazionale normalizzato con ripiego sul grezzo.
         const callsPayloads: Record<string, unknown>[] = [];
+        /* LE RIPESCATE. Le righe che il direttore ha deciso di assegnare
+           comunque NON diventano pratiche nuove: si riapre quella che c'è
+           già, con il suo storico attaccato (Luca 31/08: «non deve crearne
+           una nuova, non ci devono mai essere schede duplicate»). */
+        const ripescaggi: { id: string; patch: Record<string, unknown> }[] = [];
         let rowIdx = 0;
         listaSplits.filter((s) => s.caller && s.quantita > 0).forEach((split) => {
             for (let i = 0; i < split.quantita && rowIdx < righeTenute.length; i++) {
                 const riga = righeTenute[rowIdx];
+                const idOriginale = riusaPerRiga.get(righeTenuteIdx[rowIdx]);
                 rowIdx++;
+                if (idOriginale) {
+                    const vecchia = calls.find((c) => c.id === idOriginale);
+                    const notaLista = `Da lista: ${listaNome}`;
+                    ripescaggi.push({
+                        id: idOriginale,
+                        patch: {
+                            // la scheda resta la sua: nome, numero, codice
+                            // fiscale e storico non si toccano. Cambia solo di
+                            // chi è e da quando riparte il conto.
+                            stato: "Assegnata",
+                            caller: split.caller,
+                            data_chiamata: dataAssegnazione,
+                            // il richiamo vecchio è superato dall'assegnazione
+                            // nuova: lasciarlo la farebbe comparire in due code
+                            data_richiamo: null,
+                            lista_origine: listaNome,
+                            note: [vecchia?.note, notaLista].filter(Boolean).join(" · "),
+                            storico: [
+                                ...((vecchia?.storico as unknown[]) || []),
+                                { data: dataAssegnazione, caller: currentCaller, campo: "Riassegnazione lista", da: vecchia?.stato || "", a: `Assegnata (lista: ${listaNome})` },
+                            ],
+                        },
+                    });
+                    continue;
+                }
                 const grezzo = cella(riga, iNumero);
                 const naz = numeroNazionale(grezzo);
                 callsPayloads.push({
@@ -2431,6 +2497,15 @@ function CallerPageInner() {
                 });
             }
         });
+        /* prima le ripescate, poi le nuove: se una ripescata fallisce nessuna
+           scheda doppia è nata, e il conto lo diciamo a voce alta */
+        let ripescateKo = 0;
+        for (let i = 0; i < ripescaggi.length; i += 20) {
+            const esiti = await Promise.all(ripescaggi.slice(i, i + 20).map((r) =>
+                supabase.from("calls").update(r.patch).eq("id", r.id).then(({ error }) => !error)
+            ));
+            ripescateKo += esiti.filter((ok) => !ok).length;
+        }
         if (callsPayloads.length > 0) {
             // a blocchi da 500 (pattern import listini) — e su errore ROLLBACK
             // pulito: via le pratiche già inserite e la lista appena creata,
@@ -2451,6 +2526,11 @@ function CallerPageInner() {
         }
 
         await Promise.all([fetchCalls(), fetchListe()]);
+        if (ripescaggi.length > 0) {
+            alert(ripescateKo === 0
+                ? `Fatto: ${callsPayloads.length} pratiche nuove e ${ripescaggi.length} schede vecchie riaperte (storico compreso).`
+                : `Fatto, ma ${ripescateKo} schede su ${ripescaggi.length} non si sono riaperte: sono rimaste al caller di prima. Nessuna scheda doppia è stata creata.`);
+        }
         closeLista();
         } finally { setListaBusy(false); }
     }
@@ -2464,7 +2544,9 @@ function CallerPageInner() {
     if (listaProvenienza === "Acquistato" && !listaBrandAcq) canNext3 = false;
     if (listaProvenienza === "Marketing" && (!listaCampagna || !listaObiettivoMkt)) canNext3 = false;
     if (listaProvenienza === "Interno" && !listaInternoRows.some(r => r.negozio && r.mese && r.anno && r.brand)) canNext3 = false;
-    const canNext4 = colsAttive.some(c => listaMappa[c] === "Numero");
+    const mappaturaOk = colsAttive.some(c => listaMappa[c] === "Numero");
+    // non si passa allo split finché ogni doppione non ha una risposta
+    const canNext4 = mappaturaOk && daDecidere === 0;
     const canConfirm = splitsValidi;
 
     // ESITI AUTOMATICI del match vendita↔appuntamento (Luca 24/08):
@@ -4096,57 +4178,101 @@ function CallerPageInner() {
                                 colonna col numero: prima dello split, perché lo split
                                 dipende da quante righe restano. Non decide da solo —
                                 propone, e il direttore conferma gruppo per gruppo. */}
-                            {listaStep === 4 && canNext4 && doppioni.length > 0 && (
-                                <div className="rounded-xl border border-amber-400/40 bg-amber-500/[0.07] p-4 space-y-3">
+                            {listaStep === 4 && mappaturaOk && doppioni.length > 0 && (
+                                <div className={`rounded-xl border p-4 space-y-3 ${daDecidere > 0 ? "border-amber-400/60 bg-amber-500/[0.09]" : "border-white/10 bg-black/20"}`}>
                                     <div className="flex flex-wrap items-baseline gap-2">
                                         <h4 className="text-sm font-bold text-amber-200">⚠️ {doppioni.length} di queste {listaDati.length} righe le conosciamo già</h4>
                                         <span className="text-[11px] text-slate-400">
-                                            ne resterebbero <b className="text-white">{righeTenute.length}</b> da assegnare
+                                            <b className="text-emerald-300">{listaDati.length - doppioni.length}</b> sono libere · in tutto ne assegneresti <b className="text-white">{righeTenute.length}</b>
                                         </span>
                                     </div>
                                     <p className="text-[11px] text-slate-400">
-                                        Le liste degli SMS sono estrazioni sulla stessa base: chi lo riceve lo riceve ogni mese. Scegli gruppo per gruppo cosa importare — le righe saltate restano nel file, semplicemente non diventano pratiche.
+                                        Decidi tu, gruppo per gruppo: il CRM non sceglie da solo. <b className="text-slate-200">Salta</b> lascia la riga nel file senza farne una pratica; <b className="text-slate-200">Assegna comunque</b> <u>riapre la scheda che esiste già</u> — con tutto il suo storico — e la mette in mano al caller nuovo. Una scheda doppia non nasce mai.
                                     </p>
+                                    {daDecidere > 0 && (
+                                        <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-[11px] text-amber-100">
+                                            Mancano <b>{daDecidere}</b> righe senza risposta: scegli per il gruppo, o aprilo e decidi una per una. Finché restano, «Avanti» è chiuso.
+                                        </div>
+                                    )}
                                     <div className="space-y-2">
                                         {[...doppiPerGruppo.entries()].sort((a, b) => b[1].length - a[1].length).map(([k, righe]) => {
-                                            const et = k === "gemelli"
-                                                ? { titolo: "👯 Due volte in questo file", spiega: "la stessa persona compare più volte nella lista che stai caricando: se ne tiene una", saltaDiDefault: true }
+                                            const gemelli = k === "gemelli";
+                                            const et = gemelli
+                                                ? { titolo: "👯 Due volte in questo file", spiega: "la stessa persona compare più volte nella lista che stai caricando: si tiene la prima riga, le copie escono — due schede per la stessa persona non devono esistere", consiglio: "salta" as const }
                                                 : ETICHETTA[k as keyof typeof ETICHETTA];
-                                            const salta = gruppiSaltati[k] ?? et.saltaDiDefault;
+                                            const scelta = gemelli ? "salta" : (sceltaGruppo[k] ?? null);
+                                            const perRiga = righe.filter((d) => sceltaRiga[d.riga] != null).length;
+                                            const aperto = gruppoAperto === k;
+                                            const nDec = righe.filter((d) => decisioneDi(d) !== null).length;
+                                            const riass = righe.filter((d) => decisioneDi(d) === "riassegna").length;
                                             const altri = righe.filter((d) => d.caller && d.caller !== "—").length;
                                             return (
-                                                <div key={k} className="rounded-lg border border-white/10 bg-black/20 p-2.5">
+                                                <div key={k} className={`rounded-lg border p-2.5 ${nDec === righe.length ? "border-white/10 bg-black/20" : "border-amber-400/40 bg-amber-500/[0.06]"}`}>
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                        <span className="text-[12px] font-bold text-slate-100">{et.titolo}</span>
-                                                        <span className="text-sm font-black text-white tabular-nums">{righe.length}</span>
-                                                        <div className="ml-auto flex gap-1 p-0.5 rounded-lg bg-white/5 border border-white/10">
-                                                            {([[true, "⏭ Salta"], [false, "↻ Importa"]] as const).map(([v, l]) => (
-                                                                <button key={String(v)} onClick={() => setGruppiSaltati((p) => ({ ...p, [k]: v }))}
-                                                                    className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors ${salta === v ? (v ? "bg-rose-500/30 text-rose-100" : "bg-emerald-500/30 text-emerald-100") : "text-slate-500 hover:text-slate-300"}`}>
-                                                                    {l}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[10px] text-slate-500 mt-1">{et.spiega}{altri > 0 && k !== "gemelli" ? ` · ${altri} in mano a un caller` : ""}</p>
-                                                    <div className="mt-1.5 max-h-[104px] overflow-y-auto space-y-0.5 pr-1">
-                                                        {righe.slice(0, 40).map((d) => (
-                                                            <div key={d.riga} className="flex items-baseline gap-2 text-[10px]">
-                                                                <span className="text-slate-300 truncate flex-1">{d.nome}</span>
-                                                                <span className="text-slate-500 truncate">{d.statoPratica}</span>
-                                                                {d.caller !== "—" && <span className="text-slate-600 truncate max-w-[110px]">{d.caller}</span>}
-                                                                {d.giorni != null && <span className="text-slate-600 tabular-nums">{d.giorni}g</span>}
-                                                                {d.perNumero && !d.dentroIlFile && <span className="text-amber-300/70" title="agganciata dal solo numero di telefono: potrebbe essere un fisso di famiglia o d'ufficio">≈</span>}
+                                                        <button onClick={() => setGruppoAperto(aperto ? null : k)} className="flex items-center gap-1.5 text-left">
+                                                            <span className="text-slate-500 text-[10px] w-3">{aperto ? "▾" : "▸"}</span>
+                                                            <span className="text-[12px] font-bold text-slate-100">{et.titolo}</span>
+                                                            <span className="text-sm font-black text-white tabular-nums">{righe.length}</span>
+                                                        </button>
+                                                        {!gemelli && (
+                                                            <div className="ml-auto flex gap-1 p-0.5 rounded-lg bg-white/5 border border-white/10">
+                                                                {([["salta", "⏭ Salta tutti"], ["riassegna", "↻ Assegna comunque"]] as const).map(([v, l]) => (
+                                                                    <button key={v} onClick={() => { setSceltaGruppo((p) => ({ ...p, [k]: v })); setSceltaRiga((p) => { const q = { ...p }; righe.forEach((d) => delete q[d.riga]); return q; }); }}
+                                                                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors ${scelta === v ? (v === "salta" ? "bg-rose-500/30 text-rose-100" : "bg-emerald-500/30 text-emerald-100") : "text-slate-500 hover:text-slate-300"}`}>
+                                                                        {l}
+                                                                    </button>
+                                                                ))}
                                                             </div>
-                                                        ))}
-                                                        {righe.length > 40 && <p className="text-[10px] text-slate-600">…e altre {righe.length - 40}.</p>}
+                                                        )}
+                                                        {gemelli && <span className="ml-auto text-[10px] font-bold text-rose-200 bg-rose-500/20 px-2 py-1 rounded-md">⏭ le copie escono sempre</span>}
                                                     </div>
+                                                    <p className="text-[10px] text-slate-500 mt-1">
+                                                        {et.spiega}
+                                                        {altri > 0 && !gemelli ? ` · ${altri} in mano a un caller` : ""}
+                                                        {!gemelli && scelta === null && perRiga === 0 ? <span className="text-amber-300"> · consiglio: {et.consiglio === "salta" ? "saltare" : "assegnare comunque"}</span> : null}
+                                                        {perRiga > 0 ? <span className="text-sky-300"> · {perRiga} decise a mano</span> : null}
+                                                        {riass > 0 ? <span className="text-emerald-300"> · {riass} schede da riaprire</span> : null}
+                                                    </p>
+                                                    {!aperto && nDec < righe.length && (
+                                                        <button onClick={() => setGruppoAperto(k)} className="mt-1 text-[10px] font-bold text-sky-300 hover:text-sky-200">Apri il dettaglio e decidi una per una →</button>
+                                                    )}
+                                                    {aperto && (
+                                                        <div className="mt-2 max-h-[240px] overflow-y-auto space-y-1 pr-1 border-t border-white/10 pt-2">
+                                                            {righe.map((d) => {
+                                                                const mia = sceltaRiga[d.riga] ?? null;
+                                                                const eff = decisioneDi(d);
+                                                                return (
+                                                                    <div key={d.riga} className="flex items-center gap-2 text-[10px]">
+                                                                        <span className="text-slate-300 truncate flex-1 min-w-0" title={d.chiave}>{d.nome}</span>
+                                                                        <span className="text-slate-600 truncate max-w-[120px] hidden sm:block" title="il codice fiscale, o il numero se manca">{d.chiave}</span>
+                                                                        <span className="text-slate-500 truncate max-w-[110px]">{d.statoPratica}</span>
+                                                                        {d.caller !== "—" && <span className="text-slate-600 truncate max-w-[90px]">{d.caller}</span>}
+                                                                        {d.giorni != null && <span className="text-slate-600 tabular-nums">{d.giorni}g</span>}
+                                                                        {d.perNumero && !d.dentroIlFile && <span className="text-amber-300/70" title="agganciata dal solo numero di telefono: potrebbe essere un fisso di famiglia o d'ufficio">≈</span>}
+                                                                        {gemelli ? (
+                                                                            <span className="text-rose-300/70 shrink-0">copia in più</span>
+                                                                        ) : (
+                                                                            <div className="flex gap-0.5 shrink-0">
+                                                                                {([["salta", "⏭"], ["riassegna", "↻"]] as const).map(([v, l]) => (
+                                                                                    <button key={v} onClick={() => setSceltaRiga((p) => ({ ...p, [d.riga]: mia === v ? null : v }))}
+                                                                                        title={v === "salta" ? "non importarla" : "riapri la scheda che esiste già e dalla al caller nuovo"}
+                                                                                        className={`px-1.5 py-0.5 rounded font-bold transition-colors ${eff === v ? (v === "salta" ? "bg-rose-500/30 text-rose-100" : "bg-emerald-500/30 text-emerald-100") : "text-slate-600 hover:text-slate-300"} ${mia === v ? "ring-1 ring-white/30" : ""}`}>
+                                                                                        {l}
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
                                     </div>
                                     <p className="text-[10px] text-slate-600">
-                                        Il simbolo ≈ vuol dire che l&apos;aggancio è solo sul numero di telefono, senza codice fiscale: potrebbe essere un fisso di famiglia o d&apos;ufficio. Guarda il nome prima di saltarla.
+                                        Il simbolo ≈ vuol dire che l&apos;aggancio è solo sul numero di telefono, senza codice fiscale: potrebbe essere un fisso di famiglia o d&apos;ufficio. Guarda il nome prima di decidere. Il bordino chiaro su un tasto vuol dire che quella riga è stata decisa a mano e non segue più il gruppo.
                                     </p>
                                 </div>
                             )}
@@ -4154,7 +4280,7 @@ function CallerPageInner() {
                             {listaStep === 5 && (
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-bold text-violet-300 uppercase tracking-widest mb-3">Step 5 di 5 — Assegna ai Caller</h3>
-                                    <p className="text-xs text-slate-500 mb-4">Suddividi le {righeTenute.length} righe tra i caller{righeSaltate.size > 0 ? <> <span className="text-amber-300">({righeSaltate.size} saltate perché già conosciute)</span></> : null}. Stato iniziale: <strong className="text-sky-300">Assegnata</strong> — da lavorare subito, warning dopo 2 giorni di badge, malus dopo 3.</p>
+                                    <p className="text-xs text-slate-500 mb-4">Suddividi le {righeTenute.length} righe tra i caller{righeSaltate.size > 0 ? <> <span className="text-amber-300">({righeSaltate.size} saltate perché già conosciute)</span></> : null}{riusaPerRiga.size > 0 ? <> <span className="text-emerald-300">({riusaPerRiga.size} riaprono la scheda che esiste già, con il loro storico)</span></> : null}. Stato iniziale: <strong className="text-sky-300">Assegnata</strong> — da lavorare subito, warning dopo 2 giorni di badge, malus dopo 3.</p>
                                     {listaSplits.map((split, idx) => (
                                         <div key={idx} className="flex gap-2 items-center">
                                             <div className="flex-[2]"><SelectPersona value={split.caller} onChange={(v) => updateSplit(idx, "caller", v)} opzioni={CALLERS} placeholder="Scrivi il caller…" className="glass-input rounded-lg py-2 w-full" /></div>
@@ -4177,7 +4303,7 @@ function CallerPageInner() {
                                 </div>
                             )}
 
-                            {listaStep === 4 && !canNext4 && (
+                            {listaStep === 4 && !mappaturaOk && (
                                 <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-xl text-xs text-orange-300 flex items-center gap-2">
                                     <AlertTriangle className="w-4 h-4" /> Almeno una colonna deve essere mappata su &quot;Numero&quot; per poter procedere.
                                 </div>
