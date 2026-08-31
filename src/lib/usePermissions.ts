@@ -25,9 +25,17 @@ export const roleGradeKey = (role: string, grade: string) => `${role}@${grade}`;
  *  su grado e ruolo. Ordine di fusione: ruolo → grado → utente. */
 export const userKey = (userId: string) => `user:${userId}`;
 
-export function useRolePermissions(role: string | null | undefined, grade?: string | null, userId?: string | null): { perms: PermMap | null; loaded: boolean } {
+export function useRolePermissions(role: string | null | undefined, grade?: string | null, userId?: string | null): { perms: PermMap | null; loaded: boolean; fallito: boolean } {
     const [perms, setPerms] = useState<PermMap | null>(null);
     const [loaded, setLoaded] = useState(false);
+    /* ⚠️ SE LA LETTURA FALLISCE BISOGNA SAPERLO (31/08, revisione ostile).
+       Arrendendosi si tornava ai default di codice, e per una capacità che di
+       default è SPENTA — il lucchetto di WhatsApp e della posta — questo
+       significa aprire: un intoppo di rete al momento giusto e la sezione
+       protetta si spalancava, con un avviso in console e nient'altro.
+       Chi protegge qualcosa deve poter distinguere «non serve il codice» da
+       «non sono riuscito a chiederlo». */
+    const [fallito, setFallito] = useState(false);
 
     useEffect(() => {
         if (!role || role === "admin" || role === "dev") {
@@ -62,6 +70,7 @@ export function useRolePermissions(role: string | null | undefined, grade?: stri
                 console.warn("[permessi] non sono riuscito a leggere role_permissions:", error.message,
                     "— valgono i default del menù, le abilitazioni date dal pannello NON sono applicate.");
                 setPerms(new Map());
+                setFallito(true);
                 setLoaded(true);
                 return;
             }
@@ -79,5 +88,5 @@ export function useRolePermissions(role: string | null | undefined, grade?: stri
         return () => { vivo = false; };
     }, [role, grade, userId]);
 
-    return { perms, loaded };
+    return { perms, loaded, fallito };
 }

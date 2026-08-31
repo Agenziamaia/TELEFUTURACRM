@@ -76,9 +76,14 @@ const TINTE = {
  *  all'Omnichat, che monta le inbox per conto suo */
 export function useCodiceCanale(canale: Canale) {
     const { user } = useAuth();
-    const { perms, loaded } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const { perms, loaded, fallito } = useRolePermissions(user?.role, user?.grade, user?.id);
     const cap = canale === "email" ? CAP_EMAIL_CODICE : CAP_WA_CODICE;
-    return { serve: capAllowed(user?.role, WA_SECTION, cap, perms), loaded, userId: user?.id || null };
+    /* ⚠️ NEL DUBBIO SI CHIUDE, non si apre. Se i permessi non si sono potuti
+       leggere non so se a questa persona il codice serve: chiederlo a chi non
+       doveva è una seccatura, non chiederlo a chi doveva è una porta aperta.
+       (Chi non ha mai scelto un codice se lo sceglie lì per lì, come al primo
+       ingresso: non resta chiuso fuori.) */
+    return { serve: fallito || capAllowed(user?.role, WA_SECTION, cap, perms), loaded, userId: user?.id || null };
 }
 /** il nome di prima, per non toccare chi già lo chiama */
 export function useCodiceWhatsApp() { return useCodiceCanale("whatsapp"); }

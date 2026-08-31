@@ -19,7 +19,7 @@
    componente, stesso stato: nessuna copia da tenere allineata.
 */
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { Lucchetto, useCodiceCanale } from "@/components/CanaleProtetto";
 import { EmailInbox } from "@/components/EmailInbox";
@@ -51,10 +51,10 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
        colonna centrale, ma a sinistra restavano mittente e anteprima — si
        leggeva di cosa si parla senza digitare niente. Un canale ancora chiuso
        sparisce dalla lista e dal contatore dei non letti. */
-    const chiusi = new Set<string>([
+    const chiusi = useMemo(() => new Set<string>([
         ...(codiceWa.loaded && codiceWa.serve && !waAperto ? ["wa"] : []),
         ...(codiceMail.loaded && codiceMail.serve && !mailAperta ? ["email"] : []),
-    ]);
+    ]), [codiceWa.loaded, codiceWa.serve, waAperto, codiceMail.loaded, codiceMail.serve, mailAperta]);
     // la risposta suggerita dall'AI: si passa all'inbox come testo iniziale
     const [bozza, setBozza] = useState<string | null>(null);
     // «➕ NUOVA CONVERSAZIONE» (Luca 27/08): scegli il canale e parti da qui —
@@ -95,7 +95,12 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
             {/* ── CENTRO: l'inbox vera, senza la sua lista ── */}
             <section className="flex-1 min-w-0 overflow-hidden">
                 {!attiva && nuovaCanale === "wa" && (
-                    <WhatsAppInbox key={`nuova-wa-${nuovaTick}`} embedded senzaLista apriNuovaChat />
+                    /* ⚠️ anche da qui (rilievo 31/08): «➕ Nuova conversazione →
+                       WhatsApp» montava l'inbox senza chiedere niente, ed era
+                       proprio lo scenario del pc lasciato aperto. */
+                    codiceWa.loaded && codiceWa.serve && !waAperto
+                        ? <Lucchetto userId={codiceWa.userId} canale="whatsapp" onApri={() => setWaAperto(true)} />
+                        : <WhatsAppInbox key={`nuova-wa-${nuovaTick}`} embedded senzaLista apriNuovaChat />
                 )}
                 {!attiva && nuovaCanale === "email" && (
                     codiceMail.loaded && codiceMail.serve && !mailAperta

@@ -22,28 +22,52 @@ import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets"
 
 /* --- costanti di resa. Unica manopola per la resa dello sfondo. ---------- */
 const BG_URL = "/report-bg.webp";
-/* IL VELO SOPRA LA FOTOGRAFIA (Luca 31/08: «risulta troppo scuro»).
-   Era 0.62, e a quel punto qualunque sfondo diventava cupo — misurato
-   affiancando 0.62, 0.34 e 0.12 sullo stesso foglio. Con 0.30 l'immagine si
-   vede e le carte restano leggibili — il contrasto vero non lo fa il velo, lo
-   fa il FOGLIO opaco qui sotto. Il velo serve solo a smorzare la cornice. */
-const VELO = 0.30;   // opacita' del velo scuro sopra la foto
-/* Il colore del FOGLIO su cui poggia tutto: pieno, non trasparente. È lui che
-   separa i dati dall'immagine — non più la semitrasparenza delle carte. */
-const FOGLIO = "#0f121b";
-/* Resta per le superfici che NON sono carte-brand (la barra degli altri brand
-   e la marginalità): lì un fondo scuro leggermente diverso dal foglio le
-   stacca meglio di un velo chiaro. */
-const VETRO = 0.80;
-const CORNICE = 80;  // quanto sta largo il contenuto dal bordo del foglio.
-const PAD = 26;      // di cui: PAD dentro il foglio, il resto è cornice viva.
-/* ⚠️ CORNICE è il numero da cui `altezzaRiga()` ricava lo spazio verticale:
-   width e height del foglio DEVONO tornarci sopra al pixel. Per questo il
-   contorno chiaro è un'ombra INTERNA e non un `border`: un bordo da 1px, con
-   box-sizing border-box, si mangia 2px per lato — e con `overflow: hidden`
-   quei 2px non danno errore, tagliano dati in silenzio. Trovato dal revisore
-   il 31/08: nel caso peggiore (15 righe in colonna) restavano 3px di margine
-   invece di 5. */
+/* ═══ COME CONVIVONO I NUMERI E LA FOTOGRAFIA ═══════════════════════════
+   Luca, 31/08, sulla prima versione: «si vede lo sfondo dietro il blocco».
+   Luca, poche ore dopo, sulla seconda: «hai reso lo schema molto scuro, per
+   cui tutta la grafica sotto è diventata quasi inutile — dobbiamo trovare un
+   modo in cui si vedono gli schemi ma si vede anche la grafica».
+
+   Ha ragione due volte, e le due lamentele sono le due sponde dello stesso
+   problema: se le tabelle sono trasparenti la fotografia passa DIETRO i
+   numeri e non si legge niente; se sotto le tabelle metto un foglio pieno,
+   la fotografia non esiste più. La via di mezzo non sta nel mezzo: sta nel
+   separare le due cose invece di sovrapporle. Le tabelle restano OPACHE — i
+   numeri non hanno mai niente dietro — ma non c'è un foglio unico: sono
+   isole, e la fotografia vive negli spazi fra un'isola e l'altra.
+
+   Qui sotto le quattro rese che ho montato e fotografato per farle scegliere
+   a lui. Cambiare `RESA` cambia tutto il report: sono l'unica manopola. */
+const RESE = {
+  /* ① IL FOGLIO — quella di stamattina. Numeri nitidissimi, ma la fotografia
+     resta confinata ai 54 px di cornice: è la resa che Luca ha bocciato. */
+  foglio:  { foglio: 1,    corniceX: 54, corniceY: 54, gap: 12, velo: 0.30,
+             cartaChiara: true,  cartaA: 0,    protezioni: false },
+  /* ② ISOLE — niente foglio. Le tabelle sono opache e appoggiate direttamente
+     sulla fotografia, che torna a vedersi fra una carta e l'altra. Gli spazi
+     sono più larghi apposta: è lì che l'immagine respira. */
+  isole:   { foglio: 0,    corniceX: 54, corniceY: 54, gap: 20, velo: 0.22,
+             cartaChiara: false, cartaA: 0.90, protezioni: true },
+  /* ③ VELATO — il foglio c'è ma è smerigliato: l'immagine si intravede
+     ovunque, anche sotto le tabelle, senza mai arrivare a disturbare. */
+  velato:  { foglio: 0.62, corniceX: 54, corniceY: 54, gap: 14, velo: 0.22,
+             cartaChiara: false, cartaA: 0.78, protezioni: true },
+  /* ④ VETRINA — isole strette dentro una cornice LARGA AI LATI. La fotografia
+     ha due fasce vere in cui esistere, e il velo sopra è il più leggero di
+     tutti. ⚠️ La cornice si allarga solo in orizzontale: in verticale lo
+     spazio serve alle righe, e rubarlo le farebbe stringere sotto il minimo
+     leggibile nel caso di giornata piena. */
+  vetrina: { foglio: 0,    corniceX: 96, corniceY: 54, gap: 20, velo: 0.16,
+             cartaChiara: false, cartaA: 0.92, protezioni: true },
+};
+/** Quale resa esce dal bottone «Report». Le altre restano qui documentate e
+ *  provabili: `<ReportGiornaliero dati={d} resa="velato" />`. */
+const RESA_PREDEFINITA = "isole";
+
+const FOGLIO_RGB = "15,18,27";   // il colore del foglio, quando c'è
+const CARTA_RGB = "13,16,25";    // il colore delle tabelle opache
+const VETRO = 0.80;              // superfici che non sono carte-brand
+const PAD = 26;                  // aria fra il bordo del foglio e il contenuto
 
 const W = 1080;
 const H = 1620;
@@ -139,10 +163,22 @@ function fmtEuro(v) {
   return n ? fmtN(n) + " \u20AC" : "\u2013";
 }
 
-/* Sopra un foglio pieno un vetro SCURO sparisce: si vedrebbe un blocco scuro
-   su un blocco scuro. Le carte si staccano verso l'ALTO — un velo chiaro,
-   come le superfici del CRM. */
-const gl = function (k) { return "rgba(255,255,255," + (0.055 * k).toFixed(3) + ")"; };
+/* IL FONDO DI UNA CARTA, secondo la resa.
+   Sopra un foglio pieno una carta scura sparirebbe — scuro su scuro — e serve
+   un velo CHIARO che la sollevi. Senza foglio è il contrario: la carta è
+   l'unica cosa che separa i numeri dalla fotografia, e deve essere densa.
+   `k` è quanto una carta pesa: 1 = piena, 0.63 = carta senza produzione. */
+function gl(k, R) {
+  if (R.cartaChiara) return "rgba(255,255,255," + (0.055 * k).toFixed(3) + ")";
+  return "rgba(" + CARTA_RGB + "," + Math.min(0.96, R.cartaA * (0.74 + 0.26 * k)).toFixed(3) + ")";
+}
+/* Le superfici che non sono carte-brand (la barra degli altri brand e la
+   marginalità): stessa logica, ma restano sempre scure — anche sul foglio,
+   dove un fondo appena diverso le stacca meglio di un velo chiaro. */
+function sup(k, R) {
+  const base = R.foglio >= 1 ? VETRO : R.cartaA + 0.03;
+  return "rgba(26,29,41," + Math.min(0.95, base * k).toFixed(3) + ")";
+}
 
 function ptDi(b, r) {
   if (b.calcPt) return (Number(r.pz) || 0) * (r.val || 0);
@@ -171,9 +207,9 @@ function altezzaCard(b, rigaH) {
    tagliata a metà dalla fotografia.
    Qui si parte dallo spazio che c'è e si divide per le righe della colonna più
    carica. Sotto i 38 px il testo non ci starebbe più: è il pavimento. */
-function altezzaRiga(perId, conRail) {
-  const spazio = H - 2 * CORNICE - G.head - G.strip - G.marg - G.ai
-    - G.gap * (conRail ? 5 : 4) - (conRail ? G.rail : 0);
+function altezzaRiga(perId, conRail, R) {
+  const spazio = H - 2 * (R.corniceY + PAD) - G.head - G.strip - G.marg - G.ai
+    - R.gap * (conRail ? 5 : 4) - (conRail ? G.rail : 0);
   let righeMax = 0, carteMax = 0;
   COLONNE.forEach(function (ids) {
     let r = 0, c = 0;
@@ -182,7 +218,7 @@ function altezzaRiga(perId, conRail) {
   });
   if (!righeMax) return G.rigaH;
   const fisso = carteMax * (G.padCard + G.headCard + G.unitRow + G.padCardB)
-    + G.gap * Math.max(0, carteMax - 1) + 3 * Math.max(0, righeMax - carteMax);
+    + R.gap * Math.max(0, carteMax - 1) + 3 * Math.max(0, righeMax - carteMax);
   return Math.max(38, Math.min(G.rigaH, Math.floor((spazio - fisso) / righeMax)));
 }
 
@@ -222,7 +258,7 @@ function Riga({ b, r, rigaH }) {
   );
 }
 
-function CardBrand({ b, rigaH }) {
+function CardBrand({ b, rigaH, R }) {
   const colore = HEX[trkBrandKey(b.id)] || "#94a3b8";
   const vuota = vuotoBrand(b);
   const tp = totPunti(b);
@@ -230,7 +266,7 @@ function CardBrand({ b, rigaH }) {
     <div style={{ flexGrow: b.righe.length, flexShrink: 0, flexBasis: altezzaCard(b, rigaH),
       display: "flex", flexDirection: "column",
       padding: G.padCard + "px 10px " + G.padCardB + "px 10px", borderRadius: 15,
-      background: vuota ? gl(0.63) : gl(1),
+      background: vuota ? gl(0.63, R) : gl(1, R),
       border: "1px solid " + T.border, boxShadow: "0 8px 30px rgba(0,0,0,0.45)",
       opacity: vuota ? 0.55 : 1 }}>
       <div style={{ height: G.headCard, display: "flex", alignItems: "center",
@@ -270,13 +306,13 @@ function CardBrand({ b, rigaH }) {
    Brand minori: TIM, Dojo, Kipoint, Very, Ho, Kena. */
 const RAIL_MAX = 5;   // oltre, la corsia non ci sta in una riga
 
-function Rail({ minori }) {
+function Rail({ minori, R }) {
   const mostrati = minori.slice(0, RAIL_MAX);
   const restanti = minori.length - mostrati.length;
   return (
     <div style={{ height: G.rail, display: "flex", alignItems: "center", gap: 10, padding: "0 14px",
       overflow: "hidden",
-      borderRadius: 13, background: "rgba(26,29,41," + Math.min(0.95, VETRO * 0.74).toFixed(3) + ")",
+      borderRadius: 13, background: sup(0.74, R),
       border: "1px solid " + T.border }}>
       <span style={{ fontSize: TS.unit, fontWeight: 800, letterSpacing: "0.16em",
         textTransform: "uppercase", color: T.dimmer, marginRight: 4 }}>Altri brand</span>
@@ -301,14 +337,14 @@ function Rail({ minori }) {
   );
 }
 
-function Marg({ voci }) {
+function Marg({ voci, R }) {
   let tot = 0;
   for (let i = 0; i < voci.length; i++) tot += voci[i].v;
   const verde = HEX.marginalita;
   return (
     <div style={{ height: G.marg, borderRadius: 15, display: "flex", alignItems: "stretch",
       padding: "0 18px",
-      background: "rgba(26,29,41," + Math.min(0.95, VETRO * 1.06).toFixed(3) + ")",
+      background: sup(1.06, R),
       border: "1px solid " + verde + "3a",
       boxShadow: "0 8px 32px rgba(0,0,0,0.5), inset 0 0 50px " + verde + "0d" }}>
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 5,
@@ -349,7 +385,8 @@ function Marg({ voci }) {
      marginalita: [ {l:"Prodotti", v:34}, ... ]   // 5 voci
    }
    ========================================================================== */
-export default function ReportGiornaliero({ dati }) {
+export default function ReportGiornaliero({ dati, resa = RESA_PREDEFINITA }) {
+  const R = RESE[resa] || RESE[RESA_PREDEFINITA];
   const d = dati;
   const perId = {};
   for (let i = 0; i < d.brands.length; i++) perId[d.brands[i].id] = d.brands[i];
@@ -359,51 +396,63 @@ export default function ReportGiornaliero({ dati }) {
   const minori = d.minori || [];
   for (let i = 0; i < minori.length; i++) ricavo += Number(minori[i].e) || 0;
   // quanto spazio ha ogni riga, viste le carte di OGGI e la corsia di oggi
-  const rigaH = altezzaRiga(perId, (d.minori || []).length > 0);
+  const rigaH = altezzaRiga(perId, (d.minori || []).length > 0, R);
 
   let margTot = 0;
   for (let i = 0; i < d.marginalita.length; i++) margTot += d.marginalita[i].v;
   const totale = ricavo + margTot;
 
   return (
-    <div id="report-canvas" style={{ position: "relative", width: W, height: H,
+    <div id="report-canvas" data-resa={RESE[resa] ? resa : RESA_PREDEFINITA} style={{ position: "relative", width: W, height: H,
       overflow: "hidden", background: T.base }}>
 
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "url(" + BG_URL + ")",
           backgroundSize: "cover", backgroundPosition: "center" }} />
-        <div style={{ position: "absolute", inset: 0, background: "rgba(12,15,26," + VELO + ")" }} />
+        <div style={{ position: "absolute", inset: 0, background: "rgba(12,15,26," + R.velo + ")" }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage:
           "radial-gradient(ellipse at top left, rgba(79,70,229,0.22), transparent 55%)," +
           "radial-gradient(ellipse at bottom right, rgba(236,72,153,0.14), transparent 55%)" }} />
       </div>
 
-      {/* IL FOGLIO (Luca 31/08: «si vede lo sfondo dietro il blocco»).
-          Aveva ragione: le carte semitrasparenti lasciavano passare l'immagine
-          proprio dove stanno i numeri, e negli spazi fra una carta e l'altra
-          l'immagine tornava a spuntare — il foglio risultava affollato.
-          Ora il contenuto POGGIA su un fondo pieno e l'immagine si vede solo
-          nella cornice, come un documento appoggiato su una fotografia.
+      {/* IL CONTENITORE, che a seconda della resa È un foglio oppure non c'è.
+          Con `foglio: 1` è una superficie piena e la fotografia resta fuori,
+          nella cornice; con `foglio: 0` è trasparente e le tabelle si
+          appoggiano direttamente sull'immagine, che torna a vedersi negli
+          spazi fra l'una e l'altra. In mezzo, un foglio velato.
           ⚠️ È il contenitore STESSO a fare da foglio, non un pannello messo
           sotto: quello si sovrapponeva alla testata in modi difficili da
           prevedere. Un elemento solo, nessuna sovrapposizione possibile.
-          Le misure interne non cambiano: margine (CORNICE-PAD) + padding PAD
-          fanno esattamente i CORNICE 80 di prima, quindi l'area utile resta
-          920x1460 e i conti dell'altezza di riga restano validi. */}
+          ⚠️ E il contorno chiaro è un'ombra INTERNA, non un `border`: con
+          box-sizing border-box un bordo da 1px si mangia 2px per lato, e
+          `altezzaRiga()` quei 2px non li sa — con `overflow: hidden` non
+          darebbero errore, taglierebbero dati in silenzio. */}
       <div style={{ position: "relative", zIndex: 1,
-        width: W - 2 * (CORNICE - PAD), height: H - 2 * (CORNICE - PAD),
-        margin: (CORNICE - PAD) + "px", display: "flex",
-        flexDirection: "column", padding: PAD + "px", boxSizing: "border-box", gap: G.gap,
-        background: FOGLIO, borderRadius: 30,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.10), 0 16px 44px rgba(0,0,0,0.55)",
+        width: W - 2 * R.corniceX, height: H - 2 * R.corniceY,
+        margin: R.corniceY + "px " + R.corniceX + "px", display: "flex",
+        flexDirection: "column", padding: PAD + "px", boxSizing: "border-box", gap: R.gap,
+        background: R.foglio ? "rgba(" + FOGLIO_RGB + "," + R.foglio + ")" : "transparent",
+        borderRadius: 30,
+        boxShadow: R.foglio
+          ? "inset 0 0 0 1px rgba(255,255,255,0.10), 0 16px 44px rgba(0,0,0,0.55)"
+          : "none",
         overflow: "hidden",
         fontFamily: "var(--font-sans, Outfit), ui-sans-serif, system-ui, sans-serif",
         color: T.text }}>
 
-        {/* Le due sfumature che proteggevano titolo e commento dall'immagine
-            non servono più: fra il testo e la fotografia adesso c'è un foglio
-            pieno. Lasciarle voleva dire una banda scura in cima al foglio,
-            senza motivo. */}
+        {/* ⚠️ IL TITOLO SI PORTA DIETRO LA SUA OMBRA, ma solo quando serve.
+            «REPORT GIORNALIERO» e il ricavo sono scritti in bianco: senza un
+            foglio pieno sotto, su una fotografia chiara sparirebbero. Con
+            questa sfumatura reggono su QUALUNQUE immagine, e chi genera lo
+            sfondo non deve stare attento a lasciare scuro il bordo alto.
+            Col foglio pieno invece sarebbe solo una banda scura senza motivo,
+            e non si disegna. `pointer-events: none` perché è decorazione. */}
+        {R.protezioni ? (
+          <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: G.head + 60,
+            pointerEvents: "none",
+            background: "linear-gradient(180deg, rgba(8,10,20,0.78) 0%, rgba(8,10,20,0.42) 58%, rgba(8,10,20,0) 100%)" }} />
+        ) : null}
+
         <div style={{ position: "relative", height: G.head, display: "flex", alignItems: "center",
           justifyContent: "space-between", gap: 18 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -436,7 +485,7 @@ export default function ReportGiornaliero({ dati }) {
               return (
                 <div key={"m" + i} style={{ flex: 1, display: "flex", alignItems: "center",
                   justifyContent: "space-between", padding: "0 15px", borderRadius: 12,
-                  background: gl(1),
+                  background: gl(1, R),
                   border: "1px solid " + T.border }}>
                   <span style={{ fontSize: TS.unit, fontWeight: 800, letterSpacing: "0.10em",
                     textTransform: "uppercase", color: T.dim }}>{m[0]}</span>
@@ -448,23 +497,29 @@ export default function ReportGiornaliero({ dati }) {
           </div>
         </div>
 
-        <div style={{ flex: 1, display: "flex", gap: G.gap, minHeight: 0 }}>
+        <div style={{ flex: 1, display: "flex", gap: R.gap, minHeight: 0 }}>
           {COLONNE.map(function (ids, ci) {
             return (
               <div key={"c" + ci} style={{ flex: 1, display: "flex", flexDirection: "column",
-                gap: G.gap, minHeight: 0 }}>
+                gap: R.gap, minHeight: 0 }}>
                 {ids.map(function (id) {
                   const b = perId[id];
                   if (!b) return null;
-                  return <CardBrand key={id} b={b} rigaH={rigaH} />;
+                  return <CardBrand key={id} b={b} rigaH={rigaH} R={R} />;
                 })}
               </div>
             );
           })}
         </div>
 
-        {minori.length > 0 ? <Rail minori={minori} /> : null}
-        <Marg voci={d.marginalita} />
+        {/* stessa cortesia in fondo: là sotto il commento è chiaro su vetro */}
+        {R.protezioni ? (
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: G.ai + G.marg,
+            pointerEvents: "none",
+            background: "linear-gradient(0deg, rgba(8,10,20,0.62) 0%, rgba(8,10,20,0.28) 62%, rgba(8,10,20,0) 100%)" }} />
+        ) : null}
+        {minori.length > 0 ? <Rail minori={minori} R={R} /> : null}
+        <Marg voci={d.marginalita} R={R} />
 
         <div style={{ height: G.ai, display: "flex", alignItems: "center", gap: 14, padding: "0 18px",
           borderRadius: 15, background: "rgba(79,70,229,0.13)",

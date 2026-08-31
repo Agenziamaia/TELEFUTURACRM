@@ -37,8 +37,18 @@ do $$ begin
   end if;
 end $$;
 
-alter table codice_accesso add constraint codice_accesso_canale_noto
-  check (canale in ('whatsapp', 'email')) not valid;
+/* ⚠️ CON LA GUARDIA: era l'unica istruzione del file senza, e alla seconda
+   passata la migrazione si piantava qui — dopo aver già fatto il rename e la
+   colonna. Una migrazione che non si può rieseguire è una migrazione che, il
+   giorno che serve, non gira. */
+do $$ begin
+  if not exists (select 1 from pg_constraint
+                 where conname = 'codice_accesso_canale_noto' and conrelid = 'codice_accesso'::regclass) then
+    alter table codice_accesso add constraint codice_accesso_canale_noto
+      check (canale in ('whatsapp', 'email')) not valid;
+    alter table codice_accesso validate constraint codice_accesso_canale_noto;
+  end if;
+end $$;
 
 -- la porta resta chiusa a chiave: l'impronta non si legge dal browser
 alter table codice_accesso enable row level security;

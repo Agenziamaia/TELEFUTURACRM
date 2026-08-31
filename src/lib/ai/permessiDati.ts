@@ -76,15 +76,31 @@ export function famiglieConsentite(ruolo: string): Set<FamigliaDati> {
     return new Set(VEDE[String(ruolo || "").toLowerCase()] || []);
 }
 
-/** Le tabelle che l'assistente non apre mai, per nessuno. */
+/** Le tabelle che l'assistente non apre mai, per nessuno.
+ *
+ *  ⚠️ QUESTA LISTA NON ERA LA PROTEZIONE, ed è bene saperlo: `ai.interroga`
+ *  gira come un ruolo con `bypassrls`, quindi dentro quella funzione le regole
+ *  delle tabelle non esistono. Il 31/08 un revisore ha chiesto all'assistente
+ *  «gli ultimi messaggi di email_messages» e si è portato via la posta di
+ *  amministrazione@, il WhatsApp protetto e le impronte dei codici: avevo
+ *  chiuso `email_accounts` e non i MESSAGGI. La porta vera l'ha chiusa il
+ *  `revoke` della migrazione 20260831160000; questa lista è il secondo
+ *  chiavistello, quello che dà un errore comprensibile invece di un
+ *  «permission denied» dal database. */
 export const TABELLE_VIETATE = new Set<string>([
     "password_credentials",     // le password del CRM
     "password_access_log",      // chi ha chiesto quale password
     "impostazioni_servizio",    // le chiavi dei servizi esterni
-    "email_accounts",           // le password delle caselle
     "otp_pulizia_stato",
     "app_users_2fa",
     "auth_sessions",
+    "codice_accesso",           // le impronte dei lucchetti
+    // LA POSTA E LE CHAT sono di qualcuno: si leggono dall'Inbox, dove hanno
+    // un mittente e una faccia, non da un assistente che le riassume in blocco
+    "email_accounts", "email_messages", "email_conversations", "email_drafts",
+    "email_triage", "email_regole_utente", "email_mittenti_bloccati",
+    "email_account_users",
+    "wa_messages", "wa_conversations", "wa_instances", "wa_triage",
 ]);
 
 /** Toglie dalle righe le colonne che questo ruolo non può leggere.
