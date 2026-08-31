@@ -1346,6 +1346,33 @@ function CallerPageInner() {
         return (l.splits || []).map(s => s.caller).join(", ") || "—";
     }
 
+    /* L'AVANZAMENTO DI UNA LISTA SI CONTA, NON SI CONSERVA (Luca 31/08: «qui su
+       assegnazione liste non ci dà l'avanzamento di lavorazione»).
+       C'era una colonna `liste.lavorate` che nessuno incrementava mai: tutte le
+       liste dicevano 0%, anche quella di aprile lavorata per mesi. Un contatore
+       da tenere aggiornato a mano è un contatore che prima o poi mente; qui
+       basta guardare le pratiche, che sono già in memoria.
+       I gruppi sono quelli che ha chiesto Luca: attivato, non risponde,
+       appuntamenti in sospeso, KO. Le assorbite restano fuori dal totale —
+       nessuno può lavorarle, contarle come «da fare» sarebbe una colpa finta. */
+    const statLista = useCallback((nome: string) => {
+        const mie = calls.filter((c) => (c.lista_origine || "") === nome);
+        const vive = mie.filter((c) => !c.assorbita_da);
+        const comp = (st: string) => comportamenti[st] || "";
+        const g = { totale: vive.length, assorbite: mie.length - vive.length, daFare: 0, attivate: 0, nonRisponde: 0, appuntamenti: 0, ko: 0, lavorate: 0 };
+        for (const c of vive) {
+            const st = String(c.stato || "");
+            const b = comp(st);
+            if (b === "neutro" && /^(assegnata|nuovo)$/i.test(st)) { g.daFare++; continue; }
+            g.lavorate++;
+            if (/attivat/i.test(st)) g.attivate++;
+            else if (b === "appuntamento" || b === "richiamo") g.appuntamenti++;
+            else if (b === "non_risposto" || /mai risposto|sparito/i.test(st)) g.nonRisponde++;
+            else g.ko++;      // non interessato, non ricontattare, numero inesistente, non andato…
+        }
+        return g;
+    }, [calls, comportamenti]);
+
     const filteredListe = useMemo(() => listeAssegnate.filter((l) => {
         if (fLProvenienza && l.provenienza !== fLProvenienza) return false;
         if (fLDataDa && l.data < fLDataDa) return false;
@@ -3015,7 +3042,8 @@ function CallerPageInner() {
                                     <tbody>
                                         {filteredListe.length === 0 && (<tr><td colSpan={isDirector ? 8 : 7} className="text-center py-12 text-slate-500">Nessuna lista trovata</td></tr>)}
                                         {filteredListe.map((l) => {
-                                            const pct = l.totale > 0 ? Math.round((l.lavorate / l.totale) * 100) : 0;
+                                            const st = statLista(l.nome);
+                                            const pct = st.totale > 0 ? Math.round((st.lavorate / st.totale) * 100) : 0;
                                             return (
                                                 <tr
                                                     key={l.id}
@@ -3035,9 +3063,15 @@ function CallerPageInner() {
                                                     <td className="px-4 py-3 text-xs text-slate-400">{listaCallersLabel(l)}</td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-col gap-1 min-w-[120px]">
-                                                            <span className={`text-[11px] font-bold ${pct === 100 ? "text-emerald-400" : "text-violet-300"}`}>{l.lavorate}/{l.totale} · {pct}%</span>
-                                                            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                                                <div className={`h-full transition-all ${pct === 100 ? "bg-emerald-500" : "bg-violet-500"}`} style={{ width: `${pct}%` }} />
+                                                            <span className={`text-[11px] font-bold ${pct === 100 ? "text-emerald-400" : "text-violet-300"}`}>{st.lavorate}/{st.totale} · {pct}%</span>
+                                                            {/* LA BARRA A COLORI (Luca 31/08): non «quante ne restano»
+                                                                ma COM'È ANDATA — attivate, appuntamenti in piedi,
+                                                                non risposto, KO. Il pezzo grigio è quello che
+                                                                nessuno ha ancora toccato. */}
+                                                            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5 flex">
+                                                                {([["attivate", "#34d399"], ["appuntamenti", "#a78bfa"], ["nonRisponde", "#fbbf24"], ["ko", "#f43f5e"]] as const).map(([k, c]) => (
+                                                                    st[k] > 0 ? <div key={k} style={{ width: `${(st[k] / Math.max(1, st.totale)) * 100}%`, background: c }} /> : null
+                                                                ))}
                                                             </div>
                                                         </div>
                                                     </td>
@@ -4186,18 +4220,53 @@ function CallerPageInner() {
                                 ))}
                             </div>
 
-                            <SectionTitle>Stato Lavorazione</SectionTitle>
-                            <div className="p-4 bg-black/20 border border-white/5 rounded-xl">
-                                <div className="flex justify-between mb-2">
-                                    <span className="text-xs text-slate-400">Lavorate: <strong className="text-white">{listaDetail.lavorate}</strong> / {listaDetail.totale}</span>
-                                    <span className={`text-xs font-bold ${listaDetail.lavorate === listaDetail.totale ? "text-emerald-300" : "text-violet-300"}`}>
-                                        {listaDetail.totale > 0 ? Math.round((listaDetail.lavorate / listaDetail.totale) * 100) : 0}%
-                                    </span>
-                                </div>
-                                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                    <div className={`h-full transition-all ${listaDetail.lavorate === listaDetail.totale ? "bg-emerald-500" : "bg-violet-500"}`} style={{ width: `${listaDetail.totale > 0 ? Math.round((listaDetail.lavorate / listaDetail.totale) * 100) : 0}%` }} />
-                                </div>
-                            </div>
+                            <SectionTitle>Com&apos;è andata</SectionTitle>
+                            {(() => {
+                                /* LE STATISTICHE DELLA LISTA (Luca 31/08): «sarebbe carino
+                                   avere delle statistiche cliccandoci, differenziando
+                                   attivato da non risponde, appuntamenti in sospeso, KO».
+                                   Si contano dalle pratiche, non da un contatore: quello
+                                   che c'era (`liste.lavorate`) non lo aggiornava nessuno e
+                                   diceva 0% su tutte le liste, anche su quella di aprile
+                                   lavorata per due settimane. */
+                                const st = statLista(listaDetail.nome);
+                                const pct = st.totale > 0 ? Math.round((st.lavorate / st.totale) * 100) : 0;
+                                const gruppi = [
+                                    { k: "attivate", l: "✅ Attivate", n: st.attivate, c: "#34d399", d: "il cliente ha comprato" },
+                                    { k: "appuntamenti", l: "📅 In sospeso", n: st.appuntamenti, c: "#a78bfa", d: "appuntamenti e richiami ancora in piedi" },
+                                    { k: "nonRisponde", l: "📵 Non risponde", n: st.nonRisponde, c: "#fbbf24", d: "chiamate senza risposta, in scala" },
+                                    { k: "ko", l: "⛔ KO", n: st.ko, c: "#f43f5e", d: "non interessati, non ricontattare, numeri inesistenti" },
+                                    { k: "daFare", l: "⚪ Da lavorare", n: st.daFare, c: "rgba(148,163,184,.35)", d: "nessuno le ha ancora toccate" },
+                                ];
+                                return (
+                                    <div className="p-4 bg-black/20 border border-white/5 rounded-xl space-y-3">
+                                        <div className="flex justify-between items-baseline">
+                                            <span className="text-xs text-slate-400">Lavorate: <strong className="text-white">{st.lavorate}</strong> / {st.totale}</span>
+                                            <span className={`text-xs font-bold ${pct === 100 ? "text-emerald-300" : "text-violet-300"}`}>{pct}%</span>
+                                        </div>
+                                        <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5 flex">
+                                            {gruppi.filter((g) => g.k !== "daFare" && g.n > 0).map((g) => (
+                                                <div key={g.k} title={`${g.l}: ${g.n}`} style={{ width: `${(g.n / Math.max(1, st.totale)) * 100}%`, background: g.c }} />
+                                            ))}
+                                        </div>
+                                        <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+                                            {gruppi.map((g) => (
+                                                <div key={g.k} title={g.d} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+                                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: g.c }} />
+                                                    <span className="text-[11px] text-slate-300 truncate flex-1">{g.l}</span>
+                                                    <span className="text-sm font-black text-white tabular-nums">{g.n}</span>
+                                                    <span className="text-[10px] text-slate-600 tabular-nums w-9 text-right">{st.totale ? Math.round((g.n / st.totale) * 100) : 0}%</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {st.assorbite > 0 && (
+                                            <p className="text-[10px] text-slate-500">
+                                                Altre <b className="text-slate-300">{st.assorbite}</b> righe erano doppioni di clienti già in lavorazione e sono state unite alla pratica vera: restano fuori dal conto, perché nessuno può lavorarle.
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         <div className="flex-none px-6 py-4 border-t border-white/10 flex justify-end gap-3 bg-white/[0.02]">
