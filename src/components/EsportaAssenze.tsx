@@ -15,7 +15,8 @@
 // nell'intestazione del foglio, così chi legge il file sa da dove esce il
 // numero e non deve indovinarlo.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, X } from "lucide-react";
 import { scaricaXlsxMulti, type CellaXlsx } from "@/lib/exportXlsx";
 import { cn } from "@/utils";
@@ -63,6 +64,17 @@ export function EsportaAssenze({ titolo, colonneExtra, righe, nomeFile }: {
     nomeFile: string;
 }) {
     const [aperto, setAperto] = useState(false);
+    // `document` non esiste durante il render sul server: il portale si monta
+    // solo quando la pagina è viva nel browser
+    const [montato, setMontato] = useState(false);
+    useEffect(() => setMontato(true), []);
+    // ESC chiude, come nelle altre finestre del CRM
+    useEffect(() => {
+        if (!aperto) return;
+        const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setAperto(false); };
+        document.addEventListener("keydown", esc);
+        return () => document.removeEventListener("keydown", esc);
+    }, [aperto]);
     const [scelta, setScelta] = useState<"corrente" | "scorso" | "libero">("scorso");
     const [da, setDa] = useState("");
     const [a, setA] = useState("");
@@ -126,8 +138,15 @@ export function EsportaAssenze({ titolo, colonneExtra, righe, nomeFile }: {
                 <Download className="w-3.5 h-3.5" /> Excel
             </button>
 
-            {aperto && (
-                <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setAperto(false)}>
+            {/* LA FINESTRA SI APRE DAVANTI AGLI OCCHI, NON IN FONDO ALLA PAGINA
+                (Luca 31/08: «devo scorrere per tre secondi fino alla fine»).
+                Un `position: fixed` non si ancora allo schermo se un antenato
+                ha un `filter`, un `transform` o un `backdrop-blur`: diventa
+                assoluto rispetto a QUELLO, e qui il bottone vive dentro la
+                barra dei filtri, che il blur ce l'ha. Portandola su `body` il
+                problema non si ripresenta ovunque la si metta. */}
+            {aperto && montato && createPortal(
+                <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setAperto(false)}>
                     <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl border border-white/10 bg-[#141824] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between px-5 pt-4 pb-2">
                             <h3 className="text-white font-semibold">⬇️ Esporta {titolo}</h3>
@@ -174,7 +193,8 @@ export function EsportaAssenze({ titolo, colonneExtra, righe, nomeFile }: {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body,
             )}
         </>
     );
