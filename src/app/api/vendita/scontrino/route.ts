@@ -49,7 +49,18 @@ export async function POST(req: Request) {
             if (r.is_default) defaultAzienda = r.azienda;
         });
     }
-    const rtFor = (az: string) => aziende[az]?.rt_url || b.deviceUrl || DEFAULT_RT;
+    /* MAI LA STAMPANTE DI UN ALTRO NEGOZIO (Luca 31/08, tre negozi in prova).
+       `DEFAULT_RT` è un indirizzo vero — la cassa T1 di Donna — e serviva da
+       ripiego quando la società della riga non ha un registratore in questo
+       negozio. Ma Magliana è DUE negozi nello stesso locale con una società
+       ciascuno: Magliana W3 ha solo T1, Magliana Multi solo T2, e chi lavora
+       in uno può leggere l'IMEI di un pezzo dell'altro (stesso magazzino
+       fisico). Bastava quello: lo scontrino di una vendita fatta a Magliana
+       sarebbe uscito dalla stampante di Donna, in un altro quartiere.
+       Il ripiego resta solo dove il negozio non ha proprio nessun
+       registratore configurato — lì non c'è niente da confondere. */
+    const rtFor = (az: string) => aziende[az]?.rt_url
+        || (Object.keys(aziende).length === 0 ? (b.deviceUrl || DEFAULT_RT) : null);
 
     /* DI CHI È LA MERCE, QUANDO LA RIGA NON LO DICE (revisore 29/08).
        Una riga che arriva da una scorciatoia porta il codice articolo ma non
@@ -114,6 +125,12 @@ export async function POST(req: Request) {
         if (!(price >= 0)) { esclusi.push({ description: desc, motivo: "prezzo non valido" }); continue; }
         if (!testMode && !(Number.isInteger(reparto) && reparto >= 1 && reparto <= 40)) {
             esclusi.push({ description: desc, motivo: "reparto IVA non assegnato" });
+            continue;
+        }
+        // la società di questa riga ha un registratore QUI? Se no, la riga non
+        // è stampabile in questo negozio: si dice, non si stampa altrove.
+        if (az !== "__def" && Object.keys(aziende).length > 0 && !aziende[az]) {
+            esclusi.push({ description: desc, motivo: `${az} non ha un registratore in questo negozio` });
             continue;
         }
         (gruppi[az] ||= []).push({ description: desc, quantity: qty, unitPrice: price, department: (reparto ?? 0) as number });
@@ -227,7 +244,7 @@ export async function POST(req: Request) {
 
         const { data, error } = await supabase.from("print_jobs").insert({
             negozio,
-            device_url: rtFor(az),
+            device_url: rtFor(az) as string,
             kind,
             request_xml,
             status: "pending",

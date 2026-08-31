@@ -34,6 +34,7 @@ import {
     type VoceCassa, type NaturaCassa, type Giacenza, type PezzoSeriale, type GruppoCassa,
 } from "@/lib/cassaCatalogo";
 import { stessoMagazzino } from "@/lib/negoziNomi";
+import { supabase } from "@/lib/supabaseClient";
 
 const eur = (n: number | null | undefined) =>
     n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -87,12 +88,30 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
        cioè il contrario, nella stessa schermata.
        Finché non si sa non si decide: i pulsanti aspettano. */
     const [statoMag, setStatoMag] = useState("sconosciuto");   // sconosciuto | vuoto | pieno | errore
+    /* LE SOCIETÀ CHE SANNO STAMPARE QUI (Luca 31/08). Magliana è DUE negozi
+       nello stesso locale — Magliana W3 è Telefutura, Magliana Multi è
+       Telefutura 2 — e chi lavora in uno può leggere l'IMEI di un pezzo
+       dell'altro, perché il magazzino fisico è uno. Ma il registratore no:
+       ognuno ha il suo, e battere merce di una società sulla cassa dell'altra
+       non si può fare. Meglio dirlo quando si spara il codice, non quando il
+       cliente ha già i soldi in mano. */
+    const [societaQui, setSocietaQui] = useState<Set<string> | null>(null);
     const senzaMagazzino = statoMag === "vuoto";
     const nonSoAncora = statoMag === "sconosciuto" || statoMag === "errore";
     const ricerca = useRef<HTMLInputElement | null>(null);
 
     // la base dipende dal negozio: sono i suoi articoli con pezzi
     useEffect(() => { caricaCatalogo(negozio).then(setVoci); caricaGruppi().then(setGruppi); }, [negozio]);
+    useEffect(() => {
+        setSocietaQui(null);
+        if (!negozio) return;
+        let vivo = true;
+        supabase.from("pos_rt").select("azienda").eq("negozio", negozio).then(({ data }) => {
+            if (vivo) setSocietaQui(new Set((data || []).map((r: { azienda: string }) => r.azienda)));
+        });
+        return () => { vivo = false; };
+    }, [negozio]);
+
     useEffect(() => {
         setStatoMag("sconosciuto"); setGiac(new Map());
         if (!negozio) return;
@@ -277,6 +296,18 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             return;
         }
         const usato = p.provenienza === "usato";
+        /* LA SOCIETÀ DEL PEZZO SA STAMPARE QUI? Il pezzo può essere a due passi
+           — stesso locale, stesso magazzino — e appartenere all'altra società.
+           In quel caso non è «non disponibile»: è da battere sull'altra cassa. */
+        if (!usato && fiscale && p.azienda && societaQui && societaQui.size > 0 && !societaQui.has(p.azienda)) {
+            setManca({
+                titolo: "È merce dell'altra società",
+                nome: p.nome + " · " + p.seriale,
+                dettaglio: `Questo pezzo è di ${p.azienda === "T1" ? "Telefutura" : "Telefutura 2"}, che in ${negozio} non ha un registratore di cassa: da qui lo scontrino non può uscire.`,
+                cosaFare: "battilo sulla cassa dell'altra insegna, oppure fai prima un DDT",
+            });
+            return;
+        }
         // LO STESSO PEZZO UNA VOLTA SOLA: fra un colpo di lettore e l'altro
         // `mag_unita` non cambia, quindi il controllo di stato passerebbe due volte
         if (serialiInCarrello?.has(p.seriale)) {
