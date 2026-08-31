@@ -22,7 +22,7 @@
 */
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { modelloAi } from "@/lib/ai/modelli";
+import { modelloAi, costoChiamata } from "@/lib/ai/modelli";
 
 /** Da dove viene la spesa. Aggiungendo un motore, si aggiunge qui. */
 export type SezioneAi =
@@ -88,7 +88,11 @@ const impronta = (s: string) => createHash("sha256").update("tf:" + s).digest("h
 export async function registraConsumo(c: Consumo): Promise<void> {
     try {
         const m = modelloAi(c.modello);
-        const costoUsd = (c.tokenIn / 1e6) * m.prezzo.in + (c.tokenOut / 1e6) * m.prezzo.out;
+        /* ⚠️ il conto lo fa `costoChiamata`, non una formula copiata qui:
+           due formule per lo stesso prezzo divergono al primo cambio di
+           listino — e un listino sbagliato l'abbiamo già pagato una volta,
+           col pannello che diceva la metà della fattura vera. */
+        const costoUsd = costoChiamata(c.modello, c.tokenIn, c.tokenOut, c.tokenInCache || 0);
         await supabaseAdmin.from("ai_usage").insert({
             sezione: c.sezione,
             funzione: c.funzione ?? null,

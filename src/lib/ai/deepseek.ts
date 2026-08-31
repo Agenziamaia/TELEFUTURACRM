@@ -23,7 +23,17 @@ export interface ToolDef {
 export interface ChatResult {
   message: ChatMessage & { tool_calls?: ToolCall[] };
   finish_reason: string;
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+  /* ⚠️ `prompt_cache_hit_tokens` e `reasoning_tokens` arrivano dal fornitore
+     e finora si buttavano via. Il primo vale trenta volte meno di un token
+     nuovo (0,007 contro 0,22): ignorarlo significa contare più del vero. Il
+     secondo è il PENSIERO, già dentro completion_tokens: si tiene a parte per
+     poter dire «paghiamo più pensiero che risposta», che è la spia di un
+     prompt scritto male. */
+  usage: {
+    prompt_tokens: number; completion_tokens: number; total_tokens: number;
+    prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+  } | null;
 }
 
 export function hasKey(): boolean {

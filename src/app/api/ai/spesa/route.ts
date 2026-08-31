@@ -48,6 +48,10 @@ export async function GET(request: Request) {
     const da = (q.get("da") || primoDelMese).slice(0, 10);
     const a = (q.get("a") || oggi).slice(0, 10);
     const persona = q.get("persona") || "";
+    /* il canale (= la sezione) come filtro trasversale: chiedendo «solo
+       WhatsApp», ogni riquadro parla di quello — compreso il giorno per
+       giorno, che è la domanda con cui si comincia sempre */
+    const canale = q.get("canale") || "";
 
     /* il periodo PRECEDENTE di pari lunghezza, per il confronto: «quanto
        spendevamo prima» è la metà della domanda «quanto spendiamo» */
@@ -68,7 +72,8 @@ export async function GET(request: Request) {
 
     const tutte = (righe || []) as Riga[];
     // il filtro persona vale su tutto: se chiedi di qualcuno, ogni riquadro parla di lui
-    const R = persona ? tutte.filter((r) => r.user_id === persona) : tutte;
+    let R = persona ? tutte.filter((r) => r.user_id === persona) : tutte;
+    if (canale) R = R.filter((r) => (r.sezione || "assistente") === canale);
     const Rprima = (prima || []).filter((r) => !persona || r.user_id === persona) as Riga[];
 
     const speso = R.reduce((s, r) => s + euro(r), 0);
@@ -152,7 +157,10 @@ export async function GET(request: Request) {
     const conDurata = R.filter((r) => r.latency_ms != null);
 
     return NextResponse.json({
-        ok: true, da, a, persona,
+        ok: true, da, a, persona, canale,
+        /* i canali che ESISTONO nel periodo, per i chip del filtro: mostrarne
+           uno che non ha mai speso niente è un pulsante che non fa niente */
+        canaliVisti: [...new Set(tutte.map((r) => r.sezione || "assistente"))],
         mese: {
             speso, spesoPrima, delta: speso - spesoPrima, proiezione,
             tetto: Number(imp?.ai_tetto_mensile_eur ?? 30),

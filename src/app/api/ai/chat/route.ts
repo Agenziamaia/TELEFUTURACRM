@@ -166,6 +166,7 @@ export async function POST(req: Request) {
   const tools = [...TOOL_DEFS, ...WRITE_TOOL_DEFS];
   const trace: { tool: string; args: any; ok: boolean; summary?: string }[] = [];
   let promptTokens = 0, completionTokens = 0, toolCalls = 0;
+  let cacheTokens = 0, reasoningTokens = 0;   // sconto della cache e peso del pensiero
   let pendingAction: { tool: string; args: any } | null = null;
   let answer = "";
 
@@ -174,6 +175,8 @@ export async function POST(req: Request) {
       const res = await parla({ messages: convo, tools });
       promptTokens += res.usage?.prompt_tokens ?? 0;
       completionTokens += res.usage?.completion_tokens ?? 0;
+        cacheTokens += res.usage?.prompt_cache_hit_tokens ?? 0;
+        reasoningTokens += res.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
 
       const msg = res.message;
       const calls = msg.tool_calls || [];
@@ -225,6 +228,8 @@ export async function POST(req: Request) {
         const res2 = await parla({ messages: convo });
         promptTokens += res2.usage?.prompt_tokens ?? 0;
         completionTokens += res2.usage?.completion_tokens ?? 0;
+        cacheTokens += res2.usage?.prompt_cache_hit_tokens ?? 0;
+        reasoningTokens += res2.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
         answer = res2.message.content || "Confermi l'azione proposta?";
         break;
       }
@@ -232,13 +237,14 @@ export async function POST(req: Request) {
 
     if (!answer) answer = "Non sono riuscito a completare la richiesta entro i passaggi disponibili.";
 
-    const cost = costoChiamata(MODELLO, promptTokens, completionTokens);
+    const cost = costoChiamata(MODELLO, promptTokens, completionTokens, cacheTokens);
     /* il registro dei consumi, con tutto quello che serve al pannello: da
        quale sezione, chiesta da chi, su quale «utenza» (qui la persona
        stessa), e quanti passaggi ha fatto prima di rispondere */
     void registraConsumo({
       sezione: "assistente", funzione: "domanda", automatica: false,
       modello: MODELLO, tokenIn: promptTokens, tokenOut: completionTokens,
+      tokenInCache: cacheTokens, tokenRagionamento: reasoningTokens,
       userId: scope.userId, negozio: scope.stores?.[0] ?? null, ruolo: scope.role ?? null,
       utenza: scope.userId ? { tipo: "utente" as const, id: scope.userId, label: scope.fullName || "" } : null,
       durataMs: Date.now() - started, strumenti: toolCalls, passaggi: trace.length,

@@ -70,7 +70,7 @@ const gg = (iso: string) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
 const TUTTI = "Tutti · azienda intera";
 
 type Dati = {
-    ok: boolean; da: string; a: string; persona: string;
+    ok: boolean; da: string; a: string; persona: string; canale: string; canaliVisti: string[];
     mese: { speso: number; spesoPrima: number; delta: number; proiezione: number | null; tetto: number; avviso: number; allarme: number; chiesta: number; automatica: number; suMeseCorrente: boolean };
     giorni: { giorno: string; euro: number; richieste: number; chiamate: number; parti: { sezione: string; euro: number }[] }[];
     perSezione: { sezione: string; euro: number; chiamate: number; automatica: boolean; tokenIn: number; tokenOut: number }[];
@@ -85,6 +85,10 @@ export function AiAdminView() {
     const [ym, setYm] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; });
     const [range, setRange] = useState({ da: primoDelMese(), a: oggiISO() });
     const [persona, setPersona] = useState("");
+    const [canale, setCanale] = useState("");
+    /* il giorno su cui si è cliccato: apre il dettaglio diviso per canale —
+       «il day over day interattivo, filtrabile, cliccabile» (Luca 31/08) */
+    const [giornoAperto, setGiornoAperto] = useState<string | null>(null);
     const [d, setD] = useState<Dati | null>(null);
     const [err, setErr] = useState<string | null>(null);
     const [caricando, setCaricando] = useState(true);
@@ -100,12 +104,12 @@ export function AiAdminView() {
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
         try {
-            const r = await fetch(`/api/ai/spesa?da=${periodo.da}&a=${periodo.a}${persona ? `&persona=${persona}` : ""}`, { cache: "no-store" }).then((x) => x.json());
+            const r = await fetch(`/api/ai/spesa?da=${periodo.da}&a=${periodo.a}${persona ? `&persona=${persona}` : ""}${canale ? `&canale=${canale}` : ""}`, { cache: "no-store" }).then((x) => x.json());
             if (!r?.ok) throw new Error(r?.error || "non sono riuscito a leggere i consumi");
             setD(r);
         } catch (e) { setErr(String((e as Error)?.message || e)); }
         finally { setCaricando(false); }
-    }, [periodo.da, periodo.a, persona]);
+    }, [periodo.da, periodo.a, persona, canale]);
     useEffect(() => { void carica(); }, [carica]);
 
     if (err) return <div className="m-4 text-sm text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-xl px-4 py-3">⚠️ {err}</div>;
@@ -183,7 +187,11 @@ export function AiAdminView() {
                         col tema del sistema — bianca su un CRM scuro — e non si
                         può filtrare scrivendo. `SelectOpzioni` lavora con
                         stringhe: si mostrano i nomi e si risale all'id. */}
-                    <SelectOpzioni className="min-w-[210px]" placeholder="tutti…"
+                    {/* ⚠️ `className` SOSTITUISCE lo stile del campo, non lo
+                        aggiunge: passando solo la larghezza restava senza
+                        sfondo né bordo — «si vede poco» (Luca). Si usa `rvIn`,
+                        la stessa classe dei campi di Registra Vendita. */}
+                    <SelectOpzioni className="rvIn !w-auto min-w-[230px] !py-1.5 !text-[13px]" placeholder="tutti…"
                         value={persona ? (d.persone.find((p) => p.id === persona)?.nome || "") : TUTTI}
                         opzioni={[TUTTI, ...d.persone.filter((p) => p.domande > 0).map((p) => p.nome)]}
                         onChange={(v) => setPersona(v === TUTTI || !v ? "" : (d.persone.find((p) => p.nome === v)?.id || ""))} />
@@ -192,6 +200,22 @@ export function AiAdminView() {
                             {chiPersona?.nome} <X className="w-3 h-3" />
                         </button>
                     )}
+                    {/* I CANALI, come chip: un clic filtra TUTTA la schermata.
+                        Si mostrano solo quelli che nel periodo hanno speso
+                        qualcosa — un pulsante che non fa niente è peggio di
+                        un pulsante che manca. */}
+                    <span className="text-xs text-slate-500 ml-1">Canale:</span>
+                    {["", ...(d.canaliVisti || [])].map((k) => {
+                        const attivo = canale === k;
+                        return (
+                            <button key={k || "tutti"} onClick={() => { setCanale(k); setGiornoAperto(null); }}
+                                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                                    attivo ? "text-white shadow" : "text-slate-400 border-white/10 bg-white/5 hover:text-white")}
+                                style={attivo ? { background: (COLORI[k] || "#818cf8") + "33", borderColor: (COLORI[k] || "#818cf8") + "88" } : undefined}>
+                                {k ? `${EMOJI[k] || "•"} ${NOMI[k] || k}` : "Tutti"}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* ── i numeri grossi ─────────────────────────────────────── */}
@@ -249,12 +273,22 @@ export function AiAdminView() {
             <div className="glass-card an-card rounded-2xl p-4">
                 <div className="flex items-baseline justify-between mb-1">
                     <h3 className="text-sm font-bold text-white">Giorno per giorno</h3>
-                    <span className="text-[11px] text-slate-500">passa sopra una barra: dice quanto e per cosa</span>
+                    <span className="text-[11px] text-slate-500">passa sopra per il dettaglio · clicca per aprire il giorno</span>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-3">
                     Ogni barra è un giorno, divisa per motore. Se il costo e le richieste delle persone salgono insieme
                     è adozione — e sono soldi ben spesi; se sale solo il costo, qualcosa gira a vuoto.
                 </p>
+                <div onClick={(e) => {
+                    /* BarStack non conosce il clic: si intercetta la posizione
+                       orizzontale e si risale al giorno. Meno elegante di una
+                       prop, ma non tocca un componente che usano tutte le
+                       altre schermate. */
+                    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    const i = Math.floor(((e.clientX - box.left) / box.width) * d.giorni.length);
+                    const g = d.giorni[Math.max(0, Math.min(d.giorni.length - 1, i))];
+                    if (g) setGiornoAperto(giornoAperto === g.giorno ? null : g.giorno);
+                }} className="cursor-pointer">
                 <BarStack h={190} unit="€"
                     giorni={d.giorni.map((g) => ({
                         n: Number(g.giorno.slice(8, 10)),
@@ -269,6 +303,51 @@ export function AiAdminView() {
                     }))}
                     oggi={d.giorni.findIndex((g) => g.giorno === oggiISO())}
                     media={d.giorni.length ? d.giorni.reduce((s, g) => s + g.euro, 0) / d.giorni.length : null} />
+                </div>
+
+                {/* IL DETTAGLIO DEL GIORNO, che è la cosa che mancava: si
+                    clicca una barra e si vede quel giorno diviso per canale. */}
+                {giornoAperto && (() => {
+                    const g = d.giorni.find((x) => x.giorno === giornoAperto);
+                    if (!g) return null;
+                    const parti = [...g.parti].sort((x, y) => y.euro - x.euro);
+                    return (
+                        <div className="mt-4 rounded-2xl border border-indigo-400/30 bg-indigo-500/[0.06] p-4 an-in">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">
+                                        {new Date(g.giorno + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+                                    </span>
+                                    <div className="text-2xl font-black text-white tabular-nums">{eur(g.euro)}</div>
+                                    <div className="text-[11px] text-slate-400">
+                                        {fmtN(g.chiamate)} chiamate · {fmtN(g.richieste)} chieste da una persona
+                                    </div>
+                                </div>
+                                <button onClick={() => setGiornoAperto(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5"><X className="w-4 h-4" /></button>
+                            </div>
+                            {parti.length === 0 ? <p className="text-xs text-slate-500">Nessuna spesa in questo giorno.</p> : (
+                                <div className="space-y-1.5">
+                                    {parti.map((p) => (
+                                        <button key={p.sezione} onClick={() => setCanale(p.sezione)}
+                                            className="w-full flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors text-left">
+                                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORI[p.sezione] || "#818cf8" }} />
+                                            <span className="flex-1 text-xs text-slate-200">{EMOJI[p.sezione] || "•"} {NOMI[p.sezione] || p.sezione}</span>
+                                            <span className="relative h-2 w-32 rounded-full bg-white/5 overflow-hidden">
+                                                <span className="absolute inset-y-0 left-0 rounded-full"
+                                                    style={{ width: Math.max(3, (p.euro / Math.max(...parti.map((x) => x.euro))) * 100) + "%", background: COLORI[p.sezione] || "#818cf8" }} />
+                                            </span>
+                                            <span className="w-16 text-right text-xs font-bold tabular-nums text-white">{eur(p.euro)}</span>
+                                            <span className="w-14 text-right text-[10px] tabular-nums text-slate-500">
+                                                {fmtN((p.euro / (g.euro || 1)) * 100, 0)}%
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="mt-2 text-[10px] text-slate-500">Clicca un canale per filtrarci sopra tutta la schermata.</p>
+                        </div>
+                    );
+                })()}
             </div>
 
             {/* ══ DOVE VANNO I SOLDI + ANDAMENTO ═══════════════════════════ */}

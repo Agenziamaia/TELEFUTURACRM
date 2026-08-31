@@ -188,11 +188,11 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
     /* ⚠️ PER CASELLA, non solo in totale (Luca 31/08: «voglio piena visibilità
        tra WhatsApp ed Email»). La domanda vera non è quanto costa il triage:
        è QUALE casella costa — perché è lì che si decide se escluderla. */
-    const perCasella = new Map<string, { tokIn: number; tokOut: number; mail: number; errori: number }>();
-    const contaCasella = (id: string | null, tokIn: number, tokOut: number, ok: boolean) => {
+    const perCasella = new Map<string, { tokIn: number; tokCache: number; tokOut: number; mail: number; errori: number }>();
+    const contaCasella = (id: string | null, tokIn: number, tokCache: number, tokOut: number, ok: boolean) => {
         const k = String(id || "senza-casella");
-        const v = perCasella.get(k) || { tokIn: 0, tokOut: 0, mail: 0, errori: 0 };
-        v.tokIn += tokIn; v.tokOut += tokOut;
+        const v = perCasella.get(k) || { tokIn: 0, tokCache: 0, tokOut: 0, mail: 0, errori: 0 };
+        v.tokIn += tokIn; v.tokCache += tokCache; v.tokOut += tokOut;
         if (ok) v.mail += 1; else v.errori += 1;
         perCasella.set(k, v);
     };
@@ -370,7 +370,8 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                     // eccezione motivata sui contenuti davvero importanti
                     const regola = matchBloccato(conv);
                     const { riga, usage, abbiamoRisposto } = await classificaUna(conv, acc?.display_name || acc?.email_address || "negozio", regola?.testo || null);
-                    contaCasella(conv.account_id, usage?.prompt_tokens || 0, usage?.completion_tokens || 0, !!riga);
+                    contaCasella(conv.account_id, usage?.prompt_tokens || 0,
+                        usage?.prompt_cache_hit_tokens || 0, usage?.completion_tokens || 0, !!riga);
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
                     // nel registro si vede che la regola ha pesato (o che l'AI
@@ -433,7 +434,7 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                 void registraConsumo({
                     sezione: "triage_email", funzione: "classifica_email", automatica: true,
                     modello: MODEL_FAST, chiamate: v.mail + v.errori,
-                    tokenIn: v.tokIn, tokenOut: v.tokOut,
+                    tokenIn: v.tokIn, tokenInCache: v.tokCache, tokenOut: v.tokOut,
                     utenza: id === "senza-casella" ? null
                         : { tipo: "casella_email", id, label: nomiCas.get(id) || "casella" },
                     durataMs: Date.now() - inizio,

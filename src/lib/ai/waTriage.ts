@@ -250,11 +250,11 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
        tra WhatsApp ed Email»). Prima la corsa scriveva UNA riga di consumo e
        basta: si sapeva quanto costa il triage, non su QUALE numero — e la
        domanda vera è sempre quella, perché è lì che si interviene. */
-    const perNumero = new Map<string, { tokIn: number; tokOut: number; chat: number; errori: number }>();
-    const contaNumero = (id: string | null, tokIn: number, tokOut: number, ok: boolean) => {
+    const perNumero = new Map<string, { tokIn: number; tokCache: number; tokOut: number; chat: number; errori: number }>();
+    const contaNumero = (id: string | null, tokIn: number, tokCache: number, tokOut: number, ok: boolean) => {
         const k = String(id || "senza-numero");
-        const v = perNumero.get(k) || { tokIn: 0, tokOut: 0, chat: 0, errori: 0 };
-        v.tokIn += tokIn; v.tokOut += tokOut;
+        const v = perNumero.get(k) || { tokIn: 0, tokCache: 0, tokOut: 0, chat: 0, errori: 0 };
+        v.tokIn += tokIn; v.tokCache += tokCache; v.tokOut += tokOut;
         if (ok) v.chat += 1; else v.errori += 1;
         perNumero.set(k, v);
     };
@@ -297,7 +297,8 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
                     const { riga, usage } = await classificaUna(conv as any);
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
                     contaNumero((conv as { instance_id?: string }).instance_id || null,
-                        usage?.prompt_tokens || 0, usage?.completion_tokens || 0, !!riga);
+                        usage?.prompt_tokens || 0, usage?.prompt_cache_hit_tokens || 0,
+                        usage?.completion_tokens || 0, !!riga);
                     // riga null = risposta del modello inservibile: niente
                     // upsert, la chat resta alle euristiche e si ritenta
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
@@ -341,7 +342,7 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
                 void registraConsumo({
                     sezione: "triage_whatsapp", funzione: "classifica_chat", automatica: true,
                     modello: MODEL_FAST, chiamate: v.chat + v.errori,
-                    tokenIn: v.tokIn, tokenOut: v.tokOut,
+                    tokenIn: v.tokIn, tokenInCache: v.tokCache, tokenOut: v.tokOut,
                     utenza: id === "senza-numero" ? null
                         : { tipo: "numero_wa", id, label: nomi.get(id) || "numero" },
                     durataMs: Date.now() - inizio,
