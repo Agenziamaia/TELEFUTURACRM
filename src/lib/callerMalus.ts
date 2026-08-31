@@ -208,6 +208,13 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 export async function sincronizzaMalusCaller(
     pratiche: { id: string; stato: string; caller: string; fase: FaseCaller; giorniMalus: number; malusGiorno: number; dalMalus: Date | null }[],
     fuoriServizio?: Set<string>,
+    /** LE PRATICHE ASSORBITE non devono lasciare malus (Tommaso, 31/08).
+     *  Sono doppioni dello stesso cliente arrivati da un'altra lista: la
+     *  sezione le nasconde al caller — giustamente, il cliente l'ha gia'
+     *  lavorato sulla riga vinta — ma l'episodio nato prima dell'assorbimento
+     *  restava, e la sincronizzazione lo chiudeva come «attivo», cioe' DOVUTO.
+     *  Un caller pagava per una pratica che non poteva nemmeno vedere. */
+    assorbite?: Set<string>,
 ): Promise<EpisodioCaller[]> {
     try {
         // i tombstone (eliminato=true) sono malus ANNULLATI dal match/backfill:
@@ -233,6 +240,11 @@ export async function sincronizzaMalusCaller(
                     ep.giorni = giorni; ep.importo = importo; ep.stato_pratica = p.stato;
                 }
                 inMalus.delete(ep.call_id);
+            } else if (assorbite?.has(ep.call_id)) {
+                // il doppione non ha mai avuto una vita propria: l'episodio si
+                // annulla (tombstone), non si chiude come dovuto
+                await supabase.from("caller_malus").update({ eliminato: true, eliminato_il: new Date().toISOString(), eliminato_da: "pratica assorbita da una gemella" }).eq("id", ep.id);
+                ep.stato = "attivo"; ep.al = oggi;   // fuori dall'elenco di ritorno
             } else {
                 await supabase.from("caller_malus").update({ stato: "attivo", al: oggi }).eq("id", ep.id);
                 ep.stato = "attivo"; ep.al = oggi;

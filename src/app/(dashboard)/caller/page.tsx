@@ -1118,7 +1118,9 @@ function CallerPageInner() {
             const fuori = errFuori ? undefined : new Set(((fuoriUt ?? []) as { full_name: string | null; status: string | null; sospeso_dal: string | null }[])
                 .filter((x) => x.status === "licenziato" || (x.sospeso_dal && String(x.sospeso_dal).slice(0, 10) <= oggiF))
                 .map((x) => x.full_name).filter(Boolean) as string[]);
-            await sincronizzaMalusCaller(pratiche, fuori);
+            // i doppioni assorbiti: i loro malus si annullano, non si chiudono
+            const assorbite = new Set(calls.filter((c) => c.assorbita_da).map((c) => c.id));
+            await sincronizzaMalusCaller(pratiche, fuori, assorbite);
             setMalusSyncVersione((v) => v + 1);
         } finally { malusSyncInCorso.current = false; }
     }, [isDirector, malusDatiPronti, calls, regoleCaller, faseInfo]);

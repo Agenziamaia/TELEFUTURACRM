@@ -129,6 +129,8 @@ interface AppUser {
     hire_date: string | null;
     note: string | null;
     password: string | null;
+    password_hash?: string | null;   // presente = una password ce l'ha (mai in chiaro)
+    last_seen_at?: string | null;    // mai valorizzato = non è mai entrato
     // MOD-25: utenza Aircall collegata (bigint) — aggancia chiamate e click-to-call
     aircall_user_id?: number | null;
     // Luca 24/08 (caso Sheekel): linea Aircall "solo caller" — se valorizzata,
@@ -794,6 +796,23 @@ function UserCard({ u, rules, onOpen, onEdit }: { u: AppUser; rules: RoleCostRul
                         {u.status === "licenziato" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/20">
                                 licenziato
+                            </span>
+                        )}
+                        {/* CHI NON È MAI ENTRATO SI VEDE (Luca 31/08). Tre utenti
+                            creati in tre giorni non erano mai riusciti ad accedere e
+                            nessuno se n'era accorto: due non avevano proprio una
+                            password, perché all'epoca la creazione non la impostava.
+                            Ora la password si genera da sola e parte per email, ma
+                            un utente fermo sulla soglia deve vedersi lo stesso —
+                            l'email può sempre finire nello spam. */}
+                        {u.status !== "licenziato" && u.active !== false && !u.last_seen_at && (
+                            <span title={u.password_hash
+                                ? "Ha una password provvisoria ma non è mai entrato: dalla sua scheda, «Reset password» gliela rimanda per email"
+                                : "Non ha nessuna password: dalla sua scheda, «Reset password» gliene manda una per email"}
+                                className={"text-[10px] px-1.5 py-0.5 rounded border " + (u.password_hash
+                                    ? "bg-amber-500/15 text-amber-300 border-amber-500/25"
+                                    : "bg-rose-500/15 text-rose-300 border-rose-500/25")}>
+                                {u.password_hash ? "mai entrato" : "senza password"}
                             </span>
                         )}
                     </div>

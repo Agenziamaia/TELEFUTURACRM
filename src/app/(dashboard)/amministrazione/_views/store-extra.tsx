@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2, Paperclip, Trash2, ExternalLink, Upload } from "lucide-react";
@@ -259,8 +260,36 @@ export function OrariChiusureView() {
     const [spezzatoUi, setSpezzatoUi] = useState<Record<string, boolean>>({});
     const [aziende, setAziende] = useState<AziendaRow[]>([]);
     const [registratori, setRegistratori] = useState<RtRow[]>([]);
+    /* I BRAND CHE IL NEGOZIO TRATTA (Luca 31/08: «così abbiamo il dato
+       veramente completo sul punto vendita»).
+       ⚠️ NIENTE SECONDA VERITÀ: il dato vive già in `store_brand_rules`, la
+       tabella che Registra Vendita legge per sapere cosa può vendere quel
+       negozio e che si governa da Amministrazione → Brand × Negozio. Qui non
+       si duplica: si mostra e si tocca LA STESSA riga. Senza riga vale il
+       default di rete del brand (`catalog_brands.default_abilitato`), che è
+       come funziona di là. */
+    const [brandCat, setBrandCat] = useState<{ id: string; nome: string; colore1: string; default_abilitato?: boolean }[]>([]);
+    const [brandRules, setBrandRules] = useState<{ store: string; brand: string; vede: boolean; registra: boolean }[]>([]);
+    const brandEff = (store: string, b: { id: string; default_abilitato?: boolean }) => {
+        const r = brandRules.find((x) => x.store === store && x.brand === b.id);
+        return r ? !!r.registra : b.default_abilitato !== false;
+    };
+    const [brandBusy, setBrandBusy] = useState<string | null>(null);
+    const toggleBrand = async (store: string, b: { id: string; default_abilitato?: boolean }) => {
+        const acceso = !brandEff(store, b);
+        setBrandBusy(store + "|" + b.id);
+        // registrare implica vedere, come nella sezione Brand × Negozio
+        const { error } = await supabase.from("store_brand_rules")
+            .upsert({ store, brand: b.id, vede: acceso, registra: acceso, updated_at: new Date().toISOString() });
+        setBrandBusy(null);
+        if (dbError("Brand del negozio", error)) return;
+        setBrandRules((p) => {
+            const altri = p.filter((x) => !(x.store === store && x.brand === b.id));
+            return [...altri, { store, brand: b.id, vede: acceso, registra: acceso }];
+        });
+    };
     const carica = useCallback(async () => {
-        const [st0, ch, fs, az, rt] = await Promise.all([
+        const [st0, ch, fs, az, rt, bc, br] = await Promise.all([
             supabase.from("stores").select("name, address, civico, cap, citta, provincia, azienda, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
             supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
             supabase.from("giorni_festivi").select("giorno, nome").order("giorno"),
@@ -273,6 +302,8 @@ export function OrariChiusureView() {
                non è mai stata confermata. */
             supabase.from("aziende").select("codice, ragione_sociale, piva").order("codice"),
             supabase.from("pos_rt").select("negozio, azienda, is_default, rt_url"),
+            supabase.from("catalog_brands").select("id, nome, colore1, default_abilitato").eq("attivo", true).order("nome"),
+            supabase.from("store_brand_rules").select("store, brand, vede, registra"),
         ]);
         // mig. 158/159 non ancora applicate: si ripiega sulle colonne storiche
         const st = st0.error
@@ -284,6 +315,8 @@ export function OrariChiusureView() {
         setFestivi(((fs.data ?? []) as { giorno: string; nome: string }[]));
         setAziende((az.data ?? []) as AziendaRow[]);
         setRegistratori((rt.data ?? []) as RtRow[]);
+        setBrandCat(((bc?.data ?? []) as { id: string; nome: string; colore1: string; default_abilitato?: boolean }[]));
+        setBrandRules(((br?.data ?? []) as { store: string; brand: string; vede: boolean; registra: boolean }[]));
         setLoading(false);
     }, []);
     useEffect(() => { carica(); }, [carica]);
@@ -621,6 +654,32 @@ export function OrariChiusureView() {
                                         ))}
                                         </div>
                                     </div>
+                                    {/* I BRAND TRATTATI: si accendono e si spengono da qui,
+                                        ma la riga è la stessa di Brand × Negozio — quella che
+                                        Registra Vendita legge per sapere cosa il negozio può
+                                        vendere. Un secondo elenco che dice la stessa cosa
+                                        sarebbe un secondo elenco da tenere allineato. */}
+                                    {brandCat.length > 0 && !n.is_ufficio && (
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Brand trattati</span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {brandCat.map(b => {
+                                                    const on = brandEff(n.name, b);
+                                                    return (
+                                                        <button key={b.id} type="button" onClick={() => toggleBrand(n.name, b)}
+                                                            disabled={brandBusy === n.name + "|" + b.id}
+                                                            title={on ? `${b.nome}: il negozio lo tratta — clicca per toglierlo` : `${b.nome}: non trattato — clicca per attivarlo`}
+                                                            className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold border transition-colors",
+                                                                on ? "text-white" : "text-slate-500 border-white/10 bg-white/[0.03] hover:bg-white/10",
+                                                                brandBusy === n.name + "|" + b.id && "opacity-40")}
+                                                            style={on ? { background: `${b.colore1}33`, borderColor: `${b.colore1}88`, color: b.colore1 } : undefined}>
+                                                            {b.nome}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                     {mancaPerDdt && (
                                         <p className="text-[10px] text-amber-300/80 leading-snug">
                                             Senza via, civico, CAP e città il documento di trasporto non è valido.
