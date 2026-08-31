@@ -318,6 +318,38 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setMsg("Vendita registrata. Scontrino già emesso.");
     };
 
+    /* ═══ USCIRE BUTTA LA VENDITA — E VA DETTO OGNI VOLTA (revisore 31/08) ══
+       Da quando la registrazione è differita, chiudere il modale non lascia
+       niente a database. È la cosa giusta — quella vendita non è stata né
+       pagata né scontrinata — ma fino a ieri chiudere la lasciava SALVATA, e
+       chi lavora ha quell'abitudine in mano.
+       L'avviso c'era solo sulla × in fase «scelta». Mancava proprio dove fa
+       più male: il pannello di ERRORE, dove i contanti possono essere GIÀ nel
+       cassetto e la stampante non aver aperto lo scontrino. Scenario misurato
+       dal revisore su job veri: iPhone da 899 €, macchina incassa, stampa
+       fallita, il venditore preme «Chiudi» — 899 € nel cassetto, zero
+       contratti, zero bozza, niente da cui ripartire. */
+    const chiudiConCautela = () => {
+        if (data?.daRegistrare && fase !== "fatto") {
+            const soldiPresi = cashDone && incassato > 0;
+            const testo = soldiPresi
+                ? `Hai GIÀ incassato ${eur(incassato)} in contanti, ma la vendita non è ancora registrata.\n\nUscendo adesso il CRM non ne saprà niente: nessun contratto, nessuno scontrino.\n\nProva prima «Ristampa scontrino». Vuoi davvero uscire?`
+                : "Questa vendita NON è ancora registrata: si scrive quando lo scontrino è emesso.\n\nUscendo adesso la perdi.\n\nSe il cliente paga più tardi, usa «Tieni in sospeso».";
+            if (!window.confirm(testo)) return;
+        }
+        onDone();
+    };
+
+    /* E LA SCHEDA CHE SI CHIUDE. Il browser non chiede niente da solo: con una
+       vendita non ancora scritta, chiudere la finestra la faceva sparire — e
+       col carrello in `sessionStorage` sparisce anche la bozza. */
+    useEffect(() => {
+        if (!data?.daRegistrare || fase === "fatto") return;
+        const avvisa = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+        window.addEventListener("beforeunload", avvisa);
+        return () => window.removeEventListener("beforeunload", avvisa);
+    }, [data?.daRegistrare, fase]);
+
     // Annulla l'attesa dei contanti dal CRM (spec Francesco 31/08). Il loop di poll
     // legge il flag e si ferma; si torna alla scelta del pagamento.
     const annullaIncasso = () => { cancelCashRef.current = true; setMsg("Annullo incasso…"); };
@@ -409,17 +441,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         {/* X per uscire dal modale PRIMA di emettere (spec Francesco): non durante
                             l'incasso/stampa in corso, per non lasciare un'operazione a metà. */}
                         {fase !== "incasso" && fase !== "stampa" && (
-                            /* USCIRE ADESSO BUTTA LA VENDITA (Luca 31/08). Da quando la
-                               registrazione è differita, chiudere qui non lascia niente a
-                               database: è la cosa giusta — non è stata né pagata né
-                               scontrinata — ma va DETTA, perché fino a ieri chiudere
-                               lasciava la vendita salvata, e chi lavora ha quell'abitudine
-                               in mano. */
-                            <button type="button" onClick={() => {
-                                if (data.daRegistrare && fase === "scelta"
-                                    && !window.confirm("Questa vendita NON è ancora registrata: si scrive quando lo scontrino è emesso.\n\nUscendo adesso la perdi.\n\nSe il cliente paga più tardi, usa «Tieni in sospeso».")) return;
-                                onDone();
-                            }} title="Chiudi senza emettere" aria-label="Chiudi"
+                            <button type="button" onClick={chiudiConCautela} title="Chiudi senza emettere" aria-label="Chiudi"
                                 className="shrink-0 w-7 h-7 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 text-lg leading-none flex items-center justify-center">×</button>
                         )}
                     </div>
@@ -663,7 +685,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         <p className="text-rose-300 text-sm">{msg}</p>
                         {cashDone && <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «Ristampa scontrino».</p>}
                         <div className="flex gap-2">
-                            <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Chiudi</button>
+                            <button type="button" onClick={chiudiConCautela} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Chiudi</button>
                             {commitFail
                                 ? <button type="button" onClick={retrySalvataggio} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Salva vendita</button>
                                 : <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>}

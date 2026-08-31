@@ -5487,7 +5487,16 @@ function CRM() {
     setSelVend(user?.name||"");setSelNeg(user?.negozio||"");};
   // ── Auto-save every state change (solo dopo il ripristino della bozza) ──
   // #118: si salva l'intera vendita in corso (brand, prodotti, carrello, flusso).
-  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,notaScelta,nota,promData,promOra,promNeg,promDesc,turista},draftLoaded);
+  /* L'AUTOSAVE SI SPEGNE QUANDO LA VENDITA È SCRITTA (revisore 31/08).
+     `useAutoSave` ha come dipendenza un oggetto ricreato a ogni render, quindi
+     riscrive la bozza dopo OGNI render: il `clearDraft` in fondo al commit
+     veniva annullato dal primo re-render successivo — e il commit stesso ne
+     provoca. Se dopo un salvataggio riuscito l'operatore ricaricava invece di
+     premere «Chiudi», il carrello tornava intero e un nuovo salvataggio
+     generava numeri NUOVI: seconda vendita vera, secondo scarico di magazzino,
+     commissioning doppio. Era l'unico percorso che produceva un doppione. */
+  const venditaScritta = useRef(false);
+  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,notaScelta,nota,promData,promOra,promNeg,promDesc,turista},draftLoaded && !venditaScritta.current);
 
   // ── Load draft on mount (once) ──
   // #118: ripristino COMPLETO della vendita in corso. Prima si ricaricava solo un
@@ -6207,8 +6216,8 @@ function CRM() {
       codice: mi.codice ?? null,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
-  const chiudiScontrino = () => { pendingCommit.current = null; setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
-  const chiudiVenditaFatta = () => { setVenditaFatta(null); fullReset(); submitLock.current = false; setSubmitting(false); };
+  const chiudiScontrino = () => { venditaScritta.current = false; pendingCommit.current = null; setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
+  const chiudiVenditaFatta = () => { venditaScritta.current = false; setVenditaFatta(null); fullReset(); submitLock.current = false; setSubmitting(false); };
   // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
   // potrebbe avere una vendita in corso); rinfresca solo la lista dei sospesi.
   const chiudiSospeso = () => { pendingCommit.current = null; setScontrino(null); setSospesoReload((x) => x + 1); };
@@ -6922,7 +6931,16 @@ function CRM() {
         // 5. Insert contracts then link attachments
         if (contractRows.length > 0) {
           const { error: contractErr } = await supabase.from("contracts").insert(contractRows);
-          if (contractErr) throw contractErr;
+          /* «CHIAVE DUPLICATA» QUI VUOL DIRE «C'È GIÀ» (revisore 31/08). I numeri
+             di pratica si generano prima dell'insert, quindi un secondo
+             tentativo usa gli STESSI: se la scrittura era andata a segno e si è
+             persa solo la risposta — rete che cade subito dopo la stampa — il
+             retry si prendeva un 23505 e diceva «vendita NON salvata, annota a
+             mano». Chi la riscriveva a mano la contava due volte, col
+             commissioning doppio. Un duplicato sugli stessi id è la prova che
+             la vendita esiste: si va avanti. */
+          if (contractErr && String(contractErr.code) !== "23505") throw contractErr;
+          if (contractErr) console.warn("[vendita] contratti già presenti, proseguo:", contractErr.message);
 
           // ALLEGATI PER CONTRATTO (Luca 05/08): prima TUTTI gli allegati
           // finivano sul primo contratto del carrello. Ora:
@@ -7017,7 +7035,8 @@ function CRM() {
           const _av = avvisiScarico(_sc);
           if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
         } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
-        clearDraft("crm_v9");   // adesso sì: la vendita esiste
+        venditaScritta.current = true;   // e l'autosave smette di risuscitarla
+        clearDraft("crm_v9");            // adesso sì: la vendita esiste
         return contractRows;
       };
 
@@ -7281,7 +7300,10 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         // DIFFERITO: apri lo scontrino; la vendita si scrive SOLO a scontrino emesso.
         pendingCommit.current = commitFn;
         _resetForm(); clearDraft("crm_v9");
-        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart });
+        /* `daRegistrare` ANCHE QUI (revisore 31/08): il differimento è nato in
+           questo flusso, ma l'avviso di chiusura era finito solo sull'altro.
+           Accessori e telefoni in contanti passano di qui tutto il giorno. */
+        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true });
       } else {
         // Negozio SENZA scontrino: si salva subito, come prima.
         const rows = await commitFn();
@@ -7507,8 +7529,21 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
     <div className="rvFattaSfondo" style={{zIndex:10050}} onClick={e=>{if(e.target===e.currentTarget)setAvvisiMag([]);}}>
       <div className="rvFatta rvFatta-att">
         <div className="rvFatta-o rvFatta-att-o">📦</div>
-        <h3>Il magazzino non torna</h3>
-        <p>La vendita <b style={{color:"var(--tf-e2e8f0)"}}>è registrata</b> e non c&apos;è niente da rifare. È il magazzino che va guardato:</p>
+        {/* QUANDO IL PEZZO L'HA VENDUTO UN ALTRO BANCO, «niente da rifare» è
+            FALSO (revisore 31/08): c'è tutto da rifare. Due banchi possono
+            battere lo stesso IMEI nello stesso minuto — i controlli guardano
+            una fotografia delle giacenze presa all'apertura della pagina — e
+            solo uno dei due scarichi passa, perché l'indice sul seriale vivo
+            lascia vendere il pezzo una volta sola. Al secondo va detto. */}
+        {(() => {
+          const rubato = (avvisiMag || []).some(a => String(a).includes("non più disponibile"));
+          return (<>
+            <h3>{rubato ? "Questo pezzo l'ha venduto un altro banco" : "Il magazzino non torna"}</h3>
+            <p>{rubato
+              ? <>Lo scontrino è uscito, ma il pezzo <b style={{color:"var(--tf-e2e8f0)"}}>non era più disponibile</b>: qualcun altro l&apos;ha venduto prima. Va sistemato subito — l&apos;incasso c&apos;è, la merce no.</>
+              : <>La vendita <b style={{color:"var(--tf-e2e8f0)"}}>è registrata</b> e non c&apos;è niente da rifare. È il magazzino che va guardato:</>}</p>
+          </>);
+        })()}
         <div className="rvFatta-d" style={{textAlign:"left"}}>
           {avvisiMag.map((a,i)=>(<div key={i}><span style={{minWidth:18}}>⚠️</span><span style={{fontWeight:600,textAlign:"left"}}>{a}</span></div>))}
         </div>
