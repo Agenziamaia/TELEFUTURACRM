@@ -1857,3 +1857,46 @@ html.light .rvSotto{color:#525b73}
 /* ── LA SPIA DI CARICAMENTO ────────────────────────────────────────────
    Era un lucchetto girevole senza parole in mezzo alla pagina. */
 .rvCarico{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:56px 12px;color:var(--tf-8892b0);font-size:13px;font-weight:700}
+
+/* ═══════════ TRASFERIMENTI — quattro pezzi che alla cassetta mancavano ═════
+   (Luca 31/08: «costruisci meglio questa parte, dove posso andare ad applicare
+    diversi tipi di filtri dentro i trasferimenti»)
+   Regole: docs/REGOLE_REGISTRA_VENDITA.md — ogni classe con la sua riga
+   `html.light`, e i contrasti MISURATI compositando davvero le trasparenze sul
+   fondo vero (pagina scura #0f111a, chiara #eef2fb, dentro `.rvTabBox`).     */
+
+/* ── IL CONTATORE DENTRO UNA PASTIGLIA ─────────────────────────────────
+   Le pastiglie delle situazioni («da accettare qui», «in ritardo») valgono per
+   il NUMERO che portano: senza, bisogna premerle una per una per sapere se
+   dentro c'è qualcosa.
+   NON eredita il colore della pastiglia. Provato: con `color:inherit` e un velo
+   bianco sopra, il grigio di `.rvPill` finiva a 3,89:1 — sotto la soglia. Il
+   contatore è un CHIP ROVESCIATO, scuro col testo chiaro nel tema scuro e
+   viceversa: così funziona sia sulla pastiglia spenta sia su quella accesa,
+   che nel tema chiaro resta comunque scura.
+   Misurato — scuro 15,10:1 (9,45 sull'accesa), chiaro 9,83:1 (7,59). */
+.rvPillN{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;
+  font-size:11px;font-weight:800;line-height:1.5;font-variant-numeric:tabular-nums;
+  background:rgba(0,0,0,.30);color:var(--tf-e2e8f0)}
+html.light .rvPillN{background:rgba(255,255,255,.85);color:#33415c}
+
+/* ── LA PASTIGLIA CHE DICE «È ANDATA MALE» ─────────────────────────────
+   `.rvBadge` aveva -empty (spento), -warn (ambra), -ok (verde) e -acc (la
+   tinta del contenitore): mancava il rosso. Un documento respinto o un ammanco
+   non sono un avvertimento, sono una cosa andata storta.
+   Misurato: scuro 5,70:1 · chiaro 5,30:1. */
+.rvBadge-ko{background:rgba(239,68,68,.14);color:var(--tf-f87171);border-color:rgba(239,68,68,.40)}
+html.light .rvBadge-ko{color:#b91c1c;background:rgba(185,28,28,.09);border-color:rgba(185,28,28,.32)}
+
+/* ── LA FRECCIA DI UN TRAGITTO ─────────────────────────────────────────
+   «Magliana W3 → Castani»: la freccia non è un nome di negozio e non deve
+   pesare come loro, se no la riga si legge come tre parole uguali. Ma resta
+   leggibile, perché è lei a dire il VERSO: scuro 5,84:1 · chiaro 5,54:1. */
+.rvFrec{color:var(--tf-8892b0);font-weight:800;padding:0 2px}
+html.light .rvFrec{color:#5a6580}
+
+/* ── IL MODALE CHE DEVE ELENCARE QUALCOSA ──────────────────────────────
+   `.rvFatta` è largo 440px: giusto per una domanda, stretto per il controllo
+   all'arrivo, dove si spunta riga per riga quello che si ha davvero in mano.
+   Non è un modale diverso — è lo stesso, più largo. */
+.rvFatta-lg{max-width:760px}

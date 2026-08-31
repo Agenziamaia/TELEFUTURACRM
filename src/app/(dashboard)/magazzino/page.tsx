@@ -9,8 +9,12 @@
 //                  valore), export Excel
 //   🔍 Ricerca   — barra unica IMEI/SIM/seriale → timeline del ciclo di vita
 //                  (magazzino + usati + vendite CRM)
-//   🚚 Trasferimenti — merce da un negozio all'altro con DDT progressivo:
-//                  in transito → accettato dal magazzino che riceve
+//   🚚 Trasferimenti — TUTTE le situazioni in cui della merce si muove fra
+//                  punti vendita: invio, cessione fra le due società, passaggio
+//                  fra insegne gemelle, merce a quantità, reso a fornitore,
+//                  accettazione parziale, rifiuto, annullamento. Il ragionamento
+//                  sta in src/lib/trasferimenti.ts; le righe dei documenti (lo
+//                  storico che il mittente rivede per sempre) in mag_ddt_righe.
 //   📚 Articoli  — anagrafica articoli dall'export del gestionale (task Luca
 //                  13/08): solo i riferimenti (codice, barcode, descrizione,
 //                  gruppo/listino, sottogruppo, marca), divisi per brand.
@@ -38,7 +42,17 @@ import { caricaTutte } from "@/lib/fetchTutte";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
-import { stessoMagazzino } from "@/lib/negoziNomi";
+import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
+import { ddtHtml, type AziendaDdt, type NegozioDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
+/* Il RAGIONAMENTO sui trasferimenti — le situazioni in cui della merce si
+   muove fra punti vendita, e cosa deve succedere in ognuna — sta tutto in
+   src/lib/trasferimenti.ts. Qui si usa, non si ripete. */
+import {
+    SITUAZIONI, PERIODI, STATI_DDT, STATI_RIGA, TIPI_DDT, RIGHE_APERTE,
+    aperto, inRitardo, fermo, giorniInViaggio, eCessione, daFatturare, tipoDi,
+    nellaSituazione, estremi, pezziDi, valoreRiga, cosaMancaPerEmettere, nomeCorto, soloConNegozio,
+    type Ddt, type RigaDdt, type Situazione, type Periodo,
+} from "@/lib/trasferimenti";
 
 type Unita = {
     id: string; seriale: string; tipo_seriale: string; codice: string | null; descrizione: string;
@@ -50,10 +64,6 @@ type Unita = {
 /** Quello che l'anagrafica dice di un codice. `gruppo` e `marca` non sono
  *  decorazione: da lì si ricava l'operatore telefonico. */
 type DatiArticolo = { descrizione: string; prezzo: number | null; gruppo: string | null; marca: string | null };
-type Ddt = {
-    id: string; numero: number; da_negozio: string; a_negozio: string; stato: string;
-    creato_da: string | null; creato_il: string; accettato_da: string | null; accettato_il: string | null; note: string | null;
-};
 type Articolo = {
     codice: string; barcode: string | null; descrizione: string;
     gruppo: string | null; sottogruppo: string | null; marca: string | null;
@@ -182,7 +192,9 @@ export default function MagazzinoPage() {
             ) : tab === "articoli" ? (
                 <Articoli vedeCosti={puoCaricare} />
             ) : (
-                <Trasferimenti unita={unita} negozi={negozi} aziende={aziende} gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica} />
+                <Trasferimenti unita={unita} quantita={quantita} negozi={negozi} aziende={aziende}
+                    nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={user?.negozio || ""}
+                    gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica} />
             )}
         </div>
     );
@@ -781,160 +793,1407 @@ function RicercaSeriale({ unita }: { unita: Unita[] }) {
     );
 }
 
-/* ── 🚚 TRASFERIMENTI + 📥 CARICO ─────────────────────────────────────── */
-function Trasferimenti({ unita, negozi, aziende, gestisce, puoCaricare, utente, ricarica }: {
-    unita: Unita[]; negozi: string[]; aziende: string[]; gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
+/* ── 🚚 TRASFERIMENTI ──────────────────────────────────────────────────────
+   IL RAGIONAMENTO STA IN  src/lib/trasferimenti.ts : lì sono elencate le
+   dodici situazioni in cui della merce si muove fra punti vendita e cosa deve
+   succedere in ognuna. Qui c'è la schermata che le racconta e le filtra.
+
+   Luca 31/08: «Nel magazzino non mi interessa nemmeno vedere i prodotti in
+   transito: se vado sui trasferimenti, lì dobbiamo approfondire i dettagli.»
+   Quindi la sezione ha DUE viste sugli stessi filtri:
+     · 📄 Documenti  — i DDT, con lo stato e le azioni
+     · 📦 Merce mossa — UNA RIGA PER PEZZO, che è lo «storico dei prodotti che
+       sono stati trasferiti» che oggi non esiste: `mag_unita.ddt_id` viene
+       azzerato all'accettazione, quindi dalla riga del pezzo la prova sparisce
+       nel momento esatto in cui il trasferimento riesce. Le righe del
+       documento no: restano, e portano il negozio di partenza.
+   Regole di stile: docs/REGOLE_REGISTRA_VENDITA.md. */
+
+/** Una riga con dentro anche il suo documento: serve alla vista «merce» e
+ *  all'export, dove ogni riga si legge da sola. */
+type RigaWithDdt = RigaDdt & { ddt: Ddt };
+
+/* ── LE OPERAZIONI ─────────────────────────────────────────────────────────
+   Stanno fuori dai componenti perché le usano in due: il form quando spedisce
+   (e per i gemelli accetta subito) e la tabella quando si prende in carico.
+   La giacenza non si scrive MAI a mano (regola §8): si scrive un movimento e
+   il saldo si muove da sé. */
+
+const oraIso = () => new Date().toISOString();
+
+/** Aggiunge una tappa alla `storia` del pezzo. È un di più — la storia vera la
+ *  scrive il trigger su `mag_eventi` — ma la Ricerca seriale la legge ancora. */
+const conTappa = (storia: Unita["storia"] | undefined, evento: string, negozio: string, operatore: string, note: string) =>
+    [...(storia || []), { quando: oraIso(), evento, negozio, operatore, note }];
+
+/** LA STORIA COM'È ADESSO, non com'era quando si è aperta la pagina.
+ *  `storia` è un campo jsonb che si riscrive INTERO: partire da una copia
+ *  vecchia vuol dire cancellare le tappe scritte nel frattempo. Il caso che
+ *  lo rendeva certo sono i gemelli, dove partenza e accettazione avvengono
+ *  nello stesso clic: la seconda scriveva sopra la prima e il «partito con un
+ *  DDT» spariva. Una query sola per tutti i pezzi coinvolti. */
+async function storieCorrenti(ids: string[]): Promise<Map<string, Unita["storia"]>> {
+    const puliti = ids.filter(Boolean);
+    if (!puliti.length) return new Map();
+    const { data } = await supabase.from("mag_unita").select("id,storia").in("id", puliti);
+    return new Map(((data ?? []) as { id: string; storia: Unita["storia"] }[]).map(r => [r.id, r.storia || []]));
+}
+
+/** Il pezzo non è più in viaggio: perché? Non si tira a indovinare, si guarda
+ *  (regola §7: quando un numero non si sa, si dice perché). */
+async function perchePersa(unitaId: string): Promise<string> {
+    const { data } = await supabase.from("mag_unita").select("stato").eq("id", unitaId).maybeSingle();
+    const s = (data as { stato?: string } | null)?.stato;
+    if (s === "venduto") return "venduta_in_viaggio";
+    if (s === "annullato") return "annullata_in_viaggio";
+    return "mancante";
+}
+
+/** PRENDERE IN CARICO. `quante[riga]` dice quanti pezzi sono arrivati davvero:
+ *  è qui che vive «ne sono arrivati 5 su 6». */
+async function prendiInCarico(
+    d: Ddt, righe: RigaDdt[], quante: Record<string, number>, motivo: string, utente: string,
+): Promise<{ esiti: Record<string, string>; avvisi: string[] }> {
+    const esiti: Record<string, string> = {};
+    const avvisi: string[] = [];
+    const mov: Record<string, unknown>[] = [];
+    const presi: string[] = [];      // le righe che ho DAVVERO preso io
+    const vive = righe.filter(x => x.stato === "in_viaggio");
+    const storie = await storieCorrenti(vive.map(r => r.unita_id || ""));
+    const quando = oraIso();
+
+    /* IL DOCUMENTO SENZA RIGHE NON SI ACCETTA. `[].every(...)` è `true`: un
+       documento a cui le righe non sono state lette — o non sono mai state
+       scritte — si chiudeva «accettato» senza aver mosso un pezzo. */
+    if (!vive.length) return { esiti, avvisi: ["Questo documento non ha righe in viaggio: non l'ho chiuso. Se le righe dovrebbero esserci, ricarica la pagina."] };
+
+    for (const r of vive) {
+        const chiesti = pezziDi(r);
+        const n = Math.max(0, Math.min(chiesti, Number(quante[r.id] ?? chiesti)));
+        let stato = n >= chiesti ? "accettata" : "mancante";
+
+        /* ── PRIMA SI PRENDE LA RIGA, POI SI MUOVE LA MERCE ───────────────
+           `.eq("stato","in_viaggio")` non è una precauzione teorica: quindici
+           punti vendita guardano la stessa lista, e chi ha la scheda aperta da
+           cinque minuti vede ancora «Accetta» su un documento che un altro ha
+           già preso in carico. Senza questa condizione il secondo clic scriveva
+           un SECONDO `trasferimento_in`: −n al mittente una volta, +n al
+           destinatario due. La merce a quantità — l'84% del magazzino — era
+           l'unica strada senza guardia; i pezzi con seriale ce l'avevano già
+           sulla loro riga (`.eq("stato","in_transito")`).
+           Chi non prende la riga non tocca niente. */
+        const { data: presa } = await supabase.from("mag_ddt_righe").update({
+            stato, quantita_accettata: n,
+            motivo: n < chiesti && motivo.trim() ? motivo.trim() : null,
+            chiusa_il: quando, chiusa_da: utente,
+        }).eq("id", r.id).eq("stato", "in_viaggio").select("id");
+        if (!presa?.length) {
+            avvisi.push(`${r.descrizione}: l'aveva già presa in carico qualcun altro`);
+            continue;
+        }
+        presi.push(r.id);
+
+        if (r.unita_id) {
+            if (n > 0) {
+                /* SOLO I PEZZI CHE STANNO DAVVERO VIAGGIANDO: un pezzo venduto o
+                   cestinato mentre era in viaggio tornerebbe vendibile appena
+                   qualcuno preme «accetta».
+                   E la SOCIETÀ segue la merce (regola §8a): se il documento è una
+                   cessione, all'arrivo il pezzo è dell'altra società — se no lo
+                   scontrino uscirebbe dalla cassa sbagliata. La si scrive solo se
+                   si sa: metterla a NULL vorrebbe dire togliere al pezzo il suo
+                   proprietario. */
+                const nuovaSoc = d.azienda_a || r.azienda_a;
+                const { data } = await supabase.from("mag_unita").update({
+                    stato: "disponibile", ddt_id: null,
+                    ...(nuovaSoc ? { azienda: nuovaSoc } : {}),
+                    storia: conTappa(storie.get(r.unita_id), "📦 Arrivato e accettato", r.negozio_a, utente, `DDT n.${d.numero} da ${r.negozio_da}`),
+                }).eq("id", r.unita_id).eq("stato", "in_transito").select("id");
+                if (!data?.length) {
+                    // non era più in viaggio: la riga è mia, la correggo
+                    stato = await perchePersa(r.unita_id);
+                    await supabase.from("mag_ddt_righe").update({ stato, quantita_accettata: 0 }).eq("id", r.id);
+                    avvisi.push(`${r.descrizione} (${r.seriale}): ${STATI_RIGA[stato]?.et.toLowerCase() || stato}`);
+                }
+            }
+        } else if (n > 0 && r.codice) {
+            mov.push({
+                codice: r.codice, negozio: r.negozio_a, azienda: d.azienda_a || r.azienda_a || d.azienda_da,
+                tipo: "trasferimento_in", quantita: n, ddt_id: d.id, operatore: utente,
+                nota: `arrivato con DDT n.${d.numero} da ${r.negozio_da}`,
+            });
+        }
+        esiti[r.id] = stato;
+    }
+
+    if (mov.length) {
+        const { error } = await supabase.from("mag_movimenti").insert(mov);
+        if (error) {
+            /* IL MOVIMENTO NON È PASSATO: le righe tornano in viaggio, se no il
+               documento direbbe «arrivato» su merce che non è entrata da
+               nessuna parte e non si potrebbe più riprovare. */
+            await supabase.from("mag_ddt_righe").update({ stato: "in_viaggio", quantita_accettata: null, chiusa_il: null, chiusa_da: null })
+                .in("id", presi).is("unita_id", null);
+            avvisi.push(`le quantità non sono entrate a magazzino (${error.message}): quelle righe sono tornate «in viaggio», riprova`);
+            presi.filter(id => !righe.find(r => r.id === id)?.unita_id).forEach(id => { delete esiti[id]; });
+        }
+    }
+
+    if (!presi.length) return { esiti, avvisi: [...avvisi, "Non ho preso in carico niente: il documento resta com'era."] };
+
+    const finali = righe.map(r => esiti[r.id] || r.stato);
+    const tutto = finali.every(s => ["accettata", "venduta_in_viaggio"].includes(s));
+    /* e anche il DOCUMENTO si chiude una volta sola */
+    await supabase.from("mag_ddt").update({
+        stato: tutto ? "accettato" : "parziale",
+        accettato_da: utente, accettato_il: quando, chiuso_da: utente, chiuso_il: quando,
+        // il perché lo scrive l'operatore: qui non si inventa (regola §7)
+        motivo: tutto ? null : (motivo.trim() || null),
+        // una cessione fra società resta in elenco finché non c'è la fattura
+        ...(eCessione(d) && !d.fattura_stato ? { fattura_stato: "da_emettere" } : {}),
+    }).eq("id", d.id).eq("stato", "in_transito");
+    return { esiti, avvisi };
+}
+
+/** RIMANDARE INDIETRO tutto quello che sta ancora viaggiando: è il corpo sia
+ *  dell'annullamento (lo fa il mittente, prima che arrivi) sia del rifiuto in
+ *  blocco (lo fa chi riceve). Il DOCUMENTO NON SI CANCELLA: resta col suo
+ *  numero, marcato — un progressivo con i buchi non è un progressivo. */
+async function rimandaIndietro(
+    d: Ddt, righe: RigaDdt[], esito: "annullato" | "rifiutato", motivo: string, utente: string,
+): Promise<string[]> {
+    const avvisi: string[] = [];
+    const mov: Record<string, unknown>[] = [];
+    const presi: string[] = [];
+    const vive = righe.filter(x => x.stato === "in_viaggio");
+    const storie = await storieCorrenti(vive.map(r => r.unita_id || ""));
+    const quando = oraIso();
+    const et = esito === "annullato" ? "annullato dal mittente" : "respinto";
+
+    for (const r of vive) {
+        /* «respinta» e «tornata indietro» non sono la stessa cosa: la prima
+           dice che chi riceveva l'ha rifiutata, la seconda che il mittente ha
+           revocato. In tutti e due i casi la riga è CHIUSA — la merce è
+           rientrata — e non finisce fra le differenze da decidere. */
+        let stato = esito === "rifiutato" ? "rifiutata" : "rientrata";
+        // prima si PRENDE la riga: se l'ha già chiusa un altro, non si rientra
+        // due volte la stessa merce (la stessa trappola dell'accettazione)
+        const { data: presa } = await supabase.from("mag_ddt_righe").update({
+            stato, motivo: motivo.trim() || et, chiusa_il: quando, chiusa_da: utente,
+        }).eq("id", r.id).eq("stato", "in_viaggio").select("id");
+        if (!presa?.length) { avvisi.push(`${r.descrizione}: qualcun altro l'aveva già chiusa`); continue; }
+        presi.push(r.id);
+
+        if (r.unita_id) {
+            const { data } = await supabase.from("mag_unita").update({
+                stato: "disponibile", negozio: r.negozio_da, ddt_id: null,
+                ...(r.azienda_da ? { azienda: r.azienda_da } : {}),
+                storia: conTappa(storie.get(r.unita_id), "↩️ Tornato al mittente", r.negozio_da, utente, `DDT n.${d.numero} ${et}`),
+            }).eq("id", r.unita_id).eq("stato", "in_transito").select("id");
+            if (!data?.length) {
+                stato = await perchePersa(r.unita_id);
+                await supabase.from("mag_ddt_righe").update({ stato }).eq("id", r.id);
+                avvisi.push(`${r.descrizione} (${r.seriale}): ${STATI_RIGA[stato]?.et.toLowerCase() || stato} — non è tornato indietro`);
+            }
+        } else if (r.codice) {
+            mov.push({
+                codice: r.codice, negozio: r.negozio_da, azienda: r.azienda_da || d.azienda_da,
+                tipo: "trasferimento_in", quantita: r.quantita, ddt_id: d.id, operatore: utente,
+                nota: `rientrato: DDT n.${d.numero} ${et}`,
+            });
+        }
+    }
+
+    if (mov.length) {
+        const { error } = await supabase.from("mag_movimenti").insert(mov);
+        if (error) {
+            await supabase.from("mag_ddt_righe").update({ stato: "in_viaggio", chiusa_il: null, chiusa_da: null })
+                .in("id", presi).is("unita_id", null);
+            avvisi.push(`le quantità non sono rientrate a magazzino (${error.message}): quelle righe sono tornate «in viaggio», riprova`);
+        }
+    }
+    await supabase.from("mag_ddt").update({
+        stato: esito, motivo: motivo.trim() || et, chiuso_da: utente, chiuso_il: quando,
+    }).eq("id", d.id).eq("stato", "in_transito");
+    return avvisi;
+}
+
+/** CHIUDERE UNA DIFFERENZA. La merce che non è arrivata non si riassorbe di
+ *  nascosto: qualcuno deve dire se è tornata al mittente o se è persa. */
+async function chiudiDifferenza(
+    d: Ddt, r: RigaDdt, come: "rientrata" | "ammanco", motivo: string, utente: string,
+): Promise<string[]> {
+    const avvisi: string[] = [];
+    const quando = oraIso();
+    const restano = pezziDi(r) - Number(r.quantita_accettata || 0);
+    const storia = (await storieCorrenti([r.unita_id || ""])).get(r.unita_id || "");
+
+    /* ANCHE QUI SI PRENDE PRIMA LA RIGA: il bottone «Chiudi la differenza» sta
+       su una lista caricata all'apertura della pagina, e due amministrativi
+       che premono «è tornata al mittente» scriverebbero due rientri della
+       stessa merce. */
+    const { data: presa } = await supabase.from("mag_ddt_righe").update({
+        stato: come, motivo: motivo.trim() || null, chiusa_il: quando, chiusa_da: utente,
+    }).eq("id", r.id).eq("stato", r.stato).select("id");
+    if (!presa?.length) return ["Questa differenza l'aveva già chiusa qualcun altro: ricarica la pagina."];
+
+    if (r.unita_id) {
+        const patch = come === "rientrata"
+            ? { stato: "disponibile", negozio: r.negozio_da, ddt_id: null,
+                ...(r.azienda_da ? { azienda: r.azienda_da } : {}),
+                storia: conTappa(storia, "↩️ Tornato al mittente", r.negozio_da, utente, `differenza del DDT n.${d.numero}`) }
+            : { stato: "annullato", ddt_id: null,
+                storia: conTappa(storia, "🗑 Ammanco", r.negozio_a, utente, `mai arrivato col DDT n.${d.numero}${motivo.trim() ? ": " + motivo.trim() : ""}`) };
+        const { data } = await supabase.from("mag_unita").update(patch).eq("id", r.unita_id).eq("stato", "in_transito").select("id");
+        if (!data?.length) avvisi.push(`${r.descrizione}: il pezzo non risulta più in viaggio, la riga è stata comunque chiusa`);
+    } else if (come === "rientrata" && r.codice && restano > 0) {
+        const { error } = await supabase.from("mag_movimenti").insert({
+            codice: r.codice, negozio: r.negozio_da, azienda: r.azienda_da || d.azienda_da,
+            tipo: "trasferimento_in", quantita: restano, ddt_id: d.id, operatore: utente,
+            nota: `rientro della differenza del DDT n.${d.numero}`,
+        });
+        if (error) {
+            await supabase.from("mag_ddt_righe").update({ stato: r.stato, chiusa_il: null, chiusa_da: null }).eq("id", r.id);
+            avvisi.push(`il rientro non è stato scritto (${error.message}): la differenza è rimasta aperta, riprova`);
+        }
+    }
+    /* AMMANCO A QUANTITÀ: non serve nessun movimento. Il `trasferimento_out`
+       della partenza ha già tolto quei pezzi al mittente e nessuno li ha mai
+       caricati altrove — la perdita è già dentro i conti. Scriverne un altro
+       la conterebbe due volte. */
+    return avvisi;
+}
+
+function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, gestisce, puoCaricare, utente, ricarica }: {
+    unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
+    nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
+    mioNegozio: string; gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
 }) {
     const [ddt, setDdt] = useState<Ddt[]>([]);
+    const [righe, setRighe] = useState<RigaDdt[]>([]);
+    /* La tabella delle righe arriva con la migrazione 20260831180000, che Luca
+       applica a mano. Finché non c'è, la sezione non deve rompersi: si accorge
+       da sé e lo dice, invece di mostrare una schermata di errore. */
+    const [righeVive, setRigheVive] = useState<boolean | null>(null);
+    const [socDati, setSocDati] = useState<Record<string, AziendaDdt>>({});
+    const [negDati, setNegDati] = useState<Record<string, NegozioDdt>>({});
+    const [casse, setCasse] = useState<{ negozio: string; azienda: string; is_default: boolean | null }[]>([]);
+    const [carico, setCarico] = useState(true);
+
+    const caricaTutto = useCallback(async () => {
+        setCarico(true);
+        const [d, a, s, p] = await Promise.all([
+            supabase.from("mag_ddt").select("*").order("creato_il", { ascending: false }).limit(500),
+            supabase.from("aziende").select("codice,ragione_sociale,logo_url,piva,codice_fiscale,sede,cap,citta,provincia,rea,telefono,email"),
+            supabase.from("stores").select("name,address,civico,cap,citta,provincia,azienda,is_ufficio").order("name"),
+            supabase.from("pos_rt").select("negozio,azienda,is_default"),
+        ]);
+        setDdt((d.data ?? []) as Ddt[]);
+        const az: Record<string, AziendaDdt> = {};
+        ((a.data ?? []) as AziendaDdt[]).forEach(x => { az[x.codice] = x; });
+        setSocDati(az);
+        const ng: Record<string, NegozioDdt> = {};
+        ((s.data ?? []) as (NegozioDdt & { is_ufficio?: boolean | null })[]).forEach(x => { ng[x.name] = x; });
+        setNegDati(ng);
+        setCasse((p.data ?? []) as { negozio: string; azienda: string; is_default: boolean | null }[]);
+
+        /* PAGINATE. Con `.limit(5000)` i documenti più vecchi perdevano le
+           righe in silenzio, e la schermata diceva «questo documento non ha
+           righe» — che è una spiegazione falsa (regola §7). `caricaTutte` è lo
+           stesso paginatore che usa la scheda Giacenze. */
+        const r = await caricaTutte<RigaDdt>((from, to) =>
+            supabase.from("mag_ddt_righe").select("*").order("creato_il", { ascending: false }).range(from, to) as never);
+        if (r.error) { setRigheVive(false); setRighe([]); }
+        else { setRigheVive(true); setRighe((r.data ?? []) as RigaDdt[]); }
+        setCarico(false);
+    }, []);
+    useEffect(() => { caricaTutto(); }, [caricaTutto]);
+
+    /* I MIEI NEGOZI. I gemelli contano come uno: chi sta a Magliana W3 riceve
+       anche quello che arriva al Multi — è lo stesso bancone. */
+    const miei = useMemo(() => splitNegozi(mioNegozio).filter(Boolean), [mioNegozio]);
+    const mio = useCallback((n: string) => miei.some(m => stessoMagazzino(n, m)), [miei]);
+
+    /* UNA MAPPA, non un filtro per documento. `conteggi` chiama `righeDi` sette
+       volte per ogni documento: con 500 documenti e 5.000 righe erano ~3.500
+       scansioni complete a ogni tasto premuto nel campo «Cerca». */
+    const righePer = useMemo(() => {
+        const m = new Map<string, RigaDdt[]>();
+        righe.forEach(r => { const l = m.get(r.ddt_id); if (l) l.push(r); else m.set(r.ddt_id, [r]); });
+        m.forEach(l => l.sort((a, b) => a.riga - b.riga));
+        return m;
+    }, [righe]);
+    const VUOTE: RigaDdt[] = useMemo(() => [], []);
+    const righeDi = useCallback((id: string) => righePer.get(id) ?? VUOTE, [righePer, VUOTE]);
+
+    /* ── I FILTRI ───────────────────────────────────────────────────────── */
+    const [situazione, setSituazione] = useState<Situazione>("tutti");
+    const [cerca, setCerca] = useState("");
+    const [daNeg, setDaNeg] = useState<string[]>([]);
+    const [aNeg, setANeg] = useState<string[]>([]);
+    const [stati, setStati] = useState<string[]>([]);
+    const [tipi, setTipi] = useState<string[]>([]);
+    const [soc, setSoc] = useState<string[]>([]);
+    const [persone, setPersone] = useState<string[]>([]);
+    const [periodo, setPeriodo] = useState<Periodo>("sempre");
+    const [dal, setDal] = useState(""); const [al, setAl] = useState("");
+    const [vista, setVista] = useState<"documenti" | "merce">("documenti");
     const [apriNuovo, setApriNuovo] = useState(false);
     const [apriCarico, setApriCarico] = useState(false);
-    const caricaDdt = useCallback(async () => {
-        const { data } = await supabase.from("mag_ddt").select("*").order("numero", { ascending: false }).limit(200);
-        setDdt((data ?? []) as Ddt[]);
-    }, []);
-    useEffect(() => { caricaDdt(); }, [caricaDdt]);
+    const [apertoId, setApertoId] = useState<string | null>(null);
 
-    const unitaDiDdt = (id: string) => unita.filter(u => u.ddt_id === id);
-    const accetta = async (d: Ddt) => {
-        if (!window.confirm(`Accettare il DDT n.${d.numero} (${d.da_negozio} → ${d.a_negozio})? Le unità diventano disponibili a ${d.a_negozio}.`)) return;
-        const mie = unitaDiDdt(d.id);
-        /* SOLO I PEZZI CHE STANNO DAVVERO VIAGGIANDO (revisore 31/08).
-           L'update portava a «disponibile» tutte le unità del DDT senza
-           guardare da dove venivano: un pezzo partito, poi cestinato
-           dall'amministrazione («mai arrivato»), tornava vendibile appena il
-           negozio ricevente premeva «Accetta». */
-        let saltati = 0;
-        for (const u of mie) {
-            const { data } = await supabase.from("mag_unita").update({
-                stato: "disponibile", ddt_id: null,
-                storia: [...(u.storia || []), { quando: new Date().toISOString(), evento: "📤 Spedito e accettato", negozio: d.a_negozio, operatore: utente, note: `DDT n.${d.numero} da ${d.da_negozio}` }],
-            }).eq("id", u.id).eq("stato", "in_transito").select("id");
-            if (!data?.length) saltati++;
-        }
-        if (saltati) alert(`${saltati} ${saltati === 1 ? "pezzo non è stato accettato perché non risulta più in viaggio" : "pezzi non sono stati accettati perché non risultano più in viaggio"} (venduti o tolti dal magazzino nel frattempo).`);
-        await supabase.from("mag_ddt").update({ stato: "accettato", accettato_da: utente, accettato_il: new Date().toISOString() }).eq("id", d.id);
-        caricaDdt(); ricarica();
+    const azzera = () => {
+        setSituazione("tutti"); setCerca(""); setDaNeg([]); setANeg([]); setStati([]);
+        setTipi([]); setSoc([]); setPersone([]); setPeriodo("sempre"); setDal(""); setAl("");
     };
+    const filtriAccesi = !!(cerca.trim() || daNeg.length || aNeg.length || stati.length || tipi.length
+        || soc.length || persone.length || periodo !== "sempre" || dal || al || situazione !== "tutti");
+
+    // le etichette sono quello che si legge nelle tendine; qui si torna alle chiavi
+    const chiaviStato = useMemo(() => Object.fromEntries(Object.entries(STATI_DDT).map(([k, v]) => [v.et, k])), []);
+    const chiaviTipo = useMemo(() => Object.fromEntries(Object.entries(TIPI_DDT).map(([k, v]) => [v.et, k])), []);
+    const chiaviSoc = useMemo(() => Object.fromEntries(aziende.map(c => [nomiAzienda[c] || c, c])), [aziende, nomiAzienda]);
+
+    const gente = useMemo(() => Array.from(new Set(ddt.flatMap(d =>
+        [d.creato_da, d.accettato_da, d.chiuso_da].filter(Boolean) as string[]))).sort(), [ddt]);
+
+    /** Il testo cercato tocca il documento o una delle sue righe? Chi sta al
+     *  banco cerca l'IMEI del telefono che aspetta, non il numero del DDT. */
+    const ddtPerTesto = useMemo(() => {
+        const q = cerca.trim().toLowerCase();
+        if (!q) return null;
+        const s = new Set<string>();
+        righe.forEach(r => {
+            if (`${r.descrizione} ${r.seriale || ""} ${r.codice || ""}`.toLowerCase().includes(q)) s.add(r.ddt_id);
+        });
+        return s;
+    }, [cerca, righe]);
+
+    const passaFiltri = useCallback((d: Ddt) => {
+        const q = cerca.trim().toLowerCase();
+        if (q) {
+            const suo = `n.${d.numero} ${d.da_negozio} ${d.a_negozio} ${d.creato_da || ""} ${d.accettato_da || ""} ${d.note || ""} ${d.destinatario || ""}`.toLowerCase();
+            if (!suo.includes(q) && !ddtPerTesto?.has(d.id)) return false;
+        }
+        if (daNeg.length && !daNeg.some(n => stessoMagazzino(d.da_negozio, n))) return false;
+        if (aNeg.length && !aNeg.some(n => stessoMagazzino(d.a_negozio, n))) return false;
+        if (stati.length && !stati.map(e => chiaviStato[e]).includes(d.stato)) return false;
+        if (tipi.length && !tipi.map(e => chiaviTipo[e]).includes(d.tipo || "trasferimento")) return false;
+        if (soc.length) {
+            const c = soc.map(e => chiaviSoc[e]);
+            if (!c.includes(d.azienda_da || "") && !c.includes(d.azienda_a || "")) return false;
+        }
+        if (persone.length && ![d.creato_da, d.accettato_da, d.chiuso_da].some(p => p && persone.includes(p))) return false;
+        const est = estremi(periodo);
+        const da = dal ? new Date(dal + "T00:00:00").toISOString() : est.da;
+        const a = al ? new Date(al + "T23:59:59").toISOString() : est.a;
+        if (da && d.creato_il < da) return false;
+        if (a && d.creato_il > a) return false;
+        return true;
+    }, [cerca, ddtPerTesto, daNeg, aNeg, stati, tipi, soc, persone, periodo, dal, al, chiaviStato, chiaviTipo, chiaviSoc]);
+
+    /* I contatori delle situazioni si contano sul FILTRATO, non sul totale:
+       se guardi «questo mese», «in ritardo» deve dire quanti sono in ritardo
+       questo mese — se no il numero della pastiglia e quello che vedi dopo
+       averla premuta non coincidono. */
+    const filtrati = useMemo(() => ddt.filter(passaFiltri), [ddt, passaFiltri]);
+    const conteggi = useMemo(() => {
+        const ora = Date.now();
+        const out = {} as Record<Situazione, number>;
+        SITUAZIONI.forEach(s => { out[s.id] = filtrati.filter(d => nellaSituazione(s.id, d, righeDi(d.id), miei, ora)).length; });
+        return out;
+    }, [filtrati, righeDi, miei]);
+
+    const visibili = useMemo(() => {
+        const ora = Date.now();
+        return filtrati.filter(d => nellaSituazione(situazione, d, righeDi(d.id), miei, ora));
+    }, [filtrati, situazione, righeDi, miei]);
+
+    const merce: RigaWithDdt[] = useMemo(() => {
+        const q = cerca.trim().toLowerCase();
+        const per = new Map(visibili.map(d => [d.id, d]));
+        return righe
+            .filter(r => per.has(r.ddt_id))
+            .filter(r => !q || `${r.descrizione} ${r.seriale || ""} ${r.codice || ""}`.toLowerCase().includes(q)
+                || `n.${per.get(r.ddt_id)!.numero} ${r.negozio_da} ${r.negozio_a}`.toLowerCase().includes(q))
+            .map(r => ({ ...r, ddt: per.get(r.ddt_id)! }))
+            .sort((a, b) => b.creato_il.localeCompare(a.creato_il));
+    }, [righe, visibili, cerca]);
+
+    /* ── COSA MANCA PERCHÉ UN DDT SIA VALIDO ────────────────────────────── */
+    const manca = useMemo(() => cosaMancaPerEmettere(
+        Object.values(socDati),
+        Object.values(negDati).filter(n => negozi.includes(n.name)) as { name: string; address: string | null; civico: string | null; cap: string | null; citta: string | null }[],
+    ), [socDati, negDati, negozi]);
+
+    /* ── CHI PUÒ FARE COSA ───────────────────────────────────────────────
+       Chi non può, non vede il bottone: una cosa che non si può fare non si
+       finge cliccabile (regola §7). */
+    const puoAccettare = (d: Ddt) => gestisce && d.stato === "in_transito" && (puoCaricare || mio(d.a_negozio));
+    const puoAnnullare = (d: Ddt) => gestisce && d.stato === "in_transito" && (puoCaricare || mio(d.da_negozio));
+
+    /* ── LE AZIONI A SCHERMO ─────────────────────────────────────────────── */
+    type Azione = { d: Ddt; modo: "accetta" | "rifiuta" | "annulla" | "fattura" | "differenza"; riga?: RigaDdt };
+    const [azione, setAzione] = useState<Azione | null>(null);
+    const [quante, setQuante] = useState<Record<string, number>>({});
+    const [motivo, setMotivo] = useState("");
+    const [rifRiga, setRifRiga] = useState("");
+    const [comeChiudo, setComeChiudo] = useState<"rientrata" | "ammanco">("rientrata");
+    const [inCorso, setInCorso] = useState(false);
+
+    /* IL BOTTONE NON PROMETTE PIÙ DI QUELLO CHE FA (regola §7). Prendere in
+       carico CON differenze non è una presa in carico pulita: il verde
+       direbbe «è andato tutto bene» mentre si sta scrivendo che manca
+       qualcosa. Ambra, e la riga sopra dice quanti pezzi ballano. */
+    const differenzeInCorso = useMemo(() => {
+        if (azione?.modo !== "accetta") return false;
+        return righeDi(azione.d.id).filter(r => r.stato === "in_viaggio")
+            .some(r => Math.max(0, Math.min(pezziDi(r), Number(quante[r.id] ?? pezziDi(r)))) < pezziDi(r));
+    }, [azione, quante, righeDi]);
+
+    const apriAzione = (d: Ddt, modo: Azione["modo"], riga?: RigaDdt) => {
+        setMotivo(""); setRifRiga(d.fattura_rif || ""); setComeChiudo("rientrata");
+        const q: Record<string, number> = {};
+        righeDi(d.id).forEach(r => { if (r.stato === "in_viaggio") q[r.id] = pezziDi(r); });
+        setQuante(q);
+        setAzione({ d, modo, riga });
+    };
+
+    const conferma = async () => {
+        if (!azione || inCorso) return;
+        setInCorso(true);
+        try {
+            const { d, modo, riga } = azione;
+            const rs = righeDi(d.id);
+            let avvisi: string[] = [];
+            if (modo === "accetta") ({ avvisi } = await prendiInCarico(d, rs, quante, motivo, utente));
+            else if (modo === "rifiuta") avvisi = await rimandaIndietro(d, rs, "rifiutato", motivo, utente);
+            else if (modo === "annulla") avvisi = await rimandaIndietro(d, rs, "annullato", motivo, utente);
+            else if (modo === "differenza" && riga) avvisi = await chiudiDifferenza(d, riga, comeChiudo, motivo, utente);
+            else if (modo === "fattura") {
+                await supabase.from("mag_ddt").update({
+                    fattura_stato: rifRiga.trim() ? "emessa" : "non_dovuta",
+                    fattura_rif: rifRiga.trim() || null,
+                    /* LA DATA LOCALE, non quella UTC: `toISOString()` a Roma dopo
+                       le 22 restituisce già il giorno dopo, e su un riferimento
+                       di fattura la data sbagliata è la data sbagliata. */
+                    fattura_il: rifRiga.trim() ? new Date().toLocaleDateString("sv-SE") : null,
+                }).eq("id", d.id);
+            }
+            setAzione(null);
+            if (avvisi.length) alert("Fatto, ma c'è da sapere:\n\n· " + avvisi.join("\n· "));
+            await caricaTutto(); ricarica();
+        } catch (e) {
+            alert("Non è andata: " + ((e as Error)?.message || "errore"));
+        } finally { setInCorso(false); }
+    };
+
+    /* ── LA STAMPA DEL DOCUMENTO ─────────────────────────────────────────
+       `ddtHtml` esisteva ma non era attaccata a nessun pulsante: il DDT che
+       usciva era la tabellina scritta a mano dentro questa pagina, senza
+       partita IVA, senza indirizzi, senza le tre copie. */
     const stampa = (d: Ddt) => {
-        const mie = unitaDiDdt(d.id);
-        const w = window.open("", "_blank"); if (!w) return;
-        w.document.write(`<html><head><title>DDT ${d.numero}</title><style>body{font-family:sans-serif;padding:32px;color:#111}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:16px}td,th{border:1px solid #999;padding:6px 10px;font-size:13px;text-align:left}p{font-size:13px}</style></head><body>
-<h1>Documento di trasporto n. ${d.numero}/${new Date(d.creato_il).getFullYear()}</h1>
-<p><b>Mittente:</b> ${d.da_negozio} &nbsp;&nbsp; <b>Destinatario:</b> ${d.a_negozio}<br/><b>Data:</b> ${gghh(d.creato_il)} &nbsp;&nbsp; <b>Causale:</b> trasferimento tra punti vendita${d.note ? `<br/><b>Note:</b> ${d.note}` : ""}</p>
-<table><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>Seriale</th></tr>
-${mie.map((u, i) => `<tr><td>${i + 1}</td><td>${u.codice || ""}</td><td>${u.descrizione}</td><td>${u.seriale}</td></tr>`).join("")}
-</table><p style="margin-top:40px">Firma mittente ______________________ &nbsp;&nbsp;&nbsp; Firma destinatario ______________________</p>
-<script>window.print()</script></body></html>`);
+        const rs = righeDi(d.id);
+        const dati: DatiDdt = {
+            numero: d.numero, anno: d.anno ?? new Date(d.creato_il).getFullYear(), creato_il: d.creato_il,
+            da_negozio: d.da_negozio, a_negozio: d.a_negozio,
+            azienda_da: d.azienda_da || "", azienda_a: d.azienda_a || "",
+            causale: d.causale || "Trasferimento tra sedi", aspetto: d.aspetto || "A vista",
+            trasporto: d.trasporto || "A cura del mittente",
+            colli: d.colli, inizio_trasporto: d.inizio_trasporto,
+            creato_da: d.creato_da, note: d.note,
+        };
+        /* IL RESO A FORNITORE. Il generatore prende il destinatario da
+           `aziende[azienda_a]` e il luogo di consegna da `negozi[a_negozio]`:
+           per un reso quella società è la NOSTRA e quel negozio non esiste,
+           quindi il documento usciva con «Spett.le Telefutura» e «manca
+           l'indirizzo» (revisore 31/08). Qui il fornitore entra da quelle due
+           porte, coi dati che l'operatore ha compilato al momento dell'invio —
+           senza toccare il generatore, che è di un altro cantiere. */
+        const esterno = !!d.destinatario;
+        if (esterno) dati.azienda_a = "__fornitore";
+        const azStampa: Record<string, AziendaDdt> = esterno ? {
+            ...socDati,
+            __fornitore: {
+                codice: "__fornitore", ragione_sociale: d.destinatario || "", logo_url: null,
+                piva: d.destinatario_piva, codice_fiscale: d.destinatario_piva,
+                sede: [d.destinatario_indirizzo, d.destinatario_civico].filter(Boolean).join(", ") || null,
+                cap: d.destinatario_cap, citta: d.destinatario_citta, provincia: d.destinatario_provincia,
+                rea: null, telefono: null, email: null,
+            },
+        } : socDati;
+        const negStampa: Record<string, NegozioDdt> = esterno ? {
+            ...negDati,
+            [d.a_negozio]: {
+                name: d.a_negozio, address: d.destinatario_indirizzo, civico: d.destinatario_civico,
+                cap: d.destinatario_cap, citta: d.destinatario_citta, provincia: d.destinatario_provincia,
+            },
+        } : negDati;
+        const stampabili: RigaStampa[] = rs.map(r => ({
+            codice: r.codice, descrizione: r.descrizione, seriale: r.seriale, quantita: pezziDi(r),
+        }));
+        const w = window.open("", "_blank");
+        if (!w) { alert("Il browser ha bloccato la finestra della stampa: sbloccala e riprova."); return; }
+        // il generatore fa il documento, non chiede la stampa: la finestra di
+        // stampa è quello che si aspetta chi preme «DDT», e le copie sono tre
+        const chiedi = "<" + "script>window.addEventListener('load',function(){window.print()})<" + "/script>";
+        w.document.write(ddtHtml(dati, stampabili, azStampa, negStampa).replace("</body>", chiedi + "</body>"));
         w.document.close();
+    };
+
+    const esporta = () => {
+        const dati: CellaXlsx[][] = merce.map(r => [
+            gghh(r.creato_il), `n.${r.ddt.numero}/${r.ddt.anno ?? ""}`,
+            TIPI_DDT[r.ddt.tipo || "trasferimento"]?.et || r.ddt.tipo,
+            r.codice, r.descrizione, r.seriale || "", pezziDi(r), r.quantita_accettata ?? "",
+            r.negozio_da, r.negozio_a,
+            nomiAzienda[r.azienda_da || ""] || r.azienda_da || "", nomiAzienda[r.azienda_a || ""] || r.azienda_a || "",
+            STATI_RIGA[r.stato]?.et || r.stato, r.motivo || "",
+            r.ddt.creato_da || "", r.ddt.accettato_da || "",
+            valoreRiga(r) == null ? "" : Math.round(valoreRiga(r)! * 100) / 100,
+        ]);
+        scaricaXlsx(`trasferimenti_${new Date().toISOString().slice(0, 10)}.xlsx`,
+            ["Quando", "DDT", "Tipo", "Codice", "Articolo", "Seriale", "Pezzi", "Arrivati", "Da", "A",
+                "Società di partenza", "Società di arrivo", "Esito", "Perché", "Spedito da", "Accettato da", "Valore €"],
+            dati, "Trasferimenti");
+    };
+
+    /* ── QUELLO CHE SI VEDE ──────────────────────────────────────────────── */
+    const rigaTragitto = (d: Ddt) => (
+        <>
+            <span className="rvTab-nome">{d.da_negozio}</span>
+            <span className="rvFrec"> → </span>
+            <span className="rvTab-nome">{d.a_negozio}</span>
+            {eCessione(d) && (
+                <div className="rvTab-min">{nomeCorto(nomiAzienda[d.azienda_da || ""]) || d.azienda_da} → {nomeCorto(nomiAzienda[d.azienda_a || ""]) || d.azienda_a}</div>
+            )}
+        </>
+    );
+
+    const pastigliaStato = (d: Ddt) => {
+        const s = STATI_DDT[d.stato] || { et: d.stato, ico: "•", tono: "rvBadge-empty" };
+        const gg2 = giorniInViaggio(d);
+        return (
+            <>
+                <span className={cn("rvBadge", s.tono)}>{s.ico} {s.et}</span>
+                {aperto(d) && (
+                    <div className={cn("rvTab-min", fermo(d) ? "rvGiac rvGiac-ko" : inRitardo(d) ? "rvGiac rvGiac-no" : undefined)}>
+                        {gg2 === 0 ? "partito oggi" : `da ${gg2} ${gg2 === 1 ? "giorno" : "giorni"}`}
+                    </div>
+                )}
+                {d.stato === "accettato" && d.accettato_da && <div className="rvTab-min">{d.accettato_da} · {gg(d.accettato_il)}</div>}
+                {d.stato === "parziale" && d.motivo && <div className="rvTab-min">{d.motivo}</div>}
+                {(d.stato === "annullato" || d.stato === "rifiutato") && d.motivo && <div className="rvTab-min">{d.motivo}</div>}
+            </>
+        );
     };
 
     return (
         <div className="space-y-4">
-            {gestisce && (
-                <div className="rvPillRow">
-                    {/* pastiglie, non bottoni verdi: aprono un riquadro, non
-                        salvano niente — il verde promette (regola 7) */}
-                    <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }}
-                        className={cn("rvPill", apriNuovo && "rvPill-on")}><Truck size={15} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento</button>
-                    {puoCaricare && <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }}
-                        className={cn("rvPill", apriCarico && "rvPill-on")}><PackagePlus size={15} className="inline-block align-[-3px] mr-1.5" /> Carico merce</button>}
+            {/* SI DICE PRIMA, NON DOPO (regola §7): un DDT emesso senza la sede
+                legale delle società non è valido, e accorgersene in stampa vuol
+                dire accorgersene quando il corriere è già partito. */}
+            {manca.length > 0 && (
+                <div className="rvPrima">
+                    <div className="rvPrima-t">⚠️ Un documento di trasporto emesso adesso non sarebbe valido</div>
+                    {manca.slice(0, 6).map(m => (
+                        <div key={m} className="rvManca rvManca-qui"><i>·</i>{m}<u>Amministrazione → Negozi</u></div>
+                    ))}
+                    {manca.length > 6 && <div className="rvManca rvManca-qui"><i>·</i>…e altre {manca.length - 6} cose</div>}
                 </div>
             )}
-            {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}
-            {apriNuovo && <NuovoTrasferimento unita={unita} negozi={negozi} utente={utente} dopo={() => { setApriNuovo(false); caricaDdt(); ricarica(); }} />}
-            <div className="rvTabBox">
-                <table className="rvTab">
-                    <thead>
-                        <tr><th>DDT</th><th>Tragitto</th><th className="rvTab-c">Unità</th><th>Stato</th><th>Creato</th><th className="rvTab-c">Azioni</th></tr>
-                    </thead>
-                    <tbody>
-                        {ddt.map(d => {
-                            const n = unitaDiDdt(d.id).length;
-                            return (
-                                <tr key={d.id} className="rvTab-riga">
-                                    <td className="rvTab-cod">n.{d.numero}</td>
-                                    <td className="rvTab-nome">{d.da_negozio} → {d.a_negozio}</td>
-                                    <td className="rvTab-n">{d.stato === "accettato" ? "✓" : n}</td>
-                                    <td>{d.stato === "in_transito" ? "🚚 In transito" : d.stato === "accettato" ? `✅ Accettato da ${d.accettato_da} il ${gg(d.accettato_il)}` : d.stato}</td>
-                                    <td className="rvTab-min">{gghh(d.creato_il)}{d.creato_da ? ` · ${d.creato_da}` : ""}</td>
-                                    <td className="rvTab-c">
-                                        <span className="rvPillRow rvPillRow-dritta justify-center">
-                                            <button onClick={() => stampa(d)} className="rvPill rvPill-sm">🖨 DDT</button>
-                                            {gestisce && d.stato === "in_transito" && (
-                                                <button onClick={() => accetta(d)} className="rvPill rvPill-sm rvPill-si">✓ Accetta</button>
-                                            )}
-                                        </span>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        {!ddt.length && <tr><td colSpan={6} className="rvTab-vuoto">Nessun trasferimento ancora.</td></tr>}
-                    </tbody>
-                </table>
+            {righeVive === false && (
+                <div className="rvNota rvNota-att">
+                    <div className="rvNota-t">🧱 Manca la tabella delle righe dei documenti</div>
+                    <div className="rvNota-s">
+                        La sezione funziona a metà: i documenti si vedono, ma cosa contengono no — e la merce a
+                        quantità non si può spedire. Si applica la migrazione <b>20260831180000_trasferimenti.sql</b>.
+                    </div>
+                </div>
+            )}
+
+            {/* ── LE SITUAZIONI: le domande che si fanno ogni giorno ───────── */}
+            <div className="rvPillRow">
+                {SITUAZIONI.filter(s => miei.length || !soloConNegozio.includes(s.id)).map(s => (
+                    <button key={s.id} onClick={() => setSituazione(s.id)} title={s.spiega}
+                        className={cn("rvPill", situazione === s.id && "rvPill-on")}>
+                        {s.ico} {s.et}<b className="rvPillN">{conteggi[s.id] ?? 0}</b>
+                    </button>
+                ))}
             </div>
+
+            {/* ── I FILTRI ─────────────────────────────────────────────────── */}
+            <div className="rvBox">
+                <div className="rvBoxT">🔎 Filtra i trasferimenti</div>
+                <div className="rvBarra">
+                    <label className="rvCampo rvCampo-flex"><span className="rvLab">Cerca</span>
+                        <span className="rvCerca">
+                            <Search size={16} />
+                            <input value={cerca} onChange={e => setCerca(e.target.value)} className="rvIn"
+                                placeholder="IMEI, articolo, numero del DDT, persona…" />
+                        </span>
+                    </label>
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Parte da</span>
+                        <SelectMulti className="rvIn" values={daNeg} onChange={setDaNeg} opzioni={negozi}
+                            tuttiLabel="Tutti i negozi" placeholder="tutti" /></div>
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Arriva a</span>
+                        <SelectMulti className="rvIn" values={aNeg} onChange={setANeg} opzioni={negozi}
+                            tuttiLabel="Tutti i negozi" placeholder="tutti" /></div>
+                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Stato</span>
+                        <SelectMulti className="rvIn" values={stati} onChange={setStati}
+                            opzioni={Object.values(STATI_DDT).map(s => s.et)} tuttiLabel="Tutti gli stati" placeholder="tutti" /></div>
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Tipo di movimento</span>
+                        <SelectMulti className="rvIn" values={tipi} onChange={setTipi}
+                            opzioni={Object.values(TIPI_DDT).map(t => t.et)} tuttiLabel="Tutti i tipi" placeholder="tutti" /></div>
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Società coinvolta</span>
+                        <SelectMulti className="rvIn" values={soc} onChange={setSoc}
+                            opzioni={aziende.map(c => nomiAzienda[c] || c)} tuttiLabel="Tutte e due" placeholder="tutte" /></div>
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Chi l&apos;ha toccato</span>
+                        <SelectMulti className="rvIn" values={persone} onChange={setPersone} opzioni={gente}
+                            tuttiLabel="Chiunque" placeholder="chiunque" /></div>
+                </div>
+                <div className="rvBarra rvBarra-c mt-3">
+                    <div className="rvCampo"><span className="rvLab">Quando</span>
+                        <div className="rvPillRow">
+                            {PERIODI.map(p => (
+                                <button key={p.id} onClick={() => { setPeriodo(p.id); setDal(""); setAl(""); }}
+                                    className={cn("rvPill rvPill-sm", periodo === p.id && !dal && !al && "rvPill-on")}>{p.et}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <label className="rvCampo rvCampo-xs"><span className="rvLab">Dal</span>
+                        <input type="date" value={dal} onChange={e => { setDal(e.target.value); setPeriodo("sempre"); }} className="rvIn" /></label>
+                    <label className="rvCampo rvCampo-xs"><span className="rvLab">Al</span>
+                        <input type="date" value={al} onChange={e => { setAl(e.target.value); setPeriodo("sempre"); }} className="rvIn" /></label>
+                    <span className="rvSpazio" />
+                    {filtriAccesi && <button onClick={azzera} className="rvPill rvPill-sm">✕ Azzera i filtri</button>}
+                </div>
+            </div>
+
+            {/* ── LE DUE VISTE E LE AZIONI ─────────────────────────────────── */}
+            <div className="rvBarra rvBarra-c">
+                <div className="rvPillRow">
+                    <button onClick={() => setVista("documenti")} className={cn("rvPill", vista === "documenti" && "rvPill-on")}>
+                        📄 Documenti<b className="rvPillN">{visibili.length}</b></button>
+                    <button onClick={() => setVista("merce")} className={cn("rvPill", vista === "merce" && "rvPill-on")}>
+                        📦 Merce mossa<b className="rvPillN">{merce.length}</b></button>
+                </div>
+                <span className="rvSpazio" />
+                {gestisce && (
+                    <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }}
+                        className={cn("rvPill", apriNuovo && "rvPill-on")}>
+                        <Truck size={15} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento</button>
+                )}
+                {puoCaricare && (
+                    <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }}
+                        className={cn("rvPill", apriCarico && "rvPill-on")}>
+                        <PackagePlus size={15} className="inline-block align-[-3px] mr-1.5" /> Carico merce</button>
+                )}
+                <button onClick={esporta} disabled={!merce.length} className="rvPill rvPill-sm">
+                    <FileDown size={14} className="inline-block align-[-2px] mr-1.5" />Excel</button>
+            </div>
+
+            {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}
+            {apriNuovo && (
+                <NuovoTrasferimento unita={unita} quantita={quantita} negozi={negozi} negDati={negDati} casse={casse}
+                    nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={mioNegozio} utente={utente}
+                    righeVive={righeVive !== false}
+                    dopo={() => { setApriNuovo(false); caricaTutto(); ricarica(); }} />
+            )}
+
+            {carico ? (
+                <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico i trasferimenti…</div>
+            ) : vista === "documenti" ? (
+                <div className="rvTabBox">
+                    <table className="rvTab">
+                        <thead>
+                            {/* QUATTRO COLONNE, NON OTTO (regola §5: la finestra non è tutta
+                                per il contenuto — il menù di sinistra si prende 256px, e a 1073
+                                al magazzino ne restano 817). Con otto colonne l'azione principale
+                                — «Accetta» — finiva fuori dallo schermo, raggiungibile solo
+                                scorrendo la tabella di lato: misurato. Il tipo, la data e chi ha
+                                spedito non sono spariti, sono entrati nella cella a cui
+                                appartengono. */}
+                            <tr>
+                                <th>Documento</th><th>Tragitto</th>
+                                <th className="rvTab-c">Merce</th><th>Stato e cosa fare</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {visibili.map(d => {
+                                const rs = righeDi(d.id);
+                                const pezzi = rs.reduce((s, r) => s + pezziDi(r), 0);
+                                const val = rs.reduce((s, r) => s + (valoreRiga(r) ?? 0), 0);
+                                const senzaValore = rs.some(r => valoreRiga(r) == null);
+                                const t = TIPI_DDT[d.tipo || "trasferimento"] || TIPI_DDT.trasferimento;
+                                const apertaQui = apertoId === d.id;
+                                return (
+                                    <Fragment key={d.id}>
+                                        <tr className={cn("rvTab-riga rvTab-cl", apertaQui && "rvTab-on")}
+                                            onClick={() => setApertoId(apertaQui ? null : d.id)}>
+                                            <td className="rvTab-cod">
+                                                <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>
+                                                n.{d.numero}/{d.anno ?? new Date(d.creato_il).getFullYear()}
+                                                <div className="rvTab-min">{nomeCorto(nomiAzienda[d.azienda_da || ""]) || d.azienda_da || "—"}</div>
+                                                <div className="rvTab-min">{gghh(d.creato_il)}</div>
+                                                {d.creato_da && <div className="rvTab-min">{d.creato_da}</div>}
+                                            </td>
+                                            <td>
+                                                <span className="rvTag whitespace-nowrap" title={t.spiega}>{t.ico} {t.corto}</span>
+                                                <div className="mt-1">{rigaTragitto(d)}</div>
+                                            </td>
+                                            {/* i pezzi e quanto valgono stanno nella stessa casella: una
+                                                colonna in meno è l'azione principale ancora sullo schermo
+                                                quando la finestra è stretta e il menù è aperto */}
+                                            <td className="rvTab-n whitespace-nowrap"
+                                                title={senzaValore ? "Di qualche riga non si sa il valore d'acquisto: il totale è per difetto" : undefined}>
+                                                {rs.length ? <>{pezzi} <span className="rvTab-min">{rs.length === 1 ? "riga" : "righe"} {rs.length}</span></> : "—"}
+                                                {val > 0 && <div className="rvTab-min">{senzaValore ? "almeno " : ""}{eur(val)}</div>}
+                                            </td>
+                                            <td onClick={e => e.stopPropagation()}>
+                                                {pastigliaStato(d)}
+                                                {/* NIENTE `-dritta` qui (a differenza della vecchia riga di
+                                                    due bottoni): con tre azioni, forzare la riga unica spingeva
+                                                    «Accetta» fuori dallo schermo a 1073 col menù aperto. Meglio
+                                                    che vadano a capo. */}
+                                                <span className="rvPillRow mt-2">
+                                                    <button onClick={() => stampa(d)} className="rvPill rvPill-sm" title="Il documento in tre copie, pronto da firmare">🖨 DDT</button>
+                                                    {puoAccettare(d) && <button onClick={() => apriAzione(d, "accetta")} className="rvPill rvPill-sm rvPill-si">✓ Accetta</button>}
+                                                    {/* RESPINGERE IN BLOCCO è un'azione vera, non un caso di scuola:
+                                                        arriva il pacco sbagliato, o arriva rotto, e chi riceve non lo
+                                                        prende. Il codice per rimandare tutto indietro c'era già ma
+                                                        non aveva un bottone: senza, l'unica strada era accettare
+                                                        tutto e poi disfare. */}
+                                                    {puoAccettare(d) && <button onClick={() => apriAzione(d, "rifiuta")} className="rvPill rvPill-sm">↩️ Respingi</button>}
+                                                    {puoAnnullare(d) && <button onClick={() => apriAzione(d, "annulla")} className="rvPill rvPill-sm">🚫 Annulla</button>}
+                                                    {puoCaricare && daFatturare(d) && <button onClick={() => apriAzione(d, "fattura")} className="rvPill rvPill-sm rvPill-no">🧾 Fattura</button>}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        {apertaQui && (
+                                            <tr className="rvTab-det"><td colSpan={4}>
+                                                <div className="rvDett">
+                                                    <div className="rvDettT">Il documento</div>
+                                                    <div className="rvDettR">
+                                                        <span className="rvTab-min">Causale</span><span>{d.causale || "—"}</span>
+                                                        <span className="rvSep" />
+                                                        <span className="rvTab-min">Aspetto</span><span>{d.aspetto || "—"}</span>
+                                                        <span className="rvSep" />
+                                                        <span className="rvTab-min">Trasporto</span><span>{d.trasporto || "—"}</span>
+                                                        {d.colli != null && <><span className="rvSep" /><span className="rvTab-min">Colli</span><span>{d.colli}</span></>}
+                                                    </div>
+                                                    {d.destinatario && (
+                                                        <div className="rvDettR">
+                                                            <span className="rvTab-min">Destinatario</span>
+                                                            <span><b>{d.destinatario}</b>{d.destinatario_piva ? ` · P.IVA ${d.destinatario_piva}` : ""}</span>
+                                                            <span className="rvTab-min">
+                                                                {[[d.destinatario_indirizzo, d.destinatario_civico].filter(Boolean).join(", "),
+                                                                [d.destinatario_cap, d.destinatario_citta, d.destinatario_provincia ? `(${d.destinatario_provincia})` : null].filter(Boolean).join(" ")]
+                                                                    .filter(Boolean).join(" — ")}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    {d.note && (
+                                                        <div className="rvDettR"><span className="rvTab-min">Note</span><span>{d.note}</span></div>
+                                                    )}
+                                                    {eCessione(d) && (
+                                                        <div className="rvDettR">
+                                                            <span className="rvBadge rvBadge-warn">🧾 Cessione fra società</span>
+                                                            <span>{d.fattura_stato === "emessa"
+                                                                ? `Fatturata${d.fattura_rif ? ` — ${d.fattura_rif}` : ""}${d.fattura_il ? ` del ${gg(d.fattura_il)}` : ""}`
+                                                                : d.fattura_stato === "non_dovuta" ? "Segnata come non da fatturare"
+                                                                    : "Il DDT va seguito da fattura: non risulta ancora emessa."}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="rvDett">
+                                                    <div className="rvDettT">Cosa c&apos;è dentro</div>
+                                                    {!rs.length && <div className="rvTab-min">{righeVive === false
+                                                        ? "Le righe non si possono leggere finché la migrazione non è applicata."
+                                                        : "Non trovo righe per questo documento. Può essere nato prima del registro delle righe, oppure l'emissione si è interrotta a metà: prima di prenderlo in carico ricarica la pagina, e se restano zero avvisa l'amministrazione."}</div>}
+                                                    {rs.map(r => {
+                                                        const sr = STATI_RIGA[r.stato] || { et: r.stato, ico: "•", tono: "rvBadge-empty" };
+                                                        const n = pezziDi(r);
+                                                        const arrivati = r.quantita_accettata;
+                                                        return (
+                                                            <div key={r.id} className="rvDettR">
+                                                                <span className={cn("rvBadge rvBadge-w", sr.tono)}>{sr.ico} {sr.et}</span>
+                                                                <span className="rvTab-nome">{r.descrizione}</span>
+                                                                {r.seriale
+                                                                    ? <span className="rvDettR-mono">{r.seriale}</span>
+                                                                    : <span><b className="rvGiac rvGiac-si">{n}</b> pz{arrivati != null && arrivati < n ? <> · <b className="rvGiac rvGiac-no">{arrivati}</b> arrivati</> : null}</span>}
+                                                                {r.codice && <span className="rvTab-cod">{r.codice}</span>}
+                                                                {r.motivo && <span className="rvTab-min">— {r.motivo}</span>}
+                                                                {puoCaricare && RIGHE_APERTE.includes(r.stato) && (
+                                                                    <button onClick={() => apriAzione(d, "differenza", r)} className="rvPill rvPill-sm">Chiudi la differenza</button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </td></tr>
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
+                            {!visibili.length && <tr><td colSpan={4} className="rvTab-vuoto">
+                                {ddt.length
+                                    ? "Nessun documento con questi filtri."
+                                    : "Non è ancora partito nessun trasferimento. Il primo si fa da 🚚 Nuovo trasferimento."}
+                            </td></tr>}
+                        </tbody>
+                    </table>
+                    {!!visibili.length && (
+                        <div className="rvTab-pie">
+                            {visibili.length} {visibili.length === 1 ? "documento" : "documenti"} ·
+                            {" "}{visibili.filter(aperto).length} ancora in viaggio ·
+                            {" "}{visibili.filter(d => inRitardo(d)).length} in ritardo
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="rvTabBox">
+                    <table className="rvTab">
+                        <thead>
+                            <tr>
+                                <th>Articolo</th><th>Seriale / quantità</th>
+                                <th>Da → A</th><th>Documento</th><th>Com&apos;è finita</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {merce.slice(0, 500).map(r => {
+                                const sr = STATI_RIGA[r.stato] || { et: r.stato, ico: "•", tono: "rvBadge-empty" };
+                                const n = pezziDi(r);
+                                return (
+                                    <tr key={r.id} className="rvTab-riga">
+                                        <td><span className="rvTab-nome">{r.descrizione}</span>
+                                            {r.codice && <div className="rvTab-cod">{r.codice}</div>}</td>
+                                        <td>{r.seriale
+                                            ? <span className="rvDettR-mono">{r.seriale}</span>
+                                            : <span><b className="rvGiac rvGiac-si">{n}</b> pz{r.quantita_accettata != null && r.quantita_accettata < n ? <span className="rvTab-min"> · {r.quantita_accettata} arrivati</span> : null}</span>}</td>
+                                        <td><span className="rvTab-nome">{r.negozio_da}</span><span className="rvFrec"> → </span><span className="rvTab-nome">{r.negozio_a}</span>
+                                            {r.azienda_da !== r.azienda_a && <div className="rvTab-min">{nomeCorto(nomiAzienda[r.azienda_da || ""]) || r.azienda_da} → {nomeCorto(nomiAzienda[r.azienda_a || ""]) || r.azienda_a}</div>}</td>
+                                        <td className="rvTab-cod">n.{r.ddt.numero}/{r.ddt.anno ?? ""}
+                                            <div className="rvTab-min">{gghh(r.creato_il)}</div>
+                                            <div className="rvTab-min">{r.ddt.creato_da || "—"}{r.ddt.accettato_da ? ` → ${r.ddt.accettato_da}` : ""}</div></td>
+                                        <td><span className={cn("rvBadge", sr.tono)}>{sr.ico} {sr.et}</span>
+                                            {r.motivo && <div className="rvTab-min">{r.motivo}</div>}</td>
+                                    </tr>
+                                );
+                            })}
+                            {!merce.length && <tr><td colSpan={5} className="rvTab-vuoto">
+                                {righeVive === false
+                                    ? "Le righe dei documenti non sono leggibili: manca la migrazione 20260831180000."
+                                    : "Nessuna merce mossa con questi filtri. Qui resta scritto per sempre tutto quello che esce e che entra, anche dopo che il documento è stato accettato."}
+                            </td></tr>}
+                        </tbody>
+                    </table>
+                    {merce.length > 500 && <div className="rvTab-pie">Ne mostro 500 su {merce.length}: stringi i filtri, oppure scarica l&apos;Excel che le porta tutte.</div>}
+                    {!!merce.length && merce.length <= 500 && (
+                        <div className="rvTab-pie">
+                            {merce.length} {merce.length === 1 ? "riga" : "righe"} ·
+                            {" "}{merce.reduce((s, r) => s + pezziDi(r), 0)} pezzi mossi
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── I MODALI, in un portal (regola §6) ───────────────────────── */}
+            {azione && typeof document !== "undefined" && createPortal(
+                <div className="rvFattaSfondo" onClick={e => { if (e.target === e.currentTarget && !inCorso) setAzione(null); }}>
+                    <div className={cn("rvFatta", azione.modo === "accetta" ? "rvFatta-lg" : "rvFatta-att")}>
+                        {azione.modo === "accetta" ? <AccettaModale
+                            d={azione.d} righe={righeDi(azione.d.id)} quante={quante} setQuante={setQuante}
+                            motivo={motivo} setMotivo={setMotivo} nomiAzienda={nomiAzienda} />
+                            : azione.modo === "fattura" ? (
+                                <>
+                                    <div className="rvFatta-o rvFatta-att-o">🧾</div>
+                                    <h3>La fattura di questa cessione</h3>
+                                    <p>Il DDT n.{azione.d.numero} è una cessione fra <b>{nomiAzienda[azione.d.azienda_da || ""] || azione.d.azienda_da}</b> e <b>{nomiAzienda[azione.d.azienda_a || ""] || azione.d.azienda_a}</b>: due soggetti diversi, quindi il documento di trasporto da solo non basta.</p>
+                                    <label className="rvCampo"><span className="rvLab">Riferimento della fattura</span>
+                                        <input value={rifRiga} onChange={e => setRifRiga(e.target.value)} autoFocus className="rvIn"
+                                            placeholder="es. 128/2026 — lascia vuoto per «non dovuta»" /></label>
+                                    <div className="rvHint">Vuoto = la segno come <b>non dovuta</b>, e il documento esce dall&apos;elenco «da fatturare».</div>
+                                </>
+                            ) : azione.modo === "differenza" && azione.riga ? (
+                                <>
+                                    <div className="rvFatta-o rvFatta-att-o">⚠️</div>
+                                    <h3>Dove è finita?</h3>
+                                    <p><b>{azione.riga.descrizione}</b>{azione.riga.seriale ? <><br />{azione.riga.seriale}</> : null}<br />
+                                        Partita da {azione.riga.negozio_da} col DDT n.{azione.d.numero} e mai arrivata a {azione.riga.negozio_a}.</p>
+                                    <div className="rvCampo"><span className="rvLab">Cosa è successo</span>
+                                        <div className="rvPillRow">
+                                            <button onClick={() => setComeChiudo("rientrata")} className={cn("rvPill rvPill-sm", comeChiudo === "rientrata" && "rvPill-on")}>↩️ È tornata al mittente</button>
+                                            <button onClick={() => setComeChiudo("ammanco")} className={cn("rvPill rvPill-sm", comeChiudo === "ammanco" && "rvPill-on")}>🔴 È persa (ammanco)</button>
+                                        </div>
+                                    </div>
+                                    <label className="rvCampo mt-3"><span className="rvLab">Perché</span>
+                                        <input value={motivo} onChange={e => setMotivo(e.target.value)} className="rvIn" placeholder="mai partita, rubata, errore di conteggio…" /></label>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="rvFatta-o rvFatta-att-o">{azione.modo === "annulla" ? "🚫" : "↩️"}</div>
+                                    <h3>{azione.modo === "annulla" ? "Annullare il documento?" : "Respingere tutta la merce?"}</h3>
+                                    <p>
+                                        DDT n.{azione.d.numero} · {azione.d.da_negozio} → {azione.d.a_negozio}<br />
+                                        Tutto quello che sta ancora viaggiando torna <b>{azione.d.da_negozio}</b>.
+                                        Il documento non si cancella: resta col suo numero, marcato {azione.modo === "annulla" ? "annullato" : "respinto"}.
+                                    </p>
+                                    <label className="rvCampo"><span className="rvLab">Perché</span>
+                                        <input value={motivo} onChange={e => setMotivo(e.target.value)} autoFocus className="rvIn"
+                                            placeholder={azione.modo === "annulla" ? "spedizione sbagliata, ci ripensiamo…" : "merce danneggiata, non è quella che avevo chiesto…"} /></label>
+                                </>
+                            )}
+                        <div className="rvBarra rvBarra-c mt-4 justify-end">
+                            <button onClick={() => setAzione(null)} disabled={inCorso} className="rvPill">Lascia stare</button>
+                            {/* IL PERCHÉ SI CHIEDE, non si inventa (regola §7): prima
+                                accettare con differenze passava col campo vuoto e il
+                                documento si scriveva da solo «arrivato con differenze»,
+                                che sembrava una motivazione data dall'operatore. */}
+                            <button onClick={conferma} disabled={inCorso || (azione.modo === "fattura" ? false : azione.modo === "accetta" ? (differenzeInCorso && !motivo.trim()) : !motivo.trim())}
+                                className={cn("rvAzione", azione.modo === "accetta" ? (differenzeInCorso ? "rvAzione-att" : undefined) : azione.modo === "fattura" ? "rvAzione-att" : "rvAzione-no")}>
+                                {inCorso && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}
+                                {azione.modo === "accetta" ? (differenzeInCorso ? "Prendo in carico con differenze" : "Prendo in carico")
+                                    : azione.modo === "fattura" ? (rifRiga.trim() ? "Segna fatturata" : "Segna non dovuta")
+                                        : azione.modo === "annulla" ? "Sì, annulla" : azione.modo === "differenza" ? "Chiudi la riga" : "Sì, respingi"}
+                            </button>
+                        </div>
+                    </div>
+                </div>, document.body)}
         </div>
     );
 }
 
-function NuovoTrasferimento({ unita, negozi, utente, dopo }: { unita: Unita[]; negozi: string[]; utente: string; dopo: () => void }) {
-    const [da, setDa] = useState(""); const [a, setA] = useState(""); const [note, setNote] = useState("");
-    const [filtro, setFiltro] = useState(""); const [scelte, setScelte] = useState<Set<string>>(new Set());
+/** IL CONTROLLO ALL'ARRIVO. Non è una domanda sì/no: chi riceve APRE il pacco
+ *  e conta. «Ne sono arrivati 5 su 6» deve poterlo dire qui, se no lo dirà a
+ *  voce e il magazzino resterà sbagliato per sempre. */
+function AccettaModale({ d, righe, quante, setQuante, motivo, setMotivo, nomiAzienda }: {
+    d: Ddt; righe: RigaDdt[]; quante: Record<string, number>;
+    setQuante: (f: (p: Record<string, number>) => Record<string, number>) => void;
+    motivo: string; setMotivo: (v: string) => void; nomiAzienda: Record<string, string>;
+}) {
+    const vive = righe.filter(r => r.stato === "in_viaggio");
+    const attesi = vive.reduce((s, r) => s + pezziDi(r), 0);
+    const presi = vive.reduce((s, r) => s + Math.max(0, Math.min(pezziDi(r), Number(quante[r.id] ?? pezziDi(r)))), 0);
+    const differenze = presi !== attesi;
+    return (
+        <>
+            <div className="rvFatta-o">📦</div>
+            <h3>È arrivato tutto?</h3>
+            <p>
+                DDT n.{d.numero} · {d.da_negozio} → {d.a_negozio}<br />
+                Spunta quello che hai davvero in mano. {eCessione(d) && (
+                    <b>La merce passa a {nomiAzienda[d.azienda_a || ""] || d.azienda_a}: è una cessione, servirà la fattura.</b>
+                )}
+            </p>
+            <div className="rvDett max-h-72 overflow-y-auto pr-1">
+                {vive.map(r => {
+                    const n = pezziDi(r);
+                    const preso = Math.max(0, Math.min(n, Number(quante[r.id] ?? n)));
+                    return (
+                        <label key={r.id} className="rvDettR rvDettR-cl">
+                            <input type="checkbox" checked={preso > 0}
+                                onChange={e => setQuante(p => ({ ...p, [r.id]: e.target.checked ? n : 0 }))} />
+                            <span className="rvTab-nome">{r.descrizione}</span>
+                            {r.seriale
+                                ? <span className="rvDettR-mono">{r.seriale}</span>
+                                : <>
+                                    <span className="rvTab-min">di {n}</span>
+                                    <input type="number" min={0} max={n} value={preso} onClick={e => e.stopPropagation()}
+                                        onChange={e => setQuante(p => ({ ...p, [r.id]: Number(e.target.value) }))}
+                                        className="rvQta" />
+                                </>}
+                            {preso < n && <span className="rvBadge rvBadge-warn">{n - preso} non {n - preso === 1 ? "arrivato" : "arrivati"}</span>}
+                        </label>
+                    );
+                })}
+                {!vive.length && <div className="rvTab-min">Non c&apos;è più niente in viaggio su questo documento.</div>}
+            </div>
+            <div className="rvCartRiga">
+                <span>Attesi</span><b>{attesi}</b>
+                <span>In mano</span><b className={cn("rvGiac", differenze ? "rvGiac-no" : "rvGiac-si")}>{presi}</b>
+            </div>
+            {differenze && (
+                <label className="rvCampo"><span className="rvLab">Cosa non torna <span className="rvLabX">(finisce sul documento e resta scritto)</span></span>
+                    <input value={motivo} onChange={e => setMotivo(e.target.value)} className="rvIn"
+                        placeholder="il pacco ne conteneva uno in meno…" /></label>
+            )}
+        </>
+    );
+}
+
+/* ── 🚚 NUOVO TRASFERIMENTO ────────────────────────────────────────────────
+   Tre cose che prima non c'erano, e sono le tre situazioni che Luca ha
+   chiesto di guardare:
+   · LA MERCE A QUANTITÀ. Accessori e SIM sono l'84% del magazzino e non si
+     potevano trasferire affatto: non avendo un seriale non avevano un
+     `ddt_id` dove scriversi. Ora sono righe del documento come le altre, e la
+     giacenza si muove con un movimento — mai scritta a mano (regola §8).
+   · LA SOCIETÀ DELLA MERCE. Un DDT lo emette un soggetto: a Donna Olimpia
+     convivono Telefutura e Telefutura 2, e la merce resta di chi è. Un
+     documento trasporta merce di UNA società sola — due società, due
+     documenti — e se le società di partenza e arrivo sono diverse non è un
+     trasferimento ma una CESSIONE, con la fattura al seguito.
+   · I GEMELLI. Magliana W3 e Magliana Multi sono due insegne nello stesso
+     locale: la merce non si sposta di un metro, cambia solo proprietario.
+     Tenerla «in transito» vorrebbe dire rendere invendibile per giorni un
+     telefono che sta a quaranta centimetri: il documento si emette e si
+     chiude nello stesso atto. */
+function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzienda, anagrafica, mioNegozio, utente, righeVive, dopo }: {
+    unita: Unita[]; quantita: RigaQta[]; negozi: string[];
+    negDati: Record<string, NegozioDdt & { azienda?: string | null }>;
+    casse: { negozio: string; azienda: string; is_default: boolean | null }[];
+    nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
+    mioNegozio: string; utente: string; righeVive: boolean; dopo: () => void;
+}) {
+    const [fuori, setFuori] = useState(false);
+    const [da, setDa] = useState(splitNegozi(mioNegozio)[0] || "");
+    const [a, setA] = useState("");
+    /* IL DESTINATARIO ESTERNO, campo per campo. Su un DDT il destinatario è un
+       soggetto fiscale: ragione sociale, partita IVA e luogo di consegna. In
+       una riga di testo libero finivano tutti insieme, e il documento usciva
+       intestato alla società che spedisce (revisore 31/08). */
+    const [dest, setDest] = useState(""); const [destPiva, setDestPiva] = useState("");
+    const [destVia, setDestVia] = useState(""); const [destCiv, setDestCiv] = useState("");
+    const [destCap, setDestCap] = useState(""); const [destCitta, setDestCitta] = useState("");
+    const [destProv, setDestProv] = useState("");
+    const [soc, setSoc] = useState("");
+    const [note, setNote] = useState(""); const [colli, setColli] = useState("");
+    const [aspetto, setAspetto] = useState("A vista");
+    const [trasporto, setTrasporto] = useState("A cura del mittente");
+    const [filtro, setFiltro] = useState("");
+    const [pezzi, setPezzi] = useState<Set<string>>(new Set());
+    const [qta, setQta] = useState<Record<string, number>>({});
     const [busy, setBusy] = useState(false);
-    const disponibili = useMemo(() =>
-        unita.filter(u => u.stato === "disponibile" && u.negozio === da &&
-            (!filtro || `${u.descrizione} ${u.seriale} ${u.codice || ""}`.toLowerCase().includes(filtro.toLowerCase()))),
-        [unita, da, filtro]);
-    const crea = async () => {
-        if (!da || !a || da === a || !scelte.size) return;
-        setBusy(true);
-        const { data: d, error } = await supabase.from("mag_ddt").insert({ da_negozio: da, a_negozio: a, creato_da: utente, note: note.trim() || null }).select().single();
-        if (error || !d) { setBusy(false); alert("DDT non creato: " + (error?.message || "")); return; }
-        for (const id of scelte) {
-            const u = unita.find(x => x.id === id); if (!u) continue;
-            await supabase.from("mag_unita").update({
-                stato: "in_transito", negozio: a, ddt_id: (d as Ddt).id,
-                storia: [...(u.storia || []), { quando: new Date().toISOString(), evento: "🚚 In transito", negozio: `${da} → ${a}`, operatore: utente, note: `DDT n.${(d as Ddt).numero}` }],
-            }).eq("id", id);
+
+    /* LE SOCIETÀ CHE QUEL NEGOZIO HA DAVVERO A MAGAZZINO. Non quelle
+       dell'anagrafica: a Donna la tabella dice T2, ma sullo scaffale ci sono
+       135 pezzi di T1 e 4 di T2. */
+    const societa = useMemo(() => Array.from(new Set([
+        ...unita.filter(u => u.negozio === da && u.stato === "disponibile").map(u => u.azienda),
+        ...quantita.filter(q => q.negozio === da && q.quantita > 0).map(q => q.azienda),
+    ].filter(Boolean) as string[])).sort(), [unita, quantita, da]);
+    useEffect(() => { setSoc(societa.length === 1 ? societa[0] : ""); setPezzi(new Set()); setQta({}); }, [da, societa]);
+
+    /** Di chi sarà la merce all'arrivo. È la STESSA regola del trigger
+     *  `mag_ddt_numera` (migrazione 20260831200000), ricalcata passo per
+     *  passo: la merce resta di chi è, e solo se il negozio di arrivo quella
+     *  società non ce l'ha in nessuna forma si tratta di una cessione vera.
+     *  Se qui si dicesse una cosa e il documento ne scrivesse un'altra,
+     *  l'avviso «attenzione, è una cessione» sarebbe peggio di niente. */
+    const aziendaArrivo = useMemo(() => {
+        if (fuori || !a || !soc) return soc;
+        // 1. il negozio di arrivo ha un registratore di quella società
+        if (casse.some(c => c.negozio === a && c.azienda === soc)) return soc;
+        // 2. oppure ne ha già la merce a scaffale
+        if (unita.some(u => u.negozio === a && u.azienda === soc)) return soc;
+        if (quantita.some(g => g.negozio === a && g.azienda === soc)) return soc;
+        // 3. altrimenti è la sua, e allora è una cessione
+        const suo = negDati[a]?.azienda
+            || casse.filter(c => c.negozio === a).sort((x, y) => Number(y.is_default) - Number(x.is_default))[0]?.azienda;
+        return suo || soc;
+    }, [fuori, a, soc, casse, negDati, unita, quantita]);
+
+    const gemelli = !fuori && !!da && !!a && stessoMagazzino(da, a);
+    const tipo = tipoDi(da, a, soc, aziendaArrivo, fuori);
+
+    const q = filtro.trim().toLowerCase();
+    const disponibili = useMemo(() => unita.filter(u =>
+        u.stato === "disponibile" && u.negozio === da && (!soc || u.azienda === soc)
+        && (!q || `${u.descrizione} ${u.seriale} ${u.codice || ""}`.toLowerCase().includes(q))),
+        [unita, da, soc, q]);
+    const sfusi = useMemo(() => quantita.filter(g =>
+        g.negozio === da && (!soc || g.azienda === soc) && Number(g.quantita) > 0
+        && (!q || `${g.descrizione} ${g.codice}`.toLowerCase().includes(q))),
+        [quantita, da, soc, q]);
+    const perCodice = useMemo(() => new Map(sfusi.map(g => [g.codice, g])), [sfusi]);
+
+    const scelti = Object.entries(qta).filter(([, n]) => Number(n) > 0);
+    const totPezzi = pezzi.size + scelti.reduce((s, [, n]) => s + Number(n), 0);
+
+    /* TUTTO QUELLO CHE BLOCCA STA IN UNA FUNZIONE SOLA (regola §7): il bottone
+       verde promette, e se promette deve mantenere. */
+    const cosaManca = useMemo(() => {
+        const out: string[] = [];
+        if (!righeVive) out.push("manca la tabella delle righe dei documenti: applica la migrazione 20260831180000");
+        if (!da) out.push("scegli il negozio da cui parte la merce");
+        if (fuori) {
+            /* SI DICE PRIMA (regola §7): un DDT senza i dati del destinatario non
+               è valido, e il generatore direbbe di compilarli «in Amministrazione
+               → Negozi» — un'istruzione che per un fornitore non si può eseguire.
+               Quindi si chiedono qui, e senza non si emette. */
+            if (!dest.trim()) out.push("scrivi la ragione sociale del fornitore a cui rendi la merce");
+            if (!destPiva.trim()) out.push("scrivi la partita IVA del fornitore: sul documento è obbligatoria");
+            if (!destVia.trim() || !destCiv.trim()) out.push("scrivi via e civico del fornitore: è il luogo di consegna");
+            if (!destCap.trim() || !destCitta.trim()) out.push("scrivi CAP e città del fornitore");
         }
-        setBusy(false); dopo();
+        else if (!a) out.push("scegli il negozio che riceve");
+        else if (a === da) out.push("partenza e arrivo sono lo stesso negozio");
+        if (societa.length > 1 && !soc) out.push("scegli di quale società è la merce: un documento ne trasporta una sola");
+        if (!totPezzi) out.push("non hai scelto niente da spedire");
+        scelti.forEach(([cod, n]) => {
+            const g = perCodice.get(cod);
+            if (g && Number(n) > Number(g.quantita)) out.push(`di «${g.descrizione}» ne stai spedendo ${n} ma a ${da} ce ne sono ${g.quantita}`);
+        });
+        return out;
+    }, [righeVive, da, a, fuori, dest, destPiva, destVia, destCiv, destCap, destCitta, soc, societa, totPezzi, scelti, perCodice]);
+
+    const crea = async () => {
+        if (cosaManca.length || busy) return;
+        setBusy(true);
+        try {
+            const aNome = fuori ? dest.trim() : a;
+            const { data: creato, error } = await supabase.from("mag_ddt").insert({
+                da_negozio: da, a_negozio: aNome,
+                // LA SOCIETÀ SEGUE LA MERCE: passata esplicita, se no il trigger
+                // la dedurrebbe dal NEGOZIO — e a Donna sarebbe quella sbagliata
+                azienda_da: soc || null,
+                /* E ANCHE QUELLA DI ARRIVO, con lo stesso valore che l'operatore
+                   ha appena letto nel riquadro sopra. Lasciarla al trigger
+                   faceva uscire due esiti fiscali diversi sulla stessa tratta a
+                   minuti di distanza: la sua ricerca sui pezzi del negozio di
+                   arrivo non filtra lo stato, e per convenzione un pezzo in
+                   transito porta GIÀ il negozio di destinazione — quindi il
+                   primo DDT usciva «cessione» e il secondo «beni propri».
+                   Se il software mostra «la merce passa da X a Y», il documento
+                   deve dire X → Y (regola §7). */
+                azienda_a: (fuori ? soc : aziendaArrivo) || null,
+                tipo, stato: fuori ? "uscito" : "in_transito",
+                aspetto, trasporto, colli: colli.trim() ? Number(colli) : null,
+                creato_da: utente, note: note.trim() || null,
+                destinatario: fuori ? dest.trim() : null,
+                destinatario_piva: fuori ? (destPiva.trim() || null) : null,
+                destinatario_indirizzo: fuori ? (destVia.trim() || null) : null,
+                destinatario_civico: fuori ? (destCiv.trim() || null) : null,
+                destinatario_cap: fuori ? (destCap.trim() || null) : null,
+                destinatario_citta: fuori ? (destCitta.trim() || null) : null,
+                destinatario_provincia: fuori ? (destProv.trim().toUpperCase() || null) : null,
+                ...(fuori ? { causale: "Reso a fornitore", chiuso_da: utente, chiuso_il: oraIso() } : {}),
+            }).select().single();
+            if (error || !creato) throw new Error(error?.message || "il documento non è stato creato");
+            const d = creato as Ddt;
+
+            const righe = [
+                ...Array.from(pezzi).map(id => unita.find(u => u.id === id)).filter(Boolean).map((u, i) => ({
+                    ddt_id: d.id, riga: i + 1, codice: u!.codice, descrizione: u!.descrizione,
+                    unita_id: u!.id, seriale: u!.seriale, quantita: 1,
+                    valore_unitario: u!.valore ?? anagrafica.get(u!.codice || "")?.prezzo ?? null,
+                    negozio_da: da, negozio_a: aNome, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
+                    stato: fuori ? "uscita" : "in_viaggio",
+                })),
+                ...scelti.map(([cod, n], i) => {
+                    const g = perCodice.get(cod)!;
+                    return {
+                        ddt_id: d.id, riga: pezzi.size + i + 1, codice: cod, descrizione: g.descrizione,
+                        unita_id: null, seriale: null, quantita: Number(n),
+                        valore_unitario: anagrafica.get(cod)?.prezzo ?? null,
+                        negozio_da: da, negozio_a: aNome, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
+                        stato: fuori ? "uscita" : "in_viaggio",
+                    };
+                }),
+            ];
+            const { error: er } = await supabase.from("mag_ddt_righe").insert(righe);
+            if (er) throw new Error("le righe del documento non sono state scritte: " + er.message);
+
+            /* I PEZZI CON SERIALE ESCONO DALLA DISPONIBILITÀ DI CHI SPEDISCE.
+               `.eq("stato","disponibile")` è la guardia: fra l'apertura della
+               pagina e questo clic il pezzo può essere stato venduto al banco
+               o tolto dall'amministrazione. Se non si muove NON si fa finta di
+               niente — il documento direbbe che sta viaggiando una cosa che non
+               è mai partita: la riga si chiude subito e chi ha spedito lo legge
+               a schermo (regola §7). */
+            const storiePartenza = await storieCorrenti(Array.from(pezzi));
+            const perse: { id: string; nome: string }[] = [];
+            await Promise.all(Array.from(pezzi).map(async id => {
+                const u = unita.find(x => x.id === id);
+                const { data } = await supabase.from("mag_unita").update(fuori
+                    ? { stato: "annullato", ddt_id: d.id, storia: conTappa(storiePartenza.get(id), "📤 Uscito dal gruppo", da, utente, `reso a ${aNome} — DDT n.${d.numero}`) }
+                    : { stato: "in_transito", negozio: a, ddt_id: d.id, storia: conTappa(storiePartenza.get(id), "🚚 Partito con un DDT", `${da} → ${a}`, utente, `DDT n.${d.numero}`) }
+                ).eq("id", id).eq("stato", "disponibile").select("id");
+                if (!data?.length) perse.push({ id, nome: `${u?.descrizione || "un pezzo"} (${u?.seriale || id})` });
+            }));
+            if (perse.length) {
+                /* «MAI PARTITA», non «non arrivata»: la riga è già CHIUSA e non
+                   ha bisogno di nessuna decisione — quel pezzo è ancora dal
+                   mittente, o è stato venduto, o è stato cestinato. Chiamarla
+                   «mancante» la metteva fra le differenze aperte, e poi il
+                   modale raccontava un viaggio che non è mai cominciato. */
+                await supabase.from("mag_ddt_righe").update({
+                    stato: "mai_partita", quantita_accettata: 0,
+                    motivo: "non era più disponibile alla partenza: venduto o tolto dal magazzino nel frattempo",
+                    chiusa_il: oraIso(), chiusa_da: utente,
+                }).eq("ddt_id", d.id).in("unita_id", perse.map(x => x.id));
+                alert(`Il documento è partito, ma ${perse.length === 1 ? "un pezzo non era più disponibile" : `${perse.length} pezzi non erano più disponibili`}:\n\n· ${perse.map(x => x.nome).join("\n· ")}\n\nQuelle righe sono segnate «mai partita»: la merce è rimasta a ${da}.`);
+            }
+
+            // le quantità: un movimento, e il saldo si muove da sé
+            let uscitaOk = true;
+            if (scelti.length) {
+                const { error: em } = await supabase.from("mag_movimenti").insert(scelti.map(([cod, n]) => ({
+                    codice: cod, negozio: da, azienda: soc || d.azienda_da,
+                    tipo: fuori ? "rettifica" : "trasferimento_out",
+                    quantita: fuori ? -Number(n) : Number(n),
+                    ddt_id: d.id, operatore: utente,
+                    nota: fuori ? `reso a ${aNome} — DDT n.${d.numero}` : `trasferimento a ${aNome} — DDT n.${d.numero}`,
+                })));
+                if (em) { uscitaOk = false; alert("Il documento è partito, ma le quantità non sono uscite dal magazzino: " + em.message); }
+            }
+
+            /* I GEMELLI: la merce non si muove, il documento si chiude subito.
+               Se restasse in viaggio, un telefono a quaranta centimetri
+               resterebbe invendibile finché l'altra insegna non preme un
+               bottone — e le due insegne sono la stessa persona. */
+            /* MA NON SE LA MERCE NON È USCITA. Accettare dopo un
+               `trasferimento_out` fallito scriverebbe il `trasferimento_in`
+               senza il suo contrario: merce creata dal nulla, +n a destinazione
+               e nessun −n alla partenza (revisore 31/08). */
+            if (gemelli && uscitaOk) {
+                const { data: rr } = await supabase.from("mag_ddt_righe").select("*").eq("ddt_id", d.id);
+                const lista = (rr ?? []) as RigaDdt[];
+                const tutte: Record<string, number> = {};
+                lista.forEach(r => { tutte[r.id] = pezziDi(r); });
+                const { avvisi } = await prendiInCarico(d, lista, tutte, "", utente);
+                if (avvisi.length) alert("Il passaggio fra gemelli è stato emesso, ma:\n\n· " + avvisi.join("\n· "));
+            } else if (gemelli) {
+                alert("Il documento è emesso ma NON si è chiuso da solo: la merce non è uscita dal magazzino di partenza. Sistemala e poi prendilo in carico a mano.");
+            }
+            dopo();
+        } catch (e) {
+            alert("Trasferimento non partito: " + ((e as Error)?.message || "errore"));
+        } finally { setBusy(false); }
     };
+
     return (
         <div className="rvBox">
             <div className="rvBoxT">🚚 Nuovo trasferimento</div>
-            <div className="rvBarra">
-                {/* le tendine di sistema sono sparite anche qui: al loro posto
-                    il selettore del CRM, che si scrive per filtrare */}
-                <div className="rvCampo rvCampo-md"><span className="rvLab">Da</span>
-                    <SelectOpzioni className="rvIn" value={da} onChange={v => { setDa(v); setScelte(new Set()); }}
-                        opzioni={negozi} placeholder="scegli il negozio…" /></div>
-                <div className="rvCampo rvCampo-md"><span className="rvLab">A</span>
-                    <SelectOpzioni className="rvIn" value={a} onChange={setA}
-                        opzioni={negozi.filter(n => n !== da)} placeholder="scegli il negozio…" /></div>
-                <label className="rvCampo rvCampo-flex"><span className="rvLab">Note</span>
-                    <input value={note} onChange={e => setNote(e.target.value)} placeholder="facoltative, finiscono sul DDT" className="rvIn" /></label>
+            <div className="rvPillRow">
+                <button onClick={() => setFuori(false)} className={cn("rvPill rvPill-sm", !fuori && "rvPill-on")}>🔁 Da un negozio a un altro</button>
+                <button onClick={() => setFuori(true)} className={cn("rvPill rvPill-sm", fuori && "rvPill-on")}>📤 Reso a un fornitore</button>
             </div>
-            {da && (
-                <div className="rvSub mt-3">
-                    <label className="rvCerca">
-                        <Search size={16} />
-                        <input value={filtro} onChange={e => setFiltro(e.target.value)} placeholder="Filtra le unità disponibili…" className="rvIn" />
-                    </label>
-                    <div className="rvDett max-h-64 overflow-y-auto mt-2 pr-1">
-                        {disponibili.map(u => (
-                            <label key={u.id} className="rvDettR rvDettR-cl">
-                                <input type="checkbox" checked={scelte.has(u.id)} onChange={e => setScelte(p => { const s = new Set(p); if (e.target.checked) s.add(u.id); else s.delete(u.id); return s; })} />
-                                <span className="rvTab-nome">{u.descrizione}</span>
-                                <span className="rvDettR-mono">{u.seriale}</span>
-                                {u.azienda && <span className="rvTab-min">· {u.azienda}</span>}
-                            </label>
-                        ))}
-                        {!disponibili.length && <div className="rvVuoto"><b>Niente di disponibile a {da}</b></div>}
+            <div className="rvBarra mt-3">
+                <div className="rvCampo rvCampo-md"><span className="rvLab">Parte da</span>
+                    <SelectOpzioni className="rvIn" value={da} onChange={setDa} opzioni={negozi} placeholder="scegli il negozio…" /></div>
+                {fuori ? (
+                    <>
+                        <label className="rvCampo rvCampo-md"><span className="rvLab">A chi</span>
+                            <input value={dest} onChange={e => setDest(e.target.value)} className="rvIn" placeholder="ragione sociale del fornitore" /></label>
+                        <label className="rvCampo rvCampo-sm"><span className="rvLab">Partita IVA</span>
+                            <input value={destPiva} onChange={e => setDestPiva(e.target.value)} className="rvIn" placeholder="11 cifre" /></label>
+                        <label className="rvCampo rvCampo-flex"><span className="rvLab">Via</span>
+                            <input value={destVia} onChange={e => setDestVia(e.target.value)} className="rvIn" placeholder="via o piazza" /></label>
+                        <label className="rvCampo rvCampo-xs"><span className="rvLab">Civico</span>
+                            <input value={destCiv} onChange={e => setDestCiv(e.target.value)} className="rvIn" /></label>
+                        <label className="rvCampo rvCampo-xs"><span className="rvLab">CAP</span>
+                            <input value={destCap} onChange={e => setDestCap(e.target.value)} className="rvIn" /></label>
+                        <label className="rvCampo rvCampo-sm"><span className="rvLab">Città</span>
+                            <input value={destCitta} onChange={e => setDestCitta(e.target.value)} className="rvIn" /></label>
+                        <label className="rvCampo rvCampo-xs"><span className="rvLab">Prov.</span>
+                            <input value={destProv} onChange={e => setDestProv(e.target.value)} maxLength={2} className="rvIn" /></label>
+                    </>
+                ) : (
+                    <div className="rvCampo rvCampo-md"><span className="rvLab">Arriva a</span>
+                        <SelectOpzioni className="rvIn" value={a} onChange={setA} opzioni={negozi.filter(n => n !== da)} placeholder="scegli il negozio…" /></div>
+                )}
+                {societa.length > 1 && (
+                    <div className="rvCampo"><span className="rvLab">Società della merce</span>
+                        <div className="rvPillRow">
+                            {societa.map(c => (
+                                <button key={c} onClick={() => { setSoc(c); setPezzi(new Set()); setQta({}); }}
+                                    className={cn("rvPill rvPill-sm", soc === c && "rvPill-on")}>{nomiAzienda[c] || c}</button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* CHE COSA STA SUCCEDENDO, detto prima di premere */}
+            {!!da && (!!a || fuori) && (
+                <div className={cn("rvNota", tipo === "trasferimento" ? "rvNota-info" : tipo === "gemelli" ? "rvNota-scelta" : "rvNota-att")}>
+                    <div className="rvNota-t">{TIPI_DDT[tipo].ico} {TIPI_DDT[tipo].et}</div>
+                    <div className="rvNota-s">
+                        {TIPI_DDT[tipo].spiega}
+                        {tipo === "cessione" && soc && (
+                            <> Qui la merce passa da <b>{nomiAzienda[soc] || soc}</b> a <b>{nomiAzienda[aziendaArrivo || ""] || aziendaArrivo}</b>.</>
+                        )}
                     </div>
                 </div>
             )}
+
+            {/* CON DUE SOCIETÀ NELLO STESSO NEGOZIO la merce non si sceglie prima
+                di dire di chi è: le righe a quantità sono una per società e lo
+                stesso codice comparirebbe due volte con una casella sola. Donna
+                Olimpia è esattamente questo caso. */}
+            {da && societa.length > 1 && !soc && (
+                <div className="rvNota rvNota-info">
+                    <div className="rvNota-t">🏛 Di quale società è la merce?</div>
+                    <div className="rvNota-s">A {da} convivono {societa.map(c => nomiAzienda[c] || c).join(" e ")}. Un documento di trasporto lo emette un soggetto solo: scegli qui sopra, e sotto compare la sua merce.</div>
+                </div>
+            )}
+            {da && (societa.length <= 1 || !!soc) && (
+                <div className="rvSub mt-3">
+                    <label className="rvCerca">
+                        <Search size={16} />
+                        <input value={filtro} onChange={e => setFiltro(e.target.value)} className="rvIn"
+                            placeholder="Filtra la merce di questo negozio…" />
+                    </label>
+                    <div className="rvDett max-h-72 overflow-y-auto mt-2 pr-1">
+                        {!!disponibili.length && <div className="rvDettT">Pezzi con seriale</div>}
+                        {disponibili.slice(0, 200).map(u => (
+                            <label key={u.id} className="rvDettR rvDettR-cl">
+                                <input type="checkbox" checked={pezzi.has(u.id)}
+                                    onChange={e => setPezzi(p => { const s = new Set(p); if (e.target.checked) s.add(u.id); else s.delete(u.id); return s; })} />
+                                <span className="rvTab-nome">{u.descrizione}</span>
+                                <span className="rvDettR-mono">{u.seriale}</span>
+                                {u.azienda && <span className="rvTab-min">· {nomiAzienda[u.azienda] || u.azienda}</span>}
+                            </label>
+                        ))}
+                        {disponibili.length > 200 && <div className="rvTab-min">…e altri {disponibili.length - 200}: scrivi qualcosa per restringere.</div>}
+                        {!!sfusi.length && <div className="rvDettT mt-2">Merce a quantità <span className="rvLabX">(accessori, SIM: prima non si poteva spedire)</span></div>}
+                        {sfusi.slice(0, 200).map(g => (
+                            <div key={g.codice + g.azienda} className="rvDettR">
+                                <span className="rvTab-nome">{g.descrizione}</span>
+                                <span className="rvTab-cod">{g.codice}</span>
+                                <span className="rvTab-min">a scaffale <b className="rvGiac rvGiac-si">{g.quantita}</b></span>
+                                <span className="rvSpazio" />
+                                <input type="number" min={0} max={g.quantita} value={qta[g.codice] ?? ""} placeholder="0"
+                                    onChange={e => setQta(p => ({ ...p, [g.codice]: Number(e.target.value) }))}
+                                    className="rvQta" />
+                            </div>
+                        ))}
+                        {sfusi.length > 200 && <div className="rvTab-min">…e altri {sfusi.length - 200}: scrivi qualcosa per restringere.</div>}
+                        {!disponibili.length && !sfusi.length && (
+                            <div className="rvVuoto">📭<b>Niente da spedire a {da}</b>
+                                <small>{soc ? `di ${nomiAzienda[soc] || soc}` : ""}{q ? ` con «${filtro}»` : ""}</small></div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            <div className="rvBarra mt-3">
+                <label className="rvCampo rvCampo-xs"><span className="rvLab">Colli</span>
+                    <input type="number" min={1} value={colli} onChange={e => setColli(e.target.value)} className="rvIn" placeholder="1" /></label>
+                <label className="rvCampo rvCampo-sm"><span className="rvLab">Aspetto dei beni</span>
+                    <input value={aspetto} onChange={e => setAspetto(e.target.value)} className="rvIn" /></label>
+                <label className="rvCampo rvCampo-md"><span className="rvLab">Trasporto a cura di</span>
+                    <input value={trasporto} onChange={e => setTrasporto(e.target.value)} className="rvIn" /></label>
+                <label className="rvCampo rvCampo-flex"><span className="rvLab">Note</span>
+                    <input value={note} onChange={e => setNote(e.target.value)} className="rvIn" placeholder="facoltative, finiscono sul documento" /></label>
+            </div>
+
+            {/* COSA MANCA, sopra il bottone e non dentro un tooltip: sui monitor
+                da negozio il passaggio del mouse non esiste (regola §7). */}
+            {cosaManca.length > 0 ? (
+                <div className="rvPrima">
+                    <div className="rvPrima-t">Prima di emettere il documento</div>
+                    {cosaManca.map(m => <div key={m} className="rvManca rvManca-qui"><i>·</i>{m}</div>)}
+                </div>
+            ) : (
+                <div className="rvPronto">✓ {totPezzi} {totPezzi === 1 ? "pezzo pronto" : "pezzi pronti"} da {da} {fuori ? `a ${dest}` : `a ${a}`}{gemelli ? " — stesso locale, il documento si chiude subito" : ""}</div>
+            )}
             <div className="rvBarra rvBarra-c mt-3 justify-end">
-                <button onClick={crea} disabled={busy || !da || !a || !scelte.size} className="rvAzione">
-                    {busy ? "Creo…" : `Crea DDT (${scelte.size} unità)`}
+                <button onClick={crea} disabled={busy || cosaManca.length > 0} className="rvAzione">
+                    {busy && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}
+                    {busy ? "Emetto il documento…" : `Emetti il DDT (${totPezzi})`}
                 </button>
             </div>
         </div>
