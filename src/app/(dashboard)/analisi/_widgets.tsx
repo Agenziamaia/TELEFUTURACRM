@@ -16,6 +16,7 @@
 // (righe marginalità EXT del scope), margMap/margIcone, persona, negozio,
 // negoziTutti, nG, ym, oggi, gl, meseCorrente, areaKey.
 
+import { IconaSim } from "@/components/IconaSim";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets";
@@ -83,7 +84,7 @@ export function righeOperatore(brand, sue) {
         const cb = prendi((it) => /^customer base/i.test(String(it.categoria || "")));
         const energia = prendi((it) => /^energia/i.test(String(it.categoria || "")));
         const prot = prendi((it) => /assicuraz|multi[- ]?serv|protez/i.test(String(it.categoria || "")));
-        aggiungi("📱", "Mobile (SIM)", "#818cf8", sim, [
+        aggiungi(<IconaSim />, "Mobile (SIM)", "#818cf8", sim, [
             ["GA", sub(sim, (it) => !/mnp/i.test(String(it.prodotto || "")))],
             ["MNP", sub(sim, (it) => /mnp/i.test(String(it.prodotto || "")))],
             ...(brand === "vf" ? [["di cui dati", sub(sim, (it) => /dati/i.test(String(it.prodotto || "")))], ["MNP escluse da lettera", sub(sim, (it) => it.esclusa)]] : []),
@@ -113,13 +114,13 @@ export function righeOperatore(brand, sue) {
         aggiungi("🖥", "Glass & Prova", "#a78bfa", glass, [["Glass", sub(glass, (it) => /glass/i.test(String(it.offerta || it.prodotto || "")))], ["Prova Sky", sub(glass, (it) => /^prova/i.test(String(it.offerta || "")))]]);
         aggiungi("📡", "Triple Play", "#7c3aed", treP, [["promo 29,90/27,90", sub(treP, (it) => /2[79],90/.test(String(it.offerta || "")))]]);
         aggiungi("🌐", "Sky Fibra", "#22c55e", fibra);
-        aggiungi("📱", "Mobile MNP", "#818cf8", mnp);
-        aggiungi("📱", "Mobile GA", "#c084fc", ga, [["ric. automatica", sub(ga, (it) => /ric\.? ?auto/i.test(String(it.categoria || "")))], ["ricarica pura", sub(ga, (it) => /wallet/i.test(String(it.categoria || "")))]]);
+        aggiungi(<IconaSim />, "Mobile MNP", "#818cf8", mnp);
+        aggiungi(<IconaSim />, "Mobile GA", "#c084fc", ga, [["ric. automatica", sub(ga, (it) => /ric\.? ?auto/i.test(String(it.categoria || "")))], ["ricarica pura", sub(ga, (it) => /wallet/i.test(String(it.categoria || "")))]]);
     } else if (brand === "fw") {
         const mob = prendi((it) => /^(mobile|sim)/i.test(String(it.categoria || "")) || èTel(it.categoria));
         const fis = prendi((it) => /^(fisso|fibra)/i.test(String(it.categoria || "")));
         const ene = prendi((it) => /^energia/i.test(String(it.categoria || "")));
-        aggiungi("📱", "Mobile", "#facc15", mob);
+        aggiungi(<IconaSim />, "Mobile", "#facc15", mob);
         aggiungi("🌐", "Fisso", "#eab308", fis);
         aggiungi("⚡", "Energia", "#84cc16", ene);
     }
@@ -1235,7 +1236,7 @@ function WidgetPesoNegozi({ ctx }) {
                 tip: <div><TipTitolo>{GARA[b].label} · {n}</TipTitolo>
                     <TipRiga l="tuoi pezzi" r={`${fmtN(miei.length)}/${fmtN(store.length)}`} colore={GARA[b].colore} />
                     {b !== "fw" && <TipRiga l="tuoi punti" r={`${fmtPt(somma(miei))}/${fmtPt(somma(store))}`} />}
-                    {righe.map((r) => <TipRiga key={r.label} l={`${r.emoji} ${r.label}`} r={b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtN(r.items.length)} pz · ${fmtPt(somma(r.items))} pt`} colore={r.colore} />)}
+                    {righe.map((r) => <TipRiga key={r.label} l={<>{r.emoji} {r.label}</>} r={b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtN(r.items.length)} pz · ${fmtPt(somma(r.items))} pt`} colore={r.colore} />)}
                 </div>,
             });
         }
@@ -2096,7 +2097,7 @@ function BloccoBrandRete({ ctx, brand }) {
     );
 }
 // le stesse emoji del Master: gli anelli senza erano un po' morti (Luca 28/08)
-const PISTA_EMOJI_RETE = { mobile: "📱", fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", luce: "💡", gas: "🔥", energia: "⚡", sky: "🟣", cb: "🔁", smartphone_cb: "📲", business_mobile: "💼", business_fisso: "💼", business_piva: "💼", soluzioni_digitali: "🧩", vas: "✨", protetti: "🛟", device: "📲", t2: "🌐" };
+const PISTA_EMOJI_RETE = { mobile: <IconaSim px={13} />, fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", luce: "💡", gas: "🔥", energia: "⚡", sky: "🟣", cb: "🔁", smartphone_cb: "📲", business_mobile: "💼", business_fisso: "💼", business_piva: "💼", soluzioni_digitali: "🧩", vas: "✨", protetti: "🛟", device: "📲", t2: "🌐" };
 const PISTA_LABEL_RETE = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", business_piva: "Biz P.IVA", cb: "Customer Base", smartphone_cb: "Smartphone CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas", energia: "Luce & Gas", t2: "Fastweb T2", protetti: "W3 Protetti", device: "Telefoni & device", completezza: "Bonus Completezza" };
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════

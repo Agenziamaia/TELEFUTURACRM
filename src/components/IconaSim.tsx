@@ -1,0 +1,29 @@
+// LA SIM CARD (Luca 31/08).
+//
+// «Mobile», nelle gare e nel catalogo, vuol dire ATTIVAZIONI DI SIM — non
+// telefoni. Il 📱 resta all'apparecchio: telefoni rateizzati, venduti, device,
+// che avranno sezioni loro. Ma in Unicode la SIM card NON ESISTE: nessun
+// carattere la disegna, e le più vicine (💳 carta, 🪪 tessera, 📇 rubrica) nel
+// CRM significano già altro — 💳 è il POS in ventisette punti, dentro lo stesso
+// menu delle piste. Quindi la SIM si disegna.
+//
+// È un elemento grafico, non un carattere: vive dove il codice disegna
+// qualcosa. Dove invece serve una STRINGA — le chiavi con cui si raggruppano
+// le righe, il pallino che l'amministrazione sceglie da una tavolozza e che
+// finisce in una colonna di testo — resta 📶, che nel CRM è già il segno della
+// SIM (categoria «SIM» della marginalità, regola del catalogo cassa).
+export const SIM_TESTO = "📶";
+
+/** La SIM: corpo chiaro, angolo tagliato, contatti dorati. A 11px i contatti
+ *  sono l'unica cosa che sopravvive, ed è per questo che sono colorati: una
+ *  versione a contorno, a quella misura, diventa un rettangolino grigio. */
+export function IconaSim({ px = 14, className = "" }: { px?: number; className?: string }) {
+    return (
+        <svg width={px} height={px} viewBox="0 0 16 16" className={className}
+            role="img" aria-label="SIM" style={{ display: "inline-block", verticalAlign: "-0.15em", flexShrink: 0 }}>
+            <path d="M3.2 1.5h5.4L12.8 5.7v8.8a1 1 0 0 1-1 1H3.2a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1Z" fill="#cbd5e1" />
+            <rect x="4.5" y="6.6" width="6.2" height="5.8" rx="1" fill="#eab308" />
+            <path d="M7.6 6.6v5.8M4.5 9.5h6.2" stroke="#0b0e1c" strokeWidth=".9" />
+        </svg>
+    );
+}

@@ -91,7 +91,7 @@ export function cosaMancaAlDdt(
     ([[d.da_negozio, "partenza"], [d.a_negozio, "destinazione"]] as const).forEach(([n, ruolo]) => {
         const x = neg[n];
         if (!x?.address || !x?.civico || !x?.citta)
-            out.push(`l'indirizzo di ${n} — si compila in Amministrazione → Orari e chiusure`);
+            out.push(`l'indirizzo di ${n} — si compila in Amministrazione → Negozi`);
     });
     return out;
 }

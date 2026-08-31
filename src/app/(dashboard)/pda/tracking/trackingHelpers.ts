@@ -45,7 +45,7 @@ function parseRuleDate(dataStr: string): Date | null {
 /* ── CALENDARIO CHIUSURE (Luca 11/08) ──
    La domenica non conta già; qui si aggiungono i FESTIVI (giorni_festivi,
    globali) e le CHIUSURE STRAORDINARIE per negozio (chiusure_negozio,
-   Amministrazione → Orari & Chiusure): nei giorni in cui il negozio della
+   Amministrazione → Negozi): nei giorni in cui il negozio della
    pratica è CHIUSO, warning e malus NON corrono — la pratica arriva al
    massimo a ⚡ Da lavorare (che segue il calendario naturale) e alla
    riapertura il countdown riparte da dov'era. Registro impostato dalla

@@ -1569,7 +1569,7 @@ export default function TrackingPdaPage() {
       const { data: es } = await supabase.from("tracking_esiti").select("*").order("ordine");
       if (es && es.length) { impostaEsitiTracking(es as never); setRegoleV((v) => v + 1); }
       // CHIUSURE (Luca 11/08): festivi globali + chiusure straordinarie per
-      // negozio (Amministrazione → Orari & Chiusure) — nei giorni chiusi
+      // negozio (Amministrazione → Negozi) — nei giorni chiusi
       // warning/malus non corrono. Best-effort: senza dati vale il lun-sab.
       try {
         const [fest, chius, dom] = await Promise.all([

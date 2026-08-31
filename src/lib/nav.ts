@@ -252,7 +252,11 @@ export const NAVIGATION: NavEntry[] = [
             },
             // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
             // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
-            { name: "Orari & Chiusure", sez: "orari", icon: Clock3, roles: ["admin", "dev"] },
+            // «NEGOZI» e non piu' «Orari & Chiusure» (Luca 31/08): dentro ci
+            // sono indirizzo, CAP, citta, societa, registratore fiscale e gli
+            // orari. La `sez` resta «orari»: e' la chiave dei permessi e degli
+            // indirizzi salvati, cambiarla scollegherebbe le une e gli altri.
+            { name: "Negozi", sez: "orari", icon: Store, roles: ["admin", "dev"] },
             // "Marginalità" vive DENTRO Catalogo come pseudo-brand 💰 (Luca 05/08)
             { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
             { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
