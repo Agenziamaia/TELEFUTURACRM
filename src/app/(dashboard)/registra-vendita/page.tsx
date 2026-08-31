@@ -1738,6 +1738,15 @@ const ImeiMagazzino = ({l,r,v,o,nt,onModello}) => {
           <div style={{minWidth:0,flex:1}}>
             <div style={{fontSize:13,fontWeight:800,color:"var(--tf-f8fafc)"}}>{scelto.nome}</div>
             <div style={{fontSize:11.5,color:"var(--tf-8892b0)",fontFamily:"monospace"}}>{scelto.seriale} · {scelto.negozio}</div>
+            {/* CHI VENDE DEVE SAPERE DA QUALE SCAFFALE STA PRENDENDO (Luca
+                31/08). I gemelli sono un magazzino solo, ma restano due
+                società: il telefono esce dall'inventario dell'altra insegna,
+                e l'amministrazione dovrà regolarizzarlo con un documento. */}
+            {scelto.altraSocieta && (
+              <div className="rvHint" style={{color:"var(--tf-fbbf24)"}}>
+                ⚠️ È merce di {scelto.azienda === "T1" ? "Telefutura" : "Telefutura 2"} — esce dal magazzino di {scelto.negozio}
+              </div>
+            )}
           </div>
           <button type="button" onClick={()=>{o("");onModello?.("");}} className="rvPill rvPill-sm">✕ cambia</button>
         </div>
@@ -6053,17 +6062,26 @@ function CRM() {
       // e nemmeno al contrario: una lettura fallita non deve far diventare
       // rosso ogni IMEI del negozio
       if (errPz || !vivo) return;
-      /* LA SOCIETÀ CONTA ANCHE QUI (revisore 31/08). La cassa rifiuta il pezzo
-         del gemello quando è di un'altra società — «battilo sull'altra
-         insegna» — perché lo scontrino lo emette quella. Un telefono a rate
-         non passa dallo scontrino, ma la merce esce lo stesso dall'inventario
-         dell'altra società: senza questo filtro un pezzo di Telefutura 2 se ne
-         andava con un contratto di Telefutura 1, senza documento. */
+      /* I GEMELLI SONO UN MAGAZZINO SOLO — ANCHE FRA SOCIETÀ DIVERSE
+         (Luca 31/08, segnalazione di Emanuele da Magliana).
+         Qui c'era un filtro che teneva solo i pezzi della società con un
+         registratore in QUESTO negozio: giusto per la CASSA — uno scontrino di
+         Telefutura non si stampa sul registratore di Telefutura 2 — ma sbagliato
+         per il telefono a rate, che dallo scontrino non passa. Effetto: Emanuele
+         a Magliana Multi non poteva rateizzare un telefono che aveva in mano,
+         perché sta sullo scaffale di Magliana W3, che è la stessa stanza.
+         «I negozi doppi devono poter attingere a entrambi i magazzini: Magliana,
+         Acilia, Collatina. Il magazzino è separato e ogni magazzino ha la sua
+         ragione sociale, ma di fatto devono funzionare come un magazzino unico,
+         come Donna Olimpia.»
+         La società NON si perde: `scaricaVendita` la deduce da chi il pezzo ce
+         l'ha davvero, quindi la merce esce dall'inventario giusto. Qui si tiene
+         solo per DIRLO a schermo — chi vende deve sapere che sta prendendo un
+         telefono dell'altra insegna. */
       const { data: rt } = await supabase.from("pos_rt").select("azienda").eq("negozio", selNeg);
       const mie = new Set((rt || []).map(r => r.azienda));
       const pezzi = (data || [])
-        .filter(x => !x.azienda || mie.size === 0 || mie.has(x.azienda))
-        .map(x => ({ ...x, seriale: String(x.seriale || "") }));
+        .map(x => ({ ...x, seriale: String(x.seriale || ""), altraSocieta: !!x.azienda && mie.size > 0 && !mie.has(x.azienda) }));
       setMagVendita({ vincola: true, negozio: selNeg, pezzi, perImei: new Map(pezzi.map(x => [x.seriale, x])) });
     })();
     return () => { vivo = false; };
