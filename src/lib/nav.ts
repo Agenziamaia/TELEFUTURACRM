@@ -268,13 +268,6 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "articoli", name: "Articoli", roles: [...ADMINS, "amministrativo"], emoji: "📦" },
                 ],
             },
-            // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
-            // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
-            // «NEGOZI» e non piu' «Orari & Chiusure» (Luca 31/08): dentro ci
-            // sono indirizzo, CAP, citta, societa, registratore fiscale e gli
-            // orari. La `sez` resta «orari»: e' la chiave dei permessi e degli
-            // indirizzi salvati, cambiarla scollegherebbe le une e gli altri.
-            { name: "Negozi", sez: "orari", icon: Store, roles: ["admin", "dev"] },
             /* MINI-HUB SETUP (Luca 31/08): «creiamo un altro minihub per tenere
                tutto in ordine, chiamiamolo Setup». Sono le cinque sezioni che
                CONFIGURANO come lavora il CRM — cosa si può vendere, quali esiti
@@ -301,6 +294,13 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "trackingesiti", name: "Tracking PDA", roles: ["admin", "dev"], emoji: "🛰️" },
                 ],
             },
+            // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
+            // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
+            // «NEGOZI» e non piu' «Orari & Chiusure» (Luca 31/08): dentro ci
+            // sono indirizzo, CAP, citta, societa, registratore fiscale e gli
+            // orari. La `sez` resta «orari»: e' la chiave dei permessi e degli
+            // indirizzi salvati, cambiarla scollegherebbe le une e gli altri.
+            { name: "Negozi", sez: "orari", icon: Store, roles: ["admin", "dev"] },
             // Pannello WhatsApp (Luca 25/08): numeri, verifica, ricollega, intestazioni
             { name: "WhatsApp", sez: "whatsapp", icon: MessagesSquare, roles: ["admin", "dev"] },
             // Pannello Email (Luca 26/08): governance caselle — collega/riassegna/elimina solo da qui

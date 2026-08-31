@@ -247,6 +247,10 @@ const SEZIONI: Sezione[] = [
     // SPESA E USO DELL'AI (Luca 31/08): «un resoconto dei token che stiamo
     // utilizzando, di quanto stiamo spendendo diviso per categorie, e posso
     // filtrare per utenza». Il tetto è 30 € al mese.
+    { id: "ai", label: "AI", icon: Sparkles, desc: "Quanto costa l'intelligenza artificiale e chi la usa: spesa del mese contro il tetto, divisa fra quello che chiede una persona e quello che gira da solo, per utenza e per sezione." },
+    // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
+    // nate col registratore telematico — stesso pattern del mini-hub Costi.
+    { id: "fiscalita", label: "Fiscalità", icon: Receipt, desc: "Il mini-hub fiscale: Reparti & IVA, Cassa & Scontrini e Coupon — in sequenza, con le stesse regole di permesso delle singole sezioni." },
     /* MINI-HUB SETUP (Luca 31/08): «creiamo un altro minihub per tenere tutto
        in ordine». Sono le cinque sezioni che CONFIGURANO come lavora il CRM —
        cosa si può vendere, quali esiti esistono, cosa si può ordinare — e non
@@ -255,10 +259,6 @@ const SEZIONI: Sezione[] = [
        ⚠️ Gli `id` non cambiano: sono la chiave dei permessi e dei link
        salvati. Cambia dove stanno, non cosa sono. */
     { id: "setup", label: "Setup", icon: SlidersHorizontal, desc: "Come lavora il CRM: il catalogo di quello che si vende, gli esiti del call center e del tracking, gli articoli ordinabili e i tipi di evento del calendario." },
-    { id: "ai", label: "AI", icon: Sparkles, desc: "Quanto costa l'intelligenza artificiale e chi la usa: spesa del mese contro il tetto, divisa fra quello che chiede una persona e quello che gira da solo, per utenza e per sezione." },
-    // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
-    // nate col registratore telematico — stesso pattern del mini-hub Costi.
-    { id: "fiscalita", label: "Fiscalità", icon: Receipt, desc: "Il mini-hub fiscale: Reparti & IVA, Cassa & Scontrini e Coupon — in sequenza, con le stesse regole di permesso delle singole sezioni." },
     { id: "reparti", label: "Reparti & IVA", icon: Percent, gruppo: "fiscalita", desc: "Mappa reparto → aliquota/natura IVA del registratore telematico — la sorgente unica che decide l'IVA sullo scontrino (letta dal Catalogo)." },
     { id: "cassascontrini", label: "Cassa & Scontrini", icon: Receipt, gruppo: "fiscalita", desc: "Scontrini/fatture emessi, incassi della cassa automatica e chiusure Z di tutti i negozi, con importi e stato + i registratori configurati. Sola lettura." },
     { id: "coupon", label: "Coupon", icon: Ticket, gruppo: "fiscalita", desc: "Coupon sconto emessi dai ritiri usati: emessi, riscattati, scaduti, annullati — con valore e residuo. Sola lettura." },
