@@ -8,7 +8,17 @@ import { decifraSegreto, generaCodice, secondiResidui } from "@/lib/totp";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/* IL CODICE USA E GETTA, SU RICHIESTA (Luca 28/08 sera).
+/* ⚠️ IL PERIMETRO QUI È LA SEZIONE, NON IL NEGOZIO — ed è voluto (Luca
+   31/08): «se qualcuno ha l'accesso alla sezione password è giusto che veda
+   tutte le password del gestionale, perché spesso i ragazzi, anche se non
+   sono credenziali loro, usano credenziali di altri negozi per caricare i
+   contratti».
+   Una revisione di sicurezza l'ha segnalato come falla — chi entra nella
+   sezione può chiedere il codice di qualunque utenza — e non lo è: è il modo
+   in cui si lavora. Chi passasse di qui a «stringere» fermerebbe una cosa che
+   i negozi fanno ogni giorno.
+
+   IL CODICE USA E GETTA, SU RICHIESTA (Luca 28/08 sera).
    Il collaboratore prova ad accedere al portale, l'operatore gli manda il
    codice via mail, lui preme il pulsante e il CRM glielo consegna — senza
    dargli in mano la casella, che riceve anche tutto il resto.
