@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sparkles, RefreshCw, ChevronLeft, ChevronRight, Bot, User, AlertTriangle, X } from "lucide-react";
 import { cn } from "@/utils";
+import { SelectOpzioni } from "@/components/SelectPersona";
 /* ⚠️ `_charts` è scritto in JS con i default nei parametri: TypeScript ne
    deduce tipi strettissimi e sbagliati (`media: null`, `colore` obbligatorio
    anche dove non serve). Si prendono come sono, invece di storpiare le
@@ -66,6 +67,7 @@ const oggiISO = () => new Date().toISOString().slice(0, 10);
 const primoDelMese = () => oggiISO().slice(0, 8) + "01";
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const gg = (iso: string) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
+const TUTTI = "Tutti · azienda intera";
 
 type Dati = {
     ok: boolean; da: string; a: string; persona: string;
@@ -176,13 +178,15 @@ export function AiAdminView() {
                         📅 {gg(d.da)} → {gg(d.a)}
                     </span>
                     <span className="text-xs text-slate-500">Guarda:</span>
-                    <select value={persona} onChange={(e) => setPersona(e.target.value)}
-                        className="glass-input px-2.5 py-1.5 rounded-lg text-xs min-w-[190px]">
-                        <option value="">Tutti · azienda intera</option>
-                        {d.persone.filter((p) => p.domande > 0).map((p) => (
-                            <option key={p.id} value={p.id}>{p.nome} — {p.domande} domande</option>
-                        ))}
-                    </select>
+                    {/* ⚠️ la tendina della CASA, non quella del browser (Luca
+                        31/08: «è rimasta indietro»). Quella nativa si disegna
+                        col tema del sistema — bianca su un CRM scuro — e non si
+                        può filtrare scrivendo. `SelectOpzioni` lavora con
+                        stringhe: si mostrano i nomi e si risale all'id. */}
+                    <SelectOpzioni className="min-w-[210px]" placeholder="tutti…"
+                        value={persona ? (d.persone.find((p) => p.id === persona)?.nome || "") : TUTTI}
+                        opzioni={[TUTTI, ...d.persone.filter((p) => p.domande > 0).map((p) => p.nome)]}
+                        onChange={(v) => setPersona(v === TUTTI || !v ? "" : (d.persone.find((p) => p.nome === v)?.id || ""))} />
                     {persona && (
                         <button onClick={() => setPersona("")} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-[11px] font-bold text-indigo-200">
                             {chiPersona?.nome} <X className="w-3 h-3" />

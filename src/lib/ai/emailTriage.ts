@@ -185,6 +185,17 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
 
     let classificate = 0, dirette = 0, cestinate = 0, quarantene = 0, errori = 0, rimanenti = 0;
     let promptTok = 0, complTok = 0;
+    /* ⚠️ PER CASELLA, non solo in totale (Luca 31/08: «voglio piena visibilità
+       tra WhatsApp ed Email»). La domanda vera non è quanto costa il triage:
+       è QUALE casella costa — perché è lì che si decide se escluderla. */
+    const perCasella = new Map<string, { tokIn: number; tokOut: number; mail: number; errori: number }>();
+    const contaCasella = (id: string | null, tokIn: number, tokOut: number, ok: boolean) => {
+        const k = String(id || "senza-casella");
+        const v = perCasella.get(k) || { tokIn: 0, tokOut: 0, mail: 0, errori: 0 };
+        v.tokIn += tokIn; v.tokOut += tokOut;
+        if (ok) v.mail += 1; else v.errori += 1;
+        perCasella.set(k, v);
+    };
     let primoErrore: string | null = null;
     let senzaCredito = false;
     try {
@@ -359,6 +370,7 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                     // eccezione motivata sui contenuti davvero importanti
                     const regola = matchBloccato(conv);
                     const { riga, usage, abbiamoRisposto } = await classificaUna(conv, acc?.display_name || acc?.email_address || "negozio", regola?.testo || null);
+                    contaCasella(conv.account_id, usage?.prompt_tokens || 0, usage?.completion_tokens || 0, !!riga);
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
                     // nel registro si vede che la regola ha pesato (o che l'AI
@@ -408,21 +420,27 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
             ? `${quandoRoma(adessoIso)} · DeepSeek senza credito: da ricaricare (classificate ${classificate})`
             : `${quandoRoma(adessoIso)} · ${classificate} con AI + ${dirette} dirette · 🗑 ${cestinate} cestinate · ${errori} errori · ${rimanenti} in coda · $${costoUsd.toFixed(4)}`;
         if (classificate > 0 || (errori > 0 && !senzaCredito)) {
-            /* ⚠️ FIRMATO. Scriveva `user_id: null` esattamente come il triage
-               delle chat: due motori, una riga uguale, e la domanda di Luca
-               — «quanto spende l'email» — non aveva risposta possibile. */
-            void registraConsumo({
-                sezione: "triage_email", funzione: "classifica_email", automatica: true,
-                modello: MODEL_FAST,
-                /* ⚠️ anche i tentativi ANDATI MALE sono chiamate: si sono
-                   pagate. Contando solo le riuscite, «quante volte abbiamo
-                   parlato col modello» sarebbe un numero comodo e falso. */
-                chiamate: classificate + errori,
-                tokenIn: promptTok, tokenOut: complTok,
-                durataMs: Date.now() - inizio,
-                esito: senzaCredito ? "senza_credito" : (errori === 0 ? "ok" : "errore"),
-                codiceErrore: primoErrore ? "vedi_ultimo_esito" : null,
-            });
+            /* ⚠️ UNA RIGA PER CASELLA. Prima ne scriveva una sola per corsa e
+               con `user_id: null`, esattamente come il triage delle chat: due
+               motori indistinguibili, e nessun modo di sapere quale casella
+               pesa. Il nome si scrive accanto: se domani la casella viene
+               eliminata, la spesa storica resta leggibile. */
+            const nomiCas = new Map<string, string>();
+            (accs || []).forEach((a: { id: string; email_address?: string; display_name?: string }) =>
+                nomiCas.set(a.id, a.email_address || a.display_name || "casella"));
+            for (const [id, v] of perCasella) {
+                if (!v.mail && !v.errori) continue;
+                void registraConsumo({
+                    sezione: "triage_email", funzione: "classifica_email", automatica: true,
+                    modello: MODEL_FAST, chiamate: v.mail + v.errori,
+                    tokenIn: v.tokIn, tokenOut: v.tokOut,
+                    utenza: id === "senza-casella" ? null
+                        : { tipo: "casella_email", id, label: nomiCas.get(id) || "casella" },
+                    durataMs: Date.now() - inizio,
+                    esito: senzaCredito ? "senza_credito" : (v.errori === 0 ? "ok" : "errore"),
+                    codiceErrore: v.errori ? "vedi_ultimo_esito" : null,
+                });
+            }
         }
         await supabase.from("email_triage_stato").update({ in_corsa_da: null, ultima_corsa: new Date().toISOString(), ultimo_esito: esito }).eq("id", 1);
         return { ok: errori === 0, classificate, dirette, cestinate, quarantene, errori, rimanenti, costoUsd, esito };

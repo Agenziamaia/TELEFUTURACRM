@@ -246,12 +246,24 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
 
     let classificate = 0, dirette = 0, errori = 0, rimanenti = 0;
     let promptTok = 0, complTok = 0;
+    /* ⚠️ PER NUMERO, non solo in totale (Luca 31/08: «voglio piena visibilità
+       tra WhatsApp ed Email»). Prima la corsa scriveva UNA riga di consumo e
+       basta: si sapeva quanto costa il triage, non su QUALE numero — e la
+       domanda vera è sempre quella, perché è lì che si interviene. */
+    const perNumero = new Map<string, { tokIn: number; tokOut: number; chat: number; errori: number }>();
+    const contaNumero = (id: string | null, tokIn: number, tokOut: number, ok: boolean) => {
+        const k = String(id || "senza-numero");
+        const v = perNumero.get(k) || { tokIn: 0, tokOut: 0, chat: 0, errori: 0 };
+        v.tokIn += tokIn; v.tokOut += tokOut;
+        if (ok) v.chat += 1; else v.errori += 1;
+        perNumero.set(k, v);
+    };
     let primoErrore: string | null = null;
     let senzaCredito = false;
     try {
         const cutoff = new Date(Date.now() - FINESTRA_GG * 86400000).toISOString();
         const { data: convs } = await supabase.from("wa_conversations")
-            .select("id, customer_name, last_message_at, chiusa_il")
+            .select("id, customer_name, last_message_at, chiusa_il, instance_id")
             .or("is_group.is.null,is_group.eq.false")
             .gt("last_message_at", cutoff)
             .order("last_message_at", { ascending: false }).limit(400);
@@ -284,6 +296,8 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
                 try {
                     const { riga, usage } = await classificaUna(conv as any);
                     if (usage) { promptTok += usage.prompt_tokens || 0; complTok += usage.completion_tokens || 0; }
+                    contaNumero((conv as { instance_id?: string }).instance_id || null,
+                        usage?.prompt_tokens || 0, usage?.completion_tokens || 0, !!riga);
                     // riga null = risposta del modello inservibile: niente
                     // upsert, la chat resta alle euristiche e si ritenta
                     if (!riga) { errori++; if (!primoErrore) primoErrore = "risposta non JSON"; continue; }
@@ -310,23 +324,31 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
 
         if (classificate > 0 || (errori > 0 && !senzaCredito)) {   // il "senza credito" vive già in ultimo_esito: niente rumore nel registro
             // log costi nello stesso registro dell'assistente AI (user null = motore)
-            /* ⚠️ ADESSO SI SA CHE È IL TRIAGE DELLE CHAT. Prima scriveva
-               `user_id: null` e basta, esattamente come quello della posta:
-               erano indistinguibili, e «quanto spende WhatsApp» non si poteva
-               rispondere. `chiamate` dice quante conversazioni stanno in
-               questa riga — il triage ne accorpa fino a sessanta. */
-            void registraConsumo({
-                sezione: "triage_whatsapp", funzione: "classifica_chat", automatica: true,
-                modello: MODEL_FAST,
-                /* ⚠️ anche i tentativi ANDATI MALE sono chiamate: si sono
-                   pagate. Contando solo le riuscite, «quante volte abbiamo
-                   parlato col modello» sarebbe un numero comodo e falso. */
-                chiamate: classificate + errori,
-                tokenIn: promptTok, tokenOut: complTok,
-                durataMs: Date.now() - inizio,
-                esito: senzaCredito ? "senza_credito" : (errori === 0 ? "ok" : "errore"),
-                codiceErrore: primoErrore ? "vedi_ultimo_esito" : null,
-            });
+            /* ⚠️ UNA RIGA PER NUMERO. Prima ne scriveva una sola per corsa e
+               senza firma: due motori — chat e posta — indistinguibili, e
+               nessun modo di sapere quale numero costa. Adesso ogni numero ha
+               la sua riga, con il suo nome scritto accanto: se domani quel
+               numero si stacca, la spesa storica resta leggibile. */
+            const nomi = new Map<string, string>();
+            if (perNumero.size) {
+                const { data: ist } = await supabase.from("wa_instances")
+                    .select("id, display_name, wa_number").in("id", [...perNumero.keys()].filter((k) => k !== "senza-numero"));
+                (ist || []).forEach((i: { id: string; display_name?: string; wa_number?: string }) =>
+                    nomi.set(i.id, i.display_name || i.wa_number || "numero"));
+            }
+            for (const [id, v] of perNumero) {
+                if (!v.chat && !v.errori) continue;
+                void registraConsumo({
+                    sezione: "triage_whatsapp", funzione: "classifica_chat", automatica: true,
+                    modello: MODEL_FAST, chiamate: v.chat + v.errori,
+                    tokenIn: v.tokIn, tokenOut: v.tokOut,
+                    utenza: id === "senza-numero" ? null
+                        : { tipo: "numero_wa", id, label: nomi.get(id) || "numero" },
+                    durataMs: Date.now() - inizio,
+                    esito: senzaCredito ? "senza_credito" : (v.errori === 0 ? "ok" : "errore"),
+                    codiceErrore: v.errori ? "vedi_ultimo_esito" : null,
+                });
+            }
         }
         await supabase.from("wa_triage_stato").update({ in_corsa_da: null, ultima_corsa: new Date().toISOString(), ultimo_esito: esito }).eq("id", 1);
         return { ok: errori === 0, classificate, dirette, errori, rimanenti, costoUsd, esito };

@@ -272,6 +272,43 @@ console.log(`${B}6. Le pagine pubbliche non sovrascrivono file${X}`);
     console.log(`   ${esaminati} file con riesportazioni esaminati\n`);
 }
 
+/* ── 8. Il minimo di design (Luca 31/08) ───────────────────────────────────
+   «Riesci a tenere questo come minimo? Non possiamo mai generare contenuti in
+   termini di design inferiori.» La soglia è la sezione AI, e il documento è
+   docs/STANDARD_DESIGN.md.
+
+   ⚠️ QUESTO CONTROLLO AVVERTE, NON BLOCCA. Il design non si misura con una
+   regex, e un controllo che sbaglia e ferma il rilascio verrebbe disattivato
+   in una settimana — e allora tanto vale non averlo. Qui si guarda una cosa
+   sola e verificabile: una schermata che disegna BARRE A MANO senza usare i
+   grafici della casa. È esattamente l'errore che ha prodotto la prima
+   versione della sezione AI: barre di div, nessun tooltip, nessun filtro. */
+{
+    console.log(`${B}8. Il minimo di design nelle schermate${X}`);
+    const viste = [];
+    const cerca = (dir) => {
+        for (const n of readdirSync(dir)) {
+            const p = join(dir, n);
+            if (statSync(p).isDirectory()) cerca(p);
+            else if (/\.tsx$/.test(n)) viste.push(p);
+        }
+    };
+    try { cerca("src/app/(dashboard)"); } catch { }
+    let sospette = 0;
+    for (const f of viste) {
+        const t = readFileSync(f, "utf8");
+        // una barra fatta a mano: larghezza in percentuale calcolata inline
+        const barreAMano = (t.match(/width:\s*(?:Math\.[a-z]+\([^)]*\)|[^,;}]*)\s*\*?\s*100\s*\+\s*["'`]%/g) || []).length
+            + (t.match(/style=\{\{[^}]*width:\s*`\$\{[^}]*\}%`/g) || []).length;
+        if (barreAMano < 3) continue;                       // una o due: può essere altro
+        if (/from\s+["'][^"']*_charts["']/.test(t)) continue;  // usa già i grafici della casa
+        sospette++;
+        console.log(`${Y}  ⚠ ${f}: ${barreAMano} barre disegnate a mano, e non importa i grafici della casa${X}`);
+        console.log(`    → vedi docs/STANDARD_DESIGN.md: Ring/BarStack/AreaChart/Donut/RaceBars esistono già, con tooltip e animazioni`);
+    }
+    console.log(`   ${viste.length} schermate esaminate${sospette ? `, ${sospette} da guardare` : ""}\n`);
+}
+
 /* ── esito ─────────────────────────────────────────────────────────────── */
 if (violazioni) {
     console.log(`${R}${B}✗ ${violazioni} violazion${violazioni === 1 ? "e" : "i"} di sicurezza.${X}`);
