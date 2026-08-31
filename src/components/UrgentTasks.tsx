@@ -21,7 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
 
-interface Task { id: string; titolo: string; dettaglio: string | null; link: string | null; created_at: string; synthetic?: boolean }
+interface Task { id: string; titolo: string; dettaglio: string | null; link: string | null; created_at: string; synthetic?: boolean; tipo?: string | null }
 
 export function UrgentTasks() {
     const { user } = useAuth();
@@ -62,13 +62,13 @@ export function UrgentTasks() {
                si vedono, quella che cade lascia solo un buco. */
             const esiti = await Promise.allSettled([
                 // (1) task personali: le vede il destinatario, chiunque sia
-                supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
+                supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at,tipo")
                     .eq("target_user_id", user.id).eq("done", false).order("created_at", { ascending: false }),
                 // (2) rigetti chiusura linea: conteggio live per chi ha sottomesso
                 supabase.from("richieste_disdette").select("id", { count: "exact", head: true })
                     .eq("status", "da_integrare").eq("consulente", user.name || "—"),
                 // (3) code condivise: solo pack direzionale
-                isDirezione ? supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
+                isDirezione ? supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at,tipo")
                     .in("target_role", targets).is("target_user_id", null).eq("done", false).order("created_at", { ascending: false }) : null,
                 vedeRichiesteModifica ? supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
                 isDirezione ? supabase.from("client_access_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
@@ -222,7 +222,17 @@ export function UrgentTasks() {
                                 {t.dettaglio && <div className="text-xs text-slate-400 mt-0.5">{t.dettaglio}</div>}
                                 {!t.synthetic && <div className="text-[10px] text-slate-600 mt-1">{new Date(t.created_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
                             </button>
-                            {!t.synthetic && <button onClick={() => fatta(t.id)} className="mt-1.5 text-[11px] px-2 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 font-bold">✓ Fatta</button>}
+                            {/* IL PULSANTE DICE COSA STAI CONFERMANDO (Luca 31/08).
+                                «✓ Fatta» su una verifica di bonifico non dice niente:
+                                fatta cosa? Chiudere QUELLA task vuol dire una cosa
+                                precisa — che i soldi sono arrivati — e chi la preme
+                                deve leggerlo sul pulsante, non nel testo sopra. */}
+                            {!t.synthetic && (
+                                <button onClick={() => fatta(t.id)}
+                                    className="mt-1.5 text-[11px] px-2 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 font-bold">
+                                    {t.tipo === "scontrino_bonifico" ? "✓ Bonifico verificato" : "✓ Fatta"}
+                                </button>
+                            )}
                         </div>
                     ))}
                     {isDirezione && (

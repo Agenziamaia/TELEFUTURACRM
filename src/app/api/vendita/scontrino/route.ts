@@ -331,7 +331,7 @@ export async function POST(req: Request) {
             await supabase.from("admin_tasks").insert({
                 tipo: "scontrino_bonifico",
                 titolo: `🏦 Scontrino a BONIFICO: ${euro} € — ${negozio || "negozio non indicato"}`,
-                dettaglio: `${b.createdBy || "un operatore"} ha chiuso uno scontrino di ${euro} € con pagamento a bonifico${negozio ? ` a ${negozio}` : ""}${testMode ? " (documento NON fiscale: cassa in prova)" : ""}. Verifica che il bonifico sia arrivato prima di considerare incassata la vendita, poi chiudi questa task: chiuderla vuol dire «pagamento verificato».`,
+                dettaglio: `${b.createdBy || "un operatore"} ha chiuso uno scontrino di ${euro} € con pagamento a bonifico${negozio ? ` a ${negozio}` : ""}${testMode ? " (documento NON fiscale: cassa in prova)" : ""}. Controlla che i soldi siano arrivati sul conto, poi premi «Bonifico verificato».`,
                 /* AL DOCUMENTO, NON ALL'ELENCO (Luca 31/08: «cliccandoci sopra
                    li riporta direttamente allo scontrino che hanno
                    effettuato»). Senza l'id si atterrava sulla lista di tutte
