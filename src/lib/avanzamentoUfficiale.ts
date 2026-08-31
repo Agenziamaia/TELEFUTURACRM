@@ -33,7 +33,12 @@ export type ScartoPista = {
     cod_gara: string; pista: string;
     ufficiale: number;   // quanto dice l'operatore alla sua data
     nostro: number;      // quanto contiamo noi ALLA STESSA data
-    scarto: number;      // nostro − ufficiale: positivo = ne contiamo di più
+    /** UFFICIALE − NOSTRO: quanto va CORRETTO il nostro numero (Luca 31/08).
+     *  Il verso è quello dell'azione, non del confronto: «se mi dai un più
+     *  vuol dire che devo sommare quei punti al mio attuale; se mi dai un meno
+     *  dev'essere in rosso e devo sottrarli». Quindi il MENO è il caso che
+     *  preoccupa — sono punti che abbiamo contato e che non pagano. */
+    scarto: number;
 };
 export type ConfrontoUfficiale = {
     al: string; file: string | null;
@@ -107,32 +112,32 @@ async function calcolaConfronto(brand: DirBrandId, monthISO: string): Promise<Co
         const ufficiale = r.punti != null ? Number(r.punti) : Number(r.pezzi || 0);
         scarti.set(`${r.cod_gara}|${r.pista}`, {
             cod_gara: r.cod_gara, pista: r.pista, ufficiale, nostro,
-            scarto: Math.round((nostro - ufficiale) * 100) / 100,
+            scarto: Math.round((ufficiale - nostro) * 100) / 100,
         });
     }
     return { al: uff.al, file: uff.file, scarti, ignorati: [...ignorati], nRighe: uff.righe.length };
 }
 
-/** Il riepilogo per la striscia in testa: quanto e dove non torna.
- *  I due gruppi sono separati per CONSEGUENZA, non per segno:
- *   • «+» = contiamo punti che l'operatore non ci riconosce → la soglia che
- *     crediamo presa NON è presa, e la Bussola sta mandando le vendite altrove
- *     perché crede quel codice pieno. È l'unico caso che rende falsa la
- *     decisione della pagina;
- *   • «−» = punti nostri che l'operatore conta e noi no: pagano lo stesso,
- *     sono solo registrati su un altro codice. */
+/** Il riepilogo per la striscia in testa: quanto e dove va corretto.
+ *  I due gruppi sono separati per AZIONE:
+ *   • «−» (rosso) = DA TOGLIERE. Sono punti che noi abbiamo contato e che
+ *     l'operatore non ci riconosce: la soglia che crediamo presa può non
+ *     esserlo, e la Bussola sta mandando le vendite altrove credendo pieno un
+ *     codice che pieno non è. È il caso che rende falsa la decisione;
+ *   • «+» = DA AGGIUNGERE. L'operatore ce li conta e da noi non risultano:
+ *     pagano lo stesso, sono solo registrati altrove. */
 export function riepilogoScarti(conf: ConfrontoUfficiale | null): {
-    inPiu: ScartoPista[]; inMeno: ScartoPista[]; puntiInPiu: number; puntiInMeno: number; allineate: number;
+    daTogliere: ScartoPista[]; daAggiungere: ScartoPista[]; puntiDaTogliere: number; puntiDaAggiungere: number; allineate: number;
 } | null {
     if (!conf) return null;
     const tutti = [...conf.scarti.values()];
-    const inPiu = tutti.filter((s) => s.scarto >= 0.01).sort((a, b) => b.scarto - a.scarto);
-    const inMeno = tutti.filter((s) => s.scarto <= -0.01).sort((a, b) => a.scarto - b.scarto);
+    const daTogliere = tutti.filter((s) => s.scarto <= -0.01).sort((a, b) => a.scarto - b.scarto);
+    const daAggiungere = tutti.filter((s) => s.scarto >= 0.01).sort((a, b) => b.scarto - a.scarto);
     return {
-        inPiu, inMeno,
-        puntiInPiu: Math.round(inPiu.reduce((t, s) => t + s.scarto, 0) * 100) / 100,
-        puntiInMeno: Math.round(inMeno.reduce((t, s) => t + s.scarto, 0) * 100) / 100,
-        allineate: tutti.length - inPiu.length - inMeno.length,
+        daTogliere, daAggiungere,
+        puntiDaTogliere: Math.round(daTogliere.reduce((t, s) => t + s.scarto, 0) * 100) / 100,
+        puntiDaAggiungere: Math.round(daAggiungere.reduce((t, s) => t + s.scarto, 0) * 100) / 100,
+        allineate: tutti.length - daTogliere.length - daAggiungere.length,
     };
 }
 

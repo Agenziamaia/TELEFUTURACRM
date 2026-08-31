@@ -434,18 +434,20 @@ export function DirezioneInserimentoAdmin() {
                 const gg = `${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}`;
                 const nomeCod = (c: string) => dir?.codici.find((k) => k.cod_gara === c)?.negozio || c;
                 const nomePista = (p: string) => dir?.pisteTab.find((x) => x.chiave === p)?.nome || p;
-                const nonTornano = R.inPiu.length + R.inMeno.length;
+                const nonTornano = R.daTogliere.length + R.daAggiungere.length;
                 return (
                     <div data-zona-kpi className={cn("an-in rounded-xl border",
-                        R.puntiInPiu ? "border-rose-400/35 bg-rose-500/[0.07]" : nonTornano ? "border-white/12 bg-white/[0.03]" : "border-emerald-400/25 bg-emerald-500/[0.06]")}>
+                        R.puntiDaTogliere ? "border-rose-400/35 bg-rose-500/[0.07]" : nonTornano ? "border-white/12 bg-white/[0.03]" : "border-emerald-400/25 bg-emerald-500/[0.06]")}>
                         <button type="button" onClick={() => setRiepilogoAperto((v) => !v)} className="w-full flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left">
                             <span className="text-[12px] font-bold text-slate-200">📊 Ufficiale al {gg}</span>
                             <span className="text-[11px] text-slate-500">·</span>
                             <span className="text-[11px] text-slate-300">
-                                {nonTornano ? `${nonTornano} ${nonTornano === 1 ? "pista non torna" : "piste non tornano"} su ${conf.scarti.size}` : `tutte le ${conf.scarti.size} piste tornano`}
+                                {nonTornano
+                                    ? `${nonTornano} ${nonTornano === 1 ? "riga da correggere" : "righe da correggere"} su ${conf.scarti.size}`
+                                    : `tutte le ${conf.scarti.size} righe tornano`}
                             </span>
-                            {R.puntiInPiu > 0 && <span className="text-[11px] font-black text-rose-200">▲ {it(R.puntiInPiu)} pt che non pagano</span>}
-                            {R.puntiInMeno < 0 && <span className="text-[11px] font-bold text-slate-300">▼ {it(Math.abs(R.puntiInMeno))} pt non registrati</span>}
+                            {R.puntiDaTogliere < 0 && <span className="text-[11px] font-black text-rose-200">− {it(Math.abs(R.puntiDaTogliere))} pt da togliere</span>}
+                            {R.puntiDaAggiungere > 0 && <span className="text-[11px] font-bold text-emerald-200">+ {it(R.puntiDaAggiungere)} pt da aggiungere</span>}
                             {conf.ignorati.length > 0 && <span className="text-[11px] font-bold text-amber-200">⛔ {conf.ignorati.length} codici del file non sono fra i nostri</span>}
                             <span className={cn("ml-auto text-slate-500 transition-transform text-xs", riepilogoAperto && "rotate-180")}>▾</span>
                         </button>
@@ -463,28 +465,29 @@ export function DirezioneInserimentoAdmin() {
                                     che non pagano» e «punti registrati altrove» non si
                                     perde, la spiega la riga di legenda qui sotto. */}
                                 <p className="text-[10px] text-slate-500">
-                                    <b className="text-rose-200">▲</b> ne contiamo più di loro: la soglia che credi presa potrebbe non esserlo ·
-                                    <b className="text-slate-300"> ▼</b> ne contano più di noi: pagano lo stesso, ma stanno su un altro codice
+                                    Il numero dice che cosa farne del nostro:
+                                    <b className="text-rose-200"> −</b> da TOGLIERE, li contiamo noi e {bMeta.label} non ce li riconosce — la soglia che credi presa potrebbe non esserlo ·
+                                    <b className="text-emerald-200"> +</b> da AGGIUNGERE, ce li conta {bMeta.label} e da noi non risultano: pagano lo stesso, ma stanno su un altro codice
                                 </p>
                                 <div className="grid gap-x-5 gap-y-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(240px, 1fr))` }}>
-                                    {[...new Set([...R.inPiu, ...R.inMeno].map((x) => x.pista))].map((pista) => {
-                                        const righe = [...R.inPiu.filter((x) => x.pista === pista), ...R.inMeno.filter((x) => x.pista === pista)];
+                                    {[...new Set([...R.daTogliere, ...R.daAggiungere].map((x) => x.pista))].map((pista) => {
+                                        const righe = [...R.daTogliere.filter((x) => x.pista === pista), ...R.daAggiungere.filter((x) => x.pista === pista)];
                                         const netto = Math.round(righe.reduce((t, x) => t + x.scarto, 0) * 100) / 100;
                                         return (
                                             <div key={pista} className="min-w-0">
                                                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5 border-b border-white/10 pb-1">
                                                     <span>{EMOJI_PISTA(nomePista(pista))}</span>
                                                     <span className="truncate">{nomePista(pista)}</span>
-                                                    <span className={cn("ml-auto tabular-nums", netto > 0 ? "text-rose-200" : "text-slate-300")}>{netto > 0 ? "+" : ""}{it(netto)}</span>
+                                                    <span className={cn("ml-auto tabular-nums", netto < 0 ? "text-rose-200" : "text-emerald-200")}>{netto > 0 ? "+" : ""}{it(netto)}</span>
                                                 </p>
                                                 {righe.map((x) => (
                                                     <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
                                                         className="w-full flex items-baseline gap-2 text-[11px] text-left rounded-md px-1 py-0.5 hover:bg-white/5">
-                                                        <span className={cn("font-black tabular-nums w-[52px] shrink-0", x.scarto > 0 ? "text-rose-200" : "text-slate-300")}>
-                                                            {x.scarto > 0 ? "▲ +" : "▼ "}{it(x.scarto)}
+                                                        <span className={cn("font-black tabular-nums w-[52px] shrink-0", x.scarto < 0 ? "text-rose-200" : "text-emerald-200")}>
+                                                            {x.scarto > 0 ? "+" : "−"}{it(Math.abs(x.scarto))}
                                                         </span>
                                                         <span className="font-bold text-slate-200 truncate">{nomeCod(x.cod_gara)}</span>
-                                                        <span className="ml-auto text-slate-500 tabular-nums shrink-0">{it(x.ufficiale)} / {it(x.nostro)}</span>
+                                                        <span className="ml-auto text-slate-500 tabular-nums shrink-0" title={`${bMeta.label}: ${it(x.ufficiale)} · noi: ${it(x.nostro)}`}>{it(x.nostro)} → {it(x.ufficiale)}</span>
                                                     </button>
                                                 ))}
                                             </div>
@@ -1034,19 +1037,19 @@ export function DirezioneInserimentoAdmin() {
                                                 return (
                                                     <button key={sm.chiave} type="button"
                                                         onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
-                                                        title={`${tipPallino(sm)}${delta != null ? `\n\n${delta > 0
-                                                            ? `▲ ${it(delta)} punti che qui contiamo e ${bMeta.label} non ci riconosce al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}: la soglia che credi presa potrebbe non esserlo.`
-                                                            : `▼ ${it(Math.abs(delta))} punti che ${bMeta.label} ci conta al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)} e da noi non risultano: pagano lo stesso, ma stanno su un altro codice.`}` : ""}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
+                                                        title={`${tipPallino(sm)}${delta != null ? `\n\n${delta < 0
+                                                            ? `− ${it(Math.abs(delta))} punti DA TOGLIERE: li contiamo noi e ${bMeta.label}, al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}, non ce li riconosce. La soglia che credi presa potrebbe non esserlo.`
+                                                            : `+ ${it(delta)} punti DA AGGIUNGERE: ce li conta ${bMeta.label} al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)} e da noi non risultano. Pagano lo stesso, ma stanno su un altro codice.`}` : ""}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
                                                         className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
                                                             solaQui
                                                                 ? "bg-indigo-500/20 border-indigo-400/50"
-                                                                : delta != null && delta > 0
+                                                                : delta != null && delta < 0
                                                                     ? "bg-rose-500/10 border-rose-400/35 hover:bg-rose-500/15"
                                                                     : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20")}>
                                                         <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{conSim(EMOJI_PISTA(sm.nome))} {NOME_CORTO(sm.nome)}</span>
                                                         {delta != null && (
-                                                            <span className={cn("text-[9px] font-black tabular-nums shrink-0", delta > 0 ? "text-rose-200" : "text-slate-300")}>
-                                                                {delta > 0 ? "▲+" : "▼"}{it(delta)}
+                                                            <span className={cn("text-[9px] font-black tabular-nums shrink-0", delta < 0 ? "text-rose-200" : "text-emerald-200")}>
+                                                                {delta > 0 ? "+" : "−"}{it(Math.abs(delta))}
                                                             </span>
                                                         )}
                                                         {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
@@ -1073,9 +1076,9 @@ export function DirezioneInserimentoAdmin() {
                                             // riquadro: qui resta il resto (luce&gas, assicurazioni…)
                                             const mostrate = new Set(semafori.map((x) => x.chiave));
                                             const sc = [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara && !mostrate.has(x.pista));
-                                            const piu = Math.round(sc.filter((x) => x.scarto >= 0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
-                                            const meno = Math.round(sc.filter((x) => x.scarto <= -0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
-                                            if (!piu && !meno) return null;
+                                            const togliere = Math.round(sc.filter((x) => x.scarto <= -0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
+                                            const aggiungere = Math.round(sc.filter((x) => x.scarto >= 0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
+                                            if (!togliere && !aggiungere) return null;
                                             /* IL BADGE PORTA I PUNTI, NON IL NUMERO DI PISTE (revisore
                                                31/08): «≠ 1» su uno scarto di 1 e «≠ 1» su uno scarto di
                                                40 si scrivevano uguale, e il badge non aiutava a scegliere
@@ -1084,12 +1087,12 @@ export function DirezioneInserimentoAdmin() {
                                                arriva», cioè tranquillizza. */
                                             const gg = `${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}`;
                                             return (
-                                                <span title={piu
-                                                    ? `${it(piu)} punti che qui contiamo e ${bMeta.label} non ci riconosce al ${gg}: la soglia che credi presa potrebbe non esserlo.${meno ? ` (E ${it(Math.abs(meno))} che loro contano e noi no.)` : ""}`
-                                                    : `${it(Math.abs(meno))} punti che ${bMeta.label} ci conta al ${gg} e da noi non risultano: pagano lo stesso, ma sono registrati altrove.`}
+                                                <span title={togliere
+                                                    ? `${it(Math.abs(togliere))} punti DA TOGLIERE: li contiamo noi e ${bMeta.label} non ce li riconosce al ${gg}.${aggiungere ? ` (E ${it(aggiungere)} da aggiungere, che loro contano e noi no.)` : ""}`
+                                                    : `${it(aggiungere)} punti DA AGGIUNGERE: ce li conta ${bMeta.label} al ${gg} e da noi non risultano.`}
                                                     className={cn("hidden lg:inline-block px-1.5 py-0.5 rounded-md border text-[10px] font-black whitespace-nowrap",
-                                                        piu ? "bg-rose-500/15 border-rose-400/40 text-rose-200" : "bg-white/[0.06] border-white/15 text-slate-300")}>
-                                                    {piu ? `▲ +${it(piu)}` : `▼ ${it(meno)}`}
+                                                        togliere ? "bg-rose-500/15 border-rose-400/40 text-rose-200" : "bg-emerald-500/10 border-emerald-400/30 text-emerald-200")}>
+                                                    {togliere ? `− ${it(Math.abs(togliere))}` : `+ ${it(aggiungere)}`}
                                                 </span>
                                             );
                                         })()}
@@ -1103,7 +1106,7 @@ export function DirezioneInserimentoAdmin() {
                                                di prendersi un badge suo: misurato dal revisore, quel
                                                badge riduceva il nome del negozio a una lettera. */
                                             const sc = conf ? [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara).map((x) => x.scarto) : [];
-                                            const scPiu = sc.some((x) => x >= 0.01), scMeno = sc.some((x) => x <= -0.01);
+                                            const scPiu = sc.some((x) => x <= -0.01), scMeno = sc.some((x) => x >= 0.01);
                                             return (
                                             <span className={cn("lg:hidden flex items-center gap-1.5 border rounded-md px-1.5 py-1.5",
                                                 scPiu ? "bg-rose-500/10 border-rose-400/40" : "bg-white/[0.04] border-white/10")}>
@@ -1171,9 +1174,10 @@ export function DirezioneInserimentoAdmin() {
                                                             (() => {
                                                                 const sc = conf?.scarti.get(`${k.cod_gara}|${p.chiave}`);
                                                                 if (!sc || Math.abs(sc.scarto) < 0.01) return null;
-                                                                return sc.scarto > 0
-                                                                    ? `▲ ${it(sc.scarto)} pt che non pagano (${bMeta.label} ne conta ${it(sc.ufficiale)} al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)})`
-                                                                    : `▼ ${it(Math.abs(sc.scarto))} pt non registrati da noi (${bMeta.label} ne conta ${it(sc.ufficiale)} al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)})`;
+                                                                const g = `${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}`;
+                                                                return sc.scarto < 0
+                                                                    ? `− ${it(Math.abs(sc.scarto))} pt da togliere: al ${g} ${bMeta.label} ne conta ${it(sc.ufficiale)}, noi ${it(sc.nostro)}`
+                                                                    : `+ ${it(sc.scarto)} pt da aggiungere: al ${g} ${bMeta.label} ne conta ${it(sc.ufficiale)}, noi ${it(sc.nostro)}`;
                                                             })(),
                                                         ].filter(Boolean).join(" · ") || null}
                                                     />
