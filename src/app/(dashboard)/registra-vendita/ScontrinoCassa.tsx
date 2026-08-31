@@ -237,6 +237,18 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         }
     }, [data, aziendaSel]);
 
+    /* LA SCHEDA CHE SI CHIUDE: con una vendita non ancora scritta, chiudere la
+       finestra la faceva sparire. Questo hook DEVE stare PRIMA del "return null"
+       qui sotto — un hook dopo un return condizionale cambia il numero di hook
+       fra i render → React #310 (crash di Registra Vendita). Si auto-protegge
+       dentro, quindi va chiamato sempre. */
+    useEffect(() => {
+        if (!data?.daRegistrare || fase === "fatto") return;
+        const avvisa = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+        window.addEventListener("beforeunload", avvisa);
+        return () => window.removeEventListener("beforeunload", avvisa);
+    }, [data?.daRegistrare, fase]);
+
     if (!data) return null;
 
     const conferma = async () => {
@@ -355,16 +367,6 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         }
         onDone();
     };
-
-    /* E LA SCHEDA CHE SI CHIUDE. Il browser non chiede niente da solo: con una
-       vendita non ancora scritta, chiudere la finestra la faceva sparire — e
-       col carrello in `sessionStorage` sparisce anche la bozza. */
-    useEffect(() => {
-        if (!data?.daRegistrare || fase === "fatto") return;
-        const avvisa = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
-        window.addEventListener("beforeunload", avvisa);
-        return () => window.removeEventListener("beforeunload", avvisa);
-    }, [data?.daRegistrare, fase]);
 
     // Annulla l'attesa dei contanti dal CRM (spec Francesco 31/08). Il loop di poll
     // legge il flag e si ferma; si torna alla scelta del pagamento.
