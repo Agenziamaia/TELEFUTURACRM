@@ -237,7 +237,7 @@ type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo:
 // carica solo le colonne storiche
 type AziendaRow = { codice: string; ragione_sociale: string; piva: string | null };
 type RtRow = { negozio: string; azienda: string; is_default: boolean | null; rt_url: string | null };
-type NegozioOrariRow = { name: string; address?: string | null; cap?: string | null; citta?: string | null; provincia?: string | null; telefono?: string | null; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
+type NegozioOrariRow = { name: string; address?: string | null; civico?: string | null; cap?: string | null; citta?: string | null; provincia?: string | null; azienda?: string | null; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
 type CampoOrario = "orario_apertura" | "orario_chiusura" | "orario_pausa_inizio" | "orario_pausa_fine" | "sabato_apertura" | "sabato_chiusura";
 export function OrariChiusureView() {
     const { user } = useAuth();   // firma sulle chiusure (giallo del 06/08: righe senza autore)
@@ -261,7 +261,7 @@ export function OrariChiusureView() {
     const [registratori, setRegistratori] = useState<RtRow[]>([]);
     const carica = useCallback(async () => {
         const [st0, ch, fs, az, rt] = await Promise.all([
-            supabase.from("stores").select("name, address, cap, citta, provincia, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
+            supabase.from("stores").select("name, address, civico, cap, citta, provincia, azienda, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
             supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
             supabase.from("giorni_festivi").select("giorno, nome").order("giorno"),
             /* LE SOCIETÀ E I REGISTRATORI (Luca 31/08). «Il file orari e chiusure
@@ -302,7 +302,7 @@ export function OrariChiusureView() {
 
     /** Via, CAP, città, provincia: insieme fanno il LUOGO DI CONSEGNA del DDT.
      *  Si salva quando si esce dal campo, come l'indirizzo. */
-    const salvaCampoNegozio = async (store: string, campo: "cap" | "citta" | "provincia", val: string) => {
+    const salvaCampoNegozio = async (store: string, campo: "civico" | "cap" | "citta" | "provincia", val: string) => {
         const v = val.trim();
         const { error } = await supabase.from("stores").update({ [campo]: v || null }).eq("name", store);
         if (dbError("Dati negozio", error)) return;
@@ -314,14 +314,23 @@ export function OrariChiusureView() {
        dove ce n'è UNA — dove sono due (Donna) la scelta la fa il pezzo che si
        vende, e cambiarla da qui vorrebbe dire scegliere per lui. */
     const salvaSocieta = async (store: string, nuova_: string) => {
-        const righe = registratori.filter(r => r.negozio === store);
-        if (righe.length !== 1) { notify("Questo negozio ha due società: si cambiano dalla configurazione dei registratori."); return; }
         const az = aziende.find(a => a.codice === nuova_);
-        const { error } = await supabase.from("pos_rt")
-            .update({ azienda: nuova_, ragione_sociale: az?.ragione_sociale ?? null, piva: az?.piva ?? null })
-            .eq("negozio", store).eq("azienda", righe[0].azienda);
+        // la società sta sul NEGOZIO: ce l'ha anche prima di avere una cassa
+        const { error } = await supabase.from("stores").update({ azienda: nuova_ || null }).eq("name", store);
         if (dbError("Società del negozio", error)) return;
-        setRegistratori(p => p.map(r => r.negozio === store ? { ...r, azienda: nuova_ } : r));
+        setNegozi(p => p.map(x => x.name === store ? { ...x, azienda: nuova_ || null } : x));
+        /* E DOVE IL REGISTRATORE C'È, si allinea: le due cose devono dire la
+           stessa, se no la merce è di uno e lo scontrino lo firma un altro.
+           Dove ce ne sono DUE (Donna) non si tocca niente: lì la società
+           dello scontrino la sceglie il pezzo che si vende. */
+        const righe = registratori.filter(r => r.negozio === store);
+        if (righe.length === 1 && righe[0].azienda !== nuova_) {
+            const { error: e2 } = await supabase.from("pos_rt")
+                .update({ azienda: nuova_, ragione_sociale: az?.ragione_sociale ?? null, piva: az?.piva ?? null })
+                .eq("negozio", store).eq("azienda", righe[0].azienda);
+            if (dbError("Registratore del negozio", e2)) return;
+            setRegistratori(p => p.map(r => r.negozio === store ? { ...r, azienda: nuova_ } : r));
+        }
     };
 
     const salvaOrario = async (store: string, campo: CampoOrario, val: string) => {
@@ -527,16 +536,24 @@ export function OrariChiusureView() {
                         {(() => {
                             const rt = registratori.filter(r => r.negozio === n.name);
                             const soc = rt.map(r => r.azienda);
-                            const unaSola = rt.length === 1;
                             const nome = (c: string) => aziende.find(a => a.codice === c)?.ragione_sociale || c;
-                            const mancaPerDdt = !n.address || !n.cap || !n.citta;
+                            const mancaPerDdt = !n.address || !n.civico || !n.cap || !n.citta;
                             return (
                                 <div className="w-[290px] shrink-0 space-y-1.5 border-l border-white/5 pl-4">
                                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">📍 Scheda del punto vendita</p>
-                                    <input defaultValue={n.address || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.address || "")) salvaIndirizzo(n.name, e.target.value); }}
-                                        placeholder="Via e civico"
-                                        title="Compare nei messaggi WhatsApp ai clienti come {indirizzo}, ed è il luogo di consegna sul DDT"
-                                        className="glass-input !h-7 !px-2 text-[11px] w-full" />
+                                    {/* VIA e CIVICO separati (Luca 31/08): in un campo solo
+                                        prima o poi qualcuno scrive «via della Magliana
+                                        263/263A», un altro «Via della Magliana, 263» e un
+                                        terzo si dimentica il numero. Sul DDT l'indirizzo è
+                                        il luogo di consegna: o è preciso o si vede che manca. */}
+                                    <div className="flex gap-1.5">
+                                        <input defaultValue={n.address || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.address || "")) salvaIndirizzo(n.name, e.target.value); }}
+                                            placeholder="Via"
+                                            title="Compare nei messaggi WhatsApp ai clienti come {indirizzo}, ed è il luogo di consegna sul DDT"
+                                            className="glass-input !h-7 !px-2 text-[11px] flex-1" />
+                                        <input defaultValue={n.civico || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.civico || "")) salvaCampoNegozio(n.name, "civico", e.target.value); }}
+                                            placeholder="N." title="Numero civico" className="glass-input !h-7 !px-2 text-[11px] w-[62px]" />
+                                    </div>
                                     <div className="flex gap-1.5">
                                         <input defaultValue={n.cap || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.cap || "")) salvaCampoNegozio(n.name, "cap", e.target.value); }}
                                             placeholder="CAP" className="glass-input !h-7 !px-2 text-[11px] w-[70px]" />
@@ -547,23 +564,30 @@ export function OrariChiusureView() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0">Società</span>
-                                        {unaSola ? (
-                                            <select value={soc[0] || ""} onChange={e => salvaSocieta(n.name, e.target.value)}
-                                                title="Chi emette lo scontrino in questo negozio, e di chi è la merce a magazzino"
-                                                className="glass-input !h-7 !px-2 text-[11px] flex-1">
-                                                {aziende.map(a => <option key={a.codice} value={a.codice}>{a.ragione_sociale}</option>)}
-                                            </select>
-                                        ) : rt.length === 0 ? (
-                                            <span className="text-[11px] text-amber-300">nessun registratore configurato</span>
-                                        ) : (
-                                            <span className="text-[11px] text-slate-300" title="Due società in questo negozio: la scelta la fa il pezzo che si vende">
+                                        {/* SI SCEGLIE SEMPRE (Luca 31/08): «sui negozi dove non
+                                            c'è registratore fiscale dammi comunque la
+                                            possibilità di selezionare la società, così avrai
+                                            il dato già pronto quando li configureremo».
+                                            Un negozio la società ce l'ha anche prima della
+                                            cassa: è quella che possiede la merce a magazzino
+                                            e che firma i documenti di trasporto. */}
+                                        {rt.length > 1 ? (
+                                            <span className="text-[11px] text-slate-300 flex-1" title="Due società in questo negozio: la società dello scontrino la sceglie il pezzo che si vende">
                                                 {soc.map(nome).join(" + ")}
                                             </span>
+                                        ) : (
+                                            <select value={n.azienda || ""} onChange={e => salvaSocieta(n.name, e.target.value)}
+                                                title="La società a cui appartiene il punto vendita: possiede la merce a magazzino e firma i documenti di trasporto"
+                                                className="glass-input !h-7 !px-2 text-[11px] flex-1">
+                                                <option value="">— da scegliere —</option>
+                                                {aziende.map(a => <option key={a.codice} value={a.codice}>{a.ragione_sociale}</option>)}
+                                            </select>
                                         )}
+                                        {rt.length === 0 && <span className="text-[10px] text-slate-500 shrink-0" title="Il registratore non è ancora configurato: la società resta scritta e verrà usata quando lo sarà">senza cassa</span>}
                                     </div>
                                     {mancaPerDdt && (
                                         <p className="text-[10px] text-amber-300/80 leading-snug">
-                                            Senza via, CAP e città il documento di trasporto non è valido.
+                                            Senza via, civico, CAP e città il documento di trasporto non è valido.
                                         </p>
                                     )}
                                 </div>

@@ -35,9 +35,13 @@ export type AziendaDdt = {
     rea: string | null; telefono: string | null; email: string | null;
 };
 export type NegozioDdt = {
-    name: string; address: string | null; cap: string | null;
+    name: string; address: string | null; civico?: string | null; cap: string | null;
     citta: string | null; provincia: string | null;
 };
+
+/** Via e civico, che nel database stanno separati per non essere approssimativi. */
+const viaCivico = (n: NegozioDdt | undefined) =>
+    [n?.address, n?.civico].filter(Boolean).join(", ");
 export type RigaDdt = {
     codice: string | null; descrizione: string;
     seriale: string | null; quantita: number;
@@ -85,169 +89,218 @@ export function cosaMancaAlDdt(
         if (!a.piva) out.push(`la partita IVA di ${a.ragione_sociale}`);
     });
     ([[d.da_negozio, "partenza"], [d.a_negozio, "destinazione"]] as const).forEach(([n, ruolo]) => {
-        if (!neg[n]?.address) out.push(`l'indirizzo di ${n} — si compila in Amministrazione → Orari e chiusure`);
+        const x = neg[n];
+        if (!x?.address || !x?.civico || !x?.citta)
+            out.push(`l'indirizzo di ${n} — si compila in Amministrazione → Orari e chiusure`);
     });
     return out;
 }
 
 const COPIE = [
-    { et: "ORIGINALE", per: "copia per il destinatario" },
-    { et: "COPIA", per: "copia per il mittente" },
-    { et: "COPIA", per: "copia di accompagnamento" },
+    { et: "ORIGINALE", per: "destinatario" },
+    { et: "COPIA", per: "mittente" },
+    { et: "COPIA", per: "accompagnamento" },
 ];
 
-/** Il documento, pronto per la stampa. Tre copie in tre pagine. */
+/* ── LA FORMA (Luca 31/08, dopo aver visto un DDT vero) ────────────────────
+   Il primo tentativo aveva i bordi tondi, i riquadri spaziati e delle
+   grafiche di sfondo. Sbagliato: un documento di trasporto è un MODULO —
+   una griglia fitta di caselle squadrate, etichette minuscole in maiuscolo
+   nell'angolo, i dati dentro, e in mezzo un'area bianca grande dove alla
+   consegna si scrive a mano («alla consegna c'è 1 bottiglia rotta») e si
+   firma. Le decorazioni non servono a niente: rubano spazio a quello che
+   serve, e su una fotocopia sono grigio.
+   Ricalcato sul documento vero che Luca ha mandato. ────────────────────── */
+
+/** Una casella del modulo: etichetta piccola sopra, dato sotto. */
+const cella = (et: string, val: string, span = 1) =>
+    `<td colspan="${span}"><i>${esc(et)}</i><b>${val}</b></td>`;
+
 export function ddtHtml(
     d: DatiDdt, righe: RigaDdt[],
     az: Record<string, AziendaDdt>, neg: Record<string, NegozioDdt>,
-    grafiche?: { testata?: string; filigrana?: string; sigillo?: string; firme?: string },
 ): string {
     const mit = az[d.azienda_da], des = az[d.azienda_a];
+    const negDa = neg[d.da_negozio], negA = neg[d.a_negozio];
     const manca = cosaMancaAlDdt(az, neg, d);
     const cessione = d.azienda_da !== d.azienda_a;
     const pezzi = righe.reduce((s, r) => s + (Number(r.quantita) || 1), 0);
-
-    /* IL LOGO (Luca 31/08). È lo stesso per le due società — sono lo stesso
-       gruppo — e la ragione sociale la distingue il testo accanto. Sta in
-       `aziende.logo_url`, non scritto qui dentro: se un giorno Telefutura 2
-       avrà il suo, si cambia il dato e non il documento. */
     const logo = mit?.logo_url || "/telefutura.png";
 
-    const testata = (copia: typeof COPIE[number]) => `
-      <div class="hdr">
-        ${grafiche?.testata ? `<img class="banner" src="${esc(grafiche.testata)}" alt="">` : ""}
-        <img class="logo" src="${esc(logo)}" alt="">
-        <div class="hdrTxt">
-          <div class="soc">${esc(mit?.ragione_sociale || d.azienda_da)}</div>
-          <div class="socDati">${indirizzoAzienda(mit)}</div>
-          <div class="socDati">P. IVA ${oManca(mit?.piva, "la partita IVA")}${mit?.rea ? ` · REA ${esc(mit.rea)}` : ""}</div>
-        </div>
-        <div class="tipo">
-          <div class="tipoT">DOCUMENTO DI TRASPORTO</div>
-          <div class="tipoN">n. <b>${d.numero}</b> / ${d.anno}</div>
-          <div class="tipoD">del ${gg(d.creato_il)}</div>
-          <div class="copia">${esc(copia.et)}<small>${esc(copia.per)}</small></div>
-        </div>
-      </div>`;
-
-    const parti = `
-      <div class="parti">
-        <div class="parte">
-          <div class="parteT">Mittente</div>
-          <b>${esc(mit?.ragione_sociale || d.azienda_da)}</b><br>
-          ${indirizzoAzienda(mit)}<br>
-          P. IVA ${oManca(mit?.piva, "la partita IVA")}
-          <div class="luogo"><span class="et">Luogo di partenza</span>
-            <b>${esc(d.da_negozio)}</b><br>${indirizzoNegozio(neg[d.da_negozio], d.da_negozio)}</div>
-        </div>
-        <div class="parte">
-          <div class="parteT">Destinatario</div>
-          <b>${esc(des?.ragione_sociale || d.azienda_a)}</b><br>
-          ${indirizzoAzienda(des)}<br>
-          P. IVA ${oManca(des?.piva, "la partita IVA")}
-          <div class="luogo"><span class="et">Luogo di destinazione</span>
-            <b>${esc(d.a_negozio)}</b><br>${indirizzoNegozio(neg[d.a_negozio], d.a_negozio)}</div>
-        </div>
-      </div>`;
-
-    const tabella = `
-      <table class="beni">
-        <thead><tr>
-          <th style="width:34px">#</th><th style="width:150px">Codice</th>
-          <th>Descrizione dei beni</th><th style="width:170px">Matricola / IMEI</th>
-          <th style="width:60px" class="c">Q.tà</th>
-        </tr></thead>
-        <tbody>
-          ${righe.map((r, i) => `<tr>
-            <td class="c">${i + 1}</td>
-            <td class="mono">${esc(r.codice || "—")}</td>
-            <td>${esc(r.descrizione)}</td>
-            <td class="mono">${esc(r.seriale || "—")}</td>
-            <td class="c">${r.quantita}</td>
-          </tr>`).join("")}
-          ${righe.length === 0 ? `<tr><td colspan="5" class="c vuoto">Nessun bene in questo documento</td></tr>` : ""}
-        </tbody>
-        <tfoot><tr><td colspan="4" class="tot">Totale beni trasportati</td><td class="c tot">${pezzi}</td></tr></tfoot>
-      </table>`;
-
-    const piede = `
-      <div class="dati4">
-        <div><span>Causale del trasporto</span><b>${esc(d.causale)}</b></div>
-        <div><span>Aspetto esteriore dei beni</span><b>${esc(d.aspetto)}</b></div>
-        <div><span>Numero dei colli</span><b>${d.colli ?? "—"}</b></div>
-        <div><span>Trasporto a cura di</span><b>${esc(d.trasporto)}</b></div>
-      </div>
-      <div class="dati4">
-        <div><span>Data e ora di inizio trasporto</span><b>${gghh(d.inizio_trasporto || d.creato_il)}</b></div>
-        <div style="grid-column:span 3"><span>Note</span><b>${esc(d.note || "—")}</b></div>
-      </div>
-      ${cessione ? `<div class="avviso">⚠️ Trasferimento fra <b>società diverse</b> (${esc(mit?.ragione_sociale || d.azienda_da)} → ${esc(des?.ragione_sociale || d.azienda_a)}): è una cessione fra due soggetti, e questo documento va seguito da <b>fattura</b>.</div>` : ""}
-      ${manca.length ? `<div class="avvisoRosso"><b>Questo documento non è ancora valido.</b> Mancano: ${manca.map(esc).join(" · ")}.</div>` : ""}
-      <div class="firme">
-        ${grafiche?.firme ? `<img class="firmeImg" src="${esc(grafiche.firme)}" alt="">` : ""}
-        <div class="firmeRighe">
-          <div><span>Firma del mittente</span><i>${esc(d.creato_da || "")}</i></div>
-          <div><span>Firma del vettore</span><i></i></div>
-          <div><span>Firma del destinatario</span><i></i></div>
-        </div>
-      </div>`;
+    const rigaCitta = (n: NegozioDdt | undefined) =>
+        [n?.cap, n?.citta, n?.provincia ? `(${n.provincia})` : null].filter(Boolean).join(" ");
+    const sedeSoc = (a: AziendaDdt | undefined) =>
+        [a?.sede, [a?.cap, a?.citta, a?.provincia ? `(${a.provincia})` : null].filter(Boolean).join(" ")]
+            .filter(Boolean).join(" — ");
 
     const pagina = (copia: typeof COPIE[number]) => `
-      <section class="pag">
-        ${grafiche?.filigrana ? `<img class="filigrana" src="${esc(grafiche.filigrana)}" alt="">` : ""}
-        ${testata(copia)}${parti}${tabella}${piede}
-      </section>`;
+    <section class="pag">
+      <!-- TESTATA: chi spedisce a sinistra, chi riceve a destra -->
+      <div class="testa">
+        <div class="mit">
+          <img class="logo" src="${esc(logo)}" alt="">
+          <div>
+            <div class="rs">${esc(mit?.ragione_sociale || d.azienda_da)}</div>
+            <div class="rsDati">${sedeSoc(mit) ? esc(sedeSoc(mit)) : `<span class="manca">manca la sede legale</span>`}</div>
+            <div class="rsDati">C.F. / P. IVA ${oManca(mit?.piva, "la partita IVA")}${mit?.rea ? ` — REA ${esc(mit.rea)}` : ""}</div>
+          </div>
+        </div>
+        <div class="des">
+          <div class="spett">Spett.le</div>
+          <div class="rs">${esc(des?.ragione_sociale || d.azienda_a)}</div>
+          <div class="rsDati">${sedeSoc(des) ? esc(sedeSoc(des)) : `<span class="manca">manca la sede legale</span>`}</div>
+          <div class="rsDati">C.F. / P. IVA ${oManca(des?.piva, "la partita IVA")}</div>
+          <div class="dest"><span>Dest.</span>
+            <b>${esc(d.a_negozio)}</b><br>
+            ${viaCivico(negA) ? esc(viaCivico(negA)) : `<span class="manca">manca l'indirizzo</span>`}
+            ${rigaCitta(negA) ? "<br>" + esc(rigaCitta(negA)) : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="partenza">
+        <b>In partenza da:</b> ${esc(d.da_negozio)} —
+        ${viaCivico(negDa) ? esc(viaCivico(negDa)) : `<span class="manca">manca l'indirizzo</span>`}
+        ${rigaCitta(negDa) ? ", " + esc(rigaCitta(negDa)) : ""}
+        <span class="copiaEt">${esc(copia.et)} · ${esc(copia.per)}</span>
+      </div>
+
+      <!-- I DATI DEL DOCUMENTO -->
+      <table class="griglia">
+        <tr>
+          <td class="tit" rowspan="1"><b>DOCUMENTO DI TRASPORTO</b><small>D.P.R. 14-8-96, n. 472</small></td>
+          ${cella("Partita IVA", oManca(mit?.piva, "—"))}
+          ${cella("Codice fiscale", mit?.codice_fiscale ? esc(mit.codice_fiscale) : oManca(mit?.piva, "—"))}
+          ${cella("N. documento", `<span class="big">${d.numero}</span>`)}
+          ${cella("Data documento", gg(d.creato_il))}
+          ${cella("Foglio n.", "1")}
+        </tr>
+      </table>
+
+      <!-- I BENI -->
+      <table class="beni">
+        <thead><tr>
+          <th class="l">Codici e descrizione dei beni</th>
+          <th style="width:150px">Matricola / IMEI</th>
+          <th style="width:44px">U.M.</th>
+          <th style="width:60px">Quantità</th>
+        </tr></thead>
+        <tbody>
+          ${righe.map((r) => `<tr>
+            <td class="l">${r.codice ? `<span class="cod">(${esc(r.codice)})</span> ` : ""}${esc(r.descrizione)}</td>
+            <td class="mono">${esc(r.seriale || "—")}</td>
+            <td class="c">PZ</td>
+            <td class="c">${r.quantita}</td>
+          </tr>`).join("")}
+          ${righe.length === 0 ? `<tr><td colspan="4" class="c vuoto">Nessun bene in questo documento</td></tr>` : ""}
+          <!-- lo spazio bianco è parte del documento: alla consegna ci si
+               scrive a mano quello che non torna, e si firma lì -->
+          <tr class="spazio"><td colspan="4"></td></tr>
+        </tbody>
+      </table>
+
+      <!-- LA FASCIA DEL TRASPORTO -->
+      <table class="griglia">
+        <tr>
+          ${cella("Totale beni", String(pezzi))}
+          ${cella("Trasporto a cura di", esc(d.trasporto))}
+          ${cella("Aspetto esteriore dei beni", esc(d.aspetto))}
+          ${cella("Causale del trasporto", esc(d.causale), 2)}
+        </tr>
+        <tr>
+          ${cella("N. colli", d.colli != null ? String(d.colli) : "&nbsp;")}
+          ${cella("Peso (kg)", "&nbsp;")}
+          ${cella("Porto", "&nbsp;")}
+          ${cella("Data e ora inizio trasporto", gghh(d.inizio_trasporto || d.creato_il))}
+          ${cella("Targa", "&nbsp;")}
+        </tr>
+      </table>
+
+      <table class="griglia">
+        <tr>
+          <td class="ann" colspan="3"><i>Annotazioni e/o variazioni</i><b>${esc(d.note || "")}</b></td>
+          <td class="firma" colspan="2"><i>Firma del destinatario</i></td>
+        </tr>
+      </table>
+
+      <!-- I VETTORI: due, come sul documento vero -->
+      <table class="griglia vettori">
+        <tr>
+          <td class="vet" rowspan="2">Vettore</td>
+          <td><i>Ditta — residenza o domicilio</i><b>&nbsp;</b></td>
+          <td style="width:150px"><i>Data e ora del ritiro</i><b>&nbsp;</b></td>
+          <td style="width:200px" class="firma"><i>Firma del vettore</i></td>
+        </tr>
+        <tr>
+          <td><i>Ditta — residenza o domicilio</i><b>&nbsp;</b></td>
+          <td><i>Data e ora del ritiro</i><b>&nbsp;</b></td>
+          <td class="firma"><i>Firma del vettore</i></td>
+        </tr>
+      </table>
+
+      <table class="griglia">
+        <tr>
+          <td class="firma" style="width:50%"><i>Firma del mittente</i><b class="chi">${esc(d.creato_da || "")}</b></td>
+          <td class="firma"><i>Firma del conducente</i></td>
+        </tr>
+      </table>
+
+      ${cessione ? `<div class="nota">Trasferimento fra <b>società diverse</b> (${esc(mit?.ragione_sociale || d.azienda_da)} → ${esc(des?.ragione_sociale || d.azienda_a)}): cessione fra due soggetti, da seguire con <b>fattura</b>.</div>` : ""}
+      ${manca.length ? `<div class="notaRossa"><b>Documento non ancora valido.</b> Mancano: ${manca.map(esc).join(" · ")}.</div>` : ""}
+    </section>`;
 
     return `<!doctype html><html lang="it"><head><meta charset="utf-8">
 <title>DDT ${d.numero}/${d.anno} — ${esc(d.da_negozio)} → ${esc(d.a_negozio)}</title>
 <style>
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; margin: 0; font-size: 12px; }
-  .pag { position: relative; page-break-after: always; padding-bottom: 6mm; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #000; margin: 0; font-size: 10.5px; }
+  .pag { page-break-after: always; }
   .pag:last-child { page-break-after: auto; }
-  .filigrana { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: .5; z-index: 0; }
-  .pag > *:not(.filigrana) { position: relative; z-index: 1; }
-  .hdr { display: flex; align-items: flex-start; gap: 14px; border-bottom: 2px solid #111; padding-bottom: 8px; }
-  /* il logo sta a sinistra e non cresce: su una fotocopia in bianco e nero
-     diventa grigio, quindi la ragione sociale la deve dire il testo accanto */
-  .logo { width: 62px; height: 62px; object-fit: contain; flex: 0 0 auto; }
-  .banner { position: absolute; top: 0; left: 0; width: 100%; height: 58px; object-fit: cover; opacity: .9; z-index: -1; }
-  .hdrTxt { flex: 1; }
-  .soc { font-size: 17px; font-weight: 800; letter-spacing: .2px; }
-  .socDati { font-size: 11px; color: #333; line-height: 1.45; }
-  .tipo { text-align: right; min-width: 190px; }
-  .tipoT { font-size: 11px; font-weight: 800; letter-spacing: 1.1px; }
-  .tipoN { font-size: 16px; margin-top: 2px; }
-  .tipoD { font-size: 11px; color: #333; }
-  .copia { margin-top: 6px; font-size: 10px; font-weight: 800; letter-spacing: 1px; border: 1.5px solid #111; border-radius: 4px; padding: 3px 8px; display: inline-block; }
-  .copia small { display: block; font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 9px; color: #444; }
-  .parti { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-  .parte { border: 1px solid #999; border-radius: 5px; padding: 8px 10px; line-height: 1.5; }
-  .parteT { font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #555; margin-bottom: 3px; }
-  .luogo { margin-top: 7px; padding-top: 6px; border-top: 1px dashed #bbb; }
-  .luogo .et { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: #555; }
-  table.beni { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  .beni th, .beni td { border: 1px solid #999; padding: 5px 8px; text-align: left; }
-  .beni thead th { background: #f1f1f1; font-size: 10px; letter-spacing: .4px; text-transform: uppercase; }
+
+  /* testata */
+  .testa { display: flex; gap: 14px; align-items: flex-start; }
+  .mit { display: flex; gap: 10px; width: 52%; }
+  .logo { width: 54px; height: 54px; object-fit: contain; flex: 0 0 auto; }
+  .rs { font-size: 14px; font-weight: 800; letter-spacing: .2px; }
+  .rsDati { font-size: 9px; line-height: 1.4; color: #222; }
+  .des { flex: 1; border: 1px solid #000; padding: 6px 8px; min-height: 76px; }
+  .spett { font-size: 9px; color: #444; }
+  .dest { margin-top: 5px; padding-top: 4px; border-top: 1px dotted #999; font-size: 9.5px; line-height: 1.4; }
+  .dest span { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #444; }
+  .partenza { border: 1px solid #000; border-top: none; padding: 3px 8px; font-size: 9.5px; display: flex; justify-content: space-between; align-items: baseline; }
+  .copiaEt { font-size: 8.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+
+  /* la griglia di caselle: è la forma di un DDT */
+  table.griglia { width: 100%; border-collapse: collapse; margin-top: -1px; }
+  .griglia td { border: 1px solid #000; padding: 2px 5px 3px; vertical-align: top; height: 30px; }
+  .griglia i { display: block; font-style: normal; font-size: 7.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #444; }
+  .griglia b { font-size: 10.5px; font-weight: 700; }
+  .griglia .big { font-size: 14px; font-weight: 800; }
+  .griglia .tit { width: 34%; }
+  .griglia .tit b { font-size: 10px; letter-spacing: .3px; }
+  .griglia .tit small { display: block; font-size: 8px; color: #444; }
+  .griglia .ann { height: 52px; }
+  .griglia .firma { height: 52px; }
+  .griglia .firma .chi { font-weight: 400; font-size: 9px; color: #444; }
+  .vettori .vet { width: 20px; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center;
+                  font-size: 7.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 4px 1px; }
+
+  /* i beni */
+  table.beni { width: 100%; border-collapse: collapse; margin-top: -1px; }
+  .beni th, .beni td { border: 1px solid #000; padding: 3px 6px; }
+  .beni thead th { font-size: 7.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; text-align: center; height: 20px; }
+  .beni th.l, .beni td.l { text-align: left; }
   .beni .c { text-align: center; }
-  .beni .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
-  .beni .tot { font-weight: 800; background: #f7f7f7; }
-  .beni .vuoto { color: #777; padding: 14px; }
-  .dati4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 9px; }
-  .dati4 > div { border: 1px solid #999; border-radius: 5px; padding: 6px 9px; }
-  .dati4 span { display: block; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: #555; }
-  .dati4 b { font-size: 11.5px; }
-  .avviso { margin-top: 9px; border: 1px solid #b45309; background: #fffbeb; color: #7c2d12; border-radius: 5px; padding: 7px 10px; font-size: 11px; }
-  .avvisoRosso { margin-top: 9px; border: 1.5px solid #b91c1c; background: #fef2f2; color: #7f1d1d; border-radius: 5px; padding: 7px 10px; font-size: 11px; }
-  .manca { color: #b91c1c; font-weight: 700; font-style: italic; }
-  .firme { margin-top: 14px; position: relative; }
-  .firmeImg { width: 100%; height: 80px; object-fit: fill; position: absolute; inset: 0; }
-  .firmeRighe { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .firmeRighe > div { border: 1px solid #999; border-radius: 5px; height: 76px; padding: 6px 9px; display: flex; flex-direction: column; justify-content: space-between; }
-  .firmeRighe span { font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: #555; }
-  .firmeRighe i { font-style: normal; font-size: 10px; color: #666; border-top: 1px solid #bbb; padding-top: 3px; }
-  @media print { .noprint { display: none; } }
+  .beni .mono { font-family: ui-monospace, Menlo, monospace; font-size: 10px; text-align: center; }
+  .beni .cod { color: #333; }
+  .beni .vuoto { color: #666; padding: 12px; }
+  /* lo spazio per scrivere a mano alla consegna */
+  .beni .spazio td { height: 150px; border-top: none; }
+
+  .manca { color: #b00; font-weight: 700; font-style: italic; }
+  .nota { margin-top: 6px; border: 1px solid #000; padding: 4px 8px; font-size: 9px; }
+  .notaRossa { margin-top: 4px; border: 1.5px solid #b00; color: #b00; padding: 4px 8px; font-size: 9px; }
 </style></head><body>
 ${COPIE.map(pagina).join("")}
 </body></html>`;
