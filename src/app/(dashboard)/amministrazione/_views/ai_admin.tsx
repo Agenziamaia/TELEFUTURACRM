@@ -218,101 +218,131 @@ export function AiAdminView() {
                     })}
                 </div>
 
-                {/* ── i numeri grossi ─────────────────────────────────────── */}
-                <div className="relative mt-5 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 items-center">
-                    <Ring value={Math.min(m.speso, m.tetto)} max={m.tetto} colore={colore} size={148}
-                        centro={<>
-                            <span className="text-2xl font-black text-white tabular-nums leading-none">{eur(m.speso)}</span>
-                            <span className="text-[10px] text-slate-400 mt-1">su {eur(m.tetto)}</span>
-                            <span className="text-[10px] text-slate-500">{fmtN(quota * 100, 0)}% del tetto</span>
-                        </>}
-                        sotto={m.proiezione != null
-                            ? <span className="text-[10px] text-slate-500">a fine mese {eur(m.proiezione)}</span>
-                            : <span className="text-[10px] text-slate-500">prima {eur(m.spesoPrima)}</span>}
-                        tip={<div>
-                            <TipTitolo>Il tetto del mese</TipTitolo>
-                            <TipRiga l="speso" r={eur(m.speso)} colore={colore} />
-                            <TipRiga l="tetto" r={eur(m.tetto)}  />
-                            {m.proiezione != null && <TipRiga l="a fine mese" r={eur(m.proiezione)}  />}
-                            <TipRiga l="periodo prima" r={eur(m.spesoPrima)}  />
-                        </div>} />
+                {/* ══ IL CUORE, IN UN PEZZO SOLO (Luca 31/08: «questi due
+                    integrali in uno schema solo, bello integrato e fruibile»).
+                    Erano due riquadri staccati — il tetto sopra, il giorno per
+                    giorno sotto — e per capire «quanto ho speso e quando» si
+                    doveva saltare dall'uno all'altro. Qui l'anello del mese e
+                    l'andamento dei giorni stanno nello stesso sguardo: a
+                    sinistra dove siamo arrivati, a destra come ci siamo
+                    arrivati, e sotto il giorno che si apre. ══════════════ */}
+                <div className="relative mt-5 grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[
-                            { t: "Chiesto da una persona", v: eur(m.chiesta), i: User, c: "#818cf8",
-                              n: "È il prodotto: qualcuno l'ha voluta. Non si taglia — semmai si vuole che cresca." },
-                            { t: "Girato da solo", v: eur(m.automatica), i: Bot, c: "#64748b",
-                              n: "I motori che classificano chat e posta. È qui che si interviene, se serve." },
-                            { t: m.proiezione != null ? "A fine mese" : "Periodo prima", v: eur(m.proiezione ?? m.spesoPrima), i: Sparkles, c: "#34d399",
-                              n: m.proiezione != null ? "Di questo passo, contando i giorni già trascorsi." : "Lo stesso numero di giorni, subito prima." },
-                            { t: "Chiamate", v: fmtN(d.totali.chiamate), i: RefreshCw, c: "#38bdf8",
-                              n: "Quante volte abbiamo parlato col modello: i triage ne accorpano fino a sessanta per riga." },
-                        ].map((x) => (
-                            <Tip key={x.t} block tip={<div><TipTitolo>{x.t}</TipTitolo><p className="text-[11px] text-slate-400 max-w-[15rem] leading-relaxed">{x.n}</p></div>}>
-                                <div className="glass-card an-card rounded-2xl p-3 h-full">
-                                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                                        <x.i className="w-3 h-3" style={{ color: x.c }} /> {x.t}
+                    {/* ── la colonna del MESE ─────────────────────────────── */}
+                    <div className="flex flex-col items-center lg:items-start gap-4">
+                        <Ring value={Math.min(m.speso, m.tetto)} max={m.tetto} colore={colore} size={186}
+                            centro={<>
+                                <span className="text-[30px] font-black text-white tabular-nums leading-none">{eur(m.speso)}</span>
+                                <span className="text-[11px] text-slate-400 mt-1.5">su {eur(m.tetto)} di tetto</span>
+                                <span className="text-[10px] font-bold" style={{ color: colore }}>{fmtN(quota * 100, 0)}%</span>
+                            </>}
+                            sotto={null}
+                            tip={<div>
+                                <TipTitolo>Il tetto del mese</TipTitolo>
+                                <TipRiga l="speso" r={eur(m.speso)} colore={colore} />
+                                <TipRiga l="tetto" r={eur(m.tetto)} />
+                                {m.proiezione != null && <TipRiga l="a fine mese" r={eur(m.proiezione)} />}
+                                <TipRiga l="periodo prima" r={eur(m.spesoPrima)} />
+                            </div>} />
+
+                        {/* le due nature della spesa, sotto l'anello: è la
+                            lettura che conta più del totale */}
+                        <div className="w-full space-y-2">
+                            {[
+                                { t: "Chiesto da una persona", v: m.chiesta, i: User, c: "#818cf8",
+                                  n: "È il prodotto: qualcuno l'ha voluta. Non si taglia — semmai si vuole che cresca." },
+                                { t: "Girato da solo", v: m.automatica, i: Bot, c: "#64748b",
+                                  n: "I motori che classificano chat e posta, senza che nessuno chieda niente. È qui che si interviene, se serve." },
+                            ].map((x) => {
+                                const p = m.speso > 0 ? x.v / m.speso : 0;
+                                return (
+                                    <Tip key={x.t} block tip={<div><TipTitolo>{x.t}</TipTitolo><p className="text-[11px] text-slate-400 max-w-[15rem] leading-relaxed">{x.n}</p></div>}>
+                                        <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                                            {/* etichetta SOPRA e numero sotto: in riga, «Chiesto da una
+                                                persona» spingeva la cifra a capo e la spezzava in due */}
+                                            <span className="flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-[0.1em] text-slate-500">
+                                                <x.i className="w-3 h-3 shrink-0" style={{ color: x.c }} /> {x.t}
+                                            </span>
+                                            <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                                                <span className="text-lg font-black tabular-nums text-white">{eur(x.v)}</span>
+                                                <span className="text-[10px] tabular-nums text-slate-500">{fmtN(p * 100, 0)}%</span>
+                                            </div>
+                                            <span className="mt-1.5 block h-1 rounded-full bg-white/5 overflow-hidden">
+                                                <span className="block h-full rounded-full transition-all duration-700"
+                                                    style={{ width: Math.max(2, p * 100) + "%", background: x.c }} />
+                                            </span>
+                                        </div>
+                                    </Tip>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* ── la colonna dei GIORNI ───────────────────────────── */}
+                    <div className="min-w-0 flex flex-col">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                            {[
+                                { t: m.proiezione != null ? "A fine mese" : "Periodo prima", v: eur(m.proiezione ?? m.spesoPrima), c: "#34d399",
+                                  n: m.proiezione != null ? "Di questo passo, contando i giorni già trascorsi del mese." : "Lo stesso numero di giorni, subito prima." },
+                                { t: "Chiamate", v: fmtN(d.totali.chiamate), c: "#38bdf8",
+                                  n: "Quante volte abbiamo parlato col modello." },
+                                { t: "Token", v: fmtN((d.totali.tokenIn + d.totali.tokenOut) / 1000, 0) + "k", c: "#a78bfa",
+                                  n: "Domande e risposte messe insieme. È la materia che si paga." },
+                                { t: "Giorno più caro", v: eur(maxGiorno), c: "#fbbf24",
+                                  n: "Il picco del periodo: cliccalo nel grafico per vedere da cosa è fatto." },
+                            ].map((x) => (
+                                <Tip key={x.t} block tip={<div><TipTitolo>{x.t}</TipTitolo><p className="text-[11px] text-slate-400 max-w-[15rem] leading-relaxed">{x.n}</p></div>}>
+                                    <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2 h-full">
+                                        <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-500 truncate">{x.t}</div>
+                                        <div className="mt-0.5 text-base font-black tabular-nums" style={{ color: x.c }}>{x.v}</div>
                                     </div>
-                                    <div className="mt-1 text-lg font-black tabular-nums text-white">{x.v}</div>
-                                </div>
-                            </Tip>
-                        ))}
+                                </Tip>
+                            ))}
+                        </div>
+
+                        <div className="flex items-baseline justify-between mb-1">
+                            <h3 className="text-sm font-bold text-white">Giorno per giorno</h3>
+                            <span className="text-[11px] text-slate-500">passa sopra per il dettaglio · clicca per aprire il giorno</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-2">
+                            Ogni barra è un giorno, divisa per motore. Se il costo e le richieste delle persone salgono
+                            insieme è adozione — e sono soldi ben spesi; se sale solo il costo, qualcosa gira a vuoto.
+                        </p>
+                        <div onClick={(e) => {
+                            /* BarStack non conosce il clic: si intercetta la
+                               posizione orizzontale e si risale al giorno. Meno
+                               elegante di una prop, ma non tocca un componente
+                               che usano tutte le altre schermate. */
+                            const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const i = Math.floor(((e.clientX - box.left) / box.width) * d.giorni.length);
+                            const g = d.giorni[Math.max(0, Math.min(d.giorni.length - 1, i))];
+                            if (g) setGiornoAperto(giornoAperto === g.giorno ? null : g.giorno);
+                        }} className="cursor-pointer flex-1 min-h-[200px]">
+                            <BarStack h={218} unit="€"
+                                giorni={d.giorni.map((g) => ({
+                                    n: Number(g.giorno.slice(8, 10)),
+                                    label: gg(g.giorno),
+                                    tot: g.euro,
+                                    parti: g.parti.map((p) => ({
+                                        label: NOMI[p.sezione] || p.sezione,
+                                        val: p.euro,
+                                        colore: COLORI[p.sezione] || "#818cf8",
+                                        sub: eur(p.euro),
+                                    })),
+                                }))}
+                                oggi={d.giorni.findIndex((g) => g.giorno === oggiISO())}
+                                media={d.giorni.length ? d.giorni.reduce((s, g) => s + g.euro, 0) / d.giorni.length : null} />
+                        </div>
                     </div>
                 </div>
 
-                {quota >= m.avviso && (
-                    <p className="relative mt-3 text-xs" style={{ color: colore }}>
-                        {quota >= m.allarme
-                            ? "⚠️ Oltre l'85% del tetto. Al limite si fermano prima i motori automatici: l'assistente delle persone resta acceso."
-                            : "Superato il 60% del tetto."}
-                    </p>
-                )}
-            </div>
-
-            {/* ══ IL GIORNO PER GIORNO — «quanto abbiamo speso quel giorno» ══ */}
-            <div className="glass-card an-card rounded-2xl p-4">
-                <div className="flex items-baseline justify-between mb-1">
-                    <h3 className="text-sm font-bold text-white">Giorno per giorno</h3>
-                    <span className="text-[11px] text-slate-500">passa sopra per il dettaglio · clicca per aprire il giorno</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mb-3">
-                    Ogni barra è un giorno, divisa per motore. Se il costo e le richieste delle persone salgono insieme
-                    è adozione — e sono soldi ben spesi; se sale solo il costo, qualcosa gira a vuoto.
-                </p>
-                <div onClick={(e) => {
-                    /* BarStack non conosce il clic: si intercetta la posizione
-                       orizzontale e si risale al giorno. Meno elegante di una
-                       prop, ma non tocca un componente che usano tutte le
-                       altre schermate. */
-                    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const i = Math.floor(((e.clientX - box.left) / box.width) * d.giorni.length);
-                    const g = d.giorni[Math.max(0, Math.min(d.giorni.length - 1, i))];
-                    if (g) setGiornoAperto(giornoAperto === g.giorno ? null : g.giorno);
-                }} className="cursor-pointer">
-                <BarStack h={190} unit="€"
-                    giorni={d.giorni.map((g) => ({
-                        n: Number(g.giorno.slice(8, 10)),
-                        label: gg(g.giorno),
-                        tot: g.euro,
-                        parti: g.parti.map((p) => ({
-                            label: NOMI[p.sezione] || p.sezione,
-                            val: p.euro,
-                            colore: COLORI[p.sezione] || "#818cf8",
-                            sub: eur(p.euro),
-                        })),
-                    }))}
-                    oggi={d.giorni.findIndex((g) => g.giorno === oggiISO())}
-                    media={d.giorni.length ? d.giorni.reduce((s, g) => s + g.euro, 0) / d.giorni.length : null} />
-                </div>
-
-                {/* IL DETTAGLIO DEL GIORNO, che è la cosa che mancava: si
-                    clicca una barra e si vede quel giorno diviso per canale. */}
+                {/* ── IL GIORNO APERTO, a tutta larghezza sotto i due ─────── */}
                 {giornoAperto && (() => {
                     const g = d.giorni.find((x) => x.giorno === giornoAperto);
                     if (!g) return null;
                     const parti = [...g.parti].sort((x, y) => y.euro - x.euro);
                     return (
-                        <div className="mt-4 rounded-2xl border border-indigo-400/30 bg-indigo-500/[0.06] p-4 an-in">
+                        <div className="relative mt-4 rounded-2xl border border-indigo-400/30 bg-indigo-500/[0.07] p-4 an-in">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
                                     <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">
@@ -326,28 +356,36 @@ export function AiAdminView() {
                                 <button onClick={() => setGiornoAperto(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5"><X className="w-4 h-4" /></button>
                             </div>
                             {parti.length === 0 ? <p className="text-xs text-slate-500">Nessuna spesa in questo giorno.</p> : (
-                                <div className="space-y-1.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
                                     {parti.map((p) => (
                                         <button key={p.sezione} onClick={() => setCanale(p.sezione)}
-                                            className="w-full flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors text-left">
+                                            className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors text-left">
                                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORI[p.sezione] || "#818cf8" }} />
-                                            <span className="flex-1 text-xs text-slate-200">{EMOJI[p.sezione] || "•"} {NOMI[p.sezione] || p.sezione}</span>
-                                            <span className="relative h-2 w-32 rounded-full bg-white/5 overflow-hidden">
+                                            <span className="flex-1 text-xs text-slate-200 truncate">{EMOJI[p.sezione] || "•"} {NOMI[p.sezione] || p.sezione}</span>
+                                            <span className="relative h-2 w-24 shrink-0 rounded-full bg-white/5 overflow-hidden">
                                                 <span className="absolute inset-y-0 left-0 rounded-full"
                                                     style={{ width: Math.max(3, (p.euro / Math.max(...parti.map((x) => x.euro))) * 100) + "%", background: COLORI[p.sezione] || "#818cf8" }} />
                                             </span>
                                             <span className="w-16 text-right text-xs font-bold tabular-nums text-white">{eur(p.euro)}</span>
-                                            <span className="w-14 text-right text-[10px] tabular-nums text-slate-500">
+                                            <span className="w-10 text-right text-[10px] tabular-nums text-slate-500">
                                                 {fmtN((p.euro / (g.euro || 1)) * 100, 0)}%
                                             </span>
                                         </button>
                                     ))}
                                 </div>
                             )}
-                            <p className="mt-2 text-[10px] text-slate-500">Clicca un canale per filtrarci sopra tutta la schermata.</p>
+                            <p className="mt-2 text-[10px] text-slate-500">Clicca un motore per filtrarci sopra tutta la schermata.</p>
                         </div>
                     );
                 })()}
+
+                {quota >= m.avviso && (
+                    <p className="relative mt-3 text-xs" style={{ color: colore }}>
+                        {quota >= m.allarme
+                            ? "⚠️ Oltre l'85% del tetto. Al limite si fermano prima i motori automatici: l'assistente delle persone resta acceso."
+                            : "Superato il 60% del tetto."}
+                    </p>
+                )}
             </div>
 
             {/* ══ DOVE VANNO I SOLDI + ANDAMENTO ═══════════════════════════ */}
