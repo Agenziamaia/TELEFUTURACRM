@@ -269,13 +269,13 @@ export const NAVIGATION: NavEntry[] = [
                 ],
             },
             /* MINI-HUB SETUP (Luca 31/08): «creiamo un altro minihub per tenere
-               tutto in ordine, chiamiamolo Setup». Sono le cinque sezioni che
+               tutto in ordine, chiamiamolo Setup». Sono le sezioni che
                CONFIGURANO come lavora il CRM — cosa si può vendere, quali esiti
                esistono, cosa si può ordinare — invece di mostrarne i dati. In
                una griglia da quindici riquadri erano indistinguibili dalle
                altre; raccolte sotto un nome si trovano.
                ⚠️ Gli `id` restano quelli di sempre (`catalogo`, `callcenter`,
-               `ordinemerce`, `calendario`, `trackingesiti`): sono la chiave dei
+               `ordinemerce`, `calendario`, `trackingesiti`, `paystore`): sono la chiave dei
                permessi in role_permissions e dei link salvati. Cambiarli
                significherebbe azzerare in silenzio i permessi già dati e
                rompere ogni scorciatoia che qualcuno si è messo fra i preferiti.
@@ -292,6 +292,10 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "calendario", name: "Calendario", roles: ["admin", "dev"], emoji: "🗓️" },
                     // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
                     { id: "trackingesiti", name: "Tracking PDA", roles: ["admin", "dev"], emoji: "🛰️" },
+                    // Ricariche PayStore (Luca 01/09): registro delle vendute e
+                    // listino dei tagli. Amministrativo in su: dentro ci sono i
+                    // numeri di cellulare dei clienti.
+                    { id: "paystore", name: "PayStore", roles: [...ADMINS, "amministrativo"], emoji: "📲" },
                 ],
             },
             // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il

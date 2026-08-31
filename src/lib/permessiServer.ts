@@ -32,6 +32,11 @@ export const SEZIONE_DI: Record<string, string> = {
        Sta sotto la sezione del pannello, che Luca assegna dai Permessi. */
     "ai/spesa": "/amministrazione?sez=ai",
     "vendita": "/registra-vendita",
+    /* ⚠️ PIÙ PRECISA di «vendita»: il registro delle ricariche non è la
+       vendita. Chi sta in negozio deve poterne fare una (rotta
+       `vendita/paystore`); vedere TUTTE quelle di tutti i negozi, con i
+       numeri dei clienti, è un'altra cosa e sta sotto il pannello. */
+    "paystore": "/amministrazione?sez=paystore",
     "pos": "/registra-vendita",
     "aircall": "/chiamate",
     "usati": "/usati",
