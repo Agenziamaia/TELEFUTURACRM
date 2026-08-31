@@ -21,10 +21,15 @@ export interface SospesoRow {
 
 const eur = (n: number | null) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
 
-export function ContiSospesi({ negozio, onRiprendi, reloadKey }: {
+export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stessoBanco }: {
+    /** il punto vendita in cui si sta lavorando adesso */
     negozio: string | null;
     onRiprendi: (s: SospesoRow) => void;
     reloadKey?: number;
+    /** in questo negozio lo scontrino fiscale è configurato? */
+    cassaAccesa: (neg: string | null) => boolean;
+    /** questo negozio è lo stesso bancone di quello in cui sto? */
+    stessoBanco: (a: string | null, b: string | null) => boolean;
 }) {
     const [list, setList] = useState<SospesoRow[]>([]);
     const [open, setOpen] = useState(false);
@@ -96,10 +101,30 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey }: {
                                             <div className="text-[11px] text-slate-400">{when} · {nItems} voci{s.negozio ? ` · ${s.negozio}` : ""}{s.azienda ? ` · ${s.azienda}` : ""}</div>
                                         </div>
                                         <div className="text-white font-bold tabular-nums whitespace-nowrap">{eur(s.totale)}</div>
-                                        <button type="button" onClick={() => { setOpen(false); onRiprendi(s); }}
-                                            className="shrink-0 primary-btn px-3 py-1.5 text-xs font-semibold">Riprendi</button>
-                                        <button type="button" onClick={() => annulla(s.id)} title="Annulla conto"
-                                            className="shrink-0 w-7 h-7 rounded-lg border border-white/10 text-slate-500 hover:text-rose-300 hover:bg-white/10 text-base leading-none">×</button>
+                                        {/* SI RIPRENDE SOLO DAL BANCONE GIUSTO (revisore 31/08).
+                                            Due pericoli veri, tutti e due misurati:
+                                            · un negozio SENZA scontrino fiscale configurato — Collatina
+                                              Multi — stampava un documento NON fiscale sul suo
+                                              registratore e segnava il conto «completata»: dieci euro
+                                              incassati e chiusi senza scontrino;
+                                            · l'amministrazione, che adesso li vede tutti, poteva
+                                              accodare un incasso in contanti sulla cassa di Promontori
+                                              stando in ufficio, mentre in negozio non c'è nessun cliente.
+                                            Chi non è al bancone giusto legge e basta. */}
+                                        {stessoBanco(s.negozio, negozio) && cassaAccesa(s.negozio) ? (
+                                            <>
+                                                <button type="button" onClick={() => { setOpen(false); onRiprendi(s); }}
+                                                    className="shrink-0 primary-btn px-3 py-1.5 text-xs font-semibold">Riprendi</button>
+                                                <button type="button" onClick={() => annulla(s.id)} title="Annulla conto"
+                                                    className="shrink-0 w-7 h-7 rounded-lg border border-white/10 text-slate-500 hover:text-rose-300 hover:bg-white/10 text-base leading-none">×</button>
+                                            </>
+                                        ) : (
+                                            <span className="shrink-0 text-[10px] text-slate-500 max-w-[132px] leading-tight text-right">
+                                                {!cassaAccesa(s.negozio)
+                                                    ? "qui lo scontrino non è ancora configurato"
+                                                    : `si riprende da ${s.negozio}`}
+                                            </span>
+                                        )}
                                     </div>
                                 );
                             })}
