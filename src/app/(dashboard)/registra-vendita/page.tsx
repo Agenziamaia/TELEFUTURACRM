@@ -1376,16 +1376,53 @@ const SMARTPHONES = WT_SMARTPHONES_GROUPED;
 // l'iPhone 16 Pro Max al prezzo del 17 Pro Max: meglio NESSUN prezzo che uno
 // sbagliato, perche' da qui esce il margine.
 let _listiniTutti = null, _listiniAttesa = null;
+/* IL COLORE NON È UN MODELLO (Luca 31/08). Da quando il telefono a rate si
+   sceglie dal MAGAZZINO, il nome non arriva più dal listino ma dall'anagrafica
+   dell'articolo — che porta anche la finitura: «Samsung Galaxy A17 4G 128GB
+   Black» contro «Samsung Galaxy A17 4G 128GB». Un token in più e la chiave non
+   combaciava: su 574 telefoni a scaffale ne agganciavano il listino OTTO, e
+   con loro se n'era andata la marginalità. Il colore esce dalla chiave come già
+   ne escono «5G» e «GB»: è rumore, non prezzo. Misurato il 31/08: gli agganci
+   passano da 8 a 357 e NESSUNA coppia di modelli diversi finisce sulla stessa
+   chiave con prezzi diversi (la prova è dentro il listino stesso).
+   Restano fuori di proposito MATTE/SHINY e simili: sugli occhiali Ray-Ban la
+   finitura vale 35 € di differenza, quindi lì distingue davvero. */
+const _COLORI_LISTINO = ["BLACK","BLU","BLUE","WHITE","GREY","GRAY","GREEN","RED","PINK","PURPLE","SILVER","GOLD","TITANIUM","GRAPHITE","MIDNIGHT","STARDUST","NEBULA","OCEAN","TWILIGHT","SHAPPIRE","SAPPHIRE","VELVET","FOREST","INDIGO","CORSAIR","AUTHENTIC","GLOWING","LAVENDER","MINT","CREAM","BEIGE","IVORY","SAND","STARLIGHT","ULTRAMARINE","TEAL","AQUA","CORAL","AMBER","OBSIDIAN","ONYX","JADE","SAGE","MAUVE","PEACH","LILAC","CHARCOAL","SLATE","MARBLE","PANTONE","TAPESTRY","MOONLIGHT","SUNSET","SUNRISE","GLACIER","FROST","SNOW","IRON","STEEL","BRONZE","COPPER","PLUM","BERRY","CHERRY","LEMON","LIME","OLIVE","NAVY","AZURE","COBALT","DENIM","MIST","SHADOW","NOIR","BIANCO","NERO","GRIGIO","VERDE","ROSSO","AZZURRO","ARGENTO","ORO","VIOLA","ROSA","GIALLO","SILHOUETTE","PEARL","CRYSTAL","COSMIC","JET","SALVIA","MISTY","ARANCIO","AVORIO","NAUTICALBLUE","PHANTOM","TITANIO","MEZZANOTTE","SABBIA","ULTRAMARINO"];
+const _RUMORE_LISTINO = ["5G", "4G", "GB", "TB", "DUAL", "SIM", "IT", "EU", "NEW"];
 const chiaveListino = (s) => String(s || "").toUpperCase()
-  .replace(/\(.*?\)/g, " ")
+  /* LE PARENTESI PORTAVANO IL TAGLIO, non rumore (misurato il 31/08): buttarle
+     rendeva «Oppo A78 5G (4+128)» € 329,90 e «Oppo A78 5G (8+128)» € 369,90 lo
+     STESSO modello, e il codice prendeva la prima riga che trovava — 40 € di
+     margine sbagliato senza che nessuno se ne accorgesse. Ora si aprono. */
   .replace(/PRO\s*MAX/g, "PROMAX")
+  /* IL «+» HA DUE MESTIERI. Fra due numeri è il separatore di RAM e memoria
+     («4+128»), e va sciolto. Attaccato a un modello è parte del NOME
+     («Galaxy S24+»), e sopprimerlo faceva costare l'S24+ come l'S24: 200 € in
+     meno. La differenza è se la cifra prima del «+» sta da sola o è incollata
+     a delle lettere. */
+  .replace(/(?<![A-Z0-9])(\d{1,2})\s*\+\s*(\d{2,4})(?![0-9])/g, "$1 $2")
+  .replace(/([A-Z0-9])\s*\+/g, "$1 PLUS")
   .replace(/[^A-Z0-9]+/g, " ")
   .replace(/\b(\d+)\s+(GB|TB|G)\b/g, "$1$2")
   .replace(/\b(\d+)(GB|G)\b/g, "$1")
   .replace(/\b(\d+)TB\b/g, (_m, x) => String(Number(x) * 1024))
   .split(" ")
-  .filter(x => x && !["5G", "4G", "GB", "TB", "DUAL", "SIM", "IT", "EU", "NEW"].includes(x))
+  .filter(x => x && !_RUMORE_LISTINO.includes(x) && !_COLORI_LISTINO.includes(x))
   .sort().join(" ");
+/* IL MARGINE TIPICO DI UN BRAND, dai dati e non a mano: serve quando il prezzo
+   non viene dal listino ma dal pezzo che abbiamo davvero a scaffale. Vale solo
+   se quel brand ha UN margine solo (WindTre a magazzino: 4% su 506 righe); se
+   ne ha diversi — le righe «ordinabili» W3 vanno dal 5% al 20% — non si
+   inventa niente e resta zero. */
+const _marginePerMagazzino = (brand) => {
+  if (!_listiniTutti || !brand) return null;
+  const b = _compBrand(brand);
+  const righe = _listiniTutti.filter(r => _compBrand(r.brand) === b);
+  const daMag = righe.filter(r => r.lista === "magazzino");
+  const scelte = daMag.length ? daMag : righe;
+  const valori = [...new Set(scelte.map(r => Number(r.margine_pct ?? 0)))];
+  return valori.length === 1 ? valori[0] : null;
+};
 const caricaListini = () => {
   if (_listiniTutti) return Promise.resolve(_listiniTutti);
   if (!_listiniAttesa) _listiniAttesa = supabase.from("listini_terminali")
@@ -5491,12 +5528,37 @@ function CRM() {
       if(!_listiniTutti)return {model:mod};   // cache fredda: il modello intanto si vede
       const k=chiaveListino(mod);
       const lb=_brandListino(brandLabel);
-      const r=_listiniTutti.find(x=>chiaveListino(x.modello)===k&&(!lb||_compBrand(x.brand)===lb));
-      if(!r)return {model:mod};
-      const pz=Number(r.prezzo||0);
-      const pct=_senzaMargine()?0:Number(r.margine_pct??4);
-      const mg=pz*pct/100;
-      return {model:mod,price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false};
+      /* NON SI SCEGLIE FRA DUE PREZZI (revisore 31/08). Qui c'era `.find()`:
+         se il listino aveva due righe con la stessa chiave e prezzi diversi,
+         vinceva quella che capitava prima. Ora, se i prezzi possibili non sono
+         uno solo, il prezzo NON si mette e lo scrive il negozio — un prezzo
+         inventato è peggio di un prezzo mancante, perché nessuno lo controlla. */
+      const cand=_listiniTutti.filter(x=>chiaveListino(x.modello)===k&&(!lb||_compBrand(x.brand)===lb));
+      const prezzi=[...new Set(cand.map(x=>Number(x.prezzo||0)))];
+      if(cand.length&&prezzi.length===1){
+        const r=cand[0];
+        const pz=Number(r.prezzo||0);
+        const pct=_senzaMargine()?0:Number(r.margine_pct??4);
+        const mg=pz*pct/100;
+        return {model:mod,price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false,fontePrezzo:"listino"};
+      }
+      /* SECONDA STRADA: IL PEZZO CHE ABBIAMO DAVVERO (Luca 31/08). Il listino
+         del brand non copre tutto quello che sta a scaffale — telefoni di
+         un'altra insegna, bundle, modelli fuori catalogo: 174 pezzi su 574.
+         Ma il telefono a rate ora si sceglie dal magazzino, e l'articolo porta
+         con sé il suo prezzo di vendita (lo carica lo stesso file del listino:
+         dove i due si toccano coincidono al centesimo). Lo si propone, NON lo
+         si blocca, e nel carrello si dice da dove viene. Sotto i 20 € è un
+         valore simbolico dei vecchi carichi, non un prezzo: si lascia stare. */
+      const imei=String(det["IMEI"]||"").replace(/\D/g,"");
+      const pezzo=imei?magVendita?.perImei?.get(imei):null;
+      const pMag=Number(pezzo?.prezzo||0);
+      if(pMag>=20){
+        const pct=_senzaMargine()?0:Number(_marginePerMagazzino(brandLabel)??0);
+        const mg=pMag*pct/100;
+        return {model:mod,price:pMag,importo:pMag,margin:mg,totalMargin:mg,priceLocked:false,priceRequired:false,fontePrezzo:"magazzino"};
+      }
+      return {model:mod};
     }catch(e){console.error("[TNP-LISTINO]",e);return null;}};   // mai far sparire la voce per un dato storto
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
@@ -5583,7 +5645,15 @@ function CRM() {
     const merged=adds.map(a=>{
       if((_nNew[a.product]||0)<(_nOld[a.product]||0))return a;   // calo: no eredità
       const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&(m.autoKey||m.product+"#1")===a.autoKey);
-      return old?{...a,importo:a.importo!=null?a.importo:old.importo}:a;
+      if(!old)return a;
+      /* IL PREZZO SCRITTO A MANO NON SI RISCRIVE (31/08). Il prezzo dal
+         magazzino è una PROPOSTA, quindi resta modificabile — ma il ricalcolo
+         scatta a ogni prodotto aggiunto, e senza questo la cifra del negozio
+         tornava indietro da sola. «Modificato a mano» vuol dire: il campo
+         contiene un numero diverso da quello che avevamo proposto (`price`).
+         Cambiando IMEI la proposta cambia e riprende il sopravvento. */
+      const aMano=!old.priceLocked&&old.importo!=null&&old.importo!==""&&Number(old.importo)!==Number(old.price||0);
+      return {...a,importo:aMano?old.importo:(a.importo!=null?a.importo:old.importo)};
     });
     return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
   };
@@ -5603,7 +5673,10 @@ function CRM() {
     if(!_listiniTutti)caricaListini().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
     // valori CE freddi: coefficiente bundle e tariffe Kipoint, poi ricalcolo
     if(_ceBundleCoeff==null)caricaCeValori().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
-  },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
+    // il magazzino arriva dopo (lettura asincrona): quando c'è, il prezzo del
+    // telefono a rate si ricalcola — se no la voce resta senza prezzo per un
+    // pezzo che a scaffale ce l'ha
+  },[sales,skyS,brand,magVendita]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
   // ── RIUSO DOCUMENTI D'ARCHIVIO (Luca 05/08): se il cliente ha gia' un
@@ -7577,7 +7650,9 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                 {(expR.marg??true)&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                   {margItems.map((m,mi)=>(
                     <div key={mi} className="rvMiniRiga" style={{justifyContent:"space-between"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}{m.model&&<span style={{color:"var(--tf-94a3b8)",fontWeight:700}}> · {m.model}</span>}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}{m.model&&<span style={{color:"var(--tf-94a3b8)",fontWeight:700}}> · {m.model}</span>}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}{/* da dove viene il prezzo: il negozio deve poterlo sapere senza chiedere */}
+                        {m.fontePrezzo==="listino"&&<span title="prezzo e margine dal listino ufficiale del brand" style={{fontSize:8,fontWeight:800,color:"var(--tf-34d399)",border:"1px solid rgba(52,211,153,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>💰 LISTINO</span>}
+                        {m.fontePrezzo==="magazzino"&&<span title="il listino del brand non copre questo modello: prezzo del pezzo a magazzino, modificabile" style={{fontSize:8,fontWeight:800,color:"var(--tf-fbbf24)",border:"1px solid rgba(251,191,36,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>🏬 MAGAZZINO</span>}</div>
                       {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>€ {Number(m.importo||0).toFixed(2)}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
                       :m.prezzoModificabile===false?<div style={{fontSize:10.5,fontWeight:800,color:"var(--tf-e2e8f0)",whiteSpace:"nowrap"}}>🔒 € {Number(m.importo??0).toFixed(2)}</div>
                       :(m.auto||m.priceRequired||m.linked||m.natura)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
