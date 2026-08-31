@@ -317,7 +317,11 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
                questa riga — il triage ne accorpa fino a sessanta. */
             void registraConsumo({
                 sezione: "triage_whatsapp", funzione: "classifica_chat", automatica: true,
-                modello: MODEL_FAST, chiamate: classificate,
+                modello: MODEL_FAST,
+                /* ⚠️ anche i tentativi ANDATI MALE sono chiamate: si sono
+                   pagate. Contando solo le riuscite, «quante volte abbiamo
+                   parlato col modello» sarebbe un numero comodo e falso. */
+                chiamate: classificate + errori,
                 tokenIn: promptTok, tokenOut: complTok,
                 durataMs: Date.now() - inizio,
                 esito: senzaCredito ? "senza_credito" : (errori === 0 ? "ok" : "errore"),

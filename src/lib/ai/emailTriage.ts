@@ -413,7 +413,11 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
                — «quanto spende l'email» — non aveva risposta possibile. */
             void registraConsumo({
                 sezione: "triage_email", funzione: "classifica_email", automatica: true,
-                modello: MODEL_FAST, chiamate: classificate,
+                modello: MODEL_FAST,
+                /* ⚠️ anche i tentativi ANDATI MALE sono chiamate: si sono
+                   pagate. Contando solo le riuscite, «quante volte abbiamo
+                   parlato col modello» sarebbe un numero comodo e falso. */
+                chiamate: classificate + errori,
                 tokenIn: promptTok, tokenOut: complTok,
                 durataMs: Date.now() - inizio,
                 esito: senzaCredito ? "senza_credito" : (errori === 0 ? "ok" : "errore"),
