@@ -21,7 +21,7 @@ export interface SospesoRow {
 
 const eur = (n: number | null) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
 
-export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stessoBanco }: {
+export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stessoBanco, comeUtente }: {
     /** il punto vendita in cui si sta lavorando adesso */
     negozio: string | null;
     onRiprendi: (s: SospesoRow) => void;
@@ -30,6 +30,8 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stes
     cassaAccesa: (neg: string | null) => boolean;
     /** questo negozio è lo stesso bancone di quello in cui sto? */
     stessoBanco: (a: string | null, b: string | null) => boolean;
+    /** id della persona che si sta simulando col «guarda come» */
+    comeUtente?: string | null;
 }) {
     const [list, setList] = useState<SospesoRow[]>([]);
     const [open, setOpen] = useState(false);
@@ -41,7 +43,11 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey, cassaAccesa, stes
        tutti, gli altri vedono i propri. */
     const load = useCallback(async () => {
         try {
-            const res = await fetch("/api/vendita/sospendi");
+            /* «GUARDA COME»: il token è firmato sull'account vero, quindi senza
+               questo il server risponde sempre a chi è entrato davvero — e
+               provando il filtro cambiando persona a schermo sembrava rotto.
+               Il server lo onora solo per RESTRINGERE: non è una scorciatoia. */
+            const res = await fetch("/api/vendita/sospendi" + (comeUtente ? "?comeUtente=" + encodeURIComponent(comeUtente) : ""));
             const j = await res.json().catch(() => ({}));
             setList(Array.isArray(j.sospesi) ? j.sospesi : []);
         } catch { setList([]); }

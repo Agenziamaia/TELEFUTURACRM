@@ -5191,7 +5191,7 @@ function CRM() {
   },[brand]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Venditore e Negozio: precompilati dal login (prima erano fissi "Alberto"/"Magliana").
-  const { user } = useAuth();
+  const { user, viewAsUser } = useAuth();
   const [selVend,setSelVend]=useState("");
   const [selNeg,setSelNeg]=useState("");
   const _loginPrefill=useRef(false);
@@ -7585,7 +7585,8 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             non c'è niente da incassare. «Riprendi» riapre la cassa sul negozio
             del CONTO, non su quello selezionato. */}
         <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload}
-          cassaAccesa={posScontrinoAbilitato} stessoBanco={stessoMagazzino} />
+          cassaAccesa={posScontrinoAbilitato} stessoBanco={stessoMagazzino}
+          comeUtente={viewAsUser?.id || null} />
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
@@ -7854,7 +7855,8 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             non c'è niente da incassare. «Riprendi» riapre la cassa sul negozio
             del CONTO, non su quello selezionato. */}
         <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload}
-          cassaAccesa={posScontrinoAbilitato} stessoBanco={stessoMagazzino} />
+          cassaAccesa={posScontrinoAbilitato} stessoBanco={stessoMagazzino}
+          comeUtente={viewAsUser?.id || null} />
         {/* Il modale Incasso & Scontrino serve anche qui: "Riprendi" da un sospeso lo
             apre anche allo step Brand. È un portale, invisibile finché data===null. */}
         <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} onCommit={runPendingCommit} />

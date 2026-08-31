@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { negoziVisibiliDi } from "@/lib/visibleStoresServer";
+import { negoziVisibiliDi, negoziVisibiliComeVisto } from "@/lib/visibleStoresServer";
 import { sameStore, stessoMagazzino } from "@/lib/negoziNomi";
 
 /* ═══ CHI VEDE QUALE CONTO (Luca 31/08) ═══════════════════════════════════
@@ -21,8 +21,8 @@ import { sameStore, stessoMagazzino } from "@/lib/negoziNomi";
 
    `sameStore` e non l'uguale secco: lo stesso negozio è scritto in modi
    diversi nel database. */
-async function filtroNegozi(userId: string) {
-    const v = await negoziVisibiliDi(userId);
+async function filtroNegozi(userId: string, come?: string | null) {
+    const v = await negoziVisibiliComeVisto(userId, come);
     /* I GEMELLI SONO LO STESSO BANCONE (revisore 31/08). `sameStore` confronta
        per prefisso, e «Magliana Multi» non è prefisso di «Magliana W3»: cinque
        persone attive vedevano solo metà del proprio locale, e Alin che prova a
@@ -95,8 +95,13 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const negozio = searchParams.get("negozio");
-    const vis = await negoziVisibiliDi(_s.id);
-    const puo = await filtroNegozi(_s.id);
+    /* «GUARDA COME»: il browser dice chi si sta simulando, il server lo onora
+       solo per RESTRINGERE (vedi `negoziVisibiliComeVisto`). Serve a poterlo
+       provare: senza, cambiando persona a schermo si continuava a vedere tutto
+       e sembrava che il filtro non funzionasse. */
+    const come = searchParams.get("comeUtente");
+    const vis = await negoziVisibiliComeVisto(_s.id, come);
+    const puo = await filtroNegozi(_s.id, come);
     /* IL TETTO STA DOPO IL PERIMETRO, NON PRIMA (revisore 31/08). Prendendo le
        200 più recenti di TUTTI i negozi e filtrando poi in memoria, con quindici
        punti vendita e conti che restano aperti per settimane l'ordinamento per
