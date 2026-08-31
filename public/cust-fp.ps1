@@ -63,6 +63,17 @@ if (-not (Test-Path (Join-Path $Fpnet "MiraOposDll.dll"))) {
 try { Set-Location $Fpnet; [Reflection.Assembly]::LoadFrom((Join-Path $Fpnet "MiraOposDll.dll")) | Out-Null }
 catch { Esito $false "MiraOposDll non caricata (fpnet=$Fpnet): $($_.Exception.Message)" ""; exit 1 }
 
+# NOME OPOS AUTO (Promontori 31/08): l'agente passa "CUSTOM" per default, ma su
+# certi PC il dispositivo OPOS FiscalPrinter e' registrato con un altro nome (es.
+# "Custom Fiscal Printer"). Se il nome dato NON e' fra quelli registrati, si usa
+# il primo FiscalPrinter presente nel registro — cosi' l'agente apre quello giusto
+# senza configurarlo per negozio. Se il nome dato c'e', resta com'e' (negozi ok).
+try {
+  $__bases = @("HKLM:\SOFTWARE\WOW6432Node\OLEforRetail\ServiceOPOS\FiscalPrinter","HKLM:\SOFTWARE\OLEforRetail\ServiceOPOS\FiscalPrinter")
+  $__devs = @(); foreach ($__b in $__bases) { if (Test-Path $__b) { $__devs += (Get-ChildItem $__b -ErrorAction SilentlyContinue).PSChildName } }
+  if ($__devs.Count -gt 0 -and ($__devs -notcontains $OposName)) { $OposName = $__devs[0] }
+} catch { }
+
 $fp = $null
 try {
   $fp = New-Object MiraOposDll.FiscalPrinter('', 0, '', $true)
