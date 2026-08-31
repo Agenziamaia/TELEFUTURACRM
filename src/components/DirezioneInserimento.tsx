@@ -158,9 +158,13 @@ const etichettaSoglia = (brand: string, pista: string, i: number) => {
     return `S${i + 1}`;
 };
 
+// L'EMOJI DEL MOBILE È UNA SIM, NON UN TELEFONO (Luca 31/08): «mobile» qui è
+// una pista di gara, cioè ATTIVAZIONI DI SIM. Il telefono 📱 resta al telefono
+// come prodotto — rateizzato, venduto, device — che avrà sezioni sue.
+export const EMOJI_MOBILE = "💳";
 const EMOJI_PISTA = (nome: string) => {
     const n = nome.toLowerCase();
-    if (n.includes("mobile")) return "📱";
+    if (n.includes("mobile")) return EMOJI_MOBILE;
     if (n.includes("fisso") || n.includes("wireline")) return "🌐";
     if (n.includes("luce") || n.includes("gas") || n.includes("energia")) return "⚡";
     if (n.includes("piva") || n.includes("business") || n.includes("paletto")) return "💼";
@@ -912,10 +916,17 @@ export function DirezioneInserimentoAdmin() {
                                     )}
                                     <div className="flex items-center gap-2 shrink-0">
                                         {semCompatti.length > 0 && (
-                                            <span className="lg:hidden flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-2 py-1.5">
+                                            /* SUL TELEFONO IL PALLINO DA SOLO NON DICE DI CHI È
+                                               (Luca 31/08): sotto `lg` la fila incolonnata sparisce
+                                               e restavano cinque pallini colorati senza etichetta —
+                                               il colore si vede, ma non a quale pista appartiene.
+                                               L'icona della pista costa 12px e riporta il nome. */
+                                            <span className="lg:hidden flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-1.5 py-1.5">
                                                 {semCompatti.map((sm) => (
-                                                    <span key={sm.chiave} title={tipPallino(sm)}
-                                                        className={cn("w-2.5 h-2.5 rounded-full", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
+                                                    <span key={sm.chiave} title={tipPallino(sm)} className="flex items-center gap-0.5">
+                                                        <span className="text-[11px] leading-none">{EMOJI_PISTA(sm.nome)}</span>
+                                                        <span className={cn("w-2 h-2 rounded-full", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
+                                                    </span>
                                                 ))}
                                             </span>
                                         )}
