@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { eUnLavoroAutomatico } from "@/lib/cronParola";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaEmail } from "@/lib/email";
 import { casellaMittente } from "@/lib/emailCredenziali";
@@ -43,6 +45,16 @@ async function xlsx(fogli: FoglioExcel[]): Promise<Buffer> {
 }
 
 export async function POST(req: Request) {
+    /* ⚠️ O UNA PERSONA, O IL LAVORO AUTOMATICO (31/08 sera, rilievo del
+       revisore). Questa rotta era rimasta l'unica aperta a chiunque su
+       Internet quando le altre due hanno preso la parola d'ordine. E il danno
+       peggiore non era la mail di troppo: una chiamata da fuori BRUCIA LO
+       SLOT DEL MESE — il registro segna «inviato» e il giro vero del primo
+       del mese salta, lasciando il consulente senza il file. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "assenze/report-mensile");
+        if (!_g.ok) return _g.risposta;
+    }
     const body: Record<string, unknown> = await req.json().catch(() => ({}));
     const tokenOk = !!process.env.TRIAGE_ADMIN_TOKEN && req.headers.get("x-triage-token") === process.env.TRIAGE_ADMIN_TOKEN;
     const forza = !!body?.force && tokenOk;
@@ -121,6 +133,25 @@ export async function POST(req: Request) {
         });
     }
 
+    /* UN MESE VUOTO NON SI MANDA (rilievo del revisore). Se ferie e malattia
+       sono entrambe a zero non è una bella notizia: in un'azienda con 48
+       collaboratori un mese senza nemmeno un permesso vuol dire che il conto
+       non ha trovato i dati — un cambio di stato, una query andata a vuoto
+       senza errore. Meglio non spedire due fogli di sole intestazioni al
+       consulente: si segna «vuoto» (che NON è «inviato», quindi il giro delle
+       11:00 riprova) e si avvisa qui. */
+    if (!righeFerie.length && !righeMal.length && !forza) {
+        if (!provaA) {
+            await supabase.from("report_assenze_inviati").upsert({
+                mese: mese.iso, esito: "vuoto",
+                errore: "nessuna ferie e nessuna malattia nel mese: non spedito, controllare i dati",
+                destinatari: DESTINATARI.join(", "), righe_ferie: 0, righe_malattia: 0,
+                inviato_il: new Date().toISOString(),
+            }, { onConflict: "mese" });
+        }
+        return NextResponse.json({ ok: false, mese: mese.iso, saltato: "mese vuoto: niente da mandare, il file sarebbe di sole intestazioni" }, { status: 200 });
+    }
+
     const mittente = await casellaMittente();
     if (!mittente) return NextResponse.json({ ok: false, errore: "la casella amministrazione@ non è collegata al CRM" }, { status: 503 });
 
@@ -170,8 +201,11 @@ export async function POST(req: Request) {
         : NextResponse.json({ ok: false, errore }, { status: 502 });
 }
 
-/** GET: a che punto siamo, senza mandare niente. */
-export async function GET() {
+/** GET: a che punto siamo, senza mandare niente. Chiuso lo stesso: dice a chi
+ *  guarda quali mesi sono partiti e quando — non è roba da mostrare fuori. */
+export async function GET(req: Request) {
+    const _g = await accesso(req, "assenze/report-mensile");
+    if (!_g.ok) return _g.risposta;
     const { data } = await supabase.from("report_assenze_inviati").select("*").order("mese", { ascending: false }).limit(6);
     return NextResponse.json({ prossimo: mesePrecedente().iso, storico: data ?? [] });
 }

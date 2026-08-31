@@ -52,6 +52,8 @@ export const SEZIONE_DI: Record<string, string> = {
     "usati/sync-prices": "/amministrazione",
     // legge i cedolini degli altri: è roba da amministrazione, non da negozio
     "ferie/leggi-buste": "/amministrazione",
+    // manda il registro assenze al consulente del lavoro: stessa stanza
+    "assenze/report-mensile": "/amministrazione",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".

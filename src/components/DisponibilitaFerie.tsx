@@ -21,6 +21,12 @@ import { Search, ArrowUpDown, Loader2, Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { arrotondaGiorni, giornateAssenza, nomeMese } from "@/lib/assenze";
+
+/* I GIORNI COME LI SCRIVE IL CONSULENTE: un decimale, con la virgola.
+   L'arrotondamento PER ECCESSO Luca l'ha chiesto per le ORE di assenza (là
+   arrotondare in giù vorrebbe dire regalare tempo); un residuo ferie va al
+   più vicino, altrimenti la busta dice 4,3 e il CRM dice 4,4. */
+const gg = (n: number) => (Math.round(n * 10) / 10).toFixed(1).replace(".", ",").replace(",0", "");
 import { cn } from "@/utils";
 
 type Riga = {
@@ -82,7 +88,8 @@ export function DisponibilitaFerie() {
             return {
                 userId: u.id, nome: u.full_name, negozio: u.primary_store || "",
                 puntoFermo: pf, presiDopo: arrotondaGiorni(presi),
-                residuo: pf ? arrotondaGiorni(pf.giorni - presi) : null,
+                // il residuo NON si arrotonda per eccesso: si mostra a un decimale
+                residuo: pf ? Math.round((pf.giorni - presi) * 10) / 10 : null,
             };
         });
         setRighe(out);
@@ -104,17 +111,27 @@ export function DisponibilitaFerie() {
 
     const [leggo, setLeggo] = useState(false);
     const [esitoLettura, setEsitoLettura] = useState<string | null>(null);
-    const leggiBuste = async () => {
+    type EsitoBusta = { persona: string; file: string; giorni: number | null; motivo?: string };
+    const [esiti, setEsiti] = useState<EsitoBusta[] | null>(null);
+    /* PRIMA SI GUARDA, POI SI SCRIVE. Il lettore del PDF può sbagliare numero
+       senza dare errore: se scrive e basta, un residuo falso entra in silenzio
+       e nessuno lo rivede più. Con `dryRun` il giro si fa a vuoto e mostra chi
+       ha letto cosa; il secondo tasto scrive quello che hai appena letto. */
+    const leggiBuste = async (scrivi: boolean) => {
         setLeggo(true); setEsitoLettura(null);
         try {
             const r = await fetch("/api/ferie/leggi-buste", {
                 method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ mese: meseNuovo }),
+                body: JSON.stringify({ mese: meseNuovo, dryRun: !scrivi }),
             }).then((x) => x.json());
+            setEsiti(Array.isArray(r?.esiti) ? r.esiti : null);
             setEsitoLettura(r?.error ? `⛔ ${r.error}`
                 : r.buste === 0 ? `Nessuna busta paga archiviata per ${nomeMese(meseNuovo)}: caricale dalla scheda della persona.`
-                    : `📄 Lette ${r.letti} buste paga su ${r.buste}${r.nonLetti ? ` — ${r.nonLetti} non hanno il riquadro RATEI leggibile, quelle vanno scritte a mano` : ""}.`);
-            await carica();
+                    : `📄 ${scrivi ? "Scritte" : "Lette in prova"} ${r.letti} buste paga su ${r.buste}`
+                        + (r.nonLetti ? ` — ${r.nonLetti} senza un riquadro RATEI leggibile, quelle vanno scritte a mano` : "")
+                        + (r.doppie?.length ? ` · ATTENZIONE: ${r.doppie.join(", ")} ${r.doppie.length === 1 ? "ha" : "hanno"} due buste su questo mese, ho tenuto l'ultima letta` : "")
+                        + (scrivi ? "." : " — controlla i numeri qui sotto, poi conferma."));
+            if (scrivi) await carica();
         } catch (e) {
             setEsitoLettura("⛔ " + (e instanceof Error ? e.message : "lettura non riuscita"));
         }
@@ -152,11 +169,18 @@ export function DisponibilitaFerie() {
                     sulle buste paga hai sempre il saldo ferie». Infatti — riquadro
                     RATEI, riga FERIE, colonna Saldo, in giorni. Questo bottone le
                     apre tutte e lo scrive, invece di farlo battere a mano. */}
-                <button onClick={leggiBuste} disabled={leggo}
-                    title={`Apre le buste paga di ${nomeMese(meseNuovo)} e legge il saldo ferie dal riquadro RATEI`}
-                    className="px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
-                    {leggo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "📄"} Leggi dalle buste paga
+                <button onClick={() => leggiBuste(false)} disabled={leggo}
+                    title={`Apre le buste paga di ${nomeMese(meseNuovo)} e mostra il saldo ferie che legge, SENZA scrivere niente`}
+                    className="px-3 py-2 rounded-xl text-[11px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 hover:bg-sky-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
+                    {leggo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "👁"} Leggi in prova
                 </button>
+                {esiti && esiti.some((e) => e.giorni != null) && (
+                    <button onClick={() => leggiBuste(true)} disabled={leggo}
+                        title="Scrive i numeri che hai appena visto nella tabella dei residui"
+                        className="px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
+                        {leggo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "📄"} Scrivi questi {esiti.filter((e) => e.giorni != null).length} residui
+                    </button>
+                )}
                 <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                     mensilità
                     <input type="month" value={meseNuovo.slice(0, 7)} onChange={(e) => setMeseNuovo(e.target.value ? `${e.target.value}-01` : meseNuovo)}
@@ -167,6 +191,20 @@ export function DisponibilitaFerie() {
 
             {esitoLettura && (
                 <p className={`text-[11px] rounded-lg px-3 py-2 border ${esitoLettura.startsWith("⛔") ? "text-rose-200 bg-rose-500/10 border-rose-500/25" : "text-emerald-200 bg-emerald-500/10 border-emerald-500/25"}`}>{esitoLettura}</p>
+            )}
+            {esiti && esiti.length > 0 && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1 max-h-[220px] overflow-y-auto">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Che cosa ho letto in ogni busta paga</p>
+                    {esiti.map((e, i) => (
+                        <div key={i} className="flex items-baseline gap-2 text-[11px]">
+                            <span className="text-slate-200 truncate flex-1 min-w-0">{e.persona}</span>
+                            <span className="text-slate-600 truncate max-w-[180px] hidden md:block" title={e.file}>{e.file}</span>
+                            {e.giorni != null
+                                ? <span className={`font-black tabular-nums ${e.giorni < 0 ? "text-rose-300" : "text-emerald-300"}`}>{gg(e.giorni)} gg</span>
+                                : <span className="text-amber-300/80 truncate max-w-[240px]" title={e.motivo}>non letto — {e.motivo || "riquadro RATEI non trovato"}</span>}
+                        </div>
+                    ))}
+                </div>
             )}
             {senzaDato > 0 && (
                 <p className="text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
@@ -197,15 +235,15 @@ export function DisponibilitaFerie() {
                                     <td className="py-2 px-2 text-right text-slate-300 tabular-nums">
                                         {r.puntoFermo ? (
                                             <span title={`Residuo dichiarato dalla busta paga di ${nomeMese(r.puntoFermo.mese)}${r.puntoFermo.fonte === "manuale" ? " (scritto a mano)" : ""}`}>
-                                                {r.puntoFermo.giorni}
+                                                {gg(r.puntoFermo.giorni)}
                                                 <span className="text-[10px] text-slate-600 ml-1">{nomeMese(r.puntoFermo.mese).slice(0, 3)}</span>
                                             </span>
                                         ) : <span className="text-amber-300/80 text-xs">manca</span>}
                                     </td>
-                                    <td className="py-2 px-2 text-right text-slate-400 tabular-nums">{r.puntoFermo ? (r.presiDopo || "—") : "—"}</td>
+                                    <td className="py-2 px-2 text-right text-slate-400 tabular-nums">{r.puntoFermo ? (r.presiDopo ? gg(r.presiDopo) : "—") : "—"}</td>
                                     <td className={cn("py-2 px-2 text-right font-black tabular-nums",
                                         r.residuo == null ? "text-slate-600" : r.residuo <= 0 ? "text-rose-300" : r.residuo <= 5 ? "text-amber-300" : "text-emerald-300")}>
-                                        {r.residuo == null ? "—" : r.residuo}
+                                        {r.residuo == null ? "—" : gg(r.residuo)}
                                     </td>
                                     <td className="py-2 px-2">
                                         <div className="flex items-center gap-1">

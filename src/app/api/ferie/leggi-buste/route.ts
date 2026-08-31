@@ -53,12 +53,27 @@ export async function POST(req: Request) {
         }
     }
 
-    if (!prova && daScrivere.length) {
-        const { error: eW } = await supabase.from("ferie_residue").upsert(daScrivere, { onConflict: "user_id,mese" });
-        if (eW) return NextResponse.json({ ok: false, errore: eW.message, esiti }, { status: 503 });
+    /* DUE BUSTE PER LA STESSA PERSONA NELLO STESSO MESE: Postgres rifiuta
+       l'INTERA istruzione («ON CONFLICT DO UPDATE command cannot affect row a
+       second time») e nessuno veniva scritto — nemmeno gli altri quaranta.
+       È lo scenario che l'interfaccia stessa invita a creare, perché la
+       mensilità si assegna busta per busta. Qui si tiene UNA riga per persona
+       (l'ultima letta) e si dice quali erano in doppio. */
+    const doppie: string[] = [];
+    const unaPerPersona = new Map<string, typeof daScrivere[number]>();
+    for (const r of daScrivere) {
+        if (unaPerPersona.has(r.user_id)) doppie.push(nomeDi.get(r.user_id) || r.user_id);
+        unaPerPersona.set(r.user_id, r);
+    }
+    if (!prova && unaPerPersona.size) {
+        const { error: eW } = await supabase.from("ferie_residue").upsert([...unaPerPersona.values()], { onConflict: "user_id,mese" });
+        // la chiave si chiama `error`, come la legge chi ha chiamato: con
+        // `errore` il pannello mostrava un successo verde su un fallimento
+        if (eW) return NextResponse.json({ ok: false, error: eW.message, esiti }, { status: 503 });
     }
     return NextResponse.json({
         ok: true, mese, prova, buste: buste.length,
+        doppie: [...new Set(doppie)],
         letti: esiti.filter((e) => e.giorni != null).length,
         nonLetti: esiti.filter((e) => e.giorni == null).length,
         esiti,
