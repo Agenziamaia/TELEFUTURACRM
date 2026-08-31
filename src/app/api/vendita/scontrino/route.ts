@@ -337,7 +337,17 @@ export async function POST(req: Request) {
                    effettuato»). Senza l'id si atterrava sulla lista di tutte
                    le vendite, che è come non avere un link. */
                 link: b.contrattoId ? `/ricerca-vendite?id=${encodeURIComponent(String(b.contrattoId))}` : "/ricerca-vendite",
-                target_role: "direzione",
+                /* SOLO L'AMMINISTRAZIONE (Luca 31/08, correggendomi): «non deve
+                   arrivare alla direzione generale, non al developer, nemmeno a
+                   me che sono l'admin — solo a Claudia e Sandra». `direzione`
+                   comprende admin, dev, amministrativo e direttore generale:
+                   troppo. Qui la coda è del ruolo `amministrativo`, e se
+                   domani sono cinque saranno cinque senza toccare niente.
+                   Una riga SOLA e condivisa, non una per persona: appena una
+                   delle due verifica il bonifico e la chiude, sparisce anche
+                   all'altra — che è esattamente quello che serve, se no la
+                   seconda va a ricontrollare un pagamento già controllato. */
+                target_role: "amministrativo",
                 created_by: b.createdBy || "Cassa",
             });
         }

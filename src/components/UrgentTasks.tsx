@@ -44,7 +44,14 @@ export function UrgentTasks() {
         if (!user) return;
         let vivo = true;
         const load = async () => {
-            const targets = isAdmin ? ["admin", "direzione"] : ["direzione"];
+            /* LE CODE CONDIVISE, PER RUOLO. `amministrativo` ha la SUA coda
+               (Luca 31/08): ci finiscono le cose che deve vedere solo
+               l'amministrazione — il bonifico da verificare — e che non devono
+               comparire né all'admin né alla direzione generale. Per questo la
+               si aggiunge a chi è amministrativo, e a nessun altro. */
+            const targets = user.role === "amministrativo"
+                ? ["direzione", "amministrativo"]
+                : isAdmin ? ["admin", "direzione"] : ["direzione"];
             /* ══ UNA FONTE CHE CADE NON DEVE SPEGNERE IL FULMINE ═══════════
                Con Promise.all bastava che UNA delle sei letture fallisse — un
                errore di rete, un permesso — perché l'intero blocco saltasse e
