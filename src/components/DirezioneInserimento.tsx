@@ -439,7 +439,9 @@ export function DirezioneInserimentoAdmin() {
                     <div data-zona-kpi className={cn("an-in rounded-xl border",
                         R.puntiDaTogliere ? "border-rose-400/35 bg-rose-500/[0.07]" : nonTornano ? "border-white/12 bg-white/[0.03]" : "border-emerald-400/25 bg-emerald-500/[0.06]")}>
                         <button type="button" onClick={() => setRiepilogoAperto((v) => !v)} className="w-full flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left">
-                            <span className="text-[12px] font-bold text-slate-200">📊 Ufficiale al {gg}</span>
+                            <span className="text-[12px] font-bold text-slate-200">
+                                📊 Ufficiale al {gg}{new Set(conf.fonti.map((f) => f.al)).size > 1 ? <span className="font-normal text-slate-400"> (una data per pista)</span> : null}
+                            </span>
                             <span className="text-[11px] text-slate-500">·</span>
                             <span className="text-[11px] text-slate-300">
                                 {nonTornano
@@ -453,8 +455,13 @@ export function DirezioneInserimentoAdmin() {
                         </button>
                         {riepilogoAperto && (
                             <div className="px-3 pb-3 space-y-2.5 border-t border-white/5 pt-2.5">
+                                {/* LE FONTI, UNA PER PISTA (Luca 31/08): i tre file non
+                                    arrivano lo stesso giorno, e ogni pista vale fino alla
+                                    data del SUO file. Dirlo qui evita di credere che tutto
+                                    sia fermo alla data in testa. */}
                                 <p className="text-[10px] text-slate-500">
-                                    {conf.file ? `${conf.file} · ` : ""}{conf.nRighe} valori · fino al {gg} comanda il numero di {bMeta.label}, dopo il nostro
+                                    {conf.fonti.map((f) => `${nomePista(f.pista)}: ${f.file || "file senza nome"} al ${f.al.slice(8, 10)}/${f.al.slice(5, 7)}`).join(" · ")}
+                                    {" · "}{conf.nRighe} valori · fino a quella data comanda il numero di {bMeta.label}, dopo il nostro
                                     <button type="button" onClick={() => setModaleAvz(true)} className="ml-2 underline hover:text-slate-300">storico e caricamenti</button>
                                 </p>
                                 {/* UNA COLONNA PER PISTA (Luca 31/08): «la pagina è
@@ -478,6 +485,10 @@ export function DirezioneInserimentoAdmin() {
                                                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5 border-b border-white/10 pb-1">
                                                     <span>{EMOJI_PISTA(nomePista(pista))}</span>
                                                     <span className="truncate">{nomePista(pista)}</span>
+                                                    {(() => {
+                                                        const f = conf.fonti.find((x) => x.pista === pista);
+                                                        return f && f.al !== conf.al ? <span className="text-[9px] font-normal text-amber-200/80 shrink-0">al {f.al.slice(8, 10)}/{f.al.slice(5, 7)}</span> : null;
+                                                    })()}
                                                     <span className={cn("ml-auto tabular-nums", netto < 0 ? "text-rose-200" : "text-emerald-200")}>{netto > 0 ? "+" : ""}{it(netto)}</span>
                                                 </p>
                                                 {righe.map((x) => (

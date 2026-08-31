@@ -33,6 +33,9 @@ export type ScartoPista = {
     cod_gara: string; pista: string;
     ufficiale: number;   // quanto dice l'operatore alla sua data
     nostro: number;      // quanto contiamo noi ALLA STESSA data
+    /** la data della fotografia DI QUESTA PISTA: i tre file di WindTre non
+     *  arrivano lo stesso giorno */
+    al: string;
     /** UFFICIALE − NOSTRO: quanto va CORRETTO il nostro numero (Luca 31/08).
      *  Il verso è quello dell'azione, non del confronto: «se mi dai un più
      *  vuol dire che devo sommare quei punti al mio attuale; se mi dai un meno
@@ -41,7 +44,11 @@ export type ScartoPista = {
     scarto: number;
 };
 export type ConfrontoUfficiale = {
+    /** la data più recente fra le fotografie in vigore (per la testata) */
     al: string; file: string | null;
+    /** che cosa è in vigore, pista per pista: con tre file separati le date
+     *  possono essere diverse, e ognuna vale per la sua pista */
+    fonti: { pista: string; al: string; file: string | null }[];
     scarti: Map<string, ScartoPista>;
     /** i codici che stanno nel file dell'operatore e NON fra i nostri: le loro
      *  righe non entrano in nessun confronto, e senza dirlo sparirebbero in
@@ -52,23 +59,32 @@ export type ConfrontoUfficiale = {
 
 const ymd = (v: unknown) => String(v || "").slice(0, 10);
 
-/** L'ultima fotografia caricata per brand+mese: la sua data e le sue righe. */
-export async function ultimoAvanzamento(brand: string, monthISO: string): Promise<{ al: string; file: string | null; righe: RigaUfficiale[] } | null> {
+/** LE FOTOGRAFIE IN VIGORE, UNA PER PISTA (Luca 31/08).
+ *  WindTre manda tre file e non arrivano lo stesso giorno: il mobile e il
+ *  fisso al 26, la partnership al 25. Prendendo solo la data più recente — com'era —
+ *  la partnership spariva dal confronto senza dire niente. Per ogni pista vale
+ *  la SUA fotografia più recente, con la SUA data. */
+export async function fotografieVigenti(brand: string, monthISO: string): Promise<Map<string, { al: string; file: string | null; righe: RigaUfficiale[] }> | null> {
     const { data, error } = await supabase.from("avanzamenti_ufficiali")
         .select("al, cod_gara, pista, punti, pezzi, file_name")
-        .eq("brand", brand).eq("month", monthISO)
-        .order("al", { ascending: false });
+        .eq("brand", brand).eq("month", monthISO);
     if (error || !data?.length) return null;
     const righe = data as { al: string; cod_gara: string; pista: string; punti: number | null; pezzi: number | null; file_name: string | null }[];
-    const al = ymd(righe[0].al);
-    const sole = righe.filter((r) => ymd(r.al) === al);
-    return { al, file: sole[0]?.file_name ?? null, righe: sole.map((r) => ({ cod_gara: r.cod_gara, pista: r.pista, punti: r.punti, pezzi: r.pezzi })) };
+    const per = new Map<string, { al: string; file: string | null; righe: RigaUfficiale[] }>();
+    for (const r of righe) {
+        const al = ymd(r.al);
+        const cur = per.get(r.pista);
+        if (!cur || al > cur.al) per.set(r.pista, { al, file: r.file_name, righe: [] });
+    }
+    for (const r of righe) {
+        const cur = per.get(r.pista);
+        if (!cur || ymd(r.al) !== cur.al) continue;
+        cur.righe.push({ cod_gara: r.cod_gara, pista: r.pista, punti: r.punti, pezzi: r.pezzi });
+        if (!cur.file) cur.file = r.file_name;
+    }
+    return per;
 }
 
-/** Il confronto pronto da mostrare: chiave «codice|pista» → scarto.
- *  La nostra produzione alla data si ottiene dallo STESSO motore che disegna
- *  la pagina (caricaDirezione con `fino`): due conteggi diversi non sarebbero
- *  paragonabili. */
 /* IL CONFRONTO SI RICALCOLA UNA VOLTA SOLA (revisore 31/08): la produzione
    fermata alla data della fotografia NON cambia passando da «Adesso» a «Ieri
    sera», né riaprendo la sezione — è ferma per definizione. Senza questa
@@ -92,30 +108,39 @@ export function confrontoUfficiale(brand: DirBrandId, monthISO: string): Promise
 }
 
 async function calcolaConfronto(brand: DirBrandId, monthISO: string): Promise<ConfrontoUfficiale | null> {
-    const uff = await ultimoAvanzamento(brand, monthISO);
-    if (!uff) return null;
-    const alData = await caricaDirezione(brand, monthISO, { fino: uff.al });
+    const per = await fotografieVigenti(brand, monthISO);
+    if (!per || !per.size) return null;
+    // una lettura della produzione per ogni DATA distinta: di solito una o due
+    const date = [...new Set([...per.values()].map((v) => v.al))];
+    const alData = new Map<string, Awaited<ReturnType<typeof caricaDirezione>>>();
+    await Promise.all(date.map(async (al) => { alData.set(al, await caricaDirezione(brand, monthISO, { fino: al })); }));
+
     const scarti = new Map<string, ScartoPista>();
     const ignorati = new Set<string>();
-    for (const r of uff.righe) {
-        const k = alData.codici.find((x) => x.cod_gara === r.cod_gara);
-        if (!k) { ignorati.add(r.cod_gara); continue; }
-        /* LA CB DI WINDTRE VA A PUNTI DELLA GARA PARALLELA (Luca 26/08): la
-           barra della pagina mostra `cbPunti`, non i punti di tabellare. Se il
-           confronto usasse l'altra somma, a due centimetri di distanza la barra
-           direbbe «noi 126» e lo scarto «noi 118» — due grandezze diverse
-           presentate come la stessa (revisore 31/08). */
-        const cbW3 = brand === "windtre" && r.pista === "cb";
-        const mio = k.piste[r.pista] || { punti: 0, pezzi: 0 };
-        const nostro = cbW3 ? (k.cbPunti || 0) : mio.punti;
-        // il foglio porta sempre un valore solo per casella: si confronta quello
-        const ufficiale = r.punti != null ? Number(r.punti) : Number(r.pezzi || 0);
-        scarti.set(`${r.cod_gara}|${r.pista}`, {
-            cod_gara: r.cod_gara, pista: r.pista, ufficiale, nostro,
-            scarto: Math.round((ufficiale - nostro) * 100) / 100,
-        });
+    let nRighe = 0;
+    for (const [pista, foto] of per) {
+        const dati = alData.get(foto.al);
+        if (!dati) continue;
+        for (const r of foto.righe) {
+            nRighe++;
+            const k = dati.codici.find((x) => x.cod_gara === r.cod_gara);
+            if (!k) { ignorati.add(r.cod_gara); continue; }
+            /* LA CB DI WINDTRE VA A PUNTI DELLA GARA PARALLELA (Luca 26/08): la
+               barra della pagina mostra `cbPunti`, non i punti di tabellare. Se il
+               confronto usasse l'altra somma, a due centimetri di distanza la barra
+               direbbe «noi 126» e lo scarto «noi 118». */
+            const cbW3 = brand === "windtre" && pista === "cb";
+            const mio = k.piste[pista] || { punti: 0, pezzi: 0 };
+            const nostro = cbW3 ? (k.cbPunti || 0) : mio.punti;
+            const ufficiale = r.punti != null ? Number(r.punti) : Number(r.pezzi || 0);
+            scarti.set(`${r.cod_gara}|${pista}`, {
+                cod_gara: r.cod_gara, pista, al: foto.al, ufficiale, nostro,
+                scarto: Math.round((ufficiale - nostro) * 100) / 100,
+            });
+        }
     }
-    return { al: uff.al, file: uff.file, scarti, ignorati: [...ignorati], nRighe: uff.righe.length };
+    const fonti = [...per.entries()].map(([pista, f]) => ({ pista, al: f.al, file: f.file })).sort((a, b) => b.al.localeCompare(a.al));
+    return { al: fonti[0]?.al || date.sort().reverse()[0], file: fonti[0]?.file ?? null, fonti, scarti, ignorati: [...ignorati], nRighe };
 }
 
 /** Il riepilogo per la striscia in testa: quanto e dove va corretto.
