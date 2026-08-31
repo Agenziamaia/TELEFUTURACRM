@@ -147,9 +147,15 @@ export async function scaricaVendita(
         for (const r of conSeriale) {
             const { data, error } = await supabase.from("mag_unita")
                 .update({ stato: "venduto", venduto_il: adesso, venduto_da: operatore || null, contract_id: contractId })
-                .eq("seriale", String(r.seriale)).neq("stato", "venduto").select("id");
+                /* SOLO SE È ANCORA DISPONIBILE (revisore 31/08). Era
+                   `neq('venduto')`, che lasciava passare anche «annullato» e
+                   «in_transito»: una bozza ripresa poteva vendere un pezzo
+                   cestinato nel frattempo, cancellando il cestino senza
+                   lasciare traccia. Il carrello si autosalva coi seriali e
+                   non li rilegge al ritorno. */
+                .eq("seriale", String(r.seriale)).eq("stato", "disponibile").select("id");
             if (error) falliti.push(`${r.seriale} (${error.message})`);
-            else if (!data?.length) falliti.push(`${r.seriale} (già venduto o non trovato)`);
+            else if (!data?.length) falliti.push(`${r.seriale} (non più disponibile: venduto, trasferito o tolto dal magazzino)`);
             else { esito.scaricate++; esito.pezziVenduti = (esito.pezziVenduti || 0) + 1; }
         }
 

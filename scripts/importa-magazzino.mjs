@@ -53,7 +53,8 @@ if(fImei){
   const r=leggi(fImei); const c=Object.keys(r[0]||{});
   const cCod=trova(c,/^cod/i), cImei=trova(c,/imei/i), cDes=trova(c,/descr/i),
         cCosto=trova(c,/costo\s*imei/i)||trova(c,/costo\s*ultimo/i)||trova(c,/costo/i),
-        cPrezzo=trova(c,/^prezzo/i);
+        cPrezzo=trova(c,/^prezzo/i), cIvaP=trova(c,/iva\s*v/i), cBarP=trova(c,/barcode/i),
+        cGrpP=trova(c,/^gruppo/i), cMarP=trova(c,/^marca/i);
   /* NON TUTTI I SERIALI SONO NUMERI. Verificato sul file vero: su 135 pezzi,
      4 hanno un seriale alfanumerico — un Apple Watch («4S44MM»), un iPad
      («DLXTM0FKHND6») e due paia di occhiali Meta. Togliendo le lettere
@@ -68,6 +69,11 @@ if(fImei){
       tipo:soloCifre&&s.length===19?"sim":soloCifre&&s.length===15?"imei":"seriale",
       descrizione:String(x[cDes]??"").trim(),
       costo:num(x[cCosto]), prezzo:num(x[cPrezzo]),
+      // servono a creare l'articolo se in anagrafica non c'è (vedi sotto)
+      iva:cIvaP?String(x[cIvaP]??"").trim():null,
+      barcode:cBarP?String(x[cBarP]??"").trim():null,
+      gruppo:cGrpP?String(x[cGrpP]??"").trim():null,
+      marca:cMarP?String(x[cMarP]??"").trim():null,
     };
   }).filter(x=>x.seriale.length>=5);
   const alfa=pezzi.filter(x=>x.tipo==="seriale").length;
@@ -124,13 +130,21 @@ const ignotiP=pezzi.filter(x=>x.codice&&!noti.has(x.codice));
    con undici negozi da caricare domani non è un caso isolato: è la regola.
    Il reparto si ricava dal regime, come per il listino. */
 const REPARTO={"22":2,"4":3,"ART.36":7,"ART.74":1,"EX ART.15":5};
-for(const a of ignotiQ){
+/* ANCHE I PEZZI CON SERIALE CREANO IL LORO ARTICOLO (revisore 31/08).
+   Il fix di stamattina valeva solo per il file delle quantità: dal file IMEI
+   il pezzo entrava con `codice = null`, e siccome `mag_disponibilita` esige un
+   codice, quei telefoni NON contavano come giacenza e non comparivano in
+   cassa cercandoli per nome — si vendevano solo sparando l'IMEI.
+   A Magliana W3 erano 16 telefoni per 7.798 €: un iPhone 17, quattro Galaxy
+   S26 FE, undici Xiaomi. E i codici nel file c'erano tutti. */
+const daCreare=[...ignotiQ, ...ignotiP];
+for(const a of daCreare){
   // in prova NON si scrive, ma il codice si conta lo stesso: una prova che
   // annuncia numeri diversi da quelli veri non serve a controllare niente
   noti.add(a.codice);
 }
-if(ignotiQ.length && !flag("prova")){
-  for(const a of ignotiQ){
+if(daCreare.length && !flag("prova")){
+  for(const a of daCreare){
     await db.query(`insert into mag_articoli
         (codice,barcode,descrizione,iva_vendita,reparto,gruppo,sottogruppo,marca,prezzo,costo_ultimo,attivo,fonte)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,'magazzino-negozio')
@@ -144,7 +158,7 @@ quantita=quantita.filter(x=>noti.has(x.codice));
 // un pezzo con un seriale si carica anche senza codice in anagrafica: il
 // seriale lo identifica da solo, e non lasciarlo entrare vorrebbe dire un
 // telefono che c'è sullo scaffale ma non nel software
-pezzi.forEach(p=>{ if(p.codice&&!noti.has(p.codice)) p.codiceNonInAnagrafica=true; });
+// (l'articolo mancante viene creato qui sotto: il pezzo tiene il suo codice)
 
 console.log(`\n${B}Riepilogo${X}`);
 console.log(`   ${G}${pezzi.length}${X} pezzi con seriale (telefoni, modem, usato)`);
@@ -154,7 +168,7 @@ if(ignotiQ.length){
   ignotiQ.slice(0,6).forEach(x=>console.log(`      · ${x.codice}  ${x.descrizione.slice(0,44)}`));
   if(ignotiQ.length>6) console.log(`      · …e altri ${ignotiQ.length-6}`);
 }
-if(ignotiP.length) console.log(`   ${Y}${ignotiP.length} pezzi con un codice non in anagrafica: caricati lo stesso (il seriale li identifica)${X}`);
+if(ignotiP.length) console.log(`   ${Y}${ignotiP.length} pezzi con un codice non in anagrafica: articolo CREATO dal file${X}`);
 
 const gia=(await db.query("select (select count(*) from mag_movimenti where negozio=$1 and azienda=$2 and tipo='carico') m,(select count(*) from mag_unita where negozio=$1 and coalesce(azienda,'T1')=$2) u",[negozio,azienda])).rows[0];
 if((Number(gia.m)+Number(gia.u))>0 && !flag("forza")){
@@ -176,7 +190,7 @@ try{
   for(let i=0;i<pezzi.length;i+=200){
     const l=pezzi.slice(i,i+200); const v=[],p=[];
     l.forEach((x,k)=>{const b=k*8; v.push(`($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},'disponibile',$${b+6},$${b+7},$${b+8})`);
-      p.push(x.seriale,x.tipo,x.codiceNonInAnagrafica?null:x.codice,x.descrizione||x.codice||x.seriale,negozio,azienda,x.prezzo,"importazione Suite Mobile");});
+      p.push(x.seriale,x.tipo,x.codice,x.descrizione||x.codice||x.seriale,negozio,azienda,x.prezzo,"importazione Suite Mobile");});
     await db.query(`insert into mag_unita (seriale,tipo_seriale,codice,descrizione,negozio,stato,azienda,valore,caricato_da) values ${v.join(",")}
                     on conflict do nothing`,p);
   }

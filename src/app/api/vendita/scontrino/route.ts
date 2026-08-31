@@ -86,22 +86,25 @@ export async function POST(req: Request) {
        sarebbe uscito dalla stampante di Donna, in un altro quartiere.
        Il ripiego resta solo dove il negozio non ha proprio nessun
        registratore configurato — lì non c'è niente da confondere. */
-    /* «CUSTOM» VUOL DIRE: LA STAMPANTE LA SA L'AGENTE (Luca 31/08).
-       Otto negozi su quindici hanno `rt_url = 'custom'` — Promontori, Acilia
-       VS, Baleniere, Castani, Collatina W3, Libia, Mazzini, Merulana — e non
-       è un segnaposto da riempire: è la convenzione per «qui la stampante è
-       una sola, e l'agente del negozio ce l'ha già in configurazione»
-       (`print-agent.ps1 -FiscalUrl http://…`, uno per punto vendita).
-       Il CRM deve dire QUALE stampante solo dove ce n'è più d'una: a Donna,
-       che ha una cassa per società. Altrove passa `null` e decide l'agente —
-       il suo commento lo dice da sempre: «-FiscalUrl resta solo come fallback
-       se il job non specifica il device».
-       Mandare la stringa «custom» come indirizzo era il modo di far fallire
-       la stampa in otto negozi: l'agente ci avrebbe provato — «custom» non è
-       vuoto — contro un indirizzo che non esiste. */
-    const indirizzoVero = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u)) ? u : null;
-    const rtFor = (az: string) => indirizzoVero(aziende[az]?.rt_url)
-        || (Object.keys(aziende).length === 0 ? indirizzoVero(b.deviceUrl) : null);
+    /* «CUSTOM» È UNA STAMPANTE, NON UN SEGNAPOSTO (Luca 31/08 — correzione
+       di una mia lettura sbagliata di stamattina).
+       Otto negozi su quindici hanno `rt_url = 'custom'`: Promontori, Acilia
+       VS, Baleniere, Castani, Collatina W3, Libia, Mazzini, Merulana. Avevo
+       letto quel valore come «campo da riempire» e l'avevo tradotto in `null`
+       per lasciar decidere l'agente. È il contrario: `custom` è il MARCATORE
+       che dice all'agente di parlare con un registratore Custom via OPOS
+       locale invece che con un Epson via HTTP — sta scritto in
+       `public/print-agent.ps1`, che tratta ogni device_url non-http proprio
+       così, e lo conferma `pos_rt.ragione_sociale`, «Telefutura (Custom) - …».
+       Mandare `null` avrebbe fatto due danni in fila: `print_jobs.device_url`
+       è NOT NULL, quindi l'insert falliva DOPO che i contanti erano già stati
+       incassati — e con lo scontrino non emesso la vendita non veniva
+       nemmeno registrata, né scaricato il magazzino.
+       Quello che andava tolto, e resta tolto, è `DEFAULT_RT`: un indirizzo
+       vero — la cassa T1 di Donna — usato come ultima spiaggia. «Non so su
+       quale stampante» non si risolve scegliendone una in un altro quartiere. */
+    const rtFor = (az: string) => aziende[az]?.rt_url
+        || (Object.keys(aziende).length === 0 ? (b.deviceUrl || "") : "");
 
     /* DI CHI È LA MERCE, QUANDO LA RIGA NON LO DICE (revisore 29/08).
        Una riga che arriva da una scorciatoia porta il codice articolo ma non
@@ -291,7 +294,7 @@ export async function POST(req: Request) {
 
         const { data, error } = await supabase.from("print_jobs").insert({
             negozio,
-            device_url: rtFor(az),
+            device_url: rtFor(az) || "",
             kind,
             request_xml,
             status: "pending",

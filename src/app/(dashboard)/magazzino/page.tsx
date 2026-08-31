@@ -26,6 +26,7 @@ import { caricaTutte } from "@/lib/fetchTutte";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { cn } from "@/utils";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 
 type Unita = {
     id: string; seriale: string; tipo_seriale: string; codice: string | null; descrizione: string;
@@ -49,7 +50,7 @@ type Articolo = {
 };
 
 const STATI_LABEL: Record<string, string> = {
-    disponibile: "🟢 Disponibile", in_arrivo: "📦 In arrivo", in_transito: "🚚 In transito",
+    disponibile: "🟢 Disponibile", in_arrivo: "📦 In arrivo", in_transito: "🚚 In transito", annullato: "🗑 Tolto dal magazzino",
     spedito: "📤 Spedito", venduto: "⚪ Venduto",
 };
 const gg = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleDateString("it-IT") : "—";
@@ -187,19 +188,23 @@ type RigaQta = { codice: string; descrizione: string; negozio: string; azienda: 
    tutte insieme in «Usim abbonamento e ricaricabili», e lì l'operatore lo
    dice il nome dell'articolo.
    «LISTINO SBS» non è un operatore: SBS fa accessori. */
+/* Sulle SIM il brand è ATTACCATO al nome — `SIMILIAD`, `SIMKENA`, `SIMSKY`,
+   `ESIMFASTW` — e a volte sta solo nel CODICE (`SIM 128K PLUS UNICA 4G VOD`).
+   Le regex con il confine di parola perdevano 13 SIM su 47, e Iliad, Kena e
+   Sky non comparivano nemmeno nella tendina (revisore 31/08). */
 const OPERATORI: [string, RegExp][] = [
-    ["WindTre", /\b(wind ?3|windtre|wind tre|\bwt\b|\bw3\b)/i],
-    ["Vodafone", /\bvodafone|\bvoda\b/i],
-    ["Fastweb", /\bfastweb|\bfastw/i],
+    ["WindTre", /wind ?tre|wind ?3|\bwind\b|\bwt\b|\bw3\b/i],
+    ["Vodafone", /vodafone|\bvoda\b|\bvod\b/i],
+    ["Fastweb", /fastweb|fastw/i],
     ["TIM", /\btim\b/i],
-    ["Iliad", /\biliad/i],
+    ["Iliad", /iliad/i],
     ["Very Mobile", /\bvery\b/i],
-    ["Kena", /\bkena/i],
-    ["ho. Mobile", /\bho\.? ?mobile|\bho\b/i],
+    ["Kena", /kena/i],
+    ["ho. Mobile", /ho\.? ?mobile|\bho\b/i],
     ["Sky", /\bsky\b/i],
 ];
 /** L'operatore di un articolo, o `null` se non ne ha uno. */
-function operatoreDi(a: DatiArticolo | undefined, descrizione: string): string | null {
+function operatoreDi(a: DatiArticolo | undefined, descrizione: string, codice?: string): string | null {
     const g = String(a?.gruppo || "");
     // il listino di un operatore: è lui, senza margine di dubbio
     const m = g.match(/^\s*LISTINO\s+(.+)$/i);
@@ -210,8 +215,10 @@ function operatoreDi(a: DatiArticolo | undefined, descrizione: string): string |
         return null;   // LISTINO SBS e simili: fornitori di accessori, non operatori
     }
     // le SIM stanno tutte in un gruppo solo: l'operatore lo dice il nome
-    if (/usim|sim\b/i.test(g)) {
-        const trovato = OPERATORI.find(([, rx]) => rx.test(descrizione));
+    if (/usim|sim/i.test(g) || /^e?sim|sost/i.test(descrizione)) {
+        // il brand può stare nel nome o nel codice: si guardano entrambi
+        const testo = `${descrizione} ${codice || ""}`;
+        const trovato = OPERATORI.find(([, rx]) => rx.test(testo));
         if (trovato) return trovato[0];
     }
     return null;
@@ -282,7 +289,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     };
     const [sort, setSort] = useState<{ col: number; desc: boolean }>({ col: 1, desc: false });
 
-    const nelloScopo = useCallback((neg: string) => !negozio || neg === negozio, [negozio]);
+    /* I GEMELLI SONO LO STESSO SCAFFALE (revisore 31/08). Magliana W3 e
+       Magliana Multi sono due insegne in un locale solo, e la cassa già lo sa:
+       lascia battere l'IMEI del gemello. La griglia invece confrontava il nome
+       esatto, quindi mostrava quei pezzi in colonna «Altrove» — come se
+       fossero a Ostia — e suggeriva di farsi un DDT per merce a due passi. */
+    const nelloScopo = useCallback((neg: string) => !negozio || stessoMagazzino(neg, negozio), [negozio]);
 
     /* LA GRIGLIA. Ogni riga è un ARTICOLO, e porta due numeri diversi:
          · giacenza — quanti ce ne sono in quello che stai guardando
@@ -306,7 +318,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         const nuova = (codice: string, descrizione: string): Riga => ({
             chiave: `${codice}|${descrizione}`, codice: codice || "—", descrizione,
             giacenza: 0, inArrivo: 0, altrove: 0, valore: 0,
-            operatore: operatoreDi(anagrafica.get(codice), descrizione),
+            operatore: operatoreDi(anagrafica.get(codice), descrizione, codice),
             pezzi: [], qtaPer: [], altrovePer: {},
         });
 
@@ -376,8 +388,14 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         }
         // «solo disponibili» = quello che c'è QUI; «tutti» tiene anche ciò che
         // sta solo altrove, che è il motivo per cui la colonna esiste
+        /* LE RIGHE SOTTO ZERO RESTANO SEMPRE VISIBILI (revisore 31/08). Il
+           29/08 la query era stata aperta apposta alle giacenze negative —
+           «un magazzino che nasconde i conti che non tornano non serve a
+           niente» — e «solo disponibili» le avrebbe rimesse sotto il tappeto:
+           una riga a −1 è la prova che qualcosa è uscito senza esserci, ed è
+           esattamente quello che si deve vedere entrando. */
         out = out.filter(r => soloDisponibili
-            ? (r.giacenza > 0 || r.inArrivo > 0)
+            ? (r.giacenza !== 0 || r.inArrivo > 0)
             : (r.giacenza !== 0 || r.inArrivo > 0 || r.altrove > 0));
 
         const val = (r: Riga, c: number) => c === 0 ? r.codice : c === 1 ? r.descrizione
@@ -393,8 +411,8 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     // gli operatori che hanno davvero qualcosa in questa vista
     const operatoriPresenti = useMemo(() => {
         const s = new Set<string>();
-        unita.forEach(u => { const o = operatoreDi(anagrafica.get(u.codice || ""), u.descrizione); if (o) s.add(o); });
-        quantita.forEach(q => { const o = operatoreDi(anagrafica.get(q.codice), q.descrizione); if (o) s.add(o); });
+        unita.forEach(u => { const o = operatoreDi(anagrafica.get(u.codice || ""), u.descrizione, u.codice || ""); if (o) s.add(o); });
+        quantita.forEach(q => { const o = operatoreDi(anagrafica.get(q.codice), q.descrizione, q.codice); if (o) s.add(o); });
         return Array.from(s).sort();
     }, [unita, quantita, anagrafica]);
 
@@ -695,12 +713,20 @@ function Trasferimenti({ unita, negozi, aziende, gestisce, puoCaricare, utente, 
     const accetta = async (d: Ddt) => {
         if (!window.confirm(`Accettare il DDT n.${d.numero} (${d.da_negozio} → ${d.a_negozio})? Le unità diventano disponibili a ${d.a_negozio}.`)) return;
         const mie = unitaDiDdt(d.id);
+        /* SOLO I PEZZI CHE STANNO DAVVERO VIAGGIANDO (revisore 31/08).
+           L'update portava a «disponibile» tutte le unità del DDT senza
+           guardare da dove venivano: un pezzo partito, poi cestinato
+           dall'amministrazione («mai arrivato»), tornava vendibile appena il
+           negozio ricevente premeva «Accetta». */
+        let saltati = 0;
         for (const u of mie) {
-            await supabase.from("mag_unita").update({
+            const { data } = await supabase.from("mag_unita").update({
                 stato: "disponibile", ddt_id: null,
                 storia: [...(u.storia || []), { quando: new Date().toISOString(), evento: "📤 Spedito e accettato", negozio: d.a_negozio, operatore: utente, note: `DDT n.${d.numero} da ${d.da_negozio}` }],
-            }).eq("id", u.id);
+            }).eq("id", u.id).eq("stato", "in_transito").select("id");
+            if (!data?.length) saltati++;
         }
+        if (saltati) alert(`${saltati} ${saltati === 1 ? "pezzo non è stato accettato perché non risulta più in viaggio" : "pezzi non sono stati accettati perché non risultano più in viaggio"} (venduti o tolti dal magazzino nel frattempo).`);
         await supabase.from("mag_ddt").update({ stato: "accettato", accettato_da: utente, accettato_il: new Date().toISOString() }).eq("id", d.id);
         caricaDdt(); ricarica();
     };
