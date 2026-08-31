@@ -27,6 +27,7 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
+import { trovaDoppioni, ETICHETTA, type Doppione } from "@/lib/doppioni";
 import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, primoGiornoBadge, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
@@ -851,6 +852,11 @@ function CallerPageInner() {
     // SheetJS al caricamento — prima il conteggio era una stima (f.size/200)
     // e la conferma creava lead segnaposto senza numeri
     const [listaDati, setListaDati] = useState<string[][]>([]);
+    /* IL CONTROLLO DEI DOPPIONI (Luca 31/08: «abbiamo assegnato una lista con
+       10 clienti già lavorati e 3 nuovi, ma non ci ha segnalato niente»).
+       `saltati` sono i gruppi che il direttore ha deciso di NON importare: le
+       righe restano nel file, semplicemente non diventano pratiche. */
+    const [gruppiSaltati, setGruppiSaltati] = useState<Record<string, boolean>>({});
     // tutte le righe non vuote (intestazione compresa): la spunta la esclude
     const [listaDatiFull, setListaDatiFull] = useState<string[][]>([]);
     const [listaHeaderSaltata, setListaHeaderSaltata] = useState(false);
@@ -2246,11 +2252,42 @@ function CallerPageInner() {
             return { ...s, [field]: field === "quantita" ? parseInt(val || "0", 10) : val };
         }));
     }
+    /* CHI CONOSCIAMO GIÀ. Si guarda dentro le pratiche che la pagina ha già in
+       memoria — nessuna query in più — e dentro il file stesso, dove i gemelli
+       ci sono e nessuno li vede: su tre liste vere erano 17, e undici sarebbero
+       finite a due caller diversi lo stesso minuto. */
+    const doppioni = useMemo(() => {
+        if (listaStep < 4 || !listaDati.length) return [];
+        const idx = (campo: string) => {
+            const col = Object.keys(listaMappa).find((c) => listaMappa[c] === campo);
+            return col ? COL_LETTERS.indexOf(col) : -1;
+        };
+        return trovaDoppioni(listaDati, { cf: idx("Codice Fiscale"), numero: idx("Numero"), nome: idx("Nome"), cognome: idx("Cognome") }, calls, comportamenti);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [listaStep, listaDati, listaMappa, calls, comportamenti]);
+    const doppiPerGruppo = useMemo(() => {
+        const m = new Map<string, Doppione[]>();
+        for (const d of doppioni) { const k = d.dentroIlFile ? "gemelli" : d.stato; (m.get(k) || m.set(k, []).get(k)!).push(d); }
+        return m;
+    }, [doppioni]);
+    // le righe che verranno davvero importate
+    const righeSaltate = useMemo(() => {
+        const s = new Set<number>();
+        for (const d of doppioni) {
+            const k = d.dentroIlFile ? "gemelli" : d.stato;
+            const salta = gruppiSaltati[k] ?? (k === "gemelli" ? true : ETICHETTA[d.stato]?.saltaDiDefault ?? false);
+            if (salta) s.add(d.riga);
+        }
+        return s;
+    }, [doppioni, gruppiSaltati]);
+    const righeTenute = useMemo(() => listaDati.filter((_, i) => !righeSaltate.has(i)), [listaDati, righeSaltate]);
+
     function dividiEqualmente() {
+
         const validi = listaSplits.filter(s => s.caller);
         if (validi.length === 0) return;
-        const base = Math.floor(listaRows / validi.length);
-        const resto = listaRows - base * validi.length;
+        const base = Math.floor(righeTenute.length / validi.length);
+        const resto = righeTenute.length - base * validi.length;
         let i = 0;
         setListaSplits((prev) => prev.map(s => {
             if (!s.caller) return s;
@@ -2270,11 +2307,11 @@ function CallerPageInner() {
     // con quantità ma senza caller mostrava «✓ Completo» e quelle righe
     // sparivano in silenzio alla conferma
     const totaleAssegnato = listaSplits.filter(s => s.caller && s.quantita > 0).reduce((sum, s) => sum + s.quantita, 0);
-    const splitsValidi = listaSplits.filter(s => s.caller && s.quantita > 0).length > 0 && totaleAssegnato === listaRows;
+    const splitsValidi = listaSplits.filter(s => s.caller && s.quantita > 0).length > 0 && totaleAssegnato === righeTenute.length;
 
     async function confermaLista() {
         if (!listaFileObj || listaBusy) return;
-        if (!listaDati.length || listaDati.length !== listaRows) {
+        if (!righeTenute.length) {
             alert("Le righe del file non sono più in memoria: torna allo step 2 e ricarica il file.");
             return;
         }
@@ -2300,8 +2337,8 @@ function CallerPageInner() {
         const iRagione = idxCampo("Ragione Sociale"), iPiva = idxCampo("Partita IVA"), iNote = idxCampo("Note");
         // righe senza un telefono valido nella colonna mappata: dichiarate,
         // mai perse in silenzio (rilievo revisore) — si sceglie consapevolmente
-        const senzaTelefono = listaDati.filter((r) => cella(r, iNumero).replace(/\D/g, "").length < 6).length;
-        if (senzaTelefono > 0 && !window.confirm(`${senzaTelefono} righe su ${listaDati.length} non hanno un numero valido nella colonna mappata su «Numero»: le pratiche nasceranno senza telefono. Continuare comunque?`)) {
+        const senzaTelefono = righeTenute.filter((r) => cella(r, iNumero).replace(/\D/g, "").length < 6).length;
+        if (senzaTelefono > 0 && !window.confirm(`${senzaTelefono} righe su ${righeTenute.length} non hanno un numero valido nella colonna mappata su «Numero»: le pratiche nasceranno senza telefono. Continuare comunque?`)) {
             return;
         }
 
@@ -2343,7 +2380,7 @@ function CallerPageInner() {
             file_path: filePath,
             num_cols: listaNumCols,
             mappa: listaMappa,
-            totale: listaRows,
+            totale: righeTenute.length,
             splits: listaSplits.filter(s => s.caller && s.quantita > 0),
             lavorate: 0,
         };
@@ -2361,8 +2398,8 @@ function CallerPageInner() {
         const callsPayloads: Record<string, unknown>[] = [];
         let rowIdx = 0;
         listaSplits.filter((s) => s.caller && s.quantita > 0).forEach((split) => {
-            for (let i = 0; i < split.quantita && rowIdx < listaDati.length; i++) {
-                const riga = listaDati[rowIdx];
+            for (let i = 0; i < split.quantita && rowIdx < righeTenute.length; i++) {
+                const riga = righeTenute[rowIdx];
                 rowIdx++;
                 const grezzo = cella(riga, iNumero);
                 const naz = numeroNazionale(grezzo);
@@ -4054,10 +4091,70 @@ function CallerPageInner() {
                             )}
 
                             {/* Step 5 */}
+                            {/* ══ CHI CONOSCIAMO GIÀ (Luca 31/08) ══════════════════
+                                Compare nello step della mappatura, appena c'è una
+                                colonna col numero: prima dello split, perché lo split
+                                dipende da quante righe restano. Non decide da solo —
+                                propone, e il direttore conferma gruppo per gruppo. */}
+                            {listaStep === 4 && canNext4 && doppioni.length > 0 && (
+                                <div className="rounded-xl border border-amber-400/40 bg-amber-500/[0.07] p-4 space-y-3">
+                                    <div className="flex flex-wrap items-baseline gap-2">
+                                        <h4 className="text-sm font-bold text-amber-200">⚠️ {doppioni.length} di queste {listaDati.length} righe le conosciamo già</h4>
+                                        <span className="text-[11px] text-slate-400">
+                                            ne resterebbero <b className="text-white">{righeTenute.length}</b> da assegnare
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">
+                                        Le liste degli SMS sono estrazioni sulla stessa base: chi lo riceve lo riceve ogni mese. Scegli gruppo per gruppo cosa importare — le righe saltate restano nel file, semplicemente non diventano pratiche.
+                                    </p>
+                                    <div className="space-y-2">
+                                        {[...doppiPerGruppo.entries()].sort((a, b) => b[1].length - a[1].length).map(([k, righe]) => {
+                                            const et = k === "gemelli"
+                                                ? { titolo: "👯 Due volte in questo file", spiega: "la stessa persona compare più volte nella lista che stai caricando: se ne tiene una", saltaDiDefault: true }
+                                                : ETICHETTA[k as keyof typeof ETICHETTA];
+                                            const salta = gruppiSaltati[k] ?? et.saltaDiDefault;
+                                            const altri = righe.filter((d) => d.caller && d.caller !== "—").length;
+                                            return (
+                                                <div key={k} className="rounded-lg border border-white/10 bg-black/20 p-2.5">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-[12px] font-bold text-slate-100">{et.titolo}</span>
+                                                        <span className="text-sm font-black text-white tabular-nums">{righe.length}</span>
+                                                        <div className="ml-auto flex gap-1 p-0.5 rounded-lg bg-white/5 border border-white/10">
+                                                            {([[true, "⏭ Salta"], [false, "↻ Importa"]] as const).map(([v, l]) => (
+                                                                <button key={String(v)} onClick={() => setGruppiSaltati((p) => ({ ...p, [k]: v }))}
+                                                                    className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors ${salta === v ? (v ? "bg-rose-500/30 text-rose-100" : "bg-emerald-500/30 text-emerald-100") : "text-slate-500 hover:text-slate-300"}`}>
+                                                                    {l}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-500 mt-1">{et.spiega}{altri > 0 && k !== "gemelli" ? ` · ${altri} in mano a un caller` : ""}</p>
+                                                    <div className="mt-1.5 max-h-[104px] overflow-y-auto space-y-0.5 pr-1">
+                                                        {righe.slice(0, 40).map((d) => (
+                                                            <div key={d.riga} className="flex items-baseline gap-2 text-[10px]">
+                                                                <span className="text-slate-300 truncate flex-1">{d.nome}</span>
+                                                                <span className="text-slate-500 truncate">{d.statoPratica}</span>
+                                                                {d.caller !== "—" && <span className="text-slate-600 truncate max-w-[110px]">{d.caller}</span>}
+                                                                {d.giorni != null && <span className="text-slate-600 tabular-nums">{d.giorni}g</span>}
+                                                                {d.perNumero && !d.dentroIlFile && <span className="text-amber-300/70" title="agganciata dal solo numero di telefono: potrebbe essere un fisso di famiglia o d'ufficio">≈</span>}
+                                                            </div>
+                                                        ))}
+                                                        {righe.length > 40 && <p className="text-[10px] text-slate-600">…e altre {righe.length - 40}.</p>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-slate-600">
+                                        Il simbolo ≈ vuol dire che l&apos;aggancio è solo sul numero di telefono, senza codice fiscale: potrebbe essere un fisso di famiglia o d&apos;ufficio. Guarda il nome prima di saltarla.
+                                    </p>
+                                </div>
+                            )}
+
                             {listaStep === 5 && (
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-bold text-violet-300 uppercase tracking-widest mb-3">Step 5 di 5 — Assegna ai Caller</h3>
-                                    <p className="text-xs text-slate-500 mb-4">Suddividi le {listaRows} righe tra i caller. Stato iniziale: <strong className="text-sky-300">Assegnata</strong> — da lavorare subito, warning dopo 2 giorni di badge, malus dopo 3.</p>
+                                    <p className="text-xs text-slate-500 mb-4">Suddividi le {righeTenute.length} righe tra i caller{righeSaltate.size > 0 ? <> <span className="text-amber-300">({righeSaltate.size} saltate perché già conosciute)</span></> : null}. Stato iniziale: <strong className="text-sky-300">Assegnata</strong> — da lavorare subito, warning dopo 2 giorni di badge, malus dopo 3.</p>
                                     {listaSplits.map((split, idx) => (
                                         <div key={idx} className="flex gap-2 items-center">
                                             <div className="flex-[2]"><SelectPersona value={split.caller} onChange={(v) => updateSplit(idx, "caller", v)} opzioni={CALLERS} placeholder="Scrivi il caller…" className="glass-input rounded-lg py-2 w-full" /></div>
@@ -4071,10 +4168,10 @@ function CallerPageInner() {
                                         <button onClick={addSplit} className="text-violet-300 text-xs font-bold uppercase tracking-widest">+ Aggiungi caller</button>
                                         <button onClick={dividiEqualmente} className="text-violet-300 text-xs font-bold uppercase tracking-widest flex items-center gap-1"><Scale className="w-3 h-3" /> Dividi equamente</button>
                                     </div>
-                                    <div className={`flex justify-between items-center p-3 rounded-xl border ${totaleAssegnato === listaRows ? "bg-emerald-500/10 border-emerald-500/30" : "bg-orange-500/10 border-orange-500/30"}`}>
-                                        <span className="text-xs text-slate-400">Totale assegnato: <strong className="text-white">{totaleAssegnato}</strong> / {listaRows}</span>
-                                        <span className={`text-xs font-bold ${totaleAssegnato === listaRows ? "text-emerald-300" : "text-orange-300"}`}>
-                                            {totaleAssegnato === listaRows ? "✓ Completo" : (listaRows - totaleAssegnato > 0 ? `${listaRows - totaleAssegnato} da assegnare` : `${totaleAssegnato - listaRows} in eccesso`)}
+                                    <div className={`flex justify-between items-center p-3 rounded-xl border ${totaleAssegnato === righeTenute.length ? "bg-emerald-500/10 border-emerald-500/30" : "bg-orange-500/10 border-orange-500/30"}`}>
+                                        <span className="text-xs text-slate-400">Totale assegnato: <strong className="text-white">{totaleAssegnato}</strong> / {righeTenute.length}</span>
+                                        <span className={`text-xs font-bold ${totaleAssegnato === righeTenute.length ? "text-emerald-300" : "text-orange-300"}`}>
+                                            {totaleAssegnato === righeTenute.length ? "✓ Completo" : (righeTenute.length - totaleAssegnato > 0 ? `${righeTenute.length - totaleAssegnato} da assegnare` : `${totaleAssegnato - righeTenute.length} in eccesso`)}
                                         </span>
                                     </div>
                                 </div>
