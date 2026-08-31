@@ -73,7 +73,7 @@ type Dati = {
     ok: boolean; da: string; a: string; persona: string; canale: string; canaliVisti: string[];
     mese: { speso: number; spesoPrima: number; delta: number; proiezione: number | null; tetto: number; avviso: number; allarme: number; chiesta: number; automatica: number; suMeseCorrente: boolean };
     giorni: { giorno: string; euro: number; richieste: number; chiamate: number; parti: { sezione: string; euro: number }[] }[];
-    perSezione: { sezione: string; euro: number; chiamate: number; automatica: boolean; tokenIn: number; tokenOut: number }[];
+    perSezione: { sezione: string; euro: number; chiamate: number; automatica: boolean; tokenIn: number; tokenOut: number; dedotte: number; righe: number }[];
     perUtenza: { tipo: string; id: string; label: string; euro: number; chiamate: number }[];
     persone: { id: string; nome: string; ruolo: string; negozio: string | null; domande: number; giorniAttivi: number; euro: number; ultima: string | null; delta: number; serie: number[] }[];
     sprechi: { troncate: number; errori: number; senzaCredito: number; passaggiMedi: number | null; attesaMedia: number | null };
@@ -368,12 +368,25 @@ export function AiAdminView() {
                         {d.perSezione.map((s) => (
                             <div key={s.sezione} className="flex items-center gap-2 text-[11px]">
                                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORI[s.sezione] || "#818cf8" }} />
-                                <span className="flex-1 text-slate-300 truncate">{NOMI[s.sezione] || s.sezione}</span>
+                                <span className="flex-1 text-slate-300 truncate">
+                                    {NOMI[s.sezione] || s.sezione}
+                                    {s.dedotte > 0 && (
+                                        <span title={`${s.dedotte} righe su ${s.righe} non erano firmate dal motore: l'attribuzione è dedotta dall'ORARIO in cui sono state scritte — i due motori automatici girano a minuti diversi. Dal 31/08 si firmano da soli.`}
+                                            className="ml-1 text-[9px] text-amber-300/80 cursor-help">◔ dedotte</span>
+                                    )}
+                                </span>
                                 <span className="tabular-nums text-slate-400">{fmtN(s.chiamate)}×</span>
                                 <span className="tabular-nums font-bold text-white">{eur(s.euro)}</span>
                             </div>
                         ))}
                     </div>
+                    {d.perSezione.some((s) => s.dedotte > 0) && (
+                        <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+                            ◔ Le righe scritte prima del 31/08 non dicevano da quale motore venivano: l&apos;attribuzione
+                            è ricostruita dall&apos;orario, perché i due motori automatici girano a minuti diversi.
+                            Da oggi si firmano da soli.
+                        </p>
+                    )}
                 </div>
 
                 <div className="glass-card an-card rounded-2xl p-4">

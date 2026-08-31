@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
    persona vale su TUTTO: chiedendo di qualcuno, ogni riquadro parla di lui. */
 
 type Riga = {
-    sezione: string; automatica: boolean; costo_eur: number | null; cost_usd: number | null;
+    sezione: string; funzione: string | null; automatica: boolean; costo_eur: number | null; cost_usd: number | null;
     chiamate: number | null; prompt_tokens: number | null; completion_tokens: number | null;
     utenza_tipo: string | null; utenza_id: string | null; utenza_label: string | null;
     user_id: string | null; negozio: string | null; ruolo: string | null; esito: string | null;
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     const primaFine = new Date(new Date(da + "T00:00:00Z").getTime() - 86400000).toISOString().slice(0, 10);
     const primaInizio = new Date(new Date(primaFine + "T00:00:00Z").getTime() - (giorniPeriodo - 1) * 86400000).toISOString().slice(0, 10);
 
-    const campi = "sezione, automatica, costo_eur, cost_usd, chiamate, prompt_tokens, completion_tokens, utenza_tipo, utenza_id, utenza_label, user_id, negozio, ruolo, esito, passaggi, latency_ms, created_at";
+    const campi = "sezione, funzione, automatica, costo_eur, cost_usd, chiamate, prompt_tokens, completion_tokens, utenza_tipo, utenza_id, utenza_label, user_id, negozio, ruolo, esito, passaggi, latency_ms, created_at";
     const [{ data: righe }, { data: prima }, { data: imp }, { data: utenti }] = await Promise.all([
         supabase.from("ai_usage").select(campi)
             .gte("created_at", da + "T00:00:00Z").lte("created_at", a + "T23:59:59Z")
@@ -108,6 +108,11 @@ export async function GET(request: Request) {
         const d = R.filter((r) => (r.sezione || "assistente") === sz);
         return {
             sezione: sz, euro: d.reduce((s, r) => s + euro(r), 0),
+            /* quante di queste righe sono DEDOTTE dall'orario invece che
+               firmate dal motore: chi legge un numero deve sapere se è
+               misurato o ricostruito */
+            dedotte: d.filter((r) => r.funzione === "ricostruito_da_orario").length,
+            righe: d.length,
             chiamate: d.reduce((s, r) => s + Number(r.chiamate || 1), 0),
             automatica: d.every((r) => r.automatica),
             tokenIn: d.reduce((s, r) => s + Number(r.prompt_tokens || 0), 0),
