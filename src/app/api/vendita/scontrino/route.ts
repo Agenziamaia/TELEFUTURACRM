@@ -145,6 +145,27 @@ export async function POST(req: Request) {
         (data || []).forEach((m: any) => { byName[String(m.name).trim()] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false, azienda: m.azienda ?? null }; });
     }
 
+    /* ═══ È LA MERCE A GUIDARE LA RAGIONE SOCIALE (Luca 31/08) ═══════════════
+       «I servizi non hanno magazzino, per cui possono essere scaricati da tutti
+       in qualsiasi cassa: usciranno dalla cassa insieme al prodotto che hanno
+       selezionato, e sarà il prodotto a guidare la ragione sociale.»
+       Prima non era così: una riga senza società — un'assistenza tecnica, un
+       backup, un salva scontrino — cadeva sul DEFAULT del negozio. A Donna il
+       default è Telefutura 2, quindi un telefono di Telefutura più
+       un'assistenza uscivano come DUE scontrini, con due partite IVA, per una
+       vendita sola. Il cliente ne riceveva due e la contabilità pure.
+       Adesso si guarda prima chi ha una società (la merce) e, se è una sola,
+       tutto il resto la segue. Il default resta solo per il carrello fatto di
+       soli servizi, dove nessuno può dire di chi sia. Il carrello con DUE
+       società non arriva qui: si ferma quando si aggiunge il secondo prodotto. */
+    const societaDelleRighe = new Set<string>();
+    for (const r of righe) {
+        const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
+        const suo = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")] || null;
+        if (suo) societaDelleRighe.add(String(suo));
+    }
+    const azDellaMerce = societaDelleRighe.size === 1 ? [...societaDelleRighe][0] : null;
+
     // Costruisci le voci raggruppate per AZIENDA ("__def" = azienda di default / negozio non multi).
     type FI = { description: string; quantity: number; unitPrice: number; department: number };
     const gruppi: Record<string, FI[]> = {};
@@ -161,7 +182,8 @@ export async function POST(req: Request) {
            emettere QUELLA società — non quella che l'operatore ha lasciato
            selezionata. Le voci di un carrello misto finiscono già in gruppi
            separati qui sotto, quindi escono due scontrini, uno per società. */
-        const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")] || b.azienda || defaultAzienda || "__def";
+        const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")]
+            || azDellaMerce || b.azienda || defaultAzienda || "__def";
         const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;
