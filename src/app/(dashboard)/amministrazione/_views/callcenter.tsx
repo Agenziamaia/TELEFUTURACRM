@@ -33,11 +33,17 @@ const CATEGORIE: { id: string; label: string; hint: string }[] = [
     { id: "obiettivo", label: "Obiettivi", hint: "Cosa si vuole vendere/ottenere." },
 ];
 
-// ── MODELLI WHATSAPP (CAL-01, Luca 04/08) ────────────────────────────────────
+// ── MODELLI WHATSAPP (CAL-01, Luca 04/08 — testi rifatti il 31/08) ───────────
 // I messaggi pronti che i caller inviano dal modale WhatsApp della pratica.
 // Lo SCENARIO e' agganciato al comportamento dello stato (non ai nomi);
 // brand/obiettivo/provenienza/tipologia vuoti = il modello vale per tutti.
 // Piu' varianti nello stesso GRUPPO = rotazione anti-ban sul singolo numero.
+//
+// I GRUPPI SONO IL TONO (Luca 31/08): «-lei» e «-tu» dentro lo stesso scenario
+// diventano due schede nel modale del caller, che sceglie come dare del
+// cliente; dentro la scheda il CRM ruota da solo la variante, evitando quella
+// usata per ultima su quel numero. Se si aggiunge un gruppo nuovo, compare
+// come scheda in piu': e' il modo per creare un terzo tono.
 
 type WaTemplate = {
     id: string; gruppo: string; titolo: string | null; corpo: string; scenario: string;
@@ -49,6 +55,9 @@ const SCENARI_WA: { id: string; label: string }[] = [
     { id: "nr", label: "📵 Non risposto" },
     { id: "richiamo", label: "☎ Richiamo" },
     { id: "appuntamento", label: "📅 Appuntamento" },
+    // il cliente non si e' presentato e non risponde: ha messaggi suoi, che
+    // parlano di riprogrammare (Luca 31/08). Si accende sullo stato «Non andato»
+    { id: "saltato", label: "🚪 Appuntamento saltato" },
     { id: "generico", label: "💬 Generico" },
 ];
 const scenLabelWa = (id: string) => SCENARI_WA.find((s) => s.id === id)?.label || id;
@@ -60,9 +69,13 @@ const BRANDS_WA = ["WindTre", "Vodafone", "Fastweb", "Sky", "Energia", "Tim", "A
 // {cognome} RIMOSSO dai chips (Luca 06/08): verso il cliente si usa solo il
 // primo nome — suo e di chi scrive ({caller} = primo nome dell'utente loggato).
 // Il placeholder resta neutralizzato nel motore per i testi vecchi.
+// {indirizzo} = l'indirizzo del negozio, dall'anagrafica (Amministrazione →
+// Negozi → Indirizzo). Se non e' compilato sparisce dal messaggio insieme alla
+// preposizione che lo reggeva, quindi si puo' usare senza paura di spedire un
+// segnaposto al cliente.
 const PLACEHOLDER_WA = [
     "{nome}", "{ragione_sociale}", "{brand}", "{obiettivo}",
-    "{negozio}", "{negozio_pertinenza}", "{data_appuntamento}", "{ora_appuntamento}",
+    "{negozio}", "{indirizzo}", "{negozio_pertinenza}", "{data_appuntamento}", "{ora_appuntamento}",
     "{fascia_appuntamento}", "{data_richiamo}", "{fascia_richiamo}", "{caller}",
 ];
 

@@ -19,11 +19,15 @@ import { supabase } from "@/lib/supabaseClient";
 import { fasciaLabel } from "@/lib/fasce";
 import { MessageSquare, X, RefreshCw, Send, ExternalLink, Loader2, CheckCheck } from "lucide-react";
 
-export type ScenarioWa = "nr" | "richiamo" | "appuntamento" | "generico";
+// «saltato» = il cliente non si e' presentato all'appuntamento e non risponde
+// (Luca 31/08): prima riceveva i testi del «non risposto», che parlano d'altro
+export type ScenarioWa = "nr" | "richiamo" | "appuntamento" | "saltato" | "generico";
 
 // i soli campi della pratica che servono ai placeholder: tipizzazione
 // STRUTTURALE, la Call della pagina li possiede tutti
 export interface PraticaWa {
+    // l'indirizzo NON sta sulla pratica: arriva dall'anagrafica del negozio
+    // (stores.address) e lo carica il modale — vedi `indirizziNegozi`
     id: string;
     tipo_cliente: string;
     nome: string;
@@ -53,8 +57,11 @@ type Template = {
 };
 
 const SCENARIO_LABEL: Record<ScenarioWa, string> = {
-    nr: "📵 Non risposto", richiamo: "☎ Richiamo", appuntamento: "📅 Appuntamento", generico: "💬 Generico",
+    nr: "📵 Non risposto", richiamo: "☎ Richiamo", appuntamento: "📅 Appuntamento",
+    saltato: "🚪 Appuntamento saltato", generico: "💬 Generico",
 };
+
+const norm = (v: string) => String(v || "").trim().toLowerCase();
 
 function fmtData(v?: string): string {
     if (!v) return "";
@@ -73,7 +80,7 @@ function fmtOra(v?: string): string {
 const primoNome = (s: string) => (s || "").trim().split(/\s+/)[0] || "";
 
 // valori della pratica per i placeholder del corpo modello
-function valoriPlaceholder(call: PraticaWa, callerName: string): Record<string, string> {
+function valoriPlaceholder(call: PraticaWa, callerName: string, indirizzi: Map<string, string>): Record<string, string> {
     const dataApp = call.dataAppuntamentoNew || call.data_appuntamento;
     const dataRic = call.dataRichiamoNew || call.data_richiamo;
     const negozioApp = call.negozioAppNew || call.negozio_appuntamento;
@@ -85,6 +92,10 @@ function valoriPlaceholder(call: PraticaWa, callerName: string): Record<string, 
         obiettivo: call.obiettivo || "",
         caller: primoNome(callerName || call.caller || ""),
         negozio: negozioApp || call.negozio_pertinenza || call.negozio_provenienza || "",
+        // INDIRIZZO del negozio in gioco. Se non e' compilato in
+        // Amministrazione → Negozi resta vuoto, e il testo si richiude da solo
+        // sulla preposizione che lo precede (vedi `risolvi`).
+        indirizzo: indirizzi.get(norm(negozioApp || call.negozio_pertinenza || call.negozio_provenienza || "")) || "",
         negozio_pertinenza: call.negozio_pertinenza || call.negozio_provenienza || "",
         data_appuntamento: fmtData(dataApp),
         ora_appuntamento: fmtOra(dataApp),
@@ -102,6 +113,26 @@ function risolvi(corpo: string, vals: Record<string, string>): {
     const parti: { t: string; ph?: "ok" | "manca" }[] = [];
     const mancanti: string[] = [];
     let testo = "";
+    // SEGNAPOSTO CHE POSSONO MANCARE senza rovinare la frase. Non basta
+    // toglierli: se sparisce l'indirizzo resta «del negozio Mazzini di 📍»,
+    // cioe' una preposizione a vuoto e un segnalino che non indica piu'
+    // niente. Si toglie il PEZZO INTERO — la preposizione che lo reggeva, il
+    // segnaposto e l'eventuale spillo dopo — prima di risolvere il resto.
+    // ⚠️ lo spillo va messo in gruppo — `(?:📍)?` e non `📍?`: senza il flag `u`
+    // il punto interrogativo si applica solo alla SECONDA meta' della coppia
+    // che compone l'emoji, e la prima resta obbligatoria. Con `📍?` la pulizia
+    // funzionava solo dove lo spillo c'era davvero, e il {cognome} — che non
+    // ce l'ha mai — sarebbe finito nel messaggio al cliente.
+    // Il cognome c'era gia' (Luca 06/08: verso il cliente si usa solo il nome);
+    // l'indirizzo si aggiunge perche' finche' le anagrafiche dei negozi non
+    // sono compilate meglio una frase piu' corta di un {indirizzo} spedito.
+    for (const ph of ["cognome", "indirizzo"]) {
+        if (vals[ph]) continue;
+        corpo = corpo.replace(new RegExp(`[ \u00a0]*(?:\\b(?:di|in|presso|da)\\b[ \u00a0]*)?\\{${ph}\\}[ \u00a0]*(?:📍)?`, "g"), "")
+            // virgole rimaste orfane: «di Libia, Ho cercato» → «di Libia. Ho cercato»
+            .replace(/[ \u00a0]*,[ \u00a0]*([.,!?])/g, "$1")
+            .replace(/,([ \u00a0]+)(?=[A-ZÀ-Ý])/g, ".$1");
+    }
     const re = /\{([a-z_]+)\}/g;
     let last = 0;
     let m: RegExpExecArray | null;
@@ -109,12 +140,7 @@ function risolvi(corpo: string, vals: Record<string, string>): {
         if (m.index > last) { const t = corpo.slice(last, m.index); parti.push({ t }); testo += t; }
         const v = vals[m[1]];
         if (v) { parti.push({ t: v, ph: "ok" }); testo += v; }
-        else if (m[1] === "cognome") {
-            // cognome NEUTRALIZZATO (Luca 06/08): sparisce dal testo senza
-            // segnalare nulla, mangiandosi anche lo spazio che lo precedeva
-            if (testo.endsWith(" ")) testo = testo.slice(0, -1);
-            if (parti.length && parti[parti.length - 1].t.endsWith(" ")) parti[parti.length - 1].t = parti[parti.length - 1].t.slice(0, -1);
-        }
+
         else { parti.push({ t: `{${m[1]}}`, ph: "manca" }); mancanti.push(m[1]); testo += `{${m[1]}}`; }
         last = m.index + m[0].length;
     }
@@ -138,6 +164,17 @@ export function ModaleTemplateWa({ call, numero, scenario, userId, callerName, o
     const [errore, setErrore] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);            // gruppo in invio
     const [fatto, setFatto] = useState(false);
+    const [indirizzi, setIndirizzi] = useState<Map<string, string>>(new Map());
+
+    // gli indirizzi dei negozi, per il segnaposto {indirizzo}: una query sola,
+    // e se la colonna e' vuota il testo si richiude da solo
+    useEffect(() => {
+        (async () => {
+            const { data } = await supabase.from("stores").select("name, address");
+            setIndirizzi(new Map(((data ?? []) as { name: string; address: string | null }[])
+                .filter((r) => r.address?.trim()).map((r) => [norm(r.name), r.address!.trim()])));
+        })();
+    }, []);
 
     useEffect(() => {
         (async () => {
@@ -158,7 +195,7 @@ export function ModaleTemplateWa({ call, numero, scenario, userId, callerName, o
         })();
     }, [numero]);
 
-    const vals = useMemo(() => valoriPlaceholder(call, callerName), [call, callerName]);
+    const vals = useMemo(() => valoriPlaceholder(call, callerName, indirizzi), [call, callerName, indirizzi]);
 
     // modelli pertinenti: scenario + jolly su brand/obiettivo/provenienza/tipologia
     // (campo del modello NULL = vale per tutti); senza modelli dello scenario si

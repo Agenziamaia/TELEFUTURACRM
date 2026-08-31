@@ -235,7 +235,7 @@ export function StoreAttachments({ storeId }: { storeId: string }) {
 type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo: string };
 // pausa/is_ufficio opzionali = mig. 158/159: il fallback pre-migrazione
 // carica solo le colonne storiche
-type NegozioOrariRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
+type NegozioOrariRow = { name: string; address?: string | null; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
 type CampoOrario = "orario_apertura" | "orario_chiusura" | "orario_pausa_inizio" | "orario_pausa_fine" | "sabato_apertura" | "sabato_chiusura";
 export function OrariChiusureView() {
     const { user } = useAuth();   // firma sulle chiusure (giallo del 06/08: righe senza autore)
@@ -257,7 +257,7 @@ export function OrariChiusureView() {
     const [spezzatoUi, setSpezzatoUi] = useState<Record<string, boolean>>({});
     const carica = useCallback(async () => {
         const [st0, ch, fs] = await Promise.all([
-            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
+            supabase.from("stores").select("name, address, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
             supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
             supabase.from("giorni_festivi").select("giorno, nome").order("giorno"),
         ]);
@@ -273,6 +273,18 @@ export function OrariChiusureView() {
     }, []);
     useEffect(() => { carica(); }, [carica]);
     const hhmm = (t: string | null | undefined, fb: string) => (t || fb).slice(0, 5);
+    // L'INDIRIZZO DEL NEGOZIO (Luca 31/08): serve ai messaggi WhatsApp ai
+    // clienti, che si presentano col punto vendita e la via — «del punto
+    // vendita Mazzini di via …». Finché è vuoto il segnaposto {indirizzo}
+    // sparisce dal messaggio, quindi compilarlo è quello che rende i testi
+    // completi. Si salva quando si esce dal campo, non a ogni lettera.
+    const salvaIndirizzo = async (store: string, val: string) => {
+        const v = val.trim();
+        const { error } = await supabase.from("stores").update({ address: v || null }).eq("name", store);
+        if (dbError("Indirizzo negozio", error)) return;
+        setNegozi(p => p.map(x => x.name === store ? { ...x, address: v || null } : x));
+    };
+
     const salvaOrario = async (store: string, campo: CampoOrario, val: string) => {
         if (!val) return;
         // SABATO (Luca 12/08): turno unico dedicato, basta inizio < fine
@@ -401,6 +413,9 @@ export function OrariChiusureView() {
                             colonne). */}
                         <div className="w-52 shrink-0">
                             <p className="text-sm font-bold text-white">🏬 {n.name}</p>
+                            <input defaultValue={n.address || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.address || "")) salvaIndirizzo(n.name, e.target.value); }}
+                                placeholder="Indirizzo (via e civico)" title="Compare nei messaggi WhatsApp ai clienti come {indirizzo}"
+                                className="glass-input !h-7 !px-2 text-[11px] w-full mt-1" />
                             <div className="flex items-center gap-1 mt-1.5 text-[11px] text-slate-400"
                                 title={spezzato ? "1° turno di apertura" : "Orario di apertura (turno unico)"}>
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-8 shrink-0">{spezzato ? "1°" : "🕐"}</span>

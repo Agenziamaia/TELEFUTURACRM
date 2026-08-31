@@ -2385,6 +2385,9 @@ function CallerPageInner() {
         if (NRD_STATI.includes(s)) return "nr";
         if (RIC_STATI.includes(s)) return "richiamo";
         if (APP_STATI.includes(s)) return "appuntamento";
+        // NON ANDATO = appuntamento saltato (Luca 31/08): ha messaggi suoi, che
+        // parlano di riprogrammare — non quelli del «non ti ho trovato»
+        if (s === "Non andato") return "saltato";
         return "generico";
     };
     const statoNewIsNR = !!editCall && NRD_STATI.includes(editCall.statoNew || "");

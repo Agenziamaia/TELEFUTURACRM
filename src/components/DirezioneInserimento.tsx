@@ -161,7 +161,14 @@ const etichettaSoglia = (brand: string, pista: string, i: number) => {
 // L'EMOJI DEL MOBILE È UNA SIM, NON UN TELEFONO (Luca 31/08): «mobile» qui è
 // una pista di gara, cioè ATTIVAZIONI DI SIM. Il telefono 📱 resta al telefono
 // come prodotto — rateizzato, venduto, device — che avrà sezioni sue.
-export const EMOJI_MOBILE = "💳";
+// 📶 e non 💳: la carta e' gia' il POS in mezzo CRM — nello stesso menu delle
+// piste (Tracking PDA: «POS» → 💳) e nella stessa funzione del tabellare — e
+// due voci con la stessa icona nello stesso elenco non si distinguono.
+// 📶 invece nel CRM SIGNIFICA GIA' SIM: e' l'icona della categoria «📶 SIM»
+// della marginalita', della regola /\bsim\b/ del catalogo cassa e del gruppo
+// «📶 SIM» dell'Analisi. Adottarla qui allinea il mobile a quello che il resto
+// del CRM chiama SIM da sempre, invece di inventare un terzo segno.
+export const EMOJI_MOBILE = "📶";
 const EMOJI_PISTA = (nome: string) => {
     const n = nome.toLowerCase();
     if (n.includes("mobile")) return EMOJI_MOBILE;
