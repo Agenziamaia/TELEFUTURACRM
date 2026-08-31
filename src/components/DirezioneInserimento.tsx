@@ -24,7 +24,7 @@ import {
     finestraBilancia, codiceBilancia, codiceAssociato,
     DIR_BRANDS, W3_PALETTO_BUSINESS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
-import { confrontoUfficiale, type ConfrontoUfficiale } from "@/lib/avanzamentoUfficiale";
+import { confrontoUfficiale, riepilogoScarti, type ConfrontoUfficiale } from "@/lib/avanzamentoUfficiale";
 import { CaricaAvanzamento } from "@/components/CaricaAvanzamento";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
@@ -254,6 +254,7 @@ export function DirezioneInserimentoAdmin() {
        ogni volta: salvarlo vorrebbe dire tenersi un dato che invecchia da sé. */
     const [conf, setConf] = useState<ConfrontoUfficiale | null>(null);
     const [modaleAvz, setModaleAvz] = useState(false);
+    const [riepilogoAperto, setRiepilogoAperto] = useState(false);
 
     useEffect(() => {
         let vivo = true;
@@ -371,7 +372,7 @@ export function DirezioneInserimentoAdmin() {
                         className={cn("h-10 px-3 rounded-xl border text-xs font-bold whitespace-nowrap transition-colors",
                             conf ? "border-indigo-400/40 bg-indigo-500/15 text-indigo-100 hover:bg-indigo-500/25"
                                 : "border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10")}>
-                        📊 {conf ? `Ufficiale al ${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}` : "Avanzamento ufficiale"}
+                        📊{conf ? "" : " Avanzamento ufficiale"}
                     </button>
                     {/* la vista: il consiglio nasce sempre da «Adesso» */}
                     <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
@@ -391,7 +392,7 @@ export function DirezioneInserimentoAdmin() {
                     <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[150px]">
                         {mesi.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
                     </select>
-                    <button onClick={() => setGiro((g) => g + 1)} title="Ricarica l'avanzamento" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
+                    <button onClick={() => setGiro((g) => g + 1)} title="Ricarica i numeri della pagina" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
                 </div>
             </div>
 
@@ -409,6 +410,82 @@ export function DirezioneInserimentoAdmin() {
                     </button>
                 </div>
             )}
+
+            {/* LA SINTESI DEGLI SCARTI (Luca 29/08, disegnata col revisore 31/08).
+                Senza questa, per sapere dove siamo disallineati bisognava aprire
+                i codici uno per uno — cioè non lo scopriva nessuno. E lo scarto
+                «+» non è una curiosità: è l'unica cosa che rende FALSO l'input
+                della decisione che si prende qui. Se un codice ha sei punti che
+                non esistono, la Bussola lo crede quasi chiuso e sta mandando i
+                venditori altrove. */}
+            {conf && (() => {
+                const R = riepilogoScarti(conf);
+                if (!R) return null;
+                const gg = `${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}`;
+                const nomeCod = (c: string) => dir?.codici.find((k) => k.cod_gara === c)?.negozio || c;
+                const nomePista = (p: string) => dir?.pisteTab.find((x) => x.chiave === p)?.nome || p;
+                const nonTornano = R.inPiu.length + R.inMeno.length;
+                return (
+                    <div data-zona-kpi className={cn("an-in rounded-xl border",
+                        R.puntiInPiu ? "border-rose-400/35 bg-rose-500/[0.07]" : nonTornano ? "border-white/12 bg-white/[0.03]" : "border-emerald-400/25 bg-emerald-500/[0.06]")}>
+                        <button type="button" onClick={() => setRiepilogoAperto((v) => !v)} className="w-full flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left">
+                            <span className="text-[12px] font-bold text-slate-200">📊 Ufficiale al {gg}</span>
+                            <span className="text-[11px] text-slate-500">·</span>
+                            <span className="text-[11px] text-slate-300">
+                                {nonTornano ? `${nonTornano} ${nonTornano === 1 ? "pista non torna" : "piste non tornano"} su ${conf.scarti.size}` : `tutte le ${conf.scarti.size} piste tornano`}
+                            </span>
+                            {R.puntiInPiu > 0 && <span className="text-[11px] font-black text-rose-200">▲ {it(R.puntiInPiu)} pt che non pagano</span>}
+                            {R.puntiInMeno < 0 && <span className="text-[11px] font-bold text-slate-300">▼ {it(Math.abs(R.puntiInMeno))} pt non registrati</span>}
+                            {conf.ignorati.length > 0 && <span className="text-[11px] font-bold text-amber-200">⛔ {conf.ignorati.length} codici del file non sono fra i nostri</span>}
+                            <span className={cn("ml-auto text-slate-500 transition-transform text-xs", riepilogoAperto && "rotate-180")}>▾</span>
+                        </button>
+                        {riepilogoAperto && (
+                            <div className="px-3 pb-3 space-y-2.5 border-t border-white/5 pt-2.5">
+                                <p className="text-[10px] text-slate-500">
+                                    {conf.file ? `${conf.file} · ` : ""}{conf.nRighe} valori · fino al {gg} comanda il numero di {bMeta.label}, dopo il nostro
+                                    <button type="button" onClick={() => setModaleAvz(true)} className="ml-2 underline hover:text-slate-300">storico e caricamenti</button>
+                                </p>
+                                {R.inPiu.length > 0 && (
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-rose-200">▲ Punti che non pagano — la soglia che credi presa potrebbe non esserlo</p>
+                                        {R.inPiu.map((x) => (
+                                            <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
+                                                className="w-full flex flex-wrap items-center gap-x-2 text-[11px] text-left rounded-md px-1.5 py-0.5 hover:bg-white/5">
+                                                <span className="font-bold text-slate-200 min-w-[120px]">{nomeCod(x.cod_gara)}</span>
+                                                <span className="text-slate-400">{EMOJI_PISTA(nomePista(x.pista))} {nomePista(x.pista)}</span>
+                                                <span className="text-slate-500">loro {it(x.ufficiale)} · noi {it(x.nostro)}</span>
+                                                <span className="font-black text-rose-200">+{it(x.scarto)}</span>
+                                                <span className="ml-auto text-slate-600">apri →</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {R.inMeno.length > 0 && (
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">▼ Punti nostri non registrati — pagano lo stesso, ma stanno su un altro codice</p>
+                                        {R.inMeno.map((x) => (
+                                            <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
+                                                className="w-full flex flex-wrap items-center gap-x-2 text-[11px] text-left rounded-md px-1.5 py-0.5 hover:bg-white/5">
+                                                <span className="font-bold text-slate-200 min-w-[120px]">{nomeCod(x.cod_gara)}</span>
+                                                <span className="text-slate-400">{EMOJI_PISTA(nomePista(x.pista))} {nomePista(x.pista)}</span>
+                                                <span className="text-slate-500">loro {it(x.ufficiale)} · noi {it(x.nostro)}</span>
+                                                <span className="font-black text-slate-300">{it(x.scarto)}</span>
+                                                <span className="ml-auto text-slate-600">apri →</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {conf.ignorati.length > 0 && (
+                                    <p className="text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-2.5 py-1.5">
+                                        ⛔ {conf.ignorati.length} codici del file non sono fra i nostri ({conf.ignorati.join(", ")}): le loro righe non sono entrate in nessun confronto.
+                                    </p>
+                                )}
+                                {R.allineate > 0 && <p className="text-[11px] text-emerald-300/80">✓ le altre {R.allineate} piste tornano con l&apos;ufficiale al {gg}</p>}
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* 🕊️ INSERIMENTO LIBERO (Luca 26/08 notte-5): il brand si può
                 «spegnere» — es. Sky, dove la regia non serve: la Bussola dei
@@ -952,25 +1029,42 @@ export function DirezioneInserimentoAdmin() {
                                             quanti scarti ci sono dentro; dentro si vede quali. */}
                                         {(() => {
                                             if (!conf) return null;
-                                            const n = pisteMostrate.filter((p) => {
-                                                const sc = conf.scarti.get(`${k.cod_gara}|${p.chiave}`);
-                                                return sc && Math.abs(sc.scarto) >= 0.01;
-                                            }).length;
-                                            if (!n) return null;
+                                            const sc = pisteMostrate.map((p) => conf.scarti.get(`${k.cod_gara}|${p.chiave}`)).filter(Boolean) as { scarto: number }[];
+                                            const piu = Math.round(sc.filter((x) => x.scarto >= 0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
+                                            const meno = Math.round(sc.filter((x) => x.scarto <= -0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
+                                            if (!piu && !meno) return null;
+                                            /* IL BADGE PORTA I PUNTI, NON IL NUMERO DI PISTE (revisore
+                                               31/08): «≠ 1» su uno scarto di 1 e «≠ 1» su uno scarto di
+                                               40 si scrivevano uguale, e il badge non aiutava a scegliere
+                                               quale codice aprire per primo. E il «+» è rosa, non ambra:
+                                               in questa riga l'ambra vuol già dire «in proiezione ci
+                                               arriva», cioè tranquillizza. */
+                                            const gg = `${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}`;
                                             return (
-                                                <span title={`${n === 1 ? "Una pista non torna" : `${n} piste non tornano`} con l'avanzamento ufficiale al ${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}. Apri il codice per vedere quali.`}
-                                                    className="px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-400/40 text-[10px] font-black text-amber-200 whitespace-nowrap">
-                                                    ≠ {n}
+                                                <span title={piu
+                                                    ? `${it(piu)} punti che qui contiamo e ${bMeta.label} non ci riconosce al ${gg}: la soglia che credi presa potrebbe non esserlo.${meno ? ` (E ${it(Math.abs(meno))} che loro contano e noi no.)` : ""}`
+                                                    : `${it(Math.abs(meno))} punti che ${bMeta.label} ci conta al ${gg} e da noi non risultano: pagano lo stesso, ma sono registrati altrove.`}
+                                                    className={cn("hidden lg:inline-block px-1.5 py-0.5 rounded-md border text-[10px] font-black whitespace-nowrap",
+                                                        piu ? "bg-rose-500/15 border-rose-400/40 text-rose-200" : "bg-white/[0.06] border-white/15 text-slate-300")}>
+                                                    {piu ? `▲ +${it(piu)}` : `▼ ${it(meno)}`}
                                                 </span>
                                             );
                                         })()}
-                                        {semCompatti.length > 0 && (
+                                        {semCompatti.length > 0 && (() => {
                                             /* SUL TELEFONO IL PALLINO DA SOLO NON DICE DI CHI È
                                                (Luca 31/08): sotto `lg` la fila incolonnata sparisce
                                                e restavano cinque pallini colorati senza etichetta —
                                                il colore si vede, ma non a quale pista appartiene.
-                                               L'icona della pista costa 12px e riporta il nome. */
-                                            <span className="lg:hidden flex items-center gap-1.5 bg-white/[0.04] border border-white/10 rounded-md px-1.5 py-1.5">
+                                               L'icona della pista costa 12px e riporta il nome.
+                                               E sotto `lg` lo scarto con l'ufficiale entra QUI invece
+                                               di prendersi un badge suo: misurato dal revisore, quel
+                                               badge riduceva il nome del negozio a una lettera. */
+                                            const sc = conf ? pisteMostrate.map((p) => conf.scarti.get(`${k.cod_gara}|${p.chiave}`)?.scarto ?? 0) : [];
+                                            const scPiu = sc.some((x) => x >= 0.01), scMeno = sc.some((x) => x <= -0.01);
+                                            return (
+                                            <span className={cn("lg:hidden flex items-center gap-1.5 border rounded-md px-1.5 py-1.5",
+                                                scPiu ? "bg-rose-500/10 border-rose-400/40" : "bg-white/[0.04] border-white/10")}>
+                                                {(scPiu || scMeno) && <span className={cn("text-[10px] font-black leading-none", scPiu ? "text-rose-200" : "text-slate-300")}>≠</span>}
                                                 {semCompatti.map((sm) => (
                                                     <span key={sm.chiave} title={tipPallino(sm)} className="flex items-center gap-0.5">
                                                         <span className="text-[11px] leading-none">{EMOJI_PISTA(sm.nome)}</span>
@@ -978,7 +1072,8 @@ export function DirezioneInserimentoAdmin() {
                                                     </span>
                                                 ))}
                                             </span>
-                                        )}
+                                            );
+                                        })()}
                                         <span className={cn("text-slate-500 transition-transform text-xs", on && "rotate-180")}>▾</span>
                                     </div>
                                 </div>
@@ -1019,39 +1114,26 @@ export function DirezioneInserimentoAdmin() {
                                                         colore={bMeta.color} proiezione={proj}
                                                         targetDir={target > 0 ? target : null}
                                                         unit={cbW3 ? "pt" : (p.um === "pezzi" ? "pz" : "pt")}
-                                                        nota={[cbW3 ? `${avz.pezzi} eventi CB` : null, target > 0 ? `target direzione ${it(target)} · ${avz.punti < target ? `mancano ${it(Math.max(0, Math.ceil(target - avz.punti)))}` : "🎯 fatto"}` : null].filter(Boolean).join(" · ") || null}
+                                                        /* LO SCARTO CON L'UFFICIALE viaggia DENTRO la nota della
+                                                           barra (Luca 29/08, rifinito col revisore 31/08): una
+                                                           fascia colorata a tutta larghezza fra la barra e le
+                                                           pastiglie delle soglie spezzava in due il gesto
+                                                           «guardo la barra → clicco la soglia», e su telefono
+                                                           pesava quanto il dato principale. Qui costa zero righe.
+                                                           La sintesi di tutti gli scarti sta in testa alla
+                                                           sezione, dove si guarda una volta sola. */
+                                                        nota={[
+                                                            cbW3 ? `${avz.pezzi} eventi CB` : null,
+                                                            target > 0 ? `target direzione ${it(target)} · ${avz.punti < target ? `mancano ${it(Math.max(0, Math.ceil(target - avz.punti)))}` : "🎯 fatto"}` : null,
+                                                            (() => {
+                                                                const sc = conf?.scarti.get(`${k.cod_gara}|${p.chiave}`);
+                                                                if (!sc || Math.abs(sc.scarto) < 0.01) return null;
+                                                                return sc.scarto > 0
+                                                                    ? `▲ ${it(sc.scarto)} pt che non pagano (${bMeta.label} ne conta ${it(sc.ufficiale)} al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)})`
+                                                                    : `▼ ${it(Math.abs(sc.scarto))} pt non registrati da noi (${bMeta.label} ne conta ${it(sc.ufficiale)} al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)})`;
+                                                            })(),
+                                                        ].filter(Boolean).join(" · ") || null}
                                                     />
-                                                    {/* LO SCARTO CON L'UFFICIALE (Luca 29/08): «mi dici, guarda
-                                                        che sul mobile di Magliana ci sono tre punti in meno».
-                                                        Sta SOTTO la barra della pista, non in una tabella a
-                                                        parte, perché è lì che si guarda il numero e lì deve
-                                                        arrivare l'avvertimento. Verde = allineati: vale quanto
-                                                        il rosso, dice che di quel numero ci si può fidare. */}
-                                                    {(() => {
-                                                        const sc = conf?.scarti.get(`${k.cod_gara}|${p.chiave}`);
-                                                        if (!sc) return null;
-                                                        const gg = `${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}`;
-                                                        const u = cbW3 ? "pt" : (p.um === "pezzi" ? "pz" : "pt");
-                                                        if (Math.abs(sc.scarto) < 0.01) return (
-                                                            <div className="flex items-center gap-1.5 text-[10px] text-emerald-300/70">
-                                                                <span>✓</span><span>allineati con l&apos;ufficiale al {gg} ({it(sc.ufficiale)} {u})</span>
-                                                            </div>
-                                                        );
-                                                        const inPiu = sc.scarto > 0;
-                                                        return (
-                                                            <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
-                                                                inPiu ? "border-amber-400/40 bg-amber-500/10" : "border-sky-400/40 bg-sky-500/10")}
-                                                                title={`L'operatore, al ${gg}, conta ${it(sc.ufficiale)} ${u} su questa pista. Noi, fermando il conteggio alla STESSA data, ne contiamo ${it(sc.nostro)}.\n\n${inPiu
-                                                                    ? "Ne abbiamo di più: probabile un'attivazione registrata da noi che all'operatore non risulta (codice sbagliato, pratica non passata)."
-                                                                    : "Ne abbiamo di meno: probabile un'attivazione che l'operatore ci riconosce e che da noi non è registrata, o è finita su un altro codice."}\n\nDopo il ${gg} vale il nostro conteggio: l'operatore non l'ha ancora visto.`}>
-                                                                <span className={cn("font-black", inPiu ? "text-amber-200" : "text-sky-200")}>
-                                                                    {inPiu ? "▲" : "▼"} {inPiu ? "+" : ""}{it(sc.scarto)} {u}
-                                                                </span>
-                                                                <span className="text-slate-300">rispetto all&apos;ufficiale al {gg}</span>
-                                                                <span className="text-slate-500">— loro {it(sc.ufficiale)}, noi {it(sc.nostro)} alla stessa data</span>
-                                                            </div>
-                                                        );
-                                                    })()}
                                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                                                         {/* le SOGLIE: click = target (INTERO, sfrido incluso);
                                                             RICLICK sulla attiva = si toglie (bug Collatina S2).
@@ -1201,7 +1283,7 @@ export function DirezioneInserimentoAdmin() {
 
             {modaleAvz && dir && (
                 <CaricaAvanzamento
-                    brand={brand} monthISO={monthISO}
+                    brand={brand} brandLabel={bMeta.label} monthISO={monthISO}
                     piste={dir.pisteTab.map((p) => ({ chiave: p.chiave, nome: p.nome }))}
                     chi={user?.name}
                     onChiudi={() => setModaleAvz(false)}

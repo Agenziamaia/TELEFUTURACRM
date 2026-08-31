@@ -79,5 +79,30 @@ dico("decimale all'inglese resta tale", 1.5, F.numeroIt("1.5"));
 dico("due gruppi di migliaia", 1234567, F.numeroIt("1.234.567"));
 dico("migliaia + decimali", 1234.5, F.numeroIt("1.234,5"));
 
+// ── 7. i difetti trovati dal revisore del 31/08 ─────────────────────────────
+{
+    // «Insegna» non è il codice di inserimento
+    const head = ["Cod. Ins.", "Mobile Consumer", "Mobile Business", "Fisso", "Insegna", "Codice PDV"];
+    const m = F.proponiMappa(head, PISTE);
+    dico("«Insegna» non è il codice", F.COL_IGNORA, m[4]);
+    dico("«Cod. Ins.» è il codice", F.COL_CODICE, m[0]);
+    dico("«Codice PDV» dice di essere il codice", F.COL_CODICE, m[5]);
+    const d = F.diagnosiMappa(head, m, PISTE);
+    dico("due colonne rivendicano il codice", [0, 5], d.codici);
+    dico("due colonne sulla stessa pista", [{ pista: "Mobile", colonne: ["Mobile Consumer", "Mobile Business"] }], d.sommate);
+    // e i due mobile si SOMMANO invece di sovrascriversi
+    const out = F.righeDaGriglia([["MAGLIANA", "28", "5", "12", "x", "y"]], m, PISTE);
+    dico("consumer + business = un mobile solo", [
+        { cod_gara: "MAGLIANA", pista: "mobile", punti: 33, pezzi: null },
+        { cod_gara: "MAGLIANA", pista: "fisso", punti: 12, pezzi: null },
+    ], out);
+}
+{
+    const d = F.diagnosiMappa(["A", "B"], [F.COL_IGNORA, "Mobile"], PISTE);
+    dico("nessuna colonna codice", true, d.senzaCodice);
+    const d2 = F.diagnosiMappa(["A", "B"], [F.COL_CODICE, F.COL_IGNORA], PISTE);
+    dico("nessuna pista", true, d2.senzaPiste);
+}
+
 console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
 process.exit(ko ? 1 : 0);
