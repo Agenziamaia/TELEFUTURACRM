@@ -34,8 +34,15 @@ const VELO = 0.30;   // opacita' del velo scuro sopra la foto
    si vedevano DIETRO i numeri, e su un fondo chiaro il foglio diventava
    lattiginoso. Il fondo si deve vedere nella CORNICE, non attraverso i dati.
    A 0.80 le carte tornano solide e leggibili su qualunque immagine. */
-const VETRO = 0.80;  // opacita' dei pannelli in vetro
-const CORNICE = 80;  // bordo in cui vive lo sfondo, px, uniforme sui 4 lati
+/* Il colore del FOGLIO su cui poggia tutto: pieno, non trasparente. È lui che
+   separa i dati dall'immagine — non più la semitrasparenza delle carte. */
+const FOGLIO = "#0f121b";
+/* Resta per le superfici che NON sono carte-brand (la barra degli altri brand
+   e la marginalità): lì un fondo scuro leggermente diverso dal foglio le
+   stacca meglio di un velo chiaro. */
+const VETRO = 0.80;
+const CORNICE = 80;  // quanto stava largo il contenuto dal bordo: oggi vale
+                     // 54 di cornice (dove si vede la foto) + 26 di margine interno
 
 const W = 1080;
 const H = 1620;
@@ -129,7 +136,10 @@ function fmtEuro(v) {
   return n ? fmtN(n) + " \u20AC" : "\u2013";
 }
 
-const gl = function (k) { return "rgba(26,29,41," + Math.min(0.95, VETRO * k).toFixed(3) + ")"; };
+/* Sopra un foglio pieno un vetro SCURO sparisce: si vedrebbe un blocco scuro
+   su un blocco scuro. Le carte si staccano verso l'ALTO — un velo chiaro,
+   come le superfici del CRM. */
+const gl = function (k) { return "rgba(255,255,255," + (0.055 * k).toFixed(3) + ")"; };
 
 function ptDi(b, r) {
   if (b.calcPt) return (Number(r.pz) || 0) * (r.val || 0);
@@ -218,7 +228,6 @@ function CardBrand({ b, rigaH }) {
       display: "flex", flexDirection: "column",
       padding: G.padCard + "px 10px " + G.padCardB + "px 10px", borderRadius: 15,
       background: vuota ? gl(0.63) : gl(1),
-      backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)",
       border: "1px solid " + T.border, boxShadow: "0 8px 30px rgba(0,0,0,0.45)",
       opacity: vuota ? 0.55 : 1 }}>
       <div style={{ height: G.headCard, display: "flex", alignItems: "center",
@@ -265,7 +274,6 @@ function Rail({ minori }) {
     <div style={{ height: G.rail, display: "flex", alignItems: "center", gap: 10, padding: "0 14px",
       overflow: "hidden",
       borderRadius: 13, background: "rgba(26,29,41," + Math.min(0.95, VETRO * 0.74).toFixed(3) + ")",
-      backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)",
       border: "1px solid " + T.border }}>
       <span style={{ fontSize: TS.unit, fontWeight: 800, letterSpacing: "0.16em",
         textTransform: "uppercase", color: T.dimmer, marginRight: 4 }}>Altri brand</span>
@@ -298,7 +306,6 @@ function Marg({ voci }) {
     <div style={{ height: G.marg, borderRadius: 15, display: "flex", alignItems: "stretch",
       padding: "0 18px",
       background: "rgba(26,29,41," + Math.min(0.95, VETRO * 1.06).toFixed(3) + ")",
-      backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)",
       border: "1px solid " + verde + "3a",
       boxShadow: "0 8px 32px rgba(0,0,0,0.5), inset 0 0 50px " + verde + "0d" }}>
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 5,
@@ -359,7 +366,7 @@ export default function ReportGiornaliero({ dati }) {
     <div id="report-canvas" style={{ position: "relative", width: W, height: H,
       overflow: "hidden", background: T.base }}>
 
-      <div style={{ position: "absolute", inset: 0 }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "url(" + BG_URL + ")",
           backgroundSize: "cover", backgroundPosition: "center" }} />
         <div style={{ position: "absolute", inset: 0, background: "rgba(12,15,26," + VELO + ")" }} />
@@ -368,21 +375,31 @@ export default function ReportGiornaliero({ dati }) {
           "radial-gradient(ellipse at bottom right, rgba(236,72,153,0.14), transparent 55%)" }} />
       </div>
 
-      <div style={{ position: "relative", width: "100%", height: "100%", display: "flex",
-        flexDirection: "column", padding: CORNICE + "px", boxSizing: "border-box", gap: G.gap,
+      {/* IL FOGLIO (Luca 31/08: «si vede lo sfondo dietro il blocco»).
+          Aveva ragione: le carte semitrasparenti lasciavano passare l'immagine
+          proprio dove stanno i numeri, e negli spazi fra una carta e l'altra
+          l'immagine tornava a spuntare — il foglio risultava affollato.
+          Ora il contenuto POGGIA su un fondo pieno e l'immagine si vede solo
+          nella cornice, come un documento appoggiato su una fotografia.
+          ⚠️ È il contenitore STESSO a fare da foglio, non un pannello messo
+          sotto: quello si sovrapponeva alla testata in modi difficili da
+          prevedere. Un elemento solo, nessuna sovrapposizione possibile.
+          Le misure interne non cambiano: margine 54 + padding 26 = i CORNICE
+          80 di prima, quindi l'area utile resta 920x1460 e i conti
+          dell'altezza di riga restano validi. */}
+      <div style={{ position: "relative", zIndex: 1,
+        width: W - 2 * (CORNICE - 26), height: H - 2 * (CORNICE - 26),
+        margin: (CORNICE - 26) + "px", display: "flex",
+        flexDirection: "column", padding: "26px", boxSizing: "border-box", gap: G.gap,
+        background: FOGLIO, borderRadius: 30, border: "1px solid rgba(255,255,255,0.10)",
+        boxShadow: "0 30px 80px rgba(0,0,0,0.6)", overflow: "hidden",
         fontFamily: "var(--font-sans, Outfit), ui-sans-serif, system-ui, sans-serif",
         color: T.text }}>
 
-        {/* ⚠️ LA TESTATA SI PORTA DIETRO LA SUA OMBRA (31/08).
-            «REPORT GIORNALIERO» e il ricavo sono scritti in bianco: su uno
-            sfondo chiaro sparivano — provato con tre finti sfondi, quello
-            chiaro rendeva il titolo illeggibile. Con questa sfumatura sotto,
-            il testo regge su QUALUNQUE immagine, e chi genera lo sfondo non
-            deve stare attento a lasciare scuro il bordo alto.
-            `pointer-events: none` perché è decorazione, non un ostacolo. */}
-        <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: CORNICE + G.head + 40,
-          pointerEvents: "none",
-          background: "linear-gradient(180deg, rgba(8,10,20,0.72) 0%, rgba(8,10,20,0.45) 55%, rgba(8,10,20,0) 100%)" }} />
+        {/* Le due sfumature che proteggevano titolo e commento dall'immagine
+            non servono più: fra il testo e la fotografia adesso c'è un foglio
+            pieno. Lasciarle voleva dire una banda scura in cima al foglio,
+            senza motivo. */}
         <div style={{ position: "relative", height: G.head, display: "flex", alignItems: "center",
           justifyContent: "space-between", gap: 18 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -415,7 +432,7 @@ export default function ReportGiornaliero({ dati }) {
               return (
                 <div key={"m" + i} style={{ flex: 1, display: "flex", alignItems: "center",
                   justifyContent: "space-between", padding: "0 15px", borderRadius: 12,
-                  background: gl(1), backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)",
+                  background: gl(1),
                   border: "1px solid " + T.border }}>
                   <span style={{ fontSize: TS.unit, fontWeight: 800, letterSpacing: "0.10em",
                     textTransform: "uppercase", color: T.dim }}>{m[0]}</span>
@@ -442,16 +459,11 @@ export default function ReportGiornaliero({ dati }) {
           })}
         </div>
 
-        {/* stessa cortesia in fondo: là sotto il commento è chiaro su vetro */}
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: CORNICE + G.ai + 30,
-          pointerEvents: "none",
-          background: "linear-gradient(0deg, rgba(8,10,20,0.6) 0%, rgba(8,10,20,0.3) 60%, rgba(8,10,20,0) 100%)" }} />
         {minori.length > 0 ? <Rail minori={minori} /> : null}
         <Marg voci={d.marginalita} />
 
         <div style={{ height: G.ai, display: "flex", alignItems: "center", gap: 14, padding: "0 18px",
           borderRadius: 15, background: "rgba(79,70,229,0.13)",
-          backdropFilter: "blur(22px)", WebkitBackdropFilter: "blur(22px)",
           border: "1px solid rgba(99,102,241,0.32)" }}>
           <div style={{ width: 34, height: 34, borderRadius: 11, flexShrink: 0,
             background: "linear-gradient(135deg,#4f46e5,#a855f7)" }} />
