@@ -2788,9 +2788,26 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
 /** Le famiglie, in ordine: vince la PRIMA che riconosce l'articolo. Perciò
  *  «Telefoni» sta prima di «Accessori»: gli smartphone dei listini operatore
  *  hanno il gruppo del listino, e finirebbero fra gli accessori. */
-const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s: string) => boolean }[] = [
+const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s: string, d: string, c: string) => boolean }[] = [
     { id: "telefoni", icona: "📱", nome: "Telefoni", dentro: (_g, s) => /smartphone|^telefoni$|mobile phone/.test(s) },
     { id: "usato", icona: "♻️", nome: "Usato", dentro: (g) => g === "usato" },
+    /* I RICAMBI SONO UNA FAMIGLIA A SÉ (Luca 01/09: «fanno parte del mondo
+       dell'assistenza tecnica, così come display e tutto il resto»). Nel
+       gestionale non esistono come categoria: stanno dentro «Accessori» (391)
+       e nei listini dei fornitori.
+       QUANTI SONO DAVVERO: ~430, non di più. Ho provato a riconoscere anche
+       flat, flex, scocche, connettori e altoparlanti, e sui dati veri erano
+       tutti falsi positivi — «Flat HDMI cable» è un cavo, «Auricolare a
+       capsula» è un auricolare, «Antenna adapter» è un adattatore TV, e
+       l'unico «BACK COVER» è un iPhone usato rotto. Quello che il catalogo
+       distingue per davvero sono i DISPLAY e le BATTERIE (codice `BATT…`
+       attaccato al modello: 279 su 291). Il resto dei ricambi, se c'è,
+       nell'export non si vede — e inventarlo sarebbe peggio che dirlo. */
+    {
+        id: "ricambi", icona: "🧩", nome: "Ricambi", dentro: (_g, _s, d, c) =>
+            /^\s*display|^\s*glue\b|display (iphone|samsung|per|redmi|xiaomi)|nudo batterie/.test(d)
+            || /^batt/.test(c),
+    },
     { id: "sim", icona: "📶", nome: "SIM ed eSIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
     { id: "internet", icona: "🛜", nome: "Internet e router", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
     { id: "indossabili", icona: "⌚", nome: "Wearable e smart device", dentro: (_g, s) => /wearable|smart device|smart pass|iot/.test(s) },
@@ -2807,7 +2824,7 @@ const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
    Samsung Galaxy A34» — e una sotto-voce «Telefoni» dentro gli accessori è
    una bugia utile a nessuno: si preferisce ammettere di non sapere. */
 const NON_DICONO_COSA_E = new Set(["Telefoni", "Tablet", "SIM", "eSIM", "Usato"]);
-const LEGGO_DAL_NOME = new Set(["accessori", "servizi", "altro"]);
+const LEGGO_DAL_NOME = new Set(["accessori", "servizi", "altro", "ricambi"]);
 function sottoVoceDalNome(a: Articolo, fam: string): string | null {
     /* Solo dove il gestionale tace davvero. Dentro «Usato» o «Telefoni» il
        nome è il MODELLO, e leggerlo come famiglia produce sotto-voci
@@ -2817,10 +2834,12 @@ function sottoVoceDalNome(a: Articolo, fam: string): string | null {
     return f && !NON_DICONO_COSA_E.has(f) ? f : null;
 }
 
-function famigliaDi(a: { gruppo: string | null; sottogruppo: string | null }): string {
+function famigliaDi(a: { gruppo: string | null; sottogruppo: string | null; descrizione?: string; codice?: string }): string {
     const g = String(a.gruppo || "").toLowerCase();
     const s = String(a.sottogruppo || "").toLowerCase();
-    return (FAMIGLIE.find(f => f.dentro(g, s)) || ALTRO).id;
+    const d = String(a.descrizione || "").toLowerCase();
+    const c = String(a.codice || "").toLowerCase();
+    return (FAMIGLIE.find(f => f.dentro(g, s, d, c)) || ALTRO).id;
 }
 
 function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
@@ -2836,6 +2855,19 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
        visibili. Su iPad verticale otto file di pastiglie e la prima riga a
        y=543. Chi entra per leggere un prezzo — il caso normale — non deve
        pagare 160 pixel per un filtro che non aprirà. */
+    /* GLI USATI FUORI DALL'ANAGRAFICA (Luca 01/09: «hanno una rotazione
+       piuttosto veloce e sono quasi sempre pezzi unici, non so quanto ci
+       conviene tenerli nel tracciamento degli articoli»).
+       I NUMERI GLI DANNO RAGIONE: dei 3.217 articoli «USATO» che l'export del
+       gestionale riversa qui, 3.214 non hanno giacenza da nessuna parte e
+       NESSUNO è mai stato venduto passando da un codice articolo. Sono il 19%
+       del catalogo e non servono a niente: un pezzo unico non si riordina, e
+       un'anagrafica serve a riordinare.
+       Gli usati veri stanno nella sezione Usati, uno per uno: 278 pezzi, 277
+       col loro IMEI, con acquisto, lavorazione, vendita e margine. Rotazione
+       mediana 7 giorni. Lì hanno senso; qui erano rumore.
+       Restano raggiungibili con un pulsante: nascondere non è cancellare. */
+    const [mostraUsato, setMostraUsato] = useState(false);
     const [apriSotto, setApriSotto] = useState(false);
     const [tutteLeSotto, setTutteLeSotto] = useState(false);
 
@@ -2862,14 +2894,14 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
         _sotto: (a.sottogruppo || "").trim()
             || sottoVoceDalNome(a, famigliaDi(a))
             || (a.gruppo || "").trim() || "Senza sottogruppo",
-    })).map(a => ({
+    })).filter(a => mostraUsato || a._fam !== "usato").map(a => ({
         ...a,
         /* LA CHIAVE, senza maiuscole né spazi doppi. Il gestionale scrive lo
            stesso sottogruppo in due modi — «IOT» e «IoT», «INTERNET DEVICES» e
            «INTERNET DEVICE» — e senza normalizzare uscivano due pulsanti per
            la stessa cosa, ognuno con metà degli articoli. */
         _k: a._sotto.toUpperCase().replace(/\s+/g, " ").replace(/S$/, ""),
-    })), [articoli]);
+    })), [articoli, mostraUsato]);
 
     const conteggi = useMemo(() => {
         const m = new Map<string, number>();
@@ -3029,6 +3061,21 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
 
             <div className="rvBox">
                 <div className="rvBoxT">📚 Anagrafica articoli</div>
+                <div className="rvNota">
+                    <div className="rvNota-t">♻️ Gli usati non stanno qui</div>
+                    <div className="rvNota-s">
+                        Un pezzo usato è unico e non si riordina: si segue uno per uno in <b>Usati</b>,
+                        con il suo IMEI, dall&apos;acquisto alla vendita. Dei 3.217 articoli «USATO» che
+                        l&apos;export del gestionale riversa in anagrafica, 3.214 non hanno giacenza e
+                        nessuno è mai stato venduto da qui.
+                    </div>
+                    <div className="rvBarra rvBarra-c">
+                        <button type="button" onClick={() => { setMostraUsato(m => !m); setFamiglia(""); setSotto(""); }}
+                            className={cn("rvPill rvPill-sm", mostraUsato && "rvPill-on")}>
+                            {mostraUsato ? "Nascondi gli usati del gestionale" : "Mostrali lo stesso"}
+                        </button>
+                    </div>
+                </div>
                 <div className="rvBarra">
                     {/* OPERATORE = di chi è il listino. Non è un campo
                         dell'anagrafica: si deduce dal gruppo e dal nome, con la
