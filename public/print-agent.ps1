@@ -96,7 +96,7 @@ function Invoke-Epson {
 # Nessun HTTP: il device_url non-http (es. "custom" o "custom://<nomeOPOS>") indica
 # un registratore Custom. Estrae il testo dall'ePOS XML e delega a cust-fp.ps1 (32b).
 function Invoke-CustomOpos {
-  param([string]$DeviceUrl, [string]$RequestXml)
+  param([string]$DeviceUrl, [string]$RequestXml, [int]$TimeoutSec = 45)
   $oposName = "CUSTOM"
   if ($DeviceUrl -match '^custom://(.+)$') { $oposName = $Matches[1] }
 
@@ -106,12 +106,41 @@ function Invoke-CustomOpos {
   # Passa l'ePOS XML GREZZO al driver: tutta la logica (non_fiscal/fiscal) vive in
   # cust-fp.ps1, cosi' i futuri aggiornamenti NON richiedono di ritoccare l'agente.
   $xf = Join-Path $env:TEMP ("custxml_" + [guid]::NewGuid().ToString("N") + ".xml")
+  $of = Join-Path $env:TEMP ("custout_" + [guid]::NewGuid().ToString("N") + ".txt")
+  $ef = Join-Path $env:TEMP ("custerr_" + [guid]::NewGuid().ToString("N") + ".txt")
   $RequestXml | Set-Content -LiteralPath $xf -Encoding UTF8
+  $ps32 = Join-Path $env:WINDIR "SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
   try {
-    $ps32 = Join-Path $env:WINDIR "SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
-    $out = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $custFp -XmlFile $xf -OposName $oposName 2>&1
-    return (($out | Where-Object { $_ -match '"ok"\s*:' } | Select-Object -Last 1))
-  } finally { try { Remove-Item -LiteralPath $xf -Force } catch { } }
+    # TIMEOUT DURO: se il driver OPOS si blocca (registratore occupato da SuiteMobile,
+    # o dialogo modale invisibile perche' l'agente gira nascosto) il job NON deve piu'
+    # inchiodare l'agente. Lo lanciamo come processo a se', con output su file, e se
+    # sfora il timeout lo uccidiamo e restituiamo un errore -> l'agente prosegue.
+    $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$custFp`" -XmlFile `"$xf`" -OposName `"$oposName`""
+    $p = Start-Process -FilePath $ps32 -ArgumentList $argList -WindowStyle Hidden -PassThru `
+           -RedirectStandardOutput $of -RedirectStandardError $ef
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+      try { $p.Kill() } catch { }
+      # ripulisci eventuali figli 32-bit rimasti appesi sul driver
+      try {
+        Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+          Where-Object { $_.CommandLine -match 'cust-fp\.ps1' } |
+          ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch { } }
+      } catch { }
+      return '{"ok":false,"msg":"timeout driver Custom: registratore occupato o driver bloccato (SuiteMobile aperto?)"}'
+    }
+    $out = ""; try { $out = Get-Content -LiteralPath $of -Raw -ErrorAction SilentlyContinue } catch { }
+    $line = ($out -split "`r?`n" | Where-Object { $_ -match '"ok"\s*:' } | Select-Object -Last 1)
+    if (-not $line) {
+      $err = ""; try { $err = Get-Content -LiteralPath $ef -Raw -ErrorAction SilentlyContinue } catch { }
+      $msg = ((($err) + " " + ($out)).Trim() -replace '"', "'" -replace '[\r\n]+', ' ')
+      if (-not $msg) { $msg = "nessun esito dal driver Custom" }
+      if ($msg.Length -gt 180) { $msg = $msg.Substring(0, 180) }
+      $line = '{"ok":false,"msg":"' + $msg + '"}'
+    }
+    return $line
+  } finally {
+    foreach ($f in @($xf, $of, $ef)) { try { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } catch { } }
+  }
 }
 
 # ── Cassa pagAmico (TCP 9100) — protocollo ricostruito e validato live ───────
