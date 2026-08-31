@@ -22,7 +22,12 @@ import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets"
 
 /* --- costanti di resa. Unica manopola per la resa dello sfondo. ---------- */
 const BG_URL = "/report-bg.webp";
-const VELO = 0.62;   // opacita' del velo scuro sopra la foto
+/* IL VELO SOPRA LA FOTOGRAFIA (Luca 31/08: «risulta troppo scuro»).
+   Era 0.62, e a quel punto qualunque sfondo diventava cupo — misurato
+   affiancando 0.62, 0.34 e 0.12 sullo stesso foglio. Con 0.30 l'immagine si
+   vede e le carte restano leggibili, perché il contrasto vero non lo fa il
+   velo: lo fanno i pannelli in vetro scuro. */
+const VELO = 0.30;   // opacita' del velo scuro sopra la foto
 const VETRO = 0.5;   // opacita' dei pannelli in vetro
 const CORNICE = 80;  // bordo in cui vive lo sfondo, px, uniforme sui 4 lati
 
@@ -362,7 +367,17 @@ export default function ReportGiornaliero({ dati }) {
         fontFamily: "var(--font-sans, Outfit), ui-sans-serif, system-ui, sans-serif",
         color: T.text }}>
 
-        <div style={{ height: G.head, display: "flex", alignItems: "center",
+        {/* ⚠️ LA TESTATA SI PORTA DIETRO LA SUA OMBRA (31/08).
+            «REPORT GIORNALIERO» e il ricavo sono scritti in bianco: su uno
+            sfondo chiaro sparivano — provato con tre finti sfondi, quello
+            chiaro rendeva il titolo illeggibile. Con questa sfumatura sotto,
+            il testo regge su QUALUNQUE immagine, e chi genera lo sfondo non
+            deve stare attento a lasciare scuro il bordo alto.
+            `pointer-events: none` perché è decorazione, non un ostacolo. */}
+        <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: CORNICE + G.head + 40,
+          pointerEvents: "none",
+          background: "linear-gradient(180deg, rgba(8,10,20,0.72) 0%, rgba(8,10,20,0.45) 55%, rgba(8,10,20,0) 100%)" }} />
+        <div style={{ position: "relative", height: G.head, display: "flex", alignItems: "center",
           justifyContent: "space-between", gap: 18 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={{ fontSize: TS.h1, fontWeight: 900, letterSpacing: "-0.015em", lineHeight: 1 }}>
@@ -416,6 +431,10 @@ export default function ReportGiornaliero({ dati }) {
           })}
         </div>
 
+        {/* stessa cortesia in fondo: là sotto il commento è chiaro su vetro */}
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: CORNICE + G.ai + 30,
+          pointerEvents: "none",
+          background: "linear-gradient(0deg, rgba(8,10,20,0.6) 0%, rgba(8,10,20,0.3) 60%, rgba(8,10,20,0) 100%)" }} />
         {minori.length > 0 ? <Rail minori={minori} /> : null}
         <Marg voci={d.marginalita} />
 
