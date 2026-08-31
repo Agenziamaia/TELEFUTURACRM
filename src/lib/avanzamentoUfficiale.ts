@@ -237,7 +237,14 @@ export function linkFoglio(filePath: string): string {
     return fileUrlDa("avanzamenti-files", filePath);
 }
 
-export type FotoAvanzamento = { al: string; file: string | null; filePath: string | null; n: number; chi: string | null; quando: string | null; piste: string[] };
+export type FotoAvanzamento = {
+    al: string; file: string | null; filePath: string | null; n: number; chi: string | null; quando: string | null; piste: string[];
+    /* UN FOGLIO PER PISTA (Luca 31/08: «non mi fa scaricare il file del fisso e
+       del mobile»). WindTre manda tre file e possono avere la stessa data:
+       tenendo un solo `file` per fotografia, due depositi su tre restavano
+       irraggiungibili. */
+    fogli: { pista: string; file: string | null; filePath: string | null }[];
+};
 
 /** Le fotografie caricate: data, file, quanti valori, CHI e QUANDO.
  *  «Vale come verità fino alla sua data» è una regola che cambia i numeri su
@@ -247,18 +254,22 @@ export type FotoAvanzamento = { al: string; file: string | null; filePath: strin
 export async function storicoAvanzamenti(brand: string, monthISO: string): Promise<FotoAvanzamento[]> {
     const { data } = await supabase.from("avanzamenti_ufficiali")
         .select("al, pista, file_name, file_path, caricato_da, created_at").eq("brand", brand).eq("month", monthISO).order("al", { ascending: false });
-    const per = new Map<string, FotoAvanzamento & { _p: Set<string> }>();
+    const per = new Map<string, FotoAvanzamento & { _p: Map<string, { file: string | null; filePath: string | null }> }>();
     (data || []).forEach((r0) => {
         const r = r0 as { al: string; pista: string; file_name: string | null; file_path: string | null; caricato_da: string | null; created_at: string | null };
         const al = ymd(r.al);
-        const v = per.get(al) || { al, file: r.file_name, filePath: r.file_path, n: 0, chi: r.caricato_da, quando: r.created_at, piste: [], _p: new Set<string>() };
-        v.n++; v._p.add(r.pista);
+        const v = per.get(al) || { al, file: r.file_name, filePath: r.file_path, n: 0, chi: r.caricato_da, quando: r.created_at, piste: [], fogli: [], _p: new Map() };
+        v.n++;
+        if (!v._p.has(r.pista)) v._p.set(r.pista, { file: r.file_name, filePath: r.file_path });
         if (r.created_at && (!v.quando || r.created_at > v.quando)) { v.quando = r.created_at; v.chi = r.caricato_da; v.file = r.file_name; v.filePath = r.file_path; }
         per.set(al, v);
     });
-    // le piste che quella fotografia copre: con tre file separati serve sapere
-    // che cosa è già arrivato e che cosa manca ancora
-    return [...per.values()].map(({ _p, ...v }) => ({ ...v, piste: [..._p] }));
+    // le piste che quella fotografia copre, ognuna col SUO foglio: con tre file
+    // separati serve sapere che cosa è arrivato, e poterselo riprendere
+    return [...per.values()].map(({ _p, ...v }) => ({
+        ...v, piste: [..._p.keys()],
+        fogli: [..._p.entries()].map(([pista, f]) => ({ pista, ...f })),
+    }));
 }
 
 /** Butta via una fotografia sbagliata. */

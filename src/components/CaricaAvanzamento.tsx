@@ -234,14 +234,29 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
                                     </p>
                                     {i === 0 && <p className="text-[11px] text-indigo-200 mt-0.5">↑ è questa che comanda: fino al {gg(s.al)} valgono i suoi numeri</p>}
                                 </div>
-                                {s.filePath && (
-                                    <button onClick={async () => {
-                                        const url = await linkFoglio(s.filePath!);
-                                        if (!url) { setErrore("Non riesco a preparare il link del file."); return; }
-                                        window.open(url, "_blank");
-                                    }} title={`Riscarica ${s.file || "il foglio"}`}
-                                        className="p-2 rounded-lg text-slate-400 hover:text-indigo-200 hover:bg-indigo-500/10 shrink-0"><Download className="w-4 h-4" /></button>
-                                )}
+                                {/* UNO SCARICO PER FOGLIO, e quando il foglio non c'è si
+                                    dice perché (Luca 31/08: «non mi fa scaricare il file
+                                    del fisso e del mobile»). Quei due erano stati caricati
+                                    prima che il deposito esistesse: il numero c'è, il file
+                                    no — e un'icona che sparisce senza spiegazioni è
+                                    peggio di un'icona che manca. */}
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                    {s.fogli.map((f) => f.filePath ? (
+                                        <button key={f.pista} onClick={async () => {
+                                            const url = await linkFoglio(f.filePath!);
+                                            if (!url) { setErrore("Non riesco a preparare il link del file."); return; }
+                                            window.open(url, "_blank");
+                                        }} title={`Riscarica ${f.file || "il foglio"}`}
+                                            className="px-2 py-1 rounded-lg text-[10px] font-bold text-slate-400 hover:text-indigo-200 hover:bg-indigo-500/10 flex items-center gap-1 whitespace-nowrap">
+                                            <Download className="w-3.5 h-3.5" /> {piste.find((p) => p.chiave === f.pista)?.nome || f.pista}
+                                        </button>
+                                    ) : (
+                                        <span key={f.pista} title="Questo foglio è stato caricato prima che il CRM depositasse i file: i numeri ci sono, il foglio no. Ricaricandolo resta anche il file."
+                                            className="px-2 py-1 text-[10px] text-slate-600 whitespace-nowrap cursor-help">
+                                            {piste.find((p) => p.chiave === f.pista)?.nome || f.pista}: foglio non depositato
+                                        </span>
+                                    ))}
+                                </div>
                                 <button onClick={() => elimina(s)} title="Elimina questa fotografia"
                                     className="p-2 rounded-lg text-slate-500 hover:text-rose-200 hover:bg-rose-500/10 shrink-0"><Trash2 className="w-4 h-4" /></button>
                             </div>
