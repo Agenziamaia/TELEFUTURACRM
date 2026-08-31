@@ -46,9 +46,12 @@ export async function POST(request: Request) {
 
     /* le conversazioni che hanno almeno un media senza file, le più recenti
        per prime: sono quelle che qualcuno sta ancora guardando */
+    /* ⚠️ ESCLUDE QUELLI GIÀ TENTATI. Senza, il giro prende sempre le stesse
+       conversazioni — le più recenti con un buco — e riprova all'infinito
+       media che WhatsApp non ha più: otto giri, zero recuperi, misurato. */
     const { data: buchi } = await supabase.from("wa_messages")
         .select("conversation_id, created_at")
-        .is("media_url", null).not("media_mime", "is", null)
+        .is("media_url", null).is("media_tentato_il", null).not("media_mime", "is", null)
         .order("created_at", { ascending: false }).limit(500);
 
     const conv: string[] = [];
@@ -76,7 +79,7 @@ export async function POST(request: Request) {
             // solo i messaggi che nel CRM sono senza file
             const { data: senza } = await supabase.from("wa_messages")
                 .select("wa_message_id").eq("conversation_id", convId)
-                .is("media_url", null).not("media_mime", "is", null);
+                .is("media_url", null).is("media_tentato_il", null).not("media_mime", "is", null);
             const daFare = new Set((senza || []).map((r) => String(r.wa_message_id)));
             if (!daFare.size) continue;
 
@@ -94,8 +97,25 @@ export async function POST(request: Request) {
                     if (url) {
                         await supabase.from("wa_messages").update({ media_url: url }).eq("wa_message_id", key.id);
                         presi++;
-                    } else scaduti++;
-                } catch { scaduti++; }
+                    } else {
+                        await supabase.from("wa_messages").update({ media_tentato_il: new Date().toISOString() }).eq("wa_message_id", key.id);
+                        scaduti++;
+                    }
+                } catch {
+                    await supabase.from("wa_messages").update({ media_tentato_il: new Date().toISOString() }).eq("wa_message_id", key.id);
+                    scaduti++;
+                }
+            }
+            /* i messaggi che Evolution non riporta nemmeno più fra gli ultimi
+               50 non torneranno mai: si segnano tentati, o la loro
+               conversazione resta in cima alla coda per sempre. */
+            const visti = new Set(recs.map((m) => String(m?.key?.id || "")));
+            const mai = [...daFare].filter((id) => !visti.has(id));
+            if (mai.length) {
+                await supabase.from("wa_messages")
+                    .update({ media_tentato_il: new Date().toISOString() })
+                    .in("wa_message_id", mai);
+                scaduti += mai.length;
             }
             if (presi || scaduti) esiti.push({ conv: convId, recuperati: presi, scaduti });
         } catch { /* una conversazione che non risponde non ferma le altre */ }
@@ -105,6 +125,6 @@ export async function POST(request: Request) {
     const persi = esiti.reduce((s, e) => s + e.scaduti, 0);
     const { count } = await supabase.from("wa_messages")
         .select("id", { count: "exact", head: true })
-        .is("media_url", null).not("media_mime", "is", null);
+        .is("media_url", null).is("media_tentato_il", null).not("media_mime", "is", null);
     return NextResponse.json({ ok: true, chat: esiti.length, recuperati: tot, scaduti: persi, restano: count ?? null });
 }
