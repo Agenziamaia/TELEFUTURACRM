@@ -51,8 +51,16 @@ export async function POST(req: Request) {
         ? { iso: body.mese, da: body.mese, a: ymd(new Date(Number(body.mese.slice(0, 4)), Number(body.mese.slice(5, 7)), 0)) }
         : mesePrecedente();
     const prova = !!body?.dryRun;
+    /* PROVA VERA, MA IN CASA (Luca 31/08: «fai una verifica del processo che
+       funziona»). `provaA` manda il report a un indirizzo NOSTRO invece che ai
+       due veri: serve a vedere arrivare davvero gli allegati prima che il
+       primo del mese li porti al consulente. Solo dominio telefuturasrl.com —
+       da qui non si può spedire a nessun altro — e non tocca il registro,
+       così il giro automatico parte lo stesso. */
+    const provaA = typeof body?.provaA === "string" && /^[^@\s]+@telefuturasrl\.com$/i.test(body.provaA.trim())
+        ? body.provaA.trim() : null;
 
-    if (!forza && !prova) {
+    if (!forza && !prova && !provaA) {
         const { data: gia } = await supabase.from("report_assenze_inviati").select("mese, esito").eq("mese", mese.iso).maybeSingle();
         if (gia && gia.esito === "inviato") return NextResponse.json({ ok: true, saltato: "già inviato", mese: mese.iso });
     }
@@ -138,8 +146,8 @@ export async function POST(req: Request) {
     let esito = "inviato", errore: string | null = null;
     try {
         await inviaEmail(mittente as never, {
-            to: DESTINATARI.join(", "),
-            subject: `Telefutura — Ferie e malattia ${etichetta}`,
+            to: provaA || DESTINATARI.join(", "),
+            subject: `${provaA ? "[PROVA] " : ""}Telefutura — Ferie e malattia ${etichetta}`,
             text: testo,
             html: `<p>${testo.replace(/\n/g, "<br>")}</p>`,
             attachments: [
@@ -150,6 +158,8 @@ export async function POST(req: Request) {
     } catch (e) {
         esito = "errore"; errore = e instanceof Error ? e.message : "invio non riuscito";
     }
+    // la prova non tocca il registro: il giro automatico deve partire lo stesso
+    if (provaA) return NextResponse.json({ ok: esito === "inviato", prova: provaA, mese: mese.iso, ferie: righeFerie.length, malattia: righeMal.length, errore });
     await supabase.from("report_assenze_inviati").upsert({
         mese: mese.iso, esito, errore, destinatari: DESTINATARI.join(", "),
         righe_ferie: righeFerie.length, righe_malattia: righeMal.length, inviato_il: new Date().toISOString(),
