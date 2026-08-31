@@ -25,6 +25,7 @@ const problema = (t, come) => { violazioni++; console.log(`${R}  ✗ ${t}${X}\n 
 const SENZA_SESSIONE = {
     "auth/login": "è il login stesso",
     "auth/reset-password": "recupero password: chi lo usa non è ancora dentro",
+    "auth/primo-accesso": "cambio della password temporanea: la sessione arriva DOPO, e l'identità la prova la password stessa (verify_login)",
     "auth/token": "rilascia il lasciapassare, verifica il cookie da sé",
     "auth/azioni": "verifica la sessione da sé, con i permessi",
     "qr/[token]": "upload dal telefono del cliente: pubblico per disegno, ristretto a una pratica",

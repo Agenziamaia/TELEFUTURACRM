@@ -277,11 +277,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: true };
     };
 
+    // PRIMO ACCESSO: rotta dedicata, perché qui la sessione ANCORA NON C'È
+    // (Luca 31/08). Passava da /api/auth/azioni, che riconosce chi chiama dal
+    // cookie: su un browser pulito rispondeva «sessione non valida», e su un PC
+    // dove era entrato un collega provava a cambiare la password DI QUELLO.
     const completeFirstLogin = async (email: string, oldPw: string, newPw: string): Promise<LoginResult> => {
-        const _r = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "cambia_password", vecchia: oldPw, nuova: newPw }) }).then((r) => r.json());
-        const data = _r?.ok === true, error = _r?.error ? { message: _r.error } : null;
-        if (error) return { ok: false, error: error.message };
-        if (data !== true) return { ok: false, error: "Password attuale non valida" };
+        let _r: any;
+        try {
+            _r = await fetch("/api/auth/primo-accesso", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim(), vecchia: oldPw, nuova: newPw }) }).then((r) => r.json());
+        } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Cambio password non riuscito" }; }
+        if (_r?.error) return { ok: false, error: _r.error };
+        if (_r?.ok !== true) return { ok: false, error: "Cambio password non riuscito: riprova." };
         // Cambiata la password, si passa dal normale flusso di login: cosi' scatta
         // anche la 2FA (iscrizione al primo accesso).
         return login(email, newPw);
