@@ -2791,12 +2791,12 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
 const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s: string) => boolean }[] = [
     { id: "telefoni", icona: "📱", nome: "Telefoni", dentro: (_g, s) => /smartphone|^telefoni$|mobile phone/.test(s) },
     { id: "usato", icona: "♻️", nome: "Usato", dentro: (g) => g === "usato" },
-    { id: "sim", icona: "🔗", nome: "SIM ed eSIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
+    { id: "sim", icona: "📶", nome: "SIM ed eSIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
     { id: "internet", icona: "🛜", nome: "Internet e router", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
     { id: "indossabili", icona: "⌚", nome: "Wearable e smart device", dentro: (_g, s) => /wearable|smart device|smart pass|iot/.test(s) },
     { id: "tablet", icona: "💻", nome: "Tablet e computer", dentro: (_g, s) => /tablet|mini pc|console|camera/.test(s) },
     { id: "servizi", icona: "🧾", nome: "Servizi e ricariche", dentro: (g, s) => /^(servizi|ricariche|kpoint)$/.test(g) || /ricariche|carte servizi|^servizi$/.test(s) },
-    { id: "accessori", icona: "🎧", nome: "Accessori", dentro: (g, s) => /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s) },
+    { id: "accessori", icona: "🧰", nome: "Accessori", dentro: (g, s) => /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s) },
 ];
 const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
 
@@ -2807,7 +2807,12 @@ const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
    Samsung Galaxy A34» — e una sotto-voce «Telefoni» dentro gli accessori è
    una bugia utile a nessuno: si preferisce ammettere di non sapere. */
 const NON_DICONO_COSA_E = new Set(["Telefoni", "Tablet", "SIM", "eSIM", "Usato"]);
-function sottoVoceDalNome(a: Articolo): string | null {
+const LEGGO_DAL_NOME = new Set(["accessori", "servizi", "altro"]);
+function sottoVoceDalNome(a: Articolo, fam: string): string | null {
+    /* Solo dove il gestionale tace davvero. Dentro «Usato» o «Telefoni» il
+       nome è il MODELLO, e leggerlo come famiglia produce sotto-voci
+       inventate: un Galaxy Z Flip che diventa «Custodie e cover». */
+    if (!LEGGO_DAL_NOME.has(fam)) return null;
     const f = famigliaDalNome(a.descrizione, a.codice);
     return f && !NON_DICONO_COSA_E.has(f) ? f : null;
 }
@@ -2826,6 +2831,13 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
     const [operatore, setOperatore] = useState("");
     const [marca, setMarca] = useState("");
     const [cerca, setCerca] = useState("");
+    /* LA SECONDA FILA PARTE CHIUSA (revisore 31/08). Misurata a 1366×768 col
+       menù aperto, la prima riga di merce cadeva a y=454: tre righe di tabella
+       visibili. Su iPad verticale otto file di pastiglie e la prima riga a
+       y=543. Chi entra per leggere un prezzo — il caso normale — non deve
+       pagare 160 pixel per un filtro che non aprirà. */
+    const [apriSotto, setApriSotto] = useState(false);
+    const [tutteLeSotto, setTutteLeSotto] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -2848,8 +2860,15 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
            «LISTINO SBS». Solo se non si riconosce nemmeno così si ripiega
            sul listino del fornitore, che almeno dice da dove arriva. */
         _sotto: (a.sottogruppo || "").trim()
-            || sottoVoceDalNome(a)
+            || sottoVoceDalNome(a, famigliaDi(a))
             || (a.gruppo || "").trim() || "Senza sottogruppo",
+    })).map(a => ({
+        ...a,
+        /* LA CHIAVE, senza maiuscole né spazi doppi. Il gestionale scrive lo
+           stesso sottogruppo in due modi — «IOT» e «IoT», «INTERNET DEVICES» e
+           «INTERNET DEVICE» — e senza normalizzare uscivano due pulsanti per
+           la stessa cosa, ognuno con metà degli articoli. */
+        _k: a._sotto.toUpperCase().replace(/\s+/g, " ").replace(/S$/, ""),
     })), [articoli]);
 
     const conteggi = useMemo(() => {
@@ -2862,17 +2881,34 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
        n'è UNA sola non si mostra la fila: un pulsante che non divide niente
        è solo una riga in più da leggere. */
     const sottoVoci = useMemo(() => {
-        if (!famiglia) return [] as [string, number][];
-        const m = new Map<string, number>();
-        arricchiti.filter(a => a._fam === famiglia).forEach(a => m.set(a._sotto, (m.get(a._sotto) || 0) + 1));
-        const v = Array.from(m.entries()).sort((x, y) => y[1] - x[1]);
+        if (!famiglia) return [] as [string, number, string, boolean][];
+        const m = new Map<string, { n: number; grafie: Map<string, number> }>();
+        arricchiti.filter(a => a._fam === famiglia).forEach(a => {
+            const c = m.get(a._k) || { n: 0, grafie: new Map<string, number>() };
+            c.n++; c.grafie.set(a._sotto, (c.grafie.get(a._sotto) || 0) + 1);
+            m.set(a._k, c);
+        });
+        // a schermo si scrive la grafia più diffusa, non la chiave in maiuscolo
+        /* I RIPIEGHI IN FONDO (revisore 31/08). Quando il sottogruppo manca si
+           ripiega sul GRUPPO, che è il nome del fornitore: ordinando per
+           numerosità, «LISTINO SBS» finiva primo e più grosso, come se fosse
+           una categoria. Non lo è, e adesso lo dice: sta in coda e si chiama
+           «Non classificati». */
+        const listini = new Set(arricchiti.filter(a => !((a.sottogruppo || "").trim())
+            && !sottoVoceDalNome(a, a._fam)).map(a => a._k));
+        const v = Array.from(m.entries())
+            .map(([k, c]) => {
+                const grafia = Array.from(c.grafie.entries()).sort((x, y) => y[1] - x[1])[0][0];
+                return [k, c.n, listini.has(k) ? `Non classificati (${grafia})` : grafia, listini.has(k)] as [string, number, string, boolean];
+            })
+            .sort((x, y) => (x[3] === y[3] ? y[1] - x[1] : x[3] ? 1 : -1));
         return v.length > 1 ? v : [];
     }, [arricchiti, famiglia]);
 
     /* Le tendine mostrano solo quello che esiste DENTRO la selezione: offrire
        «Apple» quando si sta guardando le SIM è un filtro che dà zero righe. */
     const nelPerimetro = useMemo(() =>
-        arricchiti.filter(a => (!famiglia || a._fam === famiglia) && (!sotto || a._sotto === sotto)),
+        arricchiti.filter(a => (!famiglia || a._fam === famiglia) && (!sotto || a._k === sotto)),
         [arricchiti, famiglia, sotto]);
     const operatori = useMemo(() =>
         Array.from(new Set(nelPerimetro.map(a => a._op).filter(Boolean))).sort() as string[], [nelPerimetro]);
@@ -2889,6 +2925,10 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
         return true;
     }), [nelPerimetro, operatore, marca, cerca]);
 
+    /* I conteggi delle pastiglie sono calcolati su TUTTO il catalogo: appena
+       si stringe con la ricerca o una tendina smettono di corrispondere a
+       quello che si vede, e allora si nascondono. */
+    const ristretto = !!(cerca.trim() || operatore || marca);
     const TETTO = 300;
     const visibili = filtrati.slice(0, TETTO);
     const nomeFam = (id: string) => (FAMIGLIE.find(f => f.id === id) || ALTRO).nome;
@@ -2906,7 +2946,10 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
             a.codice, a.barcode || "", a.descrizione, nomeFam(a._fam), a._sotto, a._op || "", a.marca || "",
             a.prezzo ?? "", ...(vedeCosti ? [a.costo_ultimo ?? ""] : []),
         ]);
-        scaricaXlsx(`articoli_${famiglia || "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        // il nome porta i filtri: due export diversi non devono chiamarsi uguale
+        const pezzi = [famiglia || "tutti", sotto, operatore, marca, cerca].filter(Boolean)
+            .map(x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).filter(Boolean);
+        scaricaXlsx(`articoli_${pezzi.join("_")}_${new Date().toISOString().slice(0, 10)}.xlsx`,
             ["Codice", "Barcode", "Descrizione", "Famiglia", "Sottogruppo", "Operatore", "Marca", "Prezzo €", ...(vedeCosti ? ["Costo €"] : [])],
             dati, "Articoli");
     };
@@ -2914,7 +2957,15 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
     if (loading) return <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico l&apos;anagrafica articoli…</div>;
     return (
         <div className="space-y-4">
-            {/* ── LE FAMIGLIE: la stessa impostazione della cassa ── */}
+            {/* ── LE FAMIGLIE ──
+                Ogni fila di pastiglie porta la sua etichetta, come in Giacenze
+                e in Registra Vendita (revisore 31/08): senza, chi entra la
+                prima volta non sa che la prima riga dice «cosa è» e la seconda
+                «di che tipo». E l'etichetta dice «di catalogo» apposta: alla
+                cassa «Accessori» sono 12 codici scelti a mano, qui sono 9.711
+                righe lette da un export — stessa parola, due perimetri. */}
+            <div className="rvCampo">
+            <span className="rvLab">Famiglia di catalogo</span>
             <div className="rvPillRow">
                 <button onClick={() => scegliFamiglia("")} className={cn("rvPill", !famiglia && "rvPill-on")}>
                     Tutti <b className="rvPillN">{articoli.length.toLocaleString("it-IT")}</b>
@@ -2925,24 +2976,54 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                     return (
                         <button key={f.id} onClick={() => scegliFamiglia(f.id)}
                             className={cn("rvPill", famiglia === f.id && "rvPill-on")}>
-                            {f.icona} {f.nome} <b className="rvPillN">{n.toLocaleString("it-IT")}</b>
+                            {f.icona} {f.nome}
+                            {/* IL CONTEGGIO SPARISCE QUANDO NON È PIÙ VERO
+                                (revisore 31/08): è calcolato su tutto il catalogo,
+                                quindi con una ricerca in corso direbbe «9.711»
+                                sopra una tabella di quaranta righe. Un numero
+                                assente è onesto, uno sbagliato no. */}
+                            {!ristretto && <b className="rvPillN">{n.toLocaleString("it-IT")}</b>}
                         </button>
                     );
                 })}
             </div>
+            </div>
 
-            {/* ── LE SOTTO-VOCI della famiglia scelta ── */}
+            {/* ── LE SOTTO-VOCI: chiuse finché non servono ──
+                Niente `rvPillRow-fitta`: la sua imbottitura (0,2,0) scavalca
+                quella di `rvPill-sm` (0,1,0) e le due file finivano identiche.
+                Era nata per far stare otto categorie su una riga sola a
+                1920px; qui le righe restano comunque tre, quindi non compra
+                niente e costa la gerarchia. */}
             {sottoVoci.length > 0 && (
-                <div className="rvPillRow rvPillRow-fitta">
-                    <button onClick={() => setSotto("")} className={cn("rvPill rvPill-sm", !sotto && "rvPill-on")}>
-                        Tutta la famiglia
-                    </button>
-                    {sottoVoci.map(([v, n]) => (
-                        <button key={v} onClick={() => setSotto(sotto === v ? "" : v)}
-                            className={cn("rvPill rvPill-sm", sotto === v && "rvPill-on")}>
-                            {v} · {n.toLocaleString("it-IT")}
+                <div className="rvCampo">
+                    <span className="rvLab">Tipo, dentro {nomeFam(famiglia)}
+                        {!apriSotto && <span className="rvLabX"> — {sottoVoci.length} voci</span>}</span>
+                    <div className="rvPillRow">
+                        <button onClick={() => { setApriSotto(a => !a); if (apriSotto) { setSotto(""); setTutteLeSotto(false); } }}
+                            className="rvPill rvPill-sm">
+                            {apriSotto ? "− chiudi" : `+ scegli il tipo`}
                         </button>
-                    ))}
+                        {apriSotto && (
+                            <>
+                                <button onClick={() => setSotto("")} className={cn("rvPill rvPill-sm", !sotto && "rvPill-on")}>
+                                    Tutta la famiglia
+                                </button>
+                                {(tutteLeSotto ? sottoVoci : sottoVoci.slice(0, 12)).map(([k, n, etichetta]) => (
+                                    <button key={k} onClick={() => setSotto(sotto === k ? "" : k)}
+                                        className={cn("rvPill rvPill-sm", sotto === k && "rvPill-on")}>
+                                        {etichetta} <b className="rvPillN">{n.toLocaleString("it-IT")}</b>
+                                    </button>
+                                ))}
+                                {/* sotto la dodicesima la coda pesa meno dell'1% */}
+                                {!tutteLeSotto && sottoVoci.length > 12 && (
+                                    <button onClick={() => setTutteLeSotto(true)} className="rvPill rvPill-sm">
+                                        altre {sottoVoci.length - 12}…
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -2953,16 +3034,28 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                         dell'anagrafica: si deduce dal gruppo e dal nome, con la
                         stessa funzione che usa Giacenze — due letture diverse
                         dello stesso dato divergono sempre. */}
-                    {operatori.length > 0 && (
-                        <div className="rvCampo rvCampo-sm"><span className="rvLab">Operatore</span>
-                            <SelectOpzioni value={operatore} onChange={setOperatore} opzioni={operatori} placeholder="Tutti" className="rvIn" />
-                        </div>
-                    )}
-                    {marche.length > 0 && (
-                        <div className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
-                            <SelectOpzioni value={marca} onChange={setMarca} opzioni={marche} placeholder="Tutte" className="rvIn" />
-                        </div>
-                    )}
+                    {/* LA TENDINA RESTA FINCHÉ IL FILTRO È ACCESO (revisore 31/08).
+                        Prima compariva solo se c'erano valori: stringendo con una
+                        sotto-voce spariva CON il filtro ancora attivo, e restava una
+                        tabella vuota senza niente da togliere — l'unica uscita era
+                        ricliccare una famiglia, e non lo sapeva nessuno. */}
+                    {/* SEMPRE MONTATE, spente quando non c'è niente da scegliere
+                        (revisore 31/08). Comparire e sparire sposta il campo Cerca
+                        di 128 pixel mentre lo stai raggiungendo, e su iPad fa
+                        passare la barra da una riga a due. Peggio: sparivano COL
+                        FILTRO ANCORA ACCESO, e restava una tabella vuota senza
+                        niente da togliere. Una tendina spenta dice «qui non
+                        serve»; una sparita non dice niente. */}
+                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Operatore</span>
+                        <SelectOpzioni value={operatore} onChange={setOperatore}
+                            opzioni={operatore && !operatori.includes(operatore) ? [operatore, ...operatori] : operatori}
+                            disabled={!operatori.length && !operatore} placeholder="Tutti" className="rvIn" />
+                    </div>
+                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
+                        <SelectOpzioni value={marca} onChange={setMarca}
+                            opzioni={marca && !marche.includes(marca) ? [marca, ...marche] : marche}
+                            disabled={!marche.length && !marca} placeholder="Tutte" className="rvIn" />
+                    </div>
                     <label className="rvCampo rvCampo-flex"><span className="rvLab">Cerca <span className="rvLabX">(codice, barcode, descrizione)</span></span>
                         <span className="rvCerca">
                             <Search size={16} />
@@ -2981,8 +3074,13 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                 <table className="rvTab">
                     <thead>
                         <tr>
+                            {/* NIENTE COLONNA BARCODE (revisore 31/08): su iPad si
+                                prendeva 118px con `white-space:nowrap` mentre la
+                                Descrizione — la sola che si legga davvero — ne
+                                aveva 112 e andava a capo cinque volte. Il barcode
+                                non si legge da una griglia: si spara col lettore
+                                nel campo Cerca, che lo comprende, e sta nell'Excel. */}
                             <th>Codice</th>
-                            <th>Barcode</th>
                             <th>Descrizione</th>
                             <th>Sottogruppo</th>
                             <th>Operatore</th>
@@ -2995,7 +3093,6 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                         {visibili.map(a => (
                             <tr key={a.codice} className="rvTab-riga">
                                 <td className="rvTab-cod">{a.codice}</td>
-                                <td className="rvTab-cod">{a.barcode || "—"}</td>
                                 <td className="rvTab-nome">{a.descrizione}</td>
                                 <td className="rvTab-min">{a._sotto}</td>
                                 <td className="rvTab-min">{a._op || "—"}</td>
@@ -3004,7 +3101,13 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                                 {vedeCosti && <td className="rvTab-n rvTab-min">{eur(a.costo_ultimo)}</td>}
                             </tr>
                         ))}
-                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 8 : 7} className="rvTab-vuoto">Nessun articolo con questi filtri.</td></tr>}
+                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 7 : 6} className="rvTab-vuoto">
+                            {cerca.trim()
+                                ? <>«{cerca.trim()}» non si trova{famiglia ? <> dentro <b>{nomeFam(famiglia)}</b></> : null}{sotto ? " in questo tipo" : ""}. Prova a svuotare la ricerca o a premere «Tutti».</>
+                                : sotto ? <>Nessun articolo in questo tipo con i filtri scelti: prova «Tutta la famiglia».</>
+                                    : (operatore || marca) ? <>Nessun articolo di {[operatore, marca].filter(Boolean).join(" · ")} qui dentro: rimetti le tendine su «Tutti».</>
+                                        : <>Nessun articolo con questi filtri.</>}
+                        </td></tr>}
                     </tbody>
                 </table>
                 {filtrati.length > TETTO && (

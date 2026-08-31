@@ -386,33 +386,66 @@ export function scordaGruppi() { _gruppi = null; }
    specifico sta prima — «cavo tipo C» è un cavo, non un tipo. */
 const TIPI: [RegExp, string, string][] = [
     [/pellicol|vetro temp|tempered|glass|screen protect/i, "🪟", "Pellicole e vetri"],
-    [/cover|custodi|flip|bumper|guscio|book\b|wallet|jelly|handbag|\bcase\b/i, "🛡️", "Custodie e cover"],
+    /* I CARICABATTERIE PRIMA DELLE BATTERIE (revisore 31/08): «carica-BATTERI-e»
+       contiene «batteri», e con l'ordine invertito 221 caricabatterie su 289
+       si chiamavano «batterie di ricambio». Il lookahead non bastava: qui
+       basta l'ordine, che è più semplice da leggere. */
+    [/caricabatteri|caricator|alimentator|trasformator|charger|adattatore di rete/i, "⚡", "Caricabatterie"],
     [/power\s*bank|accumulator|batteria esterna/i, "🔋", "Power bank"],
-    /* LE BATTERIE DI RICAMBIO hanno il codice attaccato al modello —
+    /* Le batterie di ricambio hanno il codice attaccato al modello —
        `BATTREDMI9`, `battredminote11s` — e «batteri» non ci si aggancia:
        finivano fra i «Telefoni» perché dentro c'era «redmi». */
-    [/^\s*batt|batteri(?!a esterna)/i, "🔋", "Batterie di ricambio"],
-    [/auricolar|cuffi|ear\s*bud|earphone|headphone|airpod|headset/i, "🎧", "Auricolari e cuffie"],
+    /* `\bbatteri` col confine di parola: senza, «Custodia con antiBATTERIco»
+       diventava una batteria (44 custodie). Il confine non scatta dentro
+       «antibatterico» né dentro «caricabatterie» — che comunque ha già
+       risposto qui sopra. */
+    [/^\s*batt|\bbatteri/i, "🔋", "Batterie di ricambio"],
+    /* GLI AURICOLARI PRIMA DELLE CUSTODIE (revisore 31/08). Quaranta paia di
+       auricolari TWS si chiamano «…with charging case» e finivano fra le
+       custodie. Le custodie PER auricolari restano custodie lo stesso: il loro
+       nome dice «cover»/«custodia», che qui sotto vince comunque — e «airpod»
+       da solo, senza quelle parole, sono gli auricolari veri. */
+    [/auricolar|cuffi|ear\s*bud|earphone|headphone|headset|\btws\b/i, "🎧", "Auricolari e cuffie"],
+    /* `\bbook\b` CON ENTRAMBI I CONFINI: senza quello a sinistra prendeva
+       Mac-book, Note-book, Chrome-book — 72 articoli, portatili veri, con
+       l'icona della custodia. E `flip` da solo prendeva i pieghevoli
+       (Galaxy Z Flip): qui vuole «flip case» o «flip cover». */
+    [/cover|custodi|flip\s*(case|cover)|bumper|guscio|\bbook\b|wallet|jelly|handbag/i, "🛡️", "Custodie e cover"],
+    [/airpod/i, "🎧", "Auricolari e cuffie"],
     [/speaker|cassa bluetooth|soundbar|altoparlant/i, "🔊", "Speaker"],
     [/micro\s*sd|memory|memori|usb|pen\s*drive|pendrive|flash/i, "💾", "Memorie e USB"],
-    [/caricabatteri|caricator|alimentator|trasformator|charger|adattatore di rete/i, "⚡", "Caricabatterie"],
     [/cavo|cable|type\s*-?c|lightning|micro\s*usb/i, "🔌", "Cavi"],
     [/adattator|adapter|adatt\b/i, "🔗", "Adattatori"],
     [/modem|router|fwa|internet key|hotspot/i, "📡", "Modem e router"],
+    /* I RICAMBI PRIMA DEI TELEFONI (revisore 31/08): `DISPLAY IPHONE4B`
+       contiene «iphone», e con l'ordine invertito la regola non serviva a
+       niente — era proprio il caso per cui era stata scritta. L'ancora a
+       inizio riga resta: «display 6.5"» dentro la scheda di un telefono non
+       deve farlo diventare un ricambio. E `glue` non prende le «Glue Case». */
+    [/^\s*display|^\s*glue\b(?!\s*case)/i, "🧩", "Ricambi"],
     [/tablet|ipad/i, "🧱", "Tablet"],
     [/watch|orolog|band\b|smartband/i, "⌚", "Orologi e band"],
     [/e-?sim|esim/i, "📲", "eSIM"],
     [/\bsim\b|usim|iccid/i, "📶", "SIM"],
-    [/smartphone|telefon|phone|iphone|galaxy|redmi|xiaomi|motorola/i, "📱", "Telefoni"],
-    /* i RICAMBI si chiamano «Display», «DISPLAY IPHONE4B», e la colla per
-       rimontarli. La regola è ancorata all'inizio apposta: «display 6.5"»
-       dentro la scheda di un telefono non deve farlo diventare un ricambio. */
-    [/^\s*display|^\s*glue|\bdisplay (iphone|samsung|per)\b/i, "🧩", "Ricambi"],
-    [/support|holder|stand|treppied|cardholder/i, "📎", "Supporti"],
+    /* L'USATO PRIMA DEI TELEFONI (confronto sui 17.061 articoli): 703 telefoni
+       usati perdevano il simbolo del riciclo e diventavano telefoni normali.
+       Al banco quel simbolo dice una cosa che serve sapere prima del modello.
+       Sta comunque dopo le custodie: una cover per un usato è una cover. */
+    [/usato|ricondizion/i, "♻️", "Usato"],
+    /* UN «CASE» CHE NON HA INCONTRATO NESSUNA REGOLA PRIMA è una custodia —
+       «Glue Case for iPhone XR». Sta qui, non in fondo: sotto ai Telefoni
+       perderebbe contro «iphone», e sopra agli auricolari ruberebbe i TWS col
+       guscio di ricarica. In mezzo va bene a tutti e due. */
+    [/\bcase\b/i, "🛡️", "Custodie e cover"],
+    /* I NOMI DEI PRODUTTORI in coda: un articolo che non ha detto nient'altro
+       ma porta «ZTE Nubia» o «Oppo» è il telefono, non un accessorio per il
+       telefono — chi vende accessori scrive sempre cos'è (cover, cavo,
+       pellicola) e quelle regole hanno già parlato molto più in alto. */
+    [/smartphone|telefon|phone|iphone|galaxy|redmi|xiaomi|motorola|\bzte\b|nubia|\boppo\b|honor|realme|nokia|alcatel|huawei|pixel/i, "📱", "Telefoni"],
+    [/support|holder|stand|treppied/i, "📎", "Supporti"],
     [/charm|bijoux|portachiav|keyring/i, "✨", "Gadget e charm"],
     [/car\b|auto|ventol|parabrezza/i, "🚗", "Auto"],
     [/kasko|assicuraz|garanzi/i, "🧾", "Assicurazioni"],
-    [/usato|ricondizion/i, "♻️", "Usato"],
 ];
 
 /** L'emoji che descrive un articolo. Mai vuota: nel dubbio è una scatola. */
