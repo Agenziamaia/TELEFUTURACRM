@@ -13,6 +13,7 @@ import { isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
 import { EsportaAssenze } from "@/components/EsportaAssenze";
+import { DisponibilitaFerie } from "@/components/DisponibilitaFerie";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 // Il tab BADGE e' stato SPOSTATO nell'hub Call Center (/caller?tab=badge, Luca 28/07):
@@ -110,7 +111,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [fNegozi, setFNegozi] = useState<string[]>([]);
     const [fDa, setFDa] = useState("");
     const [fA, setFA] = useState("");
-    const [vista, setVista] = useState<"registro" | "calendario">("registro");
+    const [vista, setVista] = useState<"registro" | "calendario" | "disponibilita">("registro");
     const [meseCal, setMeseCal] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
     const [rifiutoId, setRifiutoId] = useState<number | null>(null);
     const [rifiutoNota, setRifiutoNota] = useState("");
@@ -517,12 +518,16 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </button>
                         </>)}
                         {isAdminLike && (
+                            /* TERZA VISTA: quante ferie hanno ancora (Luca 31/08).
+                               Sta accanto a Registro e Calendario perché è la stessa
+                               domanda vista da un'altra parte: qui si guarda chi le
+                               chiede, lì quanto gliene resta. */
                             <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1 bg-white/[0.03]">
-                                {(["registro", "calendario"] as const).map(v => (
+                                {(["registro", "calendario", "disponibilita"] as const).map(v => (
                                     <button key={v} onClick={() => setVista(v)}
                                         className={cn("px-3.5 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors",
                                             vista === v ? "bg-indigo-500/25 text-indigo-200" : "text-slate-500 hover:text-slate-300")}>
-                                        {v === "registro" ? "📋 Registro" : "🗓 Calendario"}
+                                        {v === "registro" ? "📋 Registro" : v === "calendario" ? "🗓 Calendario" : "🏖 Disponibilità"}
                                     </button>
                                 ))}
                             </div>
@@ -568,6 +573,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                         />
                     )}
 
+                    {isAdminLike && vista === "disponibilita" && <DisponibilitaFerie />}
                     {(!isAdminLike || vista === "registro") && (
                     <div className="glass-card overflow-hidden">
                         <div className="overflow-x-auto custom-scrollbar">
