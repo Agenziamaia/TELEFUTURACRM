@@ -232,8 +232,8 @@ function ilikeAny(q: any, col: string, variants: string[]) {
 
 export async function runTool(name: string, args: any, scope: Scope): Promise<any> {
   switch (name) {
-    case "elenco_tabelle": return await elencoTabelle();
-    case "descrivi_tabella": return await descriviTabella(String(args?.tabella || ""));
+    case "elenco_tabelle": return await elencoTabelle(scope.role);
+    case "descrivi_tabella": return await descriviTabella(String(args?.tabella || ""), scope.role);
     case "interroga": return await interroga(String(args?.sql || ""), scope);
     case "search_contracts": {
       let q = supabase.from("contracts").select(CONTRACT_COLS, { count: "exact" });

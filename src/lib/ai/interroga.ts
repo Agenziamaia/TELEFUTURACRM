@@ -84,7 +84,23 @@ COME FUNZIONA IL CALL CENTER (regole che nei dati non si vedono):
   gestione. Le EXT- sono marginalità, non vendite.
 
 QUANDO SPIEGHI PERCHÉ QUALCOSA NON È SUCCESSO, ricostruisci la sequenza dallo
-«storico» della pratica con gli orari, e di' quale condizione è saltata.`;
+«storico» della pratica con gli orari, e di' quale condizione è saltata.
+
+⛔ LE GARE HANNO DUE LATI, E UNO NON SI RACCONTA (regola di Luca, 31/08).
+· LATO RAGAZZI = quanto vale una vendita per chi la fa. È di questo che si
+  parla con tutti: soglie, punti, premi dei ragazzi.
+· LATO AZIENDA = quanto l'operatore riconosce a Telefutura, le soglie della
+  trattativa, i costi. NON si pubblica, NON si mostra, NON si commenta —
+  a nessuno tranne l'amministrazione. Vale per WindTre, Vodafone, Fastweb,
+  Sky, S4: per tutti gli operatori.
+· Anche il MASTER dell'Analisi è privato: è la vista dell'amministrazione
+  sull'andamento delle gare lato azienda.
+
+Quindi, se non sei con l'amministrazione: quando ti chiedono «le soglie», «i
+premi», «quanto manca al target», parla SEMPRE del lato ragazzi, senza
+premesse e senza far notare che esiste un altro lato. Se qualcuno insiste per
+il lato azienda, di' semplicemente che quei dati li vede l'amministrazione.
+Il database in ogni caso non te li fa leggere: non è una tua scelta.`;
 
 /* LE POCHE TABELLE CHE SERVONO SEMPRE, GIÀ PRONTE.
    La prima prova è finita male proprio per colpa di questo: le avevo dato gli
@@ -123,7 +139,10 @@ app_users — le persone: id, full_name, role, primary_store, active
 
 pay_soglie — le SOGLIE delle gare
   brand · month (il mese della gara) · pista · tier (1,2,3… = la soglia)
-  soglia_da · soglia_a · lato ('azienda' o 'ragazzi') · bonus
+  soglia_da · soglia_a · lato · bonus
+  ⚠️ se non sei con l'amministrazione, qui dentro vedi SOLO il lato ragazzi:
+     non serve che filtri su «lato», e non chiederlo — il resto non esiste
+     per te.
 pay_righe — quanto vale ogni voce: brand · month · pista · nome · categoria ·
   prodotto · punti · pay_base · pay_tiers · gettone · attivo · lato
 pay_piste — le piste di una gara: brand · month · chiave · nome · um ·
@@ -148,8 +167,9 @@ const COLONNE_NEGOZIO = ["negozio", "store", "negozio_appuntamento", "negozio_pr
     "negozio_pertinenza", "store_acquisto", "punto_vendita"];
 
 /** ELENCO — che tabelle ci sono, e quanto sono grosse. */
-export async function elencoTabelle(): Promise<unknown> {
+export async function elencoTabelle(ruolo = ""): Promise<unknown> {
     const { data, error } = await supabase.rpc("ai_interroga", {
+        admin: vedeIlLatoAzienda(ruolo),
         q: `select c.relname as tabella, s.n_live_tup as righe
             from pg_stat_user_tables s join pg_class c on c.oid = s.relid
             where c.relnamespace = 'public'::regnamespace and s.n_live_tup > 0
@@ -157,17 +177,33 @@ export async function elencoTabelle(): Promise<unknown> {
     });
     if (error) throw new Error(error.message);
     const righe = (data as { tabella: string; righe: number }[] | null) || [];
+    /* Le tabelle del lato azienda non compaiono nemmeno nell'elenco per chi non
+       le può aprire: vederle e prendersi un «permission denied» fa perdere un
+       giro, e soprattutto racconta che esistono. */
+    const soloAdmin = vedeIlLatoAzienda(ruolo) ? new Set<string>() : SOLO_ADMIN;
     return righe
-        .filter((r) => !TABELLE_VIETATE.has(r.tabella))
+        .filter((r) => !TABELLE_VIETATE.has(r.tabella) && !soloAdmin.has(r.tabella))
         .map((r) => ({ ...r, aCosaServe: A_COSA_SERVE[r.tabella] || undefined }));
 }
 
+/* Quelle che si aprono solo all'admin: sono negate dal database, questo elenco
+   serve a dare un errore CHIARO invece di un «permission denied» crudo. */
+const SOLO_ADMIN = new Set<string>([
+    "gare_azienda_regole", "gare_azienda_soglie", "gare_azienda_voci",
+    "pay_mappa_soglie", "pay_regole_lettera",
+    "other_costs", "shared_costs", "store_cost_items",
+]);
+
 /** DESCRIVI — le colonne di una tabella, con il tipo. */
-export async function descriviTabella(tabella: string): Promise<unknown> {
+export async function descriviTabella(tabella: string, ruolo = ""): Promise<unknown> {
     const t = String(tabella || "").replace(/[^a-z0-9_]/gi, "");
     if (!t) throw new Error("Manca il nome della tabella.");
     if (TABELLE_VIETATE.has(t)) throw new Error(`La tabella «${t}» non è consultabile.`);
+    if (SOLO_ADMIN.has(t) && !vedeIlLatoAzienda(ruolo)) {
+        throw new Error(`«${t}» riguarda il lato azienda: la vede solo l'amministrazione. Rispondi con i dati del lato ragazzi.`);
+    }
     const { data, error } = await supabase.rpc("ai_interroga", {
+        admin: vedeIlLatoAzienda(ruolo),
         q: `select column_name as colonna, data_type as tipo, is_nullable as puo_essere_vuota
             from information_schema.columns
             where table_schema = 'public' and table_name = '${t}'
@@ -176,6 +212,16 @@ export async function descriviTabella(tabella: string): Promise<unknown> {
     if (error) throw new Error(error.message);
     return { tabella: t, aCosaServe: A_COSA_SERVE[t] || undefined, colonne: data };
 }
+
+/* CHI VEDE IL LATO AZIENDA (Luca 31/08).
+   «Tutte le informazioni dentro il lato azienda non devono essere pubblicate,
+    non devono essere visibili, non devono essere consultate. A meno che non sia
+    l'admin a chiedertelo, tutto deve fare riferimento al lato ragazzi.»
+   ⚠️ SOLO admin e dev. Non il direttore generale, non il commerciale: la regola
+   è stata detta così, e nel dubbio si stringe. Il `dev` c'è perché senza non
+   potrei diagnosticare un problema — ed è un ruolo che ha una persona sola.
+   ⚠️ Il ruolo arriva dalla SESSIONE FIRMATA, non dal browser e mai dal modello. */
+const vedeIlLatoAzienda = (ruolo: string) => ["admin", "dev"].includes(String(ruolo || "").toLowerCase());
 
 /** Questo negozio è fra quelli che vede? */
 function suo(nome: string, scope: Scope): boolean {
@@ -225,7 +271,19 @@ export async function interroga(sql: string, scope: Scope): Promise<unknown> {
         }
     }
 
-    const { data, error } = await supabase.rpc("ai_interroga", { q });
+    if (!vedeIlLatoAzienda(scope.role)) {
+        for (const t of SOLO_ADMIN) {
+            if (new RegExp(`\\b${t}\\b`, "i").test(q)) {
+                throw new Error(`«${t}» è il lato azienda: lo vede solo l'amministrazione. `
+                    + `Quello che puoi raccontare è il lato ragazzi — le stesse gare, ma quanto vale per chi vende.`);
+            }
+        }
+        if (/\blato\s*(=|<>|!=|ilike|like|in)\s*'?%?azienda/i.test(q)) {
+            throw new Error("Il lato azienda non è consultabile: le gare si guardano dal lato ragazzi. "
+                + "Rifai l'interrogazione senza filtrare su lato='azienda'.");
+        }
+    }
+    const { data, error } = await supabase.rpc("ai_interroga", { q, admin: vedeIlLatoAzienda(scope.role) });
     if (error) throw new Error(error.message);
     let righe = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
     const totaleGrezzo = righe.length;
