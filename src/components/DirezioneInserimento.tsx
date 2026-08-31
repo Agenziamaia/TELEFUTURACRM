@@ -24,6 +24,8 @@ import {
     finestraBilancia, codiceBilancia, codiceAssociato,
     DIR_BRANDS, W3_PALETTO_BUSINESS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
+import { confrontoUfficiale, type ConfrontoUfficiale } from "@/lib/avanzamentoUfficiale";
+import { CaricaAvanzamento } from "@/components/CaricaAvanzamento";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
 import { PISTE_PARALLELE } from "@/lib/commissioning";
@@ -246,12 +248,22 @@ export function DirezioneInserimentoAdmin() {
        li manda **over target**. Perciò si parte SEMPRE dalla produzione viva —
        «ieri sera» è una vista che si può chiedere, non il modo di ragionare. */
     const [vistaIeri, setVistaIeri] = useState(false);
+    /* L'AVANZAMENTO UFFICIALE (Luca 29/08): la fotografia che manda l'operatore.
+       Fino alla sua data comanda il suo numero — è quello che poi paga; dopo,
+       comanda il nostro. Qui si tiene solo lo SCARTO fra i due, ricalcolato
+       ogni volta: salvarlo vorrebbe dire tenersi un dato che invecchia da sé. */
+    const [conf, setConf] = useState<ConfrontoUfficiale | null>(null);
+    const [modaleAvz, setModaleAvz] = useState(false);
 
     useEffect(() => {
         let vivo = true;
         setDir(null); setAperto(null);
+        setConf(null);
         caricaDirezione(brand, monthISO, { includiOggi: !vistaIeri })
             .then((d) => { if (vivo) { setDir(d); setBozze({}); setBozzeSfr({}); } });
+        // il confronto con l'ufficiale viaggia a parte: se manca la fotografia
+        // (o il conto è lento) la pagina non aspetta
+        confrontoUfficiale(brand, monthISO).then((c) => { if (vivo) setConf(c); }).catch(() => { });
         return () => { vivo = false; };
     }, [brand, monthISO, giro, vistaIeri]);
 
@@ -349,6 +361,18 @@ export function DirezioneInserimentoAdmin() {
                         tutta larghezza per una cosa che si guarda una volta ogni
                         tanto era spazio buttato */}
                     <RegistroConsigli brand={brand} />
+                    {/* LA FOTOGRAFIA DELL'OPERATORE (Luca 29/08): si carica da qui,
+                        accanto al registro, perché è la stessa famiglia di gesti —
+                        roba da direzione, una volta ogni tanto. La data resta
+                        scritta sul bottone: è l'informazione che serve davvero
+                        («fino a quando il loro numero comanda sul nostro»). */}
+                    <button type="button" onClick={() => setModaleAvz(true)}
+                        title={conf ? `Avanzamento ufficiale caricato al ${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}${conf.file ? ` — ${conf.file}` : ""}.\nFino a quella data comanda il numero dell'operatore; dopo, il nostro.` : "Carica il file di avanzamento che manda l'operatore: da lì in giù vedrai lo scarto con il nostro conteggio."}
+                        className={cn("h-10 px-3 rounded-xl border text-xs font-bold whitespace-nowrap transition-colors",
+                            conf ? "border-indigo-400/40 bg-indigo-500/15 text-indigo-100 hover:bg-indigo-500/25"
+                                : "border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10")}>
+                        📊 {conf ? `Ufficiale al ${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}` : "Avanzamento ufficiale"}
+                    </button>
                     {/* la vista: il consiglio nasce sempre da «Adesso» */}
                     <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
                         {[
@@ -922,6 +946,24 @@ export function DirezioneInserimentoAdmin() {
                                         </div>
                                     )}
                                     <div className="flex items-center gap-2 shrink-0">
+                                        {/* IL SEGNALE SULLA RIGA CHIUSA (Luca 29/08): senza questo
+                                            bisognerebbe aprire tutti i codici uno per uno per
+                                            scoprire dove siamo disallineati. Qui si vede da fuori
+                                            quanti scarti ci sono dentro; dentro si vede quali. */}
+                                        {(() => {
+                                            if (!conf) return null;
+                                            const n = pisteMostrate.filter((p) => {
+                                                const sc = conf.scarti.get(`${k.cod_gara}|${p.chiave}`);
+                                                return sc && Math.abs(sc.scarto) >= 0.01;
+                                            }).length;
+                                            if (!n) return null;
+                                            return (
+                                                <span title={`${n === 1 ? "Una pista non torna" : `${n} piste non tornano`} con l'avanzamento ufficiale al ${conf.al.slice(8, 10)}/${conf.al.slice(5, 7)}. Apri il codice per vedere quali.`}
+                                                    className="px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-400/40 text-[10px] font-black text-amber-200 whitespace-nowrap">
+                                                    ≠ {n}
+                                                </span>
+                                            );
+                                        })()}
                                         {semCompatti.length > 0 && (
                                             /* SUL TELEFONO IL PALLINO DA SOLO NON DICE DI CHI È
                                                (Luca 31/08): sotto `lg` la fila incolonnata sparisce
@@ -979,6 +1021,37 @@ export function DirezioneInserimentoAdmin() {
                                                         unit={cbW3 ? "pt" : (p.um === "pezzi" ? "pz" : "pt")}
                                                         nota={[cbW3 ? `${avz.pezzi} eventi CB` : null, target > 0 ? `target direzione ${it(target)} · ${avz.punti < target ? `mancano ${it(Math.max(0, Math.ceil(target - avz.punti)))}` : "🎯 fatto"}` : null].filter(Boolean).join(" · ") || null}
                                                     />
+                                                    {/* LO SCARTO CON L'UFFICIALE (Luca 29/08): «mi dici, guarda
+                                                        che sul mobile di Magliana ci sono tre punti in meno».
+                                                        Sta SOTTO la barra della pista, non in una tabella a
+                                                        parte, perché è lì che si guarda il numero e lì deve
+                                                        arrivare l'avvertimento. Verde = allineati: vale quanto
+                                                        il rosso, dice che di quel numero ci si può fidare. */}
+                                                    {(() => {
+                                                        const sc = conf?.scarti.get(`${k.cod_gara}|${p.chiave}`);
+                                                        if (!sc) return null;
+                                                        const gg = `${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}`;
+                                                        const u = cbW3 ? "pt" : (p.um === "pezzi" ? "pz" : "pt");
+                                                        if (Math.abs(sc.scarto) < 0.01) return (
+                                                            <div className="flex items-center gap-1.5 text-[10px] text-emerald-300/70">
+                                                                <span>✓</span><span>allineati con l&apos;ufficiale al {gg} ({it(sc.ufficiale)} {u})</span>
+                                                            </div>
+                                                        );
+                                                        const inPiu = sc.scarto > 0;
+                                                        return (
+                                                            <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
+                                                                inPiu ? "border-amber-400/40 bg-amber-500/10" : "border-sky-400/40 bg-sky-500/10")}
+                                                                title={`L'operatore, al ${gg}, conta ${it(sc.ufficiale)} ${u} su questa pista. Noi, fermando il conteggio alla STESSA data, ne contiamo ${it(sc.nostro)}.\n\n${inPiu
+                                                                    ? "Ne abbiamo di più: probabile un'attivazione registrata da noi che all'operatore non risulta (codice sbagliato, pratica non passata)."
+                                                                    : "Ne abbiamo di meno: probabile un'attivazione che l'operatore ci riconosce e che da noi non è registrata, o è finita su un altro codice."}\n\nDopo il ${gg} vale il nostro conteggio: l'operatore non l'ha ancora visto.`}>
+                                                                <span className={cn("font-black", inPiu ? "text-amber-200" : "text-sky-200")}>
+                                                                    {inPiu ? "▲" : "▼"} {inPiu ? "+" : ""}{it(sc.scarto)} {u}
+                                                                </span>
+                                                                <span className="text-slate-300">rispetto all&apos;ufficiale al {gg}</span>
+                                                                <span className="text-slate-500">— loro {it(sc.ufficiale)}, noi {it(sc.nostro)} alla stessa data</span>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                                                         {/* le SOGLIE: click = target (INTERO, sfrido incluso);
                                                             RICLICK sulla attiva = si toglie (bug Collatina S2).
@@ -1124,6 +1197,16 @@ export function DirezioneInserimentoAdmin() {
                     </div>
                     <div className="text-[10px] text-slate-600 px-1">Punti dal motore gare (tabellare azienda) · produzione allocata per Cod.Ins. · proiezione a strisce sul ritmo dei giorni lavorativi · l&apos;ora di scatto vale anche qui.</div>
                 </div>
+            )}
+
+            {modaleAvz && dir && (
+                <CaricaAvanzamento
+                    brand={brand} monthISO={monthISO}
+                    piste={dir.pisteTab.map((p) => ({ chiave: p.chiave, nome: p.nome }))}
+                    chi={user?.name}
+                    onChiudi={() => setModaleAvz(false)}
+                    onFatto={() => { confrontoUfficiale(brand, monthISO).then(setConf).catch(() => { }); }}
+                />
             )}
         </div>
     );

@@ -16,6 +16,13 @@ export const dynamic = "force-dynamic";
 //                     password parte per email all'interessato
 //   alias           → l'alias privacy di una persona: solo admin/dev/direzione
 const PUO_AMMINISTRARE = ["admin", "dev", "direttore_generale"];
+/* CHI CREA UN UTENTE DEVE POTERGLI DARE UNA PASSWORD (revisore 31/08).
+   L'`amministrativo` è abilitato a creare le persone dal pannello, ma non era
+   nell'elenco qui sopra: la creazione andava a buon fine e l'impostazione
+   della password no. Due persone — Camila Pulido e Manuel Puleo — sono nate
+   così: account attivi, nessuna password, nessuno che lo sapesse.
+   Vale SOLO per il reset della password, non per l'alias privacy. */
+const PUO_RESETTARE = [...PUO_AMMINISTRARE, "amministrativo"];
 
 export async function POST(request: Request) {
     const sess = richiedeSessione(request);
@@ -36,7 +43,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: data === true || data === "ok", risultato: data });
     }
     if (azione === "reset_password") {
-        if (!amministra) return NextResponse.json({ error: "Non hai i permessi per questa operazione" });
+        if (!PUO_RESETTARE.includes(String(io.role || ""))) return NextResponse.json({ error: "Non hai i permessi per questa operazione" });
         if (!bersaglio) return NextResponse.json({ error: "Dati mancanti" });
         // LA PASSWORD LA GENERA IL SERVER. Prima la faceva il browser e la
         // mandava in chiaro nel corpo della richiesta: un giro in più per un

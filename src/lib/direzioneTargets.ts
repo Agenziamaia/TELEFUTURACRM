@@ -107,7 +107,13 @@ export async function caricaDirezione(
        nel frattempo hanno già chiuso — mandandoli **over target**.
        Per questo il valore di fabbrica è la produzione VIVA: «ieri sera» resta
        una vista che si può chiedere, non il modo in cui si ragiona. */
-    opts?: { includiOggi?: boolean },
+    /* `fino`: FERMA il conteggio a una data (compresa). Serve al confronto con
+       l'avanzamento ufficiale dell'operatore, che è una fotografia a una certa
+       data: per capire se siamo disallineati bisogna guardare la NOSTRA
+       produzione alla STESSA data, non a oggi. Ricontare qui, con lo stesso
+       motore, invece che in una funzione a parte, è l'unico modo perché i due
+       numeri restino paragonabili anche quando la tabellare cambia. */
+    opts?: { includiOggi?: boolean; fino?: string },
 ): Promise<Direzione> {
     const optOggi = { includiOggi: opts?.includiOggi !== false };
     const [tgtRes, sfrRes, polRes, glRes, regRes] = await Promise.all([
@@ -200,6 +206,7 @@ export async function caricaDirezione(
     if (tab) {
         for (const c of contratti) {
             if (!produzioneValidaGare(c)) continue;
+            if (opts?.fino && String(c.data || "").slice(0, 10) > opts.fino) continue;
             const k0 = codiceDi(c, codici);
             const set = matchRigheAttivazione(tab.righe, c, brandIdDaLabel(c.brand));
             if (!set.length) continue;

@@ -1,0 +1,83 @@
+// PROVA DELLA LETTURA DEL FOGLIO UFFICIALE.
+// Lancio:  node scripts/prova_avanzamento.mjs
+// Costruisce a mano dei fogli come quelli che mandano gli operatori (titolo in
+// cima, numeri all'italiana, colonne di troppo) e controlla che ne esca quello
+// che deve uscire. Nessun browser, nessun database.
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const jiti = require("jiti")(import.meta.url ? new URL(".", import.meta.url).pathname : __dirname, { interopDefault: true });
+const F = jiti("../src/lib/avanzamentoFoglio.ts");
+const XLSX = require("xlsx");
+
+const PISTE = [{ chiave: "mobile", nome: "Mobile" }, { chiave: "fisso", nome: "Fisso" }, { chiave: "cb", nome: "Customer Base" }];
+let ko = 0;
+const dico = (t, atteso, avuto) => {
+    const a = JSON.stringify(atteso), b = JSON.stringify(avuto);
+    if (a === b) { console.log("  ok  " + t); return; }
+    ko++; console.log("  KO  " + t + "\n      atteso: " + a + "\n      avuto:  " + b);
+};
+
+// ── 1. foglio tipico: titolo in cima, intestazione alla riga 3 ──────────────
+{
+    const aoa = [
+        ["AVANZAMENTO GARA AGOSTO 2026", "", "", ""],
+        ["aggiornato al 25/08/2026", "", "", ""],
+        ["Cod. Ins.", "Mobile", "Fisso", "Customer Base"],
+        ["MAGLIANA", "30", "12,5", "8"],
+        ["COLLATINA", "1.240", "", "3"],
+        ["", "", "", ""],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const righe = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+    const pulite = F.pulisciGriglia(righe);
+    const { head, corpo } = F.trovaIntestazione(pulite);
+    dico("intestazione trovata", ["Cod. Ins.", "Mobile", "Fisso", "Customer Base"], head);
+    dico("corpo senza righe vuote", 2, corpo.length);
+    const mappa = F.proponiMappa(head, PISTE);
+    dico("mappa proposta", [F.COL_CODICE, "Mobile", "Fisso", "Customer Base"], mappa);
+    const out = F.righeDaGriglia(corpo, mappa, PISTE);
+    dico("righe lette", [
+        { cod_gara: "MAGLIANA", pista: "mobile", punti: 30, pezzi: null },
+        { cod_gara: "MAGLIANA", pista: "fisso", punti: 12.5, pezzi: null },
+        { cod_gara: "MAGLIANA", pista: "cb", punti: 8, pezzi: null },
+        { cod_gara: "COLLATINA", pista: "mobile", punti: 1240, pezzi: null },
+        { cod_gara: "COLLATINA", pista: "cb", punti: 3, pezzi: null },
+    ], out);
+}
+
+// ── 2. la cella VUOTA non è uno zero ────────────────────────────────────────
+dico("cella vuota → null", null, F.numeroIt(""));
+dico("zero vero → 0", 0, F.numeroIt("0"));
+dico("migliaia all'italiana", 1240, F.numeroIt("1.240"));
+dico("decimale all'italiana", 12.5, F.numeroIt("12,5"));
+dico("testo → null", null, F.numeroIt("n.d."));
+dico("numero sporco", 30, F.numeroIt(" 30 pt"));
+
+// ── 3. senza la colonna del codice non si salva niente ──────────────────────
+{
+    const out = F.righeDaGriglia([["MAGLIANA", "30"]], [F.COL_IGNORA, "Mobile"], PISTE);
+    dico("senza colonna codice → niente", [], out);
+}
+
+// ── 4. le colonne ignorate restano fuori ────────────────────────────────────
+{
+    const out = F.righeDaGriglia([["MAGLIANA", "30", "999"]], [F.COL_CODICE, "Mobile", F.COL_IGNORA], PISTE);
+    dico("colonna ignorata esclusa", [{ cod_gara: "MAGLIANA", pista: "mobile", punti: 30, pezzi: null }], out);
+}
+
+// ── 5. intestazione già in prima riga (file senza titolo) ───────────────────
+{
+    const pulite = F.pulisciGriglia([["Codice", "Mobile"], ["MAGLIANA", "5"]]);
+    const { i, head } = F.trovaIntestazione(pulite);
+    dico("intestazione in riga 1", [0, ["Codice", "Mobile"]], [i, head]);
+}
+
+// ── 6. casi che avevano fatto sbagliare la prima versione ───────────────────
+dico("trattino → null", null, F.numeroIt("-"));
+dico("trattino lungo → null", null, F.numeroIt("—"));
+dico("decimale all'inglese resta tale", 1.5, F.numeroIt("1.5"));
+dico("due gruppi di migliaia", 1234567, F.numeroIt("1.234.567"));
+dico("migliaia + decimali", 1234.5, F.numeroIt("1.234,5"));
+
+console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
+process.exit(ko ? 1 : 0);

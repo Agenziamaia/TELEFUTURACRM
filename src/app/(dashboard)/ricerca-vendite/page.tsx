@@ -902,8 +902,13 @@ export default function RicercaContratto() {
         // conta, perché lì le cifre da sole non bastano a capirlo.
         const soloCifreTel = (v: string) => v.replace(/^\s*(?:\+|00)39/, "").replace(/\D/g, "");
         if (filterCellulare.trim()) {
-            // se ne può cercare più d'uno, come per i codici
-            const numeri = filterCellulare.split(/[\s,;\n]+/).map(soloCifreTel).filter((n) => n.length >= 4).slice(0, 50);
+            // se ne può cercare più d'uno, come per i codici — ma l'elenco si
+            // spezza SOLO su virgola, punto e virgola e a capo. Sullo spazio no:
+            // il modo normale di scrivere un cellulare è «333 123 4567», e
+            // spezzandolo restava a cercare «4567» dentro tutte le pratiche
+            // (misurato dal revisore: su 1.791 numeri veri, 1.460 tornavano
+            // righe che non c'entravano, il caso peggiore 56 invece di 2).
+            const numeri = filterCellulare.split(/[,;\n\r]+/).map(soloCifreTel).filter((n) => n.length >= 4).slice(0, 50);
             // QUATTRO CIFRE MINIME (è la stessa soglia di Usati e Registra
             // vendita): «3» da solo pescherebbe l'84% delle pratiche, «39» il
             // 24%, e quello non è un filtro, è un elenco.

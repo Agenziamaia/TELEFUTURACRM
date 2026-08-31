@@ -215,6 +215,16 @@ export async function sincronizzaMalusCaller(
      *  restava, e la sincronizzazione lo chiudeva come «attivo», cioe' DOVUTO.
      *  Un caller pagava per una pratica che non poteva nemmeno vedere. */
     assorbite?: Set<string>,
+    /** IL CLIENTE HA ATTIVATO (Tommaso via Luca, 31/08). Se la persona di
+     *  quella pratica ha comprato da noi da quando la pratica esiste, non c'è
+     *  nessun lavoro mancato da punire — comunque sia andata la trafila degli
+     *  appuntamenti. Serviva perché il ponte vendita↔pratica passa solo
+     *  dall'appuntamento e si attraversa una volta sola, alla registrazione
+     *  della vendita: se l'appuntamento nasce DOPO (Paola Urso: vendita 08:47,
+     *  appuntamento 09:49) o porta una data sbagliata (Paride Massaro: anno
+     *  2024), la pratica resta aperta e matura penale su un cliente che ha già
+     *  comprato. */
+    vendute?: Set<string>,
 ): Promise<EpisodioCaller[]> {
     try {
         // i tombstone (eliminato=true) sono malus ANNULLATI dal match/backfill:
@@ -227,9 +237,18 @@ export async function sincronizzaMalusCaller(
         // `vive` resta INTATTA (il main loop svuota inMalus man mano): serve
         // al giro archiviati per capire se la pratica di un rientrato e'
         // ancora in fase malus (revisione 21/08, rilievo 13)
-        const vive = new Map(pratiche.filter((p) => p.fase === "malus" && p.dalMalus).map((p) => [p.id, p]));
+        const vive = new Map(pratiche.filter((p) => p.fase === "malus" && p.dalMalus && !vendute?.has(p.id)).map((p) => [p.id, p]));
         const inMalus = new Map(vive);
         for (const ep of episodi) {
+            // il cliente ha comprato: l'episodio si annulla anche se era già
+            // stato CHIUSO come dovuto (è il caso dei 45 € di Tommaso: erano
+            // «attivi», cioè da pagare, non «in corso»)
+            if (ep.stato !== "compensato" && vendute?.has(ep.call_id)) {
+                await supabase.from("caller_malus").update({ eliminato: true, eliminato_il: new Date().toISOString(), eliminato_da: "il cliente ha attivato: la pratica non è un lavoro mancato" }).eq("id", ep.id);
+                ep.stato = "attivo"; ep.al = ep.al || oggi;
+                inMalus.delete(ep.call_id);
+                continue;
+            }
             if (ep.stato !== "in_corso") continue;
             const p = inMalus.get(ep.call_id);
             if (p && ymd(p.dalMalus!) === ep.dal) {

@@ -1120,7 +1120,16 @@ function CallerPageInner() {
                 .map((x) => x.full_name).filter(Boolean) as string[]);
             // i doppioni assorbiti: i loro malus si annullano, non si chiudono
             const assorbite = new Set(calls.filter((c) => c.assorbita_da).map((c) => c.id));
-            await sincronizzaMalusCaller(pratiche, fuori, assorbite);
+            /* IL CLIENTE HA ATTIVATO (Tommaso via Luca, 31/08): su una persona
+               che ha comprato non c'è lavoro mancato da punire. La vista fa il
+               giro in un colpo solo sul database — CF della pratica contro le
+               attivazioni del cliente — invece di interrogare migliaia di
+               codici fiscali dal browser. Se la lettura fallisce si passa
+               `undefined`, non un insieme vuoto: meglio nessuna assoluzione
+               che assolvere tutti (o nessuno) per un errore di rete. */
+            const { data: venduteRows, error: errVend } = await supabase.from("caller_pratiche_vendute").select("call_id");
+            const vendute = errVend ? undefined : new Set((venduteRows ?? []).map((r: { call_id: string }) => String(r.call_id)));
+            await sincronizzaMalusCaller(pratiche, fuori, assorbite, vendute);
             setMalusSyncVersione((v) => v + 1);
         } finally { malusSyncInCorso.current = false; }
     }, [isDirector, malusDatiPronti, calls, regoleCaller, faseInfo]);

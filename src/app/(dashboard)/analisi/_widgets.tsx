@@ -1321,7 +1321,13 @@ function WidgetSquadra({ ctx, metrica }) {
                 ...Object.entries(GARA).map(([b, g]) => { const n = its.filter((it) => it.brandGara === b).length; return n ? { l: g.label, r: `${fmtN(n)} pz`, colore: g.colore } : null; }).filter(Boolean),
                 ...[...altriDet.values()].map((e) => ({ l: e.l, r: `${fmtN(e.n)} pz`, colore: e.c })),
             ]
-            : righeOperatore(metrica, its.filter((it) => it.brandGara === metrica)).map((r) => ({ l: `${r.emoji} ${r.label}`, r: `${fmtPt(somma(r.items))} pt · ${r.items.length} pz`, colore: r.colore }));
+            : righeOperatore(metrica, its.filter((it) => it.brandGara === metrica)).map((r) => ({
+                // `r.emoji` non è sempre un'emoji: per il mobile è l'icona SIM
+                // disegnata, cioè un nodo React. Dentro un template literal
+                // diventava «[object Object]» stampato a video nei tooltip dei
+                // widget «Squadra — punti» (rilevato dal revisore 31/08).
+                l: <>{r.emoji} {r.label}</>, r: `${fmtPt(somma(r.items))} pt · ${r.items.length} pz`, colore: r.colore
+            }));
         return { k, label: k, val, det, me: norm(k) === norm(ctx.persona), colore: metrica === "pezzi" ? "#818cf8" : GARA[metrica].colore };
     }).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
     return <RaceBars unit={metrica === "pezzi" ? "pz" : "pt"} righe={righe} vuoto="Nessuna vendita nel periodo." />;

@@ -11,14 +11,19 @@
 // password» dell'amministrazione, e il reset che l'utente si fa da solo dalla
 // schermata di login — e un testo solo evita che divergano.
 
+import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { inviaEmail } from "@/lib/email";
 
 /** Password provvisoria leggibile: niente caratteri che si confondono al
- *  telefono (0/O, 1/I/l), e i trattini per dettarla a blocchi. */
+ *  telefono (0/O, 1/I/l), e i trattini per dettarla a blocchi.
+ *  Le lettere si estraggono con il generatore CRITTOGRAFICO: `Math.random()`
+ *  non è imprevedibile — da poche password viste si può risalire al suo stato
+ *  e calcolare le successive. Per un numero di ornamento non conta; per una
+ *  credenziale sì (revisore 31/08). */
 export function passwordProvvisoria(): string {
     const alf = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    const blocco = (n: number) => Array.from({ length: n }, () => alf[Math.floor(Math.random() * alf.length)]).join("");
+    const blocco = (n: number) => Array.from({ length: n }, () => alf[crypto.randomInt(alf.length)]).join("");
     return `TF-${blocco(4)}-${blocco(4)}`;
 }
 
@@ -84,8 +89,46 @@ export async function inviaCredenziali(opts: {
                 + `<p>${esc(T.chiusura).replace(/\n\n/g, "</p><p style=\"color:#888;font-size:12px\">").replace(/\n/g, "<br>")}</p>`
                     .replace(/crm\.telefuturasrl\.com/g, `<a href="${SITO}">crm.telefuturasrl.com</a>`),
         });
+        await traccia(mittente, dest, T.oggetto, "sent", null);
         return { ok: true, da: String((mittente as { email_address?: string }).email_address || "") };
     } catch (e) {
-        return { ok: false, errore: e instanceof Error ? e.message : "invio non riuscito" };
+        const errore = e instanceof Error ? e.message : "invio non riuscito";
+        await traccia(mittente, dest, T.oggetto, "failed", errore);
+        return { ok: false, errore };
     }
+}
+
+/** LA DOMANDA È «GLIEL'ABBIAMO MANDATA?» (revisore 31/08): senza una riga da
+ *  qualche parte il CRM non sapeva rispondere — ed è esattamente la domanda che
+ *  ha fatto Luca sui tre ragazzi appena creati. Adesso l'invio lascia la sua
+ *  traccia in `email_messages`, dove la sezione Email la mostra.
+ *
+ *  Il TESTO NON SI SALVA. Dentro c'è una password viva, e archiviarla
+ *  vorrebbe dire lasciarla leggibile a chiunque apra la casella
+ *  amministrazione@ nel CRM: della traccia serve il QUANDO e il A CHI, non il
+ *  segreto. Per la stessa ragione non si fa la copia su «Posta inviata». */
+async function traccia(acc: unknown, dest: string, oggetto: string, stato: "sent" | "failed", errore: string | null) {
+    try {
+        const a = acc as { id?: string; email_address?: string };
+        if (!a?.id) return;
+        let convId: string | null = null;
+        const { data: esistente } = await supabaseAdmin.from("email_conversations")
+            .select("id").eq("account_id", a.id).ilike("customer_email", dest).limit(1);
+        if (esistente && esistente[0]) convId = esistente[0].id;
+        else {
+            const { data: creata } = await supabaseAdmin.from("email_conversations")
+                .insert({ account_id: a.id, customer_email: dest, subject: oggetto }).select("id").single();
+            convId = creata?.id ?? null;
+        }
+        const corpo = stato === "sent"
+            ? "Credenziali di accesso al CRM inviate. La password non viene archiviata."
+            : `Invio non riuscito: ${errore || "errore sconosciuto"}. La password non viene archiviata.`;
+        await supabaseAdmin.from("email_messages").insert({
+            conversation_id: convId, account_id: a.id, direction: "out", subject: oggetto,
+            body_text: corpo, status: stato, from_addr: a.email_address, to_addrs: dest,
+            email_date: new Date().toISOString(),
+        });
+        if (convId) await supabaseAdmin.from("email_conversations")
+            .update({ last_message_at: new Date().toISOString(), last_preview: corpo.slice(0, 140), subject: oggetto }).eq("id", convId);
+    } catch { /* la traccia non deve mai far fallire l'invio */ }
 }

@@ -193,14 +193,6 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visib
     visibility: [],
 };
 
-// Genera una password robusta (evita caratteri ambigui). Usa crypto del browser.
-function genPassword(len = 12): string {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-    const arr = new Uint32Array(len);
-    (globalThis.crypto || window.crypto).getRandomValues(arr);
-    return Array.from(arr, (x) => chars[x % chars.length]).join("");
-}
-
 /* ================================================================== */
 
 export default function AmministrazionePage() {
@@ -1249,11 +1241,21 @@ function UserForm({
                     </div>
                 )}
                 {esitoCredenziali && (
-                    <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-sm">
+                    <div className={`mb-4 p-3 rounded-lg border text-sm ${esitoCredenziali.pw ? "bg-emerald-500/10 border-emerald-500/25" : "bg-rose-500/10 border-rose-500/30"}`}>
                         {esitoCredenziali.email ? (
                             <p className="text-emerald-200">📧 Password provvisoria inviata a <b>{f.email}</b> da <b>{esitoCredenziali.email}</b>.</p>
                         ) : (
-                            <p className="text-amber-200">⚠️ La password è stata impostata ma l&apos;email non è partita{esitoCredenziali.errore ? ` (${esitoCredenziali.errore})` : ""}: comunicala tu.</p>
+                            /* DUE GUASTI DIVERSI, due frasi diverse (revisore 31/08):
+                               «impostata ma non spedita» si dice solo se la password
+                               c'è davvero. Quando manca — è successo a due utenti
+                               creati da un amministrativo, che non aveva il permesso
+                               di impostarla — dirlo lo stesso lasciava due persone
+                               senza accesso e nessuno che lo sapesse. */
+                            esitoCredenziali.pw ? (
+                                <p className="text-amber-200">⚠️ La password è stata impostata ma l&apos;email non è partita{esitoCredenziali.errore ? ` (${esitoCredenziali.errore})` : ""}: comunicala tu.</p>
+                            ) : (
+                                <p className="text-rose-200">⛔ La password <b>non</b> è stata impostata{esitoCredenziali.errore ? `: ${esitoCredenziali.errore}` : ""}. L&apos;utente esiste ma <b>non può entrare</b>: apri la sua scheda e premi «Reset password».</p>
+                            )
                         )}
                         {esitoCredenziali.pw && (
                             <p className="mt-1.5 text-slate-300">Password provvisoria: <b className="font-mono tracking-wider text-white select-all">{esitoCredenziali.pw}</b> — al primo accesso dovrà cambiarla.</p>
@@ -1816,15 +1818,20 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
     const [copied, setCopied] = useState(false);
 
     const doResetPassword = async () => {
-        const np = genPassword();
         setResetting(true);
+        // LA PASSWORD LA GENERA IL SERVER, e adesso è vero anche qui: prima
+        // questo tasto se la faceva da sé nel browser e la spediva dentro la
+        // richiesta, così `passwordProvvisoria()` sul server non girava mai e i
+        // due alfabeti restavano due (revisore 31/08). Un segreto in meno che
+        // viaggia, e il formato TF-XXXX-XXXX — dettabile al telefono — vale
+        // ovunque.
         // Hash lato DB (pgcrypto) + must_change_password=true: la password reale non viene
-        // mai salvata in chiaro. 'np' resta visibile all'admin solo ora, per comunicarla.
-        const _r2 = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "reset_password", userId: u.id, nuova: np }) }).then((r) => r.json());
+        // mai salvata in chiaro. Torna qui una volta sola, per comunicarla.
+        const _r2 = await fetch("/api/auth/azioni", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "reset_password", userId: u.id }) }).then((r) => r.json());
         const data = _r2?.ok === true, error = _r2?.error ? { message: _r2.error } : null;
         setResetting(false);
         if (!error && data === true) {
-            setPw(np);
+            setPw(_r2?.password || null);
             setShowPw(true);
             // la password parte anche per email: qui si dice se ce l'ha fatta,
             // perche' «l'ho resettata» e «gliel'ho recapitata» sono due cose
