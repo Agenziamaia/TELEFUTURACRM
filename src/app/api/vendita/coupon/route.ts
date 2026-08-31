@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { accesso } from "@/lib/permessiServer";
+import { accesso, permessoSezione } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { generaCoupon, validaCoupon } from "@/lib/coupons";
 
@@ -86,10 +86,15 @@ export async function POST(req: Request) {
     if (action === "annulla") {
         const code = String(b.code || "").trim().toUpperCase();
         if (!code) return NextResponse.json({ error: "codice richiesto" }, { status: 400 });
+        /* CHI PUÒ ANNULLARE LO DICE IL PANNELLO DEI PERMESSI, non un elenco
+           scritto qui (guardia di sicurezza, 31/08). L'intenzione resta la
+           stessa — annulla solo l'amministrazione — ma il giorno che si crea un
+           ruolo nuovo non c'è una seconda lista da ricordarsi di aggiornare:
+           basta dargli Amministrazione. */
         const { data: io_ } = await supabase.from("app_users")
             .select("role, full_name, active").eq("id", _s.id).maybeSingle();
-        const ruolo = String(io_?.role || "");
-        if (!io_ || io_.active === false || !["amministrativo", "direttore_generale", "admin", "dev"].includes(ruolo))
+        const puo = await permessoSezione(_s.id, "/amministrazione");
+        if (!io_ || io_.active === false || !puo.ok)
             return NextResponse.json({ error: "solo l'amministrazione può annullare un coupon" }, { status: 403 });
         const motivo = String(b.motivo || "").trim();
         // già usato: non si tocca — quei soldi sono già stati scontati a qualcuno
