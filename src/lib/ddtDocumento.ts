@@ -29,7 +29,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export type AziendaDdt = {
-    codice: string; ragione_sociale: string;
+    codice: string; ragione_sociale: string; logo_url?: string | null;
     piva: string | null; codice_fiscale: string | null;
     sede: string | null; cap: string | null; citta: string | null; provincia: string | null;
     rea: string | null; telefono: string | null; email: string | null;
@@ -67,7 +67,7 @@ function indirizzoAzienda(a: AziendaDdt | null | undefined): string {
 }
 
 function indirizzoNegozio(n: NegozioDdt | null | undefined, nome: string): string {
-    if (!n || !n.address) return `<span class="manca">manca l'indirizzo di ${esc(nome)} — si compila in Amministrazione → Punti vendita</span>`;
+    if (!n || !n.address) return `<span class="manca">manca l'indirizzo</span>`;
     const cit = [n.cap, n.citta, n.provincia ? `(${n.provincia})` : null].filter(Boolean).join(" ");
     return `${esc(n.address)}${cit ? "<br>" + esc(cit) : `<br><span class="manca">mancano CAP e città</span>`}`;
 }
@@ -85,7 +85,7 @@ export function cosaMancaAlDdt(
         if (!a.piva) out.push(`la partita IVA di ${a.ragione_sociale}`);
     });
     ([[d.da_negozio, "partenza"], [d.a_negozio, "destinazione"]] as const).forEach(([n, ruolo]) => {
-        if (!neg[n]?.address) out.push(`l'indirizzo del punto vendita di ${ruolo} (${n})`);
+        if (!neg[n]?.address) out.push(`l'indirizzo di ${n} — si compila in Amministrazione → Orari e chiusure`);
     });
     return out;
 }
@@ -107,9 +107,16 @@ export function ddtHtml(
     const cessione = d.azienda_da !== d.azienda_a;
     const pezzi = righe.reduce((s, r) => s + (Number(r.quantita) || 1), 0);
 
+    /* IL LOGO (Luca 31/08). È lo stesso per le due società — sono lo stesso
+       gruppo — e la ragione sociale la distingue il testo accanto. Sta in
+       `aziende.logo_url`, non scritto qui dentro: se un giorno Telefutura 2
+       avrà il suo, si cambia il dato e non il documento. */
+    const logo = mit?.logo_url || "/telefutura.png";
+
     const testata = (copia: typeof COPIE[number]) => `
       <div class="hdr">
         ${grafiche?.testata ? `<img class="banner" src="${esc(grafiche.testata)}" alt="">` : ""}
+        <img class="logo" src="${esc(logo)}" alt="">
         <div class="hdrTxt">
           <div class="soc">${esc(mit?.ragione_sociale || d.azienda_da)}</div>
           <div class="socDati">${indirizzoAzienda(mit)}</div>
@@ -130,7 +137,7 @@ export function ddtHtml(
           <b>${esc(mit?.ragione_sociale || d.azienda_da)}</b><br>
           ${indirizzoAzienda(mit)}<br>
           P. IVA ${oManca(mit?.piva, "la partita IVA")}
-          <div class="luogo"><span>Luogo di partenza</span>
+          <div class="luogo"><span class="et">Luogo di partenza</span>
             <b>${esc(d.da_negozio)}</b><br>${indirizzoNegozio(neg[d.da_negozio], d.da_negozio)}</div>
         </div>
         <div class="parte">
@@ -138,7 +145,7 @@ export function ddtHtml(
           <b>${esc(des?.ragione_sociale || d.azienda_a)}</b><br>
           ${indirizzoAzienda(des)}<br>
           P. IVA ${oManca(des?.piva, "la partita IVA")}
-          <div class="luogo"><span>Luogo di destinazione</span>
+          <div class="luogo"><span class="et">Luogo di destinazione</span>
             <b>${esc(d.a_negozio)}</b><br>${indirizzoNegozio(neg[d.a_negozio], d.a_negozio)}</div>
         </div>
       </div>`;
@@ -201,7 +208,10 @@ export function ddtHtml(
   .pag:last-child { page-break-after: auto; }
   .filigrana { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: .5; z-index: 0; }
   .pag > *:not(.filigrana) { position: relative; z-index: 1; }
-  .hdr { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+  .hdr { display: flex; align-items: flex-start; gap: 14px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+  /* il logo sta a sinistra e non cresce: su una fotocopia in bianco e nero
+     diventa grigio, quindi la ragione sociale la deve dire il testo accanto */
+  .logo { width: 62px; height: 62px; object-fit: contain; flex: 0 0 auto; }
   .banner { position: absolute; top: 0; left: 0; width: 100%; height: 58px; object-fit: cover; opacity: .9; z-index: -1; }
   .hdrTxt { flex: 1; }
   .soc { font-size: 17px; font-weight: 800; letter-spacing: .2px; }
@@ -216,7 +226,7 @@ export function ddtHtml(
   .parte { border: 1px solid #999; border-radius: 5px; padding: 8px 10px; line-height: 1.5; }
   .parteT { font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #555; margin-bottom: 3px; }
   .luogo { margin-top: 7px; padding-top: 6px; border-top: 1px dashed #bbb; }
-  .luogo span { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: #555; }
+  .luogo .et { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: #555; }
   table.beni { width: 100%; border-collapse: collapse; margin-top: 10px; }
   .beni th, .beni td { border: 1px solid #999; padding: 5px 8px; text-align: left; }
   .beni thead th { background: #f1f1f1; font-size: 10px; letter-spacing: .4px; text-transform: uppercase; }

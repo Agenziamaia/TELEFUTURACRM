@@ -1702,6 +1702,9 @@ html.light .rvTab-ord i{color:color-mix(in srgb,var(--rv-acc) 55%,#08101f)}
 .rvTab tbody{color:var(--tf-cbd5e1)}
 .rvTab td{padding:9px 14px;vertical-align:middle;border-top:1px solid var(--tf-w50)}
 html.light .rvTab td{border-top-color:rgba(18,28,54,.09)}
+/* ogni riga del corpo: il colore di fondo cambia con calma, se no su una
+   griglia fitta il passaggio del mouse è uno sfarfallio */
+.rvTab-riga>td{transition:background .12s ease}
 /* la riga che si può aprire */
 .rvTab-cl{cursor:pointer}
 .rvTab-cl:hover>td{background:color-mix(in srgb,var(--rv-acc) 8%,transparent)}
