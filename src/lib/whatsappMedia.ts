@@ -1,7 +1,17 @@
-import { supabase } from "@/lib/supabaseClient";
+/* ⚠️ LA CHIAVE DEL SERVER, NON QUELLA DEL BROWSER (31/08).
+   Questo modulo gira SOLO lato server — lo chiamano il webhook di Evolution e
+   il recupero dello storico — ma usava `supabaseClient`, cioè la chiave
+   pubblica. Ha funzionato finché scrivere nei depositi era libero.
+   Poi, il 28/08, la blindatura ha preteso un'identità per scrivere: sul
+   server il lasciapassare non c'è (è di una persona, e qui non c'è nessuna
+   persona), quindi da quel giorno OGNI upload è fallito. La funzione
+   restituisce `null` in silenzio, `media_url` resta vuoto, e nella chat il
+   negozio vede «[Immagine]» al posto della foto del cliente.
+   Misurato: dal 29/08 in poi, 142 media su 142 senza indirizzo. */
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
-// Salvataggio degli allegati WhatsApp nel bucket pubblico "whatsapp-media" e
-// ritorno dell'URL pubblico (che poi finisce in wa_messages.media_url).
+// Salvataggio degli allegati WhatsApp nel deposito "whatsapp-media" e ritorno
+// dell'indirizzo (che poi finisce in wa_messages.media_url).
 
 function estensione(mime?: string): string {
     const m = String(mime || "").toLowerCase().split(";")[0];
@@ -24,7 +34,10 @@ export async function salvaMediaBase64(base64: string, mimetype: string | undefi
         const { error } = await supabase.storage.from("whatsapp-media").upload(path, bytes, {
             contentType: mimetype || "application/octet-stream", upsert: true,
         });
-        if (error) return null;
+        /* ⚠️ E SE FALLISCE, SI DEVE SAPERE. Prima tornava `null` in silenzio:
+           per tre giorni ogni foto è andata persa senza una riga da nessuna
+           parte, e ce ne siamo accorti perché l'ha notato Francesco. */
+        if (error) { console.error("[wa-media] upload non riuscito:", error.message, "→", path); return null; }
         const { data } = supabase.storage.from("whatsapp-media").getPublicUrl(path);
         return data?.publicUrl || null;
     } catch {
