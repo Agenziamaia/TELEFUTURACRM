@@ -187,39 +187,30 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [nFestivoNome, setNFestivoNome] = useState("");
     const [annoFestivi, setAnnoFestivi] = useState(new Date().getFullYear());
     // giorni EFFETTIVI di una richiesta: esclusi domeniche e festivi
-    const giorniEffettivi = useCallback((r: VacationRequest) => {
-        const conta = (ymd: string) => { const d = new Date(ymd + "T12:00"); return d.getDay() !== 0 && !festiviSet.has(ymd); };
-        if (r.half_day) return conta(r.date_from) ? 0.5 : 0;
-        let n = 0;
-        const d = new Date(r.date_from + "T12:00");
-        const fine = new Date(r.date_to + "T12:00");
-        while (d <= fine) {
-            const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            if (conta(ymd)) n++;
-            d.setDate(d.getDate() + 1);
-        }
-        return n;
-    }, [festiviSet]);
-
-    /* I GIORNI CHE CADONO DENTRO IL PERIODO (Luca 31/08): un'assenza dal 28/07
-       al 4/08 non è tutta di agosto. Stessa regola dei giorni effettivi —
-       domeniche e festivi non contano — applicata alla sola parte che ci sta. */
-    const giorniEffettiviTra = useCallback((r: VacationRequest, da: string, a: string) => {
+    const giornateTra = useCallback((r: VacationRequest, da: string, a: string) => {
         const conta = (ymd: string) => { const d = new Date(ymd + "T12:00"); return d.getDay() !== 0 && !festiviSet.has(ymd); };
         const dal = r.date_from < da ? da : r.date_from;
         const al = r.date_to > a ? a : r.date_to;
-        if (dal > al) return 0;
-        if (r.half_day) return r.date_from >= da && r.date_from <= a && conta(r.date_from) ? 0.5 : 0;
-        let n = 0;
+        if (!dal || !al || dal > al) return [];
+        const out: { giorno: string; quota: number }[] = [];
         const d = new Date(dal + "T12:00");
         const fine = new Date(al + "T12:00");
         while (d <= fine) {
             const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            if (conta(ymd)) n++;
+            // MEZZA GIORNATA sul giorno TAGLIATO, non su `date_from` (revisore
+            // 31/08): con una richiesta a cavallo del periodo la mezza giornata
+            // spariva da tutti e due i mesi
+            if (conta(ymd)) out.push({ giorno: ymd, quota: r.half_day ? 0.5 : 1 });
             d.setDate(d.getDate() + 1);
         }
-        return n;
+        return r.half_day ? out.slice(0, 1) : out;
     }, [festiviSet]);
+    const giorniEffettiviTra = useCallback((r: VacationRequest, da: string, a: string) =>
+        giornateTra(r, da, a).reduce((t, g) => t + g.quota, 0), [giornateTra]);
+    /* I GIORNI EFFETTIVI di una richiesta intera: è `giornateTra` senza tagli,
+       così le due regole non possono divergere (revisore 31/08). */
+    const giorniEffettivi = useCallback((r: VacationRequest) => giorniEffettiviTra(r, r.date_from, r.date_to), [giorniEffettiviTra]);
+
 
 
     useEffect(() => {
@@ -489,14 +480,20 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 titolo="Ferie" nomeFile="ferie"
                                 colonneExtra={["Tipo", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"]}
                                 righe={({ da, a }) => requests
-                                    .filter((r: VacationRequest) => r.status === "approved" && r.date_from <= a && r.date_to >= da)
+                                    /* I CORSI FUORI (revisore 31/08): nel resto della sezione
+                                       non contano nei giorni di ferie, e per la busta paga un
+                                       corso è tempo lavorato — sommarli alle ferie nel
+                                       riepilogo dava a una persona 2 giorni di ferie che erano
+                                       due giornate di formazione. */
+                                    .filter((r: VacationRequest) => r.status === "approved" && r.tipo !== "corso" && r.date_from <= a && r.date_to >= da)
                                     .map((r: VacationRequest) => ({
                                         persona: r.employee_name, negozio: r.store || "",
-                                        dal: r.date_from < da ? da : r.date_from,
-                                        al: r.date_to > a ? a : r.date_to,
+                                        // le date VERE: il taglio al periodo sta nei giorni
+                                        dal: r.date_from, al: r.date_to,
                                         giorni: giorniEffettiviTra(r, da, a),
+                                        giornate: giornateTra(r, da, a),
                                         extra: {
-                                            "Tipo": r.tipo === "corso" ? "Corso" : "Ferie",
+                                            "Tipo": "Ferie",
                                             "Mezza giornata": r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
                                             "Stato": "Approvata",
                                             "Motivazione": r.reason || "",
@@ -1170,23 +1167,32 @@ function MalattiaSection() {
        che serve alla busta paga; il certificato copre i giorni di calendario,
        ma quelli li porta la colonna «Dal/Al» del dettaglio. */
     const [festiviMal, setFestiviMal] = useState<Set<string>>(new Set());
+    /* FINCHÉ I FESTIVI NON SONO ARRIVATI NON SI ESPORTA (revisore 31/08):
+       con l'insieme vuoto agosto dava 52 giorni invece di 50 — Ferragosto
+       contato come lavorativo — e sbagliava in silenzio. Se la lettura
+       fallisce, il bottone resta spento invece di dare numeri gonfiati. */
+    const [festiviPronti, setFestiviPronti] = useState(false);
     useEffect(() => {
         supabase.from("giorni_festivi").select("giorno")
-            .then(({ data }) => setFestiviMal(new Set(((data ?? []) as { giorno: string }[]).map((f) => f.giorno))));
+            .then(({ data, error }) => {
+                if (error) return;
+                setFestiviMal(new Set(((data ?? []) as { giorno: string }[]).map((f) => f.giorno)));
+                setFestiviPronti(true);
+            });
     }, []);
-    const giorniMalattiaTra = useCallback((dal0: string, al0: string, da: string, a: string) => {
+    const giornateMalattiaTra = useCallback((dal0: string, al0: string, da: string, a: string) => {
         const dal = dal0 < da ? da : dal0;
         const al = al0 > a ? a : al0;
-        if (!dal || !al || dal > al) return 0;
-        let n = 0;
+        if (!dal || !al || dal > al) return [];
+        const out: { giorno: string; quota: number }[] = [];
         const d = new Date(dal + "T12:00");
         const fine = new Date(al + "T12:00");
         while (d <= fine) {
             const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            if (d.getDay() !== 0 && !festiviMal.has(ymd)) n++;
+            if (d.getDay() !== 0 && !festiviMal.has(ymd)) out.push({ giorno: ymd, quota: 1 });
             d.setDate(d.getDate() + 1);
         }
-        return n;
+        return out;
     }, [festiviMal]);
 
     const fetchAbsences = useCallback(async () => {
@@ -1303,20 +1309,27 @@ function MalattiaSection() {
                         {/* L'EXPORT MANCAVA DEL TUTTO (Luca 31/08): le ferie l'avevano,
                             la malattia no — e a fine mese servono tutte e due, separate.
                             Stessa finestra, stessi due fogli. */}
-                        <EsportaAssenze
-                            titolo="Malattia" nomeFile="malattia"
-                            colonneExtra={["Certificato"]}
-                            righe={({ da, a }) => absences
-                                .filter((r) => r.date_from <= a && r.date_to >= da)
-                                .map((r) => ({
-                                    persona: r.employee_name, negozio: r.store || "",
-                                    dal: r.date_from < da ? da : r.date_from,
-                                    al: r.date_to > a ? a : r.date_to,
-                                    giorni: giorniMalattiaTra(r.date_from, r.date_to, da, a),
-                                    extra: { "Certificato": r.certificate_number || "" },
-                                }))
-                                .filter((x) => x.giorni > 0)}
-                        />
+                        {festiviPronti && (
+                            <EsportaAssenze
+                                titolo="Malattia" nomeFile="malattia"
+                                colonneExtra={["Certificato"]}
+                                righe={({ da, a }) => absences
+                                    .filter((r) => r.date_from <= a && r.date_to >= da)
+                                    .map((r) => {
+                                        const giornate = giornateMalattiaTra(r.date_from, r.date_to, da, a);
+                                        return {
+                                            persona: r.employee_name, negozio: r.store || "",
+                                            // le date VERE del certificato: il foglio si
+                                            // riconcilia con quello, e un certificato che
+                                            // arriva al 25/09 non si dichiara chiuso il 31/08
+                                            dal: r.date_from, al: r.date_to,
+                                            giorni: giornate.length, giornate,
+                                            extra: { "Certificato": r.certificate_number || "" },
+                                        };
+                                    })
+                                    .filter((x) => x.giorni > 0)}
+                            />
+                        )}
                         <button
                             onClick={() => setShowNewModal(true)}
                             className="h-9 px-4 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors flex items-center gap-2"

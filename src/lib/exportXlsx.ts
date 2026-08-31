@@ -50,6 +50,7 @@ export async function scaricaXlsxMulti(
 ): Promise<void> {
     const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
+    const usati = new Set<string>();
     for (const f of fogli) {
         const ws = XLSX.utils.aoa_to_sheet([f.intestazioni, ...f.righe]);
         ws["!cols"] = f.intestazioni.map((h, i) => {
@@ -57,8 +58,14 @@ export async function scaricaXlsxMulti(
             for (const r of f.righe) w = Math.max(w, String(r[i] ?? "").length + 2);
             return { wch: Math.min(w, 60) };
         });
-        // il nome di un foglio Excel non può superare 31 caratteri né contenere []:*?/\
-        XLSX.utils.book_append_sheet(wb, ws, f.nome.replace(/[[\]:*?/\\]/g, " ").slice(0, 31));
+        // Il nome di un foglio Excel non può superare 31 caratteri, contenere
+        // []:*?/\ , essere vuoto o iniziare/finire con un apostrofo. E due nomi
+        // che dopo il taglio COINCIDONO fanno morire l'export a metà, muto:
+        // meglio un «(2)» in fondo che un file che non esce.
+        let nome = (f.nome || "Foglio").replace(/[[\]:*?/\\]/g, " ").replace(/^'+|'+$/g, "").trim().slice(0, 31) || "Foglio";
+        for (let i = 2; usati.has(nome.toLowerCase()); i++) nome = `${nome.slice(0, 27)} (${i})`;
+        usati.add(nome.toLowerCase());
+        XLSX.utils.book_append_sheet(wb, ws, nome);
     }
     XLSX.writeFile(wb, `${nomeFile}.xlsx`);
 }

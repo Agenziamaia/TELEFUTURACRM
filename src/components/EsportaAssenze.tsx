@@ -25,9 +25,17 @@ export const ORE_AL_GIORNO = 8;
 export type RigaAssenza = {
     persona: string;
     negozio: string;
+    /** le date VERE dell'assenza, non quelle tagliate al periodo: il foglio si
+     *  riconcilia col certificato, e dichiarare chiuso il 31/08 un certificato
+     *  che arriva al 25/09 fa scattare la contestazione (revisore 31/08) */
     dal: string;              // AAAA-MM-GG
     al: string;               // AAAA-MM-GG
-    giorni: number;           // già al netto di domeniche e festivi
+    /** i giorni che cadono DENTRO il periodo, già al netto di domeniche e festivi */
+    giorni: number;
+    /** le singole giornate contate, con la loro quota (1 o 0,5): servono al
+     *  riepilogo per non sommare due volte lo stesso giorno quando una persona
+     *  ha due certificati sovrapposti */
+    giornate?: { giorno: string; quota: number }[];
     extra?: Record<string, CellaXlsx>;   // colonne in più del registro (stato, certificato…)
 };
 
@@ -69,17 +77,29 @@ export function EsportaAssenze({ titolo, colonneExtra, righe, nomeFile }: {
             r.persona, r.negozio, itDate(r.dal), itDate(r.al), r.giorni, Math.round(r.giorni * ORE_AL_GIORNO * 100) / 100,
             ...extra.map((c) => r.extra?.[c] ?? ""),
         ]);
-        /* IL RIEPILOGO: una riga per persona, come lo chiede chi paga. Le
-           mezze giornate restano frazioni — 3,5 giorni sono 3,5, non 4. */
-        const per = new Map<string, { persona: string; negozio: string; giorni: number; righe: number }>();
+        /* IL RIEPILOGO: una riga per persona, come lo chiede chi paga.
+           I GIORNI SI UNISCONO, NON SI SOMMANO (revisore 31/08). Sommando riga
+           per riga, tre certificati sovrapposti dello stesso collaboratore
+           davano 36 giorni in un mese che ne ha 25 lavorativi — 288 ore di
+           malattia su un mese da 200. Qui ogni giornata conta una volta sola, e
+           se un giorno compare sia intero sia a metà vale intero. */
+        const per = new Map<string, { persona: string; negozii: Set<string>; giorni: Map<string, number>; righe: number }>();
         for (const r of dati) {
-            const v = per.get(r.persona) || { persona: r.persona, negozio: r.negozio, giorni: 0, righe: 0 };
-            v.giorni = Math.round((v.giorni + r.giorni) * 100) / 100;
+            const v = per.get(r.persona) || { persona: r.persona, negozii: new Set<string>(), giorni: new Map<string, number>(), righe: 0 };
             v.righe++;
-            if (!v.negozio) v.negozio = r.negozio;
+            if (r.negozio) v.negozii.add(r.negozio);
+            for (const g of r.giornate || []) v.giorni.set(g.giorno, Math.max(v.giorni.get(g.giorno) ?? 0, g.quota));
             per.set(r.persona, v);
         }
         const riepilogo: CellaXlsx[][] = [...per.values()]
+            .map((v) => ({
+                persona: v.persona,
+                // più negozi = si dicono tutti: raggruppare per nome e mostrare
+                // «il primo che capita» nascondeva che uno lavora su due sedi
+                negozio: [...v.negozii].sort().join(" · "),
+                righe: v.righe,
+                giorni: Math.round([...v.giorni.values()].reduce((t, q) => t + q, 0) * 100) / 100,
+            }))
             .sort((x, y) => y.giorni - x.giorni || x.persona.localeCompare(y.persona))
             .map((v) => [v.persona, v.negozio, v.righe, v.giorni, Math.round(v.giorni * ORE_AL_GIORNO * 100) / 100]);
 
@@ -138,11 +158,13 @@ export function EsportaAssenze({ titolo, colonneExtra, righe, nomeFile }: {
                                 <p className="text-[11px] text-slate-400">Dal {itDate(periodo.da)} al {itDate(periodo.a)}, mese intero.</p>
                             )}
                             <p className="text-[11px] text-slate-400">
-                                {dati.length === 0
+                                {scelta === "libero" && (!da || !a)
+                                    ? "Scegli la data di inizio e quella di fine."
+                                    : dati.length === 0
                                     ? "In questo periodo non c'è nessuna assenza da esportare."
                                     : <>Escono <b className="text-white">{dati.length}</b> {dati.length === 1 ? "riga" : "righe"} su <b className="text-white">{new Set(dati.map((r) => r.persona)).size}</b> {new Set(dati.map((r) => r.persona)).size === 1 ? "persona" : "persone"}, in due fogli: <b className="text-white">Dettaglio</b> e <b className="text-white">Riepilogo</b>.</>}
                             </p>
-                            <p className="text-[10px] text-slate-600">Le assenze a cavallo del periodo entrano per la parte che ci cade dentro. Un giorno vale {ORE_AL_GIORNO} ore; le mezze giornate restano frazioni (0,5).</p>
+                                            <p className="text-[10px] text-slate-600">Nel dettaglio le date sono quelle vere dell&apos;assenza; i giorni sono solo quelli che cadono nel periodo. Un giorno vale {ORE_AL_GIORNO} ore, le mezze giornate restano frazioni (0,5), e nel riepilogo una giornata coperta da due assenze conta una volta sola.</p>
                         </div>
                         <div className="px-5 py-3 border-t border-white/10 flex items-center justify-end gap-2">
                             <button onClick={() => setAperto(false)} className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">Annulla</button>
