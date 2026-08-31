@@ -129,12 +129,12 @@ const QUADRI: {
     id: string; icona: string; et: string; unita: string;
     tinta?: string; spiega: string; vista?: "trasferiti" | "venduto"; euro?: boolean;
 }[] = [
+    { id: "altrove", icona: "🌐", et: "Altrove", unita: "articoli", tinta: "rvT-viola", spiega: "Quello che qui non c'è ma sta in un altro punto vendita: si può farsi mandare" },
     { id: "_all", icona: "📦", et: "Tutto", unita: "articoli", tinta: "rvT-indaco", spiega: "Tutta la merce ancora tua nei punti vendita che stai guardando: a scaffale, in arrivo, sotto zero e quella che sta solo negli altri" },
     { id: "disponibile", icona: "🟢", et: "Disponibili", unita: "articoli", tinta: "rvT-verde", spiega: "Gli articoli con giacenza maggiore di zero: quello che c'è adesso sullo scaffale" },
     { id: "in_arrivo", icona: "🚛", et: "In arrivo", unita: "articoli", tinta: "rvT-ciano", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
-    { id: "trasferiti", icona: "🚚", et: "Trasferiti", unita: "righe", spiega: "Apre la lista della merce partita da qui e non ancora accettata dall'altro negozio", vista: "trasferiti" },
+    { id: "trasferiti", icona: "🚚", et: "Trasferiti", unita: "righe", spiega: "Apre la lista della merce in viaggio che ti riguarda: partita da qui e non ancora accettata, o in arrivo con un documento da accettare", vista: "trasferiti" },
     { id: "venduto", icona: "🧾", et: "Venduti", unita: "pezzi", spiega: "Apre il venduto pezzo per pezzo, con l'IMEI e il prezzo di uscita", vista: "venduto" },
-    { id: "altrove", icona: "🌐", et: "Altrove", unita: "articoli", tinta: "rvT-viola", spiega: "Quello che qui non c'è ma sta in un altro punto vendita: si può farsi mandare" },
     { id: "sotto_zero", icona: "⚠️", et: "Sotto zero", unita: "articoli", tinta: "rvT-rosso", spiega: "Righe a saldo negativo: è uscito qualcosa che a magazzino non c'era" },
     { id: "val_vendita", icona: "💰", et: "Valore a listino", unita: "€", tinta: "rvT-ambra", spiega: "Quanto vale, ai prezzi di listino, la merce a scaffale nei punti vendita che stai guardando", euro: true },
     { id: "val_acquisto", icona: "🏷️", et: "Valore a costo", unita: "€", tinta: "rvT-bronzo", spiega: "Quanto è costata la merce a scaffale nei punti vendita che stai guardando", euro: true },
@@ -845,7 +845,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             const perId = new Map((ddt ?? []).map((d: { id: string }) => [d.id, d]));
             setInViaggio((righeDdt as { ddt_id: string; seriale: string | null; codice: string | null; descrizione: string | null; qta: number | null }[])
                 .map(r => { const d = perId.get(r.ddt_id) as { id: string; numero: string | null; da_negozio: string; a_negozio: string; emesso_il: string }; return { ...d, seriale: r.seriale, codice: r.codice, descrizione: r.descrizione, qta: r.qta }; })
-                .filter(r => r.da_negozio && (!scelti.length || scelti.some(x => stessoMagazzino(r.da_negozio, x)))));
+                /* ANCHE QUELLI CHE ARRIVANO, non solo quelli partiti. La merce
+                   che l'import ha trovato «in arrivo» viaggia con un documento
+                   il cui mittente è «Import»: guardando solo `da_negozio`,
+                   chi la riceve non la vedrebbe da nessuna parte. In viaggio è
+                   in viaggio: riguarda tutti e due i capi. */
+                .filter(r => !scelti.length
+                    || scelti.some(x => stessoMagazzino(r.da_negozio, x) || stessoMagazzino(r.a_negozio, x))));
         })();
         return () => { vivo = false; };
     }, [scelti]);
