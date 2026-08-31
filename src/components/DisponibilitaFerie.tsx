@@ -111,7 +111,7 @@ export function DisponibilitaFerie() {
 
     const [leggo, setLeggo] = useState(false);
     const [esitoLettura, setEsitoLettura] = useState<string | null>(null);
-    type EsitoBusta = { persona: string; file: string; giorni: number | null; motivo?: string };
+    type EsitoBusta = { persona: string; file: string; giorni: number | null; motivo?: string; contesto?: string[] };
     const [esiti, setEsiti] = useState<EsitoBusta[] | null>(null);
     /* PRIMA SI GUARDA, POI SI SCRIVE. Il lettore del PDF può sbagliare numero
        senza dare errore: se scrive e basta, un residuo falso entra in silenzio
@@ -204,11 +204,19 @@ export function DisponibilitaFerie() {
                                 : <span className="text-amber-300/80 truncate max-w-[240px]" title={e.motivo}>non letto — {e.motivo || "riquadro RATEI non trovato"}</span>}
                         </div>
                     ))}
+                    {esiti.some((e) => e.contesto?.length) && (
+                        <details className="mt-2">
+                            <summary className="text-[10px] text-slate-500 cursor-pointer hover:text-slate-300">Com&apos;è fatto il cedolino che non si legge (da mandare a chi sviluppa)</summary>
+                            {esiti.filter((e) => e.contesto?.length).slice(0, 3).map((e, i) => (
+                                <pre key={i} className="mt-1 text-[10px] text-slate-400 bg-black/40 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">{e.persona + "\n" + (e.contesto || []).join("\n")}</pre>
+                            ))}
+                        </details>
+                    )}
                 </div>
             )}
             {senzaDato > 0 && (
                 <p className="text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
-                    ⚠️ Per {senzaDato} {senzaDato === 1 ? "collaboratore manca" : "collaboratori manca"} il residuo di partenza. Premi <b>«Leggi dalle buste paga»</b>: il saldo sta nel riquadro RATEI del cedolino di <b>{nomeMese(meseNuovo)}</b>. Chi non ha la busta archiviata si scrive a mano qui a fianco.
+                    ⚠️ Per {senzaDato} {senzaDato === 1 ? "collaboratore manca" : "collaboratori manca"} il residuo di partenza. Premi <b>«Leggi in prova»</b>: il saldo sta nel riquadro RATEI del cedolino di <b>{nomeMese(meseNuovo)}</b>. Chi non ha la busta archiviata si scrive a mano qui a fianco.
                 </p>
             )}
 

@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     const { data: utenti } = await supabase.from("app_users").select("id, full_name");
     const nomeDi = new Map(((utenti ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
 
-    const esiti: { persona: string; file: string; giorni: number | null; riga: string | null; motivo?: string }[] = [];
+    const esiti: { persona: string; file: string; giorni: number | null; riga: string | null; motivo?: string; contesto?: string[] }[] = [];
     const daScrivere: { user_id: string; mese: string; giorni: number; fonte: string; note: string }[] = [];
     for (const busta of buste as { id: string; user_id: string; file_name: string; storage_path: string }[]) {
         const persona = nomeDi.get(busta.user_id) || busta.user_id;
@@ -43,7 +43,9 @@ export async function POST(req: Request) {
             if (eF || !file) { esiti.push({ persona, file: busta.file_name, giorni: null, riga: null, motivo: "file non scaricabile" }); continue; }
             const testo = await testoPdf(new Uint8Array(await file.arrayBuffer()));
             const s = saldoFerieDaTesto(testo);
-            esiti.push({ persona, file: busta.file_name, giorni: s.giorni, riga: s.riga, motivo: s.motivo });
+            // il CONTESTO solo quando non si è letto: serve a vedere com'è
+            // fatto il cedolino invece di tirare a indovinare
+            esiti.push({ persona, file: busta.file_name, giorni: s.giorni, riga: s.riga, motivo: s.motivo, ...(s.giorni == null && s.contesto ? { contesto: s.contesto } : {}) });
             if (s.giorni != null) daScrivere.push({
                 user_id: busta.user_id, mese, giorni: s.giorni, fonte: "busta_paga",
                 note: `letto dalla busta paga «${busta.file_name}»`,

@@ -24,7 +24,13 @@ const casi = [
     ["ferie in ore, giorni sopra",     R+"FERIE 4,33333 GG.\nFERIE 34,66 ORE",           4.33333],
     ["zero",                           R+"FERIE 0,00 GG.",                               0],
     ["niente riga ferie",              R+"Perm.Ex-Fs 5,33333 ORE",                       null],
-    ["frammenti separati",             R+"FERIE\n4,33333\nGG.",                          null],
+    /* l'etichetta sola e i numeri sotto: succedeva DAVVERO, ed è la ragione per
+       cui tutte e 24 le buste di luglio erano risultate illeggibili */
+    ["etichetta e numeri separati",    R+"FERIE\n4,33333 GG.",                           4.33333],
+    ["numeri su due righe sotto",      R+"FERIE\n4,33333\nGG.",                          4.33333],
+    ["codice di voce davanti",         R+"01 FERIE 4,33333 GG.",                         4.33333],
+    ["FERIE in mezzo alla riga",       R+"RATEI FERIE 4,33333 GG.",                      4.33333],
+    ["godute anche in mezzo",          R+"FERIE GODUTE 12,00 GG.",                       null],
 ];
 let ko = 0;
 for (const [nome, testo, atteso] of casi) {
