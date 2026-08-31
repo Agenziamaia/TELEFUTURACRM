@@ -1900,3 +1900,66 @@ html.light .rvFrec{color:#5a6580}
    all'arrivo, dove si spunta riga per riga quello che si ha davvero in mano.
    Non è un modale diverso — è lo stesso, più largo. */
 .rvFatta-lg{max-width:760px}
+
+/* ═══════════ LA STORIA DI UN PEZZO ════════════════════════════════════
+   (Luca 31/08: «clicco sull'IMEI specifico e mi dà tutta la cronistoria di
+    quel prodotto… una timeline come quella che abbiamo dentro ai clienti»)
+   La timeline dei Clienti è scritta a mano dentro la sua pagina — quella non
+   si copia, si rifà con la cassetta (regola 1). Stessa forma: una linea, i
+   nodi, una scheda per passaggio che si apre al clic e al secondo clic porta
+   al documento.
+   Contrasti MISURATI compositando davvero le trasparenze sul fondo vero:
+   scuro #12141f (il pannello), chiaro #ffffff.                            */
+
+/* ── IL SERIALE, CHE SI CLICCA ─────────────────────────────────────────
+   Un IMEI stampato uguale a un IMEI cliccabile non si distingue: qui è la
+   tinta della sezione più una sottolineatura tratteggiata, che diventa piena
+   quando ci passi sopra. Misurato: scuro 9,32:1 · chiaro 8,37:1. */
+.rvSerial{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.5px;font-weight:700;color:var(--tf-a5b4fc);background:none;border:0;
+  padding:0;cursor:pointer;text-align:left;line-height:1.4;
+  border-bottom:1px dashed color-mix(in srgb,var(--rv-acc) 55%,transparent)}
+.rvSerial:hover{color:var(--tf-c7d2fe);border-bottom-style:solid}
+html.light .rvSerial:hover{color:#101c66}
+
+/* ── IL PANNELLO ───────────────────────────────────────────────────────
+   Più largo del modale di conferma (440px): qui dentro ci sta un racconto,
+   non una domanda sì/no. Scorre da solo, perché una storia lunga non deve
+   spingere il pulsante di chiusura fuori dallo schermo. */
+.rvStoria{width:100%;max-width:660px;max-height:88vh;overflow:auto;
+  background:var(--tf-12141f);border:1px solid color-mix(in srgb,var(--rv-acc) 34%,transparent);
+  border-radius:20px;padding:22px 22px 26px;box-shadow:0 22px 60px rgba(0,0,0,.5)}
+html.light .rvStoria{box-shadow:0 18px 44px rgba(18,28,54,.16)}
+.rvStoria-t{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+.rvStoria-tit{font-size:16.5px;font-weight:800;color:var(--tf-f8fafc);line-height:1.25}
+.rvStoria-sot{margin-top:4px;font-size:12px;color:var(--tf-8892b0);line-height:1.5}
+
+/* ── LA LINEA E I NODI ─────────────────────────────────────────────────
+   `padding-left` sulla lista e nodo in negativo: la linea resta dritta anche
+   quando una scheda è alta il doppio delle altre. */
+.rvTml{position:relative;margin:14px 0 0 13px;padding-left:23px;
+  border-left:2px solid var(--tf-w100);display:flex;flex-direction:column;gap:13px}
+.rvTml-r{position:relative}
+.rvTml-p{position:absolute;left:-36px;top:3px;width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;
+  background:color-mix(in srgb,var(--rv-acc) 14%,var(--tf-12141f));
+  border:1px solid color-mix(in srgb,var(--rv-acc) 45%,transparent)}
+.rvTml-c{background:var(--tf-w30);border:1px solid var(--tf-w60);border-radius:14px;padding:10px 13px}
+.rvTml-cl{cursor:pointer;transition:border-color .15s,background .15s}
+.rvTml-cl:hover{border-color:color-mix(in srgb,var(--rv-acc) 50%,transparent);
+  background:color-mix(in srgb,var(--rv-acc) 7%,var(--tf-w30))}
+/* La data: piccola, quindi il grigio di sistema non basta. `--tf-64748b`, che
+   è il grigio tenue di casa, sul velo della scheda misura 3,60:1 nel tema
+   scuro — sotto soglia, e su un testo da 10,5px si vede eccome. Il valore che
+   passa restando più tenue del titolo è questo.
+   Misurato: scuro 5,14:1 · chiaro 5,16:1. */
+.rvTml-q{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:10.5px;color:#828da6;margin-bottom:3px;letter-spacing:.2px}
+html.light .rvTml-q{color:#59647a}
+.rvTml-e{font-size:13.5px;font-weight:800;color:var(--tf-e2e8f0);display:flex;align-items:center;gap:7px}
+/* stessa storia della data, e per lo stesso motivo: scuro 5,14:1 · chiaro 5,16:1 */
+.rvTml-fr{color:#828da6;font-size:11px;font-weight:700}
+html.light .rvTml-fr{color:#59647a}
+.rvTml-d{font-size:12px;color:var(--tf-8892b0);margin-top:2px;line-height:1.5}
+.rvTml-x{margin-top:9px;padding-top:9px;border-top:1px solid var(--tf-w60);
+  display:flex;flex-direction:column;gap:5px}

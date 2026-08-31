@@ -19,8 +19,8 @@
 //                  13/08): solo i riferimenti (codice, barcode, descrizione,
 //                  gruppo/listino, sottogruppo, marca), divisi per brand.
 //                  Import col runner scripts/import_mag_articoli.js.
-// Stati unità: disponibile · in_arrivo · in_transito (negozio = destinazione,
-// il mittente lo vede spedito nel DDT) · venduto (deflaggato ma ricercabile).
+// Stati unità: disponibile · in_arrivo · in_transito (negozio = destinazione;
+// chi l'ha spedito lo segue in Trasferimenti) · venduto · annullato.
 //
 // ⚠️  VESTITO (Luca 31/08). «Le modifiche che hai fatto sul magazzino sono
 // corrette, però dobbiamo adattarlo esteticamente al resto del gestionale:
@@ -44,6 +44,7 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
 import { ddtHtml, type AziendaDdt, type NegozioDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
+import { storiaCompleta, pezzoOra, NOME_EVENTO, type EventoPezzo } from "@/lib/magazzinoStoria";
 /* Il RAGIONAMENTO sui trasferimenti — le situazioni in cui della merce si
    muove fra punti vendita, e cosa deve succedere in ognuna — sta tutto in
    src/lib/trasferimenti.ts. Qui si usa, non si ripete. */
@@ -58,6 +59,9 @@ type Unita = {
     id: string; seriale: string; tipo_seriale: string; codice: string | null; descrizione: string;
     azienda: string | null; negozio: string; stato: string; valore: number | null;
     caricato_il: string; caricato_da: string | null; venduto_il: string | null; venduto_da: string | null;
+    /* a quanto è uscito davvero (migrazione 20260831190000): `valore` è quello
+       che ci è costato, questo è quello che ha pagato il cliente */
+    prezzo_vendita: number | null;
     contract_id: string | null; ddt_id: string | null;
     storia: { quando: string; evento: string; negozio?: string; operatore?: string; note?: string }[];
 };
@@ -71,10 +75,29 @@ type Articolo = {
     costo_ultimo: number | null; prezzo: number | null; attivo: boolean;
 };
 
+/* COME SI CHIAMA UNO STATO quando lo legge una persona (Luca 31/08).
+   «Spedito» non esisteva nemmeno come stato vero — era una voce morta della
+   tendina — e comunque fra due nostri negozi non si spedisce: si TRASFERISCE.
+   «In transito» diventa «In viaggio», che è quello che vuol dire: la merce è
+   partita da un negozio e non è ancora stata accettata nell'altro. */
 const STATI_LABEL: Record<string, string> = {
-    disponibile: "🟢 Disponibile", in_arrivo: "📦 In arrivo", in_transito: "🚚 In transito", annullato: "🗑 Tolto dal magazzino",
-    spedito: "📤 Spedito", venduto: "⚪ Venduto",
+    disponibile: "🟢 Disponibile", in_arrivo: "📦 In arrivo", in_transito: "🚚 In viaggio",
+    trasferito: "📤 Trasferito", annullato: "🗑 Tolto dal magazzino", venduto: "🧾 Venduto",
 };
+/* GLI STATI CHE SI FILTRANO, E SONO PULSANTI (Luca 31/08: «gli stati diventano
+   dei pulsanti, e nel momento in cui entro nel magazzino ho prefleggati i
+   disponibili e quelli in arrivo»).
+   Sono TRE, e le assenze sono volute:
+   · «in viaggio» non sta qui — «non mi interessa nemmeno vedere i prodotti in
+     transito dentro il magazzino». Chi ha spedito li ritrova in Trasferimenti,
+     che è il posto dove un trasferimento si segue;
+   · «tolto dal magazzino» non è uno stato — «un articolo eliminato è un
+     articolo eliminato». Resta nella storia del pezzo, non fra la merce. */
+const STATI_FILTRO: { id: string; et: string; spiega: string }[] = [
+    { id: "disponibile", et: "🟢 Disponibili", spiega: "Quello che c'è adesso sullo scaffale" },
+    { id: "in_arrivo", et: "📦 In arrivo", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
+    { id: "venduto", et: "🧾 Venduti", spiega: "Uscito con una vendita — la tabella diventa pezzo per pezzo" },
+];
 const gg = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleDateString("it-IT") : "—";
 const gghh = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -85,7 +108,7 @@ export default function MagazzinoPage() {
     // merce solo amministrazione in su (segnalazione Francesco 12/08)
     const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
     const puoCaricare = isAdminOrAbove(user?.role);
-    const [tab, setTab] = useState<"giacenze" | "ricerca" | "trasferimenti" | "articoli">("giacenze");
+    const [tab, setTab] = useState<"giacenze" | "trasferimenti" | "articoli">("giacenze");
 
     /* LE DUE SOCIETÀ, COL LORO NOME (Francesco 29/08: «non è possibile
        filtrare tra Telefutura e Telefutura 2»). Il filtro c'era, ma diceva
@@ -174,7 +197,15 @@ export default function MagazzinoPage() {
             <div className="rvTesta">
                 <h1 className="rvTit"><Boxes size={25} /> Magazzino</h1>
                 <div className="rvPillRow">
-                    {([["giacenze", "📦 Giacenze"], ["ricerca", "🔍 Ricerca seriale"], ["trasferimenti", "🚚 Trasferimenti"], ["articoli", "📚 Articoli"]] as const).map(([k, l]) => (
+                    {/* LA RICERCA SERIALE NON È PIÙ UNA SCHEDA A PARTE (Luca
+                        31/08): «il campo di ricerca seriale potrebbe essere un
+                        campo che integriamo dentro le giacenze, così abbiamo
+                        tutto in un'unica sezione». Il campo «Cerca» delle
+                        Giacenze prende anche gli IMEI, e ogni seriale a schermo
+                        si clicca e racconta la sua storia — compreso quello che
+                        gli è successo fuori dal magazzino, che era il motivo per
+                        cui la scheda separata esisteva. */}
+                    {([["giacenze", "📦 Giacenze"], ["trasferimenti", "🚚 Trasferimenti"], ["articoli", "📚 Articoli"]] as const).map(([k, l]) => (
                         <button key={k} onClick={() => setTab(k)} className={cn("rvPill", tab === k && "rvPill-on")}>
                             {l}
                         </button>
@@ -187,8 +218,6 @@ export default function MagazzinoPage() {
                 <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
                     anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare}
                     ricarica={carica} utente={user?.name || "—"} />
-            ) : tab === "ricerca" ? (
-                <RicercaSeriale unita={unita} />
             ) : tab === "articoli" ? (
                 <Articoli vedeCosti={puoCaricare} />
             ) : (
@@ -265,7 +294,26 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     const [scelti, setScelti] = useState<string[]>(mioNegozio && negozi.includes(mioNegozio) ? [mioNegozio] : []);
 
     const [azienda, setAzienda] = useState("");
-    const [stato, setStato] = useState("");
+    /* GLI STATI SONO PULSANTI, E SI SOMMANO (Luca 31/08). Entrando si vede
+       quello che c'è e quello che sta arrivando: sono le due domande che uno
+       al banco si fa davvero. Gli altri si aggiungono e si tolgono. Toglierli
+       TUTTI non ha senso — sarebbe una tabella vuota — quindi l'ultimo acceso
+       non si spegne. */
+    const [stati, setStati] = useState<string[]>(["disponibile", "in_arrivo"]);
+    const vistaVenduto = stati.includes("venduto");
+    /* LA VISTA DEL VENDUTO (Luca 31/08): «nel momento in cui clicco su venduto
+       la giacenza non mi interessa: mi dà articolo per articolo direttamente
+       con l'IMEI». E il filtro di data smette di essere una fotografia del
+       passato e diventa un INTERVALLO sulla data di vendita. Parte dal mese in
+       corso: è la domanda normale («cosa ho venduto questo mese»), e tiene la
+       tabella di una misura leggibile. */
+    const _primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+    const [dal, setDal] = useState(_primoDelMese);
+    const [al, setAl] = useState("");
+    /* LA CRONISTORIA DI UN PEZZO, DA QUI (Luca 31/08): «il campo di ricerca
+       seriale lo integriamo dentro le giacenze, così clicco sull'IMEI e mi dà
+       tutta la cronistoria di quel prodotto». Il seriale su cui è aperta. */
+    const [seriale, setSeriale] = useState<string | null>(null);
     /* ANCHE GLI OPERATORI A PIÙ SELEZIONI (Luca 31/08): «lo stesso vale per la
        tendina dell'operatore». Chi cerca «cosa ho di WindTre e Fastweb» lo
        chiede una volta, non due. Vuoto = tutti. */
@@ -374,9 +422,17 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 if (u.venduto_il && u.venduto_il <= fine) continue;
                 vivo = true;
             } else {
-                if (stato && u.stato !== stato) continue;
+                /* «IN VIAGGIO» VISTO DA CHI LO ASPETTA È «IN ARRIVO» (Luca
+                   31/08). Su un pezzo `in_transito` il campo `negozio` è già
+                   la DESTINAZIONE: per questo negozio quella merce sta
+                   arrivando, e non serve un secondo stato per dirlo. Chi l'ha
+                   spedito la segue in Trasferimenti, che è il posto giusto. */
                 vivo = u.stato === "disponibile";
                 arrivo = u.stato === "in_transito" || u.stato === "in_arrivo";
+                if (vivo && !stati.includes("disponibile")) continue;
+                if (arrivo && !stati.includes("in_arrivo")) continue;
+                // venduto e annullato non stanno in questa griglia: il venduto
+                // ha la sua vista pezzo per pezzo, l'annullato non è più merce
                 if (!vivo && !arrivo) continue;
             }
             const k = `${u.codice || ""}|${u.descrizione}`;
@@ -401,19 +457,22 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             for (const g of quantita) {
                 if (azienda && g.azienda !== azienda) continue;
                 /* IL FILTRO NON DEVE PERDERE LE QUANTITÀ (revisore 29/08): le
-                   quantità non hanno uno stato per riga, hanno due colonne. */
-                if (stato === "in_transito") continue;
-                if (stato === "disponibile" && !(Number(g.quantita) > 0)) continue;
-                if (stato === "in_arrivo" && !(Number(g.inArrivo) > 0)) continue;
+                   quantità non hanno uno stato per riga, hanno DUE COLONNE —
+                   quanto c'è e quanto arriva. Il pulsante acceso decide quale
+                   delle due si guarda, e la riga compare se almeno una delle
+                   due colonne guardate ha qualcosa dentro. */
+                const vuoleDisp = stati.includes("disponibile"), vuoleArr = stati.includes("in_arrivo");
+                const haDisp = Number(g.quantita) !== 0, haArr = Number(g.inArrivo || 0) > 0;
+                if (!((vuoleDisp && haDisp) || (vuoleArr && haArr))) continue;
                 const k = `${g.codice}|${g.descrizione}`;
                 const r = m.get(k) || nuova(g.codice, g.descrizione);
                 if (nelloScopo(g.negozio)) {
-                    r.giacenza += stato === "in_arrivo" ? 0 : Number(g.quantita);
+                    r.giacenza += vuoleDisp ? Number(g.quantita) : 0;
                     // la merce in arrivo NON è giacenza: non si vende quello che
                     // sullo scaffale non c'è. Ma sapere che arriva serve.
-                    r.inArrivo += Number(g.inArrivo || 0);
-                    r.valore += Number(g.valore || 0);
-                } else if (Number(g.quantita) > 0) {
+                    r.inArrivo += vuoleArr ? Number(g.inArrivo || 0) : 0;
+                    r.valore += vuoleDisp ? Number(g.valore || 0) : 0;
+                } else if (vuoleDisp && Number(g.quantita) > 0) {
                     r.altrove += Number(g.quantita);
                     r.altrovePer[g.negozio] = (r.altrovePer[g.negozio] || 0) + Number(g.quantita);
                 }
@@ -425,9 +484,16 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         let out = Array.from(m.values());
         if (operatori.length) out = out.filter(r =>
             operatori.some(o => o === "(nessuno)" ? !r.operatore : r.operatore === o));
+        /* LA RICERCA PRENDE ANCHE I SERIALI (Luca 31/08: «il campo di ricerca
+           seriale lo integriamo dentro le giacenze, così abbiamo tutto in
+           un'unica sezione»). Un IMEI si spara col lettore e arriva con dei
+           separatori: si tolgono. Sotto le 4 cifre non si cerca per seriale —
+           «128» beccherebbe mezzo magazzino. */
         if (cerca.trim()) {
             const q = cerca.trim().toLowerCase();
-            out = out.filter(r => `${r.codice} ${r.descrizione}`.toLowerCase().includes(q));
+            const qs = q.replace(/[\s./-]/g, "");
+            out = out.filter(r => `${r.codice} ${r.descrizione}`.toLowerCase().includes(q)
+                || (qs.length >= 4 && r.pezzi.some(p => p.seriale.toLowerCase().replace(/[\s./-]/g, "").includes(qs))));
         }
         // «solo disponibili» = quello che c'è QUI; «tutti» tiene anche ciò che
         // sta solo altrove, che è il motivo per cui la colonna esiste
@@ -449,7 +515,54 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             return sort.desc ? -cmp : cmp;
         });
         return out;
-    }, [unita, quantita, anagrafica, scelti, azienda, stato, operatori, cerca, soloDisponibili, dataStorica, sort, nelloScopo]);
+    }, [unita, quantita, anagrafica, scelti, azienda, stati, operatori, cerca, soloDisponibili, dataStorica, sort, nelloScopo]);
+
+    /* ═══ IL VENDUTO, PEZZO PER PEZZO ═══════════════════════════════════
+       Luca 31/08: «nel momento in cui clicco su venduto la giacenza non mi
+       interessa: voglio verificare il venduto del magazzino, quindi mi dà
+       articolo per articolo direttamente con l'IMEI, il prezzo al quale l'ho
+       venduto e il giorno in cui l'ho venduto».
+       Qui una riga NON è un articolo: è un pezzo. Sommare non servirebbe a
+       niente — due iPhone uguali venduti in due giorni a due prezzi diversi
+       sono due fatti diversi, e schiacciarli in «2» li nasconde entrambi. */
+    type PezzoVenduto = {
+        id: string; seriale: string; codice: string; descrizione: string;
+        negozio: string; azienda: string | null; operatore: string | null;
+        venduto_il: string | null; venduto_da: string | null;
+        prezzo: number | null; costo: number | null; contract_id: string | null;
+    };
+    const venduti = useMemo<PezzoVenduto[]>(() => {
+        if (!vistaVenduto) return [];
+        // gli estremi dell'intervallo, inclusi entrambi
+        const da = dal ? dal + "T00:00:00" : null;
+        const a = al ? al + "T23:59:59.999" : null;
+        const q = cerca.trim().toLowerCase(), qs = q.replace(/[\s./-]/g, "");
+        let out = unita.filter(u => {
+            if (u.stato !== "venduto") return false;
+            if (azienda && u.azienda !== azienda) return false;
+            if (!nelloScopo(u.negozio)) return false;
+            /* SENZA DATA NON SI FINGE (regola 7). Un pezzo venduto a cui manca
+               `venduto_il` è un dato incompleto: entra solo quando l'intervallo
+               è aperto, così si vede che c'è invece di sparire dentro un filtro
+               che non poteva valutarlo. */
+            if (u.venduto_il) { if (da && u.venduto_il < da) return false; if (a && u.venduto_il > a) return false; }
+            else if (da || a) return false;
+            if (q && !(`${u.codice || ""} ${u.descrizione}`.toLowerCase().includes(q)
+                || (qs.length >= 4 && u.seriale.toLowerCase().replace(/[\s./-]/g, "").includes(qs)))) return false;
+            return true;
+        }).map(u => ({
+            id: u.id, seriale: u.seriale, codice: u.codice || "—", descrizione: u.descrizione,
+            negozio: u.negozio, azienda: u.azienda, venduto_il: u.venduto_il, venduto_da: u.venduto_da,
+            operatore: operatoreDi(anagrafica.get(u.codice || ""), u.descrizione, u.codice || ""),
+            prezzo: u.prezzo_vendita == null ? null : Number(u.prezzo_vendita),
+            costo: u.valore == null ? null : Number(u.valore),
+            contract_id: u.contract_id,
+        }));
+        if (operatori.length) out = out.filter(r => operatori.some(o => o === "(nessuno)" ? !r.operatore : r.operatore === o));
+        // il più recente in cima: è quello che si va a cercare
+        out.sort((x, y) => String(y.venduto_il || "").localeCompare(String(x.venduto_il || "")));
+        return out;
+    }, [unita, anagrafica, vistaVenduto, dal, al, azienda, operatori, cerca, nelloScopo]);
 
     // gli operatori che hanno davvero qualcosa in questa vista
     const operatoriPresenti = useMemo(() => {
@@ -459,13 +572,45 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         return Array.from(s).sort();
     }, [unita, quantita, anagrafica]);
 
+    /* L'EXCEL ESPORTA QUELLO CHE SI STA GUARDANDO, non un'altra cosa
+       (regola 7). Col venduto a schermo, un file di giacenze sarebbe un file
+       che non c'entra niente con la domanda che uno ha appena fatto. */
     const esporta = () => {
+        const dove = scelti.length ? scelti.join("+").replace(/\s+/g, "") : "tutti";
+        const oggi = new Date().toISOString().slice(0, 10);
+        if (vistaVenduto) {
+            const dati: CellaXlsx[][] = vendutiOrdinati.map(v => [v.seriale, v.codice, v.descrizione, v.operatore || "—",
+                v.negozio, v.venduto_il ? v.venduto_il.slice(0, 10) : "—", v.venduto_da || "—",
+                v.costo == null ? "" : Math.round(v.costo * 100) / 100,
+                v.prezzo == null ? "" : Math.round(v.prezzo * 100) / 100]);
+            scaricaXlsx(`venduto_${dove}_${dal || "inizio"}_${al || oggi}.xlsx`,
+                ["IMEI / seriale", "Codice", "Descrizione", "Operatore", "Negozio", "Venduto il", "Venduto da", "A listino €", "Venduto a €"],
+                dati, "Venduto");
+            return;
+        }
         const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
-        scaricaXlsx(`giacenze_${scelti.length ? scelti.join("+").replace(/\s+/g, "") : "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        scaricaXlsx(`giacenze_${dove}_${oggi}.xlsx`,
             ["Codice", "Descrizione", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
     };
 
     const colonne = ["Codice", "Descrizione", "Giacenza", "Altrove", "In arrivo", "Valore"];
+    /* Le colonne del VENDUTO: qui una riga è un pezzo, quindi «giacenza» e
+       «altrove» non vogliono dire niente e al loro posto ci sono le due cose
+       che Luca ha chiesto — quando è uscito e a quanto. */
+    const COL_VENDUTO = ["IMEI / seriale", "Descrizione", "Negozio", "Venduto il", "Venduto da", "A listino", "Venduto a"];
+    const vendutiOrdinati = useMemo(() => {
+        const val = (r: PezzoVenduto, c: number): string | number =>
+            c === 0 ? r.seriale : c === 1 ? r.descrizione : c === 2 ? r.negozio
+                : c === 3 ? (r.venduto_il || "") : c === 4 ? (r.venduto_da || "")
+                    : c === 5 ? (r.costo ?? -1) : (r.prezzo ?? -1);
+        const out = [...venduti];
+        out.sort((a, b) => {
+            const va = val(a, sort.col), vb = val(b, sort.col);
+            const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+            return sort.desc ? -cmp : cmp;
+        });
+        return out;
+    }, [venduti, sort]);
     /** «è nel negozio che sto guardando?» — decide il colore della pastiglia
      *  del luogo, e prima era scritto due volte uguale dentro l'elemento. */
     const quiDa = (neg: string) => scelti.length ? nelloScopo(neg) : neg === mioNegozio;
@@ -499,15 +644,50 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     {/* le pastiglie di quello che hai scelto le disegna già
                         `SelectMulti`: rifarle qui le raddoppiava, con due
                         grafiche diverse (revisore 31/08) */}
-                    <span className="rvSep" />
-                    <button onClick={() => setSoloDisponibili(true)} className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo disponibili</button>
-                    <button onClick={() => setSoloDisponibili(false)} className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
-                        title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Tutti gli articoli</button>
+                </div>
+                {/* ── COSA GUARDO: GLI STATI, COME PULSANTI (Luca 31/08) ──
+                    Si accendono e si spengono, e si sommano. L'ultimo acceso
+                    non si spegne: una tabella senza nemmeno uno stato non
+                    mostrerebbe niente, e sembrerebbe rotta. */}
+                <div className="rvBarra rvBarra-c mt-3">
+                    {STATI_FILTRO.map(x => {
+                        const on = stati.includes(x.id);
+                        return (
+                            <button key={x.id} title={x.spiega}
+                                onClick={() => setStati(p => {
+                                    /* IL VENDUTO STA DA SOLO. Non è «un altro
+                                       stato», è un'altra domanda — e la tabella
+                                       cambia colonne. Tenerlo acceso insieme ai
+                                       disponibili lascerebbe a schermo una
+                                       pastiglia che non governa niente, cioè un
+                                       comando che mente (regola 7). */
+                                    if (x.id === "venduto") return on ? ["disponibile", "in_arrivo"] : ["venduto"];
+                                    const senzaVenduto = p.filter(y => y !== "venduto");
+                                    if (on) return senzaVenduto.length > 1 ? senzaVenduto.filter(y => y !== x.id) : senzaVenduto;
+                                    return [...senzaVenduto, x.id];
+                                })}
+                                className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{x.et}</button>
+                        );
+                    })}
+                    {/* asse diverso dagli stati: non è «in che stato è», è «lo
+                        conto solo qui o anche dove non ce l'ho». Si chiamava
+                        «Solo disponibili» e faceva a pugni col pulsante di
+                        stato che ora ha lo stesso nome.
+                        Sul venduto SPARISCE invece di spegnersi: lì una riga è
+                        un pezzo, e «ce l'ho altrove» non vuol dire niente. */}
+                    {!vistaVenduto && (<>
+                        <span className="rvSep" />
+                        <button onClick={() => setSoloDisponibili(true)}
+                            className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo quello che ho qui</button>
+                        <button onClick={() => setSoloDisponibili(false)}
+                            className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
+                            title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Anche quello che sta altrove</button>
+                    </>)}
                 </div>
                 {/* I FILTRI FINI */}
                 <div className="rvBarra mt-3">
                     <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
-                        <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice o descrizione…"
+                        <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice, descrizione o IMEI — puoi spararlo col lettore"
                             className="rvIn" /></label>
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
                         <SelectMulti className="rvIn"
@@ -520,17 +700,30 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             value={azienda ? (nomiAzienda[azienda] || azienda) : ""}
                             onChange={(v) => setAzienda(v ? (Object.keys(nomiAzienda).find(k => nomiAzienda[k] === v) || v) : "")}
                             opzioni={aziende.map(a => nomiAzienda[a] || a)} placeholder="Tutte le società" /></div>
-                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Stato</span>
-                        <SelectOpzioni className="rvIn" disabled={!!dataStorica}
-                            value={stato ? (STATI_LABEL[stato] || stato) : ""}
-                            onChange={(v) => setStato(v ? (Object.keys(STATI_LABEL).find(k => STATI_LABEL[k] === v) || "") : "")}
-                            opzioni={Object.values(STATI_LABEL)} placeholder="Tutti" /></div>
-                    <label className="rvCampo rvCampo-md" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">
-                        <span className="rvLab">Giacenza alla data</span>
-                        <input type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className="rvIn" /></label>
-                    {dataStorica && <button onClick={() => setDataStorica("")} className="rvPill rvPill-sm">✕ oggi</button>}
+                    {/* LA DATA CAMBIA MESTIERE COL FILTRO DELLO STATO (Luca
+                        31/08: «quel range di data diventa un range di data
+                        adattabile in virtù del filtro dello stato»). Sul
+                        venduto una fotografia a una data non vuol dire niente:
+                        quello che serve è «dal … al …». */}
+                    {vistaVenduto ? (
+                        <>
+                            <label className="rvCampo rvCampo-sm"><span className="rvLab">Venduto dal</span>
+                                <input type="date" value={dal} onChange={e => setDal(e.target.value)} className="rvIn" /></label>
+                            <label className="rvCampo rvCampo-sm"><span className="rvLab">al</span>
+                                <input type="date" value={al} onChange={e => setAl(e.target.value)} className="rvIn" /></label>
+                            {(dal || al) && <button onClick={() => { setDal(""); setAl(""); }} className="rvPill rvPill-sm"
+                                title="Tutto il venduto, da sempre">✕ tutto</button>}
+                        </>
+                    ) : (
+                        <>
+                            <label className="rvCampo rvCampo-md" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">
+                                <span className="rvLab">Giacenza alla data</span>
+                                <input type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className="rvIn" /></label>
+                            {dataStorica && <button onClick={() => setDataStorica("")} className="rvPill rvPill-sm">✕ oggi</button>}
+                        </>
+                    )}
                     <span className="rvSpazio" />
-                    <button onClick={esporta} disabled={!righe.length} className="rvAzione rvAzione-sm">
+                    <button onClick={esporta} disabled={vistaVenduto ? !venduti.length : !righe.length} className="rvAzione rvAzione-sm">
                         <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
                 </div>
@@ -584,6 +777,59 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         </div>
                     </div>
                 </div>, document.body)}
+            {/* ═══ LA TABELLA CAMBIA MESTIERE COL VENDUTO (Luca 31/08) ═══
+                «La giacenza non mi interessa: mi dà articolo per articolo
+                direttamente con l'IMEI.» Non è la stessa tabella filtrata
+                diversamente — è un'altra domanda, e vuole altre colonne. */}
+            {vistaVenduto ? (
+                <div className="rvTabBox">
+                    <table className="rvTab">
+                        <thead>
+                            <tr>
+                                {COL_VENDUTO.map((cta, i) => (
+                                    <th key={i} className={cn("rvTab-ord", i >= 5 && "rvTab-c")}
+                                        onClick={() => setSort(s2 => ({ col: i, desc: s2.col === i ? !s2.desc : i >= 3 }))}>
+                                        {cta}{sort.col === i ? <i>{sort.desc ? "↓" : "↑"}</i> : null}
+                                    </th>))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {vendutiOrdinati.map(v2 => {
+                                const sconto = v2.prezzo != null && v2.costo != null ? v2.prezzo - v2.costo : null;
+                                return (
+                                    <tr key={v2.id} className="rvTab-riga">
+                                        {/* IL SERIALE SI CLICCA E RACCONTA (Luca 31/08) */}
+                                        <td className="rvTab-cod">
+                                            <button onClick={() => setSeriale(v2.seriale)} className="rvSerial"
+                                                title="Tutta la storia di questo pezzo">{v2.seriale}</button>
+                                        </td>
+                                        <td className="rvTab-nome">
+                                            {v2.descrizione}
+                                            {v2.operatore && <span className="rvBadge rvBadge-acc ml-2 align-middle">{v2.operatore}</span>}
+                                        </td>
+                                        <td className="rvTab-min">{v2.negozio}</td>
+                                        <td className="rvTab-min">{gg(v2.venduto_il)}</td>
+                                        <td className="rvTab-min">{v2.venduto_da || "—"}</td>
+                                        <td className="rvTab-n">{eur(v2.costo)}</td>
+                                        <td className={cn("rvTab-n rvGiac", v2.prezzo == null ? "rvGiac-zero" : sconto != null && sconto < 0 ? "rvGiac-ko" : "rvGiac-si")}>
+                                            {eur(v2.prezzo)}
+                                            {/* quanto sopra o sotto il listino: è la domanda vera di
+                                                chi guarda il venduto di un negozio */}
+                                            {sconto != null && Math.abs(sconto) >= 0.01 && (
+                                                <span className="rvTab-min"> ({sconto > 0 ? "+" : ""}{eur(sconto)})</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {!vendutiOrdinati.length && <tr><td colSpan={COL_VENDUTO.length} className="rvTab-vuoto">
+                                Nessun pezzo venduto con questi filtri.
+                                {(dal || al) && " L'intervallo di date parte dal primo del mese: prova «✕ tutto»."}
+                            </td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
             <div className="rvTabBox">
                 <table className="rvTab">
                     <thead>
@@ -633,7 +879,11 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                                         <div className="rvDettT">I pezzi, uno per uno</div>
                                                         {r.pezzi.map(p => (
                                                             <div key={p.id} className="rvDettR">
-                                                                <span className="rvDettR-mono">{p.seriale}</span>
+                                                                {/* IL SERIALE SI CLICCA E RACCONTA (Luca 31/08):
+                                                                    «clicco sull'IMEI specifico e mi dà tutta la
+                                                                    cronistoria di quel prodotto» */}
+                                                                <button onClick={(e) => { e.stopPropagation(); setSeriale(p.seriale); }}
+                                                                    className="rvSerial" title="Tutta la storia di questo pezzo">{p.seriale}</button>
                                                                 <span className={cn("rvBadge rvBadge-w", quiDa(p.negozio) ? "rvBadge-ok" : "rvBadge-warn")}>
                                                                     {p.negozio}
                                                                 </span>
@@ -698,99 +948,138 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     </tbody>
                 </table>
             </div>
+            )}
+            {/* la cronistoria del pezzo, sopra tutto */}
+            {seriale && <StoriaPezzo seriale={seriale} chiudi={() => setSeriale(null)} />}
         </div>
     );
 }
 
-/* ── 🔍 RICERCA SERIALE (deep search con timeline) ───────────────────── */
-function RicercaSeriale({ unita }: { unita: Unita[] }) {
-    const [testo, setTesto] = useState("");
-    const [busy, setBusy] = useState(false);
-    type Evento = { quando: string; testo: string };
-    type Scheda = { titolo: string; sotto: string; stato: string; eventi: Evento[] };
-    const [schede, setSchede] = useState<Scheda[] | null>(null);
+/* ══ 🕰 LA STORIA DI UN PEZZO ═══════════════════════════════════════════
+   Luca 31/08: «devo poter verificare tutta la storia di quel seriale: se è
+   stato trasferito da un negozio all'altro, quando è stato comprato, da quale
+   utente è stato caricato, chi ha inviato il trasferimento, chi l'ha accettato
+   e in quale punto vendita, e se è stato venduto qual è l'utente che ha fatto
+   la vendita. Una timeline come quella dentro ai clienti: clicco su ogni step
+   e mi dà il dettaglio, ci clicco di nuovo e mi porta al documento.»
 
-    const cerca = async () => {
-        const s = testo.trim().replace(/[\s./-]/g, "");
-        if (s.length < 5) return;
-        setBusy(true);
-        const out: Scheda[] = [];
-        // 1) magazzino
-        for (const u of unita.filter(x => x.seriale.replace(/[\s./-]/g, "").includes(s))) {
-            const eventi: Evento[] = [
-                { quando: u.caricato_il, testo: `📥 Caricato a ${u.negozio}${u.caricato_da ? ` da ${u.caricato_da}` : ""}` },
-                ...(u.storia || []).map(e => ({ quando: e.quando, testo: `${e.evento}${e.negozio ? ` · ${e.negozio}` : ""}${e.operatore ? ` · ${e.operatore}` : ""}${e.note ? ` — ${e.note}` : ""}` })),
-            ];
-            if (u.venduto_il) eventi.push({ quando: u.venduto_il, testo: `💰 Venduto${u.venduto_da ? ` da ${u.venduto_da}` : ""}${u.contract_id ? ` · pratica ${u.contract_id}` : ""}` });
-            out.push({ titolo: `${u.descrizione} · ${u.seriale}`, sotto: `Magazzino — ${u.negozio}${u.azienda ? ` · ${u.azienda}` : ""}`, stato: STATI_LABEL[u.stato] || u.stato, eventi });
-        }
-        // 2) usati (gestione usati)
-        const us = await supabase.from("usati").select("id, model, imei, status, store, created_at, sold_date, venditore, status_history").ilike("imei", `%${s}%`).limit(10);
-        for (const u of (us.data ?? []) as Record<string, unknown>[]) {
-            const sh = (u.status_history || {}) as Record<string, { date?: string; operatore?: string }>;
-            const eventi = Object.entries(sh).map(([k, v]) => ({ quando: String(v?.date || u.created_at), testo: `♻️ ${k}${v?.operatore ? ` · ${v.operatore}` : ""}` }));
-            out.push({ titolo: `${u.model} · ${u.imei}`, sotto: `Gestione Usati — ${u.store} (n.${u.id})`, stato: `♻️ ${u.status}`, eventi });
-        }
-        // 3) vendite CRM (IMEI piatti e terminali della vendita)
-        const t = `%${s}%`;
-        const ct = await supabase.from("contracts")
-            .select("id, venditore, negozio, brand, prodotto, data_registrazione, dettagli")
-            .or([`dettagli->>IMEI.ilike.${t}`, `dettagli->>imei.ilike.${t}`, `dettagli->>"IMEI TNP".ilike.${t}`, `dettagli->>"IMEI CB".ilike.${t}`, `dettagli->units.cs."[{\\"imei\\":\\"${s}\\"}]"`, `codice_attivazione.ilike.${t}`].join(","))
-            .limit(10);
-        for (const c of (ct.data ?? []) as Record<string, unknown>[]) {
-            out.push({
-                titolo: `${c.brand} · ${c.prodotto}`, sotto: `Vendita ${c.id} — ${c.negozio}`,
-                stato: "🧾 Registrata",
-                eventi: [{ quando: String(c.data_registrazione), testo: `💰 Venduto il ${gg(String(c.data_registrazione))} da ${c.venditore} · ${c.negozio} · pratica ${c.id}` }],
-            });
-        }
-        setSchede(out); setBusy(false);
-    };
+   Gli eventi li scrive un TRIGGER sul database, non questo codice: qualunque
+   strada tocchi il pezzo lascia la sua traccia, anche quelle che scriveremo
+   domani. Qui si legge e si mostra. ══════════════════════════════════════ */
+function StoriaPezzo({ seriale, chiudi }: { seriale: string; chiudi: () => void }) {
+    const [eventi, setEventi] = useState<EventoPezzo[] | null>(null);
+    const [ora, setOra] = useState<Record<string, unknown> | null>(null);
+    const [aperto, setAperto] = useState<string | null>(null);
 
-    return (
-        <div className="space-y-4 max-w-3xl">
-            <div className="rvBox">
-                <div className="rvBoxT">🔍 Cerca un seriale</div>
-                <div className="rvBarra rvBarra-c">
-                    {/* l'icona dentro il campo, come la ricerca della cassa:
-                        prima erano un'icona, un campo senza cornice e un
-                        bottone dentro lo stesso riquadro — tre pezzi per una
-                        cosa sola */}
-                    <label className="rvCerca rvSpazio">
-                        <Search size={16} />
-                        <input value={testo} onChange={e => setTesto(e.target.value)} onKeyDown={e => e.key === "Enter" && cerca()}
-                            placeholder="Spara o scrivi IMEI / ICCID / seriale…" className="rvIn" />
-                    </label>
-                    <button onClick={cerca} disabled={busy || testo.trim().length < 5} className="rvAzione">
-                        {busy ? "Cerco…" : "Cerca"}
-                    </button>
+    useEffect(() => {
+        let vivo = true;
+        setEventi(null); setOra(null);
+        Promise.all([storiaCompleta(seriale), pezzoOra(seriale)]).then(([e, o]) => {
+            if (!vivo) return;
+            setEventi(e); setOra(o as Record<string, unknown> | null);
+        });
+        return () => { vivo = false; };
+    }, [seriale]);
+
+    // ESC chiude, come ogni altro modale del CRM
+    useEffect(() => {
+        const k = (e: KeyboardEvent) => { if (e.key === "Escape") chiudi(); };
+        window.addEventListener("keydown", k);
+        return () => window.removeEventListener("keydown", k);
+    }, [chiudi]);
+
+    if (typeof document === "undefined") return null;
+    const stato = String(ora?.stato || "");
+
+    return createPortal(
+        /* IN UN PORTAL (regola 6): un `position:fixed` dentro un elemento con
+           backdrop-filter si aggancia a QUELLO, non alla finestra. */
+        <div className="rvFattaSfondo" onClick={(e) => { if (e.target === e.currentTarget) chiudi(); }}>
+            <div className="rvStoria">
+                <div className="rvStoria-t">
+                    <div>
+                        <div className="rvStoria-tit">{String(ora?.descrizione || "Pezzo")}</div>
+                        <div className="rvStoria-sot">
+                            <span className="rvDettR-mono">{seriale}</span>
+                            {ora?.codice ? <> · cod. {String(ora.codice)}</> : null}
+                            {stato ? <> · {STATI_LABEL[stato] || stato}</> : null}
+                        </div>
+                    </div>
+                    <button onClick={chiudi} className="rvPill rvPill-sm">✕ Chiudi</button>
                 </div>
-                <div className="rvHint">Guarda il magazzino, la gestione usati e le vendite registrate: servono almeno 5 caratteri.</div>
+
+                {/* DOV'È ADESSO E QUANTO VALE: la fotografia, prima del racconto */}
+                {ora && (
+                    <div className="rvBarra rvBarra-c">
+                        <span className="rvTag">📍 {String(ora.negozio || "—")}</span>
+                        {ora.azienda ? <span className="rvTag">🏢 {String(ora.azienda)}</span> : null}
+                        {ora.valore != null && <span className="rvTag">🏷 a listino {eur(Number(ora.valore))}</span>}
+                        {ora.prezzo_vendita != null && <span className="rvTag">🧾 venduto a {eur(Number(ora.prezzo_vendita))}</span>}
+                    </div>
+                )}
+
+                {eventi === null ? (
+                    <div className="rvCarico"><Loader2 className="w-5 h-5 animate-spin" /> Cerco la sua storia…</div>
+                ) : eventi.length === 0 ? (
+                    /* NON SI FINGE UNA STORIA CHE NON C'È (regola 7). Il registro
+                       parte dal 31/08: per i pezzi caricati prima c'è la riga di
+                       carico ricostruita, e nient'altro. Dirlo è meglio che
+                       mostrare un riquadro vuoto che sembra un guasto. */
+                    <div className="rvNota rvNota-att">
+                        <div className="rvNota-t">Di questo pezzo non risulta nessun passaggio</div>
+                        <div className="rvNota-s">Il registro dei movimenti parte dal 31/08/2026. Se il pezzo è entrato prima ed è rimasto fermo, non c&apos;è altro da raccontare.</div>
+                    </div>
+                ) : (
+                    <div className="rvTml">
+                        {eventi.map(e => {
+                            const nome = NOME_EVENTO[e.evento] || { et: e.evento, ico: "•" };
+                            const dettagli = Object.entries(e.dettaglio || {}).filter(([, v]) => v != null && v !== "");
+                            const apribile = dettagli.length > 0 || !!e.note;
+                            const su = aperto === e.id;
+                            return (
+                                <div key={e.id} className="rvTml-r">
+                                    <div className="rvTml-p">{nome.ico}</div>
+                                    <div role={apribile ? "button" : undefined} tabIndex={apribile ? 0 : undefined}
+                                        onClick={() => apribile && setAperto(su ? null : e.id)}
+                                        onKeyDown={(ev) => { if (apribile && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); setAperto(su ? null : e.id); } }}
+                                        className={cn("rvTml-c", apribile && "rvTml-cl")}>
+                                        <div className="rvTml-q">{gghh(e.quando)}</div>
+                                        <div className="rvTml-e">
+                                            {nome.et}
+                                            {apribile && <span className="rvTml-fr">{su ? "▴" : "▾"}</span>}
+                                        </div>
+                                        <div className="rvTml-d">
+                                            {e.negozioDa && e.negozio && e.negozioDa !== e.negozio
+                                                ? <>{e.negozioDa} → <b>{e.negozio}</b></>
+                                                : e.negozio || "—"}
+                                            {e.operatore ? <> · {e.operatore}</> : null}
+                                        </div>
+                                        {su && (
+                                            <div className="rvTml-x">
+                                                {dettagli.map(([k, v]) => (
+                                                    <div key={k} className="rvDettR">
+                                                        <span className="rvTab-min">{k}</span>
+                                                        <span className="rvDove-fine">{String(v)}</span>
+                                                    </div>
+                                                ))}
+                                                {e.note && <div className="rvTab-min">{e.note}</div>}
+                                                {/* IL SECONDO CLIC PORTA AL DOCUMENTO (Luca 31/08) */}
+                                                {e.vaiA && (
+                                                    <a href={e.vaiA} className="rvAzione rvAzione-sm mt-2 inline-block"
+                                                        onClick={(ev) => ev.stopPropagation()}>
+                                                        {e.documento === "ddt" ? "🚚 Apri il documento di trasporto" : "🧾 Apri la vendita"}
+                                                    </a>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
-            {schede && !schede.length && (
-                <div className="rvTabBox">
-                    <div className="rvVuoto">🔎<b>Nessuna traccia di questo seriale</b><small>né a magazzino, né negli usati, né nelle vendite</small></div>
-                </div>
-            )}
-            {schede?.map((sc, i) => (
-                <div key={i} className="rvBox">
-                    <div className="rvCardT-riga">
-                        <span className="rvNome">{sc.titolo}</span>
-                        <span className="rvBadge rvBadge-empty">{sc.stato}</span>
-                    </div>
-                    <div className="rvSotto">{sc.sotto}</div>
-                    <div className="rvDett">
-                        {sc.eventi.sort((a, b) => String(a.quando).localeCompare(String(b.quando))).map((e, j) => (
-                            <div key={j} className="rvDettR">
-                                <span className="rvDettR-mono shrink-0 w-32">{gghh(e.quando)}</span>
-                                <span>{e.testo}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            ))}
-        </div>
-    );
+        </div>, document.body);
 }
 
 /* ── 🚚 TRASFERIMENTI ──────────────────────────────────────────────────────
