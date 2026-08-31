@@ -447,7 +447,19 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
   // (SIM/ESIM/Sost, linked) e per quelle a margine percentuale (senza importo il
   // margine verrebbe 0). Le vendite SIM a importo NULL nascevano proprio da qui:
   // la guardia al checkout copriva solo le voci AUTO del flusso brand.
-  const needImporto=!!(selProd&&(selProd.linked||selProd.type==="pct"||selProd.type==="cost"));
+  /* IL PREZZO SERVE ANCHE A MARGINE FISSO (Luca 31/08: «Salva Scontrino non
+     mi fa mettere il prezzo»). La regola chiedeva l'importo solo dove serviva
+     a CALCOLARE il margine — percentuale o costo azienda — e lasciava fuori le
+     voci a margine fisso. Ma «margine fisso» dice quanto guadagniamo noi, non
+     quanto paga il cliente: quelle voci entravano in carrello a zero, senza
+     campo per correggerle, e sullo scontrino non c'era niente da incassare.
+     Sono otto, non una: Salva Scontrino, PowerBank, New Cover, PLX, CN/CP,
+     Mem/Pen, Orologio Cash, Mi Band.
+     Chi un prezzo ce l'ha già — le SIM a zero, che non si vendono a un prezzo
+     perché il margine è la provvigione dell'operatore — resta fuori: la
+     condizione guarda `price == null`, non il tipo di margine. */
+  const _vuoleImporto=(x)=>!!(x&&(x.linked||x.type==="pct"||x.type==="cost"||x.price==null||x.price===undefined));
+  const needImporto=_vuoleImporto(selProd);
   const importoMissing=needImporto&&String(importo).trim()==="";
   /* DRITTO IN CARRELLO (Luca 29/08): «non deve più chiedermi i prezzi qui,
      deve aggiungermi il prodotto direttamente a carrello con il prezzo che ha
@@ -477,7 +489,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
          nullo o zero perché non si vendono a un prezzo — il margine è la
          provvigione dell'operatore — e marcarle obbligatorie avrebbe
          costretto il venditore a inventarsi un numero per ognuna. */
-      priceRequired:!!(p.linked||p.type==="pct"||p.type==="cost"),
+      priceRequired:_vuoleImporto(p),
       // dove la scorciatoia ha un gemello a magazzino, vendere lo scarica:
       // la società la deduce `scaricaVendita` da chi ha davvero i pezzi
       codice:p.codiceMagazzino||null,
