@@ -25,15 +25,9 @@ const BG_URL = "/report-bg.webp";
 /* IL VELO SOPRA LA FOTOGRAFIA (Luca 31/08: «risulta troppo scuro»).
    Era 0.62, e a quel punto qualunque sfondo diventava cupo — misurato
    affiancando 0.62, 0.34 e 0.12 sullo stesso foglio. Con 0.30 l'immagine si
-   vede e le carte restano leggibili, perché il contrasto vero non lo fa il
-   velo: lo fanno i pannelli in vetro scuro. */
+   vede e le carte restano leggibili — il contrasto vero non lo fa il velo, lo
+   fa il FOGLIO opaco qui sotto. Il velo serve solo a smorzare la cornice. */
 const VELO = 0.30;   // opacita' del velo scuro sopra la foto
-/* QUANTO SONO SOLIDE LE CARTE (Luca 31/08, guardando i fogli montati).
-   Era 0.5, tarato su uno sfondo quasi nero: là sotto non passava niente. Con
-   un'immagine vera invece lo sfondo attraversa le tabelle — le fibre ottiche
-   si vedevano DIETRO i numeri, e su un fondo chiaro il foglio diventava
-   lattiginoso. Il fondo si deve vedere nella CORNICE, non attraverso i dati.
-   A 0.80 le carte tornano solide e leggibili su qualunque immagine. */
 /* Il colore del FOGLIO su cui poggia tutto: pieno, non trasparente. È lui che
    separa i dati dall'immagine — non più la semitrasparenza delle carte. */
 const FOGLIO = "#0f121b";
@@ -41,8 +35,15 @@ const FOGLIO = "#0f121b";
    e la marginalità): lì un fondo scuro leggermente diverso dal foglio le
    stacca meglio di un velo chiaro. */
 const VETRO = 0.80;
-const CORNICE = 80;  // quanto stava largo il contenuto dal bordo: oggi vale
-                     // 54 di cornice (dove si vede la foto) + 26 di margine interno
+const CORNICE = 80;  // quanto sta largo il contenuto dal bordo del foglio.
+const PAD = 26;      // di cui: PAD dentro il foglio, il resto è cornice viva.
+/* ⚠️ CORNICE è il numero da cui `altezzaRiga()` ricava lo spazio verticale:
+   width e height del foglio DEVONO tornarci sopra al pixel. Per questo il
+   contorno chiaro è un'ombra INTERNA e non un `border`: un bordo da 1px, con
+   box-sizing border-box, si mangia 2px per lato — e con `overflow: hidden`
+   quei 2px non danno errore, tagliano dati in silenzio. Trovato dal revisore
+   il 31/08: nel caso peggiore (15 righe in colonna) restavano 3px di margine
+   invece di 5. */
 
 const W = 1080;
 const H = 1620;
@@ -53,7 +54,9 @@ const T = {
   text: "#f8fafc",
   muted: "#94a3b8",
   dim: "#64748b",
-  dimmer: "#475569"
+  /* alzato dal revisore-contrasto (31/08): #475569 sul foglio dava 2.2:1,
+     e queste sono etichette da 13px guardate su un telefono. */
+  dimmer: "#5b6b81"
 };
 
 /* Colori brand: stessi valori di TRK_BRAND_COLORS, qui in esadecimale perche'
@@ -384,15 +387,16 @@ export default function ReportGiornaliero({ dati }) {
           ⚠️ È il contenitore STESSO a fare da foglio, non un pannello messo
           sotto: quello si sovrapponeva alla testata in modi difficili da
           prevedere. Un elemento solo, nessuna sovrapposizione possibile.
-          Le misure interne non cambiano: margine 54 + padding 26 = i CORNICE
-          80 di prima, quindi l'area utile resta 920x1460 e i conti
-          dell'altezza di riga restano validi. */}
+          Le misure interne non cambiano: margine (CORNICE-PAD) + padding PAD
+          fanno esattamente i CORNICE 80 di prima, quindi l'area utile resta
+          920x1460 e i conti dell'altezza di riga restano validi. */}
       <div style={{ position: "relative", zIndex: 1,
-        width: W - 2 * (CORNICE - 26), height: H - 2 * (CORNICE - 26),
-        margin: (CORNICE - 26) + "px", display: "flex",
-        flexDirection: "column", padding: "26px", boxSizing: "border-box", gap: G.gap,
-        background: FOGLIO, borderRadius: 30, border: "1px solid rgba(255,255,255,0.10)",
-        boxShadow: "0 30px 80px rgba(0,0,0,0.6)", overflow: "hidden",
+        width: W - 2 * (CORNICE - PAD), height: H - 2 * (CORNICE - PAD),
+        margin: (CORNICE - PAD) + "px", display: "flex",
+        flexDirection: "column", padding: PAD + "px", boxSizing: "border-box", gap: G.gap,
+        background: FOGLIO, borderRadius: 30,
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.10), 0 16px 44px rgba(0,0,0,0.55)",
+        overflow: "hidden",
         fontFamily: "var(--font-sans, Outfit), ui-sans-serif, system-ui, sans-serif",
         color: T.text }}>
 

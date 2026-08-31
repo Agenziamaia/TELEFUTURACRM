@@ -21,7 +21,7 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
-import { Lucchetto, useCodiceWhatsApp } from "@/components/WhatsAppProtetta";
+import { Lucchetto, useCodiceCanale } from "@/components/CanaleProtetto";
 import { EmailInbox } from "@/components/EmailInbox";
 import { NewChatModal } from "../_components/NewChatModal";
 import { ListaOmni } from "./ListaOmni";
@@ -41,8 +41,20 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
        leggeva le stesse conversazioni passando da qui. Lo sblocco sta a
        livello di Omnichat e non della singola conversazione: cambiando chat
        il codice non si richiede ogni volta, ma uscendo dalla scheda sì. */
-    const codiceWa = useCodiceWhatsApp();
+    const codiceWa = useCodiceCanale("whatsapp");
     const [waAperto, setWaAperto] = useState(false);
+    /* E LO STESSO PER LA POSTA (31/08). Due lucchetti distinti: si apre quello
+       che serve, l'altro resta chiuso. */
+    const codiceMail = useCodiceCanale("email");
+    const [mailAperta, setMailAperta] = useState(false);
+    /* ⚠️ ANCHE LA LISTA (rilievo mio, stesso giorno): il lucchetto copriva la
+       colonna centrale, ma a sinistra restavano mittente e anteprima — si
+       leggeva di cosa si parla senza digitare niente. Un canale ancora chiuso
+       sparisce dalla lista e dal contatore dei non letti. */
+    const chiusi = new Set<string>([
+        ...(codiceWa.loaded && codiceWa.serve && !waAperto ? ["wa"] : []),
+        ...(codiceMail.loaded && codiceMail.serve && !mailAperta ? ["email"] : []),
+    ]);
     // la risposta suggerita dall'AI: si passa all'inbox come testo iniziale
     const [bozza, setBozza] = useState<string | null>(null);
     // «➕ NUOVA CONVERSAZIONE» (Luca 27/08): scegli il canale e parti da qui —
@@ -77,7 +89,7 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
         <div className="flex-1 min-h-0 flex overflow-hidden">
             {/* ── SINISTRA: la lista fusa ── */}
             <aside className="w-full sm:w-80 lg:w-[340px] shrink-0 border-r border-white/5 bg-[#0f111a]/60">
-                <ListaOmni attivaId={attiva?.id || null} onScegli={scegli} onNuova={() => setNuovaScelta(true)} />
+                <ListaOmni attivaId={attiva?.id || null} onScegli={scegli} onNuova={() => setNuovaScelta(true)} chiusi={chiusi} />
             </aside>
 
             {/* ── CENTRO: l'inbox vera, senza la sua lista ── */}
@@ -86,7 +98,9 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
                     <WhatsAppInbox key={`nuova-wa-${nuovaTick}`} embedded senzaLista apriNuovaChat />
                 )}
                 {!attiva && nuovaCanale === "email" && (
-                    <EmailInbox key={`nuova-email-${nuovaTick}`} embedded senzaLista apriComponi />
+                    codiceMail.loaded && codiceMail.serve && !mailAperta
+                        ? <Lucchetto userId={codiceMail.userId} canale="email" onApri={() => setMailAperta(true)} />
+                        : <EmailInbox key={`nuova-email-${nuovaTick}`} embedded senzaLista apriComponi />
                 )}
                 {!attiva && !nuovaCanale && (
                     <div className="h-full flex items-center justify-center p-8 text-center">
@@ -102,11 +116,13 @@ export function OmniChat({ thread, apriInterna, meId, ricaricaInterna }: {
                 )}
                 {attiva?.canale === "wa" && (
                     codiceWa.loaded && codiceWa.serve && !waAperto
-                        ? <Lucchetto userId={codiceWa.userId} onApri={() => setWaAperto(true)} />
+                        ? <Lucchetto userId={codiceWa.userId} canale="whatsapp" onApri={() => setWaAperto(true)} />
                         : <WhatsAppInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} testoIniziale={bozza} />
                 )}
                 {attiva?.canale === "email" && (
-                    <EmailInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} />
+                    codiceMail.loaded && codiceMail.serve && !mailAperta
+                        ? <Lucchetto userId={codiceMail.userId} canale="email" onApri={() => setMailAperta(true)} />
+                        : <EmailInbox key={attiva.id} embedded senzaLista apriConvId={idNudo} />
                 )}
                 {attiva?.canale === "interna" && attiva.altrui && (
                     // chat di un collega: si legge, non si risponde

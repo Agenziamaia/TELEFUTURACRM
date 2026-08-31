@@ -613,6 +613,17 @@ export const CAP_WA_CODICE: CapDef = {
     default: () => false,
 };
 
+// ─── LA POSTA SOTTO CODICE (Luca 31/08) ────────────────────────────────────
+// «È personale nei confronti di tutti e di eventuali ruoli che gestiscono
+// quella persona.» Stesso impianto del WhatsApp Protetto, ma è una LEVA
+// DIVERSA: si può volere la posta sotto codice e WhatsApp no, o il contrario.
+export const CAP_EMAIL_CODICE: CapDef = {
+    id: "codice_email",
+    label: "Posta Protetta",
+    desc: "Se accesa, la casella email personale di questa persona si apre solo con un codice che sceglie lei al primo ingresso — e sparisce a tutti gli altri: colleghi, direzione generale, amministrazione. La vedono solo il titolare e l'admin (che è chi può azzerare il codice). Vale per la casella INTESTATA a questa persona: se quella casella è di fatto aziendale — amministrazione@ ne è l'esempio — accenderla la nasconde anche alla direzione. Il codice non è rileggibile da nessuno; cinque tentativi sbagliati bloccano per cinque minuti. Default: spenta per tutti.",
+    default: () => false,
+};
+
 export const CAP_CHAT_OMNI: CapDef = {
     id: "omnichat",
     label: "Omnichat (in costruzione)",
@@ -677,8 +688,8 @@ export const CAP_WA_VISTA: CapGroupChoice = {
 export const CAP_CHAT_WA: CapGroupFlags = {
     mode: "flags",
     section: WA_SECTION,
-    sectionLabel: "Chat — WhatsApp",
-    caps: [CAP_WA_CODICE],
+    sectionLabel: "Chat — canali protetti",
+    caps: [CAP_WA_CODICE, CAP_EMAIL_CODICE],
 };
 
 

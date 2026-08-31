@@ -507,8 +507,8 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag, ecc }: {
                             l'unico rimedio se lo dimenticano è cancellarlo e
                             farne scegliere un altro. Solo su una PERSONA: su un
                             ruolo intero non avrebbe senso. */}
-                        {c.id === "codice" && g.section === "/chat" && ruolo.startsWith("user:") && eff && (
-                            <AzzeraCodiceWa userId={ruolo.slice(5)} />
+                        {(c.id === "codice" || c.id === "codice_email") && g.section === "/chat" && ruolo.startsWith("user:") && eff && (
+                            <AzzeraCodice userId={ruolo.slice(5)} canale={c.id === "codice_email" ? "email" : "whatsapp"} />
                         )}
                         {contro.length > 0 && (
                             <span
@@ -529,19 +529,21 @@ function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag, ecc }: {
     );
 }
 
-/* ── AZZERA IL CODICE WHATSAPP ─────────────────────────────────────────────
+/* ── AZZERA IL CODICE DI UN CANALE ─────────────────────────────────────────
    Il codice non è rileggibile da nessuno (nel database c'è solo l'impronta):
    se la persona lo dimentica, l'unica strada è cancellarlo e farle scegliere
    il prossimo al primo ingresso. La prova che chi clicca è un admin la fa il
-   DATABASE (`wa_codice_azzera` controlla il ruolo), non questo bottone. */
-function AzzeraCodiceWa({ userId }: { userId: string }) {
+   DATABASE (`codice_azzera` controlla il ruolo), non questo bottone.
+   UN CANALE PER VOLTA (31/08): chi dimentica il codice della posta non deve
+   perdere anche quello di WhatsApp. */
+function AzzeraCodice({ userId, canale }: { userId: string; canale: "whatsapp" | "email" }) {
     const { user } = useAuth();
     const [stato, setStato] = useState<"fermo" | "conferma" | "vado" | "fatto" | "errore">("fermo");
     const [msg, setMsg] = useState<string | null>(null);
 
     const azzera = async () => {
         setStato("vado"); setMsg(null);
-        const { data, error } = await supabase.rpc("wa_codice_azzera", { p_user: userId, p_admin: user?.id || null });
+        const { data, error } = await supabase.rpc("codice_azzera", { p_user: userId, p_admin: user?.id || null, p_canale: canale });
         const d = (data || {}) as { ok?: boolean; errore?: string };
         if (error || !d.ok) { setStato("errore"); setMsg(error?.message || d.errore || "non riuscito"); return; }
         setStato("fatto");

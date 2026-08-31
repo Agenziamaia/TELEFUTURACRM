@@ -27,8 +27,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare, Sparkles, AtSign } from "lucide-react";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_CHAT_OMNI } from "@/lib/capabilities";
-import { WhatsAppProtetta } from "@/components/WhatsAppProtetta";
-import { EmailInbox } from "@/components/EmailInbox";
+import { WhatsAppProtetta, PostaProtetta } from "@/components/CanaleProtetto";
 import { OmniChat } from "./_omni/OmniChat";
 import { AvatarUtente } from "@/components/AvatarUtente";
 import { cn } from "@/utils";
@@ -1323,7 +1322,7 @@ function ChatPageInner() {
       ) : mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppProtetta embedded apriNumero={convParam ? null : waParam} apriConvId={convParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} apriConvId={mconvParam} /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><PostaProtetta embedded componiA={mailParam} apriConvId={mconvParam} /></div>
       ) : (
       <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}

@@ -18,7 +18,11 @@ import { seesAllStores } from "@/lib/roles";
 import { caricaConversazioni, elencoNegozi, elencoPersone, membriNegozio } from "./dati";
 import type { ChatOmni } from "./tipi";
 
-export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | null; onScegli: (c: ChatOmni) => void; onNuova?: () => void }) {
+/* ⚠️ `chiusi` — I CANALI ANCORA SOTTO CODICE (31/08). Il lucchetto copriva
+   solo la colonna centrale, ma la lista qui a sinistra mostra mittente e
+   anteprima: chi passava davanti allo schermo leggeva comunque di cosa si
+   parla, senza digitare niente. Un canale chiuso non compare proprio. */
+export function ListaOmni({ attivaId, onScegli, onNuova, chiusi }: { attivaId: string | null; onScegli: (c: ChatOmni) => void; onNuova?: () => void; chiusi?: Set<string> }) {
     const { user } = useAuth();
     const { stores } = useVisibleStores();
     // COME ORDINARE (Luca 26/08: «che tu metta i non letti davanti ha senso,
@@ -130,6 +134,8 @@ export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | 
     const lista = useMemo(() => {
         const q = cerca.trim().toLowerCase();
         const out = (chats || [])
+            // i canali ancora sotto codice non entrano nemmeno in lista
+            .filter((c) => !chiusi?.has(c.canale))
             .filter((c) => !q || `${c.nome} ${c.anteprima} ${c.sottotitolo || ""} ${c.numero || ""} ${c.perChi || ""}`.toLowerCase().includes(q));
         // arriva già in ordine di tempo: «non letti prima» li fa risalire
         // SENZA mescolarli — dentro ogni fascia il tempo continua a scendere
@@ -137,9 +143,10 @@ export function ListaOmni({ attivaId, onScegli, onNuova }: { attivaId: string | 
             return [...out].sort((a, b) => (a.daLeggere === b.daLeggere ? 0 : a.daLeggere ? -1 : 1));
         }
         return out;
-    }, [chats, cerca, ordine]);
+    }, [chats, cerca, ordine, chiusi]);
 
-    const nonLetti = useMemo(() => (chats || []).filter((c) => c.daLeggere).length, [chats]);
+    // anche il contatore dei non letti: se il canale è chiuso, non si conta
+    const nonLetti = useMemo(() => (chats || []).filter((c) => c.daLeggere && !chiusi?.has(c.canale)).length, [chats, chiusi]);
 
     return (
         <div className="h-full flex flex-col min-h-0">
