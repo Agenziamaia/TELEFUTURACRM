@@ -6203,14 +6203,44 @@ function CRM() {
   // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
   // on/off per negozio senza toccare il box. Env resta come override.
   const posStoresRef = useRef<string[]>([]);
+  /* HO LETTO DAVVERO LA CONFIGURAZIONE? (revisore 31/08)
+     Questa lettura non guardava l'errore e non riprovava mai: se falliva —
+     rete, RLS, il 522 di stasera — il ref restava vuoto per TUTTA la sessione
+     e ogni vendita prezzata scivolava nel ramo «niente scontrino». Prima era
+     un «✅ Salvato!» muto e l'operatore sospettava un guasto; da stasera c'è
+     un messaggio che spiega, e un messaggio sbagliato è peggio del silenzio:
+     certifica che è normale un corrispettivo incassato e non certificato.
+     Quindi si tiene distinto «letto: qui la cassa non c'è» da «non ho potuto
+     leggere», e si riprova due volte prima di arrendersi. */
+  const posStoresLetti = useRef(false);
   useEffect(() => {
-    supabase.from("pos_scontrino_negozi").select("negozio").then(({ data }) => {
-      posStoresRef.current = (data || []).map((r: any) => String(r.negozio || "").trim());
-    });
+    let vivo = true;
+    const leggi = async (tentativo = 0) => {
+      const { data, error } = await supabase.from("pos_scontrino_negozi").select("negozio");
+      if (!vivo) return;
+      if (error || !data) {
+        console.error("configurazione cassa non letta:", error?.message || "nessun dato");
+        if (tentativo < 2) { setTimeout(() => leggi(tentativo + 1), 2000 * (tentativo + 1)); return; }
+        return;   // posStoresLetti resta false: il software non dirà di sapere
+      }
+      posStoresRef.current = data.map((r: any) => String(r.negozio || "").trim());
+      posStoresLetti.current = true;
+    };
+    leggi();
+    return () => { vivo = false; };
   }, []);
   const posScontrinoAbilitato = (neg) => {
     const n = String(neg || "").trim();
     return posStoresRef.current.includes(n) || POS_STORES_ENV.includes(n);
+  };
+  /* PERCHÉ NON È USCITO LO SCONTRINO, detto in modo che sia vero in tutti e
+     tre i casi — compreso quello in cui la risposta è «non lo so». */
+  const _percheNienteScontrino = (neg) => {
+    if (!posStoresLetti.current && !POS_STORES_ENV.includes(String(neg || "").trim()))
+      return "Non sono riuscito a leggere la configurazione della cassa di questo punto vendita, quindi non ho chiesto il pagamento. La vendita è salva: segnalalo all'amministrazione e ricarica la pagina prima della prossima.";
+    if (!posScontrinoAbilitato(neg))
+      return "Questo punto vendita non ha la cassa collegata al CRM.";
+    return "Nessuna riga del carrello ha un prezzo: non c'era niente da incassare, quindi non è stato chiesto il pagamento.";
   };
   // Voci del carrello candidate allo scontrino (prezzate). Reparto/va_in_scontrino
   // li decide il server da marg_items; qui passiamo tutte le righe con prezzo.
@@ -7092,9 +7122,7 @@ function CRM() {
                da incassare, ed è giusto che non chieda come si paga;
              · questo negozio la cassa non ce l'ha accesa.
            Dirlo costa una riga e toglie una diagnosi sbagliata. */
-        const _perche = !posScontrinoAbilitato(selNeg)
-          ? "Questo punto vendita non ha ancora la cassa collegata al CRM."
-          : "Nessuna riga del carrello ha un prezzo: non c'era niente da incassare, quindi non è stato chiesto il pagamento.";
+        const _perche = _percheNienteScontrino(selNeg);
         await commitFn();
         setUploading(false);
         sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
@@ -7339,9 +7367,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       } else {
         // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
         // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).
-        const _perche = !posScontrinoAbilitato(selNeg)
-          ? "Questo punto vendita non ha ancora la cassa collegata al CRM."
-          : "Nessuna riga del carrello ha un prezzo: non c'era niente da incassare, quindi non è stato chiesto il pagamento.";
+        const _perche = _percheNienteScontrino(selNeg);
         const rows = await commitFn();
         _resetForm(); clearDraft("crm_v9");
         setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length, cliente: _cliLabel, negozio: selNeg, venditore: selVend, perche: _perche });

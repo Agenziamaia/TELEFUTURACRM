@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { sedeFisica } from "@/lib/negoziNomi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,98 @@ export const dynamic = "force-dynamic";
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const PUO_APPROVARE = ["amministrativo", "direttore_generale", "admin", "dev"];
+
+const oggiYmd = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/* LE SEDI DI TURNO, RICALCOLATE QUI. Stessa regola della pagina Turni e di
+   `src/lib/doveLavoro.ts`: scheda + negozi assegnati, meno le esclusioni del
+   giorno, più le coperture. Sul server serve per una ragione precisa: decidere
+   se una dichiarazione è «sono al mio posto» o «chiedo di andare altrove» non
+   può dipendere da quello che racconta il browser. */
+async function sediDiTurno(userId: string, nome: string): Promise<string[]> {
+    const data = oggiYmd();
+    const [u, links, cop] = await Promise.all([
+        supabase.from("app_users").select("primary_store").eq("id", userId).maybeSingle(),
+        supabase.from("user_stores").select("store_name").eq("user_id", userId),
+        supabase.from("turni_negozio").select("store, tipo").eq("data", data).eq("persona", nome),
+    ]);
+    const sedi = new Set<string>();
+    const agg = (n?: string | null) => { const k = sedeFisica(n || ""); if (k) sedi.add(k); };
+    agg(u.data?.primary_store);
+    (links.data ?? []).forEach((r: { store_name: string }) => agg(r.store_name));
+    (cop.data ?? []).forEach((r: { store: string; tipo: string | null }) => {
+        if (String(r.tipo || "") === "escluso") sedi.delete(sedeFisica(r.store));
+        else agg(r.store);
+    });
+    return [...sedi];
+}
+
+/* ═══ DICHIARARE DOVE SI LAVORA ═══════════════════════════════════════════════
+   Passa dal server perché il browser NON può fare `update` su
+   `presenza_negozio` (revocato apposta: se no uno si approverebbe da solo la
+   richiesta). E un update serve davvero: l'indice `presenza_una_attiva` ammette
+   UNA sola riga attiva per persona al giorno, quindi chi cambia negozio a metà
+   giornata — due turni, una sostituzione — deve prima veder chiusa la
+   precedente. Fatto dal browser, quell'insert moriva con «duplicate key value
+   violates unique constraint», scritto tale e quale sul monitor del negozio.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function dichiara(userId: string, nome: string, sede: string, motivo: string) {
+    const data = oggiYmd();
+    const mie = await sediDiTurno(userId, nome);
+    const { data: righe } = await supabase.from("presenza_negozio")
+        .select("id, sede, stato").eq("user_id", userId).eq("data", data)
+        .in("stato", ["attiva", "in_attesa"]);
+    const attiva = (righe ?? []).find((r) => r.stato === "attiva");
+
+    // confermare dov'è già: non si scrive niente, ed è il caso più frequente
+    if (attiva && attiva.sede === sede) return { ok: true, stato: "attiva", cambiato: false };
+
+    if (mie.includes(sede)) {
+        // è un suo turno: si sposta e basta, nessuna approvazione
+        if (attiva) {
+            await supabase.from("presenza_negozio")
+                .update({ stato: "chiusa", deciso_da: "cambio dichiarato", deciso_il: new Date().toISOString() })
+                .eq("id", attiva.id);
+        }
+        const { error } = await supabase.from("presenza_negozio").insert({
+            user_id: userId, data, sede, origine: "turno", stato: "attiva",
+        });
+        if (error) return { ok: false, error: error.message };
+        return { ok: true, stato: "attiva", cambiato: true };
+    }
+
+    /* FUORI TURNO: intanto lavora dove è di turno (Luca: «nessuno resta fermo
+       davanti a un cliente»), e la richiesta nasce in attesa. */
+    const sedeTurno = mie[0] || null;
+    if (!attiva && sedeTurno) {
+        await supabase.from("presenza_negozio").insert({
+            user_id: userId, data, sede: sedeTurno, origine: "turno", stato: "attiva",
+        });
+    }
+    const giaChiesta = (righe ?? []).find((r) => r.stato === "in_attesa" && r.sede === sede);
+    if (!giaChiesta) {
+        const { error } = await supabase.from("presenza_negozio").insert({
+            user_id: userId, data, sede, origine: "richiesta", stato: "in_attesa",
+            sede_turno: sedeTurno, motivo: motivo || null,
+        });
+        if (error) return { ok: false, error: error.message };
+        /* LA TASK ALL'AMMINISTRAZIONE la scrive il SERVER, non il browser: se
+           la scrive il client, basta chiudere la scheda un attimo prima e la
+           richiesta resta invisibile a chi la deve approvare. */
+        await supabase.from("admin_tasks").insert({
+            tipo: "accesso_negozio",
+            titolo: `🏪 ${nome} chiede di lavorare a ${sede}`,
+            dettaglio: `Oggi risulta di turno a ${sedeTurno || "nessun negozio"}. Ha chiesto di lavorare a ${sede}${motivo.trim() ? ` — «${motivo.trim()}»` : ""}. Fino all'approvazione continua a lavorare su ${sedeTurno || "nessun negozio"}. Si approva da Collaboratori → Turni.`,
+            link: "/collaboratori?sezione=turni",
+            target_role: "amministrativo",
+            created_by: nome || null,
+        });
+    }
+    return { ok: true, stato: "in_attesa", sedeTurno, cambiato: true };
+}
 
 async function chiSei(id: string) {
     const { data } = await supabase.from("app_users")
@@ -52,10 +145,24 @@ export async function POST(req: Request) {
         _s = _g.sess;
     }
     const io_ = await chiSei(_s.id);
-    if (!io_ || io_.active === false || !PUO_APPROVARE.includes(String(io_.role || "")))
+    if (!io_ || io_.active === false)
+        return NextResponse.json({ error: "utente non attivo" }, { status: 403 });
+
+    const _b = await req.json().catch(() => ({})) as { id?: string; esito?: string; azione?: string; sede?: string; motivo?: string };
+
+    /* DICHIARARE la propria presenza: lo può fare CHIUNQUE, ma solo per SÉ —
+       `_s.id` viene dalla sessione firmata, non dal corpo della richiesta. */
+    if (_b.azione === "dichiara") {
+        const sede = String(_b.sede || "").trim().toLowerCase();
+        if (!sede) return NextResponse.json({ error: "sede mancante" }, { status: 400 });
+        const r = await dichiara(_s.id, io_.full_name || "", sede, String(_b.motivo || ""));
+        return NextResponse.json(r, { status: r.ok ? 200 : 500 });
+    }
+
+    if (!PUO_APPROVARE.includes(String(io_.role || "")))
         return NextResponse.json({ error: "solo l'amministrazione può approvare" }, { status: 403 });
 
-    const b = await req.json().catch(() => ({})) as { id?: string; esito?: string };
+    const b = _b;
     if (!b.id) return NextResponse.json({ error: "id richiesto" }, { status: 400 });
     const approva = b.esito !== "rifiuta";
 

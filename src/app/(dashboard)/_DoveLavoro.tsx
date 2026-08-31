@@ -27,15 +27,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import {
-    sediDelGruppo, sediDiTurnoOggi, presenzaOggi, dichiaraPresenza,
+    sediDelGruppo, sediDiTurnoOggi, presenzaOggi,
     type SedeLavoro,
 } from "@/lib/doveLavoro";
 
 /** I ruoli che stanno dietro a un bancone. Gli altri non vedono la schermata. */
-const RUOLI_DI_NEGOZIO = ["venditore", "store_manager", "tecnico", "agente"];
+const RUOLI_DI_NEGOZIO = [
+    "venditore", "store_manager", "tecnico", "agente",
+    /* IL DIRETTORE COMMERCIALE (Luca 31/08): «sta sui negozi tutti i giorni,
+       per cui anche a lui bisogna chiedere in che punto vendita lavora». */
+    "direttore_commerciale",
+];
+/* LE ECCEZIONI PER PERSONA (Luca 31/08). Il ruolo non basta sempre: Marta
+   Perrotta è direttore generale ma «fa molte coperture», quindi la domanda la
+   riguarda eccome. Si va per id, non per nome: i nomi si riscrivono.
+   Franca Arduini ha lo stesso ruolo e resta fuori — lei in negozio non ci sta. */
+const ANCHE_LORO = ["7e3f04f6-f30b-4b4b-aea8-f732c45e1861"];   // Marta Perrotta
+const deveRispondere = (u: { id?: string; role?: string } | null) =>
+    RUOLI_DI_NEGOZIO.includes(String(u?.role || "")) || ANCHE_LORO.includes(String(u?.id || ""));
 
 export function DoveLavoro() {
     const { user } = useAuth();
@@ -49,7 +60,7 @@ export function DoveLavoro() {
     const [errore, setErrore] = useState("");
 
     const guarda = useCallback(async () => {
-        if (!user?.id || !RUOLI_DI_NEGOZIO.includes(String(user.role || ""))) { setServe(false); return; }
+        if (!user?.id || !deveRispondere(user)) { setServe(false); return; }
         /* SI CHIEDE A OGNI ACCESSO (Luca 31/08), non una volta al giorno: chi
            esce e rientra lo fa quasi sempre perché è cambiato qualcosa. Il
            confronto è fra l'istante dell'accesso e quello dell'ultima risposta:
@@ -61,18 +72,33 @@ export function DoveLavoro() {
             gia = acc && localStorage.getItem("crm_dove_lavoro") === acc ? acc : "";
         } catch { /* localStorage negato: si chiede, che è il lato sicuro */ }
         if (gia) { setServe(false); return; }
-        const p = await presenzaOggi(user.id);
-        // la presenza già dichiarata resta il valore di partenza, ma la domanda
+        // la presenza già dichiarata resta il valore di PARTENZA, ma la domanda
         // si fa lo stesso: confermare costa un clic, indovinare costa una vendita
-        if (p.attiva) setScelta(p.attiva.sede);
+        const p = await presenzaOggi(user.id);
         const [tutte, mie] = await Promise.all([
             sediDelGruppo(),
             sediDiTurnoOggi(user.id, user.name || ""),
         ]);
+        /* SI APRE SOLO SE SO COSA OFFRIRE (revisore 31/08). Se l'elenco delle
+           sedi torna vuoto — la query fallisce, la rete cade, il database non
+           risponde — questa schermata diventerebbe un pannello a tutto schermo
+           senza un bottone dentro: niente sedi da scegliere, niente conferma
+           possibile, niente ESC. Cioè il CRM chiuso a chiave, la mattina in cui
+           quindici negozi aprono la cassa. Meglio non chiedere: la presenza è
+           un dato che vogliamo, non un lucchetto. */
+        if (!tutte.length) { setServe(false); return; }
         setSedi(tutte);
         setDiTurno(mie);
-        // una sola sede di turno: è già scelta, basta confermare
-        setScelta(mie.length === 1 ? mie[0] : null);
+        /* CHI OGGI NON È DI TURNO DA NESSUNA PARTE vede subito TUTTE le sedi
+           (revisore 31/08). Prima l'elenco era filtrato sui suoi turni e il
+           pulsante «Sto in un altro negozio» compariva solo se un turno ce
+           l'aveva: chi non ne aveva restava davanti a «Nessun punto vendita
+           disponibile» e a un bottone spento. Ferie rientrate, sostituzioni
+           dell'ultimo minuto, gente appena assunta: capita, e capita di lunedì. */
+        setAltro(mie.length === 0);
+        // la presenza già dichiarata è il punto di partenza; se no, l'unico turno
+        const p_ = p.attiva?.sede && tutte.some((x) => x.sede === p.attiva!.sede) ? p.attiva.sede : null;
+        setScelta(p_ || (mie.length === 1 ? mie[0] : null));
         setServe(true);
     }, [user?.id, user?.role, user?.name]);
 
@@ -88,41 +114,23 @@ export function DoveLavoro() {
         if (!scelta || salvando) return;
         setSalvando(true); setErrore("");
         try {
-            /* FUORI TURNO: la richiesta nasce IN ATTESA, ma intanto si lavora dove
-               si è di turno (scelta di Luca: «nessuno resta fermo davanti a un
-               cliente»). Se un turno non ce l'ha proprio, resta solo la richiesta:
-               è raro, e vendere da un negozio che non è suo senza che nessuno lo
-               sappia è esattamente ciò che questa schermata esiste per impedire. */
-            const { presenzaOggi: leggi } = await import("@/lib/doveLavoro");
-            const gia_ = await leggi(user.id);
-            /* CONFERMARE LA STESSA SEDE non scrive niente: la presenza è già
-               quella, e una seconda riga «attiva» lo stesso giorno non
-               esisterebbe nemmeno — l'indice ne ammette una sola. */
-            if (gia_.attiva && gia_.attiva.sede === scelta) {
-                try { localStorage.setItem("crm_dove_lavoro", localStorage.getItem("crm_accesso_il") || String(Date.now())); } catch { }
-                setServe(false); setSalvando(false);
-                return;
-            }
-            if (fuoriTurno && sedeDiTurno) {
-                const a = await dichiaraPresenza(user.id, sedeDiTurno);
-                if (!a.ok) throw new Error(a.error);
-            }
-            const r = await dichiaraPresenza(user.id, scelta, fuoriTurno ? (sedeDiTurno || "—") : null, motivo);
-            if (!r.ok) throw new Error(r.error);
+            /* TUTTA LA REGOLA STA SUL SERVER (revisore 31/08). Da qui si dice
+               solo dove si è: se sia un turno o una richiesta, se una presenza
+               di stamattina vada chiusa, se serva avvisare l'amministrazione,
+               lo decide `/api/turni/presenza` — che è anche l'unico a poter
+               chiudere la riga precedente, visto che al browser l'`update` su
+               `presenza_negozio` è tolto apposta.
+               Prima questo pezzo faceva due insert di fila e, per chi cambiava
+               negozio a metà giornata, il secondo sbatteva contro l'indice
+               unico: l'errore del database finiva a schermo davanti al cliente. */
+            const r = await fetch("/api/turni/presenza", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ azione: "dichiara", sede: scelta, motivo }),
+            });
+            const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string }));
+            if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
 
-            if (fuoriTurno) {
-                // l'amministrazione lo deve sapere: stessa coda del bonifico
-                const eti = sedi.find((s) => s.sede === scelta)?.etichetta || scelta;
-                const daDove = sedi.find((s) => s.sede === sedeDiTurno)?.etichetta || sedeDiTurno || "nessun turno";
-                await supabase.from("admin_tasks").insert({
-                    tipo: "accesso_negozio",
-                    titolo: `🏪 ${user.name} chiede di lavorare a ${eti}`,
-                    dettaglio: `Oggi risulta di turno a ${daDove}. Ha chiesto di lavorare a ${eti}${motivo.trim() ? ` — «${motivo.trim()}»` : ""}. Fino all'approvazione continua a lavorare su ${daDove}. Si approva da Collaboratori → Turni.`,
-                    link: "/collaboratori?sezione=turni",
-                    target_role: "amministrativo",
-                    created_by: user.name || null,
-                });
-            }
             try { localStorage.setItem("crm_dove_lavoro", localStorage.getItem("crm_accesso_il") || String(Date.now())); } catch { }
             setServe(false);
             // il resto del CRM legge la presenza al montaggio: si riparte pulito
@@ -174,7 +182,7 @@ export function DoveLavoro() {
                     </div>
                 )}
 
-                {!altro && mie.length > 0 && (
+                {!altro && (
                     <div className="rvBarra rvBarra-c" style={{ marginTop: 10 }}>
                         <button type="button" className="rvPill rvPill-sm" onClick={() => { setAltro(true); setScelta(null); }}>
                             Sto in un altro negozio
