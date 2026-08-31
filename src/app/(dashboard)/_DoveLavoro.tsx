@@ -12,8 +12,12 @@
    i conti in sospeso che uno vede. Un campo che si cambia senza che nessuno lo
    sappia non è un dato certo.
 
-   Si chiede UNA VOLTA AL GIORNO, non a ogni pagina: la risposta si scrive, e
-   finché quella dichiarazione è attiva questa schermata non ricompare.
+   Si chiede A OGNI ACCESSO (Luca 31/08: «deve chiederlo ogni volta che fanno
+   l'accesso»), non a ogni pagina. Chi esce e rientra lo fa quasi sempre perché
+   è cambiato qualcosa — un turno, un altro negozio, un altro PC — ed è
+   esattamente il momento in cui la domanda serve. Il marcatore è l'istante del
+   login: finché la risposta è quella di QUESTO accesso, ricaricare una pagina
+   non fa ricomparire la schermata; il login successivo sì.
 
    CHI NON VENDE NON LA VEDE. Call center, back office, direzione, ufficio: non
    escono da un punto vendita e non hanno un magazzino: chiedere loro «dove
