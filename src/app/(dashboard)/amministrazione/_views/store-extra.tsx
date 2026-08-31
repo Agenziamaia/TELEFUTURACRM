@@ -235,7 +235,9 @@ export function StoreAttachments({ storeId }: { storeId: string }) {
 type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo: string };
 // pausa/is_ufficio opzionali = mig. 158/159: il fallback pre-migrazione
 // carica solo le colonne storiche
-type NegozioOrariRow = { name: string; address?: string | null; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
+type AziendaRow = { codice: string; ragione_sociale: string; piva: string | null };
+type RtRow = { negozio: string; azienda: string; is_default: boolean | null; rt_url: string | null };
+type NegozioOrariRow = { name: string; address?: string | null; cap?: string | null; citta?: string | null; provincia?: string | null; telefono?: string | null; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
 type CampoOrario = "orario_apertura" | "orario_chiusura" | "orario_pausa_inizio" | "orario_pausa_fine" | "sabato_apertura" | "sabato_chiusura";
 export function OrariChiusureView() {
     const { user } = useAuth();   // firma sulle chiusure (giallo del 06/08: righe senza autore)
@@ -255,11 +257,22 @@ export function OrariChiusureView() {
     const [nuova, setNuova] = useState<Record<string, { dal: string; al: string; motivo: string }>>({});
     // toggle "spezzato" per negozio: acceso a mano oppure dedotto dalla pausa a DB
     const [spezzatoUi, setSpezzatoUi] = useState<Record<string, boolean>>({});
+    const [aziende, setAziende] = useState<AziendaRow[]>([]);
+    const [registratori, setRegistratori] = useState<RtRow[]>([]);
     const carica = useCallback(async () => {
-        const [st0, ch, fs] = await Promise.all([
-            supabase.from("stores").select("name, address, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
+        const [st0, ch, fs, az, rt] = await Promise.all([
+            supabase.from("stores").select("name, address, cap, citta, provincia, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta, sabato_apertura, sabato_chiusura").order("name"),
             supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
             supabase.from("giorni_festivi").select("giorno, nome").order("giorno"),
+            /* LE SOCIETÀ E I REGISTRATORI (Luca 31/08). «Il file orari e chiusure
+               diventa il posto in cui deteniamo tutte le informazioni sui punti
+               vendita»: la società di un negozio non è un'etichetta, è chi emette
+               lo scontrino e chi possiede la merce a magazzino. Sta su `pos_rt`,
+               insieme al registratore di cassa: qui la si legge e si può
+               correggere, che è quello che serve per gli undici negozi in cui
+               non è mai stata confermata. */
+            supabase.from("aziende").select("codice, ragione_sociale, piva").order("codice"),
+            supabase.from("pos_rt").select("negozio, azienda, is_default, rt_url"),
         ]);
         // mig. 158/159 non ancora applicate: si ripiega sulle colonne storiche
         const st = st0.error
@@ -269,6 +282,8 @@ export function OrariChiusureView() {
         setNegozi(((st.data ?? []) as NegozioOrariRow[]).filter(n => !n.is_ufficio));
         setChiusure((ch.data ?? []) as ChiusuraRow[]);
         setFestivi(((fs.data ?? []) as { giorno: string; nome: string }[]));
+        setAziende((az.data ?? []) as AziendaRow[]);
+        setRegistratori((rt.data ?? []) as RtRow[]);
         setLoading(false);
     }, []);
     useEffect(() => { carica(); }, [carica]);
@@ -283,6 +298,30 @@ export function OrariChiusureView() {
         const { error } = await supabase.from("stores").update({ address: v || null }).eq("name", store);
         if (dbError("Indirizzo negozio", error)) return;
         setNegozi(p => p.map(x => x.name === store ? { ...x, address: v || null } : x));
+    };
+
+    /** Via, CAP, città, provincia: insieme fanno il LUOGO DI CONSEGNA del DDT.
+     *  Si salva quando si esce dal campo, come l'indirizzo. */
+    const salvaCampoNegozio = async (store: string, campo: "cap" | "citta" | "provincia", val: string) => {
+        const v = val.trim();
+        const { error } = await supabase.from("stores").update({ [campo]: v || null }).eq("name", store);
+        if (dbError("Dati negozio", error)) return;
+        setNegozi(p => p.map(x => x.name === store ? { ...x, [campo]: v || null } : x));
+    };
+
+    /* CAMBIARE LA SOCIETÀ DI UN NEGOZIO non è cambiare un'etichetta: è dire
+       chi emette lo scontrino e di chi è la merce a magazzino. Si tocca solo
+       dove ce n'è UNA — dove sono due (Donna) la scelta la fa il pezzo che si
+       vende, e cambiarla da qui vorrebbe dire scegliere per lui. */
+    const salvaSocieta = async (store: string, nuova_: string) => {
+        const righe = registratori.filter(r => r.negozio === store);
+        if (righe.length !== 1) { notify("Questo negozio ha due società: si cambiano dalla configurazione dei registratori."); return; }
+        const az = aziende.find(a => a.codice === nuova_);
+        const { error } = await supabase.from("pos_rt")
+            .update({ azienda: nuova_, ragione_sociale: az?.ragione_sociale ?? null, piva: az?.piva ?? null })
+            .eq("negozio", store).eq("azienda", righe[0].azienda);
+        if (dbError("Società del negozio", error)) return;
+        setRegistratori(p => p.map(r => r.negozio === store ? { ...r, azienda: nuova_ } : r));
     };
 
     const salvaOrario = async (store: string, campo: CampoOrario, val: string) => {
@@ -413,9 +452,6 @@ export function OrariChiusureView() {
                             colonne). */}
                         <div className="w-52 shrink-0">
                             <p className="text-sm font-bold text-white">🏬 {n.name}</p>
-                            <input defaultValue={n.address || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.address || "")) salvaIndirizzo(n.name, e.target.value); }}
-                                placeholder="Indirizzo (via e civico)" title="Compare nei messaggi WhatsApp ai clienti come {indirizzo}"
-                                className="glass-input !h-7 !px-2 text-[11px] w-full mt-1" />
                             <div className="flex items-center gap-1 mt-1.5 text-[11px] text-slate-400"
                                 title={spezzato ? "1° turno di apertura" : "Orario di apertura (turno unico)"}>
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-8 shrink-0">{spezzato ? "1°" : "🕐"}</span>
@@ -480,6 +516,59 @@ export function OrariChiusureView() {
                                 <span className={`text-[11px] font-bold ${n.domenica_aperta ? "text-emerald-300" : "text-slate-500"}`}>🌞 Aperto la domenica</span>
                             </div>
                         </div>
+                        {/* LA SCHEDA DEL PUNTO VENDITA (Luca 31/08): «visto che abbiamo
+                            molto spazio sulla destra, posso inserire le informazioni del
+                            negozio — l'indirizzo, la società a cui appartiene — così
+                            questo diventa il posto in cui deteniamo tutte le
+                            informazioni sui punti vendita».
+                            Non è anagrafica per bellezza: l'indirizzo è il LUOGO DI
+                            CONSEGNA del documento di trasporto, e senza non è valido;
+                            la società è chi emette lo scontrino e di chi è la merce. */}
+                        {(() => {
+                            const rt = registratori.filter(r => r.negozio === n.name);
+                            const soc = rt.map(r => r.azienda);
+                            const unaSola = rt.length === 1;
+                            const nome = (c: string) => aziende.find(a => a.codice === c)?.ragione_sociale || c;
+                            const mancaPerDdt = !n.address || !n.cap || !n.citta;
+                            return (
+                                <div className="w-[290px] shrink-0 space-y-1.5 border-l border-white/5 pl-4">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">📍 Scheda del punto vendita</p>
+                                    <input defaultValue={n.address || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.address || "")) salvaIndirizzo(n.name, e.target.value); }}
+                                        placeholder="Via e civico"
+                                        title="Compare nei messaggi WhatsApp ai clienti come {indirizzo}, ed è il luogo di consegna sul DDT"
+                                        className="glass-input !h-7 !px-2 text-[11px] w-full" />
+                                    <div className="flex gap-1.5">
+                                        <input defaultValue={n.cap || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.cap || "")) salvaCampoNegozio(n.name, "cap", e.target.value); }}
+                                            placeholder="CAP" className="glass-input !h-7 !px-2 text-[11px] w-[70px]" />
+                                        <input defaultValue={n.citta || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.citta || "")) salvaCampoNegozio(n.name, "citta", e.target.value); }}
+                                            placeholder="Città" className="glass-input !h-7 !px-2 text-[11px] flex-1" />
+                                        <input defaultValue={n.provincia || ""} onBlur={e => { if ((e.target.value.trim().toUpperCase() || "") !== (n.provincia || "")) salvaCampoNegozio(n.name, "provincia", e.target.value.toUpperCase()); }}
+                                            placeholder="PR" maxLength={2} className="glass-input !h-7 !px-2 text-[11px] w-[48px] uppercase" />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0">Società</span>
+                                        {unaSola ? (
+                                            <select value={soc[0] || ""} onChange={e => salvaSocieta(n.name, e.target.value)}
+                                                title="Chi emette lo scontrino in questo negozio, e di chi è la merce a magazzino"
+                                                className="glass-input !h-7 !px-2 text-[11px] flex-1">
+                                                {aziende.map(a => <option key={a.codice} value={a.codice}>{a.ragione_sociale}</option>)}
+                                            </select>
+                                        ) : rt.length === 0 ? (
+                                            <span className="text-[11px] text-amber-300">nessun registratore configurato</span>
+                                        ) : (
+                                            <span className="text-[11px] text-slate-300" title="Due società in questo negozio: la scelta la fa il pezzo che si vende">
+                                                {soc.map(nome).join(" + ")}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {mancaPerDdt && (
+                                        <p className="text-[10px] text-amber-300/80 leading-snug">
+                                            Senza via, CAP e città il documento di trasporto non è valido.
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        })()}
                         <div className="flex-1 min-w-[280px] space-y-1.5">
                             {mie.length === 0 && <p className="text-xs text-slate-600 italic mt-1.5">Nessuna chiusura straordinaria.</p>}
                             {mie.map(c => (

@@ -17,8 +17,20 @@
 //                  Import col runner scripts/import_mag_articoli.js.
 // Stati unità: disponibile · in_arrivo · in_transito (negozio = destinazione,
 // il mittente lo vede spedito nel DDT) · venduto (deflaggato ma ricercabile).
+//
+// ⚠️  VESTITO (Luca 31/08). «Le modifiche che hai fatto sul magazzino sono
+// corrette, però dobbiamo adattarlo esteticamente al resto del gestionale:
+// alla sezione di Registra Vendita, per come l'abbiamo ridefinita — quelle
+// tendine, quelle caselle, quei formati, quei colori, quelle sfumature.»
+// Da qui in poi questa pagina segue  docs/REGOLE_REGISTRA_VENDITA.md :
+// solo classi `.rv*` di globals.css, niente stile scritto dentro l'elemento,
+// il colore dal contenitore (`--rv-acc`), i modali in un portal. Se manca una
+// classe si aggiunge ALLA CASSETTA — non si fa un'eccezione qui.
+// Il COMPORTAMENTO non è cambiato: filtri, conteggi, colonna «Altrove»,
+// esplosione dei pezzi, cestino, DDT ed export sono gli stessi di prima.
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpen, Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { isAdminOrAbove } from "@/lib/roles";
@@ -145,21 +157,22 @@ export default function MagazzinoPage() {
     ])).sort(), [unita, quantita]);
 
     return (
-        <div className="p-6 max-w-[1500px]">
-            <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Boxes size={26} /> Magazzino</h1>
-                <div className="flex gap-2">
+        /* la tinta della sezione sta sul contenitore, non nei bottoni
+           (regola 2): è l'indaco del CRM, e tutto quello che sta dentro —
+           pastiglie, riquadri, frecce d'ordinamento — la eredita. */
+        <div className="max-w-[1500px]">
+            <div className="rvTesta">
+                <h1 className="rvTit"><Boxes size={25} /> Magazzino</h1>
+                <div className="rvPillRow">
                     {([["giacenze", "📦 Giacenze"], ["ricerca", "🔍 Ricerca seriale"], ["trasferimenti", "🚚 Trasferimenti"], ["articoli", "📚 Articoli"]] as const).map(([k, l]) => (
-                        <button key={k} onClick={() => setTab(k)}
-                            className={cn("px-4 py-2 rounded-xl text-sm font-semibold border transition",
-                                tab === k ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}>
+                        <button key={k} onClick={() => setTab(k)} className={cn("rvPill", tab === k && "rvPill-on")}>
                             {l}
                         </button>
                     ))}
                 </div>
             </div>
             {loading ? (
-                <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
+                <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico il magazzino…</div>
             ) : tab === "giacenze" ? (
                 <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
                     anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare}
@@ -422,100 +435,108 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             ["Codice", "Descrizione", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
     };
 
-    const selCls = "glass-input !h-9 text-sm";
-    const btn = (attivo: boolean) => cn("px-3 h-9 rounded-lg text-xs font-bold border transition",
-        attivo ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]");
     const colonne = ["Codice", "Descrizione", "Giacenza", "Altrove", "In arrivo", "Valore"];
+    /** «è nel negozio che sto guardando?» — decide il colore della pastiglia
+     *  del luogo, e prima era scritto due volte uguale dentro l'elemento. */
+    const quiDa = (neg: string) => neg === negozio || (!negozio && neg === mioNegozio);
 
     return (
         <div className="space-y-4">
-            <div className="glass-panel rounded-2xl p-4 space-y-3">
+            <div className="rvBox">
+                <div className="rvBoxT">🔎 Cosa guardo</div>
                 {/* DOVE GUARDO — il mio negozio è già scelto */}
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="rvBarra rvBarra-c">
                     {mioNegozio && negozi.includes(mioNegozio) && (
-                        <button onClick={() => setNegozio(mioNegozio)} className={btn(negozio === mioNegozio)}>🏠 {mioNegozio}</button>
+                        <button onClick={() => setNegozio(mioNegozio)} className={cn("rvPill rvPill-sm", negozio === mioNegozio && "rvPill-on")}>🏠 {mioNegozio}</button>
                     )}
-                    <button onClick={() => setNegozio("")} className={btn(!negozio)}>🌐 Tutti i negozi</button>
-                    <div className="w-52"><SelectOpzioni className="glass-input w-full text-sm"
+                    <button onClick={() => setNegozio("")} className={cn("rvPill rvPill-sm", !negozio && "rvPill-on")}>🌐 Tutti i negozi</button>
+                    {/* la className SOSTITUISCE il default di SelectOpzioni (non
+                        si fondono): va addosso all'<input>, quindi `.rvIn` e
+                        basta — un `.rvSel > div` non aggancerebbe niente. */}
+                    <div className="rvCampo rvCampo-md"><SelectOpzioni className="rvIn"
                         value={negozio && negozio !== mioNegozio ? negozio : ""} onChange={setNegozio}
                         opzioni={negozi} placeholder="…o un altro punto vendita" /></div>
-                    <span className="w-px h-6 bg-white/10 mx-1" />
-                    <button onClick={() => setSoloDisponibili(true)} className={btn(soloDisponibili)}>📗 Solo disponibili</button>
-                    <button onClick={() => setSoloDisponibili(false)} className={btn(!soloDisponibili)}
+                    <span className="rvSep" />
+                    <button onClick={() => setSoloDisponibili(true)} className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo disponibili</button>
+                    <button onClick={() => setSoloDisponibili(false)} className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
                         title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Tutti gli articoli</button>
                 </div>
                 {/* I FILTRI FINI */}
-                <div className="flex items-end gap-3 flex-wrap">
-                    <label className="text-xs text-slate-400">Cerca<br />
+                <div className="rvBarra mt-3">
+                    <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
                         <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice o descrizione…"
-                            className={cn(selCls, "w-56")} /></label>
-                    <label className="text-xs text-slate-400">Operatore<br />
-                        <div className="w-44 mt-0.5"><SelectOpzioni className="glass-input w-full text-sm"
+                            className="rvIn" /></label>
+                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Operatore</span>
+                        <SelectOpzioni className="rvIn"
                             value={operatore} onChange={setOperatore}
-                            opzioni={[...operatoriPresenti, "(nessuno)"]} placeholder="Tutti" /></div></label>
-                    <label className="text-xs text-slate-400">Azienda<br />
-                        <div className="w-56 mt-0.5"><SelectOpzioni className="glass-input w-full text-sm"
+                            opzioni={[...operatoriPresenti, "(nessuno)"]} placeholder="Tutti" /></div>
+                    <div className="rvCampo rvCampo-lg"><span className="rvLab">Azienda</span>
+                        <SelectOpzioni className="rvIn"
                             value={azienda ? (nomiAzienda[azienda] || azienda) : ""}
                             onChange={(v) => setAzienda(v ? (Object.keys(nomiAzienda).find(k => nomiAzienda[k] === v) || v) : "")}
-                            opzioni={aziende.map(a => nomiAzienda[a] || a)} placeholder="Tutte le società" /></div></label>
-                    <label className="text-xs text-slate-400">Stato<br />
-                        <div className="w-44 mt-0.5"><SelectOpzioni className="glass-input w-full text-sm" disabled={!!dataStorica}
+                            opzioni={aziende.map(a => nomiAzienda[a] || a)} placeholder="Tutte le società" /></div>
+                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Stato</span>
+                        <SelectOpzioni className="rvIn" disabled={!!dataStorica}
                             value={stato ? (STATI_LABEL[stato] || stato) : ""}
                             onChange={(v) => setStato(v ? (Object.keys(STATI_LABEL).find(k => STATI_LABEL[k] === v) || "") : "")}
-                            opzioni={Object.values(STATI_LABEL)} placeholder="Tutti" /></div></label>
-                    <label className="text-xs text-slate-400" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">Giacenza alla data<br />
-                        <input type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className={selCls} /></label>
-                    {dataStorica && <button onClick={() => setDataStorica("")} className="text-xs text-slate-400 hover:text-white pb-2">✕ oggi</button>}
-                    <div className="flex-1" />
-                    <button onClick={esporta} disabled={!righe.length}
-                        className="px-3 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-40">
-                        <FileDown size={14} /> Excel
+                            opzioni={Object.values(STATI_LABEL)} placeholder="Tutti" /></div>
+                    <label className="rvCampo rvCampo-md" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">
+                        <span className="rvLab">Giacenza alla data</span>
+                        <input type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className="rvIn" /></label>
+                    {dataStorica && <button onClick={() => setDataStorica("")} className="rvPill rvPill-sm">✕ oggi</button>}
+                    <span className="rvSpazio" />
+                    <button onClick={esporta} disabled={!righe.length} className="rvAzione rvAzione-sm">
+                        <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
                 </div>
                 {dataStorica && (
-                    <p className="text-[11px] text-amber-300/80">
-                        La fotografia a una data passata vale sui soli pezzi con seriale: le quantità non hanno una storia per riga.
-                    </p>
+                    <div className="rvNota rvNota-att">
+                        <div className="rvNota-t">📅 La fotografia a una data passata</div>
+                        <div className="rvNota-s">Vale sui soli pezzi con seriale: le quantità non hanno una storia per riga.</div>
+                    </div>
                 )}
             </div>
-            {daCestinare && (
-                <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4" onClick={() => !cestinando && setDaCestinare(null)}>
-                    <div className="glass-card rounded-2xl p-6 w-[min(460px,92vw)]" onClick={e => e.stopPropagation()}>
-                        <div className="text-lg font-bold text-white mb-1">Togliere dal magazzino?</div>
-                        <p className="text-sm text-slate-300 mb-1">{daCestinare.titolo}</p>
-                        <p className="text-xs text-slate-400 mb-4">
-                            {daCestinare.seriale
-                                ? <>pezzo <span className="font-mono">{daCestinare.seriale}</span> · {daCestinare.negozio}</>
-                                : <>{daCestinare.quantita} pezzi · {daCestinare.negozio}</>}
-                        </p>
-                        {/* niente sparisce davvero: resta scritto chi, quando e perché */}
-                        <p className="text-[11px] text-slate-500 mb-3">
+            {/* IN UN PORTAL (regola 6): oggi sopra non c'è nessun riquadro
+                sfocato, ma il giorno che il magazzino finisce dentro una card
+                col backdrop-filter questo modale diventerebbe grande quanto la
+                card — è già successo alla cassa, misurato 420×130. */}
+            {daCestinare && typeof document !== "undefined" && createPortal(
+                <div className="rvFattaSfondo" onClick={(e) => { if (e.target === e.currentTarget && !cestinando) setDaCestinare(null); }}>
+                    <div className="rvFatta rvFatta-att">
+                        <div className="rvFatta-o rvFatta-att-o">🗑</div>
+                        <h3>Togliere dal magazzino?</h3>
+                        <p>
+                            <b>{daCestinare.titolo}</b><br />
                             {daCestinare.seriale
                                 ? "Il pezzo non sarà più vendibile né trasferibile, ma la sua storia resta."
                                 : "La giacenza va a zero con una rettifica: il movimento resta scritto."}
                         </p>
-                        <input value={motivo} onChange={e => setMotivo(e.target.value)} autoFocus
-                            placeholder="perché? (rubato, rotto, mai arrivato…)"
-                            className="glass-input w-full text-sm mb-4" />
-                        <div className="flex gap-2 justify-end">
+                        {/* niente sparisce davvero: resta scritto chi, quando e perché */}
+                        <div className="rvFatta-d">
+                            <div><span>{daCestinare.seriale ? "Pezzo" : "Quantità"}</span>
+                                <span>{daCestinare.seriale ? daCestinare.seriale : `${daCestinare.quantita} pezzi`}</span></div>
+                            <div><span>Negozio</span><span>{daCestinare.negozio}</span></div>
+                        </div>
+                        <label className="rvCampo"><span className="rvLab">Perché lo togli</span>
+                            <input value={motivo} onChange={e => setMotivo(e.target.value)} autoFocus
+                                placeholder="rubato, rotto, mai arrivato…" className="rvIn" /></label>
+                        <div className="rvBarra rvBarra-c mt-4 justify-end">
                             <button onClick={() => { setDaCestinare(null); setMotivo(""); }} disabled={cestinando}
-                                className="px-4 h-9 rounded-lg text-sm text-slate-300 border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-40">Annulla</button>
-                            <button onClick={cestina} disabled={cestinando}
-                                className="px-4 h-9 rounded-lg text-sm font-bold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-40 inline-flex items-center gap-2">
-                                {cestinando && <Loader2 className="w-4 h-4 animate-spin" />}Sì, toglilo
+                                className="rvPill">Annulla</button>
+                            <button onClick={cestina} disabled={cestinando} className="rvAzione rvAzione-no">
+                                {cestinando && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}Sì, toglilo
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
-            <div className="glass-card overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-300">
-                    <thead className="bg-white/[0.03] text-xs uppercase text-slate-400">
+                </div>, document.body)}
+            <div className="rvTabBox">
+                <table className="rvTab">
+                    <thead>
                         <tr>{colonne.map((cta, i) => (
-                            <th key={i} className={cn("px-4 py-3 font-semibold cursor-pointer select-none", i >= 2 && "text-center")}
+                            <th key={i} className={cn("rvTab-ord", i >= 2 && "rvTab-c")}
                                 onClick={() => setSort(s => ({ col: i, desc: s.col === i ? !s.desc : false }))}
                                 title={i === 3 ? "Quanti ce ne sono negli ALTRI punti vendita" : undefined}>
-                                {cta}{sort.col === i ? (sort.desc ? " ↓" : " ↑") : ""}
+                                {cta}{sort.col === i ? <i>{sort.desc ? "↓" : "↑"}</i> : null}
                             </th>))}
                         </tr>
                     </thead>
@@ -526,75 +547,73 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             return (
                                 <Fragment key={r.chiave}>
                                     <tr onClick={() => apribile && setAperta(apertaQui ? null : r.chiave)}
-                                        className={cn("border-t border-white/5", apribile && "cursor-pointer hover:bg-white/[0.03]", apertaQui && "bg-white/[0.05]")}>
-                                        <td className="px-4 py-2 font-mono text-xs text-slate-400">
-                                            {apribile && <span className="mr-1.5 text-slate-500">{apertaQui ? "▾" : "▸"}</span>}{r.codice}
+                                        className={cn("rvTab-riga", apribile && "rvTab-cl", apertaQui && "rvTab-on")}>
+                                        <td className="rvTab-cod">
+                                            {apribile && <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>}{r.codice}
                                         </td>
-                                        <td className="px-4 py-2 text-white">
+                                        <td className="rvTab-nome">
                                             {r.descrizione}
-                                            {r.operatore && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 align-middle">{r.operatore}</span>}
+                                            {r.operatore && <span className="rvBadge rvBadge-acc ml-2 align-middle">{r.operatore}</span>}
                                         </td>
-                                        <td className={cn("px-4 py-2 text-center font-bold", r.giacenza > 0 ? "text-emerald-300" : r.giacenza < 0 ? "text-rose-300" : "text-slate-600")}>{r.giacenza}</td>
-                                        <td className="px-4 py-2 text-center text-amber-300/90">{r.altrove || "—"}</td>
-                                        <td className="px-4 py-2 text-center text-sky-300">{r.inArrivo || "—"}</td>
-                                        <td className="px-4 py-2 text-center tabular-nums">{eur(r.valore)}</td>
+                                        <td className={cn("rvTab-n rvGiac", r.giacenza > 0 ? "rvGiac-si" : r.giacenza < 0 ? "rvGiac-ko" : "rvGiac-zero")}>{r.giacenza}</td>
+                                        <td className={cn("rvTab-n rvGiac", r.altrove ? "rvGiac-no" : "rvGiac-zero")}>{r.altrove || "—"}</td>
+                                        <td className={cn("rvTab-n rvGiac", r.inArrivo ? "rvGiac-arr" : "rvGiac-zero")}>{r.inArrivo || "—"}</td>
+                                        <td className="rvTab-n">{eur(r.valore)}</td>
                                     </tr>
                                     {apertaQui && (
-                                        <tr className="bg-black/20">
-                                            <td colSpan={6} className="px-6 py-3">
+                                        <tr className="rvTab-det">
+                                            <td colSpan={6}>
                                                 {r.pezzi.length > 0 ? (
-                                                    <div className="space-y-1">
-                                                        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">I pezzi, uno per uno</div>
+                                                    <div className="rvDett">
+                                                        <div className="rvDettT">I pezzi, uno per uno</div>
                                                         {r.pezzi.map(p => (
-                                                            <div key={p.id} className="flex items-center gap-3 text-xs">
-                                                                <span className="font-mono text-slate-300 w-44">{p.seriale}</span>
-                                                                <span className={cn("px-2 py-0.5 rounded text-[11px]",
-                                                                    p.negozio === negozio || (!negozio && p.negozio === mioNegozio)
-                                                                        ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
+                                                            <div key={p.id} className="rvDettR">
+                                                                <span className="rvDettR-mono">{p.seriale}</span>
+                                                                <span className={cn("rvBadge rvBadge-w", quiDa(p.negozio) ? "rvBadge-ok" : "rvBadge-warn")}>
                                                                     {p.negozio}
                                                                 </span>
-                                                                <span className="text-slate-500">{STATI_LABEL[p.stato] || p.stato}</span>
-                                                                <span className="text-slate-400 tabular-nums ml-auto">{eur(p.valore)}</span>
+                                                                <span className="rvTab-min">{STATI_LABEL[p.stato] || p.stato}</span>
+                                                                <span className="rvDove-fine">{eur(p.valore)}</span>
                                                                 {puoCancellare && (
                                                                     <button title="Togli questo pezzo dal magazzino"
                                                                         onClick={(e) => { e.stopPropagation(); setDaCestinare({ titolo: r.descrizione, codice: r.codice, pezzoId: p.id, seriale: p.seriale, negozio: p.negozio }); }}
-                                                                        className="text-slate-500 hover:text-rose-400 transition px-1">🗑</button>
+                                                                        className="rvCestino">🗑</button>
                                                                 )}
                                                             </div>
                                                         ))}
                                                     </div>
                                                 ) : r.qtaPer.length === 0 ? (
-                                                    <div className="text-xs text-slate-400">Nessun dettaglio da mostrare.</div>
+                                                    <div className="rvTab-min">Nessun dettaglio da mostrare.</div>
                                                 ) : null}
                                                 {r.qtaPer.length > 0 && (
-                                                    <div className={cn("space-y-1", r.pezzi.length > 0 && "mt-3 pt-3 border-t border-white/5")}>
-                                                        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Merce a quantità, negozio per negozio</div>
+                                                    <div className="rvDett">
+                                                        <div className="rvDettT">Merce a quantità, negozio per negozio</div>
                                                         {r.qtaPer.map(q => (
-                                                            <div key={q.negozio + q.azienda} className="flex items-center gap-3 text-xs">
-                                                                <span className={cn("px-2 py-0.5 rounded text-[11px] w-36",
-                                                                    q.negozio === negozio || (!negozio && q.negozio === mioNegozio)
-                                                                        ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
+                                                            <div key={q.negozio + q.azienda} className="rvDettR">
+                                                                <span className={cn("rvBadge rvBadge-w", quiDa(q.negozio) ? "rvBadge-ok" : "rvBadge-warn")}>
                                                                     {q.negozio}
                                                                 </span>
-                                                                <span className="text-slate-500">{nomiAzienda[q.azienda] || q.azienda}</span>
-                                                                <span className="text-slate-300 ml-auto"><b className={q.quantita < 0 ? "text-rose-300" : "text-emerald-300"}>{q.quantita}</b> pezzi</span>
-                                                                {q.inArrivo > 0 && <span className="text-sky-300">+{q.inArrivo} in arrivo</span>}
+                                                                <span className="rvTab-min">{nomiAzienda[q.azienda] || q.azienda}</span>
+                                                                <span className="rvDove-fine"><b className={cn("rvGiac", q.quantita < 0 ? "rvGiac-ko" : "rvGiac-si")}>{q.quantita}</b> pezzi</span>
+                                                                {q.inArrivo > 0 && <span className="rvGiac rvGiac-arr">+{q.inArrivo} in arrivo</span>}
                                                                 {puoCancellare && q.quantita !== 0 && (
                                                                     <button title="Azzera questa giacenza (resta scritto chi e perché)"
                                                                         onClick={(e) => { e.stopPropagation(); setDaCestinare({ titolo: r.descrizione, codice: r.codice, negozio: q.negozio, azienda: q.azienda, quantita: q.quantita }); }}
-                                                                        className="text-slate-500 hover:text-rose-400 transition px-1">🗑</button>
+                                                                        className="rvCestino">🗑</button>
                                                                 )}
                                                             </div>
                                                         ))}
                                                     </div>
                                                 )}
                                                 {Object.keys(r.altrovePer).length > 0 && (
-                                                    <div className="mt-3 pt-3 border-t border-white/5">
-                                                        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Dove sta, negli altri negozi</div>
-                                                        <div className="flex flex-wrap gap-2">
+                                                    <div className="rvDett">
+                                                        <div className="rvDettT">Dove sta, negli altri negozi</div>
+                                                        {/* niente `.rvPill` qui: si accenderebbero al passaggio del
+                                                            mouse e sembrerebbero premibili (regola 7) */}
+                                                        <div className="rvPillRow">
                                                             {Object.entries(r.altrovePer).sort((a, b) => b[1] - a[1]).map(([neg, n]) => (
-                                                                <span key={neg} className="text-xs px-2 py-1 rounded-lg bg-white/[0.05] text-slate-300">
-                                                                    {neg} <b className="text-amber-300">{n}</b>
+                                                                <span key={neg} className="rvTag">
+                                                                    {neg} <b className="rvGiac rvGiac-no">{n}</b>
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -606,7 +625,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                 </Fragment>
                             );
                         })}
-                        {!righe.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                        {!righe.length && <tr><td colSpan={6} className="rvTab-vuoto">
                             Nessun articolo con questi filtri.
                             {soloDisponibili && " Prova «📚 Tutti gli articoli» per vedere anche quello che sta in un altro negozio."}
                             {!unita.length && !quantita.length && " Il magazzino parte vuoto: il primo carico si fa da 🚚 Trasferimenti → 📥 Carico merce."}
@@ -665,27 +684,40 @@ function RicercaSeriale({ unita }: { unita: Unita[] }) {
 
     return (
         <div className="space-y-4 max-w-3xl">
-            <div className="glass-panel rounded-2xl p-4 flex items-center gap-2">
-                <Search size={18} className="text-slate-400 shrink-0" />
-                <input value={testo} onChange={e => setTesto(e.target.value)} onKeyDown={e => e.key === "Enter" && cerca()}
-                    placeholder="Cerca IMEI / SIM / seriale…" className="flex-1 bg-transparent outline-none text-white text-sm py-2" />
-                <button onClick={cerca} disabled={busy || testo.trim().length < 5}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-40">
-                    {busy ? "Cerco…" : "Cerca"}
-                </button>
+            <div className="rvBox">
+                <div className="rvBoxT">🔍 Cerca un seriale</div>
+                <div className="rvBarra rvBarra-c">
+                    {/* l'icona dentro il campo, come la ricerca della cassa:
+                        prima erano un'icona, un campo senza cornice e un
+                        bottone dentro lo stesso riquadro — tre pezzi per una
+                        cosa sola */}
+                    <label className="rvCerca rvSpazio">
+                        <Search size={16} />
+                        <input value={testo} onChange={e => setTesto(e.target.value)} onKeyDown={e => e.key === "Enter" && cerca()}
+                            placeholder="Spara o scrivi IMEI / ICCID / seriale…" className="rvIn" />
+                    </label>
+                    <button onClick={cerca} disabled={busy || testo.trim().length < 5} className="rvAzione">
+                        {busy ? "Cerco…" : "Cerca"}
+                    </button>
+                </div>
+                <div className="rvHint">Guarda il magazzino, la gestione usati e le vendite registrate: servono almeno 5 caratteri.</div>
             </div>
-            {schede && !schede.length && <div className="glass-panel rounded-2xl p-6 text-center text-slate-400 text-sm">Nessuna traccia di questo seriale: né a magazzino, né negli usati, né nelle vendite.</div>}
+            {schede && !schede.length && (
+                <div className="rvTabBox">
+                    <div className="rvVuoto">🔎<b>Nessuna traccia di questo seriale</b><small>né a magazzino, né negli usati, né nelle vendite</small></div>
+                </div>
+            )}
             {schede?.map((sc, i) => (
-                <div key={i} className="glass-panel rounded-2xl p-5">
-                    <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-                        <div className="text-sm font-bold text-white">{sc.titolo}</div>
-                        <span className="text-xs font-semibold text-slate-300 bg-white/[0.06] border border-white/10 rounded-full px-2.5 py-1">{sc.stato}</span>
+                <div key={i} className="rvBox">
+                    <div className="rvCardT-riga">
+                        <span className="rvNome">{sc.titolo}</span>
+                        <span className="rvBadge rvBadge-empty">{sc.stato}</span>
                     </div>
-                    <div className="text-[11px] text-slate-500 mb-3">{sc.sotto}</div>
-                    <div className="space-y-1.5">
+                    <div className="rvSotto">{sc.sotto}</div>
+                    <div className="rvDett">
                         {sc.eventi.sort((a, b) => String(a.quando).localeCompare(String(b.quando))).map((e, j) => (
-                            <div key={j} className="flex items-start gap-2 text-[12px] text-slate-300">
-                                <span className="text-slate-500 font-mono shrink-0 w-32">{gghh(e.quando)}</span>
+                            <div key={j} className="rvDettR">
+                                <span className="rvDettR-mono shrink-0 w-32">{gghh(e.quando)}</span>
                                 <span>{e.testo}</span>
                             </div>
                         ))}
@@ -746,38 +778,44 @@ ${mie.map((u, i) => `<tr><td>${i + 1}</td><td>${u.codice || ""}</td><td>${u.desc
     return (
         <div className="space-y-4">
             {gestisce && (
-                <div className="flex gap-2">
-                    <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold inline-flex items-center gap-2"><Truck size={15} /> Nuovo trasferimento</button>
-                    {puoCaricare && <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }} className="px-4 py-2 rounded-xl border border-white/15 text-slate-200 text-sm font-semibold inline-flex items-center gap-2"><PackagePlus size={15} /> Carico merce</button>}
+                <div className="rvPillRow">
+                    {/* pastiglie, non bottoni verdi: aprono un riquadro, non
+                        salvano niente — il verde promette (regola 7) */}
+                    <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }}
+                        className={cn("rvPill", apriNuovo && "rvPill-on")}><Truck size={15} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento</button>
+                    {puoCaricare && <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }}
+                        className={cn("rvPill", apriCarico && "rvPill-on")}><PackagePlus size={15} className="inline-block align-[-3px] mr-1.5" /> Carico merce</button>}
                 </div>
             )}
             {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}
             {apriNuovo && <NuovoTrasferimento unita={unita} negozi={negozi} utente={utente} dopo={() => { setApriNuovo(false); caricaDdt(); ricarica(); }} />}
-            <div className="glass-card overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-300">
-                    <thead className="bg-white/[0.03] text-xs uppercase text-slate-400">
-                        <tr><th className="px-4 py-3">DDT</th><th className="px-4 py-3">Tragitto</th><th className="px-4 py-3">Unità</th><th className="px-4 py-3">Stato</th><th className="px-4 py-3">Creato</th><th className="px-4 py-3 text-center w-40">Azioni</th></tr>
+            <div className="rvTabBox">
+                <table className="rvTab">
+                    <thead>
+                        <tr><th>DDT</th><th>Tragitto</th><th className="rvTab-c">Unità</th><th>Stato</th><th>Creato</th><th className="rvTab-c">Azioni</th></tr>
                     </thead>
                     <tbody>
                         {ddt.map(d => {
                             const n = unitaDiDdt(d.id).length;
                             return (
-                                <tr key={d.id} className="border-t border-white/5 hover:bg-white/[0.03]">
-                                    <td className="px-4 py-2 font-mono text-xs">n.{d.numero}</td>
-                                    <td className="px-4 py-2 text-white">{d.da_negozio} → {d.a_negozio}</td>
-                                    <td className="px-4 py-2">{d.stato === "accettato" ? "✓" : n}</td>
-                                    <td className="px-4 py-2">{d.stato === "in_transito" ? "🚚 In transito" : d.stato === "accettato" ? `✅ Accettato da ${d.accettato_da} il ${gg(d.accettato_il)}` : d.stato}</td>
-                                    <td className="px-4 py-2 text-xs text-slate-500">{gghh(d.creato_il)}{d.creato_da ? ` · ${d.creato_da}` : ""}</td>
-                                    <td className="px-4 py-2 text-center">
-                                        <button onClick={() => stampa(d)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 mr-1">🖨 DDT</button>
-                                        {gestisce && d.stato === "in_transito" && (
-                                            <button onClick={() => accetta(d)} className="text-xs text-emerald-300 border border-emerald-500/40 rounded-lg px-2 py-1">✓ Accetta</button>
-                                        )}
+                                <tr key={d.id} className="rvTab-riga">
+                                    <td className="rvTab-cod">n.{d.numero}</td>
+                                    <td className="rvTab-nome">{d.da_negozio} → {d.a_negozio}</td>
+                                    <td className="rvTab-n">{d.stato === "accettato" ? "✓" : n}</td>
+                                    <td>{d.stato === "in_transito" ? "🚚 In transito" : d.stato === "accettato" ? `✅ Accettato da ${d.accettato_da} il ${gg(d.accettato_il)}` : d.stato}</td>
+                                    <td className="rvTab-min">{gghh(d.creato_il)}{d.creato_da ? ` · ${d.creato_da}` : ""}</td>
+                                    <td className="rvTab-c">
+                                        <span className="rvPillRow flex-nowrap justify-center">
+                                            <button onClick={() => stampa(d)} className="rvPill rvPill-sm">🖨 DDT</button>
+                                            {gestisce && d.stato === "in_transito" && (
+                                                <button onClick={() => accetta(d)} className="rvPill rvPill-sm rvPill-si">✓ Accetta</button>
+                                            )}
+                                        </span>
                                     </td>
                                 </tr>
                             );
                         })}
-                        {!ddt.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">Nessun trasferimento ancora.</td></tr>}
+                        {!ddt.length && <tr><td colSpan={6} className="rvTab-vuoto">Nessun trasferimento ancora.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -807,37 +845,42 @@ function NuovoTrasferimento({ unita, negozi, utente, dopo }: { unita: Unita[]; n
         }
         setBusy(false); dopo();
     };
-    const selCls = "glass-input !h-9 text-sm";
     return (
-        <div className="glass-panel rounded-2xl p-5 space-y-3">
-            <div className="text-sm font-bold text-white">🚚 Nuovo trasferimento</div>
-            <div className="flex items-end gap-3 flex-wrap">
-                <label className="text-xs text-slate-400">Da<br />
-                    <select value={da} onChange={e => { setDa(e.target.value); setScelte(new Set()); }} className={selCls}><option value="">—</option>{negozi.map(n => <option key={n}>{n}</option>)}</select></label>
-                <label className="text-xs text-slate-400">A<br />
-                    <select value={a} onChange={e => setA(e.target.value)} className={selCls}><option value="">—</option>{negozi.filter(n => n !== da).map(n => <option key={n}>{n}</option>)}</select></label>
-                <label className="text-xs text-slate-400 flex-1 min-w-[200px]">Note<br />
-                    <input value={note} onChange={e => setNote(e.target.value)} placeholder="facoltative, finiscono sul DDT" className={selCls + " w-full"} /></label>
+        <div className="rvBox">
+            <div className="rvBoxT">🚚 Nuovo trasferimento</div>
+            <div className="rvBarra">
+                {/* le tendine di sistema sono sparite anche qui: al loro posto
+                    il selettore del CRM, che si scrive per filtrare */}
+                <div className="rvCampo rvCampo-md"><span className="rvLab">Da</span>
+                    <SelectOpzioni className="rvIn" value={da} onChange={v => { setDa(v); setScelte(new Set()); }}
+                        opzioni={negozi} placeholder="scegli il negozio…" /></div>
+                <div className="rvCampo rvCampo-md"><span className="rvLab">A</span>
+                    <SelectOpzioni className="rvIn" value={a} onChange={setA}
+                        opzioni={negozi.filter(n => n !== da)} placeholder="scegli il negozio…" /></div>
+                <label className="rvCampo rvCampo-flex"><span className="rvLab">Note</span>
+                    <input value={note} onChange={e => setNote(e.target.value)} placeholder="facoltative, finiscono sul DDT" className="rvIn" /></label>
             </div>
             {da && (
-                <>
-                    <input value={filtro} onChange={e => setFiltro(e.target.value)} placeholder="Filtra le unità disponibili…" className="glass-input !h-9 text-sm w-full" />
-                    <div className="max-h-64 overflow-y-auto space-y-1">
+                <div className="rvSub mt-3">
+                    <label className="rvCerca">
+                        <Search size={16} />
+                        <input value={filtro} onChange={e => setFiltro(e.target.value)} placeholder="Filtra le unità disponibili…" className="rvIn" />
+                    </label>
+                    <div className="rvDett max-h-64 overflow-y-auto mt-2 pr-1">
                         {disponibili.map(u => (
-                            <label key={u.id} className="flex items-center gap-2 text-[12px] text-slate-300 px-2 py-1 rounded-lg hover:bg-white/[0.04] cursor-pointer">
+                            <label key={u.id} className="rvDettR cursor-pointer">
                                 <input type="checkbox" checked={scelte.has(u.id)} onChange={e => setScelte(p => { const s = new Set(p); if (e.target.checked) s.add(u.id); else s.delete(u.id); return s; })} />
-                                <span className="text-white">{u.descrizione}</span>
-                                <span className="font-mono text-slate-500">{u.seriale}</span>
-                                {u.azienda && <span className="text-slate-600">· {u.azienda}</span>}
+                                <span className="rvTab-nome">{u.descrizione}</span>
+                                <span className="rvDettR-mono">{u.seriale}</span>
+                                {u.azienda && <span className="rvTab-min">· {u.azienda}</span>}
                             </label>
                         ))}
-                        {!disponibili.length && <div className="text-xs text-slate-500 italic px-2 py-3">Niente di disponibile a {da}.</div>}
+                        {!disponibili.length && <div className="rvVuoto"><b>Niente di disponibile a {da}</b></div>}
                     </div>
-                </>
+                </div>
             )}
-            <div className="text-right">
-                <button onClick={crea} disabled={busy || !da || !a || !scelte.size}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-40">
+            <div className="rvBarra rvBarra-c mt-3 justify-end">
+                <button onClick={crea} disabled={busy || !da || !a || !scelte.size} className="rvAzione">
                     {busy ? "Creo…" : `Crea DDT (${scelte.size} unità)`}
                 </button>
             </div>
@@ -864,29 +907,38 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
         if (error) { alert("Carico non riuscito: " + error.message); return; }
         dopo();
     };
-    const selCls = "glass-input !h-9 text-sm";
     return (
-        <div className="glass-panel rounded-2xl p-5 space-y-3">
-            <div className="text-sm font-bold text-white">📥 Carico merce</div>
-            <div className="flex items-end gap-3 flex-wrap">
-                <label className="text-xs text-slate-400 flex-1 min-w-[220px]">Descrizione articolo<br />
-                    <input value={descrizione} onChange={e => setDescrizione(e.target.value)} placeholder='es. "iPhone 15 128GB Nero"' className={selCls + " w-full"} /></label>
-                <label className="text-xs text-slate-400">Codice<br />
-                    <input value={codice} onChange={e => setCodice(e.target.value)} className={selCls + " w-28"} /></label>
-                <label className="text-xs text-slate-400">Tipo seriale<br />
-                    <select value={tipo} onChange={e => setTipo(e.target.value)} className={selCls}><option value="imei">IMEI</option><option value="sim">SIM (ICCID)</option><option value="seriale">Seriale</option></select></label>
-                <label className="text-xs text-slate-400">Negozio<br />
-                    <select value={negozio} onChange={e => setNegozio(e.target.value)} className={selCls}><option value="">—</option>{negozi.map(n => <option key={n}>{n}</option>)}</select></label>
-                <label className="text-xs text-slate-400">Azienda<br />
-                    <select value={azienda} onChange={e => setAzienda(e.target.value)} className={selCls}><option value="">—</option>{Array.from(new Set([...aziende, "T1", "T2"])).map(a => <option key={a}>{a}</option>)}</select></label>
-                <label className="text-xs text-slate-400">Valore unitario €<br />
-                    <input value={valore} onChange={e => setValore(e.target.value)} className={selCls + " w-24"} /></label>
+        <div className="rvBox">
+            <div className="rvBoxT">📥 Carico merce</div>
+            <div className="rvBarra">
+                <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione articolo</span>
+                    <input value={descrizione} onChange={e => setDescrizione(e.target.value)} placeholder='es. "iPhone 15 128GB Nero"' className="rvIn" /></label>
+                <label className="rvCampo rvCampo-xs"><span className="rvLab">Codice</span>
+                    <input value={codice} onChange={e => setCodice(e.target.value)} className="rvIn" /></label>
+                <div className="rvCampo rvCampo-md"><span className="rvLab">Negozio</span>
+                    <SelectOpzioni className="rvIn" value={negozio} onChange={setNegozio}
+                        opzioni={negozi} placeholder="scegli il negozio…" /></div>
+                <div className="rvCampo rvCampo-sm"><span className="rvLab">Azienda</span>
+                    <SelectOpzioni className="rvIn" value={azienda} onChange={setAzienda}
+                        opzioni={Array.from(new Set([...aziende, "T1", "T2"]))} placeholder="—" /></div>
+                <label className="rvCampo rvCampo-xs"><span className="rvLab">Valore unitario €</span>
+                    <input value={valore} onChange={e => setValore(e.target.value)} className="rvIn" /></label>
             </div>
-            <label className="text-xs text-slate-400 block">Seriali (uno per riga — spara pure col lettore barcode)<br />
-                <textarea value={seriali} onChange={e => setSeriali(e.target.value)} rows={5} className="glass-input w-full text-sm font-mono mt-1" /></label>
-            <div className="text-right">
-                <button onClick={salva} disabled={busy || !descrizione.trim() || !negozio || !seriali.trim()}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40">
+            {/* TRE VOCI E UNA SOLA VALIDA: una tendina si può svuotare, e un
+                carico senza tipo di seriale finirebbe a DB con il campo vuoto.
+                Le pastiglie non hanno lo stato «niente» (regola 7). */}
+            <div className="mt-3">
+                <span className="rvLab">Tipo seriale</span>
+                <div className="rvPillRow">
+                    {([["imei", "IMEI"], ["sim", "SIM (ICCID)"], ["seriale", "Seriale"]] as const).map(([k, l]) => (
+                        <button key={k} onClick={() => setTipo(k)} className={cn("rvPill rvPill-sm", tipo === k && "rvPill-on")}>{l}</button>
+                    ))}
+                </div>
+            </div>
+            <label className="rvCampo mt-3"><span className="rvLab">Seriali <span className="rvLabX">(uno per riga — spara pure col lettore barcode)</span></span>
+                <textarea value={seriali} onChange={e => setSeriali(e.target.value)} rows={5} className="rvIn font-mono" /></label>
+            <div className="rvBarra rvBarra-c mt-3 justify-end">
+                <button onClick={salva} disabled={busy || !descrizione.trim() || !negozio || !seriali.trim()} className="rvAzione">
                     {busy ? "Carico…" : "Carica le unità"}
                 </button>
             </div>
@@ -947,70 +999,75 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
             dati, "Articoli");
     };
 
-    if (loading) return <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>;
+    if (loading) return <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico l&apos;anagrafica articoli…</div>;
     return (
         <div className="space-y-4">
-            {/* chips dei GRUPPI coi conteggi: la divisione per brand a colpo d'occhio */}
-            <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => setGruppo("")}
-                    className={cn("px-3 py-1.5 rounded-xl border text-xs font-semibold transition",
-                        !gruppo ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}>
+            {/* chips dei GRUPPI coi conteggi: la divisione per brand a colpo
+                d'occhio. `rvPillRow-fitta` stringe il contorno, non il testo:
+                i gruppi sono tanti e devono stare in poche righe. */}
+            <div className="rvPillRow rvPillRow-fitta">
+                <button onClick={() => setGruppo("")} className={cn("rvPill rvPill-sm", !gruppo && "rvPill-on")}>
                     Tutti · {articoli.length}
                 </button>
                 {gruppi.map(([g, n]) => (
                     <button key={g} onClick={() => setGruppo(gruppo === g ? "" : g)}
-                        className={cn("px-3 py-1.5 rounded-xl border text-xs font-semibold transition",
-                            gruppo === g ? "bg-indigo-600 text-white border-transparent" : "text-slate-300 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]")}>
+                        className={cn("rvPill rvPill-sm", gruppo === g && "rvPill-on")}>
                         {g} · {n}
                     </button>
                 ))}
             </div>
-            <div className="glass-panel rounded-2xl p-4 flex items-end gap-3 flex-wrap">
-                <label className="text-xs text-slate-400">Marca<br />
-                    <SelectOpzioni value={marca} onChange={setMarca} opzioni={marche} placeholder="Tutte" className="w-44" />
-                </label>
-                <label className="text-xs text-slate-400 flex-1 min-w-[220px]">Cerca (codice, barcode, descrizione)<br />
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Es. Galaxy A16, 8032325…"
-                            className="glass-input !h-9 text-sm w-full pl-9" />
+            <div className="rvBox">
+                <div className="rvBoxT">📚 Anagrafica articoli</div>
+                <div className="rvBarra">
+                    {/* la className SOSTITUISCE il default di SelectOpzioni: con
+                        `w-44` il campo restava senza vestito (niente bordo, né
+                        angoli, né imbottitura) — ci vuole `.rvIn` diretta. */}
+                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
+                        <SelectOpzioni value={marca} onChange={setMarca} opzioni={marche} placeholder="Tutte" className="rvIn" />
                     </div>
-                </label>
-                <button onClick={esporta} disabled={!filtrati.length}
-                    className="px-3 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-40">
-                    <FileDown size={14} /> Excel
-                </button>
+                    <label className="rvCampo rvCampo-flex"><span className="rvLab">Cerca <span className="rvLabX">(codice, barcode, descrizione)</span></span>
+                        <span className="rvCerca">
+                            <Search size={16} />
+                            <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="Es. Galaxy A16, 8032325…"
+                                className="rvIn" />
+                        </span>
+                    </label>
+                    <span className="rvSpazio" />
+                    <button onClick={esporta} disabled={!filtrati.length} className="rvAzione rvAzione-sm">
+                        <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
+                    </button>
+                </div>
             </div>
-            <div className="glass-card overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-300">
-                    <thead className="bg-white/[0.03] text-xs uppercase text-slate-400">
+            <div className="rvTabBox">
+                <table className="rvTab">
+                    <thead>
                         <tr>
-                            <th className="px-4 py-3 font-semibold">Codice</th>
-                            <th className="px-4 py-3 font-semibold">Barcode</th>
-                            <th className="px-4 py-3 font-semibold">Descrizione</th>
-                            <th className="px-4 py-3 font-semibold">Sottogruppo</th>
-                            <th className="px-4 py-3 font-semibold">Marca</th>
-                            <th className="px-4 py-3 font-semibold text-center">Prezzo</th>
-                            {vedeCosti && <th className="px-4 py-3 font-semibold text-center">Costo ult.</th>}
+                            <th>Codice</th>
+                            <th>Barcode</th>
+                            <th>Descrizione</th>
+                            <th>Sottogruppo</th>
+                            <th>Marca</th>
+                            <th className="rvTab-c">Prezzo</th>
+                            {vedeCosti && <th className="rvTab-c">Costo ult.</th>}
                         </tr>
                     </thead>
                     <tbody>
                         {visibili.map(a => (
-                            <tr key={a.codice} className="border-t border-white/5 hover:bg-white/[0.03]">
-                                <td className="px-4 py-2 font-mono text-xs text-slate-400 whitespace-nowrap">{a.codice}</td>
-                                <td className="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">{a.barcode || "—"}</td>
-                                <td className="px-4 py-2 text-slate-200">{a.descrizione}</td>
-                                <td className="px-4 py-2 text-xs text-slate-400">{a.sottogruppo || "—"}</td>
-                                <td className="px-4 py-2 text-xs text-slate-400">{a.marca || "—"}</td>
-                                <td className="px-4 py-2 text-center tabular-nums">{eur(a.prezzo)}</td>
-                                {vedeCosti && <td className="px-4 py-2 text-center tabular-nums text-slate-400">{eur(a.costo_ultimo)}</td>}
+                            <tr key={a.codice} className="rvTab-riga">
+                                <td className="rvTab-cod">{a.codice}</td>
+                                <td className="rvTab-cod">{a.barcode || "—"}</td>
+                                <td className="rvTab-nome">{a.descrizione}</td>
+                                <td className="rvTab-min">{a.sottogruppo || "—"}</td>
+                                <td className="rvTab-min">{a.marca || "—"}</td>
+                                <td className="rvTab-n">{eur(a.prezzo)}</td>
+                                {vedeCosti && <td className="rvTab-n rvTab-min">{eur(a.costo_ultimo)}</td>}
                             </tr>
                         ))}
-                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 7 : 6} className="px-4 py-10 text-center text-slate-500">Nessun articolo con questi filtri.</td></tr>}
+                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 7 : 6} className="rvTab-vuoto">Nessun articolo con questi filtri.</td></tr>}
                     </tbody>
                 </table>
                 {filtrati.length > TETTO && (
-                    <div className="px-4 py-3 text-xs text-slate-500 border-t border-white/5">
+                    <div className="rvTab-pie">
                         Mostro i primi {TETTO} di {filtrati.length.toLocaleString("it-IT")} articoli — affina coi filtri o usa l&apos;Excel per l&apos;elenco completo.
                     </div>
                 )}
