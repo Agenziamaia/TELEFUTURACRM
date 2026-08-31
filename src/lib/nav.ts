@@ -127,9 +127,6 @@ export const NAVIGATION: NavEntry[] = [
         icon: Store,
         children: [
             { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: EVERYONE },
-            // MAGAZZINO (Luca 12/08): consultazione giacenze/seriali per tutto
-            // il negozio; carico e trasferimenti restano dei ruoli di gestione
-            { name: "Magazzino", href: "/magazzino", icon: Boxes, roles: EVERYONE },
             { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
             // REGISTRO CHIAMATE Aircall del negozio (AIR-01, Luca 04/08): il
@@ -137,6 +134,21 @@ export const NAVIGATION: NavEntry[] = [
             // gestito a parte per ruolo (store manager in su, gate in pagina e
             // sul proxy). La voce resta amministrabile dal pannello Permessi.
             { name: "Registro Chiamate", href: "/chiamate", icon: Phone, roles: EVERYONE },
+        ],
+    },
+    /* HUB MAGAZZINO (Luca 01/09): «stavo pensando di tirare fuori magazzino da
+       dentro negozio, facendolo HUB, con dentro le tre attuali sezioni».
+       Era una voce sola dentro «Negozio», e le tre sezioni si trovavano solo
+       entrando: dal 1° settembre il magazzino è il registro fiscale della
+       merce, e ci si entra per una delle tre cose, non «per il magazzino». */
+    {
+        type: "group",
+        label: "Magazzino",
+        icon: Boxes,
+        children: [
+            { name: "Giacenze", href: "/magazzino?tab=giacenze", icon: Boxes, roles: EVERYONE },
+            { name: "Trasferimenti", href: "/magazzino?tab=trasferimenti", icon: Package, roles: EVERYONE },
+            { name: "Articoli", href: "/magazzino?tab=articoli", icon: ClipboardList, roles: EVERYONE },
         ],
     },
     // HUB UTILITY (Luca 12/08): subito DOPO l'hub Negozio (non dentro).

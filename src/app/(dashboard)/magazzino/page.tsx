@@ -32,7 +32,7 @@
 // classe si aggiunge ALLA CASSETTA — non si fa un'eccezione qui.
 // Il COMPORTAMENTO non è cambiato: filtri, conteggi, colonna «Altrove»,
 // esplosione dei pezzi, cestino, DDT ed export sono gli stessi di prima.
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { famigliaDalNome } from "@/lib/cassaCatalogo";
@@ -122,6 +122,14 @@ export default function MagazzinoPage() {
     const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
     const puoCaricare = isAdminOrAbove(user?.role);
     const [tab, setTab] = useState<"giacenze" | "trasferimenti" | "articoli">("giacenze");
+    /* LA SEZIONE ARRIVA DALL'INDIRIZZO (Luca 01/09): il magazzino è diventato
+       un hub nel menù — Giacenze, Trasferimenti, Articoli — e ogni voce deve
+       portare dove dice. I pulsanti in alto restano: chi è già dentro cambia
+       sezione senza tornare al menù. */
+    useEffect(() => {
+        const t = new URLSearchParams(window.location.search).get("tab");
+        if (t === "giacenze" || t === "trasferimenti" || t === "articoli") setTab(t);
+    }, []);
     /* IL SECONDO CLIC DELLA CRONISTORIA ARRIVA QUI (revisore 31/08). La storia
        di un pezzo offre «apri il documento di trasporto» con `?ddt=<numero>`,
        ma questa pagina non leggeva nessun parametro: si ricaricava sulle
@@ -324,8 +332,14 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        TUTTI non ha senso — sarebbe una tabella vuota — quindi l'ultimo acceso
        non si spegne. */
     const [stati, setStati] = useState<string[]>(["disponibile", "in_arrivo"]);
-    const [vista, setVista] = useState<"giacenze" | "venduto">("giacenze");
+    /* TRE DOMANDE, NON DUE (Luca 01/09, col confronto sugli Usati): una fila
+       sola di pastiglie — Disponibili e In arrivo accese, Trasferiti e Venduti
+       spente — e premendo una delle due spente si apre la sua schermata coi
+       suoi filtri. Prima «quello che ho venduto» stava in una riga a parte, in
+       fondo, staccata dagli stati a cui appartiene. */
+    const [vista, setVista] = useState<"giacenze" | "venduto" | "trasferiti">("giacenze");
     const vistaVenduto = vista === "venduto";
+    const vistaTrasf = vista === "trasferiti";
     /* LA VISTA DEL VENDUTO (Luca 31/08): «nel momento in cui clicco su venduto
        la giacenza non mi interessa: mi dà articolo per articolo direttamente
        con l'IMEI». E il filtro di data smette di essere una fotografia del
@@ -667,9 +681,51 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         });
         return out;
     }, [venduti, sort]);
+    /* LA MERCE USCITA DA QUI E NON ANCORA ARRIVATA. «In arrivo» racconta già
+       i pezzi che vengono VERSO di noi (su un pezzo in viaggio il negozio è la
+       destinazione); questa è l'altra faccia, che nessuna schermata mostrava:
+       quello che è partito e di cui siamo ancora responsabili finché qualcuno
+       non lo accetta. Si legge dai DDT in transito, che sono la prova
+       documentale del passaggio. */
+    const [inViaggio, setInViaggio] = useState<{ id: string; numero: string | null; da_negozio: string; a_negozio: string; emesso_il: string; seriale: string | null; codice: string | null; descrizione: string | null; qta: number | null }[] | null>(null);
+    useEffect(() => {
+        if (!vistaTrasf) return;
+        let vivo = true;
+        (async () => {
+            const { data: ddt, error } = await supabase.from("mag_ddt")
+                .select("id,numero,da_negozio,a_negozio,emesso_il").eq("stato", "in_transito").order("emesso_il", { ascending: false }).limit(200);
+            if (error) console.error("ddt in transito:", error.message);
+            const ids = (ddt ?? []).map((d: { id: string }) => d.id);
+            const righeDdt = ids.length
+                ? (await supabase.from("mag_ddt_righe").select("ddt_id,seriale,codice,descrizione,qta").in("ddt_id", ids)).data ?? []
+                : [];
+            if (!vivo) return;
+            const perId = new Map((ddt ?? []).map((d: { id: string }) => [d.id, d]));
+            setInViaggio((righeDdt as { ddt_id: string; seriale: string | null; codice: string | null; descrizione: string | null; qta: number | null }[])
+                .map(r => { const d = perId.get(r.ddt_id) as { id: string; numero: string | null; da_negozio: string; a_negozio: string; emesso_il: string }; return { ...d, seriale: r.seriale, codice: r.codice, descrizione: r.descrizione, qta: r.qta }; })
+                .filter(r => r.da_negozio && (!scelti.length || scelti.some(x => stessoMagazzino(r.da_negozio, x)))));
+        })();
+        return () => { vivo = false; };
+    }, [vistaTrasf, scelti]);
+
     /** «è nel negozio che sto guardando?» — decide il colore della pastiglia
      *  del luogo, e prima era scritto due volte uguale dentro l'elemento. */
     const quiDa = (neg: string) => scelti.length ? nelloScopo(neg) : neg === mioNegozio;
+
+    /* I MIEI NEGOZI: il mio e chi divide con me il magazzino. */
+    const mieiNegozi = useMemo(() =>
+        mioNegozio ? negozi.filter(n => stessoMagazzino(n, mioNegozio)) : [], [negozi, mioNegozio]);
+    const sonoIMiei = mieiNegozi.length > 0 && scelti.length === mieiNegozi.length
+        && mieiNegozi.every(n => scelti.includes(n));
+    /* GIÀ SCELTI ALL'INGRESSO: la domanda normale, dietro al bancone, è
+       «cos'ho qui» — non «cos'ha il gruppo». Una volta sola: se poi uno
+       allarga a tutti i negozi, non gli si richiude sotto le mani. */
+    const primaVolta = useRef(true);
+    useEffect(() => {
+        if (!primaVolta.current || !mieiNegozi.length) return;
+        primaVolta.current = false;
+        setScelti(mieiNegozi);
+    }, [mieiNegozi]);
 
     return (
         <div className="space-y-4">
@@ -678,9 +734,15 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 {/* DOVE GUARDO — il mio negozio è già scelto */}
                 <div className="rvLab">Dove guardo</div>
                 <div className="rvBarra rvBarra-c">
-                    {mioNegozio && negozi.includes(mioNegozio) && (
-                        <button onClick={() => setScelti([mioNegozio])}
-                            className={cn("rvPill rvPill-sm", scelti.length === 1 && scelti[0] === mioNegozio && "rvPill-on")}>🏠 {mioNegozio}</button>
+                    {/* «I MIEI» sono il mio negozio E il suo gemello (Luca 01/09):
+                        chi sta a Magliana ha un magazzino solo diviso su due
+                        insegne, e vederne metà non serve a niente. È già scelto
+                        all'ingresso: la domanda normale è «cos'ho qui». */}
+                    {mieiNegozi.length > 0 && (
+                        <button onClick={() => setScelti(mieiNegozi)}
+                            className={cn("rvPill rvPill-sm", sonoIMiei && "rvPill-on")}>
+                            🏪 I miei{mieiNegozi.length > 1 ? <span className="rvLabX"> · {mieiNegozi.length} insegne</span> : ""}
+                        </button>
                     )}
                     <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi</button>
                     {/* PIÙ NEGOZI INSIEME (Luca 31/08). Il primo tentativo usava
@@ -710,39 +772,50 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     si spezzava lasciando il divisorio a separare le cose
                     sbagliate. La grammatica di casa c'era già: in Registra
                     Vendita ogni `.rvPillRow` ha sopra la sua etichetta. */}
-                {!vistaVenduto && (
-                    <div className="rvBarra rvBarra-t mt-3">
-                        <div className="rvCampo"><span className="rvLab">In che stato</span>
-                            <div className="rvPillRow">
-                                {STATI_FILTRO.map(x => {
-                                    const on = stati.includes(x.id);
-                                    return (
-                                        <button key={x.id} title={dataStorica ? "Con la fotografia a una data passata gli stati non si applicano: togli la data" : x.spiega}
-                                            /* CON LA FOTOGRAFIA ALLA DATA NON GOVERNANO NIENTE
-                                               (revisore 31/08): quel ramo non consulta gli stati e i
-                                               pulsanti davano tutti lo stesso risultato. La tendina di
-                                               prima era `disabled`; convertendola in pulsanti la
-                                               disabilitazione s'era persa. */
-                                            disabled={!!dataStorica}
-                                            /* l'ultimo acceso non si spegne: una tabella senza nemmeno
-                                               uno stato non mostra niente e sembra rotta */
-                                            onClick={() => setStati(p => on ? (p.length > 1 ? p.filter(y => y !== x.id) : p) : [...p, x.id])}
-                                            className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{x.et}</button>
-                                    );
-                                })}
-                            </div>
-                            {/* la spiegazione non può vivere solo nel tooltip: sui monitor da
-                                negozio il passaggio del mouse non c'è (regola 7) */}
-                            <div className="rvHint">«In arrivo» è ordinato o in viaggio verso qui: non si vende ancora.</div>
-                        </div>
-                        <div className="rvCampo"><span className="rvLab">Cosa conto</span>
-                            <div className="rvPillRow">
-                                <button onClick={() => setSoloDisponibili(true)}
-                                    className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo quello che ho qui</button>
-                                <button onClick={() => setSoloDisponibili(false)}
-                                    className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
-                                    title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Anche quello che sta altrove</button>
-                            </div>
+                {/* ── UNA FILA SOLA, come negli Usati (Luca 01/09) ──
+                    Le prime due sono FILTRI e sono accese di partenza; le altre
+                    due sono ALTRE SCHERMATE e stanno spente, perché premendole
+                    cambiano le colonne, i filtri e l'Excel. Prima «quello che ho
+                    venduto» viveva in una riga staccata in fondo alla pagina,
+                    lontano dagli stati di cui fa parte. */}
+                <div className="rvCampo mt-3"><span className="rvLab">In che stato</span>
+                    <div className="rvPillRow">
+                        {STATI_FILTRO.map(x => {
+                            const on = !vistaVenduto && !vistaTrasf && stati.includes(x.id);
+                            return (
+                                <button key={x.id} title={dataStorica ? "Con la fotografia a una data passata gli stati non si applicano: togli la data" : x.spiega}
+                                    disabled={!!dataStorica}
+                                    onClick={() => {
+                                        // tornando dagli stati «altra schermata» si rientra nelle giacenze
+                                        if (vistaVenduto || vistaTrasf) { setVista("giacenze"); setStati([x.id]); return; }
+                                        // l'ultimo acceso non si spegne: una tabella senza nemmeno uno
+                                        // stato non mostra niente e sembra rotta
+                                        setStati(p => on ? (p.length > 1 ? p.filter(y => y !== x.id) : p) : [...p, x.id]);
+                                    }}
+                                    className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{x.et}</button>
+                            );
+                        })}
+                        <button onClick={() => setVista(vistaTrasf ? "giacenze" : "trasferiti")}
+                            title="La merce partita da qui e non ancora accettata dall'altro negozio"
+                            className={cn("rvPill rvPill-sm", vistaTrasf && "rvPill-on")}>
+                            🚚 Trasferiti{vistaTrasf && inViaggio ? <b className="rvPillN">{inViaggio.length}</b> : null}
+                        </button>
+                        <button onClick={() => setVista(vistaVenduto ? "giacenze" : "venduto")}
+                            title="Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita"
+                            className={cn("rvPill rvPill-sm", vistaVenduto && "rvPill-on")}>
+                            🧾 Venduti{vistaVenduto ? <b className="rvPillN">{venduti.length}</b> : null}
+                        </button>
+                    </div>
+                    <div className="rvHint">«In arrivo» è ordinato o in viaggio verso qui: non si vende ancora. «Trasferiti» è quello che è uscito e non è ancora stato accettato.</div>
+                </div>
+                {!vistaVenduto && !vistaTrasf && (
+                    <div className="rvCampo mt-3"><span className="rvLab">Cosa conto</span>
+                        <div className="rvPillRow">
+                            <button onClick={() => setSoloDisponibili(true)}
+                                className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo quello che ho qui</button>
+                            <button onClick={() => setSoloDisponibili(false)}
+                                className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
+                                title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Anche quello che sta altrove</button>
                         </div>
                     </div>
                 )}
@@ -819,19 +892,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     </div>
                 )}
             </div>
-            {/* ── LE DUE DOMANDE, COL LORO CONTEGGIO ────────────────────────
-                Non è un filtro fra i filtri: premendo «quello che ho venduto»
-                cambiano le colonne, la data cambia mestiere e l'Excel esporta
-                un altro file. Stessa forma della fila «📄 Documenti / 📦 Merce
-                mossa» dei Trasferimenti — e finalmente il conteggio, che nelle
-                Giacenze non c'era da nessuna parte. */}
-            <div className="rvPillRow">
-                <button onClick={() => setVista("giacenze")} className={cn("rvPill", !vistaVenduto && "rvPill-on")}>
-                    📦 Quello che ho<b className="rvPillN">{vistaVenduto ? "—" : righe.length}</b></button>
-                <button onClick={() => setVista("venduto")} className={cn("rvPill", vistaVenduto && "rvPill-on")}
-                    title="Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita">
-                    🧾 Quello che ho venduto{vistaVenduto && <b className="rvPillN">{venduti.length}</b>}</button>
-            </div>
             {/* IN UN PORTAL (regola 6): oggi sopra non c'è nessun riquadro
                 sfocato, ma il giorno che il magazzino finisce dentro una card
                 col backdrop-filter questo modale diventerebbe grande quanto la
@@ -899,7 +959,36 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     </div>
                 </div>
             )}
-            {vistaVenduto ? (
+            {vistaTrasf ? (
+                /* LA MERCE CHE È USCITA E NON È ANCORA ARRIVATA. Finché
+                   l'altro negozio non accetta il documento, quei pezzi sono
+                   ancora responsabilità di chi li ha spediti — ed è l'unica
+                   schermata che lo dice. */
+                <div className="rvTabBox">
+                    <table className="rvTab">
+                        <thead>
+                            <tr><th>Documento</th><th>Da → A</th><th>Emesso</th><th>Pezzo</th><th className="rvTab-c">Qtà</th></tr>
+                        </thead>
+                        <tbody>
+                            {inViaggio === null && <tr><td colSpan={5} className="rvTab-vuoto">Carico…</td></tr>}
+                            {inViaggio?.length === 0 && (
+                                <tr><td colSpan={5} className="rvTab-vuoto">
+                                    Niente in viaggio: tutto quello che è partito è già stato accettato.
+                                </td></tr>
+                            )}
+                            {(inViaggio ?? []).map((r, i) => (
+                                <tr key={`${r.id}-${r.seriale || r.codice || i}`} className="rvTab-riga">
+                                    <td className="rvTab-cod">{r.numero || "—"}</td>
+                                    <td className="rvTab-nome">{r.da_negozio} → {r.a_negozio}</td>
+                                    <td className="rvTab-min">{gg(r.emesso_il)}</td>
+                                    <td className="rvTab-nome">{r.descrizione || r.codice || "—"}{r.seriale ? <span className="rvTab-min"> · {r.seriale}</span> : null}</td>
+                                    <td className="rvTab-n">{r.seriale ? 1 : (r.qta ?? 1)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : vistaVenduto ? (
                 <div className="rvTabBox">
                     <table className="rvTab">
                         <thead>
