@@ -24,7 +24,7 @@ import { NewChatModal } from "./_components/NewChatModal";
 import { ScreenshotEditor } from "./_components/ScreenshotEditor";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare, Sparkles } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft, CheckSquare, Sparkles, AtSign } from "lucide-react";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_CHAT_OMNI } from "@/lib/capabilities";
 import { WhatsAppProtetta } from "@/components/WhatsAppProtetta";
@@ -65,6 +65,9 @@ function snippetMatch(body: string, q: string): { prima: string; match: string; 
 
 // icona + colore per tipo di tag
 const REF_UI = {
+  // la persona ha il viola della chat, e non il verde dei clienti: in un
+  // gruppo si deve capire al volo che quello e' un collega chiamato in causa
+  persona: { Icon: AtSign, cls: "bg-indigo-500/20 text-indigo-100 border-indigo-400/40 hover:bg-indigo-500/30 font-semibold" },
   cliente: { Icon: User, cls: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30 hover:bg-emerald-500/25" },
   contratto: { Icon: FileText, cls: "bg-sky-500/15 text-sky-200 border-sky-500/30 hover:bg-sky-500/25" },
   appuntamento: { Icon: CalendarDays, cls: "bg-amber-500/15 text-amber-200 border-amber-500/30 hover:bg-amber-500/25" },
@@ -537,6 +540,15 @@ function ChatPageInner() {
     const c = new URLSearchParams(window.location.search).get("c");
     if (c) setSelId(c);
   }, []);
+  // /chat?persona=<id>: ci si arriva cliccando un collega taggato in un
+  // messaggio — si apre la chat con lui, creandola se non c'era
+  useEffect(() => {
+    const p = searchParams.get("persona");
+    if (!p || !meId || p === meId) return;
+    let vivo = true;
+    getOrCreateDM(meId, p).then((id) => { if (vivo && id) setSelId(id); }).catch(() => { /* niente */ });
+    return () => { vivo = false; };
+  }, [searchParams, meId]);
 
   // ── BOZZE PERSISTENTI + ULTIMA CHAT (Luca 06/08) ────────────────────────
   // Uscire dalla chat per un'altra sezione del CRM e rientrare deve riportare
@@ -690,11 +702,15 @@ function ChatPageInner() {
     const q = mention.query;
     const t = setTimeout(() => {
       // "@" da solo -> suggerimenti recenti; da 1 carattere in poi -> ricerca
-      const p = q.length === 0 ? recentEntities() : searchAllEntities(q);
+      // i PARTECIPANTI alla conversazione aperta: in un gruppo, «@» seguito da
+      // un nome vuol dire quasi sempre «chiamo uno di voi»
+      const dentro = (parts || []).map((x) => x.user_id).filter(Boolean);
+      const p = q.length === 0 ? recentEntities(dentro) : searchAllEntities(q, dentro);
       p.then(setMentionRows).catch(() => setMentionRows([]));
     }, q.length === 0 ? 0 : 200);
     return () => clearTimeout(t);
-  }, [mention?.query, mention !== null]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mention?.query, mention !== null, parts]);
 
   const pickMention = (r) => {
     if (!mention) return;
@@ -1097,7 +1113,7 @@ function ChatPageInner() {
                   <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
                     {mention.query
                       ? "Risultati — Invio per il primo"
-                      : "Recenti — continua a scrivere per cercare"}
+                      : "Chi c'è nel gruppo, e i record recenti"}
                   </p>
                   {mentionRows.map((r) => {
                     const ui = REF_UI[r.type] || REF_UI.cliente;
@@ -1111,7 +1127,9 @@ function ChatPageInner() {
                         </span>
                         <span className="flex-1 min-w-0">
                           <span className="block text-sm text-white truncate">{r.label}</span>
-                          <span className="block text-[10px] text-slate-500">{r.type}</span>
+                          <span className="block text-[10px] text-slate-500">
+                            {r.type === "persona" ? (parts || []).some((x) => x.user_id === r.id) ? "in questa conversazione" : "collega" : r.type}
+                          </span>
                         </span>
                       </button>
                     );

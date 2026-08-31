@@ -27,11 +27,18 @@ export interface ChatAttachment {
   id: string; url: string; name: string | null; mime: string | null; size_bytes: number | null;
 }
 /** Riferimento a un record del CRM allegato a un messaggio (tag cliccabile). */
-export type RefKind = "cliente" | "contratto" | "appuntamento";
+// «persona» = un COLLEGA, non un record del CRM (Luca 31/08: «quando creo un
+// gruppo devo poter taggare anche le persone che ci sono dentro»). Prima
+// scrivendo @alex uscivano i CLIENTI di nome Alexandra: il tag serviva solo a
+// puntare a schede, non a chiamare qualcuno.
+export type RefKind = "cliente" | "contratto" | "appuntamento" | "persona";
 export interface ChatRef { type: RefKind; id: string; label: string }
 
 /** Dove porta il tag quando ci clicchi. */
 export function refHref(r: ChatRef): string {
+  // una persona taggata porta alla chat con lei: e' la cosa che serve dopo
+  // averla nominata in un gruppo
+  if (r.type === "persona") return `/chat?persona=${encodeURIComponent(r.id)}`;
   if (r.type === "cliente") return `/clienti?id=${encodeURIComponent(r.id)}`;
   if (r.type === "contratto") return `/ricerca-vendite?id=${encodeURIComponent(r.id)}`;
   return `/calendario?appuntamento=${encodeURIComponent(r.id)}`;
@@ -253,7 +260,7 @@ export function subscribeReactions(convId: string, onChange: () => void) {
  * Token inline di un tag dentro il testo del messaggio: `@[tipo:id|etichetta]`.
  * Permette di scrivere "ho sentito @Mario Rossi per @CTR_0001" con il tag nel punto giusto.
  */
-export const REF_TOKEN_RE = /@\[(cliente|contratto|appuntamento):([^\]|]+)\|([^\]]+)\]/g;
+export const REF_TOKEN_RE = /@\[(cliente|contratto|appuntamento|persona):([^\]|]+)\|([^\]]+)\]/g;
 export const refToken = (r: ChatRef) => `@[${r.type}:${r.id}|${r.label}]`;
 
 /** Spezza il corpo del messaggio in testo semplice + tag, mantenendo l'ordine. */
@@ -283,7 +290,7 @@ const apptLabel = (a: any) =>
  * Suggerimenti mostrati appena si digita "@", senza ancora aver scritto nulla:
  * i record piu' recenti, cosi' il caso comune ("l'ultimo contratto") e' a un tasto.
  */
-export async function recentEntities(): Promise<ChatRef[]> {
+export async function recentEntities(dentro: string[] = []): Promise<ChatRef[]> {
   const [cl, ct, ap] = await Promise.all([
     supabase.from("clients").select("id, nome, cognome, ragione_sociale, cf_piva")
       .order("created_at", { ascending: false }).limit(5).then((r) => r.data || [], () => []),
@@ -297,7 +304,11 @@ export async function recentEntities(): Promise<ChatRef[]> {
       .neq("type", "richiamo")
       .order("date", { ascending: false }).limit(4).then((r) => r.data || [], () => []),
   ]);
+  // premendo «@» e basta, in un gruppo, la cosa che si vuole quasi sempre e'
+  // chiamare uno dei presenti: i partecipanti aprono l'elenco
+  const persone = dentro.length ? await searchPersone("", dentro).catch(() => []) : [];
   return [
+    ...persone.filter((p) => dentro.includes(p.id)),
     ...cl.map((c: any) => ({ type: "cliente" as const, id: c.id, label: clientLabel(c) })),
     ...ct.map((c: any) => ({ type: "contratto" as const, id: String(c.id), label: contractLabel(c) })),
     ...ap.map((a: any) => ({ type: "appuntamento" as const, id: String(a.id), label: apptLabel(a) })),
@@ -305,13 +316,36 @@ export async function recentEntities(): Promise<ChatRef[]> {
 }
 
 /** Ricerca su tutti e tre i tipi insieme (usata dall'autocomplete con "@"). */
-export async function searchAllEntities(q: string): Promise<ChatRef[]> {
-  const [a, b, c] = await Promise.all([
+export async function searchAllEntities(q: string, dentro: string[] = []): Promise<ChatRef[]> {
+  // LE PERSONE PER PRIME. Scrivendo «@alex» in un gruppo si sta chiamando un
+  // collega, non cercando un cliente che si chiama Alexandra: i colleghi
+  // stanno in cima, i record del CRM restano sotto.
+  const [p, a, b, c] = await Promise.all([
+    searchPersone(q, dentro).catch(() => []),
     searchEntities("cliente", q).catch(() => []),
     searchEntities("contratto", q).catch(() => []),
     searchEntities("appuntamento", q).catch(() => []),
   ]);
-  return [...a.slice(0, 6), ...b.slice(0, 6), ...c.slice(0, 4)];
+  return [...p, ...a.slice(0, 5), ...b.slice(0, 5), ...c.slice(0, 3)];
+}
+
+/** I COLLEGHI da taggare. `dentro` sono gli id dei partecipanti alla
+ *  conversazione: vengono per primi, perche' in un gruppo si tagga quasi
+ *  sempre uno che e' dentro — gli altri restano raggiungibili scrivendone il
+ *  nome, che serve per dire «ne parlo con Tizio» anche se Tizio non c'e'. */
+export async function searchPersone(q: string, dentro: string[] = []): Promise<ChatRef[]> {
+  const s = q.trim();
+  const sel = supabase.from("app_users").select("id, full_name, role, primary_store").eq("active", true);
+  const { data } = s
+    ? await sel.ilike("full_name", `%${s}%`).order("full_name").limit(12)
+    : await sel.order("full_name").limit(60);
+  const righe = (data || []) as { id: string; full_name: string; role: string | null; primary_store: string | null }[];
+  const dentroSet = new Set(dentro);
+  const peso = (u: { id: string }) => (dentroSet.has(u.id) ? 0 : 1);
+  return righe
+    .sort((a, b) => peso(a) - peso(b) || String(a.full_name).localeCompare(String(b.full_name), "it"))
+    .slice(0, s ? 8 : 10)
+    .map((u) => ({ type: "persona" as RefKind, id: u.id, label: u.full_name }));
 }
 
 /** Ricerca record del CRM da taggare in chat (cliente / contratto / appuntamento). */
