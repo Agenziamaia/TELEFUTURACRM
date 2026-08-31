@@ -7566,7 +7566,13 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             className={cn("rvAzione",_m.length&&tp>0&&"rvAzione-att")} style={{marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?`🔒 Manca ${_m.length===1?"una cosa":_m.length+" cose"}`:`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
         <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} onCommit={runPendingCommit} />
-        {posScontrinoAbilitato(selNeg) && <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />}
+        {/* IL PANNELLO NON DIPENDE PIÙ DAL NEGOZIO SCELTO NEL MODULO (Luca 31/08).
+            Era legato a `posScontrinoAbilitato(selNeg)`: l'amministrativo, che un
+            negozio non ce l'ha, non lo vedeva mai — e doveva vederli tutti. Ora
+            decide il server chi vede cosa, e il pannello sparisce da solo quando
+            non c'è niente da incassare. «Riprendi» riapre la cassa sul negozio
+            del CONTO, non su quello selezionato. */}
+        <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
@@ -7828,7 +7834,13 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       {vistaStep==="brand"&&<div className="rvCard" style={{padding:20}}>
         {/* Conti in sospeso anche al PRIMO step (spec Francesco): il pulsante è un
             portale fisso in basso a sinistra e si nasconde da solo se non ce ne sono. */}
-        {posScontrinoAbilitato(selNeg) && <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />}
+        {/* IL PANNELLO NON DIPENDE PIÙ DAL NEGOZIO SCELTO NEL MODULO (Luca 31/08).
+            Era legato a `posScontrinoAbilitato(selNeg)`: l'amministrativo, che un
+            negozio non ce l'ha, non lo vedeva mai — e doveva vederli tutti. Ora
+            decide il server chi vede cosa, e il pannello sparisce da solo quando
+            non c'è niente da incassare. «Riprendi» riapre la cassa sul negozio
+            del CONTO, non su quello selezionato. */}
+        <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />
         {/* Il modale Incasso & Scontrino serve anche qui: "Riprendi" da un sospeso lo
             apre anche allo step Brand. È un portale, invisibile finché data===null. */}
         <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} onCommit={runPendingCommit} />

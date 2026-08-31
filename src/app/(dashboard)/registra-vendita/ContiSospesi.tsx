@@ -29,14 +29,18 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey }: {
     const [list, setList] = useState<SospesoRow[]>([]);
     const [open, setOpen] = useState(false);
 
+    /* NON SI CHIEDE PIÙ UN NEGOZIO (Luca 31/08). Qui si passava il negozio
+       SCELTO NEL MODULO, che è un campo modificabile: lo store manager di
+       Magliana, con «Donna» selezionato, si vedeva i conti aperti di Donna.
+       Adesso decide il server, che sa chi sei: l'amministrazione li vede
+       tutti, gli altri vedono i propri. */
     const load = useCallback(async () => {
-        if (!negozio) { setList([]); return; }
         try {
-            const res = await fetch("/api/vendita/sospendi?negozio=" + encodeURIComponent(negozio));
+            const res = await fetch("/api/vendita/sospendi");
             const j = await res.json().catch(() => ({}));
             setList(Array.isArray(j.sospesi) ? j.sospesi : []);
         } catch { setList([]); }
-    }, [negozio]);
+    }, []);
 
     useEffect(() => { load(); }, [load, reloadKey]);
     // aggiornamento leggero: un altro banco può aggiungerne uno.
@@ -54,7 +58,7 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey }: {
     };
 
     const n = list.length;
-    if (!negozio || n === 0) return null;
+    if (n === 0) return null;
 
     return createPortal(
         <>
@@ -70,7 +74,12 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey }: {
                     <div className="glass-panel w-full max-w-lg p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-baseline justify-between">
                             <h3 className="text-lg font-bold text-white">🕗 Conti in sospeso</h3>
-                            <span className="text-xs text-slate-400">{negozio} · {n}</span>
+                            {/* l'elenco può attraversare più negozi: si nomina quello
+                                solo quando è davvero uno solo, se no si dice quanti */}
+                            <span className="text-xs text-slate-400">
+                                {(() => { const ns = [...new Set(list.map(x => x.negozio).filter(Boolean))];
+                                    return ns.length === 1 ? `${ns[0]} · ${n}` : `${ns.length} punti vendita · ${n}`; })()}
+                            </span>
                         </div>
                         <p className="text-[11px] text-slate-500">Riprendi un conto quando il cliente torna a pagare: si riapre Incasso &amp; Scontrino su quelle voci.</p>
                         <div className="space-y-2 max-h-[60vh] overflow-y-auto">
@@ -81,7 +90,10 @@ export function ContiSospesi({ negozio, onRiprendi, reloadKey }: {
                                     <div key={s.id} className="rounded-xl bg-white/5 border border-white/10 p-3 flex items-center gap-3">
                                         <div className="min-w-0 flex-1">
                                             <div className="text-sm text-slate-100 font-semibold truncate">{s.cliente || "Cliente non indicato"}</div>
-                                            <div className="text-[11px] text-slate-400">{when} · {nItems} voci{s.azienda ? ` · ${s.azienda}` : ""}</div>
+                                            {/* IL NEGOZIO SULLA RIGA: l'amministrazione ne vede di
+                                                più d'uno, e senza il nome non saprebbe dove sono i
+                                                soldi da incassare */}
+                                            <div className="text-[11px] text-slate-400">{when} · {nItems} voci{s.negozio ? ` · ${s.negozio}` : ""}{s.azienda ? ` · ${s.azienda}` : ""}</div>
                                         </div>
                                         <div className="text-white font-bold tabular-nums whitespace-nowrap">{eur(s.totale)}</div>
                                         <button type="button" onClick={() => { setOpen(false); onRiprendi(s); }}
