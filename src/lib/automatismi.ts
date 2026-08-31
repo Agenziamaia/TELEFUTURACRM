@@ -21,9 +21,9 @@
 export type AreaAuto = "amministrazione" | "comunicazioni" | "sicurezza" | "callcenter" | "vendite";
 
 export const AREE: { id: AreaAuto; nome: string; emoji: string; cosa: string }[] = [
-    { id: "amministrazione", nome: "Amministrazione", emoji: "🗂", cosa: "Documenti e adempimenti che partono da soli verso l'esterno: il consulente del lavoro, il commercialista, gli enti." },
-    { id: "comunicazioni", nome: "Comunicazioni", emoji: "💬", cosa: "Chat e posta: quello che il CRM legge, classifica e mette in ordine senza che nessuno lo chieda." },
-    { id: "sicurezza", nome: "Sicurezza", emoji: "🔒", cosa: "Pulizie e scadenze: codici usa-e-getta, dati che non devono restare in giro." },
+    { id: "amministrazione", nome: "Amministrazione", emoji: "🗂", cosa: "Ferie, malattie e adempimenti che partono da soli verso l'esterno: il consulente del lavoro, il commercialista, gli enti." },
+    { id: "comunicazioni", nome: "Comunicazioni", emoji: "💬", cosa: "Chat, posta e codici usa-e-getta: tutto quello che arriva da fuori e che il CRM legge, classifica e mette in ordine senza che nessuno lo chieda." },
+    { id: "sicurezza", nome: "Sicurezza", emoji: "🔒", cosa: "Dati che non devono restare in giro più del necessario: pulizie, scadenze, tracce da cancellare." },
     { id: "callcenter", nome: "Call Center", emoji: "📞", cosa: "Automatismi delle pratiche e dei caller." },
     { id: "vendite", nome: "Vendite", emoji: "🧾", cosa: "Automatismi di cassa, magazzino e documenti di vendita." },
 ];
@@ -119,7 +119,12 @@ export const AUTOMATISMI: Automatismo[] = [
     },
     {
         id: "otp-pulizia",
-        area: "sicurezza",
+        /* ⚠️ COMUNICAZIONI, non «sicurezza» (Luca 01/09: «dentro comunicazione
+           ci avrei messo quelle di WhatsApp, email e dei codici usa e getta»).
+           Ha ragione: quei codici arrivano per posta e vivono in una casella —
+           è lo stesso mestiere del triage, non una faccenda a parte. Chi li
+           cerca li cerca lì. */
+        area: "comunicazioni",
         nome: "Pulizia dei codici usa-e-getta",
         emoji: "🧹",
         cosaFa: "Ogni dieci minuti cancella i codici OTP scaduti che il CRM ha pescato dalla posta. Un codice serve due minuti: tenerlo dopo è solo un rischio in più.",
@@ -171,4 +176,53 @@ export function oraItaliana(cron: string, adesso = new Date()): string | null {
             : new Date(d.getTime() + 864e5);
     }
     return d.toLocaleTimeString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" });
+}
+
+/* ═══ CAMBIARE L'ORARIO SENZA SCRIVERE CRON ════════════════════════════════
+   Il pannello lo apre Luca, non un sistemista: chiedergli «0 5 1 * *» è
+   chiedergli di imparare una sintassi per fare una cosa che sa dire in
+   italiano. Qui si generano le scelte sensate PER QUEL LAVORO — le cadenze se
+   è ricorrente, gli orari se parte una volta al mese — e il cron lo scriviamo
+   noi. Il campo grezzo resta comunque, sotto, per i casi che qui non ci sono.
+
+   ⚠️ LO SFALSAMENTO SI CONSERVA. `email-triage` gira su «5-59/10»: cinque
+   minuti dopo WhatsApp, di proposito, per non chiedere tutto insieme al
+   fornitore. Una scorciatoia che scrivesse la cadenza secca lo riallineerebbe
+   a WhatsApp e nessuno capirebbe perché il fornitore ha ricominciato a
+   rifiutare le richieste. */
+export type Scorciatoia = { etichetta: string; cron: string };
+
+/** Lo scarto in ore fra Roma e UTC nel momento indicato (1 d'inverno, 2 d'estate). */
+function scartoRoma(quando = new Date()): number {
+    const q = new Date(quando.toLocaleString("en-US", { timeZone: "Europe/Rome" }));
+    const u = new Date(quando.toLocaleString("en-US", { timeZone: "UTC" }));
+    return Math.round((q.getTime() - u.getTime()) / 3600000);
+}
+
+export function scorciatoieOrario(cron: string, adesso = new Date()): Scorciatoia[] {
+    const p = String(cron || "").trim().split(/\s+/);
+    if (p.length !== 5) return [];
+    const [min, ora, gg, , dow] = p;
+
+    // ── ricorrente: «ogni N minuti», con l'eventuale sfalsamento conservato
+    const ric = min.match(/^(?:\*|(\d+)-(\d+))\/(\d+)$/);
+    if (ric && ora === "*") {
+        const off = Number(ric[1] || 0);
+        return [5, 10, 15, 20, 30, 60].map((n) => ({
+            etichetta: n === 60 ? "ogni ora" : `ogni ${n} minuti`,
+            // l'offset ha senso solo se sta dentro il passo: a 5 minuti non
+            // esiste un «parte al minuto 10»
+            cron: off > 0 && off < n && n < 60 ? `${off}-59/${n} * * * *` : n === 60 ? `${off % 60} * * * *` : `*/${n} * * * *`,
+        }));
+    }
+
+    // ── a orario fisso: si sceglie l'ora ITALIANA, il cron lo scriviamo in UTC
+    if (/^\d+$/.test(min) && /^\d+$/.test(ora)) {
+        const scarto = scartoRoma(adesso);
+        return [6, 7, 8, 9, 12, 18].map((h) => {
+            const utc = ((h - scarto) % 24 + 24) % 24;
+            return { etichetta: `alle ${String(h).padStart(2, "0")}:00`, cron: `0 ${utc} ${gg} * ${dow}` };
+        });
+    }
+    return [];
 }
