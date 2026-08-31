@@ -730,6 +730,12 @@ function CallerPageInner() {
     const APP_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "appuntamento").map(([s]) => s); return v.length ? v : APPUNTAMENTO_STATI; }, [comportamenti]);
     const RIC_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "richiamo").map(([s]) => s); return v.length ? v : RICHIAMO_STATI; }, [comportamenti]);
     const NRD_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "non_risposto").map(([s]) => s); return v.length ? v : NR_STATI; }, [comportamenti]);
+    // APPUNTAMENTO SALTATO: dal COMPORTAMENTO come tutti gli altri. Prima era
+    // agganciato al nome «Non andato» — proprio quello che il commento di
+    // `scenarioWa` vieta, perché gli esiti si rinominano dal pannello in due
+    // click, e dopo la rinomina il cliente che ha bucato l'appuntamento
+    // avrebbe ricevuto il messaggio generico di presentazione.
+    const SALT_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "saltato").map(([s]) => s); return v.length ? v : ["Non andato"]; }, [comportamenti]);
     const PROVENIENZE_OPT = opzioniDb.provenienza?.length ? opzioniDb.provenienza : [...PROVENIENZE];
     const TIPOLOGIE_OPT = opzioniDb.tipologia?.length ? opzioniDb.tipologia : [...TIPOLOGIE];
     const OBIETTIVI_OPT = opzioniDb.obiettivo?.length ? opzioniDb.obiettivo : [...OBIETTIVI];
@@ -2385,9 +2391,9 @@ function CallerPageInner() {
         if (NRD_STATI.includes(s)) return "nr";
         if (RIC_STATI.includes(s)) return "richiamo";
         if (APP_STATI.includes(s)) return "appuntamento";
-        // NON ANDATO = appuntamento saltato (Luca 31/08): ha messaggi suoi, che
-        // parlano di riprogrammare — non quelli del «non ti ho trovato»
-        if (s === "Non andato") return "saltato";
+        // appuntamento saltato: ha messaggi suoi, che parlano di riprogrammare
+        // — non quelli del «non ti ho trovato»
+        if (SALT_STATI.includes(s)) return "saltato";
         return "generico";
     };
     const statoNewIsNR = !!editCall && NRD_STATI.includes(editCall.statoNew || "");

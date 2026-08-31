@@ -20,6 +20,11 @@ const COMPORTAMENTI: { id: string; label: string }[] = [
     { id: "appuntamento", label: "📅 Appuntamento" },
     { id: "richiamo", label: "☎ Richiamo" },
     { id: "non_risposto", label: "📵 Non risposto" },
+    // SALTATO (Luca 31/08): il cliente non si e' presentato all'appuntamento.
+    // Non e' un «non risposto»: i messaggi WhatsApp che riceve parlano di
+    // riprogrammare, non di «ti ho cercato». Lo stato che porta questo
+    // comportamento accende lo scenario 🚪 dei modelli.
+    { id: "saltato", label: "🚪 Appuntamento saltato" },
     // ESITO DEFINITIVO (Luca 11/08, come il 🏁 del Tracking PDA): archivia la
     // pratica/lead — esce dalla lista di lavoro del Caller (si rivede col
     // toggle 🗂 Archiviate), non resta in perenne lavorazione e non genera malus
@@ -213,7 +218,8 @@ function ModelliWaView({ opzioniCaller }: { opzioniCaller: Opzione[] }) {
                 </div>
                 <div className="flex-1">
                     <h3 className="text-sm font-bold text-white">Modelli WhatsApp <span className="text-slate-500 font-normal">· {modelli.filter((m) => m.attivo).length} attivi</span></h3>
-                    <p className="text-[11px] text-slate-500">I messaggi pronti del bottone WhatsApp dei caller. Scegli le opzioni per vedere quali modelli matcherebbero su una pratica così fatta; più varianti nello stesso gruppo ruotano da sole (anti-ban): scrivile DAVVERO diverse tra loro.</p>
+                    <p className="text-[11px] text-slate-500">I messaggi pronti del bottone WhatsApp dei caller. Scegli le opzioni per vedere quali modelli matcherebbero su una pratica così fatta.
+                        <br /><b className="text-slate-400">Il gruppo è il tono</b>: «…-lei» e «…-tu» diventano due schede fra cui il caller sceglie — un gruppo nuovo è una scheda in più, cioè un terzo tono. Dentro la scheda le varianti <b className="text-slate-400">ruotano da sole</b> (anti-ban), quindi scrivile DAVVERO diverse tra loro.</p>
                 </div>
                 <button onClick={() => setNuovoOpen((v) => !v)}
                     className="px-3.5 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5 shrink-0">

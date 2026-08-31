@@ -62,6 +62,8 @@ const SCENARIO_LABEL: Record<ScenarioWa, string> = {
 };
 
 const norm = (v: string) => String(v || "").trim().toLowerCase();
+/** un negozio, non un elenco: con le virgole dentro è una multiselezione */
+const unNegozio = (v?: string | null) => (String(v || "").includes(",") ? "" : String(v || "").trim());
 
 function fmtData(v?: string): string {
     if (!v) return "";
@@ -71,7 +73,14 @@ function fmtData(v?: string): string {
 }
 function fmtOra(v?: string): string {
     if (!v || !v.includes("T")) return "";
-    return v.split("T")[1].slice(0, 5);
+    const hhmm = v.split("T")[1].slice(0, 5);
+    // MEZZANOTTE NON E' UN ORARIO, e' un appuntamento A FASCIA. Il CRM prende
+    // gli appuntamenti anche su «Mattina/Pomeriggio», e li' salva la sola data:
+    // a database diventa 00:00, e un messaggio che dice «alle ore 🕐 00:00» al
+    // cliente non e' un dettaglio, e' un errore. Tornando vuoto il segnaposto
+    // risulta MANCANTE, quindi il modale sceglie da solo la variante a fascia
+    // e — se non ce ne fossero — non lascia partire l'invio.
+    return hhmm === "00:00" ? "" : hhmm;
 }
 
 // SOLO IL NOME, mai il cognome (Luca 06/08): verso il cliente ci si firma col
@@ -91,11 +100,18 @@ function valoriPlaceholder(call: PraticaWa, callerName: string, indirizzi: Map<s
         brand: call.brand || "",
         obiettivo: call.obiettivo || "",
         caller: primoNome(callerName || call.caller || ""),
-        negozio: negozioApp || call.negozio_pertinenza || call.negozio_provenienza || "",
+        // UN NEGOZIO SOLO. Su 938 pratiche il campo di provenienza porta la
+        // MULTISELEZIONE salvata come stringa — «Collatina W3, Donna,
+        // Garbatella, …» — e il messaggio sarebbe partito cosi': «Sono Sandra
+        // del negozio Collatina W3, Donna, Garbatella, Libia, …». Un valore
+        // con le virgole non e' un negozio: si tratta come assente, il
+        // segnaposto risulta mancante e l'invio si blocca finche' la pratica
+        // non viene sistemata.
+        negozio: unNegozio(negozioApp) || unNegozio(call.negozio_pertinenza) || unNegozio(call.negozio_provenienza),
         // INDIRIZZO del negozio in gioco. Se non e' compilato in
         // Amministrazione → Negozi resta vuoto, e il testo si richiude da solo
         // sulla preposizione che lo precede (vedi `risolvi`).
-        indirizzo: indirizzi.get(norm(negozioApp || call.negozio_pertinenza || call.negozio_provenienza || "")) || "",
+        indirizzo: indirizzi.get(norm(unNegozio(negozioApp) || unNegozio(call.negozio_pertinenza) || unNegozio(call.negozio_provenienza))) || "",
         negozio_pertinenza: call.negozio_pertinenza || call.negozio_provenienza || "",
         data_appuntamento: fmtData(dataApp),
         ora_appuntamento: fmtOra(dataApp),
@@ -127,11 +143,26 @@ function risolvi(corpo: string, vals: Record<string, string>): {
     // l'indirizzo si aggiunge perche' finche' le anagrafiche dei negozi non
     // sono compilate meglio una frase piu' corta di un {indirizzo} spedito.
     for (const ph of ["cognome", "indirizzo"]) {
-        if (vals[ph]) continue;
-        corpo = corpo.replace(new RegExp(`[ \u00a0]*(?:\\b(?:di|in|presso|da)\\b[ \u00a0]*)?\\{${ph}\\}[ \u00a0]*(?:📍)?`, "g"), "")
-            // virgole rimaste orfane: «di Libia, Ho cercato» → «di Libia. Ho cercato»
-            .replace(/[ \u00a0]*,[ \u00a0]*([.,!?])/g, "$1")
-            .replace(/,([ \u00a0]+)(?=[A-ZÀ-Ý])/g, ".$1");
+        // SOLO SE IL SEGNAPOSTO C'E' DAVVERO. Girava su ogni testo — anche su
+        // quelli che non lo nominano — e le sue riscritture di punteggiatura
+        // rovinavano le virgole buone: «la promo Sky, Netflix e Disney»
+        // diventava «la promo Sky. Netflix e Disney».
+        if (vals[ph] || !corpo.includes(`{${ph}}`)) continue;
+        // si porta via il segno che lo reggeva (preposizione, virgola,
+        // lineetta) e lo spillo che lo seguiva, poi RICUCE la frase: se dopo
+        // comincia una maiuscola ci vuole un punto, altrimenti uno spazio.
+        // Senza la ricucitura restavano frasi saldate — «del punto vendita
+        // Mazzini L'ho cercata poco fa» — perche' a fare da punto era proprio
+        // il pezzo che abbiamo tolto.
+        const re = new RegExp(`([^ \u00a0])?[ \u00a0]*(?:[,;—–-][ \u00a0]*)?(?:\\b(?:di|in|presso|da)\\b[ \u00a0]*)?\\{${ph}\\}[ \u00a0]*(?:📍)?[ \u00a0]*`, "g");
+        corpo = corpo.replace(re, (m, pre = "", off: number, testoIntero: string) => {
+            const dopo = testoIntero.slice(off + m.length);
+            const chiudi = /^[A-ZÀ-Ý]/.test(dopo) && !/[.!?:;,]$/.test(pre);
+            return pre + (chiudi ? ". " : dopo ? " " : "");
+        });
+        corpo = corpo.replace(/[ \u00a0]*,[ \u00a0]*([.,!?])/g, "$1")
+            .replace(/[ \u00a0]*([.,!?])/g, "$1")
+            .replace(/[ \u00a0]{2,}/g, " ").trim();
     }
     const re = /\{([a-z_]+)\}/g;
     let last = 0;
@@ -224,18 +255,25 @@ export function ModaleTemplateWa({ call, numero, scenario, userId, callerName, o
             const next = { ...prev };
             gruppi.forEach(([g, vars]) => {
                 if (next[g] != null) return;
-                const lastIdx = vars.findIndex((v) => v.id === usatiRecenti[0]);
-                let scelto = lastIdx >= 0 && vars.length > 1 ? (lastIdx + 1) % vars.length : 0;
+                // ROTAZIONE VERA (revisione 31/08): si evitavano solo le
+                // varianti usate per ULTIME su quel numero, e per un cliente
+                // mai contattato si partiva sempre dalla prima — con nove
+                // varianti se ne usava una. Adesso il punto di partenza lo
+                // decide il numero stesso, quindi clienti diversi ricevono
+                // testi diversi, ed evita TUTTE le varianti già usate con lui.
+                const semi = [...numero].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7);
+                const usate = new Set(usatiRecenti);
+                let scelto = semi % vars.length;
                 for (let k = 0; k < vars.length; k++) {
-                    const i = (scelto + k) % vars.length;
-                    if (i === lastIdx && vars.length > 1) continue;
+                    const i = (semi + k) % vars.length;
+                    if (usate.has(vars[i].id) && vars.length > usate.size) continue;
                     if (!risolvi(vars[i].corpo, vals).mancanti.length) { scelto = i; break; }
                 }
                 next[g] = scelto;
             });
             return next;
         });
-    }, [gruppi, usatiRecenti, vals]);
+    }, [gruppi, usatiRecenti, vals, numero]);
 
     const invia = async (gruppo: string, t: Template, testo: string) => {
         if (busy || fatto) return;
