@@ -36,3 +36,29 @@ export async function scaricaXlsx(
     // niente più Blob/createObjectURL/revoke a carico del chiamante.
     XLSX.writeFile(wb, nomeFile.endsWith(".xlsx") ? nomeFile : `${nomeFile}.xlsx`);
 }
+
+/** PIÙ FOGLI IN UN FILE SOLO (Luca 31/08: «mi deve dare due tab, dettaglio e
+ *  riepilogo»). Stessa auto-larghezza dell'export a foglio singolo.
+ *
+ *  I giorni si scrivono come NUMERO, non come testo: così Excel li somma, li
+ *  ordina, e le mezze giornate le mostra col separatore decimale della lingua
+ *  del foglio — che qui è la virgola. Un «0,5» scritto come testo sarebbe una
+ *  parola: bella da vedere e inutile in una somma. */
+export async function scaricaXlsxMulti(
+    nomeFile: string,
+    fogli: { nome: string; intestazioni: string[]; righe: CellaXlsx[][] }[],
+): Promise<void> {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    for (const f of fogli) {
+        const ws = XLSX.utils.aoa_to_sheet([f.intestazioni, ...f.righe]);
+        ws["!cols"] = f.intestazioni.map((h, i) => {
+            let w = Math.max(h.length + 2, 8);
+            for (const r of f.righe) w = Math.max(w, String(r[i] ?? "").length + 2);
+            return { wch: Math.min(w, 60) };
+        });
+        // il nome di un foglio Excel non può superare 31 caratteri né contenere []:*?/\
+        XLSX.utils.book_append_sheet(wb, ws, f.nome.replace(/[[\]:*?/\\]/g, " ").slice(0, 31));
+    }
+    XLSX.writeFile(wb, `${nomeFile}.xlsx`);
+}

@@ -13,6 +13,7 @@ import { isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
+import { EsportaAssenze } from "@/components/EsportaAssenze";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 // Il tab BADGE e' stato SPOSTATO nell'hub Call Center (/caller?tab=badge, Luca 28/07):
@@ -200,6 +201,27 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         }
         return n;
     }, [festiviSet]);
+
+    /* I GIORNI CHE CADONO DENTRO IL PERIODO (Luca 31/08): un'assenza dal 28/07
+       al 4/08 non è tutta di agosto. Stessa regola dei giorni effettivi —
+       domeniche e festivi non contano — applicata alla sola parte che ci sta. */
+    const giorniEffettiviTra = useCallback((r: VacationRequest, da: string, a: string) => {
+        const conta = (ymd: string) => { const d = new Date(ymd + "T12:00"); return d.getDay() !== 0 && !festiviSet.has(ymd); };
+        const dal = r.date_from < da ? da : r.date_from;
+        const al = r.date_to > a ? a : r.date_to;
+        if (dal > al) return 0;
+        if (r.half_day) return r.date_from >= da && r.date_from <= a && conta(r.date_from) ? 0.5 : 0;
+        let n = 0;
+        const d = new Date(dal + "T12:00");
+        const fine = new Date(al + "T12:00");
+        while (d <= fine) {
+            const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            if (conta(ymd)) n++;
+            d.setDate(d.getDate() + 1);
+        }
+        return n;
+    }, [festiviSet]);
+
 
     useEffect(() => {
         fetchRequests();
@@ -460,24 +482,30 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                         )}
 
                         {isAdminLike && (
-                            <button onClick={() => {
-                                // giorni EFFETTIVI (03/08): domeniche e festivi non contano
-                                // GLB-03: da CSV a vero .xlsx \u2014 giorni come cella numerica,
-                                // via i replaceAll(';') che aggiravano il separatore CSV
-                                const giorni = giorniEffettivi;
-                                const intestazioni = ["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"];
-                                const righe: CellaXlsx[][] = richiesteVisibili.map(r => [
-                                    r.employee_name, r.store, formatDate(r.date_from), formatDate(r.date_to),
-                                    giorni(r),
-                                    r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
-                                    r.status === "approved" ? "Approvata" : r.status === "rejected" ? "Rifiutata" : "In attesa",
-                                    r.reason || "", r.admin_note || "",
-                                ]);
-                                void scaricaXlsx(`ferie_${fDa || "inizio"}_${fA || "oggi"}`, intestazioni, righe, "Ferie");
-                            }} disabled={richiesteVisibili.length === 0}
-                                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
-                                ⬇️ Excel
-                            </button>
+                            /* L'EXPORT CHIEDE IL PERIODO E DÀ DUE FOGLI (Luca 31/08).
+                               Prima usciva un foglio solo, con quello che i filtri della
+                               pagina lasciavano vedere: per la busta paga serve il mese
+                               intero e serve il riepilogo per persona, con le ore. */
+                            <EsportaAssenze
+                                titolo="Ferie" nomeFile="ferie"
+                                colonneExtra={["Tipo", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"]}
+                                righe={({ da, a }) => requests
+                                    .filter((r: VacationRequest) => r.status === "approved" && r.date_from <= a && r.date_to >= da)
+                                    .map((r: VacationRequest) => ({
+                                        persona: r.employee_name, negozio: r.store || "",
+                                        dal: r.date_from < da ? da : r.date_from,
+                                        al: r.date_to > a ? a : r.date_to,
+                                        giorni: giorniEffettiviTra(r, da, a),
+                                        extra: {
+                                            "Tipo": r.tipo === "corso" ? "Corso" : "Ferie",
+                                            "Mezza giornata": r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
+                                            "Stato": "Approvata",
+                                            "Motivazione": r.reason || "",
+                                            "Nota amministrazione": r.admin_note || "",
+                                        },
+                                    }))
+                                    .filter((x) => x.giorni > 0)}
+                            />
                         )}
 
                         {puoRegistrare && (<>
@@ -1138,6 +1166,30 @@ function MalattiaSection() {
     const [newCertNum, setNewCertNum] = useState("");
     const [saving, setSaving] = useState(false);
 
+    /* I GIORNI DI MALATTIA CHE CADONO NEL PERIODO. Come per le ferie si contano
+       i giorni LAVORATIVI persi — domeniche e festivi fuori — perché è quello
+       che serve alla busta paga; il certificato copre i giorni di calendario,
+       ma quelli li porta la colonna «Dal/Al» del dettaglio. */
+    const [festiviMal, setFestiviMal] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        supabase.from("giorni_festivi").select("giorno")
+            .then(({ data }) => setFestiviMal(new Set(((data ?? []) as { giorno: string }[]).map((f) => f.giorno))));
+    }, []);
+    const giorniMalattiaTra = useCallback((dal0: string, al0: string, da: string, a: string) => {
+        const dal = dal0 < da ? da : dal0;
+        const al = al0 > a ? a : al0;
+        if (!dal || !al || dal > al) return 0;
+        let n = 0;
+        const d = new Date(dal + "T12:00");
+        const fine = new Date(al + "T12:00");
+        while (d <= fine) {
+            const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            if (d.getDay() !== 0 && !festiviMal.has(ymd)) n++;
+            d.setDate(d.getDate() + 1);
+        }
+        return n;
+    }, [festiviMal]);
+
     const fetchAbsences = useCallback(async () => {
         const { data } = await supabase.from("sickness_absences").select("*").order("date_from", { ascending: false });
         setAbsences((data ?? []) as SicknessRow[]);
@@ -1249,6 +1301,23 @@ function MalattiaSection() {
                             <button onClick={() => { setFiltroDa(""); setFiltroA(""); setFilterPersone([]); }}
                                 className="h-9 px-2.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 underline">Pulisci</button>
                         )}
+                        {/* L'EXPORT MANCAVA DEL TUTTO (Luca 31/08): le ferie l'avevano,
+                            la malattia no — e a fine mese servono tutte e due, separate.
+                            Stessa finestra, stessi due fogli. */}
+                        <EsportaAssenze
+                            titolo="Malattia" nomeFile="malattia"
+                            colonneExtra={["Certificato"]}
+                            righe={({ da, a }) => absences
+                                .filter((r) => r.date_from <= a && r.date_to >= da)
+                                .map((r) => ({
+                                    persona: r.employee_name, negozio: r.store || "",
+                                    dal: r.date_from < da ? da : r.date_from,
+                                    al: r.date_to > a ? a : r.date_to,
+                                    giorni: giorniMalattiaTra(r.date_from, r.date_to, da, a),
+                                    extra: { "Certificato": r.certificate_number || "" },
+                                }))
+                                .filter((x) => x.giorni > 0)}
+                        />
                         <button
                             onClick={() => setShowNewModal(true)}
                             className="h-9 px-4 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors flex items-center gap-2"
