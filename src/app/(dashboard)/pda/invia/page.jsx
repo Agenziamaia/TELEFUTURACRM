@@ -13,6 +13,7 @@ import { numeroNazionale } from "@/lib/telefono";
 import { useStores, useSellers } from "@/lib/org";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { RicercaCliente } from "@/components/RicercaCliente";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
@@ -175,7 +176,9 @@ const SKY_TV_PRODUCTS = ["Sky TV", "Sky Glass", "Sky Uffici", "Sky Bar", "Sky Ho
 const SKY_PACCHETTI = ["Netflix", "Cinema", "Calcio", "Sport", "Multivision", "4K"];
 const SKY_TECNOLOGIA = ["Parabola", "Fibra"];
 
-const CAT_ICONS = { "Mobile": "📱", "Fisso": "🏠", "Luce & Gas": "⚡", "Multi-servizi": "🛡️", "Abbonamenti SKY": "📺", "POS": "💳" };
+// nel PDA «Mobile» e' la categoria di ATTIVAZIONE (i telefoni stanno sotto
+// TNP): il segno e' quello della SIM. Resta una stringa, la disegna conSim.
+const CAT_ICONS = { "Mobile": SIM_TESTO, "Fisso": "🏠", "Luce & Gas": "⚡", "Multi-servizi": "🛡️", "Abbonamenti SKY": "📺", "POS": "💳" };
 const CAT_COLORS = { "Mobile": "var(--tf-2e75b6)", "Fisso": "var(--tf-28a745)", "Luce & Gas": "var(--tf-fd7e14)", "Multi-servizi": "var(--tf-6f42c1)", "Abbonamenti SKY": "var(--tf-0072ce)", "POS": "var(--tf-6f42c1)" };
 
 const DONOR_MOBILE = ["", "TIM", "Vodafone", "WindTre", "Iliad", "Fastweb Mobile", "PosteMobile", "ho. Mobile", "Kena Mobile", "Very Mobile", "CoopVoce", "Spusu", "Lyca Mobile", "1Mobile", "Tiscali Mobile", "Digi Mobil", "Noitel", "Optima Mobile", "Feder Mobile", "Rabona Mobile", "Elimobile", "BT Italia", "Segnoverde Mobile", "Uno Mobile", "Saily", "Visitel", "Ops! Mobile"];
@@ -206,7 +209,7 @@ function CartItem({ it, ii, gi, total, expI, setExpI }) {
     <div className={`py-4 ${ii < total - 1 ? "border-b border-white/5" : ""}`}>
       <div className="flex items-center gap-4">
         <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg border border-white/10 group-hover:scale-110 transition-transform">
-          {it.macroIcon}
+          {conSim(it.macroIcon)}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -1510,7 +1513,7 @@ export default function InviaPda() {
     return (
       <div key={categoria} style={{ background: "var(--tf-w30)", borderRadius: 14, padding: 18, borderLeft: "4px solid " + catColor }}>
         <div className="flex items-center justify-between gap-3" style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: catColor, textTransform: "uppercase", letterSpacing: .8 }}>{catIcon} {categoria}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: catColor, textTransform: "uppercase", letterSpacing: .8 }}>{conSim(catIcon)} {categoria}</div>
           <button onClick={() => addSale(catKey)}
             style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 11, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", whiteSpace: "nowrap" }}>
             ➕ Aggiungi {categoria}

@@ -1,3 +1,4 @@
+import { SIM_TESTO } from "@/lib/sim";
 /**
  * Tassonomia unica dei contratti — sorgente di verita' per TUTTO il CRM.
  *
@@ -49,7 +50,13 @@ export interface CategoriaDef {
 }
 
 export const CATEGORIE: CategoriaDef[] = [
-    { id: "mobile", label: "Mobile", desc: "SIM e offerte mobili", color: "var(--tf-3b82f6)", icon: "📱" },
+    /* «Mobile» qui vuol dire SIM, lo dice la descrizione stessa (Luca 31/08):
+       il segno è quello della SIM, non del telefono. Resta una STRINGA — di qui
+       passa anche il carrello, e un disegno dentro un dato diventa
+       «[object Object]». Chi disegna la fa passare da `conSim()`.
+       Attenzione: «Telefono a Rate» è una categoria di questo stesso macro ma è
+       un apparecchio: la sua icona la corregge `iconW3Cat` in Registra Vendita. */
+    { id: "mobile", label: "Mobile", desc: "SIM e offerte mobili", color: "var(--tf-3b82f6)", icon: SIM_TESTO },
     { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "var(--tf-0ea5e9)", icon: "🏠" },
     { id: "energia", label: "Energia", desc: "Luce e gas", color: "var(--tf-10b981)", icon: "⚡" },
     { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "var(--tf-ef4444)", icon: "📺" },

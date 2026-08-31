@@ -29,13 +29,14 @@ import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { Tip, TipRiga, TipTitolo, SogliaBar, fmtPt, fmtN } from "./_charts";
 import { GARA, LogoBrand, righeOperatore, DrillPanel } from "./_widgets";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 // match a PREFISSO bidirezionale (come il pannello target): "Magliana" ↔
 // "Magliana W3"/"Magliana Multi", "Donna Olimpia" ↔ codice "Donna"
 const stessoNome = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 const PISTA_LABEL = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", cb: "Customer Base", business_piva: "Business (eventi)", business_mobile: "Business mobile", business_fisso: "Business fisso", soluzioni_digitali: "Soluzioni digitali", vas: "VAS", luce: "Luce", gas: "Gas" };
-const PISTA_EMOJI = { mobile: "📱", fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", sky: "🟣", cb: "🔁", business_piva: "💼", business_mobile: "💼", business_fisso: "💼", soluzioni_digitali: "🧩", vas: "✨", luce: "💡", gas: "🔥" };
+const PISTA_EMOJI = { mobile: SIM_TESTO, fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", sky: "🟣", cb: "🔁", business_piva: "💼", business_mobile: "💼", business_fisso: "💼", soluzioni_digitali: "🧩", vas: "✨", luce: "💡", gas: "🔥" };
 
 /* I FILTRI DEL MASTER STANNO NELLA BARRA DEL PERIODO (Luca 28/08 sera).
    La lente Codici/Negozi, la scelta dei punti vendita e l'interruttore
@@ -379,7 +380,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
         const conVincoli = b === "w3" ? modo === "gruppoFr" : !filtroAttivo;
         return (
             <SogliaBar key={p.chiave}
-                emoji={PISTA_EMOJI[p.chiave] || "▫️"} label={PISTA_LABEL[p.chiave] || p.nome}
+                emoji={conSim(PISTA_EMOJI[p.chiave] || "▫️")} label={PISTA_LABEL[p.chiave] || p.nome}
                 punti={st.punti} pezzi={st.pezzi} soglie={scala} colore={G.colore}
                 proiezione={prj(st.punti)}
                 gate={conVincoli ? (st.gate || null) : null}
@@ -466,7 +467,7 @@ function CartaMaster({ b, lente, tab, raw, sue, sueTutte, codici, setCodici, neg
                                                 <div key={r.label} onClick={(e) => { e.stopPropagation(); apri({ titolo: `${G.label} · ${r.label}`, sub: filtroLabel, items: r.items }); }}
                                                     title={`${fmtN(r.items.length)} pezzi${b !== "fw" ? ` · ${fmtPt(pt)} pt` : ""} — clicca per l'elenco`}
                                                     className="grid grid-cols-[minmax(110px,1.1fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1 hover:bg-white/5 transition-colors cursor-pointer">
-                                                    <span className="text-[11px] font-semibold text-slate-300 truncate">{r.emoji} {r.label}</span>
+                                                    <span className="text-[11px] font-semibold text-slate-300 truncate">{conSim(r.emoji)} {r.label}</span>
                                                     <span className="h-1.5 rounded-full bg-white/5 overflow-hidden">
                                                         <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, ((b === "fw" ? r.items.length : pt) / maxPt) * 100)}%`, background: `linear-gradient(90deg, ${r.colore}55, ${r.colore})` }} />
                                                     </span>

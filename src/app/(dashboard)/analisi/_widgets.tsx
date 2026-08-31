@@ -16,7 +16,7 @@
 // (righe marginalità EXT del scope), margMap/margIcone, persona, negozio,
 // negoziTutti, nG, ym, oggi, gl, meseCorrente, areaKey.
 
-import { IconaSim } from "@/components/IconaSim";
+import { IconaSim, SIM_TESTO, conSim } from "@/components/IconaSim";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE, trkBrandKey } from "@/lib/brandAssets";
@@ -84,7 +84,7 @@ export function righeOperatore(brand, sue) {
         const cb = prendi((it) => /^customer base/i.test(String(it.categoria || "")));
         const energia = prendi((it) => /^energia/i.test(String(it.categoria || "")));
         const prot = prendi((it) => /assicuraz|multi[- ]?serv|protez/i.test(String(it.categoria || "")));
-        aggiungi(<IconaSim />, "Mobile (SIM)", "#818cf8", sim, [
+        aggiungi(SIM_TESTO, "Mobile (SIM)", "#818cf8", sim, [
             ["GA", sub(sim, (it) => !/mnp/i.test(String(it.prodotto || "")))],
             ["MNP", sub(sim, (it) => /mnp/i.test(String(it.prodotto || "")))],
             ...(brand === "vf" ? [["di cui dati", sub(sim, (it) => /dati/i.test(String(it.prodotto || "")))], ["MNP escluse da lettera", sub(sim, (it) => it.esclusa)]] : []),
@@ -114,13 +114,13 @@ export function righeOperatore(brand, sue) {
         aggiungi("🖥", "Glass & Prova", "#a78bfa", glass, [["Glass", sub(glass, (it) => /glass/i.test(String(it.offerta || it.prodotto || "")))], ["Prova Sky", sub(glass, (it) => /^prova/i.test(String(it.offerta || "")))]]);
         aggiungi("📡", "Triple Play", "#7c3aed", treP, [["promo 29,90/27,90", sub(treP, (it) => /2[79],90/.test(String(it.offerta || "")))]]);
         aggiungi("🌐", "Sky Fibra", "#22c55e", fibra);
-        aggiungi(<IconaSim />, "Mobile MNP", "#818cf8", mnp);
-        aggiungi(<IconaSim />, "Mobile GA", "#c084fc", ga, [["ric. automatica", sub(ga, (it) => /ric\.? ?auto/i.test(String(it.categoria || "")))], ["ricarica pura", sub(ga, (it) => /wallet/i.test(String(it.categoria || "")))]]);
+        aggiungi(SIM_TESTO, "Mobile MNP", "#818cf8", mnp);
+        aggiungi(SIM_TESTO, "Mobile GA", "#c084fc", ga, [["ric. automatica", sub(ga, (it) => /ric\.? ?auto/i.test(String(it.categoria || "")))], ["ricarica pura", sub(ga, (it) => /wallet/i.test(String(it.categoria || "")))]]);
     } else if (brand === "fw") {
         const mob = prendi((it) => /^(mobile|sim)/i.test(String(it.categoria || "")) || èTel(it.categoria));
         const fis = prendi((it) => /^(fisso|fibra)/i.test(String(it.categoria || "")));
         const ene = prendi((it) => /^energia/i.test(String(it.categoria || "")));
-        aggiungi(<IconaSim />, "Mobile", "#facc15", mob);
+        aggiungi(SIM_TESTO, "Mobile", "#facc15", mob);
         aggiungi("🌐", "Fisso", "#eab308", fis);
         aggiungi("⚡", "Energia", "#84cc16", ene);
     }
@@ -750,7 +750,7 @@ function AnalisiPistaPanel({ G, ct, ctx, chiudi, apriDrill, drillAperto = false 
                     <div className="flex items-center gap-3">
                         <LogoBrand chiave={G.chiave} h={30} />
                         <div>
-                            <p className="text-sm font-black text-white leading-tight">{ct.emoji} Pista {ct.label} <span className="text-slate-500 font-semibold">· analisi</span></p>
+                            <p className="text-sm font-black text-white leading-tight">{conSim(ct.emoji)} Pista {ct.label} <span className="text-slate-500 font-semibold">· analisi</span></p>
                             <p className="text-[10px] text-slate-500">{ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio)}{(ctx.etichettaPeriodo || ctx.periodoLabel) ? ` · ${ctx.etichettaPeriodo || ctx.periodoLabel}` : ""}</p>
                         </div>
                     </div>
@@ -936,7 +936,7 @@ function CartaOperatore({ brand, ctx, size }) {
                                         </>} />
                                 </div>
                                 <div className="text-[10px] font-bold text-slate-200 flex items-center gap-1.5">
-                                    <span>{ct.emoji} {ct.label}</span>
+                                    <span>{conSim(ct.emoji)} {ct.label}</span>
                                     {ctx.confronto && ct.val !== ct.prevVal && <Delta v={Math.round((ct.val - ct.prevVal) * 100) / 100} />}
                                     <button onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · pista ${ct.label}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: ct.items }); }}
                                         className="text-[9px] font-black text-slate-400 border border-white/10 bg-white/[0.04] rounded-md px-1.5 py-0.5 hover:text-white hover:bg-white/[0.1] transition-colors"
@@ -970,7 +970,7 @@ function CartaOperatore({ brand, ctx, size }) {
                         const pt = somma(r.items);
                         return (
                             <Tip key={r.label} block tip={<div>
-                                <TipTitolo>{r.emoji} {r.label}</TipTitolo>
+                                <TipTitolo>{conSim(r.emoji)} {r.label}</TipTitolo>
                                 <TipRiga l="pezzi" r={fmtN(r.items.length)} colore={r.colore} />
                                 {brand !== "fw" && <TipRiga l="punti" r={fmtPt(pt)} />}
                                 {r.det.map(([l, v]) => <TipRiga key={l} l={l} r={fmtN(v)} />)}
@@ -978,7 +978,7 @@ function CartaOperatore({ brand, ctx, size }) {
                             </div>}>
                                 <div onClick={(e) => { e.stopPropagation(); setDrill({ titolo: `${G.label} · ${r.label}`, sub: ctx.etichettaScope || (ctx.persona ? `di ${ctx.persona}` : ctx.negozio), items: r.items }); }}
                                     className="grid grid-cols-[minmax(110px,1.1fr)_2fr_auto_auto] items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
-                                    <span className="text-xs font-semibold text-slate-200 truncate">{r.emoji} {r.label}</span>
+                                    <span className="text-xs font-semibold text-slate-200 truncate">{conSim(r.emoji)} {r.label}</span>
                                     <span className="h-2 rounded-full bg-white/5 overflow-hidden">
                                         <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(3, ((brand === "fw" ? r.items.length : pt) / Math.max(1, brand === "fw" ? pezzi : punti)) * 100)}%`, background: `linear-gradient(90deg, ${r.colore}55, ${r.colore})` }} />
                                     </span>
@@ -1236,7 +1236,7 @@ function WidgetPesoNegozi({ ctx }) {
                 tip: <div><TipTitolo>{GARA[b].label} · {n}</TipTitolo>
                     <TipRiga l="tuoi pezzi" r={`${fmtN(miei.length)}/${fmtN(store.length)}`} colore={GARA[b].colore} />
                     {b !== "fw" && <TipRiga l="tuoi punti" r={`${fmtPt(somma(miei))}/${fmtPt(somma(store))}`} />}
-                    {righe.map((r) => <TipRiga key={r.label} l={<>{r.emoji} {r.label}</>} r={b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtN(r.items.length)} pz · ${fmtPt(somma(r.items))} pt`} colore={r.colore} />)}
+                    {righe.map((r) => <TipRiga key={r.label} l={<>{conSim(r.emoji)} {r.label}</>} r={b === "fw" ? `${fmtN(r.items.length)} pz` : `${fmtN(r.items.length)} pz · ${fmtPt(somma(r.items))} pt`} colore={r.colore} />)}
                 </div>,
             });
         }
@@ -1326,7 +1326,7 @@ function WidgetSquadra({ ctx, metrica }) {
                 // disegnata, cioè un nodo React. Dentro un template literal
                 // diventava «[object Object]» stampato a video nei tooltip dei
                 // widget «Squadra — punti» (rilevato dal revisore 31/08).
-                l: <>{r.emoji} {r.label}</>, r: `${fmtPt(somma(r.items))} pt · ${r.items.length} pz`, colore: r.colore
+                l: <>{conSim(r.emoji)} {r.label}</>, r: `${fmtPt(somma(r.items))} pt · ${r.items.length} pz`, colore: r.colore
             }));
         return { k, label: k, val, det, me: norm(k) === norm(ctx.persona), colore: metrica === "pezzi" ? "#818cf8" : GARA[metrica].colore };
     }).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
@@ -1497,7 +1497,7 @@ function WidgetMixPezzi({ ctx }) {
                 {att && dett.map((rg) => (
                     <span key={rg.label} className="flex items-center gap-1 text-[9px] text-slate-300 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10">
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: rg.colore || att.g.colore }} />
-                        {rg.emoji} {rg.label} · <b className="text-slate-100 tabular-nums">{fmtN(rg.items.length)}</b>
+                        {conSim(rg.emoji)} {rg.label} · <b className="text-slate-100 tabular-nums">{fmtN(rg.items.length)}</b>
                     </span>
                 ))}
                 {!att && <span className="text-[9px] text-slate-600">passa sull'anello o sulle righe · click per bloccare</span>}
@@ -2051,7 +2051,7 @@ function BloccoBrandRete({ ctx, brand }) {
                                 poi il target, poi quanto manca — ognuno solo se lo
                                 spazio lo paga davvero */}
                             <div className="tf-foot">
-                                <p className="l1">{emo(x)} {nome(x)}</p>
+                                <p className="l1">{conSim(emo(x))} {nome(x)}</p>
                                 <div className="l2">
                                     {x.presa ? <span className="tf-mini text-white" style={{ background: `${b.colore}cc` }}>S{x.presa.tier} presa</span>
                                         : x.scala.length > 0 ? <span className="tf-mini text-slate-400 bg-white/5">sotto la S1</span> : null}
@@ -2090,7 +2090,7 @@ function BloccoBrandRete({ ctx, brand }) {
                 costava 23-38px per nulla. */}
             <div className="tf-rb-bar">
                 {inDrill && (
-                    <SogliaBar label={nome(inDrill)} emoji={emo(inDrill)} punti={inDrill.punti} pezzi={inDrill.unit === "pz" ? null : inDrill.pezzi}
+                    <SogliaBar label={nome(inDrill)} emoji={conSim(emo(inDrill))} punti={inDrill.punti} pezzi={inDrill.unit === "pz" ? null : inDrill.pezzi}
                         soglie={inDrill.scala} colore={b.colore} proiezione={inDrill.proiezione} gate={inDrill.gate}
                         malus={inDrill.obbligo && inDrill.obbligo.fatti < inDrill.obbligo.su
                             ? `${inDrill.obbligo.su - inDrill.obbligo.fatti} codici sotto il minimo di ${inDrill.obbligo.quota}` : null}
@@ -2103,7 +2103,12 @@ function BloccoBrandRete({ ctx, brand }) {
     );
 }
 // le stesse emoji del Master: gli anelli senza erano un po' morti (Luca 28/08)
-const PISTA_EMOJI_RETE = { mobile: <IconaSim px={13} />, fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", luce: "💡", gas: "🔥", energia: "⚡", sky: "🟣", cb: "🔁", smartphone_cb: "📲", business_mobile: "💼", business_fisso: "💼", business_piva: "💼", soluzioni_digitali: "🧩", vas: "✨", protetti: "🛟", device: "📲", t2: "🌐" };
+/* LE EMOJI DI PISTA SONO STRINGHE, sempre (revisore 31/08). Qui `mobile`
+   conteneva l'icona disegnata, cioè un nodo React: finiva dentro un
+   `title={`${emo(x)} ${nome(x)}`}` e il browser stampava «[object Object]
+   Mobile» sul tooltip degli anelli di Rete. Il disegno lo mette `conSim()`
+   nei punti che disegnano; il title resta una frase leggibile. */
+const PISTA_EMOJI_RETE = { mobile: SIM_TESTO, fisso: "🌐", assicurazioni: "🛡", lucegas: "⚡", luce: "💡", gas: "🔥", energia: "⚡", sky: "🟣", cb: "🔁", smartphone_cb: "📲", business_mobile: "💼", business_fisso: "💼", business_piva: "💼", soluzioni_digitali: "🧩", vas: "✨", protetti: "🛟", device: "📲", t2: "🌐" };
 const PISTA_LABEL_RETE = { mobile: "Mobile", fisso: "Fisso", assicurazioni: "Assicurazioni", lucegas: "Luce & Gas", sky: "Punti Sky", business_mobile: "Biz mobile", business_fisso: "Biz fisso", business_piva: "Biz P.IVA", cb: "Customer Base", smartphone_cb: "Smartphone CB", soluzioni_digitali: "Sol. digitali", vas: "VAS", luce: "Luce", gas: "Gas", energia: "Luce & Gas", t2: "Fastweb T2", protetti: "W3 Protetti", device: "Telefoni & device", completezza: "Bonus Completezza" };
 
 /* ═══ REGISTRO ═════════════════════════════════════════════════════════

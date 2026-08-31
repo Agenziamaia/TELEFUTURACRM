@@ -702,8 +702,9 @@ function CallerPageInner() {
     // OPZIONI AMMINISTRABILI (mig. 105): stati/esiti, provenienze, tipologie e
     // obiettivi arrivano da caller_opzioni (Amministrazione → Call Center);
     // tabella vuota o non raggiungibile = liste storiche in codice. Gli stati
-    // con automatismi (NR → WhatsApp, richiami, appuntamenti → calendario)
-    // sono riconosciuti PER NOME: valgono finche' il nome resta quello.
+    // con automatismi (WhatsApp, richiami, appuntamenti → calendario) si
+    // riconoscono dal COMPORTAMENTO scelto nel pannello, non piu' dal nome
+    // (mig. 119): rinominare uno stato non ne spegne piu' l'automatismo.
     const [opzioniDb, setOpzioniDb] = useState<Record<string, string[]>>({});
     // COMPORTAMENTI degli stati (mig. 119): appuntamento/richiamo/non_risposto,
     // configurabili dal pannello — prima erano riconosciuti PER NOME nel codice
@@ -2417,7 +2418,12 @@ function CallerPageInner() {
     const isSegnalazione = editCall && editCall.provenienza === "Segnalazione";
     const isMarketing = editCall && editCall.provenienza === "Marketing";
     const isInterno = editCall && editCall.provenienza === "Interno";
-    const needsWhatsapp = editCall && NRD_STATI.includes(editCall.stato);
+    /* ANCHE L'APPUNTAMENTO SALTATO CHIEDE IL WHATSAPP (revisore 31/08). Il
+       messaggio parte davvero — gli stati «saltato» hanno i loro testi, quelli
+       che propongono di riprogrammare — ma il selettore Sì/No non compariva:
+       era vincolato ai soli «non risposto». Il caller mandava il messaggio e
+       non poteva dire di averlo mandato. */
+    const needsWhatsapp = editCall && (NRD_STATI.includes(editCall.stato) || SALT_STATI.includes(editCall.stato));
     const needsRichiamo = editCall && RIC_STATI.includes(editCall.stato);
 
     const isListeView = currentView === "liste";

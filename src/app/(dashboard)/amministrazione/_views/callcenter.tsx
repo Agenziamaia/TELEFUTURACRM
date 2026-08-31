@@ -4,8 +4,9 @@
 // sezione Caller — esiti/stati, provenienze, tipologie e obiettivi. Le voci
 // vivono in caller_opzioni: aggiungi, rinomina, riordina, spegni (le pratiche
 // gia' salvate mantengono il testo con cui sono state esitate). ATTENZIONE:
-// gli stati con automatismi (NR → WhatsApp, richiami, appuntamenti →
-// calendario) sono riconosciuti PER NOME nel codice del Caller.
+// gli stati con automatismi (WhatsApp, richiami, appuntamenti →
+// calendario) si riconoscono dal COMPORTAMENTO scelto qui, non
+// piu' dal nome (mig. 119).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Phone, Plus, ChevronUp, ChevronDown, MessageSquare } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";

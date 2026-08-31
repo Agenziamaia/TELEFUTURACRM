@@ -606,7 +606,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
             {CATALOGO.filter(espandibile).map(c=>(
                 <button key={c.cat} onClick={()=>{setCatApertaId(catApertaId===c.cat?null:c.cat);setSelProd(null);}}
                   className={cn("rvPill",catApertaId===c.cat&&"rvPill-on")}>
-                  {/^esim/i.test(nomeCat(c))?"📲":"📶"} {nomeCat(c)} <span style={{opacity:.55}}>{c.items.length}</span>
+                  {/^esim/i.test(nomeCat(c))?"📲":<IconaSim px={13}/>} {nomeCat(c)} <span style={{opacity:.55}}>{c.items.length}</span>
                 </button>))}
             {catApertaId&&(()=>{
               const c=CATALOGO.find(x=>x.cat===catApertaId);
@@ -5190,7 +5190,10 @@ function CRM() {
   // compilano in un MODALE centrale invece che inline. {gid,si,subId}
   const [prodModal,setProdModal]=useState(null);
   // icone su richiesta: Wallet=portafogli, Ric.Auto=banca, il resto invariato
-  const iconW3Cat=(g)=>{const n=String(g.title||"").toLowerCase();if(n.includes("wallet"))return "💲";if(n.includes("ric."))return "💳";if(n.includes("ric auto"))return "💳";if(n.includes("sostituz"))return "🪪";return g.icon;};
+  // «Telefono a Rate» sta nel macro mobile ma NON e' una SIM: e' un apparecchio,
+  // e tiene il telefono (Luca 31/08 — il resto del macro mobile e' passato alla
+  // SIM disegnata, questa categoria no).
+  const iconW3Cat=(g)=>{const n=String(g.title||"").toLowerCase();if(n.includes("wallet"))return "💲";if(n.includes("ric."))return "💳";if(n.includes("ric auto"))return "💳";if(n.includes("sostituz"))return "🪪";if(n.includes("telefono"))return "📱";return g.icon;};
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
   // le tendine del terminale leggono il listino di QUESTO brand
@@ -5291,7 +5294,10 @@ function CRM() {
         else if(cmp.nome==="Seriale SIM (ICCID)")det["ICCID"]=raw||"";
         else det[cmp.nome]=raw||"";
       });
-      items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det,
+      // il carrello mostra la STESSA icona della griglia (revisore 31/08: prima
+      // prendeva g.icon grezzo, quindi Wallet e Ric.Auto avevano due segni
+      // diversi nei due posti, e il telefono restava sulle SIM)
+      items.push({macro:g.title,macroColor:g.color,macroIcon:iconW3Cat(g),sub:sub.title,saleNum:si+1,details:det,
         // coordinate dell'articolo nella selezione (Luca 11/08): servono al 🗑
         // del carrello per togliere ESATTAMENTE questa voce da sales/sv
         gId:g.id,saleIdx:si,subId:sub.id,

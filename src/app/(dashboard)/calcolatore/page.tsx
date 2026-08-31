@@ -18,6 +18,7 @@ import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { SogliaBar as SogliaBarRaw } from "../analisi/_charts";
 import { useAuth } from "@/context/AuthContext";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 import {
     CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
     calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigheAttivazione, matchRigaTabellare, matchRigheGaraParallela, PISTE_PARALLELE, giorniLavorativiMese, payPerRiga, payEuroAttivazione, puntiPerRighe, esclusaDalleGare, sostituzioneSim, PARALLELE_SOLO_AZIENDA, FASCIA_SP } from "@/lib/commissioning";
@@ -57,7 +58,10 @@ const meseCorrente = () => {
 // il componente del master non ha props tipizzati (TS inferisce never[] sui
 // default): lo si adotta con la firma vera, senza toccare il file dell'Analisi
 const SogliaBar = SogliaBarRaw as unknown as (p: {
-    emoji?: string; label: string; punti: number; pezzi?: number | null;
+    /* `emoji` può essere anche un DISEGNO (l'icona SIM): la barra lo rende come
+       figlio JSX, quindi un nodo va benissimo — è il testo intorno che deve
+       restare una stringa. */
+    emoji?: React.ReactNode; label: string; punti: number; pezzi?: number | null;
     soglie?: PaySoglia[]; colore?: string; gate?: string | null; malus?: string | null;
     nota?: string | null; proiezione?: number | null; onClick?: () => void; unit?: string;
 }) => React.ReactElement;
@@ -65,7 +69,7 @@ const SogliaBar = SogliaBarRaw as unknown as (p: {
 // emoji di pista, stessa semantica del tabellare (la barra del master ne ha una)
 const emojiPistaCalc = (nome: string): string => {
     const n = String(nome || "").toLowerCase();
-    return /mobile|\bsim\b/.test(n) ? "📱" : /fisso|wireline|fwa/.test(n) ? "🏠"
+    return /mobile|\bsim\b/.test(n) ? SIM_TESTO : /fisso|wireline|fwa/.test(n) ? "🏠"
         : /luce/.test(n) ? "💡" : /\bgas\b/.test(n) ? "🔥" : /energia|energy/.test(n) ? "⚡"
         : /telefon|device|smartphone/.test(n) ? "📞" : /assicur/.test(n) ? "🛡"
         : /boost|extra/.test(n) ? "🚀" : /\bvas\b|soluzioni|digital/.test(n) ? "🧩"
@@ -807,7 +811,7 @@ export default function CalcolatorePage() {
                                 return (
                                     <div key={p.chiave} className="mb-2.5 last:mb-0">
                                         <SogliaBar
-                                            emoji={emojiPistaCalc(p.nome)}
+                                            emoji={conSim(emojiPistaCalc(p.nome))}
                                             label={appoggiate.length ? "Energia · soglia unica" : p.nome}
                                             punti={a.punti} pezzi={a.pezzi} soglie={scalaP}
                                             colore={meta?.color || "#6366f1"}

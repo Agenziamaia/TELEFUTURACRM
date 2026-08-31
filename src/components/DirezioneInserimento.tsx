@@ -31,9 +31,10 @@ import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
 import { PISTE_PARALLELE } from "@/lib/commissioning";
 import { TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { cn } from "@/utils";
+import { conSim } from "@/components/IconaSim";
 
 const SogliaBar = SogliaBarRaw as unknown as (p: {
-    label: string; emoji?: string; punti: number; pezzi?: number;
+    label: string; emoji?: React.ReactNode; punti: number; pezzi?: number;
     soglie: { tier: number; soglia_da: number }[]; colore?: string;
     proiezione?: number | null; nota?: string | null; unit?: string;
     targetDir?: number | null;
@@ -452,7 +453,7 @@ export function DirezioneInserimentoAdmin() {
                                             <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
                                                 className="w-full flex flex-wrap items-center gap-x-2 text-[11px] text-left rounded-md px-1.5 py-0.5 hover:bg-white/5">
                                                 <span className="font-bold text-slate-200 min-w-[120px]">{nomeCod(x.cod_gara)}</span>
-                                                <span className="text-slate-400">{EMOJI_PISTA(nomePista(x.pista))} {nomePista(x.pista)}</span>
+                                                <span className="text-slate-400">{conSim(EMOJI_PISTA(nomePista(x.pista)))} {nomePista(x.pista)}</span>
                                                 <span className="text-slate-500">loro {it(x.ufficiale)} · noi {it(x.nostro)}</span>
                                                 <span className="font-black text-rose-200">+{it(x.scarto)}</span>
                                                 <span className="ml-auto text-slate-600">apri →</span>
@@ -467,7 +468,7 @@ export function DirezioneInserimentoAdmin() {
                                             <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
                                                 className="w-full flex flex-wrap items-center gap-x-2 text-[11px] text-left rounded-md px-1.5 py-0.5 hover:bg-white/5">
                                                 <span className="font-bold text-slate-200 min-w-[120px]">{nomeCod(x.cod_gara)}</span>
-                                                <span className="text-slate-400">{EMOJI_PISTA(nomePista(x.pista))} {nomePista(x.pista)}</span>
+                                                <span className="text-slate-400">{conSim(EMOJI_PISTA(nomePista(x.pista)))} {nomePista(x.pista)}</span>
                                                 <span className="text-slate-500">loro {it(x.ufficiale)} · noi {it(x.nostro)}</span>
                                                 <span className="font-black text-slate-300">{it(x.scarto)}</span>
                                                 <span className="ml-auto text-slate-600">apri →</span>
@@ -552,7 +553,7 @@ export function DirezioneInserimentoAdmin() {
                             const bozzaSfr = bozzeSfr[p.chiave] ?? (sfrido ? String(sfrido) : "");
                             return (
                                 <div key={p.chiave} className="flex items-center gap-1.5">
-                                    <span className="text-xs text-slate-300 font-semibold">{EMOJI_PISTA(p.nome)} {p.nome}</span>
+                                    <span className="text-xs text-slate-300 font-semibold">{conSim(EMOJI_PISTA(p.nome))} {p.nome}</span>
                                     <input value={bozzaSfr} onChange={(e) => setBozzeSfr((b) => ({ ...b, [p.chiave]: e.target.value }))}
                                         onBlur={() => {
                                             if (String(bozzaSfr).trim() === "") { setBozzeSfr((b) => ({ ...b, [p.chiave]: sfrido ? String(sfrido) : "" })); return; }
@@ -702,7 +703,7 @@ export function DirezioneInserimentoAdmin() {
                         </button>
                         {recapAperto && righe.map((r) => (
                             <div key={r.pk} className="space-y-1">
-                                <SogliaBar emoji={EMOJI_PISTA(r.meta.nome)}
+                                <SogliaBar emoji={conSim(EMOJI_PISTA(r.meta.nome))}
                                     label={r.richiesto > 0 ? `${r.meta.nome} · richiesti ${it(r.richiesto)}` : `${r.meta.nome} · nessun target dato`}
                                     punti={r.richiesto > 0 ? r.utile : r.fatto}
                                     soglie={r.richiesto > 0 ? [{ tier: 1, soglia_da: r.richiesto }] : []}
@@ -782,7 +783,7 @@ export function DirezioneInserimentoAdmin() {
                                                     acceso
                                                         ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100"
                                                         : "border-white/[0.08] bg-white/[0.03] text-slate-500 hover:text-slate-200 hover:bg-white/[0.07]")}>
-                                                {EMOJI_PISTA(v.nome)} {v.nome}
+                                                {conSim(EMOJI_PISTA(v.nome))} {v.nome}
                                             </button>
                                         );
                                     })}
@@ -811,7 +812,7 @@ export function DirezioneInserimentoAdmin() {
                                 const projRete = proiezioneDir(dir, puntiRete);
                                 return (
                                     <div key={pg} className="space-y-2">
-                                        <SogliaBar emoji={EMOJI_PISTA(meta.nome)} label={`${meta.nome} · rete`}
+                                        <SogliaBar emoji={conSim(EMOJI_PISTA(meta.nome))} label={`${meta.nome} · rete`}
                                             punti={puntiRete} pezzi={pezziRete} soglie={scalaRete}
                                             colore={bMeta.color} proiezione={projRete}
                                             unit={meta.um === "pezzi" ? "pz" : "pt"} nota={null} />
@@ -1014,7 +1015,7 @@ export function DirezioneInserimentoAdmin() {
                                                             solaQui
                                                                 ? "bg-indigo-500/20 border-indigo-400/50"
                                                                 : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20")}>
-                                                        <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{EMOJI_PISTA(sm.nome)} {sm.nome}</span>
+                                                        <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{conSim(EMOJI_PISTA(sm.nome))} {sm.nome}</span>
                                                         {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
                                                         <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
                                                     </button>
@@ -1073,7 +1074,7 @@ export function DirezioneInserimentoAdmin() {
                                                 {(scPiu || scMeno) && <span className={cn("text-[10px] font-black leading-none", scPiu ? "text-rose-200" : "text-slate-300")}>≠</span>}
                                                 {semCompatti.map((sm) => (
                                                     <span key={sm.chiave} title={tipPallino(sm)} className="flex items-center gap-0.5">
-                                                        <span className="text-[11px] leading-none">{EMOJI_PISTA(sm.nome)}</span>
+                                                        <span className="text-[11px] leading-none">{conSim(EMOJI_PISTA(sm.nome))}</span>
                                                         <span className={cn("w-2 h-2 rounded-full", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
                                                     </span>
                                                 ))}
@@ -1114,7 +1115,7 @@ export function DirezioneInserimentoAdmin() {
                                                     {/* LA BARRA come in Analisi → Rete: produzione piena,
                                                         proiezione a strisce, tacche alle soglie */}
                                                     <SogliaBar
-                                                        emoji={EMOJI_PISTA(p.nome)} label={cbW3 ? `${p.nome} · punti` : p.nome}
+                                                        emoji={conSim(EMOJI_PISTA(p.nome))} label={cbW3 ? `${p.nome} · punti` : p.nome}
                                                         punti={avz.punti} pezzi={avz.pezzi}
                                                         soglie={(scala || []).map((s, i) => ({ tier: i + 1, soglia_da: Number(s) }))}
                                                         colore={bMeta.color} proiezione={proj}
@@ -1639,7 +1640,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
                                 className={cn("px-3 py-1.5 rounded-xl text-xs font-bold border transition-all",
                                     pista === p.chiave ? "text-white border-transparent scale-105" : "bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/10")}
                                 style={pista === p.chiave ? { background: bMeta?.color || "#38bdf8", boxShadow: `0 0 12px color-mix(in srgb, ${bMeta?.color || "#38bdf8"} 50%, transparent)` } : undefined}>
-                                {EMOJI_PISTA(p.nome)} {p.nome}
+                                {conSim(EMOJI_PISTA(p.nome))} {p.nome}
                             </button>
                         ))}
                     </div>
