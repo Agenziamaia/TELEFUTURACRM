@@ -57,6 +57,21 @@ const REGOLE: Record<string, "sessione" | "casella" | "numero"> = {
 const primaCartella = (p: string) => p.split("/")[0] || "";
 
 export async function GET(request: Request, ctx: { params: Promise<{ percorso: string[] }> }) {
+    /* ⚠️ PRIMA DI TUTTO: senza la chiave di servizio qui non si firma niente.
+       `supabaseAdmin`, se non ce l'ha, ripiega sulla chiave pubblica — che su
+       un deposito privato non può firmare — e il risultato sarebbe un «file
+       non trovato» misterioso su OGNI allegato dell'azienda, con mezz'ora
+       persa a cercarlo nel posto sbagliato.
+       Sta prima dell'autenticazione di proposito: «il server è configurato
+       male» è vero indipendentemente da chi chiede, e questa rotta è l'unico
+       posto da cui si può sapere se la chiave c'è prima di girarla — cioè
+       prima di chiudere tredici gigabyte al buio. */
+    if (!serviceRolePresente()) {
+        console.error("[file] manca SUPABASE_SERVICE_ROLE_KEY: gli indirizzi non si possono firmare.");
+        return NextResponse.json(
+            { error: "Configurazione incompleta: manca la chiave di servizio." }, { status: 503 });
+    }
+
     /* «file» non è una sezione del menù: `accesso` si limita a pretendere la
        sessione firmata, che è il salto che conta — oggi questi file li
        scarica Internet. Il resto lo decidono le regole qui sotto. */
@@ -88,16 +103,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ percorso: s
         if (data !== true) return NextResponse.json({ error: "Questo file non è tuo." }, { status: 403 });
     }
 
-    /* ⚠️ SENZA LA CHIAVE DI SERVIZIO NON SI FIRMA NIENTE, e va detto forte:
-       `supabaseAdmin` in sua assenza ripiega sulla chiave pubblica, che su un
-       deposito privato non può firmare. Il risultato sarebbe un «file non
-       trovato» misterioso su OGNI allegato dell'azienda, e mezz'ora persa a
-       cercarlo nel posto sbagliato. */
-    if (!serviceRolePresente()) {
-        console.error("[file] manca SUPABASE_SERVICE_ROLE_KEY: gli indirizzi non si possono firmare.");
-        return NextResponse.json(
-            { error: "Configurazione incompleta: manca la chiave di servizio." }, { status: 503 });
-    }
     const { data, error } = await supabaseAdmin.storage.from(deposito).createSignedUrl(dentro, 300);
     if (error || !data?.signedUrl) {
         return NextResponse.json({ error: "File non trovato." }, { status: 404 });
