@@ -837,7 +837,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     {cerca.trim().replace(/[\s./-]/g, "").length >= 8 && (
                         <button onClick={() => setSeriale(cerca.trim().replace(/[\s./-]/g, ""))}
                             className="rvPill rvPill-sm" title="Cerca questo seriale ovunque: magazzino, permute, vendite">
-                            🕰 Storia di questo seriale</button>
+                            🕰 Storico</button>
                     )}
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
                         <SelectMulti className="rvIn"
