@@ -3217,6 +3217,10 @@ function WidgetRegiaTask({ ctx, size }) {
    può aggiungere per sbaglio, e chi già ce l'ha in un layout salvato se lo
    vede sparire (risolviLayout filtra su infoWidget). */
 
+/** Chi inserisce le vendite senza stare in un punto vendita: il back office.
+ *  Per loro la Bussola vale come per i negozi — è il loro mestiere. */
+const BACKOFFICE = ["back_office_caller", "back_office"];
+
 const FISSI = {
     soglia_euro: { label: "Vale X€", icon: Euro, sizes: [1, 2], def: 1, gruppo: "performance" , aree: ["pv", "ob"] },
     treno19: { label: "Il Treno delle 19", icon: TrainFront, sizes: [1, 2], def: 1, gruppo: "strumenti" , aree: ["pv", "ob"] },
@@ -3242,7 +3246,14 @@ const FISSI = {
        Da 6 a 8 colonne su 16 — con il passo «Cosa c'e' dentro?» le pastiglie
        andavano a capo e il consiglio finiva schiacciato. minW = maxW = 8:
        non si puo' piu' rimpicciolire, perche' sotto non e' leggibile. */
-    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], minW: 8, maxW: 8, minH: 4, maxH: 4, defW: 8, defH: 4 },
+    /* LA BUSSOLA VALE ANCHE PER IL BACK OFFICE (Luca 31/08: «Alex Coviello non
+       ha i widget dedicati per gli inserimenti; essendo del back office il
+       widget inserimenti deve averlo, e dev'essere obbligatorio»). L'area del
+       suo ruolo è «cc», che il filtro escludeva — ma la Bussola non serve a
+       chi VENDE, serve a chi INSERISCE, e il back office inserisce. `piuRuoli`
+       aggiunge i ruoli oltre l'area, senza aprire il widget a tutto il call
+       center (i caller non caricano vendite). */
+    bussola: { label: "Direzione inserimento", icon: Compass, sizes: [2, 4], def: 2, gruppo: "strumenti" , aree: ["pv"], piuRuoli: BACKOFFICE, minW: 8, maxW: 8, minH: 4, maxH: 4, defW: 8, defH: 4 },
     obiettivo: { label: "Obiettivo", icon: TargetIcon, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     azioni: { label: "Azioni e to-do", icon: Zap, sizes: [1, 2], def: 1, gruppo: "strumenti" },
     bacheca: { label: "Bacheca aziendale", icon: Megaphone, sizes: [1, 2, 4], def: 2, gruppo: "comunicazione" },
@@ -3283,7 +3294,9 @@ export function infoWidget(id, ctx) {
     if (f.ruoli && !ctx.seesAll && !f.ruoli.includes(ctx.user?.role)) return null;
     // AREA DEL RUOLO: chi vede tutta la rete (admin, direzione generale,
     // amministrativo) non si filtra — deve poter guardare qualunque cosa.
-    if (f.aree && !ctx.seesAll && !f.aree.includes(areaDi(ctx.user?.role))) return null;
+    // …e ruoli che valgono OLTRE l'area (la Bussola per il back office)
+    const oltreArea = f.piuRuoli && f.piuRuoli.includes(ctx.user?.role);
+    if (f.aree && !ctx.seesAll && !oltreArea && !f.aree.includes(areaDi(ctx.user?.role))) return null;
     return { id, ...f, perTutti: !f.aree };
 }
 
@@ -3424,7 +3437,8 @@ export function risolviLayout(salvato, ctx) {
 export function widgetObbligatorio(id, ctx) {
     if (id !== "bussola") return false;
     if (ctx.seesAll) return false;
-    return areaDi(ctx.user?.role) === "pv";
+    // punto vendita e back office: a tutti e due la Bussola non si toglie
+    return areaDi(ctx.user?.role) === "pv" || BACKOFFICE.includes(ctx.user?.role);
 }
 
 export function widgetsDisponibili(ctx, giaPresenti) {
