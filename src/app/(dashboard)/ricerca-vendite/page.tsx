@@ -846,8 +846,22 @@ export default function RicercaContratto() {
         // E si può incollarne PIÙ DI UNO — separati da virgola, spazio o a
         // capo: chi arriva da un foglio ne ha una colonna, non uno solo.
         if (filterCodice.trim()) {
-            const codici = filterCodice.split(/[\s,;\n]+/).map((x) => x.trim().replace(/[",()]/g, "")).filter(Boolean);
-            if (codici.length) query = query.or(codici.flatMap((c) => [`id.ilike.%${c}%`, `codice_attivazione.ilike.%${c}%`]).join(","));
+            // via anche `*` e `%`: PostgREST li legge come JOLLY, e un asterisco
+            // sfuggito da un incolla restituiva l'intera tabella invece di zero
+            // risultati. E un tetto: oltre ~190 codici l'indirizzo della
+            // richiesta sfonda e la connessione cade senza un messaggio.
+            const codici = filterCodice.split(/[\s,;\n]+/)
+                .map((x) => x.trim().replace(/[",()*%]/g, ""))
+                // almeno tre caratteri utili: un «-» da solo pescherebbe tutto,
+                // visto che il codice del CRM il trattino ce l'ha sempre
+                .filter((x) => x.replace(/[^A-Za-z0-9]/g, "").length >= 3)
+                .slice(0, 100);
+            // la colonna calcolata mette insieme il codice nostro, quello
+            // dell'operatore e le copie nei dettagli (vedi la migrazione
+            // 20260831130000): su 32 pratiche il codice operatore vive SOLO lì
+            query = codici.length
+                ? query.or(codici.map((c) => `codici_contratto.ilike.%${c}%`).join(","))
+                : query.eq("id", "__nessun_codice_valido__");
         }
         if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
         if (filterProdotti !== null) query = query.in("prodotto", filterProdotti);
@@ -887,7 +901,20 @@ export default function RicercaContratto() {
         // per 39, non un prefisso — e su un fisso «+39 06…» la distinzione
         // conta, perché lì le cifre da sole non bastano a capirlo.
         const soloCifreTel = (v: string) => v.replace(/^\s*(?:\+|00)39/, "").replace(/\D/g, "");
-        if (soloCifreTel(filterCellulare)) query = query.ilike("numeri_telefono", `%${soloCifreTel(filterCellulare)}%`);
+        if (filterCellulare.trim()) {
+            // se ne può cercare più d'uno, come per i codici
+            const numeri = filterCellulare.split(/[\s,;\n]+/).map(soloCifreTel).filter((n) => n.length >= 4).slice(0, 50);
+            // QUATTRO CIFRE MINIME (è la stessa soglia di Usati e Registra
+            // vendita): «3» da solo pescherebbe l'84% delle pratiche, «39» il
+            // 24%, e quello non è un filtro, è un elenco.
+            // E se il campo è scritto ma non ne resta niente di cercabile — «+39»,
+            // due cifre, delle lettere — NON si può lasciar cadere la condizione:
+            // l'utente vedrebbe tutta la lista credendo di aver filtrato. Meglio
+            // zero risultati, che è la verità.
+            query = numeri.length
+                ? query.or(numeri.map((n) => `numeri_telefono.ilike.%${n}%`).join(","))
+                : query.eq("id", "__nessun_numero_valido__");
+        }
         // Segnalazione 80: i filtri data valgono per elenco E tessere insieme.
         // Le date sono in formato AAAA-MM-GG, quindi il confronto e' diretto.
         const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
@@ -2058,7 +2085,7 @@ export default function RicercaContratto() {
                     {/* 9. Numero di cellulare */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Numero di telefono</label>
-                        <input type="text" placeholder="Es. 3331234567" title="Cerca fra tutti i numeri della pratica: anagrafica, provvisorio, definitivo, fisso"
+                        <input type="text" placeholder="Es. 3331234567" title="Cerca fra tutti i numeri della pratica: anagrafica, provvisorio, definitivo, fisso. Almeno 4 cifre; più numeri separati da una virgola."
                             className="glass-input w-full" value={filterCellulare} onChange={e => setFilterCellulare(e.target.value)} />
                     </div>
                 </div>
