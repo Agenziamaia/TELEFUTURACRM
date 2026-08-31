@@ -23,6 +23,7 @@ import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, capAllowed, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_RICERCA_NON_VALIDA } from "@/lib/capabilities";
 import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento } from "@/lib/matchAppuntamento";
+import { percorsoDaUrl } from "@/lib/fileUrl";
 
 interface ContrattoRow {
     id: string;
@@ -1391,7 +1392,7 @@ export default function RicercaContratto() {
             // verifica 06/08: su errore count è null — senza il check il file
             // veniva cancellato SENZA conteggio (l'opposto del best-effort)
             if (!cntErr && count === 0) {
-                const path = decodeURIComponent(a.file_url.split("/object/public/contracts/")[1] || "");
+                const path = percorsoDaUrl(a.file_url, "contracts");
                 if (path) await supabase.storage.from("contracts").remove([path]);
             }
         } catch { /* best-effort */ }
