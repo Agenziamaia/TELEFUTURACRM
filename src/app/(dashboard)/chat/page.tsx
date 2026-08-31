@@ -91,8 +91,13 @@ function lastSeen(s) {
 }
 
 function ChatPageInner() {
-  const { user } = useAuth();
-  const meId = user?.id;
+  const { user, realUserId } = useAuth();
+  // CHI SCRIVE E' SEMPRE L'ACCOUNT VERO, anche mentre si «guarda come» un
+  // altro: il lasciapassare per il database e' firmato su quello, e dal 31/08
+  // le funzioni della chat rifiutano — giustamente — di aprire una
+  // conversazione a nome di un'identita' diversa da chi chiama. In «guarda
+  // come» si guarda, non si scrive al posto di qualcun altro.
+  const meId = realUserId ?? user?.id;
   const meName = user?.name || "";
   // reazioni rapide stile Telegram + set del picker del compositore
   const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "👏"];
@@ -453,8 +458,13 @@ function ChatPageInner() {
   const versoReazioni = (btn: HTMLElement | null, alto: number) => {
     const r = btn?.getBoundingClientRect();
     if (!r) return false;
-    const cima = Math.max(scrollRef.current?.getBoundingClientRect().top ?? 0, 0);
-    return r.top - cima < alto + 8;
+    const lista = scrollRef.current?.getBoundingClientRect();
+    const cima = Math.max(lista?.top ?? 0, 0);
+    const fondo = lista?.bottom ?? window.innerHeight;
+    const sopra = r.top - cima, sotto = fondo - r.bottom;
+    // si scende solo se sopra non ci sta E sotto c'e' piu' spazio: su una
+    // finestra bassa, aprire in giu' per forza sfonderebbe dall'altra parte
+    return sopra < alto + 8 && sotto > sopra;
   };
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
@@ -840,7 +850,11 @@ function ChatPageInner() {
               )}
             </div>
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+            {/* scorrendo, un menu ancorato al messaggio si porta dietro la sua
+                posizione ma non il suo verso: si chiude, come fanno WhatsApp e
+                Telegram, invece di restare aperto storto */}
+            <div ref={scrollRef} onScroll={() => { if (reactFor) { setReactFor(null); setReactPickerFor(null); } }}
+              className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
               {messages.map((m) => {
                 const mine = m.sender_id === meId;
                 // Segnalazione 74: messaggio citato (se e' stato eliminato resta il segnaposto)
@@ -876,7 +890,7 @@ function ChatPageInner() {
                     <button type="button" title="Reagisci"
                       onClick={(ev) => {
                         setReactPickerFor(null);
-                        // 44px = la riga delle reazioni rapide, misurata
+                        // 44px = la riga rapida (36 di menu + 8 di margine), misurata
                         if (reactFor !== m.id) setReactGiu(versoReazioni(ev.currentTarget, 44));
                         setReactFor(reactFor === m.id ? null : m.id);
                       }}
@@ -886,14 +900,21 @@ function ChatPageInner() {
                     {reactFor === m.id && !reactPickerFor && (
                       // CHT-01: sotto sm i picker si sganciano dall'ancora (fixed in
                       // basso, tutta larghezza), altrimenti sbordano dal viewport
-                      <div className={`fixed sm:absolute left-3 right-3 bottom-20 z-30 flex flex-wrap justify-center sm:justify-start gap-0.5 px-1.5 py-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${reactGiu ? "sm:top-full sm:bottom-auto sm:mt-1" : "sm:bottom-full sm:top-auto sm:mb-1"} ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
+                      // IL MENU NON DEVE COLLASSARE IN COLONNA. Da `sm` in su e'
+                      // ancorato da un lato solo, quindi la sua larghezza e' quella
+                      // dello `span` del bottone — 28px: le otto emoji si impilavano
+                      // e il menu diventava alto 248px invece di 36. Ecco perche' il
+                      // ribaltamento sembrava non bastare: la soglia era giusta, era
+                      // il menu a essere sei volte piu' alto del previsto.
+                      <div className={`fixed sm:absolute left-3 right-3 bottom-20 z-30 flex flex-wrap sm:flex-nowrap sm:w-max justify-center sm:justify-start gap-0.5 px-1.5 py-1 mb-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${reactGiu ? "sm:top-full sm:bottom-auto sm:mt-1" : "sm:bottom-full sm:top-auto sm:mb-1"} ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
                         {QUICK_REACTIONS.map((e) => (
                           <button key={e} type="button" onClick={() => onReact(m.id, e)}
                             className="text-lg leading-none p-1 rounded-full hover:bg-white/10 hover:scale-125 transition-transform">{e}</button>
                         ))}
                         {/* + = qualsiasi emoji (Luca 02/08): apre la griglia completa */}
                         <button type="button" title="Tutte le emoji"
-                          onClick={(ev) => { setReactGiu(versoReazioni(ev.currentTarget, 216)); setReactPickerFor(m.id); }}
+                          // 192px = max-h-48, il tetto vero della griglia completa
+                          onClick={(ev) => { setReactGiu(versoReazioni(ev.currentTarget, 200)); setReactPickerFor(m.id); }}
                           className="text-sm font-black leading-none px-1.5 rounded-full text-slate-300 hover:bg-white/10">＋</button>
                       </div>
                     )}

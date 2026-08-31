@@ -801,7 +801,7 @@ function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kp
 }
 
 function PresenzeAdmin() {
-    const { user } = useAuth();
+    const { user, realUserId } = useAuth();
     const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     // Correzione ED eliminazione turni dalla ROTELLINA (Luca 05/08, cap
     // corregge_turni): prima cancellare era solo-admin (25/07) e correggere
@@ -857,12 +857,15 @@ function PresenzeAdmin() {
                 const { data: dest } = await supabase.from("app_users")
                     .select("id").eq("full_name", editShift.employee_name).eq("active", true).maybeSingle();
                 if (!dest?.id) throw new Error(`"${editShift.employee_name}" non trovato tra gli utenti attivi`);
-                const { data: convId, error: eDm } = await supabase.rpc("chat_get_or_create_dm", { p_me: user.id, p_other: dest.id });
+                // l'identita' e' quella VERA dell'account (vedi chat/page.tsx):
+                // in «guarda come» il database rifiuta chi scrive a nome d'altri
+                const ioVero = realUserId ?? user.id;
+                const { data: convId, error: eDm } = await supabase.rpc("chat_get_or_create_dm", { p_me: ioVero, p_other: dest.id });
                 if (eDm || !convId) throw new Error(eDm?.message || "conversazione non creata");
                 const fmtT = (d: Date) => d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
                 const body = `⏱ Il tuo turno di ${ini.toLocaleDateString("it-IT")} è stato corretto dall'amministrazione: entrata ${fmtT(ini)}, uscita ${fmtT(fine)}, ore nette ${fmtOre(oreNette(aggiornato))}.`;
                 const { error: eMsg } = await supabase.from("chat_messages")
-                    .insert({ conversation_id: convId, sender_id: user.id, body });
+                    .insert({ conversation_id: convId, sender_id: ioVero, body });
                 if (eMsg) throw new Error(eMsg.message);
                 await supabase.from("chat_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", convId);
             } catch (e) {

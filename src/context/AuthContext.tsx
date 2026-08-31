@@ -35,6 +35,12 @@ export interface ViewAsUser { id: string; name: string; role: Role; grade?: stri
 interface AuthContextType {
     user: User | null;        // ATTENZIONE: role qui e' il ruolo EFFETTIVO (vedi viewAs)
     realRole: Role | null;    // ruolo vero dell'account, non cambia mai
+    // IDENTITA' VERA, quella dell'account con cui si e' entrati. Serve dove si
+    // SCRIVE a nome proprio: il database riconosce chi sei dal lasciapassare,
+    // che e' firmato sull'account vero — «guarda come» vive solo nel browser.
+    // Senza, chi guarda come un altro non riusciva piu' ad aprire una chat: il
+    // database rifiutava, giustamente, un'identita' che non era la sua.
+    realUserId: string | null;
     viewAs: Role | null;      // ruolo che si sta simulando (null = nessuno)
     setViewAs: (r: Role | null) => void;
     // Simulazione di un UTENTE specifico (richiesta Luca 25/07): dopo il ruolo si
@@ -354,7 +360,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [user]);
 
     return (
-        <AuthContext.Provider value={{ user, realRole: baseUser?.role ?? null, viewAs: puoCambiare ? viewAs : null, setViewAs, viewAsUser: puoCambiare ? viewAsUser : null, setViewAsUser, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ user, realRole: baseUser?.role ?? null, realUserId: baseUser?.id ?? null, viewAs: puoCambiare ? viewAs : null, setViewAs, viewAsUser: puoCambiare ? viewAsUser : null, setViewAsUser, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
             {children}
         </AuthContext.Provider>
     );
