@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 import { buildRequestXml } from "@/lib/fiscalprint";
 import { formaPagamento } from "@/lib/pos";
 import { validaCoupon, redimiCoupon } from "@/lib/coupons";
@@ -67,15 +68,37 @@ export async function POST(req: Request) {
         } catch { /* il log non deve mai fermare una vendita */ }
     };
 
-    // Mappa azienda -> RT per il negozio (multi-societario).
-    const aziende: Record<string, { rt_url: string }> = {};
+    /* ═══ I DUE REGISTRATORI DI UN LOCALE SOLO (Luca 31/08) ══════════════════
+       «Sono al Wind3, ho un cliente davanti, gli vendo un prodotto del Multi:
+        devo poter fare lo scontrino senza mandare il cliente dall'altra parte.»
+       A Magliana, Acilia e Collatina le due insegne sono la STESSA STANZA, con
+       un registratore per società a pochi metri. Prima la mappa si fermava al
+       negozio selezionato: da Magliana W3 una riga di Telefutura 2 non trovava
+       nessun registratore e veniva scartata, anche se quello giusto è lì.
+       Ora la mappa comprende i gemelli. La società resta quella della MERCE —
+       questo non si tocca, sono due partite IVA — ma il registratore si trova.
+
+       IL LAVORO VA ALL'AGENTE DEL NEGOZIO CHE POSSIEDE IL REGISTRATORE, non a
+       chi ha battuto lo scontrino: Acilia VS e Collatina W3 hanno `rt_url =
+       'custom'`, cioè l'agente usa il driver del SUO dispositivo locale. Un
+       lavoro «custom» consegnato all'agente sbagliato stamperebbe sulla
+       stampante sbagliata — e sarebbe uno scontrino fiscale emesso da chi non
+       doveva. La carta esce comunque dalla macchina di quella società, perché
+       è quella il misuratore fiscale: non c'è modo di aggirarlo, e infatti
+       Luca chiede di scegliere solo dove vanno i SOLDI (la cash machine),
+       non dove esce la carta. */
+    const aziende: Record<string, { rt_url: string; negozio: string }> = {};
     let defaultAzienda: string | null = null;
     if (negozio) {
-        const { data } = await supabase.from("pos_rt").select("azienda, rt_url, is_default").eq("negozio", negozio);
-        (data || []).forEach((r: any) => {
-            aziende[r.azienda] = { rt_url: r.rt_url };
-            if (r.is_default) defaultAzienda = r.azienda;
+        const { data: tuttiRt } = await supabase.from("pos_rt").select("negozio, azienda, rt_url, is_default");
+        const qui = (tuttiRt || []).filter((r: any) => r.negozio === negozio);
+        const accanto = (tuttiRt || []).filter((r: any) => r.negozio !== negozio && stessoMagazzino(r.negozio, negozio));
+        // prima il proprio, poi il gemello: se la stessa società avesse un
+        // registratore da entrambe le parti, vince quello dove si sta lavorando
+        [...qui, ...accanto].forEach((r: any) => {
+            if (!aziende[r.azienda]) aziende[r.azienda] = { rt_url: r.rt_url, negozio: r.negozio };
         });
+        qui.forEach((r: any) => { if (r.is_default) defaultAzienda = r.azienda; });
     }
     /* MAI LA STAMPANTE DI UN ALTRO NEGOZIO (Luca 31/08, tre negozi in prova).
        Il ripiego era un indirizzo VERO — la cassa T1 di Donna — e scattava
@@ -315,7 +338,8 @@ export async function POST(req: Request) {
         }
 
         const { data, error } = await supabase.from("print_jobs").insert({
-            negozio,
+            // l'agente di CHI POSSIEDE il registratore (vedi sopra: «custom»)
+            negozio: aziende[az]?.negozio || negozio,
             device_url: rtFor(az) || "",
             kind,
             request_xml,

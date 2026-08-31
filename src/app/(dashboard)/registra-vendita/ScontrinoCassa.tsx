@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { arrotonda5, totaleRighe, FORME_PAGAMENTO, FORME_A_MANO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 
 /* Modale "Incasso & Scontrino" — l'output fiscale di Registra Vendita.
    Si apre a vendita registrata: si compone il pagamento (fino a 3 forme, spec #2),
@@ -56,6 +57,16 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // vanno comunque al loro RT).
     const [aziende, setAziende] = useState<{ code: string; label: string }[]>([]);
     const [aziendaSel, setAziendaSel] = useState<string | null>(null);
+    /* A QUALE CASSA INCASSO (Luca 31/08). «Sono al Wind3 e faccio uno scontrino
+       di un prodotto che sta al Multi, ma faccio pagare il cliente da me: uso
+       la cash machine del Wind3.»
+       Sono due dispositivi diversi e vanno decisi separatamente: la CARTA
+       fiscale la deve emettere il registratore della società che possiede la
+       merce — non c'è modo di aggirarlo — mentre i SOLDI li prende la macchina
+       davanti a cui sta il cliente. La domanda compare solo dove le insegne
+       nello stesso locale sono più d'una. */
+    const [insegne, setInsegne] = useState<string[]>([]);
+    const [cassaSel, setCassaSel] = useState<string | null>(null);
     // Coupon sconto (spec Francesco): abbassa l'imponibile. Il residuo rigenera un nuovo coupon.
     const [couponInput, setCouponInput] = useState("");
     const [coupon, setCoupon] = useState<{ code: string; valore: number; sconto: number } | null>(null);
@@ -93,6 +104,13 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false); cancelCashRef.current = false;
         const neg = data?.negozio;
         if (!neg) return;
+        // le insegne del LOCALE: quelle con un registratore hanno anche una cassa
+        supabase.from("pos_rt").select("negozio").then(({ data: tutti }) => {
+            const nel = [...new Set((tutti || []).map((r: any) => String(r.negozio)))]
+                .filter((n) => stessoMagazzino(n, neg)).sort();
+            setInsegne(nel);
+            setCassaSel(nel.includes(neg) ? neg : (nel[0] || neg));
+        });
         supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
             const list = (rows || []).map((r: any) => ({ code: r.azienda, label: r.ragione_sociale || r.azienda, isDef: !!r.is_default }));
             setAziende(list.map((x) => ({ code: x.code, label: x.label })));
@@ -225,7 +243,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                    senza inserire soldi veri nella macchina. */
                 setIncassato(cashRounded); setResto(0); setCashDone(true); setPaidCash(cashRounded);
             } else {
-                const r = await incassaContanti(cashRounded, data.negozio);
+                const r = await incassaContanti(cashRounded, cassaSel || data.negozio);
                 if (!r || !r.ok) {
                     if (r?.cancelled) { setFase("scelta"); setMsg(""); return; }  // annullato: si torna al pagamento
                     setFase("errore");
@@ -495,6 +513,28 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                 </span>
                             </div>
                         </div>
+                        )}
+
+                        {/* A QUALE CASSA INCASSO — solo dove il locale ha più
+                            insegne, e solo se ci sono contanti da prendere. Lo
+                            scontrino esce comunque dal registratore della
+                            società che possiede la merce: qui si sceglie solo
+                            dove il cliente mette i soldi. */}
+                        {insegne.length > 1 && cashRounded > 0 && (
+                            <div>
+                                <p className="text-[11px] text-slate-500 mb-1.5">Il cliente paga alla cassa di…</p>
+                                <div className="flex gap-2">
+                                    {insegne.map((n) => (
+                                        <button key={n} type="button" onClick={() => setCassaSel(n)}
+                                            className={"flex-1 py-2.5 rounded-xl border text-xs font-bold transition "
+                                                + (cassaSel === n
+                                                    ? "bg-emerald-500/25 border-emerald-400/60 text-white"
+                                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                                            💶 {n}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         )}
 
                         {cashRounded > 0 && (

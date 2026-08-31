@@ -106,8 +106,18 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
         setSocietaQui(null);
         if (!negozio) return;
         let vivo = true;
-        supabase.from("pos_rt").select("azienda").eq("negozio", negozio).then(({ data }) => {
-            if (vivo) setSocietaQui(new Set((data || []).map((r: { azienda: string }) => r.azienda)));
+        /* ANCHE IL REGISTRATORE DELL'INSEGNA ACCANTO (Luca 31/08). Magliana,
+           Acilia e Collatina sono un locale solo con un registratore per
+           società a pochi metri: «sono al Wind3, vendo un prodotto del Multi,
+           devo poter fare lo scontrino senza mandare il cliente dall'altra
+           parte». Il registratore giusto c'è — è a tre metri. La carta esce da
+           quella macchina, perché è quella il misuratore fiscale della società
+           che possiede la merce; i SOLDI invece si incassano alla cash machine
+           di chi sta vendendo, e quella si sceglie al momento dell'incasso. */
+        supabase.from("pos_rt").select("negozio, azienda").then(({ data }) => {
+            if (!vivo) return;
+            const qui = (data || []).filter((r: { negozio: string }) => stessoMagazzino(r.negozio, negozio));
+            setSocietaQui(new Set(qui.map((r: { azienda: string }) => r.azienda)));
         });
         return () => { vivo = false; };
     }, [negozio]);
@@ -303,8 +313,8 @@ export function CassaProdotti({ negozio, venditore, onAdd, servizi, scorciatoie,
             setManca({
                 titolo: "È merce dell'altra società",
                 nome: p.nome + " · " + p.seriale,
-                dettaglio: `Questo pezzo è di ${p.azienda === "T1" ? "Telefutura" : "Telefutura 2"}, che in ${negozio} non ha un registratore di cassa: da qui lo scontrino non può uscire.`,
-                cosaFare: "battilo sulla cassa dell'altra insegna, oppure fai prima un DDT",
+                dettaglio: `Questo pezzo è di ${p.azienda === "T1" ? "Telefutura" : "Telefutura 2"}, che in questo locale non ha nessun registratore di cassa: lo scontrino non può uscire da qui.`,
+                cosaFare: "fai prima un trasferimento, oppure vendilo dal punto vendita di quella società",
             });
             return;
         }
