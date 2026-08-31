@@ -39,6 +39,29 @@ export async function POST(req: Request) {
         if (data && data.test_mode === false) testMode = false;
     }
 
+    /* LOG DETTAGLIATO (spec Rahib 31/08, test multi-negozio): ogni tentativo di
+       scontrino scrive una riga in pos_log — successo o errore — col contesto
+       per capire e correggere. Solo lato server (service key), SEMPRE in
+       try/catch: il log non deve MAI bloccare o rompere una vendita. */
+    const logPos = async (esito: string, extra: any = {}) => {
+        try {
+            await supabase.from("pos_log").insert({
+                negozio,
+                azienda: extra.azienda ?? (b.azienda ?? null),
+                rt_url: extra.rt_url ?? null,
+                esito,
+                test_mode: testMode,
+                totale: extra.totale ?? null,
+                items: extra.items ?? righe.length,
+                esclusi: extra.esclusi ?? null,
+                errore: extra.errore ?? null,
+                job_ids: extra.job_ids ?? null,
+                operatore: b.createdBy ?? null,
+                dettagli: extra.dettagli ?? null,
+            });
+        } catch { /* il log non deve mai fermare una vendita */ }
+    };
+
     // Mappa azienda -> RT per il negozio (multi-societario).
     const aziende: Record<string, { rt_url: string }> = {};
     let defaultAzienda: string | null = null;
@@ -138,6 +161,7 @@ export async function POST(req: Request) {
 
     const totalPrintable = Object.values(gruppi).reduce((n, a) => n + a.length, 0);
     if (!totalPrintable) {
+        await logPos("errore", { errore: "nessuna voce stampabile (reparto mancante o voci escluse)", esclusi });
         return NextResponse.json({ error: "nessuna voce stampabile (reparto mancante o voci escluse)", esclusi }, { status: 400 });
     }
 
@@ -153,6 +177,7 @@ export async function POST(req: Request) {
     const escluseVere = esclusi.filter((e) => e.motivo !== "esclusa dallo scontrino");
     if (b.dryRun) {
         if (escluseVere.length) {
+            await logPos("verifica-errore", { errore: escluseVere.map((e) => `«${e.description}»: ${e.motivo}`).join(" · "), esclusi, dettagli: { dryRun: true } });
             return NextResponse.json({
                 error: escluseVere.map((e) => `«${e.description}»: ${e.motivo}`).join(" · "),
                 esclusi, testMode,
@@ -238,9 +263,13 @@ export async function POST(req: Request) {
                 kind = "fiscal_receipt";
             }
         } catch (e: any) {
+            await logPos("errore", { azienda: az === "__def" ? null : az, errore: e?.message || "dati non validi", esclusi, dettagli: { fase: "costruzione-xml" } });
             return NextResponse.json({ error: e?.message || "dati non validi", receipts }, { status: 400 });
         }
-        if (!request_xml) return NextResponse.json({ error: "impossibile costruire lo scontrino" }, { status: 400 });
+        if (!request_xml) {
+            await logPos("errore", { azienda: az === "__def" ? null : az, errore: "impossibile costruire lo scontrino", esclusi });
+            return NextResponse.json({ error: "impossibile costruire lo scontrino" }, { status: 400 });
+        }
 
         const { data, error } = await supabase.from("print_jobs").insert({
             negozio,
@@ -250,7 +279,10 @@ export async function POST(req: Request) {
             status: "pending",
             meta: { total: netTotale, sconto: scontoGruppo || 0, azienda: az === "__def" ? null : az, items: items.length, testMode, coupon: couponCode || null },
         }).select("id").single();
-        if (error) return NextResponse.json({ error: error.message, receipts }, { status: 500 });
+        if (error) {
+            await logPos("errore", { azienda: az === "__def" ? null : az, rt_url: rtFor(az) as string, errore: error.message, totale: netTotale, esclusi, dettagli: { fase: "coda-print_jobs" } });
+            return NextResponse.json({ error: error.message, receipts }, { status: 500 });
+        }
         receipts.push({ azienda: az === "__def" ? null : az, rt: rtFor(az), jobId: data.id, stampate: items.length, totale: netTotale, sconto: scontoGruppo });
     }
 
@@ -262,5 +294,14 @@ export async function POST(req: Request) {
         else couponWarning = c.error || "coupon non consumato";
     }
 
+    await logPos(escluseVere.length ? "ok-parziale" : "ok", {
+        azienda: receipts.map((r) => r.azienda || "def").join(", "),
+        rt_url: receipts.map((r) => r.rt).join(", "),
+        totale: receipts.reduce((s, r) => s + (Number(r.totale) || 0), 0),
+        items: totalPrintable,
+        esclusi: esclusi.length ? esclusi : null,
+        job_ids: receipts.map((r) => r.jobId),
+        dettagli: { receipts, scontoCoupon: couponSconto, nGruppi: receipts.length },
+    });
     return NextResponse.json({ ok: true, testMode, receipts, stampate: totalPrintable, esclusi, scontoCoupon: couponSconto, nuovoCoupon, couponWarning });
 }
