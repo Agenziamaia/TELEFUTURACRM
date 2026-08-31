@@ -29,20 +29,31 @@ export default function ErroreDashboard({ error, reset }: { error: Error & { dig
     useEffect(() => {
         const msg = `${error?.message || ""} ${error?.name || ""}`;
         if (!DA_DEPLOY.test(msg)) return;
-        // una volta sola: se anche dopo il ricaricamento è rotta, allora è
-        // rotta davvero e la schermata va mostrata
+        /* TRE TENTATIVI, NON UNO (Luca 01/09, che il muro se l'è visto).
+           Il primo giro era immediato: se la richiesta cade mentre il server
+           si sta riavviando — cioè per tutta la durata di un deploy — anche il
+           ricaricamento arriva troppo presto, fallisce, e la seconda volta si
+           mostrava il pannello. Un deploy dura qualche secondo: aspettare
+           prima di riprovare copre quasi sempre la finestra.
+           Il tetto resta: dopo tre volte è rotta davvero, e continuare a
+           ricaricare sarebbe un ciclo infinito su uno schermo da negozio. */
+        const ATTESE = [0, 2500, 6000];
+        let n = 0;
         try {
-            if (sessionStorage.getItem("crm_reload_deploy")) return;
-            sessionStorage.setItem("crm_reload_deploy", "1");
+            n = Number(sessionStorage.getItem("crm_reload_deploy") || "0");
+            if (n >= ATTESE.length) return;
+            sessionStorage.setItem("crm_reload_deploy", String(n + 1));
         } catch { return; }
         setRicarico(true);
-        window.location.reload();
+        if (ATTESE[n]) setTimeout(() => window.location.reload(), ATTESE[n]);
+        else window.location.reload();
     }, [error]);
 
-    // il segno che il giro è andato a buon fine: se la pagina vive 15 secondi
+    // il segno che il giro è andato a buon fine: se la pagina vive 20 secondi
     // senza esplodere, il permesso di ricaricare si ricarica anche lui
     useEffect(() => {
-        const t = setTimeout(() => { try { sessionStorage.removeItem("crm_reload_deploy"); } catch { } }, 15000);
+        // 20 secondi: deve coprire anche il terzo tentativo, che parte al sesto
+        const t = setTimeout(() => { try { sessionStorage.removeItem("crm_reload_deploy"); } catch { } }, 20000);
         return () => clearTimeout(t);
     }, []);
 

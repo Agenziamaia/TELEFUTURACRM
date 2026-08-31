@@ -15,10 +15,47 @@
    pulsante che copia tutto. Un errore che si legge si chiude in dieci minuti;
    uno che non si legge costa una serata.                                    */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+/* GLI ERRORI CHE NON SONO ERRORI: un pezzo di JavaScript che non si carica.
+   Ogni build rinomina i suoi file, e per i pochi secondi in cui il server si
+   riavvia una scheda già aperta ne chiede uno e non lo trova. Non è un difetto
+   del CRM: è il CRM che sta cambiando versione sotto i piedi di chi lo usa.
+   Mostrarglielo come un guasto — con la pila di chiamate e il pulsante «copia
+   il dettaglio» — è sbagliato due volte: non è colpa sua e non c'è niente da
+   mandare a nessuno. (Luca 01/09: l'ha visto premendo Giacenze durante un
+   deploy; la stessa rete c'era già in `(dashboard)/error.tsx`, ma qui alla
+   radice non era mai arrivata.) */
+const DA_DEPLOY = /Loading chunk|ChunkLoadError|dynamically imported module|Importing a module script failed|Failed to fetch|Failed to load chunk/i;
 
 export default function ErroreRadice({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
     const [copiato, setCopiato] = useState(false);
+    const [ricarico, setRicarico] = useState(false);
+
+    /* TRE TENTATIVI DISTANZIATI, poi ci si arrende e si mostra il pannello.
+       Il primo subito, gli altri dopo qualche secondo: se la richiesta è caduta
+       perché il server stava riavviando, riprovare all'istante fallisce di
+       nuovo. Il conto sta in `sessionStorage` e si azzera da solo quando la
+       pagina sopravvive: senza tetto sarebbe un ciclo infinito su uno schermo
+       da negozio. */
+    useEffect(() => {
+        if (!DA_DEPLOY.test(`${error?.message || ""} ${error?.name || ""}`)) return;
+        const ATTESE = [0, 2500, 6000];
+        let n = 0;
+        try {
+            n = Number(sessionStorage.getItem("crm_reload_deploy") || "0");
+            if (n >= ATTESE.length) return;
+            sessionStorage.setItem("crm_reload_deploy", String(n + 1));
+        } catch { return; }
+        setRicarico(true);
+        if (ATTESE[n]) setTimeout(() => location.reload(), ATTESE[n]);
+        else location.reload();
+    }, [error]);
+
+    useEffect(() => {
+        const t = setTimeout(() => { try { sessionStorage.removeItem("crm_reload_deploy"); } catch { } }, 20000);
+        return () => clearTimeout(t);
+    }, []);
     const testo = [
         `messaggio: ${error?.message || "(nessuno)"}`,
         `tipo: ${error?.name || "Error"}`,
@@ -28,6 +65,22 @@ export default function ErroreRadice({ error, reset }: { error: Error & { digest
         "",
         String(error?.stack || "").split("\n").slice(0, 12).join("\n"),
     ].filter(Boolean).join("\n");
+
+
+    if (ricarico) return (
+
+        <html lang="it"><body style={{ background: "#0b1020", color: "#94a3b8", fontFamily: "system-ui, sans-serif" }}>
+
+            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
+
+                È uscita una versione nuova: ricarico…
+
+            </div>
+
+        </body></html>
+
+    );
+
 
     return (
         <html lang="it">
