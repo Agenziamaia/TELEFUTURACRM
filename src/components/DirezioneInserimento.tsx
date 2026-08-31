@@ -1043,7 +1043,11 @@ export function DirezioneInserimentoAdmin() {
                            non è un rosso: è «ci sei, ma senza rete». */
                         const stilePallino = (stato: string) => stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
                             : stato === "viola" ? { background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }
-                                : stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
+                                /* CELESTE, non giallo (Luca 31/08): accanto all'arancione
+                                   il giallo si confondeva — due ambre a mezzo centimetro
+                                   di distanza che vogliono dire cose opposte. Il celeste
+                                   sta lontano da tutti gli altri della fila. */
+                                : stato === "giallo" ? { background: "#38bdf8", boxShadow: "0 0 7px #38bdf888" }
                                     : stato === "arancione" ? { background: "#fb923c", boxShadow: "0 0 7px #fb923c88" }
                                         : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
                                             : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
@@ -1384,7 +1388,7 @@ export function DirezioneInserimentoAdmin() {
                                     <div className="text-slate-400 pb-1">Ogni pista ne ha <b className="text-white">due</b>: il primo è <b className="text-white">dove sei ADESSO</b>, il secondo <b className="text-white">dove arrivi a fine mese</b> con questo ritmo. La sigla accanto a ciascuno è la soglia di quel momento — <span className="font-mono text-slate-200">S1 → S2</span> vuol dire «oggi hai la prima, chiudi con la seconda» — e il colore dice se quella soglia è il tuo target o no.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#34d399", boxShadow: "0 0 7px #34d399" }} /> <b className="text-white">Verde</b> — target preso.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }} /> <b className="text-white">Viola</b> — in proiezione lo SUPERA di oltre il 15%: c&apos;è margine da spostare sui rossi.</div>
-                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }} /> <b className="text-white">Giallo</b> — sul pallino di ADESSO: una soglia l&apos;hai presa, ma non è quella del target (sei a uno scalino sotto). Su quello di FINE MESE: il target non è ancora preso, ma in proiezione ci arrivi.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#38bdf8", boxShadow: "0 0 7px #38bdf888" }} /> <b className="text-white">Celeste</b> — sul pallino di ADESSO: una soglia l&apos;hai presa, ma non è quella del target (sei a uno scalino sotto). Su quello di FINE MESE: il target non è ancora preso, ma in proiezione ci arrivi.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fb923c", boxShadow: "0 0 7px #fb923c88" }} /> <b className="text-white">Arancione</b> — la soglia c&apos;è, il cuscinetto no: sei sopra il numero nudo ma sotto il target con lo sfrido. Basta una pratica che cade e la soglia salta.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse" style={{ background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} /> <b className="text-white">Rosso</b> (pulsante) — nemmeno in proiezione: serve una spinta.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "rgba(148,163,184,.45)" }} /> <b className="text-white">Grigio</b> — proiezione non ancora attiva (primi giorni del mese).</div>
