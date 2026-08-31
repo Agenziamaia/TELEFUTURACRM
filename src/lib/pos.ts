@@ -74,6 +74,12 @@ export interface RigaScontrino {
     unitPrice: number;
     qty?: number;
     reparto?: number | null;
+    /* Di chi è questa riga, quando si sa: la società fissata sul prodotto, o il
+     * codice di magazzino da cui il server la deduce. Viaggiavano già entrambi;
+     * qui si dichiarano, perché servono anche al modale per capire se il
+     * carrello è di sola merce o di soli servizi. */
+    azienda?: string | null;
+    codice?: string | null;
 }
 
 /** Totale (IVA inclusa) di una lista di righe. */

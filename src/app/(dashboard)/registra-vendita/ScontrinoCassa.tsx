@@ -65,6 +65,13 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        merce — non c'è modo di aggirarlo — mentre i SOLDI li prende la macchina
        davanti a cui sta il cliente. La domanda compare solo dove le insegne
        nello stesso locale sono più d'una. */
+    /* SOLI SERVIZI (Luca 31/08): «uno scontrino di soli servizi deve chiedermi
+       dove scontrinarlo, e di conseguenza in quale cash machine incassarlo».
+       Un servizio non ha magazzino, quindi nessuna riga può dire di chi è la
+       vendita: è l'unico caso in cui la domanda ha senso, e infatti negli altri
+       la risposta la dà la merce. Se nel locale c'è una sola società non si
+       chiede niente: non ci sarebbe niente da scegliere. */
+    const soloServizi = !!data && !data.items.some((i) => i.azienda || i.codice);
     const [insegne, setInsegne] = useState<string[]>([]);
     const [cassaSel, setCassaSel] = useState<string | null>(null);
     // Coupon sconto (spec Francesco): abbassa l'imponibile. Il residuo rigenera un nuovo coupon.
@@ -111,8 +118,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             setInsegne(nel);
             setCassaSel(nel.includes(neg) ? neg : (nel[0] || neg));
         });
-        supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
-            const list = (rows || []).map((r: any) => ({ code: r.azienda, label: r.ragione_sociale || r.azienda, isDef: !!r.is_default }));
+        /* LE SOCIETÀ CHE POSSONO EMETTERE QUI comprendono i gemelli: a Magliana
+           il registratore dell'altra insegna è a tre metri (Luca 31/08). */
+        supabase.from("pos_rt").select("negozio, azienda, ragione_sociale, is_default").then(({ data: tuttiR }) => {
+            const rows = (tuttiR || []).filter((r: any) => stessoMagazzino(r.negozio, neg));
+            const list = rows.map((r: any) => ({
+                code: r.azienda,
+                label: (r.ragione_sociale || r.azienda) + (r.negozio !== neg ? ` · ${r.negozio}` : ""),
+                isDef: !!r.is_default && r.negozio === neg,
+            }));
             setAziende(list.map((x) => ({ code: x.code, label: x.label })));
             // se si RIPRENDE un sospeso con azienda già scelta, rispettala; altrimenti default.
             const preset = data?.azienda && list.find((x) => x.code === data.azienda);
@@ -190,7 +204,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     negozio: data?.negozio ?? null,
                     deviceUrl: data?.deviceUrl,
                     items: data?.items ?? [],
-                    // niente `azienda`: la decide la MERCE, riga per riga (Luca 31/08)
+                    /* la società la decide la MERCE, riga per riga — tranne
+                       quando merce non ce n'è: lì l'ha scelta l'operatore */
+                    azienda: soloServizi ? aziendaSel : null,
                     pagamenti,
                     contrattoId: data?.contrattoId ?? null,
                     coupon: couponPayload,
@@ -223,7 +239,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         try {
             const res = await fetch("/api/vendita/scontrino", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ negozio: data.negozio, items: data.items, dryRun: true }),
+                body: JSON.stringify({ negozio: data.negozio, items: data.items, azienda: soloServizi ? aziendaSel : null, dryRun: true }),
             });
             chk = await res.json().catch(() => ({}));
             if (!res.ok) chk.ok = false;
@@ -431,10 +447,32 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             dire emettere uno scontrino con la partita IVA sbagliata.
                             Il carrello misto non arriva più fin qui: si ferma quando si
                             aggiunge il secondo prodotto (`addMargItem`). */}
-                        {aziende.length > 1 && (
+                        {aziende.length > 1 && !soloServizi && (
                             <p className="text-[11px] text-slate-500">
                                 🏢 La ragione sociale la decide la merce: ogni riga esce dalla società su cui è caricata.
                             </p>
+                        )}
+                        {/* SOLI SERVIZI: qui la merce non c'è, quindi non c'è niente
+                            che possa decidere al posto dell'operatore. È l'unico caso
+                            in cui la domanda si fa — e si fa solo dove le società che
+                            possono emettere in questo locale sono più d'una. */}
+                        {aziende.length > 1 && soloServizi && (
+                            <div>
+                                <p className="text-[11px] text-slate-500 mb-1.5">
+                                    Sono tutti servizi: chi emette lo scontrino?
+                                </p>
+                                <div className="flex gap-2">
+                                    {aziende.map((a) => (
+                                        <button key={a.code} type="button" onClick={() => setAziendaSel(a.code)}
+                                            className={"flex-1 py-2.5 rounded-xl border text-xs font-bold transition "
+                                                + (aziendaSel === a.code
+                                                    ? "bg-sky-500/25 border-sky-400/60 text-white"
+                                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                                            🏢 {a.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         )}
 
                         {/* Coupon: sconto che abbassa l'imponibile (sostituisce "Altro") */}
