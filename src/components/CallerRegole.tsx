@@ -69,7 +69,19 @@ export function CallerRegoleModal({ stati, soloLettura = false, onClose, onSaved
                                     const r = righe[s];
                                     return (
                                         <tr key={s} className="border-t border-white/5">
-                                            <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{s}</td>
+                                            <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">
+                                                {s}
+                                                {/* UNA REGOLA CHE NON AVVISA MAI (Luca 31/08, caso Lorenzini:
+                                                    «questo non mi era mai apparso nei warning»). Col warning
+                                                    allo stesso giorno del malus — o dopo — il caller non vede
+                                                    mai la fascia gialla: la pratica passa da «a posto» a
+                                                    «penale» in un colpo. Non lo cambio io: la soglia è una
+                                                    decisione, ma va vista mentre la si scrive. */}
+                                                {!r?.esente && r?.giorni_malus != null && r?.giorni_warning != null && r.giorni_warning >= r.giorni_malus && (
+                                                    <span title={`Con warning a ${r.giorni_warning} e malus a ${r.giorni_malus} il caller non vede mai l'avviso: la pratica passa da «a posto» a «in penale» senza preavviso. Metti il warning almeno un giorno prima del malus.`}
+                                                        className="ml-1.5 text-[10px] font-black text-amber-300 cursor-help">⚠ senza preavviso</span>
+                                                )}
+                                            </td>
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="giorni_lavorare" /></td>
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="giorni_warning" /></td>
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="giorni_malus" /></td>
