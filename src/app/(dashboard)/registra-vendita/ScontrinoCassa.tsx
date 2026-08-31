@@ -44,7 +44,16 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const totale = data ? totaleRighe(data.items) : 0;
 
     // Pagamento come lista di forme (max 3). Default: tutto in contanti.
-    const [righe, setRighe] = useState<RigaPagamento[]>([{ forma: "CONTANTI", importo: 0 }]);
+    /* NESSUNA FORMA PRESELEZIONATA (Luca 31/08). Era «Contanti» di partenza:
+       chi non guardava premeva «Incassa ed emetti» e la vendita usciva a
+       contanti senza che nessuno lo avesse deciso. Con una vendita di prova da
+       1 centesimo — dove l'arrotondamento a 5 cent porta la quota contanti a
+       ZERO e la cassa automatica non viene nemmeno chiamata — sembrava che il
+       CRM non chiedesse proprio niente.
+       È la stessa cosa che Luca voleva evitare fin dall'inizio: «rischi che io
+       esca senza selezionare una modalità di pagamento». Ora si sceglie, e
+       «Incassa ed emetti» resta spento finché non lo si fa. */
+    const [righe, setRighe] = useState<RigaPagamento[]>([{ forma: "", importo: 0 }]);
     const [fase, setFase] = useState<Fase>("scelta");
     const [incassato, setIncassato] = useState(0);
     const [resto, setResto] = useState(0);
@@ -104,7 +113,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
            questo momento. */
         const cIn = data?.coupon || null;
         const sc = cIn ? Math.min(Number(cIn.sconto) || 0, t) : 0;
-        setRighe([{ forma: "CONTANTI", importo: +(t - sc).toFixed(2) }]);
+        setRighe([{ forma: "", importo: +(t - sc).toFixed(2) }]);
         setFase("scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
@@ -151,7 +160,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // Somme / bilancio del pagamento (sul netto da pagare).
     const sommaPag = +righe.reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
     const rimanente = +(totaleDaPagare - sommaPag).toFixed(2);
-    const bilanciato = coperto || (Math.abs(rimanente) < 0.005 && righe.every((r) => Number(r.importo) > 0));
+    // ogni riga deve avere una FORMA scelta, non solo un importo
+    const bilanciato = coperto || (Math.abs(rimanente) < 0.005
+        && righe.every((r) => Number(r.importo) > 0 && !!r.forma));
     const cashPortion = coperto ? 0 : +righe.filter((r) => isFormaCash(r.forma)).reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
     const cashRounded = arrotonda5(cashPortion);
     const arrotondamento = +(cashRounded - cashPortion).toFixed(2);
@@ -412,11 +423,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             const valore = Number(j.valore_residuo) || 0;
             const sconto = +Math.min(valore, totale).toFixed(2);
             setCoupon({ code: j.code || code, valore, sconto });
-            setRighe([{ forma: "CONTANTI", importo: +(totale - sconto).toFixed(2) }]);
+            setRighe([{ forma: "", importo: +(totale - sconto).toFixed(2) }]);
             setCouponInput("");
         } catch { setCouponMsg("Errore nella verifica del coupon."); }
     };
-    const removeCoupon = () => { setCoupon(null); setCouponMsg(""); setRighe([{ forma: "CONTANTI", importo: totale }]); };
+    const removeCoupon = () => { setCoupon(null); setCouponMsg(""); setRighe([{ forma: "", importo: totale }]); };
 
     // ── gestione righe pagamento ──────────────────────────────────────────────
     const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, forma } : r)));
@@ -553,7 +564,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                    La forma scelta dal carrello — credito, finanziamento — non
                                    ha un pulsante: si mostra com'è, e non si cambia a mano. */
                                 <div key={i} className="flex gap-3 items-end flex-wrap">
-                                    {FORME_A_MANO.some((f) => f.code === r.forma) ? (
+                                    {/* vuota = ancora da scegliere: i pulsanti si mostrano
+                                        tutti spenti, non il riquadro «deciso dal carrello» */}
+                                    {(!r.forma || FORME_A_MANO.some((f) => f.code === r.forma)) ? (
                                         <div className="flex gap-1.5 flex-1 min-w-0">
                                             {FORME_A_MANO.map((f) => {
                                                 const on = r.forma === f.code;
@@ -590,7 +603,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                     <button type="button" onClick={addRiga} className="text-xs text-violet-300 hover:text-violet-200">+ Aggiungi pagamento</button>
                                 ) : <span />}
                                 <span className={"text-xs tabular-nums " + (bilanciato ? "text-emerald-400" : "text-amber-300")}>
-                                    {bilanciato ? "✓ Bilanciato" : `Rimanente ${eur(rimanente)}`}
+                                    {bilanciato ? "✓ Bilanciato"
+                                        : righe.some((r) => !r.forma) ? "Scegli come paga il cliente"
+                                            : `Rimanente ${eur(rimanente)}`}
                                 </span>
                             </div>
                         </div>
