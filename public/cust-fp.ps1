@@ -37,6 +37,14 @@ function Esito([bool]$ok, [string]$msg, [string]$mat) {
   (@{ ok = $ok; msg = $msg; matricola = $mat } | ConvertTo-Json -Compress)
 }
 
+# Parsing numerico INVARIANTE: il CRM manda i decimali col punto ("10.00"), ma i PC
+# negozio sono in locale IT (virgola) -> [double]"10.00" sbaglierebbe. Forziamo il
+# punto e la cultura invariante.
+function ToNum([string]$s) {
+  if (-not $s) { return 0.0 }
+  return [double]::Parse(($s -replace ',', '.'), [Globalization.CultureInfo]::InvariantCulture)
+}
+
 try { $xml = Get-Content -Raw -LiteralPath $XmlFile } catch { Esito $false "xml illeggibile: $($_.Exception.Message)" ""; exit 1 }
 
 # tipo documento dall'ePOS XML
@@ -93,11 +101,65 @@ try { $mat = [string]$fp.matricola_fiscale } catch { }
 
 try {
   if ($isFiscal) {
-    # Percorso FISCALE Custom: da implementare/collaudare PRIMA del go-live fiscale
-    # (comincia_scontrino_fiscale / scrivi_riga_scontrino / stampa_riga_pagamenti /
-    # chiudi_scontrino_fiscale). Finche' i negozi Custom restano in TEST mode il CRM
-    # invia solo non_fiscal, quindi qui non si arriva.
-    Esito $false "fiscal Custom non ancora abilitato (tenere il negozio in test mode)" $mat
+    # ── PERCORSO FISCALE CUSTOM (bozza 01/09 — DA VALIDARE sul registratore reale) ──
+    # Il CRM invia ePOS Epson (printerFiscalReceipt). Qui lo traduciamo nelle chiamate
+    # OPOS Custom ESATTAMENTE come fa SuiteMobile (decompilato MiraOposDll):
+    #   comincia_scontrino_fiscale -> per riga scrivi_riga_scontrino(reparto come vatInfo,
+    #   prezzo in EURO: il driver lo *100 da solo) -> stampa_riga_pagamenti (richiede
+    #   is_rt=true; il nome pagamento -> DirectIO 3004 contanti / 3006 carte / 3005 $NR$
+    #   non riscosso) -> chiudi_scontrino_fiscale (fa la chiusura DirectIO 30112+3013).
+    # DORMIENTE finche' il negozio e' in test_mode: in quel caso il CRM manda non_fiscal
+    # e qui NON si arriva. NON attivare il fiscale su un Custom senza una prova reale.
+    $fp.is_rt = $true
+
+    $items = @()
+    foreach ($mm in [regex]::Matches($xml, '<printRecItem\b[^>]*/>')) {
+      $t = $mm.Value
+      $items += [pscustomobject]@{
+        desc  = [System.Net.WebUtility]::HtmlDecode([regex]::Match($t, 'description="([^"]*)"').Groups[1].Value)
+        qty   = (ToNum ([regex]::Match($t, 'quantity="([^"]*)"').Groups[1].Value))
+        price = (ToNum ([regex]::Match($t, 'unitPrice="([^"]*)"').Groups[1].Value))
+        dept  = [int]([regex]::Match($t, 'department="([^"]*)"').Groups[1].Value)
+      }
+    }
+    $pays = @()
+    foreach ($mm in [regex]::Matches($xml, '<printRecTotal\b[^>]*/>')) {
+      $t = $mm.Value
+      $pays += [pscustomobject]@{
+        desc   = [System.Net.WebUtility]::HtmlDecode([regex]::Match($t, 'description="([^"]*)"').Groups[1].Value)
+        amount = (ToNum ([regex]::Match($t, 'payment="([^"]*)"').Groups[1].Value))
+        ptype  = [int]([regex]::Match($t, 'paymentType="([^"]*)"').Groups[1].Value)
+      }
+    }
+
+    if ($items.Count -eq 0) {
+      Esito $false "fiscale: nessuna riga (printRecItem) nel documento" $mat
+    } else {
+      $tot = 0.0
+      foreach ($it in $items) { $q = $(if ($it.qty -gt 0) { $it.qty } else { 1.0 }); $tot += $it.price * $q }
+
+      $fp.comincia_scontrino_fiscale($false, "", "")
+      foreach ($it in $items) {
+        $q = $(if ($it.qty -gt 0) { $it.qty } else { 1.0 })
+        $fp.scrivi_riga_scontrino("", [string]$it.desc, [double]$it.price, [double]$q, [double]$it.dept, "", $false)
+      }
+      if ($pays.Count -eq 0) {
+        $fp.stampa_riga_pagamenti([double]$tot, [double]$tot, "CONTANTI", "")
+      } else {
+        foreach ($p in $pays) {
+          $tp = switch ([int]$p.ptype) {
+            0       { "CONTANTI" }
+            2       { if ($p.desc) { [string]$p.desc } else { "CARTE" } }
+            4       { '$NR$' + $(if ($p.desc) { [string]$p.desc } else { "CREDITO" }) }
+            default { if ($p.desc) { [string]$p.desc } else { "CONTANTI" } }
+          }
+          $fp.stampa_riga_pagamenti([double]$tot, [double]$p.amount, [string]$tp, "")
+        }
+      }
+      $ns = 0; $bc = ""
+      [void]$fp.chiudi_scontrino_fiscale("", "1", $false, [ref]$ns, "", [ref]$bc, $false)
+      Esito $true ("fiscale stampato" + $(if ($ns) { " (n. $ns)" } else { "" })) $mat
+    }
   } else {
     $fp.comincia_scontrino_nonfiscale()
     foreach ($l in $lines) { $fp.stampa_testo_semplice_nonfiscale([string]$l, $false, $false, $false) }
