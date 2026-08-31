@@ -43,7 +43,7 @@ import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
-import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
+import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
 import { storiaCompleta, pezzoOra, NOME_EVENTO, type EventoPezzo } from "@/lib/magazzinoStoria";
 /* Il RAGIONAMENTO sui trasferimenti — le situazioni in cui della merce si
    muove fra punti vendita, e cosa deve succedere in ognuna — sta tutto in
@@ -1507,16 +1507,23 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
     const [socDati, setSocDati] = useState<Record<string, AziendaDdt>>({});
     const [negDati, setNegDati] = useState<Record<string, NegozioDdt>>({});
     const [casse, setCasse] = useState<{ negozio: string; azienda: string; is_default: boolean | null }[]>([]);
+    /* CHI PORTA LA MERCE (Luca 31/08). Sta in tabella, non nel codice: un
+       corriere è un fornitore. Se non c'è, il documento lascia il riquadro
+       vuoto — che è la verità, non un dato inventato. */
+    const [vettore, setVettore] = useState<VettoreDdt | null>(null);
     const [carico, setCarico] = useState(true);
 
     const caricaTutto = useCallback(async () => {
         setCarico(true);
-        const [d, a, s, p] = await Promise.all([
+        const [d, a, s, p, v] = await Promise.all([
             supabase.from("mag_ddt").select("*").order("creato_il", { ascending: false }).limit(500),
             supabase.from("aziende").select("codice,ragione_sociale,logo_url,piva,codice_fiscale,sede,cap,citta,provincia,rea,telefono,email"),
             supabase.from("stores").select("name,address,civico,cap,citta,provincia,azienda,is_ufficio").order("name"),
             supabase.from("pos_rt").select("negozio,azienda,is_default"),
+            supabase.from("vettori").select("ragione_sociale,piva,codice_fiscale,sede,cap,citta,provincia")
+                .eq("predefinito", true).eq("attivo", true).maybeSingle(),
         ]);
+        setVettore((v.data as VettoreDdt) ?? null);
         setDdt((d.data ?? []) as Ddt[]);
         const az: Record<string, AziendaDdt> = {};
         ((a.data ?? []) as AziendaDdt[]).forEach(x => { az[x.codice] = x; });
@@ -1773,7 +1780,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
             .map(r => ({
                 codice: r.codice, descrizione: r.descrizione, seriale: r.seriale, quantita: pezziDi(r),
             }));
-        return { d: dati, righe: stampabili, az: azStampa, neg: negStampa };
+        return { d: dati, righe: stampabili, az: azStampa, neg: negStampa, vettore };
     };
 
     /** Apre una finestra col documento e chiede la stampa. */
@@ -1789,7 +1796,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
 
     const stampa = (d: Ddt) => {
         const x = perStampa(d);
-        apriPerStampa(ddtHtml(x.d, x.righe, x.az, x.neg));
+        apriPerStampa(ddtHtml(x.d, x.righe, x.az, x.neg, x.vettore));
     };
 
     /* ARCHIVIO DEI DOCUMENTI DEL PERIODO (Luca 31/08): «tutto lo storico delle

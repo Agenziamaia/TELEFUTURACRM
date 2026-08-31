@@ -34,6 +34,12 @@ export type AziendaDdt = {
     sede: string | null; cap: string | null; citta: string | null; provincia: string | null;
     rea: string | null; telefono: string | null; email: string | null;
 };
+/** Chi porta materialmente la merce. Sta in tabella (`vettori`), non nel
+ *  codice: un corriere è un fornitore, e i fornitori cambiano. */
+export type VettoreDdt = {
+    ragione_sociale: string; piva: string | null; codice_fiscale: string | null;
+    sede: string | null; cap: string | null; citta: string | null; provincia: string | null;
+};
 export type NegozioDdt = {
     name: string; address: string | null; civico?: string | null; cap: string | null;
     citta: string | null; provincia: string | null;
@@ -119,6 +125,7 @@ const cella = (et: string, val: string, span = 1) =>
 export function ddtHtml(
     d: DatiDdt, righe: RigaDdt[],
     az: Record<string, AziendaDdt>, neg: Record<string, NegozioDdt>,
+    vettore?: VettoreDdt | null,
 ): string {
     const mit = az[d.azienda_da], des = az[d.azienda_a];
     const negDa = neg[d.da_negozio], negA = neg[d.a_negozio];
@@ -210,7 +217,11 @@ export function ddtHtml(
       <table class="griglia">
         <tr>
           ${cella("Totale beni", String(pezzi))}
-          ${cella("Trasporto a cura di", esc(d.trasporto))}
+          <!-- se un vettore c'è, il trasporto è a cura sua: dire «a cura del
+               mittente» mentre sotto c'è il corriere sarebbero due righe dello
+               stesso documento che si contraddicono -->
+          ${cella("Trasporto a cura di", esc(
+            (!d.trasporto || /mittente/i.test(d.trasporto)) && vettore ? vettore.ragione_sociale : d.trasporto))}
           ${cella("Aspetto esteriore dei beni", esc(d.aspetto))}
           ${cella("Causale del trasporto", esc(d.causale), 2)}
         </tr>
@@ -230,18 +241,24 @@ export function ddtHtml(
         </tr>
       </table>
 
-      <!-- I VETTORI: due, come sul documento vero -->
+      <!-- IL VETTORE, UNO SOLO (Luca 31/08: «vedo due colonne dedicate al
+           vettore quando probabilmente è un errore perché deve essere
+           solamente una»). Il modulo cartaceo ne prevede due perché un
+           trasporto può passare di mano, ma qui il corriere è uno: una casella
+           che nessuno riempirà mai è spazio rubato all'area dove alla consegna
+           si scrive a mano.
+           La ditta si stampa; data del ritiro e firma restano vuote, perché
+           quelle le mette il corriere quando la merce la prende davvero. -->
       <table class="griglia vettori">
         <tr>
-          <td class="vet" rowspan="2">Vettore</td>
-          <td><i>Ditta — residenza o domicilio</i><b>&nbsp;</b></td>
+          <td class="vet">Vettore</td>
+          <td><i>Ditta — residenza o domicilio</i><b>${vettore
+            ? esc([vettore.ragione_sociale,
+                   [vettore.sede, [vettore.cap, vettore.citta, vettore.provincia ? `(${vettore.provincia})` : null].filter(Boolean).join(" ")].filter(Boolean).join(" — "),
+                   vettore.piva ? `C.F. / P. IVA ${vettore.piva}` : null].filter(Boolean).join(" · "))
+            : "&nbsp;"}</b></td>
           <td style="width:150px"><i>Data e ora del ritiro</i><b>&nbsp;</b></td>
           <td style="width:200px" class="firma"><i>Firma del vettore</i></td>
-        </tr>
-        <tr>
-          <td><i>Ditta — residenza o domicilio</i><b>&nbsp;</b></td>
-          <td><i>Data e ora del ritiro</i><b>&nbsp;</b></td>
-          <td class="firma"><i>Firma del vettore</i></td>
         </tr>
       </table>
 
@@ -271,7 +288,7 @@ ${COPIE.map(pagina).join("")}
    roba si manda al commercialista e si mette da parte. Uno per documento
    vorrebbe dire aprire quaranta finestre e salvare quaranta file a mano. */
 export function ddtRaccolta(
-    documenti: { d: DatiDdt; righe: RigaDdt[]; az: Record<string, AziendaDdt>; neg: Record<string, NegozioDdt> }[],
+    documenti: { d: DatiDdt; righe: RigaDdt[]; az: Record<string, AziendaDdt>; neg: Record<string, NegozioDdt>; vettore?: VettoreDdt | null }[],
     titolo: string,
 ): string {
     /* SI RIUSA `ddtHtml`, non se ne scrive una copia: due generatori dello
@@ -279,7 +296,7 @@ export function ddtRaccolta(
        commercialista chiede perché l'archivio non somiglia a quello che avete
        consegnato in mano al corriere. Qui si prende il corpo di ciascuno. */
     const corpo = documenti.map(x => {
-        const html = ddtHtml(x.d, x.righe, x.az, x.neg);
+        const html = ddtHtml(x.d, x.righe, x.az, x.neg, x.vettore);
         const i = html.indexOf("<body>"), j = html.lastIndexOf("</body>");
         return i < 0 || j < 0 ? "" : html.slice(i + "<body>".length, j);
     }).join("\n");
