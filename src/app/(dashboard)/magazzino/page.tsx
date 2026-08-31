@@ -247,10 +247,20 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        dover scegliere niente. Poi può allargare a tutti o guardare un altro
        punto vendita. Chi un negozio non ce l'ha in scheda — amministrazione,
        direzione — entra su «tutti», che è la sua vista naturale. */
-    const [negozio, setNegozio] = useState(mioNegozio && negozi.includes(mioNegozio) ? mioNegozio : "");
+    /* PIÙ NEGOZI INSIEME (Luca 31/08): «devo poter selezionare anche più
+       negozi contemporaneamente». Lista vuota = tutti, che è la stessa cosa
+       ma si scrive una volta sola invece di spuntarne quindici. */
+    const [scelti, setScelti] = useState<string[]>(mioNegozio && negozi.includes(mioNegozio) ? [mioNegozio] : []);
+    const aggiungiNegozio = (n: string) => { if (n && !scelti.includes(n)) setScelti([...scelti, n]); };
+    const togliNegozio = (n: string) => setScelti(scelti.filter(x => x !== n));
     const [azienda, setAzienda] = useState("");
     const [stato, setStato] = useState("");
-    const [operatore, setOperatore] = useState("");
+    /* ANCHE GLI OPERATORI A PIÙ SELEZIONI (Luca 31/08): «lo stesso vale per la
+       tendina dell'operatore». Chi cerca «cosa ho di WindTre e Fastweb» lo
+       chiede una volta, non due. Vuoto = tutti. */
+    const [operatori, setOperatori] = useState<string[]>([]);
+    const aggiungiOperatore = (o: string) => { if (o && !operatori.includes(o)) setOperatori([...operatori, o]); };
+    const togliOperatore = (o: string) => setOperatori(operatori.filter(x => x !== o));
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
        compaiono anche quelli che qui non ci sono ma stanno in un altro
        negozio: serve a chi vuole sapere se può farsi mandare un pezzo. */
@@ -307,7 +317,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        lascia battere l'IMEI del gemello. La griglia invece confrontava il nome
        esatto, quindi mostrava quei pezzi in colonna «Altrove» — come se
        fossero a Ostia — e suggeriva di farsi un DDT per merce a due passi. */
-    const nelloScopo = useCallback((neg: string) => !negozio || stessoMagazzino(neg, negozio), [negozio]);
+    /* «Dentro quello che sto guardando». Nessuno scelto = tutti. I gemelli
+       contano come uno: Magliana W3 e Magliana Multi sono lo stesso scaffale. */
+    const nelloScopo = useCallback((neg: string) =>
+        !scelti.length || scelti.some(s => stessoMagazzino(neg, s)), [scelti]);
 
     /* LA GRIGLIA. Ogni riga è un ARTICOLO, e porta due numeri diversi:
          · giacenza — quanti ce ne sono in quello che stai guardando
@@ -394,7 +407,8 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         }
 
         let out = Array.from(m.values());
-        if (operatore) out = out.filter(r => operatore === "(nessuno)" ? !r.operatore : r.operatore === operatore);
+        if (operatori.length) out = out.filter(r =>
+            operatori.some(o => o === "(nessuno)" ? !r.operatore : r.operatore === o));
         if (cerca.trim()) {
             const q = cerca.trim().toLowerCase();
             out = out.filter(r => `${r.codice} ${r.descrizione}`.toLowerCase().includes(q));
@@ -419,7 +433,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             return sort.desc ? -cmp : cmp;
         });
         return out;
-    }, [unita, quantita, anagrafica, negozio, azienda, stato, operatore, cerca, soloDisponibili, dataStorica, sort, nelloScopo]);
+    }, [unita, quantita, anagrafica, scelti, azienda, stato, operatori, cerca, soloDisponibili, dataStorica, sort, nelloScopo]);
 
     // gli operatori che hanno davvero qualcosa in questa vista
     const operatoriPresenti = useMemo(() => {
@@ -431,14 +445,14 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
 
     const esporta = () => {
         const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
-        scaricaXlsx(`giacenze_${negozio || "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        scaricaXlsx(`giacenze_${scelti.length ? scelti.join("+").replace(/\s+/g, "") : "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
             ["Codice", "Descrizione", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
     };
 
     const colonne = ["Codice", "Descrizione", "Giacenza", "Altrove", "In arrivo", "Valore"];
     /** «è nel negozio che sto guardando?» — decide il colore della pastiglia
      *  del luogo, e prima era scritto due volte uguale dentro l'elemento. */
-    const quiDa = (neg: string) => neg === negozio || (!negozio && neg === mioNegozio);
+    const quiDa = (neg: string) => scelti.length ? nelloScopo(neg) : neg === mioNegozio;
 
     return (
         <div className="space-y-4">
@@ -447,15 +461,26 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 {/* DOVE GUARDO — il mio negozio è già scelto */}
                 <div className="rvBarra rvBarra-c">
                     {mioNegozio && negozi.includes(mioNegozio) && (
-                        <button onClick={() => setNegozio(mioNegozio)} className={cn("rvPill rvPill-sm", negozio === mioNegozio && "rvPill-on")}>🏠 {mioNegozio}</button>
+                        <button onClick={() => setScelti([mioNegozio])}
+                            className={cn("rvPill rvPill-sm", scelti.length === 1 && scelti[0] === mioNegozio && "rvPill-on")}>🏠 {mioNegozio}</button>
                     )}
-                    <button onClick={() => setNegozio("")} className={cn("rvPill rvPill-sm", !negozio && "rvPill-on")}>🌐 Tutti i negozi</button>
-                    {/* la className SOSTITUISCE il default di SelectOpzioni (non
+                    <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi</button>
+                    {/* SI AGGIUNGONO, NON SI SOSTITUISCONO (Luca 31/08). La tendina
+                        propone solo i negozi non ancora presi e li mette in fila
+                        come pastiglie: un elenco a spunte con quindici voci si
+                        legge peggio di tre pastiglie che dicono cosa stai
+                        guardando.
+                        La className SOSTITUISCE il default di SelectOpzioni (non
                         si fondono): va addosso all'<input>, quindi `.rvIn` e
                         basta — un `.rvSel > div` non aggancerebbe niente. */}
                     <div className="rvCampo rvCampo-md"><SelectOpzioni className="rvIn"
-                        value={negozio && negozio !== mioNegozio ? negozio : ""} onChange={setNegozio}
-                        opzioni={negozi} placeholder="…o un altro punto vendita" /></div>
+                        value="" onChange={aggiungiNegozio}
+                        opzioni={negozi.filter(n => !scelti.includes(n))}
+                        placeholder={scelti.length ? "…aggiungine un altro" : "…o scegli i punti vendita"} /></div>
+                    {scelti.map(n => (
+                        <button key={n} onClick={() => togliNegozio(n)} title="Togli questo punto vendita"
+                            className="rvPill rvPill-sm rvPill-on">{n} ✕</button>
+                    ))}
                     <span className="rvSep" />
                     <button onClick={() => setSoloDisponibili(true)} className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo disponibili</button>
                     <button onClick={() => setSoloDisponibili(false)} className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
@@ -468,8 +493,17 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             className="rvIn" /></label>
                     <div className="rvCampo rvCampo-sm"><span className="rvLab">Operatore</span>
                         <SelectOpzioni className="rvIn"
-                            value={operatore} onChange={setOperatore}
-                            opzioni={[...operatoriPresenti, "(nessuno)"]} placeholder="Tutti" /></div>
+                            value="" onChange={aggiungiOperatore}
+                            opzioni={[...operatoriPresenti, "(nessuno)"].filter(o => !operatori.includes(o))}
+                            placeholder={operatori.length ? "…aggiungine un altro" : "Tutti"} /></div>
+                    {operatori.length > 0 && (
+                        <div className="rvPillRow" style={{ gap: 5 }}>
+                            {operatori.map(o => (
+                                <button key={o} onClick={() => togliOperatore(o)} title="Togli questo operatore"
+                                    className="rvPill rvPill-sm rvPill-on">{o} ✕</button>
+                            ))}
+                        </div>
+                    )}
                     <div className="rvCampo rvCampo-lg"><span className="rvLab">Azienda</span>
                         <SelectOpzioni className="rvIn"
                             value={azienda ? (nomiAzienda[azienda] || azienda) : ""}
