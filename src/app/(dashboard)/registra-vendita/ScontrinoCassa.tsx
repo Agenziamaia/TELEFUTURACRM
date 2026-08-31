@@ -26,6 +26,9 @@ export interface ScontrinoData {
     /** la vendita a cui questo scontrino appartiene: serve alla task del
      *  bonifico, che deve riportare all'incasso vero e non a un elenco */
     contrattoId?: string | null;
+    /** coupon GIÀ applicato sul carrello (Luca 31/08): qui arriva applicato,
+     *  non si richiede al cliente di ripeterlo alla cassa */
+    coupon?: { code: string; valore: number; sconto: number } | null;
 }
 
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
@@ -74,11 +77,20 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // reset all'apertura di una NUOVA vendita (o alla chiusura del modale)
     useEffect(() => {
         const t = data ? totaleRighe(data.items) : 0;
-        setRighe([{ forma: "CONTANTI", importo: t }]);
+        /* IL COUPON ARRIVA GIÀ APPLICATO DAL CARRELLO (Luca 31/08). Il totale
+           da mettere in contanti è quindi quello SCONTATO: partire dal pieno
+           avrebbe chiesto alla cassa automatica dei soldi che il cliente non
+           deve. Lo sconto si ricapa sul totale di adesso, che è la verità di
+           questo momento. */
+        const cIn = data?.coupon || null;
+        const sc = cIn ? Math.min(Number(cIn.sconto) || 0, t) : 0;
+        setRighe([{ forma: "CONTANTI", importo: +(t - sc).toFixed(2) }]);
         setFase("scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
-        setCouponInput(""); setCoupon(null); setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false); cancelCashRef.current = false;
+        setCouponInput("");
+        setCoupon(cIn ? { code: cIn.code, valore: Number(cIn.valore) || 0, sconto: sc } : null);
+        setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false); cancelCashRef.current = false;
         const neg = data?.negozio;
         if (!neg) return;
         supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
@@ -397,6 +409,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                 </div>
                             )}
                             {couponMsg && <p className="text-[11px] text-rose-300">{couponMsg}</p>}
+                        {/* si può applicare anche prima, dal carrello: qui resta
+                            per chi riprende un conto sospeso o se lo ricorda tardi */}
                         </div>
 
                         {coperto ? (

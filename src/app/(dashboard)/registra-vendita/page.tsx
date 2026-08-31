@@ -6099,6 +6099,36 @@ function CRM() {
   };
   // Conti in sospeso: contatore per rinfrescare il pulsante rosso dopo salva/completa.
   const [sospesoReload, setSospesoReload] = useState(0);
+  /* IL COUPON SI APPLICA SUL CARRELLO (Luca 31/08): «lo applico sul carrello e
+     mi sconta il carrello ancora prima che vado in cassa — è come funziona in
+     tutti gli e-commerce». Prima viveva solo dentro il modale d'incasso, cioè
+     dopo che il cliente aveva già sentito il prezzo pieno.
+     Qui si VALIDA e si mostra; a consumarlo resta lo scontrino, che è l'unico
+     momento in cui la vendita è certa — un coupon bruciato su una vendita
+     abbandonata sarebbe uno sconto perso per il cliente. */
+  const [couponCart, setCouponCart] = useState(null);
+  const [couponCartIn, setCouponCartIn] = useState("");
+  const [couponCartMsg, setCouponCartMsg] = useState("");
+  const [couponCartBusy, setCouponCartBusy] = useState(false);
+  const applicaCouponCart = async (totaleDaIncassare) => {
+    const code = String(couponCartIn || "").trim().toUpperCase();
+    setCouponCartMsg("");
+    if (!code) return;
+    setCouponCartBusy(true);
+    try {
+      const res = await fetch("/api/vendita/coupon", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "valida", code }) });
+      const j = await res.json().catch(() => ({}));
+      if (!j.valido) { setCouponCartMsg("Coupon non valido: " + (j.motivo || "sconosciuto")); return; }
+      const valore = Number(j.valore) || 0;
+      // lo sconto non supera mai quello che c'è da incassare: il resto
+      // rigenera un coupon nuovo, e quello lo fa il server allo scontrino
+      const sconto = Math.min(valore, Math.max(0, totaleDaIncassare));
+      setCouponCart({ code: j.code || code, valore, sconto });
+      setCouponCartIn("");
+    } catch { setCouponCartMsg("Non sono riuscito a verificare il coupon."); }
+    finally { setCouponCartBusy(false); }
+  };
   // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
   // on/off per negozio senza toccare il box. Env resta come override.
   const posStoresRef = useRef<string[]>([]);
@@ -6940,7 +6970,7 @@ function CRM() {
         /* IL NUMERO DELLA VENDITA VIAGGIA COL MODALE (Luca 31/08): la task
            del bonifico deve riportare l'amministrazione ALLO SCONTRINO che è
            stato fatto, non alla lista di tutte le vendite. */
-        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null });
+        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
         // niente più reset a orologeria: la conferma resta finché non la
@@ -7177,7 +7207,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         // DIFFERITO: apri lo scontrino; la vendita si scrive SOLO a scontrino emesso.
         pendingCommit.current = commitFn;
         _resetForm(); clearDraft("crm_v9");
-        setScontrino({ items: _scRows, negozio: selNeg });
+        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart });
       } else {
         // Negozio SENZA scontrino: si salva subito, come prima.
         const rows = await commitFn();
@@ -7718,6 +7748,53 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
               </div>
               {tel.length>0&&<div style={{fontSize:10,color:"var(--tf-w600)",fontWeight:700,marginTop:2,textAlign:"right"}}>telefoni a listino € {telListino.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})} → il margine è nel valore</div>}
             </div>);})()}
+          {/* ═══ IL COUPON, SUL CARRELLO ═══════════════════════════════════
+              Luca 31/08: «lo applico sul carrello e mi sconta il carrello
+              ancora prima che vado in cassa». Compare solo quando c'è
+              qualcosa da incassare: su un carrello di sole pratiche — senza
+              voci prezzate — uno sconto non vuol dire niente.
+              Il numero qui non è il «valore carrello» qui sopra, che è il
+              MARGINE nostro: è quello che paga il cliente, cioè le stesse
+              righe che andranno sullo scontrino. */}
+          {(()=>{
+            const righeCassa = buildScontrinoItems(margItems);
+            const daIncassare = righeCassa.reduce((t,r)=>t+(Number(r.unitPrice)||0)*(Number(r.qty)>0?Number(r.qty):1),0);
+            if (daIncassare <= 0) return null;
+            const sc = couponCart ? Math.min(Number(couponCart.sconto)||0, daIncassare) : 0;
+            const resta = Math.round((daIncassare - sc) * 100) / 100;
+            const eur2 = (n)=>"€ "+Number(n||0).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2});
+            return (
+              <div className="rvCoup">
+                <div className="rvCoup-tot">
+                  <span className="rvCoup-t">🧾 DA INCASSARE</span>
+                  <span>
+                    {sc>0 && <s>{eur2(daIncassare)}</s>}{" "}
+                    <b>{eur2(resta)}</b>
+                  </span>
+                </div>
+                {couponCart ? (
+                  <div className="rvCoup-r">
+                    <span className="rvCoup-ok">🎟 {couponCart.code} — sconto {eur2(sc)}
+                      {Number(couponCart.valore) > sc ? ` (residuo ${eur2(Number(couponCart.valore)-sc)}: torna in un coupon nuovo)` : ""}</span>
+                    <span style={{marginLeft:"auto"}} />
+                    <button type="button" className="rvCoup-b"
+                      onClick={()=>{setCouponCart(null);setCouponCartMsg("");}}>✕ Togli</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rvCoup-r">
+                      <input className="rvCoup-in" value={couponCartIn} placeholder="CPN-XXX-XXXX"
+                        onChange={e=>setCouponCartIn(e.target.value)}
+                        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();applicaCouponCart(daIncassare);}}} />
+                      <button type="button" className="rvCoup-b" disabled={couponCartBusy||!couponCartIn.trim()}
+                        onClick={()=>applicaCouponCart(daIncassare)}>{couponCartBusy?"…":"Applica"}</button>
+                    </div>
+                    {couponCartMsg && <div className="rvCoup-ko">{couponCartMsg}</div>}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
         <div style={{padding:14,flex:1}}>
           {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].length===0&&margItems.length===0?(

@@ -2008,3 +2008,31 @@ html.light .rvTml-fr{color:#59647a}
    spariva e sembravano quattro schede sorelle. */
 .rvTml-x .rvDettR{background:none;border:0;border-radius:0;padding:4px 0}
 .rvTml-x .rvDettR + .rvDettR{border-top:1px solid var(--tf-w50)}
+
+/* ═══════════ IL COUPON SUL CARRELLO ═══════════════════════════════════
+   (Luca 31/08: «se ho un codice coupon lo applico sul carrello e mi sconta
+    il carrello ancora prima che vado in cassa — è come funziona in tutti gli
+    e-commerce»)
+   Sta nella barra scura del carrello, che ha il suo fondo indaco pieno: qui
+   i contrasti si misurano su QUELLO, non sul fondo pagina.               */
+.rvCoup{margin-top:8px;background:var(--tf-w160);border:1px solid var(--tf-w250);
+  border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;gap:7px}
+.rvCoup-t{font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--tf-w750)}
+.rvCoup-r{display:flex;gap:7px;align-items:center}
+/* il campo dentro la barra scura: `.rvIn` è pensato per il fondo pagina e qui
+   sparirebbe — stessa forma, fondo proprio */
+.rvCoup-in{flex:1;min-width:0;background:rgba(0,0,0,.28);border:1px solid var(--tf-w300);
+  border-radius:9px;color:#fff;font-size:12.5px;font-weight:700;padding:7px 10px;outline:none}
+.rvCoup-in::placeholder{color:var(--tf-w400)}
+.rvCoup-in:focus{border-color:rgba(255,255,255,.55)}
+.rvCoup-b{flex:0 0 auto;border-radius:9px;border:1px solid var(--tf-w300);
+  background:rgba(255,255,255,.14);color:#fff;font-size:12px;font-weight:800;
+  padding:7px 13px;cursor:pointer;line-height:1.2}
+.rvCoup-b:hover{background:rgba(255,255,255,.24)}
+.rvCoup-b:disabled{opacity:.45;cursor:not-allowed}
+.rvCoup-ok{font-size:11.5px;font-weight:800;color:#a7f3d0}
+.rvCoup-ko{font-size:11px;font-weight:700;color:#fecaca}
+/* la riga del totale: quello che il cliente paga davvero */
+.rvCoup-tot{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.rvCoup-tot b{color:#fff;font-weight:900;font-size:19px}
+.rvCoup-tot s{color:var(--tf-w600);font-size:12px;font-weight:700}
