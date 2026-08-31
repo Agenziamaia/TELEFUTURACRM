@@ -33,6 +33,7 @@ const SENZA_SESSIONE = {
     "aircall/webhook": "chiamata da Aircall, protetta dal suo token",
     "whatsapp/triage": "girata dal cron",
     "email/triage": "girata dal cron",
+    "assenze/report-mensile": "girata dal cron il primo del mese; scrive solo il proprio registro e manda una mail a due indirizzi fissi, il token serve solo a forzare",
     "passwords/pulizia-otp": "girata dal cron, protetta da TRIAGE_ADMIN_TOKEN (il GET invece passa da accesso())",
     "print/enqueue": "agente di stampa, protetto dal suo token",
     "print/next": "agente di stampa, protetto dal suo token",

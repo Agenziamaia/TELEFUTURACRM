@@ -18,27 +18,13 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, X } from "lucide-react";
-import { scaricaXlsxMulti, type CellaXlsx } from "@/lib/exportXlsx";
+import { scaricaXlsxMulti } from "@/lib/exportXlsx";
+import { fogliAssenze, ORE_AL_GIORNO, type CellaFoglio as CellaXlsx, type RigaAssenza as RigaAssenzaLib } from "@/lib/assenze";
 import { cn } from "@/utils";
 
-export const ORE_AL_GIORNO = 8;
+export { ORE_AL_GIORNO };
 
-export type RigaAssenza = {
-    persona: string;
-    negozio: string;
-    /** le date VERE dell'assenza, non quelle tagliate al periodo: il foglio si
-     *  riconcilia col certificato, e dichiarare chiuso il 31/08 un certificato
-     *  che arriva al 25/09 fa scattare la contestazione (revisore 31/08) */
-    dal: string;              // AAAA-MM-GG
-    al: string;               // AAAA-MM-GG
-    /** i giorni che cadono DENTRO il periodo, già al netto di domeniche e festivi */
-    giorni: number;
-    /** le singole giornate contate, con la loro quota (1 o 0,5): servono al
-     *  riepilogo per non sommare due volte lo stesso giorno quando una persona
-     *  ha due certificati sovrapposti */
-    giornate?: { giorno: string; quota: number }[];
-    extra?: Record<string, CellaXlsx>;   // colonne in più del registro (stato, certificato…)
-};
+export type RigaAssenza = RigaAssenzaLib;
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const itDate = (s: string) => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : "");
@@ -84,49 +70,10 @@ export function EsportaAssenze({ titolo, colonneExtra, righe, nomeFile }: {
 
     const esporta = async () => {
         if (scelta === "libero" && (!da || !a)) return;
-        const extra = colonneExtra || [];
-        const dettaglio: CellaXlsx[][] = dati.map((r) => [
-            r.persona, r.negozio, itDate(r.dal), itDate(r.al), r.giorni, Math.round(r.giorni * ORE_AL_GIORNO * 100) / 100,
-            ...extra.map((c) => r.extra?.[c] ?? ""),
-        ]);
-        /* IL RIEPILOGO: una riga per persona, come lo chiede chi paga.
-           I GIORNI SI UNISCONO, NON SI SOMMANO (revisore 31/08). Sommando riga
-           per riga, tre certificati sovrapposti dello stesso collaboratore
-           davano 36 giorni in un mese che ne ha 25 lavorativi — 288 ore di
-           malattia su un mese da 200. Qui ogni giornata conta una volta sola, e
-           se un giorno compare sia intero sia a metà vale intero. */
-        const per = new Map<string, { persona: string; negozii: Set<string>; giorni: Map<string, number>; righe: number }>();
-        for (const r of dati) {
-            const v = per.get(r.persona) || { persona: r.persona, negozii: new Set<string>(), giorni: new Map<string, number>(), righe: 0 };
-            v.righe++;
-            if (r.negozio) v.negozii.add(r.negozio);
-            for (const g of r.giornate || []) v.giorni.set(g.giorno, Math.max(v.giorni.get(g.giorno) ?? 0, g.quota));
-            per.set(r.persona, v);
-        }
-        const riepilogo: CellaXlsx[][] = [...per.values()]
-            .map((v) => ({
-                persona: v.persona,
-                // più negozi = si dicono tutti: raggruppare per nome e mostrare
-                // «il primo che capita» nascondeva che uno lavora su due sedi
-                negozio: [...v.negozii].sort().join(" · "),
-                righe: v.righe,
-                giorni: Math.round([...v.giorni.values()].reduce((t, q) => t + q, 0) * 100) / 100,
-            }))
-            .sort((x, y) => y.giorni - x.giorni || x.persona.localeCompare(y.persona))
-            .map((v) => [v.persona, v.negozio, v.righe, v.giorni, Math.round(v.giorni * ORE_AL_GIORNO * 100) / 100]);
-
-        await scaricaXlsxMulti(`${nomeFile}_${periodo.nome}`, [
-            {
-                nome: "Dettaglio",
-                intestazioni: ["Collaboratore", "Negozio", "Dal", "Al", "Giorni", `Ore (${ORE_AL_GIORNO}h/giorno)`, ...extra],
-                righe: dettaglio,
-            },
-            {
-                nome: "Riepilogo",
-                intestazioni: ["Collaboratore", "Negozio", "Assenze", "Giorni totali", `Ore totali (${ORE_AL_GIORNO}h/giorno)`],
-                righe: riepilogo,
-            },
-        ]);
+        /* I FOGLI LI COSTRUISCE LA LIBRERIA CONDIVISA: gli stessi numeri devono
+           uscire da qui e dall'email automatica del primo del mese. Due copie
+           della stessa aritmetica divergono sempre. */
+        await scaricaXlsxMulti(`${nomeFile}_${periodo.nome}`, fogliAssenze(dati, colonneExtra || []));
         setAperto(false);
     };
 

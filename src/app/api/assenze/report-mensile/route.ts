@@ -1,0 +1,167 @@
+import { NextResponse } from "next/server";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { inviaEmail } from "@/lib/email";
+import { casellaMittente } from "@/lib/emailCredenziali";
+import {
+    fogliAssenze, giornateAssenza, mesePrecedente, nomeMese, ymd,
+    type RigaAssenza, type FoglioExcel,
+} from "@/lib/assenze";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/* IL REPORT DELLE ASSENZE, IL PRIMO DI OGNI MESE (Luca 31/08).
+ *
+ * «Al primo di ogni mese dobbiamo inviare un'email con l'export delle ferie e
+ * quello della malattia a telefuturasrl@hotmail.com e a
+ * studioandreavincioni@gmail.com. Nel testo dobbiamo dire di fare attenzione
+ * che ci sono due tab per ogni foglio, uno di dettaglio e uno di riepilogo.»
+ *
+ * Il mese che si manda è quello APPENA CHIUSO: il primo settembre parte agosto,
+ * intero. Il conto è lo stesso del bottone Excel — stessa libreria, stessi
+ * numeri — perché due copie della stessa aritmetica divergono sempre.
+ *
+ * SI PUÒ CHIAMARE PIÙ VOLTE. Il cron può ripetere, la rete può cadere a metà:
+ * di ogni mese resta una riga in `report_assenze_inviati`, e se c'è già la
+ * chiamata non fa niente. `force` la scavalca, ma solo col token.
+ */
+const DESTINATARI = ["telefuturasrl@hotmail.com", "studioandreavincioni@gmail.com"];
+
+async function xlsx(fogli: FoglioExcel[]): Promise<Buffer> {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    for (const f of fogli) {
+        const ws = XLSX.utils.aoa_to_sheet([f.intestazioni, ...f.righe]);
+        ws["!cols"] = f.intestazioni.map((h, i) => {
+            let w = Math.max(h.length + 2, 8);
+            for (const r of f.righe) w = Math.max(w, String(r[i] ?? "").length + 2);
+            return { wch: Math.min(w, 60) };
+        });
+        XLSX.utils.book_append_sheet(wb, ws, f.nome);
+    }
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
+export async function POST(req: Request) {
+    const body: Record<string, unknown> = await req.json().catch(() => ({}));
+    const tokenOk = !!process.env.TRIAGE_ADMIN_TOKEN && req.headers.get("x-triage-token") === process.env.TRIAGE_ADMIN_TOKEN;
+    const forza = !!body?.force && tokenOk;
+    // `mese` (AAAA-MM-01) per rimandare un mese vecchio; senza, quello chiuso ieri
+    const mese = typeof body?.mese === "string" && /^\d{4}-\d{2}-01$/.test(body.mese)
+        ? { iso: body.mese, da: body.mese, a: ymd(new Date(Number(body.mese.slice(0, 4)), Number(body.mese.slice(5, 7)), 0)) }
+        : mesePrecedente();
+    const prova = !!body?.dryRun;
+
+    if (!forza && !prova) {
+        const { data: gia } = await supabase.from("report_assenze_inviati").select("mese, esito").eq("mese", mese.iso).maybeSingle();
+        if (gia && gia.esito === "inviato") return NextResponse.json({ ok: true, saltato: "già inviato", mese: mese.iso });
+    }
+
+    // ── i dati: le stesse fonti del bottone Excel ──────────────────────────
+    const [fes, fer, mal] = await Promise.all([
+        supabase.from("giorni_festivi").select("giorno"),
+        supabase.from("vacation_requests").select("employee_name, store, date_from, date_to, half_day, tipo, reason, admin_note")
+            .eq("status", "approved").lte("date_from", mese.a).gte("date_to", mese.da),
+        supabase.from("sickness_absences").select("employee_name, store, date_from, date_to, certificate_number")
+            .lte("date_from", mese.a).gte("date_to", mese.da),
+    ]);
+    /* SENZA I FESTIVI NON SI MANDA NIENTE: contarli come lavorativi gonfia le
+       ore, e un file gonfiato che arriva al consulente è peggio di un file che
+       non arriva (rilievo del revisore sull'export a mano). */
+    if (fes.error) return NextResponse.json({ ok: false, errore: "non ho potuto leggere i giorni festivi: report non inviato" }, { status: 503 });
+    const festivi = new Set(((fes.data ?? []) as { giorno: string }[]).map((f) => String(f.giorno).slice(0, 10)));
+    if (fer.error || mal.error) return NextResponse.json({ ok: false, errore: (fer.error || mal.error)?.message }, { status: 503 });
+
+    const g = (v: unknown) => String(v ?? "").slice(0, 10);
+    const righeFerie: RigaAssenza[] = ((fer.data ?? []) as Record<string, string>[])
+        // i CORSI sono tempo lavorato, non ferie: fuori, come nel bottone Excel
+        .filter((r) => r.tipo !== "corso")
+        .map((r) => {
+            const giornate = giornateAssenza(g(r.date_from), g(r.date_to), mese.da, mese.a, festivi, !!r.half_day);
+            return {
+                persona: r.employee_name, negozio: r.store || "",
+                dal: g(r.date_from), al: g(r.date_to),
+                giorni: giornate.reduce((t, x) => t + x.quota, 0), giornate,
+                extra: {
+                    "Mezza giornata": r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
+                    "Motivazione": r.reason || "", "Nota amministrazione": r.admin_note || "",
+                },
+            };
+        }).filter((x) => x.giorni > 0);
+    const righeMal: RigaAssenza[] = ((mal.data ?? []) as Record<string, string>[]).map((r) => {
+        const giornate = giornateAssenza(g(r.date_from), g(r.date_to), mese.da, mese.a, festivi);
+        return {
+            persona: r.employee_name, negozio: r.store || "",
+            dal: g(r.date_from), al: g(r.date_to),
+            giorni: giornate.length, giornate,
+            extra: { "Certificato": r.certificate_number || "" },
+        };
+    }).filter((x) => x.giorni > 0);
+
+    const fogliF = fogliAssenze(righeFerie, ["Mezza giornata", "Motivazione", "Nota amministrazione"]);
+    const fogliM = fogliAssenze(righeMal, ["Certificato"]);
+    const etichetta = nomeMese(mese.iso);
+    const nomeF = `ferie_${mese.iso.slice(0, 7)}.xlsx`;
+    const nomeM = `malattia_${mese.iso.slice(0, 7)}.xlsx`;
+
+    if (prova) {
+        return NextResponse.json({
+            ok: true, prova: true, mese: mese.iso, etichetta,
+            ferie: { righe: righeFerie.length, persone: fogliF[1].righe.length },
+            malattia: { righe: righeMal.length, persone: fogliM[1].righe.length },
+            destinatari: DESTINATARI,
+        });
+    }
+
+    const mittente = await casellaMittente();
+    if (!mittente) return NextResponse.json({ ok: false, errore: "la casella amministrazione@ non è collegata al CRM" }, { status: 503 });
+
+    const testo = [
+        `Buongiorno,`,
+        ``,
+        `in allegato il riepilogo delle assenze di ${etichetta}:`,
+        ``,
+        `• ${nomeF} — ferie e permessi approvati`,
+        `• ${nomeM} — assenze per malattia`,
+        ``,
+        `ATTENZIONE: ogni file contiene DUE FOGLI.`,
+        `  – «Dettaglio»: una riga per ogni assenza, con le date e i giorni che cadono nel mese.`,
+        `  – «Riepilogo»: una riga per collaboratore, con il totale dei giorni e delle ore.`,
+        ``,
+        `I giorni sono quelli lavorativi (escluse domeniche e festività); il sabato è considerato lavorativo. Un giorno vale 8 ore. Le mezze giornate valgono 0,5. Nel riepilogo una giornata coperta da più assenze conta una volta sola.`,
+        ``,
+        `Questo messaggio è automatico e parte il primo di ogni mese.`,
+        ``,
+        `Telefutura`,
+    ].join("\n");
+
+    let esito = "inviato", errore: string | null = null;
+    try {
+        await inviaEmail(mittente as never, {
+            to: DESTINATARI.join(", "),
+            subject: `Telefutura — Ferie e malattia ${etichetta}`,
+            text: testo,
+            html: `<p>${testo.replace(/\n/g, "<br>")}</p>`,
+            attachments: [
+                { filename: nomeF, content: await xlsx(fogliF), contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                { filename: nomeM, content: await xlsx(fogliM), contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+            ],
+        });
+    } catch (e) {
+        esito = "errore"; errore = e instanceof Error ? e.message : "invio non riuscito";
+    }
+    await supabase.from("report_assenze_inviati").upsert({
+        mese: mese.iso, esito, errore, destinatari: DESTINATARI.join(", "),
+        righe_ferie: righeFerie.length, righe_malattia: righeMal.length, inviato_il: new Date().toISOString(),
+    }, { onConflict: "mese" });
+
+    return esito === "inviato"
+        ? NextResponse.json({ ok: true, mese: mese.iso, ferie: righeFerie.length, malattia: righeMal.length, a: DESTINATARI })
+        : NextResponse.json({ ok: false, errore }, { status: 502 });
+}
+
+/** GET: a che punto siamo, senza mandare niente. */
+export async function GET() {
+    const { data } = await supabase.from("report_assenze_inviati").select("*").order("mese", { ascending: false }).limit(6);
+    return NextResponse.json({ prossimo: mesePrecedente().iso, storico: data ?? [] });
+}
