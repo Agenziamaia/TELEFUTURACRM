@@ -27,7 +27,25 @@ export const dynamic = "force-dynamic";
  * di ogni mese resta una riga in `report_assenze_inviati`, e se c'è già la
  * chiamata non fa niente. `force` la scavalca, ma solo col token.
  */
-const DESTINATARI = ["telefuturasrl@hotmail.com", "studioandreavincioni@gmail.com"];
+/* I DESTINATARI SI CAMBIANO DALL'HUB, non qui (Luca 31/08: «voglio poter
+   modificare tempistiche, destinatari e tutto ciò che è possibile
+   modificare»). Questi restano il valore di partenza: valgono finché nessuno
+   li ha toccati da Amministrazione → Automatismi. */
+const DESTINATARI_DI_PARTENZA = ["telefuturasrl@hotmail.com", "studioandreavincioni@gmail.com"];
+
+async function destinatari(): Promise<string[]> {
+    try {
+        const { data } = await supabase.from("automatismi_config")
+            .select("parametri").eq("id", "assenze-report-mensile").maybeSingle();
+        const v = (data?.parametri as { destinatari?: unknown })?.destinatari;
+        const puliti = Array.isArray(v)
+            ? v.map((x) => String(x || "").trim()).filter((x) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(x))
+            : [];
+        // una lista vuota o tutta sbagliata NON deve zittire il report: si
+        // torna ai due indirizzi di sempre invece di spedire a nessuno
+        return puliti.length ? puliti : DESTINATARI_DI_PARTENZA;
+    } catch { return DESTINATARI_DI_PARTENZA; }
+}
 
 async function xlsx(fogli: FoglioExcel[]): Promise<Buffer> {
     const XLSX = await import("xlsx");
@@ -76,6 +94,8 @@ export async function POST(req: Request) {
         const { data: gia } = await supabase.from("report_assenze_inviati").select("mese, esito").eq("mese", mese.iso).maybeSingle();
         if (gia && gia.esito === "inviato") return NextResponse.json({ ok: true, saltato: "già inviato", mese: mese.iso });
     }
+
+    const DEST = await destinatari();
 
     // ── i dati: le stesse fonti del bottone Excel ──────────────────────────
     const [fes, fer, mal] = await Promise.all([
@@ -129,7 +149,7 @@ export async function POST(req: Request) {
             ok: true, prova: true, mese: mese.iso, etichetta,
             ferie: { righe: righeFerie.length, persone: fogliF[1].righe.length },
             malattia: { righe: righeMal.length, persone: fogliM[1].righe.length },
-            destinatari: DESTINATARI,
+            destinatari: DEST,
         });
     }
 
@@ -145,7 +165,7 @@ export async function POST(req: Request) {
             await supabase.from("report_assenze_inviati").upsert({
                 mese: mese.iso, esito: "vuoto",
                 errore: "nessuna ferie e nessuna malattia nel mese: non spedito, controllare i dati",
-                destinatari: DESTINATARI.join(", "), righe_ferie: 0, righe_malattia: 0,
+                destinatari: DEST.join(", "), righe_ferie: 0, righe_malattia: 0,
                 inviato_il: new Date().toISOString(),
             }, { onConflict: "mese" });
         }
@@ -177,7 +197,7 @@ export async function POST(req: Request) {
     let esito = "inviato", errore: string | null = null;
     try {
         await inviaEmail(mittente as never, {
-            to: provaA || DESTINATARI.join(", "),
+            to: provaA || DEST.join(", "),
             subject: `${provaA ? "[PROVA] " : ""}Telefutura — Ferie e malattia ${etichetta}`,
             text: testo,
             html: `<p>${testo.replace(/\n/g, "<br>")}</p>`,
@@ -192,12 +212,12 @@ export async function POST(req: Request) {
     // la prova non tocca il registro: il giro automatico deve partire lo stesso
     if (provaA) return NextResponse.json({ ok: esito === "inviato", prova: provaA, mese: mese.iso, ferie: righeFerie.length, malattia: righeMal.length, errore });
     await supabase.from("report_assenze_inviati").upsert({
-        mese: mese.iso, esito, errore, destinatari: DESTINATARI.join(", "),
+        mese: mese.iso, esito, errore, destinatari: DEST.join(", "),
         righe_ferie: righeFerie.length, righe_malattia: righeMal.length, inviato_il: new Date().toISOString(),
     }, { onConflict: "mese" });
 
     return esito === "inviato"
-        ? NextResponse.json({ ok: true, mese: mese.iso, ferie: righeFerie.length, malattia: righeMal.length, a: DESTINATARI })
+        ? NextResponse.json({ ok: true, mese: mese.iso, ferie: righeFerie.length, malattia: righeMal.length, a: DEST })
         : NextResponse.json({ ok: false, errore }, { status: 502 });
 }
 

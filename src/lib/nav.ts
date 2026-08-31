@@ -18,7 +18,7 @@
 import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
-    Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
+    Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag, Cog,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
     BarChart3, Receipt, User, Globe, Mail, SlidersHorizontal,
 } from "lucide-react";
@@ -309,6 +309,11 @@ export const NAVIGATION: NavEntry[] = [
                una sezione come le altre: si assegna a chiunque dalla pagina
                Permessi, senza toccare il codice — richiesta esplicita di Luca. */
             { name: "AI", sez: "ai", icon: Sparkles, roles: ["admin", "dev"] },
+            /* AUTOMATISMI (Luca 31/08): nasce ristretto come l'AI — da qui si
+               spengono lavori che spediscono documenti del personale e si
+               cambiano i destinatari di quelle email. Si allarga dalla pagina
+               Permessi quando serve, senza toccare il codice. */
+            { name: "Automatismi", sez: "automatismi", icon: Cog, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

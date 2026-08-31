@@ -16,6 +16,7 @@ import { TrackingEsitiView } from "./_views/tracking_esiti";
 import { WhatsAppAdminView } from "./_views/whatsapp_admin";
 import { EmailAdminView } from "./_views/email_admin";
 import { AiAdminView } from "./_views/ai_admin";
+import { AutomatismiView } from "./_views/automatismi";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -99,6 +100,7 @@ import {
     MessageCircle,
     Store,
     Sparkles,
+    Cog,
     SlidersHorizontal,
 } from "lucide-react";
 
@@ -248,6 +250,11 @@ const SEZIONI: Sezione[] = [
     // utilizzando, di quanto stiamo spendendo diviso per categorie, e posso
     // filtrare per utenza». Il tetto è 30 € al mese.
     { id: "ai", label: "AI", icon: Sparkles, desc: "Quanto costa l'intelligenza artificiale e chi la usa: spesa del mese contro il tetto, divisa fra quello che chiede una persona e quello che gira da solo, per utenza e per sezione." },
+    /* HUB AUTOMATISMI (Luca 31/08): «nel futuro ne costruiremo tanti, quindi
+       crealo già come Hub». Un lavoro che gira di notte non si lamenta: se
+       smette, nessuno lo nota finché qualcuno non chiede «ma quel file non è
+       arrivato?». Qui si vede, si cambia e si prova. */
+    { id: "automatismi", label: "Automatismi", icon: Cog, desc: "Tutto quello che il CRM fa da solo: quando gira, com'è andata l'ultima volta, a chi arriva — e si cambiano orari e destinatari senza toccare il database. Con la prova per verificare che funzioni davvero." },
     // FISCALITÀ (Luca 24/08): mini-hub che raggruppa le tre sezioni fiscali
     // nate col registratore telematico — stesso pattern del mini-hub Costi.
     { id: "fiscalita", label: "Fiscalità", icon: Receipt, desc: "Il mini-hub fiscale: Reparti & IVA, Cassa & Scontrini e Coupon — in sequenza, con le stesse regole di permesso delle singole sezioni." },
@@ -704,6 +711,8 @@ function AmministrazioneInner() {
                 <WhatsAppAdminView />
             ) : sez === "ai" ? (
                 <AiAdminView />
+            ) : sez === "automatismi" ? (
+                <AutomatismiView />
             ) : sez === "email" ? (
                 <EmailAdminView />
             ) : (sez === "fiscalita" || FISC_IDS.includes(sez || "")) ? (
