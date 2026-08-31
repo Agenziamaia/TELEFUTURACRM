@@ -387,7 +387,7 @@ export function PermessiView() {
                                     const capGroup = capGroups[0];
                                     return (
                                         <div key={v.href}>
-                                            <div className={`flex items-center gap-3 px-4 py-2.5 ${padreOff ? "opacity-40" : ""}`} style={{ paddingLeft: 16 + (v.livello || 0) * 26 }}>
+                                            <div className={`flex items-center gap-3 px-4 py-2.5 transition-opacity ${padreOff ? "opacity-30" : ""}`} style={{ paddingLeft: 16 + (v.livello || 0) * 26 }}>
                                                 {(v.livello || 0) > 0 && <span className="text-slate-600 text-xs shrink-0">└</span>}
                                                 <div className="flex-1 min-w-0">
                                                     <div className="text-sm font-medium text-white">{v.nome}</div>
@@ -410,10 +410,27 @@ export function PermessiView() {
                                                 )}
                                                 {eccezione && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title={`Eccezione del grado ${gradeLabel(ruolo, grado)} su questa voce`} />}
                                                 {eccPersona && <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" title={`Eccezione personale di ${personaObj?.full_name} su questa voce`} />}
+                                                {/* ⚠️ COL PADRE SPENTO LA LEVETTA SI MOSTRA SPENTA (Luca
+                                                    01/09: «quando disabilito l'hub si disabilitano anche
+                                                    quelle sotto, anche graficamente»). Prima la riga si
+                                                    sbiadiva ma la levetta restava VERDE — e il verde è la
+                                                    prima cosa che l'occhio legge: si vedeva un hub chiuso
+                                                    con dentro tre voci apparentemente aperte, che è il
+                                                    contrario di quello che succede davvero.
+                                                    ⚠️ Si spegne solo la GRAFICA, non il dato: la riga
+                                                    salvata resta accesa, e riaprendo l'hub le voci
+                                                    tornano come erano. Spegnerle davvero vorrebbe dire
+                                                    perdere una configurazione fatta a mano ogni volta che
+                                                    si chiude un hub per un minuto. Chi vuole sapere il
+                                                    valore vero lo legge nel pallino qui accanto. */}
+                                                {padreOff && eff && (
+                                                    <span title="Questa voce è accesa, ma con l'hub spento non conta: riaprendo l'hub torna visibile."
+                                                        className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-emerald-400/50">on</span>
+                                                )}
                                                 <button onClick={() => { if (!padreOff) toggle(v); }} disabled={busy === v.href || padreOff}
-                                                    className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""} ${padreOff ? "cursor-not-allowed" : ""}`}
-                                                    title={padreOff ? "Prima accendi l'accesso all'hub (la riga sopra): con l'hub spento le voci interne non si possono abilitare" : eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
-                                                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
+                                                    className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff && !padreOff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""} ${padreOff ? "cursor-not-allowed" : ""}`}
+                                                    title={padreOff ? "L'hub è spento: queste voci non sono raggiungibili, qualunque sia il loro valore. Accendi prima l'accesso all'hub (la riga sopra)." : eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
+                                                    <span className={`absolute top-0.5 w-5 h-5 rounded-full transition-all ${eff && !padreOff ? "bg-white left-6" : "bg-white left-0.5"} ${padreOff ? "bg-slate-400" : ""}`} />
                                                 </button>
                                             </div>
                                             {capGroup && capOpen === v.href && (
