@@ -23,6 +23,9 @@ export interface ScontrinoData {
     cliente?: string | null;   // per salvare/ritrovare il conto in sospeso
     azienda?: string | null;   // ragione sociale preselezionata (es. ripresa da sospeso)
     sospesoId?: string;        // se valorizzato: si sta COMPLETANDO un conto in sospeso
+    /** la vendita a cui questo scontrino appartiene: serve alla task del
+     *  bonifico, che deve riportare all'incasso vero e non a un elenco */
+    contrattoId?: string | null;
 }
 
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
@@ -159,6 +162,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     items: data?.items ?? [],
                     azienda: aziendaSel,
                     pagamenti,
+                    contrattoId: data?.contrattoId ?? null,
                     coupon: couponPayload,
                 }),
             });
@@ -322,7 +326,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
 
     return createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="glass-panel w-full max-w-md p-5 space-y-4">
+            {/* PIÙ LARGO (Luca 31/08): a `max-w-md` i tre pulsanti di pagamento
+                finivano a «Co… Ca… Bo…» — tre etichette tagliate che bisogna
+                indovinare, sull'ultimo gesto della vendita. Lo spazio c'è. */}
+            <div className="glass-panel w-full max-w-2xl p-6 space-y-4">
                 <div className="flex items-baseline justify-between">
                     <h3 className="text-lg font-bold text-white">🧾 Incasso &amp; Scontrino</h3>
                     <div className="flex items-center gap-2">
@@ -404,19 +411,19 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                    preme quello che serve.
                                    La forma scelta dal carrello — credito, finanziamento — non
                                    ha un pulsante: si mostra com'è, e non si cambia a mano. */
-                                <div key={i} className="flex gap-2 items-center flex-wrap">
+                                <div key={i} className="flex gap-3 items-end flex-wrap">
                                     {FORME_A_MANO.some((f) => f.code === r.forma) ? (
                                         <div className="flex gap-1.5 flex-1 min-w-0">
                                             {FORME_A_MANO.map((f) => {
                                                 const on = r.forma === f.code;
                                                 return (
                                                     <button key={f.code} type="button" onClick={() => setForma(i, f.code)}
-                                                        className={"flex-1 min-w-0 flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors "
+                                                        className={"flex-1 min-w-0 flex flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-3.5 text-sm font-bold transition-colors "
                                                             + (on
-                                                                ? "bg-violet-500/25 border-violet-400/70 text-white"
+                                                                ? "bg-violet-500/25 border-violet-400/70 text-white shadow-lg shadow-violet-900/30"
                                                                 : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200")}>
-                                                        <span className="text-base leading-none">{f.icona}</span>
-                                                        <span className="truncate">{f.label}</span>
+                                                        <span className="text-2xl leading-none">{f.icona}</span>
+                                                        <span>{f.label}</span>
                                                     </button>
                                                 );
                                             })}
@@ -428,13 +435,13 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                             <span className="text-[10px] text-slate-500 ml-1.5">deciso dal carrello</span>
                                         </span>
                                     )}
-                                    <div className="relative w-28 shrink-0">
-                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
+                                    <div className="relative w-32 shrink-0">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-base">€</span>
                                         <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
-                                            className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm text-right tabular-nums pl-5 pr-2 py-2 outline-none focus:border-violet-400/60" />
+                                            className="w-full rounded-2xl bg-white/5 border border-white/10 text-slate-100 text-lg font-bold text-right tabular-nums pl-6 pr-3 py-3 outline-none focus:border-violet-400/60" />
                                     </div>
                                     <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
-                                        className="shrink-0 w-8 h-8 rounded-lg border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
+                                        className="shrink-0 w-9 h-11 rounded-xl border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
                                 </div>
                             ))}
                             <div className="flex items-center justify-between">

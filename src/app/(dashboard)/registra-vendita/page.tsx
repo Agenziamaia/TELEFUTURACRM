@@ -6937,7 +6937,10 @@ function CRM() {
         // flusso brand: i contratti sono GIÀ salvati qui sopra → nessun commit differito.
         pendingCommit.current = null;
         clearDraft("crm_v9");
-        setScontrino({ items: _scRows, negozio: selNeg });
+        /* IL NUMERO DELLA VENDITA VIAGGIA COL MODALE (Luca 31/08): la task
+           del bonifico deve riportare l'amministrazione ALLO SCONTRINO che è
+           stato fatto, non alla lista di tutte le vendite. */
+        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
         // niente più reset a orologeria: la conferma resta finché non la
