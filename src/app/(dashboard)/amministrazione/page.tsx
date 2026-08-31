@@ -2332,6 +2332,7 @@ interface Attachment {
     storage_path: string;
     note: string | null;
     category: string | null;
+    mese: string | null;
     created_at: string;
 }
 
@@ -2339,14 +2340,34 @@ const ATT_BUCKET = "user-attachments";
 const ATT_CATS = [
     { id: "contratto", label: "Contratto" },
     { id: "documenti", label: "Documenti" },
+    /* LE BUSTE PAGA HANNO CASA LORO, e dentro i mesi (Luca 31/08): stavano in
+       «Altri allegati» perché la sezione non c'era. `mensile` accende il
+       raggruppamento per mensilità e la domanda al caricamento. */
+    { id: "busta_paga", label: "Buste paga", mensile: true },
     { id: "altri", label: "Altri allegati" },
-];
+] as { id: string; label: string; mensile?: boolean }[];
+
+const MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+const etichettaMese = (iso: string | null) => iso ? `${MESI_IT[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}` : "mensilità da assegnare";
+/** L'elenco dei mesi da proporre: dal mese scorso indietro di due anni. */
+const MESI_SCELTA = (() => {
+    const out: { iso: string; label: string }[] = [];
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+    for (let i = 0; i < 24; i++) {
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+        out.push({ iso, label: etichettaMese(iso) });
+        d.setMonth(d.getMonth() - 1);
+    }
+    return out;
+})();
 
 function UserAttachments({ userId }: { userId: string }) {
     const [items, setItems] = useState<Attachment[]>([]);
     const [loading, setLoading] = useState(true);
     const [files, setFiles] = useState<Record<string, File | null>>({});
     const [names, setNames] = useState<Record<string, string>>({});
+    // la mensilità scelta al caricamento, per le categorie che la vogliono
+    const [mesi, setMesi] = useState<Record<string, string>>({ busta_paga: MESI_SCELTA[0]?.iso || "" });
     const [savingCat, setSavingCat] = useState<string | null>(null);
     const [err, setErr] = useState("");
 
@@ -2354,7 +2375,7 @@ function UserAttachments({ userId }: { userId: string }) {
         setLoading(true);
         const { data } = await supabase
             .from("user_attachments")
-            .select("id, file_name, storage_path, note, category, created_at")
+            .select("id, file_name, storage_path, note, category, mese, created_at")
             .eq("user_id", userId)
             .order("created_at", { ascending: false });
         setItems((data as Attachment[]) || []);
@@ -2393,6 +2414,7 @@ function UserAttachments({ userId }: { userId: string }) {
             storage_path: storagePath,
             note: name || null,
             category: cat,
+            mese: mesi[cat] || null,
             size_bytes: file?.size || null,
         });
         setSavingCat(null);
@@ -2428,8 +2450,25 @@ function UserAttachments({ userId }: { userId: string }) {
                         {loading ? (
                             <div className="flex justify-center py-4 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /></div>
                         ) : list.length ? (
-                            <div className="space-y-1.5">
-                                {list.map((a) => (
+                            /* LE SOTTOCARTELLE DEI MESI: un gruppo per mensilità, dal più
+                               recente. Quelle senza mese stanno in cima, perché sono le
+                               uniche su cui c'è ancora qualcosa da fare. */
+                            <div className="space-y-3">
+                                {(cat.mensile
+                                    ? [...new Set(list.map((x) => x.mese || ""))].sort((x, y) => (x === "" ? -1 : y === "" ? 1 : y.localeCompare(x)))
+                                    : [null]
+                                ).map((mese) => {
+                                  const dentro = cat.mensile ? list.filter((x) => (x.mese || "") === mese) : list;
+                                  return (
+                                  <div key={mese ?? "tutti"} className="space-y-1.5">
+                                    {cat.mensile && (
+                                        <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${mese ? "text-slate-500" : "text-amber-300"}`}>
+                                            📁 {etichettaMese(mese || null)}
+                                            <span className="font-normal normal-case tracking-normal text-slate-600">· {dentro.length}</span>
+                                        </p>
+                                    )}
+                                    <div className="space-y-1.5">
+                                {dentro.map((a) => (
                                     <div key={a.id} className="glass-card p-3 rounded-lg flex items-center gap-3">
                                         <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
                                         <div className="min-w-0 flex-1">
@@ -2437,12 +2476,30 @@ function UserAttachments({ userId }: { userId: string }) {
                                             {a.note && a.storage_path && <p className="text-xs text-slate-500 truncate">{a.file_name}</p>}
                                             <p className="text-[10px] text-slate-600">{fmtDateTime(a.created_at)}</p>
                                         </div>
+                                        {cat.mensile && (
+                                            /* la mensilità si corregge dalla riga: le sedici
+                                               arrivate in coppia aspettano proprio questo */
+                                            <select value={a.mese || ""} title="Mensilità"
+                                                onChange={async (e) => {
+                                                    const v = e.target.value || null;
+                                                    await supabase.from("user_attachments").update({ mese: v }).eq("id", a.id);
+                                                    load();
+                                                }}
+                                                className={`glass-input !h-7 !px-2 text-[11px] w-[140px] shrink-0 ${a.mese ? "" : "!border-amber-400/50"}`}>
+                                                <option value="">— mensilità —</option>
+                                                {MESI_SCELTA.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
+                                            </select>
+                                        )}
                                         {a.storage_path && (
                                             <button onClick={() => openFile(a)} className="text-slate-400 hover:text-white p-1" title="Apri"><Eye className="w-4 h-4" /></button>
                                         )}
                                         <button onClick={() => remove(a)} className="text-slate-500 hover:text-rose-400 p-1" title="Elimina"><X className="w-4 h-4" /></button>
                                     </div>
                                 ))}
+                                    </div>
+                                  </div>
+                                  );
+                                })}
                             </div>
                         ) : (
                             <p className="text-xs text-slate-600 px-1">Nessun allegato.</p>
@@ -2450,6 +2507,14 @@ function UserAttachments({ userId }: { userId: string }) {
                         <div className="glass-card p-3 rounded-lg flex flex-col sm:flex-row gap-2 sm:items-center">
                             <input type="text" value={names[cat.id] || ""} onChange={(e) => setNames((p) => ({ ...p, [cat.id]: e.target.value }))} placeholder="Nome allegato" className="glass-input text-sm flex-1" />
                             <input type="file" onChange={(e) => setFiles((p) => ({ ...p, [cat.id]: e.target.files?.[0] || null }))} className="text-xs text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-indigo-500/20 file:text-indigo-200 file:text-xs" />
+                            {cat.mensile && (
+                                <select value={mesi[cat.id] || ""} onChange={(e) => setMesi((p) => ({ ...p, [cat.id]: e.target.value }))}
+                                    title="Di che mensilità è questa busta paga"
+                                    className="glass-input text-sm sm:w-[170px]">
+                                    <option value="">— mensilità —</option>
+                                    {MESI_SCELTA.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
+                                </select>
+                            )}
                             <button onClick={() => save(cat.id)} disabled={savingCat === cat.id} className="primary-btn text-xs px-3 whitespace-nowrap flex items-center gap-1 justify-center">
                                 {savingCat === cat.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Salva
                             </button>
