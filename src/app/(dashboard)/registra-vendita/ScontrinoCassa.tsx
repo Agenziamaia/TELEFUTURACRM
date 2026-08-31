@@ -141,7 +141,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // Sconto coupon (capato al totale) → quanto resta DA PAGARE con le forme.
     const scontoCoupon = coupon ? Math.min(coupon.sconto, totale) : 0;
     const totaleDaPagare = +(totale - scontoCoupon).toFixed(2);
-    const coperto = totaleDaPagare <= 0.005; // coupon copre tutto: niente pagamento
+    /* NIENTE DA INCASSARE. Due casi diversi che qui finivano nello stesso: il
+       coupon che copre tutto, e un carrello che vale ZERO. Il secondo non
+       c'entra col coupon, e dirlo confonde chi sta cercando di capire perché
+       non gli è stato chiesto il pagamento (Luca 31/08, prova a Promontori). */
+    const coperto = totaleDaPagare <= 0.005;
+    const nienteDaPagare = !coupon && totale <= 0.005;
 
     // Somme / bilancio del pagamento (sul netto da pagare).
     const sommaPag = +righe.reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
@@ -532,7 +537,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         </div>
 
                         {coperto ? (
-                            <p className="text-sm text-emerald-300 text-center py-1">Coperto interamente dal coupon — nessun pagamento da incassare.</p>
+                            <p className="text-sm text-emerald-300 text-center py-1">
+                                {nienteDaPagare
+                                    ? "Non c'è niente da incassare: il totale è zero. Lo scontrino esce lo stesso, senza forma di pagamento."
+                                    : "Coperto interamente dal coupon — nessun pagamento da incassare."}
+                            </p>
                         ) : (
                         <div className="space-y-2">
                             <p className="text-[11px] text-slate-500">Forme di pagamento (max 3)</p>
