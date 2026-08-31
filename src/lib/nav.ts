@@ -275,6 +275,10 @@ export const NAVIGATION: NavEntry[] = [
             { name: "WhatsApp", sez: "whatsapp", icon: MessagesSquare, roles: ["admin", "dev"] },
             // Pannello Email (Luca 26/08): governance caselle — collega/riassegna/elimina solo da qui
             { name: "Email", sez: "email", icon: Mail, roles: ["admin", "dev"] },
+            /* SPESA E USO DELL'AI (Luca 31/08). Nasce riservata all'admin, ma è
+               una sezione come le altre: si assegna a chiunque dalla pagina
+               Permessi, senza toccare il codice — richiesta esplicita di Luca. */
+            { name: "AI", sez: "ai", icon: Sparkles, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

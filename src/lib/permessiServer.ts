@@ -26,6 +26,11 @@ export const SEZIONE_DI: Record<string, string> = {
     "whatsapp": "/chat",
     "email": "/chat",
     "ai": "/assistente",
+    /* ⚠️ PIÙ PRECISA di «ai»: la spesa non è l'assistente. Senza questa riga
+       la rotta avrebbe ereditato «/assistente» — che nel menù è aperta ai
+       manager — e i costi dell'azienda sarebbero usciti a chi apre una chat.
+       Sta sotto la sezione del pannello, che Luca assegna dai Permessi. */
+    "ai/spesa": "/amministrazione?sez=ai",
     "vendita": "/registra-vendita",
     "pos": "/registra-vendita",
     "aircall": "/chiamate",
