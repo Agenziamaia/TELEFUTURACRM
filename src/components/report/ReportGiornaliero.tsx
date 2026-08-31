@@ -28,7 +28,13 @@ const BG_URL = "/report-bg.webp";
    vede e le carte restano leggibili, perché il contrasto vero non lo fa il
    velo: lo fanno i pannelli in vetro scuro. */
 const VELO = 0.30;   // opacita' del velo scuro sopra la foto
-const VETRO = 0.5;   // opacita' dei pannelli in vetro
+/* QUANTO SONO SOLIDE LE CARTE (Luca 31/08, guardando i fogli montati).
+   Era 0.5, tarato su uno sfondo quasi nero: là sotto non passava niente. Con
+   un'immagine vera invece lo sfondo attraversa le tabelle — le fibre ottiche
+   si vedevano DIETRO i numeri, e su un fondo chiaro il foglio diventava
+   lattiginoso. Il fondo si deve vedere nella CORNICE, non attraverso i dati.
+   A 0.80 le carte tornano solide e leggibili su qualunque immagine. */
+const VETRO = 0.80;  // opacita' dei pannelli in vetro
 const CORNICE = 80;  // bordo in cui vive lo sfondo, px, uniforme sui 4 lati
 
 const W = 1080;
@@ -390,11 +396,16 @@ export default function ReportGiornaliero({ dati }) {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            {/* ⚠️ «RICAVO TOTALE» era grigio medio (#64748b): su uno sfondo chiaro
+                o luminoso spariva — visto su tre immagini su cinque. Bianco
+                velato con la sua ombra: si legge su qualunque cosa ci sia
+                sotto, e resta discreto come deve. */}
             <span style={{ fontSize: TS.ricLab, fontWeight: 800, letterSpacing: "0.18em",
-              textTransform: "uppercase", color: T.dim }}>Ricavo totale</span>
+              textTransform: "uppercase", color: "rgba(255,255,255,0.72)",
+              textShadow: "0 1px 6px rgba(0,0,0,0.85)" }}>Ricavo totale</span>
             <span style={{ fontSize: TS.kpi, fontWeight: 900, lineHeight: 1,
-              fontVariantNumeric: "tabular-nums", color: totale > 0 ? T.text : T.dimmer,
-              textShadow: totale > 0 ? "0 0 34px rgba(99,102,241,0.55)" : "none" }}>{fmtEuro(totale)}</span>
+              fontVariantNumeric: "tabular-nums", color: totale > 0 ? T.text : "rgba(255,255,255,0.45)",
+              textShadow: totale > 0 ? "0 0 34px rgba(99,102,241,0.55)" : "0 1px 6px rgba(0,0,0,0.8)" }}>{fmtEuro(totale)}</span>
           </div>
         </div>
 
