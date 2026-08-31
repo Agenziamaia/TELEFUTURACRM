@@ -12,7 +12,6 @@ import { gruppaSedi, assenzeDelGiorno, type AssenzaGiorno } from "@/lib/copertur
 import { isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
-import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { EsportaAssenze } from "@/components/EsportaAssenze";
 import { useVisibleStores } from "@/lib/visibleStores";
 
