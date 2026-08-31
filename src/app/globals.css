@@ -925,12 +925,10 @@ html.light .rvFatta-o.rvFatta-att-o{color:#9a5b00;background:rgba(154,91,0,.10);
 .rvT-ciano{--rv-acc:var(--tf-0ea5e9)}
 .rvT-ambra{--rv-acc:var(--tf-f59e0b)}
 .rvT-rosso{--rv-acc:var(--tf-ef4444)}
-.rvT-rosa{--rv-acc:var(--tf-f472b6)}
-.rvT-grigio{--rv-acc:var(--tf-94a3b8)}
-.rvT-bronzo{--rv-acc:var(--tf-c084fc)}
-html.light .rvT-rosa{--rv-acc:#a5195e}
-html.light .rvT-grigio{--rv-acc:#4b5a75}
-html.light .rvT-bronzo{--rv-acc:#6d28d9}
+/* «bronzo» era un viola, cioè la stessa tinta di `rvT-viola` con un altro
+   nome: i due valori sono una coppia e devono restare in famiglia con l'ambra. */
+.rvT-bronzo{--rv-acc:var(--tf-fb923c)}
+html.light .rvT-bronzo{--rv-acc:#9a4b00}
 .rvT-viola{--rv-acc:var(--tf-8b5cf6)}
 html.light .rvT-verde{--rv-acc:#0f7a4d}
 html.light .rvT-ambra{--rv-acc:#9a5b00}
@@ -940,9 +938,6 @@ html.light .rvT-ciano{--rv-acc:#0e6a94}
    Regola 7: una cosa che non si può fare non si finge cliccabile. Il
    riquadro del valore è un numero, non un filtro: niente manina, niente
    reazione al passaggio del mouse. */
-/* UN IMPORTO A SEI CIFRE NON STA IN 28px: usciva dal bordo (Luca 01/09).
-   Il numero degli euro ha il suo corpo, e comunque non va mai a capo. */
-.rvRapido-euro{font-size:19px;letter-spacing:-.2px;white-space:nowrap}
 .rvRapido-statico{cursor:default}
 .rvRapido-statico:hover{transform:none;box-shadow:none;border-color:var(--tf-w60)}
 html.light .rvRapido-statico:hover{border-color:rgba(15,23,42,.12)}
@@ -951,6 +946,75 @@ html.light .rvRapido{background:linear-gradient(160deg,#ffffff,#f6f5f2);border-c
 html.light .rvRapido b{color:#1e2952}
 html.light .rvRapido small{color:#5a6580}
 html.light .rvRapido.rvRapido-on{background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 16%,#fff),#fff)}
+
+/* ═══ I DUE VALORI, IN ALTO A DESTRA ══════════════════════════════════════
+   Luca 01/09: «se quei pulsanti di valore li mettessimo in alto come abbiamo
+   fatto con gli usati? In alto a destra?». È la stessa scelta di Gestione
+   Usati, e risolve il disallineamento alla radice: un importo a sei cifre non
+   deve più stare nella stessa sagoma di un conteggio a quattro. Non sono
+   filtri — non si premono — e in testata si legge subito che sono un'altra
+   cosa dai riquadri che filtrano. */
+.rvBoxTop{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.rvValori{display:flex;gap:10px;flex-wrap:wrap}
+.rvValore{display:flex;flex-direction:column;justify-content:center;gap:2px;
+  padding:9px 14px;border-radius:14px;border:1px solid var(--tf-w60);
+  background:linear-gradient(160deg,var(--tf-w50),var(--tf-w20))}
+.rvValore em{font-style:normal;font-size:20px;font-weight:800;line-height:1.15;
+  font-variant-numeric:tabular-nums;letter-spacing:-.3px;white-space:nowrap;color:var(--tf-f8fafc)}
+.rvValore b{font-size:11px;font-weight:800;letter-spacing:.3px;color:var(--rv-acc);white-space:nowrap}
+.rvValore small{font-size:10.5px;color:var(--tf-8892b0);white-space:nowrap}
+html.light .rvValore{background:linear-gradient(160deg,#ffffff,#f6f5f2);border-color:rgba(15,23,42,.12)}
+html.light .rvValore em{color:#1e2952}
+html.light .rvValore small{color:#5a6580}
+
+/* ═══ LA FILA DI SINTESI DEL MAGAZZINO ════════════════════════════════════
+   `.rvRapido` nasce per la cassa, dove <em> è un'ICONA a 28px; qui <em> è un
+   NUMERO, e i due mestieri non stanno nella stessa misura. Tutto è chiuso
+   dentro `.rvRapidoG-kpi`, così la cassa non si muove di un pixel.
+   Misurato in Chrome headless: a 28px «576.649 €» è largo 145px e nel
+   riquadro ce ne stanno 124 — usciva dal bordo di 19px per volta. Il primo
+   tentativo, una classe `.rvRapido-euro`, non funzionava: `.rvRapido em` è
+   più specifica e vinceva lei (è la trappola §4, la stessa di `.rvIn:focus`). */
+
+/* colonna minima 132 → 146px: a 1280 restano sei colonne come prima, ma
+   l'utile GARANTITO passa da 110 a 124px — il pavimento su cui sono tarate
+   le due soglie qui sotto. */
+.rvRapidoG-kpi{grid-template-columns:repeat(auto-fill,minmax(min(100%,146px),1fr))}
+.rvRapidoG-kpi .rvRapido{position:relative}
+.rvRapidoG-kpi .rvRapido em{font-size:24px;white-space:nowrap;max-width:100%;letter-spacing:-.3px}
+/* i due scalini, sulla LUNGHEZZA della stringa e non sulla finestra (§5): il
+   problema è quanto è lungo il numero, e nessuna media query lo sa. Si
+   calcolano sulla stessa stringa che va a schermo, quindi non possono
+   divergere da quello che si vede. */
+.rvRapidoG-kpi .rvRapido em.rvNum-m{font-size:20px}
+.rvRapidoG-kpi .rvRapido em.rvNum-s{font-size:17px}
+/* la riga dell'unità: una riga sola sempre, così i riquadri restano alti
+   uguale; se un giorno ci si scrive troppo, si tronca coi puntini — su
+   un'etichetta si può, su un numero no. Il colore cambia perché `--tf-8892b0`
+   sul fondo tinto di un riquadro ACCESO dà 3,78:1, sotto la soglia. */
+.rvRapidoG-kpi .rvRapido small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;color:var(--tf-cbd5e1)}
+html.light .rvRapidoG-kpi .rvRapido small{color:#384b61}
+/* «spento» qui vuol dire «questo conteggio è zero», non «disabilitato»: a .42
+   l'etichetta scendeva a 2,45:1 nel tema chiaro, cioè lo zero diventava
+   illeggibile proprio mentre diciamo che zero è un'informazione. */
+.rvRapidoG-kpi .rvRapido-off{opacity:.78}
+
+/* ── I RIQUADRI CHE APRONO UN'ALTRA SCHERMATA ────────────────────────────
+   Non filtrano questa tabella: aprono la loro, con altre colonne e un altro
+   Excel. La tinta la porta la CLASSE DELLA NATURA, non una `rvT-*`: due
+   riquadri che fanno la stessa cosa devono avere lo stesso colore anche se
+   domani se ne aggiunge un terzo. */
+.rvRapidoG-kpi .rvRapido-vista{--rv-acc:var(--tf-94a3b8);border-left:3px solid var(--rv-acc);padding-left:8px}
+html.light .rvRapidoG-kpi .rvRapido-vista{--rv-acc:#475569;border-left-color:var(--rv-acc)}
+.rvRapidoG-kpi .rvRapido-vista::after{content:"\2197";position:absolute;top:7px;right:9px;
+  font-size:11px;font-weight:800;line-height:1;
+  color:color-mix(in srgb,var(--rv-acc) 55%,#fff)}
+html.light .rvRapidoG-kpi .rvRapido-vista::after{color:color-mix(in srgb,var(--rv-acc) 92%,#000)}
+/* «sei dentro questa schermata» è un'altra cosa da «questo filtro è acceso»:
+   classe sua, se no litigherebbe con `.rvRapido.rvRapido-on` a pari specificità. */
+.rvRapidoG-kpi .rvRapido-vista.rvRapido-vista-on{border-color:var(--rv-acc);
+  background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 30%,transparent),var(--tf-w30))}
+html.light .rvRapidoG-kpi .rvRapido-vista.rvRapido-vista-on{background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 18%,#fff),#fff)}
 
 
 /* ── LA TESTATA DELLA CASSA (Luca 29/08) ────────────────────────────────
