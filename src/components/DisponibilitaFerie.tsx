@@ -47,6 +47,23 @@ export function DisponibilitaFerie() {
         const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
     });
+    /* IL MESE GIUSTO È QUELLO CHE HA LE BUSTE, non «il mese scorso». Il primo
+       settembre «il mese scorso» è agosto, e le buste archiviate erano di
+       luglio: il pannello rispondeva «nessuna busta paga per agosto» e
+       sembrava rotto. Si guarda cosa c'è davvero e si parte da lì. */
+    const [mesiBuste, setMesiBuste] = useState<string[]>([]);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const { data } = await supabase.from("user_attachments")
+                .select("mese").eq("category", "busta_paga").not("mese", "is", null);
+            if (!vivo) return;
+            const mesi = [...new Set(((data ?? []) as { mese: string }[]).map((r) => String(r.mese).slice(0, 10)))].sort();
+            setMesiBuste(mesi);
+            if (mesi.length) setMeseNuovo(mesi[mesi.length - 1]);
+        })();
+        return () => { vivo = false; };
+    }, []);
 
     const carica = useCallback(async () => {
         const [ut, res, fer, fes] = await Promise.all([
@@ -126,7 +143,8 @@ export function DisponibilitaFerie() {
             }).then((x) => x.json());
             setEsiti(Array.isArray(r?.esiti) ? r.esiti : null);
             setEsitoLettura(r?.error ? `⛔ ${r.error}`
-                : r.buste === 0 ? `Nessuna busta paga archiviata per ${nomeMese(meseNuovo)}: caricale dalla scheda della persona.`
+                : r.buste === 0 ? `Nessuna busta paga archiviata per ${nomeMese(meseNuovo)}.`
+                    + (mesiBuste.length ? ` Ce ne sono per: ${mesiBuste.map(nomeMese).join(", ")} — cambia la mensilità qui accanto.` : " Caricale dalla scheda della persona.")
                     : `📄 ${scrivi ? "Scritte" : "Lette in prova"} ${r.letti} buste paga su ${r.buste}`
                         + (r.nonLetti ? ` — ${r.nonLetti} senza un riquadro RATEI leggibile, quelle vanno scritte a mano` : "")
                         + (r.doppie?.length ? ` · ATTENZIONE: ${r.doppie.join(", ")} ${r.doppie.length === 1 ? "ha" : "hanno"} due buste su questo mese, ho tenuto l'ultima letta` : "")
@@ -180,6 +198,18 @@ export function DisponibilitaFerie() {
                         className="px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
                         {leggo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "📄"} Scrivi questi {esiti.filter((e) => e.giorni != null).length} residui
                     </button>
+                )}
+                {mesiBuste.length > 1 && (
+                    <div className="flex gap-1">
+                        {mesiBuste.slice(-4).map((m) => (
+                            <button key={m} onClick={() => setMeseNuovo(m)}
+                                title={`Le buste paga archiviate di ${nomeMese(m)}`}
+                                className={cn("px-2.5 py-1.5 rounded-lg text-[10px] font-bold border",
+                                    meseNuovo === m ? "border-sky-400/60 bg-sky-500/20 text-sky-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                {nomeMese(m)}
+                            </button>
+                        ))}
+                    </div>
                 )}
                 <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                     mensilità
