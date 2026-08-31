@@ -122,7 +122,15 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
             titolo: `🏪 ${nome} chiede di lavorare a ${sede}`,
             dettaglio: `Oggi risulta di turno a ${sedeTurno || "nessun negozio"}. Ha chiesto di lavorare a ${sede}${motivo.trim() ? ` — «${motivo.trim()}»` : ""}. Fino all'approvazione continua a lavorare su ${sedeTurno || "nessun negozio"}. Si approva da Collaboratori → Turni.`,
             link: "/collaboratori?sezione=turni",
-            target_role: "amministrativo",
+            /* TUTTO IL DIREZIONALE, non solo l'amministrazione (Luca 31/08:
+               «abilita tutto il reparto… io, Claudia, Sandra, Franca e
+               Marta»). La coda `direzione` è esattamente quella: la leggono
+               admin, amministrativo e direttore generale. Diverso dal bonifico,
+               che resta nella coda `amministrativo` perché quello lo devono
+               vedere solo Claudia e Sandra — qui invece serve che qualcuno
+               risponda in fretta, e più occhi ci sono meno si aspetta:
+               finché nessuno approva, quella persona non può vendere. */
+            target_role: "direzione",
             created_by: nome || null,
         });
     }
