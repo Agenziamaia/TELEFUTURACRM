@@ -807,7 +807,11 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie, vaiA }: 
     const [dataRif, setDataRif] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
     const [conAttesa, setConAttesa] = useState(true);
     // SETTIMANA senza domenica (03/08): colonne piu' larghe, negozio mai aperto
-    const [senzaDomenica, setSenzaDomenica] = useState(false);
+    /* LA DOMENICA NASCOSTA DI DEFAULT (Luca 31/08): nei giorni di ferie non
+       conta mai — lo dice la legenda del calendario stesso — quindi come
+       colonna toglie spazio alle sei che contano. Resta il tasto per
+       riaprirla, per chi vuole vedere la settimana intera. */
+    const [senzaDomenica, setSenzaDomenica] = useState(true);
     const [giornoSel, setGiornoSel] = useState<string | null>(null);
     // le card-filtro sopra PILOTANO il calendario (Luca 03/08 sera)
     useEffect(() => {
