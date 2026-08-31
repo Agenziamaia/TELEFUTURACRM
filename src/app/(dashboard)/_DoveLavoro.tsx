@@ -46,8 +46,21 @@ export function DoveLavoro() {
 
     const guarda = useCallback(async () => {
         if (!user?.id || !RUOLI_DI_NEGOZIO.includes(String(user.role || ""))) { setServe(false); return; }
+        /* SI CHIEDE A OGNI ACCESSO (Luca 31/08), non una volta al giorno: chi
+           esce e rientra lo fa quasi sempre perché è cambiato qualcosa. Il
+           confronto è fra l'istante dell'accesso e quello dell'ultima risposta:
+           uguali = ha già risposto per QUESTO accesso, e a ogni ricarico di
+           pagina non si ripresenta. */
+        let gia = "";
+        try {
+            const acc = localStorage.getItem("crm_accesso_il") || "";
+            gia = acc && localStorage.getItem("crm_dove_lavoro") === acc ? acc : "";
+        } catch { /* localStorage negato: si chiede, che è il lato sicuro */ }
+        if (gia) { setServe(false); return; }
         const p = await presenzaOggi(user.id);
-        if (p.attiva) { setServe(false); return; }   // ha già dichiarato: non si chiede più
+        // la presenza già dichiarata resta il valore di partenza, ma la domanda
+        // si fa lo stesso: confermare costa un clic, indovinare costa una vendita
+        if (p.attiva) setScelta(p.attiva.sede);
         const [tutte, mie] = await Promise.all([
             sediDelGruppo(),
             sediDiTurnoOggi(user.id, user.name || ""),
@@ -76,6 +89,16 @@ export function DoveLavoro() {
                cliente»). Se un turno non ce l'ha proprio, resta solo la richiesta:
                è raro, e vendere da un negozio che non è suo senza che nessuno lo
                sappia è esattamente ciò che questa schermata esiste per impedire. */
+            const { presenzaOggi: leggi } = await import("@/lib/doveLavoro");
+            const gia_ = await leggi(user.id);
+            /* CONFERMARE LA STESSA SEDE non scrive niente: la presenza è già
+               quella, e una seconda riga «attiva» lo stesso giorno non
+               esisterebbe nemmeno — l'indice ne ammette una sola. */
+            if (gia_.attiva && gia_.attiva.sede === scelta) {
+                try { localStorage.setItem("crm_dove_lavoro", localStorage.getItem("crm_accesso_il") || String(Date.now())); } catch { }
+                setServe(false); setSalvando(false);
+                return;
+            }
             if (fuoriTurno && sedeDiTurno) {
                 const a = await dichiaraPresenza(user.id, sedeDiTurno);
                 if (!a.ok) throw new Error(a.error);
@@ -96,6 +119,7 @@ export function DoveLavoro() {
                     created_by: user.name || null,
                 });
             }
+            try { localStorage.setItem("crm_dove_lavoro", localStorage.getItem("crm_accesso_il") || String(Date.now())); } catch { }
             setServe(false);
             // il resto del CRM legge la presenza al montaggio: si riparte pulito
             window.location.reload();

@@ -22,6 +22,25 @@ export async function GET(req: Request) {
   // più Supabase. Un job nuovo viene comunque ritirato entro il TTL della cache.
   if (queueKnownEmpty(negozio)) return NextResponse.json({ job: null });
 
+  /* PRIMA DI TUTTO: I LAVORI RITIRATI E MAI CONFERMATI (31/08/2026).
+     Un job passa a "sent" appena l'agente lo ritira, e torna "done"/"error"
+     solo quando l'agente riporta l'esito su /result. Se l'agente muore in
+     mezzo — o, com'è successo fino a stasera, se /result gli rifiuta il
+     callback — quel lavoro resta "sent" PER SEMPRE: 42 ce n'erano stasera, il
+     più vecchio dell'11 agosto, e nessuno se n'era accorto perché in quello
+     stato non compare né come fatto né come fallito.
+     Da qui in poi scadono: dopo 10 minuti diventano "error" con scritto che
+     l'esito non è mai arrivato. NON si rimettono in coda — un `cash_collect`
+     ristampato è un cassetto che si riapre e un cliente che paga due volte:
+     meglio un fallimento visibile, che qualcuno può decidere di ripetere, di
+     una ristampa automatica che nessuno ha chiesto. */
+  if (negozio) {
+    await supabase.from("print_jobs")
+      .update({ status: "error", result: '{"ok":false,"msg":"esito mai ricevuto dall\'agente del negozio: scaduto dopo 10 minuti"}', updated_at: new Date().toISOString() })
+      .eq("negozio", negozio).eq("status", "sent")
+      .lt("updated_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
+  }
+
   let q = supabase.from("print_jobs").select("*").eq("status", "pending")
     .order("created_at", { ascending: true }).limit(1);
   if (negozio) q = q.eq("negozio", negozio);

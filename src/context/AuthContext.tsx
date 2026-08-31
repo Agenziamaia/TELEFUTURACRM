@@ -257,6 +257,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const persist = (u: User) => {
         setUser(u);
         localStorage.setItem("crm_session", JSON.stringify(u));
+        /* OGNI ACCESSO SI RICHIEDE DOVE SI LAVORA (Luca 31/08: «deve chiederlo
+           ogni volta che fanno l'accesso»). Non una volta al giorno: chi esce e
+           rientra lo fa quasi sempre perché è cambiato qualcosa — un cambio di
+           turno, un altro negozio, un altro PC — ed è esattamente il momento in
+           cui la domanda serve.
+           Il marcatore è l'ISTANTE dell'accesso: la schermata lo scrive quando
+           riceve la risposta, e finché i due coincidono non ricompare. Così non
+           si ripresenta a ogni ricarico di pagina, ma torna al login dopo. */
+        try { localStorage.setItem("crm_accesso_il", String(Date.now())); } catch { }
     };
 
     // Login con 2FA verificata lato server (route /api/auth/login): la sessione

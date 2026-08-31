@@ -7083,7 +7083,18 @@ function CRM() {
         setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
-        // niente scontrino da fare: si registra subito, come prima
+        /* NIENTE SCONTRINO: ma il venditore deve sapere PERCHÉ (Luca 31/08:
+           «non gli chiede il metodo di pagamento… come se la cassa non fosse
+           collegata»). Sono due situazioni diverse che fin qui uscivano
+           identiche — un «✅ Salvato!» muto — e da lì l'unica lettura
+           possibile era «la cassa è rotta»:
+             · il carrello non ha NESSUNA riga con un prezzo → non c'è niente
+               da incassare, ed è giusto che non chieda come si paga;
+             · questo negozio la cassa non ce l'ha accesa.
+           Dirlo costa una riga e toglie una diagnosi sbagliata. */
+        const _perche = !posScontrinoAbilitato(selNeg)
+          ? "Questo punto vendita non ha ancora la cassa collegata al CRM."
+          : "Nessuna riga del carrello ha un prezzo: non c'era niente da incassare, quindi non è stato chiesto il pagamento.";
         await commitFn();
         setUploading(false);
         sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
@@ -7094,7 +7105,7 @@ function CRM() {
           brands: fc.map((x) => x.brandLabel || x.brandId).filter(Boolean),
           prodotti: contractRows.length,
           cliente: (ana.ragioneSociale || `${ana.nome || ""} ${ana.cognome || ""}`.trim() || ana.cf || "").trim(),
-          negozio: selNeg, venditore: selVend,
+          negozio: selNeg, venditore: selVend, perche: _perche,
         });
         setSubmitting(false);
       }
@@ -7326,10 +7337,14 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
            Accessori e telefoni in contanti passano di qui tutto il giorno. */
         setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true });
       } else {
-        // Negozio SENZA scontrino: si salva subito, come prima.
+        // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
+        // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).
+        const _perche = !posScontrinoAbilitato(selNeg)
+          ? "Questo punto vendita non ha ancora la cassa collegata al CRM."
+          : "Nessuna riga del carrello ha un prezzo: non c'era niente da incassare, quindi non è stato chiesto il pagamento.";
         const rows = await commitFn();
         _resetForm(); clearDraft("crm_v9");
-        setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length, cliente: _cliLabel, negozio: selNeg, venditore: selVend });
+        setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length, cliente: _cliLabel, negozio: selNeg, venditore: selVend, perche: _perche });
       }
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
@@ -7527,6 +7542,12 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         <div className="rvFatta-o">✓</div>
         <h3>Vendita registrata</h3>
         <p>È salvata nel CRM: la trovi in Ricerca Vendite e nel Tracking.</p>
+        {venditaFatta.perche && (
+          <div className="rvNota rvNota-att" style={{ marginBottom: 10, textAlign: "left" }}>
+            <div className="rvNota-t">🧾 Nessuno scontrino per questa vendita</div>
+            <div className="rvNota-s">{venditaFatta.perche}</div>
+          </div>
+        )}
         <div className="rvFatta-d">
           {venditaFatta.cliente&&<div><span>Cliente</span><span>{venditaFatta.cliente}</span></div>}
           <div><span>Prodotti</span><span>{venditaFatta.prodotti}</span></div>
