@@ -907,7 +907,7 @@ html.light .rvFatta-o.rvFatta-att-o{color:#9a5b00;background:rgba(154,91,0,.10);
 .rvRapido:hover{transform:translateY(-2px);
   border-color:color-mix(in srgb,var(--rv-acc) 55%,var(--tf-w60));
   box-shadow:0 8px 20px rgba(0,0,0,.22)}
-.rvRapido em{font-style:normal;font-size:28px;line-height:1}
+.rvRapido em{font-style:normal;font-size:28px;line-height:1;font-weight:800;font-variant-numeric:tabular-nums}
 .rvRapido img{height:52px;width:auto;max-width:88%;object-fit:contain}
 .rvRapido b{font-size:12.5px;font-weight:700;color:var(--tf-f8fafc);line-height:1.25}
 .rvRapido small{font-size:10.5px;color:var(--tf-8892b0);line-height:1.2}
@@ -915,6 +915,28 @@ html.light .rvFatta-o.rvFatta-att-o{color:#9a5b00;background:rgba(154,91,0,.10);
 .rvRapido-off:hover{transform:none;box-shadow:none}
 .rvRapido.rvRapido-on{border-color:var(--rv-acc);
   background:linear-gradient(160deg,color-mix(in srgb,var(--rv-acc) 24%,transparent),var(--tf-w20))}
+/* ── LA TINTA DI UN QUADRATONE ────────────────────────────────────────
+   Regola 2: il colore è UNA variabile e la porta il contenitore. In
+   magazzino non si può scriverla inline — la guardia degli stili è a un
+   passo dal tetto — quindi la tinta è una classe. I valori del tema chiaro
+   sono quelli già misurati altrove in questo foglio. */
+.rvT-indaco{--rv-acc:var(--tf-818cf8)}
+.rvT-verde{--rv-acc:var(--tf-10b981)}
+.rvT-ciano{--rv-acc:var(--tf-0ea5e9)}
+.rvT-ambra{--rv-acc:var(--tf-f59e0b)}
+.rvT-rosso{--rv-acc:var(--tf-ef4444)}
+.rvT-viola{--rv-acc:var(--tf-8b5cf6)}
+html.light .rvT-verde{--rv-acc:#0f7a4d}
+html.light .rvT-ambra{--rv-acc:#9a5b00}
+html.light .rvT-rosso{--rv-acc:#b91c1c}
+html.light .rvT-ciano{--rv-acc:#0e6a94}
+/* ── IL QUADRATONE CHE NON SI PREME ───────────────────────────────────
+   Regola 7: una cosa che non si può fare non si finge cliccabile. Il
+   riquadro del valore è un numero, non un filtro: niente manina, niente
+   reazione al passaggio del mouse. */
+.rvRapido-statico{cursor:default}
+.rvRapido-statico:hover{transform:none;box-shadow:none;border-color:var(--tf-w60)}
+html.light .rvRapido-statico:hover{border-color:rgba(15,23,42,.12)}
 .rvRapidoG{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,132px),1fr));gap:10px}
 html.light .rvRapido{background:linear-gradient(160deg,#ffffff,#f6f5f2);border-color:rgba(15,23,42,.12)}
 html.light .rvRapido b{color:#1e2952}

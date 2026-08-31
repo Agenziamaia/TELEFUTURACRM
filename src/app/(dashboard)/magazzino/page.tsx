@@ -105,6 +105,35 @@ const STATI_FILTRO: { id: string; et: string; spiega: string }[] = [
     { id: "disponibile", et: "🟢 Disponibili", spiega: "Quello che c'è adesso sullo scaffale" },
     { id: "in_arrivo", et: "📦 In arrivo", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
 ];
+/* ═══ I QUADRATONI DELLE GIACENZE (Luca 01/09) ═══════════════════════════
+   «Voglio la stessa logica, anche grafica, di Gestione Usati: quei quadratoni
+   grandi col menu e il filtraggio impostato in quel modo.»
+
+   La grammatica che si copia è quella: un multi-selettore disegnato a griglia,
+   ogni riquadro con l'icona, l'etichetta, la spunta quando è acceso e il
+   numero grande sotto; i riquadri a zero restano a schermo, spenti, perché
+   zero è un'informazione.
+   Il MARKUP invece non si copia: Gestione Usati è scritta a mano con le
+   utility, e con lei si porterebbe dentro anche il suo difetto — nel tema
+   chiaro tre di quei pulsanti hanno il testo quasi bianco su fondo chiaro,
+   perché `text-purple-100`, `text-blue-100` e `text-orange-100` non sono
+   rimappati. Il magazzino segue le sue regole, e la classe giusta esisteva
+   già: `.rvRapido`, nata per i pulsanti rapidi della cassa, che ha le sue
+   righe per il tema chiaro e non usa le media query sulla finestra.
+
+   QUALI RIQUADRI: solo quelli alimentati da dati che esistono davvero. Niente
+   «Venduti» e niente «In viaggio» — `mag_unita` ha zero venduti e non c'è
+   nessun DDT in transito: sarebbero due riquadri che dicono sempre zero, e
+   restano pastiglie-vista. */
+const QUADRI: { id: string; icona: string; et: string; sotto: string; tinta: string; spiega: string }[] = [
+    { id: "_all", icona: "📊", et: "Totale", sotto: "articoli", tinta: "rvT-indaco", spiega: "Tutto quello che rientra nei filtri, in qualunque stato" },
+    { id: "disponibile", icona: "🟢", et: "Disponibili", sotto: "pezzi", tinta: "rvT-verde", spiega: "Quello che c'è adesso sullo scaffale" },
+    { id: "in_arrivo", icona: "📦", et: "In arrivo", sotto: "in ordine", tinta: "rvT-ciano", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
+    { id: "altrove", icona: "🌐", et: "Altrove", sotto: "negli altri PV", tinta: "rvT-viola", spiega: "Quello che qui non c'è ma sta in un altro negozio: si può farsi mandare" },
+    { id: "sotto_zero", icona: "⚠️", et: "Sotto zero", sotto: "da controllare", tinta: "rvT-rosso", spiega: "Righe a saldo negativo: è uscito qualcosa che a magazzino non c'era" },
+    { id: "valore", icona: "💰", et: "Valore", sotto: "a listino", tinta: "rvT-ambra", spiega: "Valore della merce mostrata, ai prezzi di listino dell'anagrafica" },
+];
+
 /* IL VENDUTO NON È UNO STATO, È UN'ALTRA DOMANDA (revisore design 31/08).
    Premendolo cambiano le colonne, il filtro di data cambia mestiere, due
    pastiglie spariscono e l'Excel esporta un altro file: è un cambio di
@@ -362,6 +391,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        compaiono anche quelli che qui non ci sono ma stanno in un altro
        negozio: serve a chi vuole sapere se può farsi mandare un pezzo. */
     const [soloDisponibili, setSoloDisponibili] = useState(true);
+    /* «SOTTO ZERO» è un filtro a sé, non uno stato: una riga negativa è merce
+       uscita che a magazzino non c'era, e va guardata da sola. */
+    const [sottoZero, setSottoZero] = useState(false);
     const [dataStorica, setDataStorica] = useState("");
     const [cerca, setCerca] = useState("");
     const [aperta, setAperta] = useState<string | null>(null);
@@ -447,7 +479,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         altrovePer: Record<string, number>;
     };
 
-    const righe = useMemo(() => {
+    const righeGrezze = useMemo(() => {
         const m = new Map<string, Riga>();
         const nuova = (codice: string, descrizione: string): Riga => ({
             chiave: `${codice}|${descrizione}`, codice: codice || "—", descrizione,
@@ -559,6 +591,28 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
            coerenti sugli accessori e zeri sui telefoni).
            Con la fotografia a una data passata gli stati non si applicano — i
            pulsanti sono spenti — quindi vale la giacenza e basta. */
+        return out;
+    }, [unita, quantita, anagrafica, scelti, azienda, operatori, cerca, dataStorica, nelloScopo]);
+
+    /* I QUADRATONI CONTANO PRIMA DEL PROPRIO FILTRO (è la regola di Gestione
+       Usati, dove `kpiData` applica tutto tranne gli stati): se contassero
+       dopo, il riquadro spento direbbe zero e nessuno lo premerebbe mai. */
+    const conteggi = useMemo(() => {
+        const t = { _all: 0, disponibile: 0, in_arrivo: 0, altrove: 0, sotto_zero: 0, valore: 0 };
+        for (const r of righeGrezze) {
+            t._all++;
+            if (r.giacenza > 0) t.disponibile += r.giacenza;
+            if (r.giacenza < 0) t.sotto_zero++;
+            t.in_arrivo += r.inArrivo;
+            t.altrove += r.altrove;
+            t.valore += r.valore;
+        }
+        return t;
+    }, [righeGrezze]);
+
+    const righe = useMemo(() => {
+        let out = [...righeGrezze];
+        if (sottoZero) out = out.filter(r => r.giacenza < 0);
         const vuoleDisp = !!dataStorica || stati.includes("disponibile");
         const vuoleArr = !dataStorica && stati.includes("in_arrivo");
         out = out.filter(r => {
@@ -574,7 +628,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             return sort.desc ? -cmp : cmp;
         });
         return out;
-    }, [unita, quantita, anagrafica, scelti, azienda, stati, operatori, cerca, soloDisponibili, dataStorica, sort, nelloScopo]);
+    }, [righeGrezze, stati, soloDisponibili, dataStorica, sort, sottoZero]);
 
     /* ═══ IL VENDUTO, PEZZO PER PEZZO ═══════════════════════════════════
        Luca 31/08: «nel momento in cui clicco su venduto la giacenza non mi
@@ -708,6 +762,33 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         return () => { vivo = false; };
     }, [vistaTrasf, scelti]);
 
+    /* PREMERE UN QUADRATONE. Stessa logica di Gestione Usati: i riquadri di
+       stato si sommano in OR, e l'ultimo acceso non si spegne — una tabella
+       senza nemmeno uno stato non mostra niente e sembra rotta. */
+    const premiQuadro = (id: string) => {
+        if (vistaVenduto || vistaTrasf) setVista("giacenze");
+        if (id === "valore") return;                                   // è un numero, non un filtro
+        if (id === "_all") { setStati(["disponibile", "in_arrivo"]); setSoloDisponibili(false); setSottoZero(false); return; }
+        if (id === "altrove") { setSoloDisponibili(v => !v); return; }
+        if (id === "sotto_zero") { setSottoZero(v => !v); return; }
+        setStati(p => p.includes(id) ? (p.length > 1 ? p.filter(x => x !== id) : p) : [...p, id]);
+    };
+    const quadroAcceso = (id: string) =>
+        id === "_all" ? (!sottoZero && !soloDisponibili && stati.length === 2)
+            : id === "altrove" ? !soloDisponibili
+                : id === "sotto_zero" ? sottoZero
+                    : id === "valore" ? false
+                        : stati.includes(id);
+
+    /* RIMETTERE TUTTO COM'ERA ENTRANDO. In Gestione Usati c'è, qui mancava: con
+       otto filtri addosso, ricordarsi quale si è toccato è un lavoro. */
+    const azzeraFiltri = () => {
+        setScelti(mieiNegozi.length ? mieiNegozi : []);
+        setStati(["disponibile", "in_arrivo"]);
+        setSoloDisponibili(true); setSottoZero(false); setVista("giacenze");
+        setAzienda(""); setOperatori([]); setCerca(""); setDataStorica("");
+    };
+
     /** «è nel negozio che sto guardando?» — decide il colore della pastiglia
      *  del luogo, e prima era scritto due volte uguale dentro l'elemento. */
     const quiDa = (neg: string) => scelti.length ? nelloScopo(neg) : neg === mioNegozio;
@@ -741,10 +822,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     {mieiNegozi.length > 0 && (
                         <button onClick={() => setScelti(mieiNegozi)}
                             className={cn("rvPill rvPill-sm", sonoIMiei && "rvPill-on")}>
-                            🏪 I miei{mieiNegozi.length > 1 ? <span className="rvLabX"> · {mieiNegozi.length} insegne</span> : ""}
+                            🏪 I miei{mieiNegozi.length > 1 ? <span className="rvLabX"> · {mieiNegozi.length} insegne</span> : ""}{sonoIMiei ? " ✓" : ""}
                         </button>
                     )}
-                    <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi</button>
+                    <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi{!scelti.length ? " ✓" : ""}</button>
                     {/* PIÙ NEGOZI INSIEME (Luca 31/08). Il primo tentativo usava
                         `SelectOpzioni` — una tendina a scelta SINGOLA — passandole
                         `value=""` e aggiungendo la voce presa a una lista fuori.
@@ -763,6 +844,20 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     {/* le pastiglie di quello che hai scelto le disegna già
                         `SelectMulti`: rifarle qui le raddoppiava, con due
                         grafiche diverse (revisore 31/08) */}
+                    <span className="rvSpazio" />
+                    {/* LE ALTRE SCHERMATE stanno qui, non fra i quadratoni: non
+                        sono conteggi di giacenza, sono un'altra domanda —
+                        premendole cambiano le colonne, i filtri e l'Excel. */}
+                    <button onClick={() => setVista(vistaTrasf ? "giacenze" : "trasferiti")}
+                        title="La merce partita da qui e non ancora accettata dall'altro negozio"
+                        className={cn("rvPill rvPill-sm", vistaTrasf && "rvPill-on")}>
+                        🚚 Trasferiti{vistaTrasf ? " ✓" : ""}{vistaTrasf && inViaggio ? <b className="rvPillN">{inViaggio.length}</b> : null}
+                    </button>
+                    <button onClick={() => setVista(vistaVenduto ? "giacenze" : "venduto")}
+                        title="Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita"
+                        className={cn("rvPill rvPill-sm", vistaVenduto && "rvPill-on")}>
+                        🧾 Venduti{vistaVenduto ? " ✓" : ""}{vistaVenduto ? <b className="rvPillN">{venduti.length}</b> : null}
+                    </button>
                 </div>
                 {/* ── OGNI ASSE COL SUO NOME (revisore design 31/08) ──
                     Erano cinque pastiglie identiche in fila, tre accese,
@@ -772,53 +867,38 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     si spezzava lasciando il divisorio a separare le cose
                     sbagliate. La grammatica di casa c'era già: in Registra
                     Vendita ogni `.rvPillRow` ha sopra la sua etichetta. */}
-                {/* ── UNA FILA SOLA, come negli Usati (Luca 01/09) ──
-                    Le prime due sono FILTRI e sono accese di partenza; le altre
-                    due sono ALTRE SCHERMATE e stanno spente, perché premendole
-                    cambiano le colonne, i filtri e l'Excel. Prima «quello che ho
-                    venduto» viveva in una riga staccata in fondo alla pagina,
-                    lontano dagli stati di cui fa parte. */}
-                <div className="rvCampo mt-3"><span className="rvLab">In che stato</span>
-                    <div className="rvPillRow">
-                        {STATI_FILTRO.map(x => {
-                            const on = !vistaVenduto && !vistaTrasf && stati.includes(x.id);
-                            return (
-                                <button key={x.id} title={dataStorica ? "Con la fotografia a una data passata gli stati non si applicano: togli la data" : x.spiega}
-                                    disabled={!!dataStorica}
-                                    onClick={() => {
-                                        // tornando dagli stati «altra schermata» si rientra nelle giacenze
-                                        if (vistaVenduto || vistaTrasf) { setVista("giacenze"); setStati([x.id]); return; }
-                                        // l'ultimo acceso non si spegne: una tabella senza nemmeno uno
-                                        // stato non mostra niente e sembra rotta
-                                        setStati(p => on ? (p.length > 1 ? p.filter(y => y !== x.id) : p) : [...p, x.id]);
-                                    }}
-                                    className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{x.et}</button>
+                {/* ═══ I QUADRATONI ═══════════════════════════════════════
+                    Il numero è calcolato PRIMA del proprio filtro (come
+                    `kpiData` negli Usati): un riquadro spento deve dire quanti
+                    ce ne sarebbero, se no nessuno lo premerebbe mai. E i
+                    riquadri a zero restano a schermo, spenti: zero è
+                    un'informazione — «Sotto zero: 0» vuol dire che i conti
+                    tornano, e non vederlo non è la stessa cosa. */}
+                <div className="rvCampo rvCampo-flex mt-3"><span className="rvLab">Cosa c&apos;è in magazzino</span>
+                    <div className="rvRapidoG">
+                        {QUADRI.map(q => {
+                            const on = quadroAcceso(q.id);
+                            const n = (conteggi as Record<string, number>)[q.id] ?? 0;
+                            const premibile = q.id !== "valore";
+                            const cls = cn("rvRapido", q.tinta, !premibile && "rvRapido-statico",
+                                on && "rvRapido-on", !on && !n && "rvRapido-off");
+                            const dentro = (
+                                <>
+                                    <em>{q.id === "valore" ? eur(n) : n.toLocaleString("it-IT")}</em>
+                                    <b>{q.icona} {q.et}{on ? " ✓" : ""}</b>
+                                    <small>{q.sotto}</small>
+                                </>
                             );
+                            return premibile
+                                ? <button key={q.id} type="button" onClick={() => premiQuadro(q.id)} title={q.spiega} className={cls}>{dentro}</button>
+                                : <div key={q.id} title={q.spiega} className={cls}>{dentro}</div>;
                         })}
-                        <button onClick={() => setVista(vistaTrasf ? "giacenze" : "trasferiti")}
-                            title="La merce partita da qui e non ancora accettata dall'altro negozio"
-                            className={cn("rvPill rvPill-sm", vistaTrasf && "rvPill-on")}>
-                            🚚 Trasferiti{vistaTrasf && inViaggio ? <b className="rvPillN">{inViaggio.length}</b> : null}
-                        </button>
-                        <button onClick={() => setVista(vistaVenduto ? "giacenze" : "venduto")}
-                            title="Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita"
-                            className={cn("rvPill rvPill-sm", vistaVenduto && "rvPill-on")}>
-                            🧾 Venduti{vistaVenduto ? <b className="rvPillN">{venduti.length}</b> : null}
-                        </button>
                     </div>
-                    <div className="rvHint">«In arrivo» è ordinato o in viaggio verso qui: non si vende ancora. «Trasferiti» è quello che è uscito e non è ancora stato accettato.</div>
+                    <div className="rvHint">
+                        «In arrivo» è ordinato o in viaggio verso qui: non si vende ancora.
+                        «Altrove» è quello che qui non c&apos;è ma sta in un altro punto vendita.
+                    </div>
                 </div>
-                {!vistaVenduto && !vistaTrasf && (
-                    <div className="rvCampo mt-3"><span className="rvLab">Cosa conto</span>
-                        <div className="rvPillRow">
-                            <button onClick={() => setSoloDisponibili(true)}
-                                className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo quello che ho qui</button>
-                            <button onClick={() => setSoloDisponibili(false)}
-                                className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
-                                title="Mostra anche quello che qui non c'è ma sta in un altro negozio">📚 Anche quello che sta altrove</button>
-                        </div>
-                    </div>
-                )}
                 {/* I FILTRI FINI */}
                 <div className="rvBarra mt-3">
                     <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
@@ -878,6 +958,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         </>
                     )}
                     <span className="rvSpazio" />
+                    <button onClick={azzeraFiltri} className="rvPill rvPill-sm"
+                        title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
+                        ↺ Reset
+                    </button>
                     <button onClick={esporta} disabled={vistaVenduto ? !venduti.length : !righe.length} className="rvAzione rvAzione-sm">
                         <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
