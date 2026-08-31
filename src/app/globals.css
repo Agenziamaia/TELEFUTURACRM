@@ -1942,6 +1942,19 @@ html.light .rvSerial:hover{color:#101c66}
   background:var(--tf-12141f);border:1px solid var(--tf-w120);
   border-radius:20px;padding:22px 22px 26px;box-shadow:0 22px 60px rgba(0,0,0,.5)}
 html.light .rvStoria{box-shadow:0 18px 44px rgba(18,28,54,.16)}
+/* LA SCHEDA DI UN ARTICOLO sta più larga e respira (Luca 01/09: «questo
+   dettaglio è un po' striminzito, allarga un po' le scritte»). Dentro ci
+   stanno due tabelle — dove sta il pezzo e cosa gli è successo — più il
+   modulo di modifica: a 660px andavano tutte a capo. Solo misure, nessun
+   colore: il tema chiaro non ha niente da rimappare. */
+.rvScheda{max-width:980px;padding:26px 26px 30px}
+.rvScheda .rvStoria-tit{font-size:19px}
+.rvScheda .rvStoria-sot{font-size:13px}
+.rvScheda .rvLab{font-size:12.5px;letter-spacing:.5px}
+.rvScheda .rvCampo{margin-top:16px}
+.rvScheda .rvTab td,.rvScheda .rvTab th{padding-top:9px;padding-bottom:9px}
+.rvScheda .rvTab-nome,.rvScheda .rvTab-min{font-size:13px}
+.rvScheda .rvIn{font-size:14px}
 /* LA TESTATA RESTA (revisore design 31/08). Il pannello scorre — 88vh — ma
    con venti passaggi il titolo, l'IMEI e «✕ Chiudi» uscivano dallo schermo:
    non sapevi più di che pezzo stavi leggendo la storia, né come uscirne.

@@ -2816,6 +2816,21 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
     { id: "internet", icona: "🛜", nome: "Internet e router", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
     { id: "indossabili", icona: "⌚", nome: "Wearable e smart device", dentro: (_g, s) => /wearable|smart device|smart pass|iot/.test(s) },
     { id: "tablet", icona: "💻", nome: "Tablet e computer", dentro: (_g, s) => /tablet|mini pc|console|camera/.test(s) },
+    /* UTILITY (Luca 01/09: «questi non sono articoli, questi devono essere
+       Utily, cose come acconto ecc»). Dentro il gruppo «SERVIZI» del gestionale
+       convivono due cose diverse: i SERVIZI che si vendono davvero — assistenza
+       36,60 €, backup 20 €, taglio SIM 5 € — e le VOCI TECNICHE, che merce non
+       sono e nemmeno servizio: gli acconti (uno per trattamento IVA), il cambio
+       righe generiche `ART22_GENERICO` / `ART74_GENERICO` che
+       servono solo a battere un importo a una certa aliquota.
+       Si riconoscono da come sono scritte: il gestionale marca le voci di
+       sistema col dollaro (`$ACCONTO$22`, `$SM$CI_1`) e le generiche col
+       suffisso `_GENERICO`. Sta PRIMA di «Servizi» perché quasi tutte hanno
+       proprio quel gruppo. */
+    {
+        id: "utility", icona: "🧮", nome: "Utility", dentro: (_g, _s, d, c) =>
+            /^\$/.test(c) || /_generico$/.test(c) || /acconto|caparra|anticipo/.test(d),
+    },
     { id: "servizi", icona: "🧾", nome: "Servizi e ricariche", dentro: (g, s) => /^(servizi|ricariche|kpoint)$/.test(g) || /ricariche|carte servizi|^servizi$/.test(s) },
     { id: "accessori", icona: "🧰", nome: "Accessori", dentro: (g, s) => /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s) },
 ];
@@ -2828,7 +2843,7 @@ const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
    Samsung Galaxy A34» — e una sotto-voce «Telefoni» dentro gli accessori è
    una bugia utile a nessuno: si preferisce ammettere di non sapere. */
 const NON_DICONO_COSA_E = new Set(["Telefoni", "Tablet", "SIM", "eSIM", "Usato"]);
-const LEGGO_DAL_NOME = new Set(["accessori", "servizi", "altro", "ricambi"]);
+const LEGGO_DAL_NOME = new Set(["accessori", "servizi", "altro", "ricambi"]);   // «utility» no: i loro nomi sono già la voce
 function sottoVoceDalNome(a: Articolo, fam: string): string | null {
     /* Solo dove il gestionale tace davvero. Dentro «Usato» o «Telefoni» il
        nome è il MODELLO, e leggerlo come famiglia produce sotto-voci
@@ -2982,9 +2997,35 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
         _k: a._sotto.toUpperCase().replace(/\s+/g, " ").replace(/S$/, ""),
     })), [articoli, mostraUsato]);
 
+    /* I CONTEGGI SEGUONO I FILTRI (Luca 01/09: «questi filtri devono essere
+       adattivi, ho selezionato da sistemare ma non si aggiornano con la
+       quantità aggiornata»). Si contano gli articoli che superano TUTTO tranne
+       la famiglia e la sotto-voce: se contassi anche quelli, ogni pastiglia
+       direbbe zero tranne quella accesa, che è inutile. Così invece la fila
+       risponde alla domanda vera — «di quelli da sistemare, quanti sono
+       telefoni e quanti accessori». */
+    const passaFiltri = useMemo(() => {
+        const q = cerca.trim().toLowerCase();
+        return arricchiti.filter(a => {
+            if (soloProblemi && !problemaDi(a)) return false;
+            if (operatore && a._op !== operatore) return false;
+            if (marca && a.marca !== marca) return false;
+            if (q && !`${a.codice} ${a.barcode || ""} ${a.descrizione}`.toLowerCase().includes(q)) return false;
+            return true;
+        });
+    }, [arricchiti, soloProblemi, operatore, marca, cerca]);
+
     const conteggi = useMemo(() => {
         const m = new Map<string, number>();
-        arricchiti.forEach(a => m.set(a._fam, (m.get(a._fam) || 0) + 1));
+        passaFiltri.forEach(a => m.set(a._fam, (m.get(a._fam) || 0) + 1));
+        return m;
+    }, [passaFiltri]);
+    /* Quali famiglie ESISTONO in assoluto: le pastiglie restano ferme anche
+       quando un filtro le porta a zero. Farle sparire mentre si scrive
+       significa che il pulsante che stavi per premere si sposta. */
+    const famiglieVive = useMemo(() => {
+        const m = new Set<string>();
+        arricchiti.forEach(a => m.add(a._fam));
         return m;
     }, [arricchiti]);
 
@@ -2994,7 +3035,7 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
     const sottoVoci = useMemo(() => {
         if (!famiglia) return [] as [string, number, string, boolean][];
         const m = new Map<string, { n: number; grafie: Map<string, number> }>();
-        arricchiti.filter(a => a._fam === famiglia).forEach(a => {
+        passaFiltri.filter(a => a._fam === famiglia).forEach(a => {
             const c = m.get(a._k) || { n: 0, grafie: new Map<string, number>() };
             c.n++; c.grafie.set(a._sotto, (c.grafie.get(a._sotto) || 0) + 1);
             m.set(a._k, c);
@@ -3005,7 +3046,7 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
            numerosità, «LISTINO SBS» finiva primo e più grosso, come se fosse
            una categoria. Non lo è, e adesso lo dice: sta in coda e si chiama
            «Non classificati». */
-        const listini = new Set(arricchiti.filter(a => !((a.sottogruppo || "").trim())
+        const listini = new Set(passaFiltri.filter(a => !((a.sottogruppo || "").trim())
             && !sottoVoceDalNome(a, a._fam)).map(a => a._k));
         const v = Array.from(m.entries())
             .map(([k, c]) => {
@@ -3014,7 +3055,7 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
             })
             .sort((x, y) => (x[3] === y[3] ? y[1] - x[1] : x[3] ? 1 : -1));
         return v.length > 1 ? v : [];
-    }, [arricchiti, famiglia]);
+    }, [passaFiltri, famiglia]);
 
     /* Le tendine mostrano solo quello che esiste DENTRO la selezione: offrire
        «Apple» quando si sta guardando le SIM è un filtro che dà zero righe. */
@@ -3026,24 +3067,23 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
     const marche = useMemo(() =>
         Array.from(new Set(nelPerimetro.map(a => a.marca).filter(Boolean))).sort() as string[], [nelPerimetro]);
 
-    const filtrati = useMemo(() => nelPerimetro.filter(a => {
-        if (soloProblemi && !problemaDi(a)) return false;
-        if (operatore && a._op !== operatore) return false;
-        if (marca && a.marca !== marca) return false;
-        if (cerca) {
-            const q = cerca.toLowerCase();
-            if (!`${a.codice} ${a.barcode || ""} ${a.descrizione}`.toLowerCase().includes(q)) return false;
-        }
-        return true;
-    }), [nelPerimetro, operatore, marca, cerca, soloProblemi]);
+    const filtrati = useMemo(() =>
+        passaFiltri.filter(a => (!famiglia || a._fam === famiglia) && (!sotto || a._k === sotto)),
+        [passaFiltri, famiglia, sotto]);
+    // «da sistemare» conta su tutto: è il numero che dice quanto lavoro resta
     const conProblema = useMemo(() => arricchiti.filter(a => a.attivo && problemaDi(a)).length, [arricchiti]);
 
-    /* I conteggi delle pastiglie sono calcolati su TUTTO il catalogo: appena
-       si stringe con la ricerca o una tendina smettono di corrispondere a
-       quello che si vede, e allora si nascondono. */
-    const ristretto = !!(cerca.trim() || operatore || marca);
     const TETTO = 300;
-    const visibili = filtrati.slice(0, TETTO);
+    /* SI GIRA PAGINA (Luca 01/09: «altrimenti non riesco a vedere gli altri»).
+       Prima si vedevano i primi 300 e basta: con 8.292 articoli in una famiglia,
+       gli altri 7.992 esistevano solo nell'Excel. */
+    const [pagina, setPagina] = useState(0);
+    const pagine = Math.max(1, Math.ceil(filtrati.length / TETTO));
+    // cambiando filtro si torna alla prima: restare a pagina 12 di una lista
+    // che adesso ne ha 3 vuol dire guardare una tabella vuota senza capire
+    useEffect(() => { setPagina(0); }, [famiglia, sotto, operatore, marca, cerca, soloProblemi]);
+    const pag = Math.min(pagina, pagine - 1);
+    const visibili = filtrati.slice(pag * TETTO, (pag + 1) * TETTO);
     const nomeFam = (id: string) => (FAMIGLIE.find(f => f.id === id) || ALTRO).nome;
 
     /* Cambiare famiglia azzera la sotto-voce e i filtri: restare con «Apple»
@@ -3120,7 +3160,7 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
 
     const pannelloScheda = scheda && createPortal(
         <div className="rvFattaSfondo" onClick={e => { if (e.target === e.currentTarget) { setScheda(null); } }}>
-            <div className="rvStoria">
+            <div className="rvStoria rvScheda">
                 <div className="rvStoria-t">
                     <div>
                         <div className="rvStoria-tit">{scheda.descrizione}</div>
@@ -3332,11 +3372,11 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
             <span className="rvLab">Famiglia di catalogo</span>
             <div className="rvPillRow">
                 <button onClick={() => scegliFamiglia("")} className={cn("rvPill", !famiglia && "rvPill-on")}>
-                    Tutti <b className="rvPillN">{articoli.length.toLocaleString("it-IT")}</b>
+                    Tutti <b className="rvPillN">{passaFiltri.length.toLocaleString("it-IT")}</b>
                 </button>
                 {[...FAMIGLIE, ALTRO].map(f => {
+                    if (!famiglieVive.has(f.id)) return null;   // in catalogo non esiste proprio
                     const n = conteggi.get(f.id) || 0;
-                    if (!n) return null;   // una famiglia vuota non è un pulsante, è rumore
                     return (
                         <button key={f.id} onClick={() => scegliFamiglia(f.id)}
                             className={cn("rvPill", famiglia === f.id && "rvPill-on")}>
@@ -3346,7 +3386,7 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
                                 quindi con una ricerca in corso direbbe «9.711»
                                 sopra una tabella di quaranta righe. Un numero
                                 assente è onesto, uno sbagliato no. */}
-                            {!ristretto && <b className="rvPillN">{n.toLocaleString("it-IT")}</b>}
+                            <b className="rvPillN">{n.toLocaleString("it-IT")}</b>
                         </button>
                     );
                 })}
@@ -3492,7 +3532,17 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
                 {pannelloScheda}{pannelloNuovo}
                 {filtrati.length > TETTO && (
                     <div className="rvTab-pie">
-                        Mostro i primi {TETTO} di {filtrati.length.toLocaleString("it-IT")} articoli — affina coi filtri o usa l&apos;Excel per l&apos;elenco completo.
+                        <div className="rvBarra rvBarra-c">
+                            <button type="button" className="rvPill rvPill-sm" disabled={pag === 0}
+                                onClick={() => setPagina(p => Math.max(0, p - 1))}>← Indietro</button>
+                            <span className="rvTab-min">
+                                Pagina <b>{pag + 1}</b> di {pagine.toLocaleString("it-IT")} — articoli {(pag * TETTO + 1).toLocaleString("it-IT")}–{Math.min((pag + 1) * TETTO, filtrati.length).toLocaleString("it-IT")} di {filtrati.length.toLocaleString("it-IT")}
+                            </span>
+                            <button type="button" className="rvPill rvPill-sm" disabled={pag >= pagine - 1}
+                                onClick={() => setPagina(p => Math.min(pagine - 1, p + 1))}>Avanti →</button>
+                            <span className="rvSpazio" />
+                            <span className="rvTab-min">L&apos;Excel le porta tutte.</span>
+                        </div>
                     </div>
                 )}
             </div>
