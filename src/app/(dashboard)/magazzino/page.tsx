@@ -77,6 +77,10 @@ type Articolo = {
     gruppo: string | null; sottogruppo: string | null; marca: string | null;
     iva_acquisto: string | null; iva_vendita: string | null;
     costo_ultimo: number | null; prezzo: number | null; attivo: boolean;
+    /** in cassa quel prezzo si può correggere? (Luca 29/08) */
+    prezzo_modificabile?: boolean;
+    /** il numero che il registratore stampa sulla riga: decide l'IVA */
+    reparto?: number | null;
 };
 
 /* COME SI CHIAMA UNO STATO quando lo legge una persona (Luca 31/08).
@@ -238,7 +242,7 @@ export default function MagazzinoPage() {
                     anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare}
                     ricarica={carica} utente={user?.name || "—"} />
             ) : tab === "articoli" ? (
-                <Articoli vedeCosti={puoCaricare} />
+                <Articoli vedeCosti={puoCaricare} puoDefinire={puoCaricare} />
             ) : (
                 <Trasferimenti unita={unita} quantita={quantita} negozi={negozi} aziende={aziende}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={user?.negozio || ""}
@@ -2842,7 +2846,23 @@ function famigliaDi(a: { gruppo: string | null; sottogruppo: string | null; desc
     return (FAMIGLIE.find(f => f.dentro(g, s, d, c)) || ALTRO).id;
 }
 
-function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
+/* QUANDO UN ARTICOLO NON È PRONTO PER LA CASSA, e perché. Veniva dalla scheda
+   del pannello amministrativo, che da oggi non c'è più: la definizione e la
+   consultazione erano due schede diverse sugli stessi dati, e chi definiva non
+   vedeva quello che vedevano i ragazzi. */
+function problemaDi(a: Articolo): string | null {
+    /* SENZA REPARTO LA RIGA NON VA SULLO SCONTRINO: fuori dalla modalità di
+       prova il server la esclude, e il cliente paga una cosa che sul foglio
+       non c'è. Oggi sono tre articoli, due dei quali Galaxy S24 da 899 e 959 €. */
+    if (a.reparto == null) return "senza reparto IVA: sullo scontrino la riga verrebbe esclusa";
+    if (a.prezzo == null) return "senza prezzo di vendita: in cassa non si può vendere";
+    if (a.costo_ultimo == null) return "senza costo d'acquisto: il margine resta ignoto";
+    if (a.costo_ultimo > 5000) return "il costo sembra un codice a barre finito nel campo sbagliato";
+    if (a.costo_ultimo > a.prezzo) return "costa più di quanto lo vendiamo";
+    return null;
+}
+
+function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire: boolean }) {
     const [articoli, setArticoli] = useState<Articolo[]>([]);
     const [loading, setLoading] = useState(true);
     const [famiglia, setFamiglia] = useState("");
@@ -2867,7 +2887,66 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
        col loro IMEI, con acquisto, lavorazione, vendita e margine. Rotazione
        mediana 7 giorni. Lì hanno senso; qui erano rumore.
        Restano raggiungibili con un pulsante: nascondere non è cancellare. */
-    const [mostraUsato, setMostraUsato] = useState(false);
+    /* LA DEFINIZIONE, dall'amministrativo in su (Luca 01/09). Prezzo, costo e
+       «in cassa si può correggere» si scrivono da qui, e la scrittura passa
+       dal server: la tabella non è più modificabile dal browser. Chi non ha
+       il ruolo consulta e basta, e il costo non lo vede proprio. */
+    const [bozza, setBozza] = useState<Record<string, Partial<Articolo>>>({});
+    const [salvando, setSalvando] = useState("");
+    const [erroreSalva, setErroreSalva] = useState("");
+    const [soloProblemi, setSoloProblemi] = useState(false);
+    const [nuovo, setNuovo] = useState<Record<string, string> | null>(null);
+    /* LA SCHEDA DELL'ARTICOLO (Luca 01/09): «cliccando su ogni articolo mi
+       deve aprire una pagina con le varie disponibilità sui punti vendita e
+       anche una sezione di storico con le ultime movimentazioni», e «devo
+       avere anche la possibilità di modificarlo, dall'amministrativo in su».
+       La modifica sta QUI e non nelle celle della tabella: la tabella si legge
+       di corsa al banco, e un campo di testo dentro una riga che scorre è il
+       modo migliore per cambiare il prezzo dell'articolo sbagliato. */
+    const [scheda, setScheda] = useState<Articolo | null>(null);
+    const [dispon, setDispon] = useState<{ negozio: string; quantita: number; in_arrivo: number; azienda: string | null }[] | null>(null);
+    const [movim, setMovim] = useState<{ id: string; negozio: string; tipo: string; quantita: number; creato_il: string; operatore: string | null; nota: string | null; seriale: string | null }[] | null>(null);
+
+    useEffect(() => {
+        if (!scheda) { setDispon(null); setMovim(null); return; }
+        let vivo = true;
+        (async () => {
+            const [g, m] = await Promise.all([
+                supabase.from("mag_giacenze").select("negozio,quantita,in_arrivo,azienda")
+                    .eq("codice", scheda.codice).order("negozio"),
+                supabase.from("mag_movimenti").select("id,negozio,tipo,quantita,creato_il,operatore,nota,seriale")
+                    .eq("codice", scheda.codice).order("creato_il", { ascending: false }).limit(40),
+            ]);
+            if (!vivo) return;
+            if (g.error) console.error("giacenze articolo:", g.error.message);
+            if (m.error) console.error("movimenti articolo:", m.error.message);
+            setDispon((g.data ?? []) as never);
+            setMovim((m.data ?? []) as never);
+        })();
+        return () => { vivo = false; };
+    }, [scheda]);
+    /* I REPARTI, per NOME e non per numero (dati alla mano: tre reparti sono
+       tutti «N2 non soggetta», due «N5 regime del margine», due al 4%. Se uno
+       sceglie il 6 invece del 3 lo scontrino esce identico, ma i totali per
+       reparto — quelli che finiscono nel corrispettivo giornaliero — si
+       spezzano in due. Quindi si sceglie il significato, e il numero segue). */
+    const [reparti, setReparti] = useState<{ reparto: number; descrizione: string; aliquota: number | null; natura: string | null }[]>([]);
+    useEffect(() => {
+        supabase.from("pos_reparti").select("reparto,descrizione,aliquota,natura")
+            .eq("attivo", true).order("reparto")
+            .then(({ data, error }) => { if (error) console.error("reparti:", error.message); setReparti((data ?? []) as never); });
+    }, []);
+    const etichettaReparto = (n: number | null | undefined) => {
+        if (n == null) return "—";
+        const r = reparti.find(x => x.reparto === n);
+        return r ? `${n} · ${r.descrizione}` : `${n}`;
+    };
+    /* GLI USATI NON SONO IN ANAGRAFICA e non c'è più niente da spiegare:
+       la nota l'ha letta chi doveva (Luca 01/09: «toglimi sta voce che non
+       serve»). Dei 3.217 articoli «USATO» dell'export, 3.214 non avevano
+       giacenza e nessuno era mai stato venduto da qui; i pezzi veri stanno in
+       Usati, uno per uno col loro IMEI. */
+    const mostraUsato = false;
     const [apriSotto, setApriSotto] = useState(false);
     const [tutteLeSotto, setTutteLeSotto] = useState(false);
 
@@ -2948,6 +3027,7 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
         Array.from(new Set(nelPerimetro.map(a => a.marca).filter(Boolean))).sort() as string[], [nelPerimetro]);
 
     const filtrati = useMemo(() => nelPerimetro.filter(a => {
+        if (soloProblemi && !problemaDi(a)) return false;
         if (operatore && a._op !== operatore) return false;
         if (marca && a.marca !== marca) return false;
         if (cerca) {
@@ -2955,7 +3035,8 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
             if (!`${a.codice} ${a.barcode || ""} ${a.descrizione}`.toLowerCase().includes(q)) return false;
         }
         return true;
-    }), [nelPerimetro, operatore, marca, cerca]);
+    }), [nelPerimetro, operatore, marca, cerca, soloProblemi]);
+    const conProblema = useMemo(() => arricchiti.filter(a => a.attivo && problemaDi(a)).length, [arricchiti]);
 
     /* I conteggi delle pastiglie sono calcolati su TUTTO il catalogo: appena
        si stringe con la ricerca o una tendina smettono di corrispondere a
@@ -2973,6 +3054,53 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
         setSotto(""); setOperatore(""); setMarca("");
     };
 
+    const val = (a: Articolo, k: keyof Articolo) => (bozza[a.codice] && k in bozza[a.codice] ? bozza[a.codice][k] : a[k]);
+    const cambia = (a: Articolo, k: keyof Articolo, v: unknown) =>
+        setBozza(p => ({ ...p, [a.codice]: { ...p[a.codice], [k]: v } }));
+
+    const salva = async (a: Articolo) => {
+        const b = bozza[a.codice];
+        if (!b || salvando) return;
+        setSalvando(a.codice); setErroreSalva("");
+        try {
+            const r = await fetch("/api/magazzino/articoli", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ azione: "salva", codice: a.codice, ...b }),
+            });
+            const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string }));
+            if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
+            // si aggiorna la riga in mano, senza ricaricare 17.000 articoli
+            setArticoli(p => p.map(x => (x.codice === a.codice ? { ...x, ...b } as Articolo : x)));
+            setBozza(p => { const n = { ...p }; delete n[a.codice]; return n; });
+        } catch (e) {
+            setErroreSalva(`«${a.descrizione}»: ${(e as Error)?.message || "non salvato"}`);
+        } finally { setSalvando(""); }
+    };
+
+    const creaArticolo = async () => {
+        if (!nuovo || salvando) return;
+        setSalvando("__nuovo"); setErroreSalva("");
+        try {
+            const r = await fetch("/api/magazzino/articoli", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ azione: "crea", ...nuovo }),
+            });
+            const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string }));
+            if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
+            setArticoli(p => [{
+                codice: String(nuovo.codice).trim(), barcode: nuovo.barcode || null,
+                descrizione: String(nuovo.descrizione).trim(),
+                gruppo: nuovo.gruppo || null, sottogruppo: nuovo.sottogruppo || null, marca: nuovo.marca || null,
+                iva_acquisto: null, iva_vendita: null,
+                costo_ultimo: nuovo.costo_ultimo ? Number(nuovo.costo_ultimo) : null,
+                prezzo: Number(nuovo.prezzo), attivo: true,
+            } as Articolo, ...p]);
+            setNuovo(null);
+        } catch (e) {
+            setErroreSalva((e as Error)?.message || "non creato");
+        } finally { setSalvando(""); }
+    };
+
     const esporta = () => {
         const dati: CellaXlsx[][] = filtrati.map(a => [
             a.codice, a.barcode || "", a.descrizione, nomeFam(a._fam), a._sotto, a._op || "", a.marca || "",
@@ -2985,6 +3113,210 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
             ["Codice", "Barcode", "Descrizione", "Famiglia", "Sottogruppo", "Operatore", "Marca", "Prezzo €", ...(vedeCosti ? ["Costo €"] : [])],
             dati, "Articoli");
     };
+
+    const totGiac = (dispon ?? []).reduce((n, r) => n + Number(r.quantita || 0), 0);
+    const totArrivo = (dispon ?? []).reduce((n, r) => n + Number(r.in_arrivo || 0), 0);
+    const inModifica = scheda ? bozza[scheda.codice] : null;
+
+    const pannelloScheda = scheda && createPortal(
+        <div className="rvFattaSfondo" onClick={e => { if (e.target === e.currentTarget) { setScheda(null); } }}>
+            <div className="rvStoria">
+                <div className="rvStoria-t">
+                    <div>
+                        <div className="rvStoria-tit">{scheda.descrizione}</div>
+                        <div className="rvStoria-sot">
+                            {scheda.codice}{scheda.barcode ? ` · ${scheda.barcode}` : ""}
+                            {scheda.marca ? ` · ${scheda.marca}` : ""}
+                            {" · "}{etichettaReparto(scheda.reparto)}
+                        </div>
+                    </div>
+                    <button type="button" className="rvPill rvPill-sm" onClick={() => setScheda(null)}>Chiudi</button>
+                </div>
+
+                {problemaDi(scheda) && (
+                    <div className="rvNota rvNota-att">
+                        <div className="rvNota-t">Da sistemare</div>
+                        <div className="rvNota-s">{problemaDi(scheda)}</div>
+                    </div>
+                )}
+
+                {/* ── DOVE SI TROVA ── */}
+                <div className="rvCampo">
+                    <span className="rvLab">Disponibilità nei punti vendita
+                        {dispon && <span className="rvLabX"> — {totGiac} pezzi{totArrivo ? `, ${totArrivo} in arrivo` : ""}</span>}</span>
+                    {dispon === null ? <div className="rvTab-min">Carico…</div>
+                        : dispon.length === 0 ? <div className="rvTab-min">Nessun pezzo in nessun magazzino.</div>
+                            : (
+                                <div className="rvTabBox">
+                                    <table className="rvTab">
+                                        <thead><tr><th>Punto vendita</th><th>Società</th><th className="rvTab-c">Pezzi</th><th className="rvTab-c">In arrivo</th></tr></thead>
+                                        <tbody>
+                                            {dispon.map(r => (
+                                                <tr key={r.negozio + (r.azienda || "")} className="rvTab-riga">
+                                                    <td className="rvTab-nome">{r.negozio}</td>
+                                                    <td className="rvTab-min">{r.azienda || "—"}</td>
+                                                    <td className="rvTab-n">{r.quantita}</td>
+                                                    <td className="rvTab-n rvTab-min">{r.in_arrivo || "—"}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                </div>
+
+                {/* ── COSA GLI È SUCCESSO ── */}
+                <div className="rvCampo">
+                    <span className="rvLab">Ultime movimentazioni
+                        {movim && movim.length >= 40 && <span className="rvLabX"> — le 40 più recenti</span>}</span>
+                    {movim === null ? <div className="rvTab-min">Carico…</div>
+                        : movim.length === 0 ? <div className="rvTab-min">Nessun movimento registrato per questo articolo.</div>
+                            : (
+                                <div className="rvTabBox">
+                                    <table className="rvTab">
+                                        <thead><tr><th>Quando</th><th>Cosa</th><th>Dove</th><th className="rvTab-c">Qtà</th><th>Chi</th></tr></thead>
+                                        <tbody>
+                                            {movim.map(m => (
+                                                <tr key={m.id} className="rvTab-riga">
+                                                    <td className="rvTab-min">{new Date(m.creato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                                                    <td className="rvTab-nome">{m.tipo}{m.seriale ? ` · ${m.seriale}` : ""}</td>
+                                                    <td className="rvTab-min">{m.negozio}</td>
+                                                    <td className="rvTab-n">{m.quantita}</td>
+                                                    <td className="rvTab-min">{m.operatore || "—"}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                </div>
+
+                {/* ── LA DEFINIZIONE, dall'amministrativo in su ── */}
+                {puoDefinire ? (
+                    <>
+                        <div className="rvBarra">
+                            <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione</span>
+                                <input className="rvIn" value={String(val(scheda, "descrizione") ?? "")}
+                                    onChange={e => cambia(scheda, "descrizione", e.target.value)} />
+                            </label>
+                            <label className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
+                                <input className="rvIn" value={String(val(scheda, "marca") ?? "")}
+                                    onChange={e => cambia(scheda, "marca", e.target.value)} />
+                            </label>
+                        </div>
+                        <div className="rvBarra">
+                            <label className="rvCampo rvCampo-sm"><span className="rvLab">Prezzo di vendita €</span>
+                                <input className="rvIn" inputMode="decimal" value={String(val(scheda, "prezzo") ?? "")}
+                                    onChange={e => cambia(scheda, "prezzo", e.target.value)} />
+                            </label>
+                            <label className="rvCampo rvCampo-sm"><span className="rvLab">Costo d&apos;acquisto €</span>
+                                <input className="rvIn" inputMode="decimal" value={String(val(scheda, "costo_ultimo") ?? "")}
+                                    onChange={e => cambia(scheda, "costo_ultimo", e.target.value)} />
+                            </label>
+                            {/* IL REPARTO SI SCEGLIE PER SIGNIFICATO, non per numero: tre
+                                reparti sono «non soggetta», due «regime del margine», due
+                                al 4%. Sbagliarne uno non cambia lo scontrino ma spacca in
+                                due i totali del corrispettivo giornaliero. */}
+                            <label className="rvCampo rvCampo-sm"><span className="rvLab">Reparto IVA</span>
+                                <select className="rvIn" value={String(val(scheda, "reparto") ?? "")}
+                                    onChange={e => cambia(scheda, "reparto", e.target.value)}>
+                                    <option value="">— da assegnare —</option>
+                                    {reparti.map(r => (
+                                        <option key={r.reparto} value={r.reparto}>
+                                            {r.reparto} · {r.descrizione}{r.aliquota != null ? ` (${r.aliquota}%)` : r.natura ? ` (${r.natura})` : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+                        <div className="rvBarra rvBarra-c">
+                            <button type="button"
+                                onClick={() => cambia(scheda, "prezzo_modificabile", !val(scheda, "prezzo_modificabile"))}
+                                className={cn("rvPill rvPill-sm", val(scheda, "prezzo_modificabile") && "rvPill-on")}>
+                                {val(scheda, "prezzo_modificabile") ? "🔓 in cassa il prezzo si può correggere" : "🔒 in cassa il prezzo è fisso"}
+                            </button>
+                            <button type="button"
+                                onClick={() => cambia(scheda, "attivo", !val(scheda, "attivo"))}
+                                className={cn("rvPill rvPill-sm", !val(scheda, "attivo") && "rvPill-no")}>
+                                {val(scheda, "attivo") ? "Attivo" : "Spento: non si vende"}
+                            </button>
+                            <span className="rvSpazio" />
+                            <button type="button" className="rvAzione rvAzione-sm"
+                                disabled={!inModifica || salvando === scheda.codice}
+                                onClick={async () => { await salva(scheda); const f = articoli.find(x => x.codice === scheda.codice); if (f) setScheda({ ...f, ...bozza[scheda.codice] } as Articolo); }}>
+                                {salvando === scheda.codice ? "…" : inModifica ? "Salva le modifiche" : "Nessuna modifica"}
+                            </button>
+                        </div>
+                        {erroreSalva && <div className="rvErr">{erroreSalva}</div>}
+                    </>
+                ) : (
+                    <div className="rvNota">
+                        <div className="rvNota-s">
+                            Prezzo di vendita <b>{eur(scheda.prezzo)}</b> · {etichettaReparto(scheda.reparto)}.
+                            La definizione degli articoli si cambia dall&apos;amministrazione.
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>, document.body);
+
+    const pannelloNuovo = nuovo && createPortal(
+        <div className="rvFattaSfondo" onClick={e => { if (e.target === e.currentTarget) setNuovo(null); }}>
+            <div className="rvStoria">
+                <div className="rvStoria-t">
+                    <div>
+                        <div className="rvStoria-tit">Nuovo articolo</div>
+                        <div className="rvStoria-sot">
+                            Gli articoli arrivano dall&apos;export del gestionale: qui si aggiunge quello che lì non c&apos;è.
+                            Il <b>codice</b> è la chiave e non si ripete; il <b>prezzo di vendita</b> senza il quale in cassa non si può vendere.
+                        </div>
+                    </div>
+                </div>
+                <div className="rvBarra">
+                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice *</span>
+                        <input className="rvIn" value={nuovo.codice} onChange={e => setNuovo({ ...nuovo, codice: e.target.value })} />
+                    </label>
+                    <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione *</span>
+                        <input className="rvIn" value={nuovo.descrizione} onChange={e => setNuovo({ ...nuovo, descrizione: e.target.value })} />
+                    </label>
+                </div>
+                <div className="rvBarra">
+                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Prezzo di vendita € *</span>
+                        <input className="rvIn" inputMode="decimal" value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} />
+                    </label>
+                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Costo d&apos;acquisto €</span>
+                        <input className="rvIn" inputMode="decimal" value={nuovo.costo_ultimo} onChange={e => setNuovo({ ...nuovo, costo_ultimo: e.target.value })} />
+                    </label>
+                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Reparto IVA</span>
+                        <select className="rvIn" value={nuovo.reparto} onChange={e => setNuovo({ ...nuovo, reparto: e.target.value })}>
+                            <option value="">— da assegnare —</option>
+                            {reparti.map(r => (
+                                <option key={r.reparto} value={r.reparto}>
+                                    {r.reparto} · {r.descrizione}{r.aliquota != null ? ` (${r.aliquota}%)` : r.natura ? ` (${r.natura})` : ""}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+                <div className="rvBarra">
+                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
+                        <input className="rvIn" value={nuovo.marca} onChange={e => setNuovo({ ...nuovo, marca: e.target.value })} />
+                    </label>
+                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Barcode</span>
+                        <input className="rvIn" value={nuovo.barcode} onChange={e => setNuovo({ ...nuovo, barcode: e.target.value })} />
+                    </label>
+                </div>
+                {erroreSalva && <div className="rvErr">{erroreSalva}</div>}
+                <div className="rvBarra rvBarra-c">
+                    <button type="button" className="rvPill rvPill-sm" onClick={() => setNuovo(null)}>Annulla</button>
+                    <span className="rvSpazio" />
+                    <button type="button" className="rvAzione rvAzione-sm" onClick={creaArticolo}
+                        disabled={!nuovo.codice.trim() || !nuovo.descrizione.trim() || !nuovo.prezzo.trim() || salvando === "__nuovo"}>
+                        {salvando === "__nuovo" ? "…" : "Crea l'articolo"}
+                    </button>
+                </div>
+            </div>
+        </div>, document.body);
 
     if (loading) return <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico l&apos;anagrafica articoli…</div>;
     return (
@@ -3061,21 +3393,6 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
 
             <div className="rvBox">
                 <div className="rvBoxT">📚 Anagrafica articoli</div>
-                <div className="rvNota">
-                    <div className="rvNota-t">♻️ Gli usati non stanno qui</div>
-                    <div className="rvNota-s">
-                        Un pezzo usato è unico e non si riordina: si segue uno per uno in <b>Usati</b>,
-                        con il suo IMEI, dall&apos;acquisto alla vendita. Dei 3.217 articoli «USATO» che
-                        l&apos;export del gestionale riversa in anagrafica, 3.214 non hanno giacenza e
-                        nessuno è mai stato venduto da qui.
-                    </div>
-                    <div className="rvBarra rvBarra-c">
-                        <button type="button" onClick={() => { setMostraUsato(m => !m); setFamiglia(""); setSotto(""); }}
-                            className={cn("rvPill rvPill-sm", mostraUsato && "rvPill-on")}>
-                            {mostraUsato ? "Nascondi gli usati del gestionale" : "Mostrali lo stesso"}
-                        </button>
-                    </div>
-                </div>
                 <div className="rvBarra">
                     {/* OPERATORE = di chi è il listino. Non è un campo
                         dell'anagrafica: si deduce dal gruppo e dal nome, con la
@@ -3111,6 +3428,20 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                         </span>
                     </label>
                     <span className="rvSpazio" />
+                    {/* «DA SISTEMARE» viene dalla scheda del pannello amministrativo,
+                        che da oggi non c'è più: definizione e consultazione erano due
+                        schede diverse sugli stessi dati, e chi definiva non vedeva
+                        quello che vedevano i ragazzi. */}
+                    {puoDefinire && (
+                        <button onClick={() => setSoloProblemi(x => !x)}
+                            className={cn("rvPill rvPill-sm", soloProblemi && "rvPill-on")}>
+                            ⚠️ Da sistemare{conProblema > 0 ? ` · ${conProblema.toLocaleString("it-IT")}` : ""}
+                        </button>
+                    )}
+                    {puoDefinire && (
+                        <button onClick={() => { setNuovo({ codice: "", descrizione: "", prezzo: "", costo_ultimo: "", marca: "", barcode: "", reparto: "" }); setErroreSalva(""); }}
+                            className="rvAzione rvAzione-sm">+ Nuovo articolo</button>
+                    )}
                     <button onClick={esporta} disabled={!filtrati.length} className="rvAzione rvAzione-sm">
                         <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
@@ -3138,7 +3469,8 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                     </thead>
                     <tbody>
                         {visibili.map(a => (
-                            <tr key={a.codice} className="rvTab-riga">
+                            <tr key={a.codice} className="rvTab-riga rvTab-riga-cli"
+                                onClick={() => { setScheda(a); setErroreSalva(""); }}>
                                 <td className="rvTab-cod">{a.codice}</td>
                                 <td className="rvTab-nome">{a.descrizione}</td>
                                 <td className="rvTab-min">{a._sotto}</td>
@@ -3157,6 +3489,7 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                         </td></tr>}
                     </tbody>
                 </table>
+                {pannelloScheda}{pannelloNuovo}
                 {filtrati.length > TETTO && (
                     <div className="rvTab-pie">
                         Mostro i primi {TETTO} di {filtrati.length.toLocaleString("it-IT")} articoli — affina coi filtri o usa l&apos;Excel per l&apos;elenco completo.

@@ -20,7 +20,13 @@ import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
 import { CouponView } from "./_views/coupon";
-import { ArticoliView } from "./_views/articoli";
+/* ARTICOLI NON STA PIÙ QUI (Luca 01/09): «non ha senso tenerne due, e una
+   dentro il magazzino serve per forza, perché dobbiamo dare visibilità ai
+   ragazzi dei vari articoli». La scheda unica è Magazzino → 📚 Articoli:
+   tutti consultano e filtrano, dall'amministrativo in su si aprono l'articolo
+   e ne cambiano prezzo, costo, reparto IVA e se in cassa il prezzo si tocca.
+   Due schede sugli stessi dati volevano dire che chi definiva non vedeva
+   quello che vedevano i ragazzi. */
 import { CassaScontriniView } from "./_views/pos";
 import { RepartiIvaView } from "./_views/reparti";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
@@ -247,14 +253,13 @@ const SEZIONI: Sezione[] = [
     { id: "reparti", label: "Reparti & IVA", icon: Percent, gruppo: "fiscalita", desc: "Mappa reparto → aliquota/natura IVA del registratore telematico — la sorgente unica che decide l'IVA sullo scontrino (letta dal Catalogo)." },
     { id: "cassascontrini", label: "Cassa & Scontrini", icon: Receipt, gruppo: "fiscalita", desc: "Scontrini/fatture emessi, incassi della cassa automatica e chiusure Z di tutti i negozi, con importi e stato + i registratori configurati. Sola lettura." },
     { id: "coupon", label: "Coupon", icon: Ticket, gruppo: "fiscalita", desc: "Coupon sconto emessi dai ritiri usati: emessi, riscattati, scaduti, annullati — con valore e residuo. Sola lettura." },
-    { id: "articoli", label: "Articoli", icon: Package, gruppo: "fiscalita", desc: "La definizione degli articoli per la cassa: prezzo di vendita (obbligatorio), costo d'acquisto e se in cassa quel prezzo si può correggere." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
 // ordine FISSO del mini-hub Costi (Luca 31/07): Negozi → Condivisi → Altri
 const COSTI_IDS = ["negozi", "condivisi", "altri"];
 // ordine FISSO del mini-hub Fiscalità (Luca 24/08)
-const FISC_IDS = ["reparti", "cassascontrini", "coupon", "articoli"];
+const FISC_IDS = ["reparti", "cassascontrini", "coupon"];
 
 function AmministrazioneInner() {
     const { user } = useAuth();
@@ -677,8 +682,6 @@ function AmministrazioneInner() {
                                 <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna sezione di Fiscalità abilitata per il tuo ruolo.</div>
                             ) : attiva === "cassascontrini" ? (
                                 <CassaScontriniView />
-                            ) : attiva === "articoli" ? (
-                                <ArticoliView />
                             ) : attiva === "coupon" ? (
                                 <CouponView />
                             ) : (

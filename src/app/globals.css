@@ -1745,6 +1745,7 @@ html.light .rvTab td{border-top-color:rgba(18,28,54,.09)}
 .rvTab-riga>td{transition:background .12s ease}
 .rvTab-riga:hover>td{background:var(--tf-w30)}
 html.light .rvTab-riga:hover>td{background:rgba(18,28,54,.045)}
+.rvTab-riga-cli{cursor:pointer}
 /* la riga che si può aprire */
 .rvTab-cl{cursor:pointer}
 .rvTab-cl:hover>td{background:color-mix(in srgb,var(--rv-acc) 8%,transparent)}
