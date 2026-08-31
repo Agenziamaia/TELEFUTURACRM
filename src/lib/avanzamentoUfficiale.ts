@@ -140,9 +140,21 @@ export function riepilogoScarti(conf: ConfrontoUfficiale | null): {
  *  un file sbagliato non deve sommarsi a quello vecchio. */
 export async function salvaAvanzamento(opts: {
     brand: string; monthISO: string; al: string; righe: RigaUfficiale[]; fileName?: string; chi?: string;
+    /** il foglio originale: si deposita, così dallo storico si riscarica */
+    file?: File | null;
 }): Promise<{ ok: true; n: number; avviso?: string } | { ok: false; errore: string }> {
     const righe = opts.righe.filter((r) => r.cod_gara && r.pista && (r.punti != null || r.pezzi != null));
     if (!righe.length) return { ok: false, errore: "nessuna riga da salvare" };
+    /* IL FOGLIO SI TIENE (Luca 31/08). Se il deposito rifiuta non si blocca il
+       salvataggio: i numeri valgono comunque, e il file è una comodità — al
+       massimo lo storico non avrà il tasto per riscaricarlo. */
+    let filePath: string | null = null;
+    if (opts.file) {
+        const nome = String(opts.file.name || "foglio.xlsx").replace(/[^a-zA-Z0-9._-]+/g, "_");
+        const p = `${opts.brand}/${opts.monthISO.slice(0, 7)}/${opts.al}_${Date.now()}_${nome}`;
+        const { error } = await supabase.storage.from("avanzamenti-files").upload(p, opts.file, { upsert: false });
+        if (!error) filePath = p;
+    }
     /* LA PULIZIA TOCCA SOLO LE PISTE DI QUESTO FILE (Luca 31/08). WindTre non
        manda un foglio: ne manda tre, uno per il mobile, uno per il fisso e uno
        per la partnership, tutti con la stessa data. Ripulendo per (brand,
@@ -161,7 +173,7 @@ export async function salvaAvanzamento(opts: {
     const { error } = await supabase.from("avanzamenti_ufficiali").upsert(righe.map((r) => ({
         brand: opts.brand, month: opts.monthISO, al: opts.al,
         cod_gara: r.cod_gara, pista: r.pista, punti: r.punti, pezzi: r.pezzi,
-        file_name: opts.fileName || null, caricato_da: opts.chi || null, created_at: adesso,
+        file_name: opts.fileName || null, file_path: filePath, caricato_da: opts.chi || null, created_at: adesso,
     })), { onConflict: "brand,month,al,cod_gara,pista" });
     if (error) return { ok: false, errore: error.message };
     // i resti della fotografia precedente per la STESSA data
@@ -175,7 +187,15 @@ export async function salvaAvanzamento(opts: {
     return { ok: true, n: righe.length };
 }
 
-export type FotoAvanzamento = { al: string; file: string | null; n: number; chi: string | null; quando: string | null; piste: string[] };
+/** Il link per riscaricare il foglio: firmato e a scadenza, come per le liste
+ *  del call center — il deposito è chiuso, dentro ci sono i numeri di gara di
+ *  tutti i punti vendita. */
+export async function linkFoglio(filePath: string): Promise<string | null> {
+    const { data, error } = await supabase.storage.from("avanzamenti-files").createSignedUrl(filePath, 120);
+    return error ? null : (data?.signedUrl ?? null);
+}
+
+export type FotoAvanzamento = { al: string; file: string | null; filePath: string | null; n: number; chi: string | null; quando: string | null; piste: string[] };
 
 /** Le fotografie caricate: data, file, quanti valori, CHI e QUANDO.
  *  «Vale come verità fino alla sua data» è una regola che cambia i numeri su
@@ -184,14 +204,14 @@ export type FotoAvanzamento = { al: string; file: string | null; n: number; chi:
  *  (revisore 31/08). */
 export async function storicoAvanzamenti(brand: string, monthISO: string): Promise<FotoAvanzamento[]> {
     const { data } = await supabase.from("avanzamenti_ufficiali")
-        .select("al, pista, file_name, caricato_da, created_at").eq("brand", brand).eq("month", monthISO).order("al", { ascending: false });
+        .select("al, pista, file_name, file_path, caricato_da, created_at").eq("brand", brand).eq("month", monthISO).order("al", { ascending: false });
     const per = new Map<string, FotoAvanzamento & { _p: Set<string> }>();
     (data || []).forEach((r0) => {
-        const r = r0 as { al: string; pista: string; file_name: string | null; caricato_da: string | null; created_at: string | null };
+        const r = r0 as { al: string; pista: string; file_name: string | null; file_path: string | null; caricato_da: string | null; created_at: string | null };
         const al = ymd(r.al);
-        const v = per.get(al) || { al, file: r.file_name, n: 0, chi: r.caricato_da, quando: r.created_at, piste: [], _p: new Set<string>() };
+        const v = per.get(al) || { al, file: r.file_name, filePath: r.file_path, n: 0, chi: r.caricato_da, quando: r.created_at, piste: [], _p: new Set<string>() };
         v.n++; v._p.add(r.pista);
-        if (r.created_at && (!v.quando || r.created_at > v.quando)) { v.quando = r.created_at; v.chi = r.caricato_da; v.file = r.file_name; }
+        if (r.created_at && (!v.quando || r.created_at > v.quando)) { v.quando = r.created_at; v.chi = r.caricato_da; v.file = r.file_name; v.filePath = r.file_path; }
         per.set(al, v);
     });
     // le piste che quella fotografia copre: con tre file separati serve sapere
@@ -201,12 +221,17 @@ export async function storicoAvanzamenti(brand: string, monthISO: string): Promi
 
 /** Butta via una fotografia sbagliata. */
 export async function eliminaAvanzamento(brand: string, monthISO: string, al: string): Promise<{ ok: boolean; errore?: string }> {
+    // prima si prende il percorso, poi si cancellano le righe: dopo non c'è più
+    const { data: fogli } = await supabase.from("avanzamenti_ufficiali")
+        .select("file_path").eq("brand", brand).eq("month", monthISO).eq("al", al).not("file_path", "is", null);
+    const percorsi = [...new Set(((fogli ?? []) as { file_path: string }[]).map((r) => r.file_path))];
     const { error } = await supabase.from("avanzamenti_ufficiali")
         .delete().eq("brand", brand).eq("month", monthISO).eq("al", al);
+    if (!error && percorsi.length) await supabase.storage.from("avanzamenti-files").remove(percorsi);
     scordaConfronto(brand, monthISO);
     return error ? { ok: false, errore: error.message } : { ok: true };
 }
 
 // La lettura del foglio vive in un file suo, senza dipendenze: si prova a
 // mano, senza browser e senza database (test in scripts/prova_avanzamento.mjs).
-export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate, soloCifre, quotaCodiciNoti } from "@/lib/avanzamentoFoglio";
+export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate, soloCifre, quotaCodiciNoti, classificaColonneValore, punteggioColonnaValore } from "@/lib/avanzamentoFoglio";

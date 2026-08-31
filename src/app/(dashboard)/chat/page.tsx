@@ -738,7 +738,12 @@ function ChatPageInner() {
       // i PARTECIPANTI alla conversazione aperta: in un gruppo, «@» seguito da
       // un nome vuol dire quasi sempre «chiamo uno di voi»
       const dentro = (parts || []).map((x) => x.user_id).filter(Boolean);
-      const p = q.length === 0 ? recentEntities(dentro, meId) : searchAllEntities(q, dentro, meId);
+      /* SOLO CHI È NELLA CONVERSAZIONE (Luca 31/08): «mi fa taggare anche
+         persone che non ci sono». Un @ a chi non è nel gruppo non gli arriva
+         — resta scritto un nome che quella persona non leggerà mai. Se i
+         partecipanti non sono ancora arrivati (`dentro` vuoto) vale l'elenco
+         completo, altrimenti si resterebbe senza nessuno. */
+      const p = q.length === 0 ? recentEntities(dentro, meId) : searchAllEntities(q, dentro, meId, dentro.length > 0);
       p.then(setMentionRows).catch(() => setMentionRows([]));
     }, q.length === 0 ? 0 : 200);
     return () => clearTimeout(t);

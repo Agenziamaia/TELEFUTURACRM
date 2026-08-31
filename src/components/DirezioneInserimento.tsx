@@ -172,6 +172,15 @@ const etichettaSoglia = (brand: string, pista: string, i: number) => {
 // «📶 SIM» dell'Analisi. Adottarla qui allinea il mobile a quello che il resto
 // del CRM chiama SIM da sempre, invece di inventare un terzo segno.
 export const EMOJI_MOBILE = "📶";
+/** Il nome della pista dentro un riquadro da 152px: «Customer Base» ci sta
+ *  solo come CB (Luca 31/08: «la parola customer base non c'entra»). */
+const NOME_CORTO = (nome: string) => {
+    const n = String(nome || "");
+    if (/customer\s*base/i.test(n)) return "CB";
+    if (/^w3\s*protetti/i.test(n)) return "Protetti";
+    return n;
+};
+
 const EMOJI_PISTA = (nome: string) => {
     const n = nome.toLowerCase();
     if (n.includes("mobile")) return EMOJI_MOBILE;
@@ -446,36 +455,42 @@ export function DirezioneInserimentoAdmin() {
                                     {conf.file ? `${conf.file} · ` : ""}{conf.nRighe} valori · fino al {gg} comanda il numero di {bMeta.label}, dopo il nostro
                                     <button type="button" onClick={() => setModaleAvz(true)} className="ml-2 underline hover:text-slate-300">storico e caricamenti</button>
                                 </p>
-                                {R.inPiu.length > 0 && (
-                                    <div className="space-y-1">
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-rose-200">▲ Punti che non pagano — la soglia che credi presa potrebbe non esserlo</p>
-                                        {R.inPiu.map((x) => (
-                                            <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
-                                                className="w-full flex flex-wrap items-center gap-x-2 text-[11px] text-left rounded-md px-1.5 py-0.5 hover:bg-white/5">
-                                                <span className="font-bold text-slate-200 min-w-[120px]">{nomeCod(x.cod_gara)}</span>
-                                                <span className="text-slate-400">{conSim(EMOJI_PISTA(nomePista(x.pista)))} {nomePista(x.pista)}</span>
-                                                <span className="text-slate-500">loro {it(x.ufficiale)} · noi {it(x.nostro)}</span>
-                                                <span className="font-black text-rose-200">+{it(x.scarto)}</span>
-                                                <span className="ml-auto text-slate-600">apri →</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                                {R.inMeno.length > 0 && (
-                                    <div className="space-y-1">
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">▼ Punti nostri non registrati — pagano lo stesso, ma stanno su un altro codice</p>
-                                        {R.inMeno.map((x) => (
-                                            <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
-                                                className="w-full flex flex-wrap items-center gap-x-2 text-[11px] text-left rounded-md px-1.5 py-0.5 hover:bg-white/5">
-                                                <span className="font-bold text-slate-200 min-w-[120px]">{nomeCod(x.cod_gara)}</span>
-                                                <span className="text-slate-400">{conSim(EMOJI_PISTA(nomePista(x.pista)))} {nomePista(x.pista)}</span>
-                                                <span className="text-slate-500">loro {it(x.ufficiale)} · noi {it(x.nostro)}</span>
-                                                <span className="font-black text-slate-300">{it(x.scarto)}</span>
-                                                <span className="ml-auto text-slate-600">apri →</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                                {/* UNA COLONNA PER PISTA (Luca 31/08): «la pagina è
+                                    molto larga, sfrutta la larghezza». Con tre file —
+                                    mobile, fisso, partnership — l'elenco unico diventava
+                                    una colonna lunga e stretta in mezzo al vuoto. Il ▲
+                                    resta rosa e il ▼ neutro: la distinzione fra «punti
+                                    che non pagano» e «punti registrati altrove» non si
+                                    perde, la spiega la riga di legenda qui sotto. */}
+                                <p className="text-[10px] text-slate-500">
+                                    <b className="text-rose-200">▲</b> ne contiamo più di loro: la soglia che credi presa potrebbe non esserlo ·
+                                    <b className="text-slate-300"> ▼</b> ne contano più di noi: pagano lo stesso, ma stanno su un altro codice
+                                </p>
+                                <div className="grid gap-x-5 gap-y-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(240px, 1fr))` }}>
+                                    {[...new Set([...R.inPiu, ...R.inMeno].map((x) => x.pista))].map((pista) => {
+                                        const righe = [...R.inPiu.filter((x) => x.pista === pista), ...R.inMeno.filter((x) => x.pista === pista)];
+                                        const netto = Math.round(righe.reduce((t, x) => t + x.scarto, 0) * 100) / 100;
+                                        return (
+                                            <div key={pista} className="min-w-0">
+                                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5 border-b border-white/10 pb-1">
+                                                    <span>{EMOJI_PISTA(nomePista(pista))}</span>
+                                                    <span className="truncate">{nomePista(pista)}</span>
+                                                    <span className={cn("ml-auto tabular-nums", netto > 0 ? "text-rose-200" : "text-slate-300")}>{netto > 0 ? "+" : ""}{it(netto)}</span>
+                                                </p>
+                                                {righe.map((x) => (
+                                                    <button key={`${x.cod_gara}|${x.pista}`} type="button" onClick={() => apriSolaPista(x.cod_gara, x.pista)}
+                                                        className="w-full flex items-baseline gap-2 text-[11px] text-left rounded-md px-1 py-0.5 hover:bg-white/5">
+                                                        <span className={cn("font-black tabular-nums w-[52px] shrink-0", x.scarto > 0 ? "text-rose-200" : "text-slate-300")}>
+                                                            {x.scarto > 0 ? "▲ +" : "▼ "}{it(x.scarto)}
+                                                        </span>
+                                                        <span className="font-bold text-slate-200 truncate">{nomeCod(x.cod_gara)}</span>
+                                                        <span className="ml-auto text-slate-500 tabular-nums shrink-0">{it(x.ufficiale)} / {it(x.nostro)}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                                 {conf.ignorati.length > 0 && (
                                     <p className="text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-2.5 py-1.5">
                                         ⛔ {conf.ignorati.length} codici del file non sono fra i nostri ({conf.ignorati.join(", ")}): le loro righe non sono entrate in nessun confronto.
@@ -1004,18 +1019,36 @@ export function DirezioneInserimentoAdmin() {
                                     {/* la FILA incolonnata (Luca 27/08-2): stessa cella,
                                         stessa colonna su ogni riga → colpo d'occhio verticale */}
                                     {semafori.length > 0 && (
-                                        <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "128px" }}>
+                                        /* LO SCARTO STA DENTRO IL SUO RIQUADRO (Luca 31/08):
+                                           «se non torna il mobile me lo metti dentro al
+                                           mobile». Un badge unico in coda diceva che
+                                           qualcosa non tornava, non CHE COSA — e con tre
+                                           file caricati le piste in ballo sono cinque.
+                                           Il riquadro cresce da 128 a 152px e «Customer
+                                           Base», che si leggeva «Custo…», diventa CB. */
+                                        <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "152px" }}>
                                             {semafori.map((sm) => {
                                                 const solaQui = on && pistaSola === sm.chiave;
+                                                const sc = conf?.scarti.get(`${k.cod_gara}|${sm.chiave}`);
+                                                const delta = sc && Math.abs(sc.scarto) >= 0.01 ? sc.scarto : null;
                                                 return (
                                                     <button key={sm.chiave} type="button"
                                                         onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
-                                                        title={`${tipPallino(sm)}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
+                                                        title={`${tipPallino(sm)}${delta != null ? `\n\n${delta > 0
+                                                            ? `▲ ${it(delta)} punti che qui contiamo e ${bMeta.label} non ci riconosce al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}: la soglia che credi presa potrebbe non esserlo.`
+                                                            : `▼ ${it(Math.abs(delta))} punti che ${bMeta.label} ci conta al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)} e da noi non risultano: pagano lo stesso, ma stanno su un altro codice.`}` : ""}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
                                                         className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
                                                             solaQui
                                                                 ? "bg-indigo-500/20 border-indigo-400/50"
-                                                                : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20")}>
-                                                        <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{conSim(EMOJI_PISTA(sm.nome))} {sm.nome}</span>
+                                                                : delta != null && delta > 0
+                                                                    ? "bg-rose-500/10 border-rose-400/35 hover:bg-rose-500/15"
+                                                                    : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20")}>
+                                                        <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{conSim(EMOJI_PISTA(sm.nome))} {NOME_CORTO(sm.nome)}</span>
+                                                        {delta != null && (
+                                                            <span className={cn("text-[9px] font-black tabular-nums shrink-0", delta > 0 ? "text-rose-200" : "text-slate-300")}>
+                                                                {delta > 0 ? "▲+" : "▼"}{it(delta)}
+                                                            </span>
+                                                        )}
                                                         {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
                                                         <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
                                                     </button>
@@ -1036,7 +1069,10 @@ export function DirezioneInserimentoAdmin() {
                                                ma vivono nella card «Target di gruppo», e uno
                                                scarto lì non deve sparire. Dove sia, lo dice la
                                                striscia in testa. */
-                                            const sc = [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara);
+                                            // le piste della fila portano già il loro scarto dentro il
+                                            // riquadro: qui resta il resto (luce&gas, assicurazioni…)
+                                            const mostrate = new Set(semafori.map((x) => x.chiave));
+                                            const sc = [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara && !mostrate.has(x.pista));
                                             const piu = Math.round(sc.filter((x) => x.scarto >= 0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
                                             const meno = Math.round(sc.filter((x) => x.scarto <= -0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
                                             if (!piu && !meno) return null;

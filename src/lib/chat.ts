@@ -317,7 +317,7 @@ export async function recentEntities(dentro: string[] = [], meId?: string | null
   ]);
   // premendo «@» e basta, in un gruppo, la cosa che si vuole quasi sempre e'
   // chiamare uno dei presenti: i partecipanti aprono l'elenco
-  const persone = dentro.length ? await searchPersone("", dentro, meId).catch(() => []) : [];
+  const persone = dentro.length ? await searchPersone("", dentro, meId, true).catch(() => []) : [];
   return [
     ...persone.filter((p) => dentro.includes(p.id)),
     ...cl.map((c: any) => ({ type: "cliente" as const, id: c.id, label: clientLabel(c) })),
@@ -327,12 +327,12 @@ export async function recentEntities(dentro: string[] = [], meId?: string | null
 }
 
 /** Ricerca su tutti e tre i tipi insieme (usata dall'autocomplete con "@"). */
-export async function searchAllEntities(q: string, dentro: string[] = [], meId?: string | null): Promise<ChatRef[]> {
+export async function searchAllEntities(q: string, dentro: string[] = [], meId?: string | null, soloDentro = false): Promise<ChatRef[]> {
   // LE PERSONE PER PRIME. Scrivendo «@alex» in un gruppo si sta chiamando un
   // collega, non cercando un cliente che si chiama Alexandra: i colleghi
   // stanno in cima, i record del CRM restano sotto.
   const [p, a, b, c] = await Promise.all([
-    searchPersone(q, dentro, meId).catch(() => []),
+    searchPersone(q, dentro, meId, soloDentro).catch(() => []),
     searchEntities("cliente", q).catch(() => []),
     searchEntities("contratto", q).catch(() => []),
     searchEntities("appuntamento", q).catch(() => []),
@@ -344,8 +344,14 @@ export async function searchAllEntities(q: string, dentro: string[] = [], meId?:
  *  conversazione: vengono per primi, perche' in un gruppo si tagga quasi
  *  sempre uno che e' dentro — gli altri restano raggiungibili scrivendone il
  *  nome, che serve per dire «ne parlo con Tizio» anche se Tizio non c'e'. */
-export async function searchPersone(q: string, dentro: string[] = [], meId?: string | null): Promise<ChatRef[]> {
+export async function searchPersone(q: string, dentro: string[] = [], meId?: string | null, soloDentro = false): Promise<ChatRef[]> {
   const s = q.trim();
+  /* DENTRO UNA CONVERSAZIONE SI TAGGA CHI C'È (Luca 31/08): «mi fa taggare
+     anche persone che non ci sono». Giusto: un @ a chi non è nel gruppo non
+     gli arriva, e il messaggio resta lì a nominare qualcuno che non lo
+     leggerà. Fuori da una conversazione — la barra di ricerca, un gruppo che
+     si sta creando — l'elenco resta quello di tutti. */
+  const chiuso = soloDentro && dentro.length > 0;
   const base = () => {
     let sel = supabase.from("app_users").select("id, full_name").eq("active", true);
     if (meId) sel = sel.neq("id", meId);        // taggare se stessi non serve a niente
@@ -359,7 +365,9 @@ export async function searchPersone(q: string, dentro: string[] = [], meId?: str
     dentro.length
       ? (s ? base().in("id", dentro).ilike("full_name", `%${s}%`) : base().in("id", dentro)).order("full_name").limit(8)
       : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
-    (s ? base().ilike("full_name", `%${s}%`) : base()).order("full_name").limit(s ? 12 : 40),
+    chiuso
+      ? Promise.resolve({ data: [] as { id: string; full_name: string }[] })
+      : (s ? base().ilike("full_name", `%${s}%`) : base()).order("full_name").limit(s ? 12 : 40),
   ]);
   const visti = new Set<string>();
   const out: ChatRef[] = [];
@@ -368,7 +376,7 @@ export async function searchPersone(q: string, dentro: string[] = [], meId?: str
     visti.add(u.id);
     out.push({ type: "persona" as RefKind, id: u.id, label: u.full_name });
   }
-  return out.slice(0, s ? 8 : 10);
+  return out.slice(0, chiuso ? 12 : (s ? 8 : 10));
 }
 
 /** Ricerca record del CRM da taggare in chat (cliente / contratto / appuntamento). */

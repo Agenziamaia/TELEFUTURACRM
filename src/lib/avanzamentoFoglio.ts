@@ -158,13 +158,45 @@ export function celleScartate(griglia: string[][], mappa: string[], piste: { chi
  *  questi file si chiama «Punti», «Totale», «Progressivo», «Agosto»… e non
  *  c'è verso di indovinarla dal nome. Vince quella con più celle numeriche;
  *  il codice è la prima colonna che di numeri non ne ha quasi. */
+/** Quanto una colonna «sembra» la colonna dei valori di una pista.
+ *  Serve perché nei file veri il titolo non aiuta: nel foglio Partnership
+ *  Rewards di WindTre la colonna giusta si chiama «Somma di …» come altre
+ *  quaranta, e la scelta a occhio prendeva una colonna di zeri e uni (Luca
+ *  31/08). Allora si guarda che cosa c'è dentro: le colonne di bandierine
+ *  (solo 0 e 1) valgono poco, quelle con numeri veri e diversi fra loro
+ *  valgono di più, e il titolo che nomina la pista vale un bonus. */
+export function punteggioColonnaValore(celle: string[], titolo: string, nomePista: string): number {
+    const vivi = celle.map((c) => String(c ?? "").trim()).filter(Boolean);
+    if (!vivi.length) return -1;
+    const num = vivi.map((c) => numeroIt(c)).filter((n): n is number => n != null);
+    const quota = num.length / vivi.length;
+    if (quota < 0.5) return -1;                       // non è una colonna di numeri
+    const distinti = new Set(num).size;
+    const somma = num.reduce((t, n) => t + Math.abs(n), 0);
+    const bandierine = num.every((n) => n === 0 || n === 1);
+    const t = String(titolo || "").toLowerCase();
+    const parole = [...String(nomePista || "").toLowerCase().split(/\s+/).filter((w) => w.length > 2), ...SINONIMI_PISTA[String(nomePista || "").toLowerCase()] || []];
+    const generiche = ["progress", "totale", "punti", "pezzi", "avanz", "valore", "reward"];
+    let p = 0;
+    if (parole.some((w) => t.includes(w))) p += 100;
+    if (generiche.some((w) => t.includes(w))) p += 40;
+    if (bandierine) p -= 60;                          // 0/1: è un flag, non un punteggio
+    if (somma === 0) p -= 80;                         // tutta a zero: non dice niente
+    p += Math.min(20, distinti * 2) + Math.min(20, Math.log10(1 + somma) * 8);
+    return p;
+}
+
+/** Sinonimi con cui gli operatori chiamano le nostre piste nei loro fogli. */
+const SINONIMI_PISTA: Record<string, string[]> = {
+    "customer base": ["partnership", "reward", "cb"],
+    "mobile": ["sim", "mnp", "linee"],
+    "fisso": ["fibra", "wireline", "fwa"],
+    "luce & gas": ["energia", "luce", "gas", "commodity"],
+    "protetti": ["kit", "protezione"],
+};
+
 export function proponiMappaUnaPista(head: string[], corpo: string[][], nomePista: string, codiciNoti: string[] = []): string[] {
     const n = head.length;
-    const quoteNum: number[] = [];
-    for (let i = 0; i < n; i++) {
-        const celle = corpo.map((r) => String(r[i] ?? "").trim()).filter(Boolean);
-        quoteNum[i] = celle.length ? celle.filter((c) => numeroIt(c) != null).length / celle.length : 0;
-    }
     // ① la colonna che contiene i NOSTRI codici, comunque si chiami
     let iCod = -1, mCod = 0.3;
     for (let i = 0; i < n; i++) {
@@ -173,18 +205,37 @@ export function proponiMappaUnaPista(head: string[], corpo: string[][], nomePist
     }
     // ② altrimenti il titolo, ③ altrimenti la prima colonna che di numeri non ne ha
     if (iCod < 0) iCod = head.findIndex((h) => /(^|\b)cod(ice|\.)?\b|cod\.?\s*ins|c\.?\s*ins\b|codins|cod_/i.test(String(h || "")));
-    if (iCod < 0) for (let i = 0; i < n; i++) if (quoteNum[i] < 0.5) { iCod = i; break; }
-    // la colonna del valore: prima il titolo che parla di quella pista o di un
-    // avanzamento, poi la più numerica che resta
-    const chiavi = [String(nomePista || "").toLowerCase().split(" ")[0], "progress", "totale", "punti", "pezzi", "avanz", "valore"].filter(Boolean);
-    let iVal = -1;
-    for (let i = 0; i < n; i++) {
-        if (i === iCod || quoteNum[i] < 0.5) continue;
-        const t = String(head[i] || "").toLowerCase();
-        if (chiavi.some((k) => t.includes(k))) { iVal = i; break; }
+    if (iCod < 0) {
+        for (let i = 0; i < n; i++) {
+            const celle = corpo.map((r) => String(r[i] ?? "").trim()).filter(Boolean);
+            const q = celle.length ? celle.filter((c) => numeroIt(c) != null).length / celle.length : 0;
+            if (q < 0.5) { iCod = i; break; }
+        }
     }
-    if (iVal < 0) { let m = 0.5; for (let i = 0; i < n; i++) if (i !== iCod && quoteNum[i] > m) { m = quoteNum[i]; iVal = i; } }
+    // la colonna del valore: vince il punteggio, non l'ordine
+    const classifica = classificaColonneValore(head, corpo, nomePista, iCod);
+    const iVal = classifica.length ? classifica[0].i : -1;
     return head.map((_, i) => (i === iCod ? COL_CODICE : i === iVal ? nomePista : COL_IGNORA));
+}
+
+/** Le colonne candidate a portare i numeri della pista, dalla più probabile.
+ *  La finestra la mostra come elenco: su un foglio da 47 colonne indovinare
+ *  non basta, bisogna far scegliere in fretta. */
+export function classificaColonneValore(head: string[], corpo: string[][], nomePista: string, escludi = -1): { i: number; titolo: string; punteggio: number; esempio: string; totale: number }[] {
+    const out: { i: number; titolo: string; punteggio: number; esempio: string; totale: number }[] = [];
+    for (let i = 0; i < head.length; i++) {
+        if (i === escludi) continue;
+        const celle = corpo.map((r) => String(r[i] ?? ""));
+        const p = punteggioColonnaValore(celle, head[i] || "", nomePista);
+        if (p < 0) continue;
+        const num = celle.map((c) => numeroIt(c)).filter((x): x is number => x != null);
+        out.push({
+            i, titolo: head[i] || `colonna ${i + 1}`, punteggio: p,
+            esempio: celle.filter(Boolean).slice(0, 3).join(" · "),
+            totale: Math.round(num.reduce((t, x) => t + x, 0) * 100) / 100,
+        });
+    }
+    return out.sort((a, b) => b.punteggio - a.punteggio);
 }
 
 /** Dalla griglia + mappatura alle righe da salvare.

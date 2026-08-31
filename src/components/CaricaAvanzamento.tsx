@@ -22,10 +22,10 @@
 // aver visto: gli avvisi stanno in cima, non in fondo.
 
 import { useEffect, useState } from "react";
-import { Upload, X, Check, Loader2, Trash2 } from "lucide-react";
+import { Upload, X, Check, Loader2, Trash2, Download } from "lucide-react";
 import {
-    salvaAvanzamento, storicoAvanzamenti, eliminaAvanzamento,
-    pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, righeDaGriglia, diagnosiMappa, celleScartate, soloCifre,
+    salvaAvanzamento, storicoAvanzamenti, eliminaAvanzamento, linkFoglio,
+    pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, righeDaGriglia, diagnosiMappa, celleScartate, soloCifre, classificaColonneValore,
     COL_CODICE, COL_IGNORA, type RigaUfficiale, type FotoAvanzamento,
 } from "@/lib/avanzamentoUfficiale";
 import { cn } from "@/utils";
@@ -50,6 +50,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
     onFatto: () => void; onChiudi: () => void;
 }) {
     const [nomeFile, setNomeFile] = useState("");
+    const [fileObj, setFileObj] = useState<File | null>(null);   // il foglio originale, da depositare
     const [griglia, setGriglia] = useState<string[][]>([]);
     const [intestazioni, setIntestazioni] = useState<string[]>([]);
     const [mappa, setMappa] = useState<string[]>([]);      // colonna → CODICE | nome pista | IGNORA
@@ -99,7 +100,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
            file non si legge, prima restavano in piedi griglia e mappatura del
            primo con il NOME del secondo — e si salvavano i numeri di uno sotto
            il nome dell'altro. */
-        setErrore(null); setFatto(null); setNomeFile(f.name);
+        setErrore(null); setFatto(null); setNomeFile(f.name); setFileObj(f);
         setGriglia([]); setIntestazioni([]); setMappa([]);
         try {
             const XLSX = await import("xlsx");
@@ -154,7 +155,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
         if (!righeUfficiali.length) { setErrore("Non c'è nessun numero da salvare: controlla la mappatura."); return; }
         if (codiciRiconosciuti === 0) { setErrore(`⛔ Nessuno dei ${codiciFile.length} codici di questa colonna è fra i nostri: hai scelto la colonna sbagliata. I nostri sono ${codiciNoti.slice(0, 3).join(", ")}${codiciNoti.length > 3 ? "…" : ""}.`); return; }
         setBusy(true); setErrore(null);
-        const r = await salvaAvanzamento({ brand, monthISO, al, righe: righeUfficiali, fileName: nomeFile, chi: chi || undefined });
+        const r = await salvaAvanzamento({ brand, monthISO, al, righe: righeUfficiali, fileName: nomeFile, chi: chi || undefined, file: fileObj });
         setBusy(false);
         if (!r.ok) { setErrore(r.errore); return; }
         setFatto(r.n);
@@ -224,11 +225,19 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
                                     </p>
                                     {i === 0 && <p className="text-[11px] text-indigo-200 mt-0.5">↑ è questa che comanda: fino al {gg(s.al)} valgono i suoi numeri</p>}
                                 </div>
+                                {s.filePath && (
+                                    <button onClick={async () => {
+                                        const url = await linkFoglio(s.filePath!);
+                                        if (!url) { setErrore("Non riesco a preparare il link del file."); return; }
+                                        window.open(url, "_blank");
+                                    }} title={`Riscarica ${s.file || "il foglio"}`}
+                                        className="p-2 rounded-lg text-slate-400 hover:text-indigo-200 hover:bg-indigo-500/10 shrink-0"><Download className="w-4 h-4" /></button>
+                                )}
                                 <button onClick={() => elimina(s)} title="Elimina questa fotografia"
                                     className="p-2 rounded-lg text-slate-500 hover:text-rose-200 hover:bg-rose-500/10 shrink-0"><Trash2 className="w-4 h-4" /></button>
                             </div>
                         ))}
-                        <p className="text-[10px] text-slate-600 pt-1">Vale sempre la più recente. Ricaricare la stessa data la sostituisce.</p>
+                        <p className="text-[10px] text-slate-600 pt-1">Vale sempre la più recente. Ricaricare la stessa data la sostituisce. Il foglio originale resta depositato: ⬇ lo riscarica.</p>
                     </div>
                 ) : (
                     <>
@@ -324,6 +333,38 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
                                         </p>
                                     )}
 
+                                    {/* UNA PISTA SOLA: due domande, non quarantasette
+                                        (Luca 31/08, foglio Partnership Rewards da 47
+                                        colonne). Le candidate ai numeri si mostrano in
+                                        ordine di quanto somigliano a un punteggio — col
+                                        totale accanto, che è il modo più rapido per
+                                        riconoscere la colonna giusta: quella delle
+                                        bandierine 0/1 fa 1, quella dei punti fa 268. */}
+                                    {modo === "una" ? (
+                                        <div className="space-y-2">
+                                            {[["codice", CODICE, "La colonna con il codice di inserimento"], ["valore", pistaUna, `La colonna con i numeri di ${pistaUna}`]].map(([ruolo, valore, etichetta]) => {
+                                                const iAttuale = mappa.indexOf(valore as string);
+                                                const cand: { i: number; titolo: string; punteggio: number; esempio: string; totale: number }[] | null = ruolo === "valore" ? classificaColonneValore(intestazioni, griglia, pistaUna, mappa.indexOf(CODICE)) : null;
+                                                const lista = cand ? cand.map((c) => c.i) : intestazioni.map((_, i) => i);
+                                                const altre = intestazioni.map((_, i) => i).filter((i) => !lista.includes(i));
+                                                return (
+                                                    <label key={ruolo} className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-[11px] text-slate-300 w-[230px] shrink-0">{etichetta}</span>
+                                                        <select value={iAttuale} onChange={(e) => {
+                                                            const nuovo = Number(e.target.value);
+                                                            setMappa((mm) => mm.map((v, j) => (j === nuovo ? (valore as string) : v === valore ? IGNORA : v)));
+                                                        }} className="glass-input !h-8 text-[11px] flex-1 min-w-[260px] !border-indigo-400/50">
+                                                            <option value={-1}>— scegli —</option>
+                                                            {[...lista, ...altre].map((i) => {
+                                                                const c = cand?.find((x) => x.i === i);
+                                                                return <option key={i} value={i}>{intestazioni[i] || `colonna ${i + 1}`}{c ? `  —  ${esempio(i)}  ·  totale ${c.totale}` : `  —  ${esempio(i)}`}</option>;
+                                                            })}
+                                                        </select>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
                                     <div className="space-y-1">
                                         {mappate.map(({ i, m }) => (
                                             <div key={i} className="flex items-center gap-2">
@@ -338,8 +379,9 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
                                             </div>
                                         ))}
                                     </div>
+                                    )}
 
-                                    {ignorate.length > 0 && (
+                                    {modo === "largo" && ignorate.length > 0 && (
                                         <div className="mt-3">
                                             <button type="button" onClick={() => setIgnorateAperte((v) => !v)} className="text-[11px] text-slate-500 hover:text-slate-300">
                                                 ⚪ {ignorate.length} colonne che sto ignorando ({ignorate.slice(0, 3).map((x) => intestazioni[x.i] || "senza titolo").join(", ")}{ignorate.length > 3 ? "…" : ""}) {ignorateAperte ? "▴" : "▾"}

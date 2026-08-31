@@ -165,5 +165,30 @@ for (const [cella, atteso] of [
     dico("codice con i punti", 1, Math.round(F.quotaCodiciNoti(["9.000.721.835"], NOSTRI)));
 }
 
+// ── 11. Partnership Rewards: la colonna giusta non si chiama come la pista ──
+{
+    const NOSTRI = ["9000721835", "9001154565", "9001297833"];
+    const PISTE2 = [{ chiave: "cb", nome: "Customer Base" }, { chiave: "mobile", nome: "Mobile" }];
+    const head = ["Ragione Sociale", "COD_GARA", "Somma di MIA UNTIED - MIA CYC U", "Somma di PUNTI PARTNERSHIP", "AREA MANAGER"];
+    const corpo = [
+        ["MAGLIANA", "9000721835", "0", "126", "Rossi"],
+        ["LIBIA", "9001154565", "1", "88", "Rossi"],
+        ["MAZZINI", "9001297833", "0", "54", "Bianchi"],
+    ];
+    const m = F.proponiMappaUnaPista(head, corpo, "Customer Base", NOSTRI);
+    dico("partnership: la colonna 0/1 non vince", F.COL_IGNORA, m[2]);
+    dico("partnership: vince quella dei punti", "Customer Base", m[3]);
+    dico("partnership: il codice resta COD_GARA", F.COL_CODICE, m[1]);
+    dico("partnership: righe", [
+        { cod_gara: "9000721835", pista: "cb", punti: 126, pezzi: null },
+        { cod_gara: "9001154565", pista: "cb", punti: 88, pezzi: null },
+        { cod_gara: "9001297833", pista: "cb", punti: 54, pezzi: null },
+    ], F.righeDaGriglia(corpo, m, PISTE2));
+    // e la classifica propone le candidate in ordine, col totale
+    const cl = F.classificaColonneValore(head, corpo, "Customer Base", 1);
+    dico("classifica: prima la giusta", "Somma di PUNTI PARTNERSHIP", cl[0].titolo);
+    dico("classifica: col totale", 268, cl[0].totale);
+}
+
 console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
 process.exit(ko ? 1 : 0);
