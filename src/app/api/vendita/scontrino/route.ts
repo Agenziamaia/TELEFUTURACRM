@@ -315,6 +315,30 @@ export async function POST(req: Request) {
         else couponWarning = c.error || "coupon non consumato";
     }
 
+    /* IL BONIFICO VA DETTO ALL'AMMINISTRAZIONE (Luca 31/08). Uno scontrino
+       chiuso a bonifico è una vendita incassata... forse: i soldi arrivano
+       quando arrivano, e qualcuno deve andare a controllare che siano arrivati
+       davvero. A Donna hanno chiuso 3 € a bonifico e all'amministrativo non è
+       arrivato niente, perché questo avviso non esisteva.
+       Sta QUI, sul server, dopo la stampa riuscita: dal browser si potrebbe
+       saltare, e un avviso che si può saltare non è un avviso. Non blocca né
+       ritarda la vendita — se la scrittura fallisce, pazienza. */
+    try {
+        const aBonifico = pagamentiIn.filter((p: any) => String(p?.forma || "").toUpperCase() === "BONIFICO" && Number(p?.importo) > 0);
+        if (aBonifico.length) {
+            const quanto = aBonifico.reduce((t: number, p: any) => t + Number(p.importo || 0), 0);
+            const euro = quanto.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            await supabase.from("admin_tasks").insert({
+                tipo: "scontrino_bonifico",
+                titolo: `🏦 Scontrino a BONIFICO: ${euro} € — ${negozio || "negozio non indicato"}`,
+                dettaglio: `${b.createdBy || "un operatore"} ha chiuso uno scontrino di ${euro} € con pagamento a bonifico${negozio ? ` a ${negozio}` : ""}${testMode ? " (documento NON fiscale: cassa in prova)" : ""}. Verifica che il bonifico sia arrivato prima di considerare incassata la vendita.`,
+                link: "/ricerca-vendite",
+                target_role: "direzione",
+                created_by: b.createdBy || "Cassa",
+            });
+        }
+    } catch { /* l'avviso non deve mai fermare una vendita */ }
+
     await logPos(escluseVere.length ? "ok-parziale" : "ok", {
         azienda: receipts.map((r) => r.azienda || "def").join(", "),
         rt_url: receipts.map((r) => r.rt).join(", "),

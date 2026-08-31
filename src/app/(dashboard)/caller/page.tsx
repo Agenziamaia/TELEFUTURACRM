@@ -1202,7 +1202,12 @@ function CallerPageInner() {
             tipo: "vendita_segnalata",
             titolo: `🔗 Vendita collegata da approvare: ${f.nome.trim()} ${f.cognome.trim()} (${f.negozio.trim()})`,
             dettaglio: `${currentCaller} segnala che dall'appuntamento della lead è nata una vendita a nome ${f.nome.trim()} ${f.cognome.trim()} il ${f.giorno} presso ${f.negozio.trim()}. Dal Caller, bottone 🔗 «Vendite segnalate»: approva collegando la vendita.`,
-            link: "/caller", target_role: "direzione", created_by: currentCaller,
+            /* SOLO ALL'ADMIN (Luca 31/08): «quelle devono arrivare solamente a
+               me, altrimenti l'amministrativo non capisce niente». Una vendita
+               collegata segnalata dal call center è una decisione di merito —
+               quale vendita si aggancia a quale lead — non una pratica da
+               sbrigare, e chi la deve prendere è uno solo. */
+            link: "/caller", target_role: "admin", created_by: currentCaller,
         }).then(({ error: eT }) => { if (eT) console.warn("admin_tasks:", eT.message); });
         setSegnalaBusy(false); setSegnalaOpen(false);
         caricaSegnalate();
