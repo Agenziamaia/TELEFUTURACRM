@@ -1617,3 +1617,146 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 @media (prefers-reduced-motion: reduce) {
     .animate-in { animation-duration: 1ms; }
 }
+
+/* ═══════════════ MAGAZZINO — LA STESSA CASSETTA (Luca 31/08) ══════════════
+   «Le modifiche sul magazzino sono corrette, però dobbiamo adattarlo
+    esteticamente al resto del gestionale: alla sezione di Registra Vendita,
+    per come l'abbiamo ridefinita — quelle tendine, quelle caselle, quei
+    formati, quei colori, quelle sfumature.»
+
+   Il magazzino parlava una lingua sua: `glass-panel` e `glass-input` per i
+   riquadri e i campi, bottoni `bg-indigo-600` scritti dentro l'elemento, una
+   tabella con l'intestazione a `bg-white/[0.03]`. Da qui in poi usa la
+   cassetta di Registra Vendita.
+
+   Quello che il magazzino ha e Registra Vendita no — una TABELLA vera, con le
+   colonne ordinabili e le righe che si aprono — entra QUI una volta sola
+   (`.rvTab*`), così la prossima tabella del CRM non riparte da capo.
+
+   Regole: docs/REGOLE_REGISTRA_VENDITA.md.
+   · il colore lo porta il contenitore (`--rv-acc`), mai l'elemento;
+   · ogni classe ha la sua riga `html.light`;
+   · i contrasti sono misurati compositando davvero le trasparenze sul fondo
+     vero (scuro #0f111a, chiaro #eef0f6), soglia 4,5:1.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── LA TESTATA DI SEZIONE ─────────────────────────────────────────────
+   Registra Vendita scrive il suo titolo dentro l'elemento (28px/800): qui
+   diventa una classe, così le due sezioni hanno la stessa testa. */
+.rvTit{display:flex;align-items:center;gap:9px;margin:0;font-size:26px;font-weight:800;letter-spacing:-.3px;color:var(--tf-f8fafc)}
+.rvTesta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+
+/* ── LE RIGHE DI COMANDI ───────────────────────────────────────────────
+   Niente media query sul viewport (regola 5): si avvolgono da sole. */
+.rvBarra{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px 12px}
+.rvBarra-c{align-items:center}
+.rvSpazio{flex:1 1 auto;min-width:0}
+.rvSep{flex:0 0 auto;align-self:stretch;width:1px;min-height:28px;margin:0 3px;border-radius:1px;background:var(--tf-w120)}
+
+/* il campo con la sua etichetta: `.rvLab` sopra, `.rvIn` sotto. Le taglie
+   sono un tetto, non una misura fissa — si stringono quando lo spazio
+   finisce, invece di sfondare la riga. */
+.rvCampo{display:flex;flex-direction:column;flex:0 1 auto;min-width:0;max-width:100%}
+.rvCampo-xs{width:124px}
+.rvCampo-sm{width:162px}
+.rvCampo-md{width:200px}
+.rvCampo-lg{width:244px}
+.rvCampo-flex{flex:1 1 240px;width:auto}
+
+/* ── LA TABELLA ────────────────────────────────────────────────────────
+   La cassetta non ne aveva una: Registra Vendita non ha tabelle, il
+   magazzino ne ha tre. Stessa pelle dei riquadri del carrello
+   (`.rvGruppo`), intestazione che si può cliccare per ordinare, righe che
+   si aprono. Sui monitor da negozio conta il colpo d'occhio: il corpo resta
+   a 13,5px, non scende a 12. */
+.rvTabBox{background:var(--tf-w20);border:1px solid var(--tf-w60);border-radius:14px;overflow:auto;box-shadow:var(--rv-shadow)}
+html.light .rvTabBox{background:linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%);border-color:rgba(18,28,54,.10);
+  box-shadow:0 1px 2px rgba(18,28,54,.05),0 10px 26px rgba(58,64,120,.10),0 34px 64px rgba(58,64,120,.06),inset 0 1px 0 rgba(255,255,255,.9)}
+.rvTab{width:100%;border-collapse:collapse;text-align:left;font-size:13.5px}
+.rvTab thead th{padding:11px 14px;white-space:nowrap;font-size:10.5px;font-weight:800;letter-spacing:.75px;text-transform:uppercase;
+  color:var(--tf-8892b0);background:var(--tf-w50);border-bottom:1px solid var(--tf-w80)}
+html.light .rvTab thead th{color:#4a5875;background:#eceffa;border-bottom-color:rgba(18,28,54,.12)}
+/* l'intestazione che ordina: si può premere, e lo si vede */
+.rvTab-ord{cursor:pointer;user-select:none;transition:color .15s,background .15s}
+.rvTab-ord:hover{color:var(--tf-e2e8f0);background:var(--tf-w80)}
+html.light .rvTab-ord:hover{color:#1e2952;background:#e2e7f6}
+/* la freccia dell'ordinamento: è un segno di stato, non decorazione —
+   prende la tinta del contenitore schiarita come `.rvTorna` */
+.rvTab-ord i{font-style:normal;margin-left:5px;font-weight:900;color:color-mix(in srgb,var(--rv-acc) 74%,#fff)}
+html.light .rvTab-ord i{color:color-mix(in srgb,var(--rv-acc) 55%,#08101f)}
+.rvTab td{padding:9px 14px;vertical-align:middle;border-top:1px solid var(--tf-w50);color:var(--tf-cbd5e1)}
+html.light .rvTab td{border-top-color:rgba(18,28,54,.09)}
+/* la riga che si può aprire */
+.rvTab-cl{cursor:pointer}
+.rvTab-cl:hover>td{background:color-mix(in srgb,var(--rv-acc) 8%,transparent)}
+.rvTab-on>td{background:color-mix(in srgb,var(--rv-acc) 13%,transparent)}
+html.light .rvTab-cl:hover>td{background:color-mix(in srgb,var(--rv-acc) 7%,transparent)}
+html.light .rvTab-on>td{background:color-mix(in srgb,var(--rv-acc) 11%,transparent)}
+/* la freccetta ▸/▾ davanti al codice */
+.rvTab-ap{display:inline-block;width:15px;font-weight:900;font-size:11px;color:color-mix(in srgb,var(--rv-acc) 74%,#fff)}
+html.light .rvTab-ap{color:color-mix(in srgb,var(--rv-acc) 55%,#08101f)}
+/* i tipi di cella */
+.rvTab-c{text-align:center}
+.rvTab-n{text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+.rvTab-cod{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;white-space:nowrap;color:var(--tf-94a3b8)}
+.rvTab-nome{font-weight:600;color:var(--tf-f8fafc)}
+.rvTab-min{font-size:11.5px;color:var(--tf-8892b0)}
+/* niente da mostrare, e il piede che spiega il taglio dell'elenco */
+.rvTab-vuoto{padding:38px 18px;text-align:center;font-size:13px;line-height:1.65;color:var(--tf-8892b0)}
+.rvTab-pie{padding:10px 15px;border-top:1px solid var(--tf-w50);font-size:11.5px;color:var(--tf-8892b0)}
+html.light .rvTab-pie{border-top-color:rgba(18,28,54,.09)}
+/* la riga aperta: RIENTRA, non sporge — è un dettaglio di quella sopra */
+.rvTab-det>td{padding:13px 18px;border-top:none;background:rgba(4,6,14,.42)}
+html.light .rvTab-det>td{background:#eef1f9}
+
+/* ── IL DETTAGLIO DENTRO UNA RIGA APERTA ───────────────────────────────
+   I pezzi uno per uno, le quantità negozio per negozio, dove sta altrove:
+   tre elenchi con la stessa faccia, separati da un filo. */
+.rvDett{display:flex;flex-direction:column;gap:5px}
+.rvDett+.rvDett{margin-top:12px;padding-top:12px;border-top:1px solid var(--tf-w60)}
+.rvDettT{margin-bottom:3px;font-size:10.5px;font-weight:800;letter-spacing:.75px;text-transform:uppercase;color:var(--tf-8892b0)}
+.rvDettR{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:6px 10px;border-radius:10px;
+  font-size:12px;color:var(--tf-cbd5e1);background:var(--tf-w30);border:1px solid var(--tf-w60)}
+.rvDettR-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--tf-e2e8f0)}
+.rvDove-fine{margin-left:auto;font-variant-numeric:tabular-nums}
+
+/* ── LA PASTIGLIA DI UN LUOGO (dentro il dettaglio) ────────────────────
+   `.rvBadge-ok` = è qui · `.rvBadge-warn` = sta altrove: sono già nella
+   cassetta con la loro riga chiara, quindi si riusano. Manca solo la
+   pastiglia che porta la tinta del contenitore. */
+.rvBadge-acc{background:color-mix(in srgb,var(--rv-acc) 16%,transparent);color:color-mix(in srgb,var(--rv-acc) 74%,#fff);border-color:color-mix(in srgb,var(--rv-acc) 42%,transparent)}
+html.light .rvBadge-acc{background:color-mix(in srgb,var(--rv-acc) 10%,transparent);color:color-mix(in srgb,var(--rv-acc) 55%,#08101f);border-color:color-mix(in srgb,var(--rv-acc) 35%,transparent)}
+/* la pastiglia larga quanto le sue sorelle: incolonna i nomi dei negozi */
+.rvBadge-w{display:inline-block;min-width:132px;text-align:center}
+
+/* ── I NUMERI CHE DICONO QUALCOSA ──────────────────────────────────────
+   `.rvGiac-si` (verde, ce n'è) e `.rvGiac-no` (ambra, non qui) esistono già
+   dalla cassa. Il magazzino ne chiede altri tre: sotto zero — che è la prova
+   che qualcosa è uscito senza esserci, e si deve vedere —, lo zero spento e
+   la merce in arrivo. Verde, ambra e ciano NON sono rimappati nel chiaro
+   (regola 3): la riga `html.light` non è facoltativa. */
+.rvGiac-ko{color:var(--tf-f87171)}
+html.light .rvGiac-ko{color:#b91c1c}
+.rvGiac-zero{color:var(--tf-8892b0);font-weight:700}
+html.light .rvGiac-zero{color:#5a6580}
+.rvGiac-arr{color:var(--tf-7dd3fc)}
+html.light .rvGiac-arr{color:#0e6a94}
+
+/* ── DUE AZIONI CHE MANCAVANO ──────────────────────────────────────────
+   La piccola (sta in una barra di filtri) e quella che TOGLIE: il verde di
+   `.rvAzione` promette che andrà bene (regola 7), e per «Sì, toglilo» la
+   promessa è un'altra. */
+.rvAzione-sm{padding:9px 17px;border-radius:11px;font-size:12.5px}
+.rvAzione-no{background:linear-gradient(135deg,#9c1c26,#c62b38);box-shadow:0 6px 18px rgba(198,43,56,.30)}
+html.light .rvAzione-no{background:linear-gradient(135deg,#9c1c26,#c62b38);box-shadow:0 6px 18px rgba(198,43,56,.22)}
+
+/* ── LA RIGA DI RICERCA CON L'ICONA DENTRO ─────────────────────────────
+   L'icona sta nel campo, non accanto: il campo resta uno solo e si allunga. */
+.rvCerca{position:relative;display:block;width:100%}
+.rvCerca>svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--tf-8892b0)}
+html.light .rvCerca>svg{color:#5a6580}
+.rvCerca>.rvIn{padding-left:36px}
+
+/* ── LA SPIA DI CARICAMENTO ────────────────────────────────────────────
+   Era un lucchetto girevole senza parole in mezzo alla pagina. */
+.rvCarico{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:56px 12px;color:var(--tf-8892b0);font-size:13px;font-weight:700}
