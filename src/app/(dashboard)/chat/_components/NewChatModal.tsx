@@ -69,14 +69,25 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
       return n;
     });
 
+  // UN ERRORE MUTO E' PEGGIO DI UN ERRORE (Luca 31/08: «clicco su crea gruppo
+  // e non me lo crea»). Il gruppo non nasceva per un motivo preciso — la
+  // blindatura bloccava il RETURNING dell'insert — ma qui la promessa
+  // falliva in silenzio: nessun avviso, il modale restava aperto e sembrava
+  // che il pulsante non fosse collegato a niente. Il broadcast, che l'avviso
+  // ce l'aveva, l'errore lo diceva.
+  const [errore, setErrore] = useState("");
   const startDM = async (otherId: string) => {
-    if (busy) return; setBusy(true);
-    try { onCreated(await getOrCreateDM(meId, otherId)); } finally { setBusy(false); }
+    if (busy) return; setBusy(true); setErrore("");
+    try { onCreated(await getOrCreateDM(meId, otherId)); }
+    catch (e: any) { setErrore(e?.message || String(e)); }
+    finally { setBusy(false); }
   };
   const makeGroup = async () => {
     if (busy || !title.trim() || selectedIds.length === 0) return;
-    setBusy(true);
-    try { onCreated(await createGroup(meId, title.trim(), selectedIds)); } finally { setBusy(false); }
+    setBusy(true); setErrore("");
+    try { onCreated(await createGroup(meId, title.trim(), selectedIds)); }
+    catch (e: any) { setErrore(e?.message || String(e)); }
+    finally { setBusy(false); }
   };
   const sendBroadcast = async () => {
     if (busy || !bcBody.trim() || selectedIds.length === 0) return;
@@ -84,7 +95,7 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
     try {
       const n = await broadcast(meId, selectedIds, bcBody.trim());
       onBroadcastDone?.(n);
-    } catch (e: any) { alert("Invio non riuscito: " + (e?.message || e)); }
+    } catch (e: any) { setErrore(e?.message || String(e)); }
     finally { setBusy(false); }
   };
 
@@ -212,11 +223,16 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
           {filtered.length === 0 && <p className="text-center text-sm text-slate-500 py-8">Nessun risultato</p>}
         </div>
 
+        {errore && (
+          <p className="mx-5 mb-2 text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/25 rounded-lg px-3 py-2">
+            Non è riuscito: {errore}
+          </p>
+        )}
         {tab === "group" && (
           <div className="px-5 py-3 border-t border-white/10">
             <button onClick={makeGroup} disabled={busy || !title.trim() || selectedIds.length === 0}
               className="primary-btn w-full disabled:opacity-40 disabled:cursor-not-allowed">
-              Crea gruppo{selectedIds.length ? ` · ${selectedIds.length} membri` : ""}
+              {busy ? "Creo il gruppo…" : `Crea gruppo${selectedIds.length ? ` · ${selectedIds.length} membri` : ""}`}
             </button>
           </div>
         )}
