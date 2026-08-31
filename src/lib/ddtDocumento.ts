@@ -251,7 +251,42 @@ export function ddtHtml(
 
     return `<!doctype html><html lang="it"><head><meta charset="utf-8">
 <title>DDT ${d.numero}/${d.anno} — ${esc(d.da_negozio)} → ${esc(d.a_negozio)}</title>
-<style>
+<style>${STILE}</style></head><body>
+${COPIE.map(pagina).join("")}
+</body></html>`;
+}
+
+/* ═══ L'ARCHIVIO DI UN PERIODO IN UN FILE SOLO ════════════════════════════
+   Luca 31/08: «dentro Trasferimenti dobbiamo avere tutto lo storico delle DDT,
+   dove possiamo anche fare un export complessivo dei PDF mensilmente».
+   Un documento unico con dentro tutti i DDT del periodo, ognuno che comincia a
+   pagina nuova: il browser lo salva come UN pdf — che è la forma in cui questa
+   roba si manda al commercialista e si mette da parte. Uno per documento
+   vorrebbe dire aprire quaranta finestre e salvare quaranta file a mano. */
+export function ddtRaccolta(
+    documenti: { d: DatiDdt; righe: RigaDdt[]; az: Record<string, AziendaDdt>; neg: Record<string, NegozioDdt> }[],
+    titolo: string,
+): string {
+    /* SI RIUSA `ddtHtml`, non se ne scrive una copia: due generatori dello
+       stesso documento divergono al primo ritocco, e te ne accorgi quando il
+       commercialista chiede perché l'archivio non somiglia a quello che avete
+       consegnato in mano al corriere. Qui si prende il corpo di ciascuno. */
+    const corpo = documenti.map(x => {
+        const html = ddtHtml(x.d, x.righe, x.az, x.neg);
+        const i = html.indexOf("<body>"), j = html.lastIndexOf("</body>");
+        return i < 0 || j < 0 ? "" : html.slice(i + "<body>".length, j);
+    }).join("\n");
+    return `<!doctype html><html lang="it"><head><meta charset="utf-8">
+<title>${esc(titolo)}</title>
+<style>${STILE}</style></head><body>
+${documenti.length ? corpo : `<p style="font-family:Arial;padding:40px">Nessun documento di trasporto in questo periodo.</p>`}
+</body></html>`;
+}
+
+/** Il foglio di stile del modulo: uno solo, per il documento singolo e per
+ *  l'archivio — se no le due stampe si somigliano finché qualcuno non tocca
+ *  una delle due. */
+const STILE = `
   @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
   body { font-family: "Helvetica Neue", Arial, sans-serif; color: #000; margin: 0; font-size: 10.5px; }
@@ -301,7 +336,4 @@ export function ddtHtml(
   .manca { color: #b00; font-weight: 700; font-style: italic; }
   .nota { margin-top: 6px; border: 1px solid #000; padding: 4px 8px; font-size: 9px; }
   .notaRossa { margin-top: 4px; border: 1.5px solid #b00; color: #b00; padding: 4px 8px; font-size: 9px; }
-</style></head><body>
-${COPIE.map(pagina).join("")}
-</body></html>`;
-}
+`;

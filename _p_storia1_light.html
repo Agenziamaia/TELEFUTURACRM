@@ -1,4 +1,6 @@
-@import "tailwindcss";
+<!doctype html><html class="light" lang="it"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
 
 @theme {
   --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif,
@@ -807,10 +809,6 @@ html.light .rvFatta-o{color:#0f7a4d;background:rgba(15,122,77,.10);border-color:
 /* il semaforo della scheda: da compilare / incompleto / completo */
 .rvBadge{font-size:10.5px;font-weight:800;padding:4px 11px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
 .rvBadge-empty{background:var(--tf-w60);color:var(--tf-94a3b8);border-color:var(--tf-w120)}
-/* la misura piccola, per i distintivi che stanno DENTRO una riga di carrello:
-   stesse tinte già misurate, solo più stretti — un colore nuovo qui vorrebbe
-   dire rimisurare due temi per dire una cosa che il verde diceva già */
-.rvBadge-mini{font-size:9px;padding:2px 7px;margin-left:5px;vertical-align:middle}
 .rvBadge-warn{background:rgba(245,158,11,.14);color:var(--tf-f59e0b);border-color:rgba(245,158,11,.38)}
 .rvBadge-ok{background:rgba(40,167,69,.14);color:var(--tf-34d399);border-color:rgba(52,211,153,.38)}
 /* «scegli una di queste»: il requisito che manca, e quello soddisfatto */
@@ -1967,3 +1965,114 @@ html.light .rvTml-fr{color:#59647a}
 .rvTml-d{font-size:12px;color:var(--tf-8892b0);margin-top:2px;line-height:1.5}
 .rvTml-x{margin-top:9px;padding-top:9px;border-top:1px solid var(--tf-w60);
   display:flex;flex-direction:column;gap:5px}
+</style><style>
+@layer theme, base, components, utilities;
+html,body{margin:0;padding:0}
+body{font-family:Outfit,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  background-color:#0f111a;color:#f8fafc;min-height:100vh;
+  background-image:radial-gradient(ellipse at top left,rgba(79,70,229,.15),transparent 50%),
+    radial-gradient(ellipse at bottom right,rgba(236,72,153,.15),transparent 50%);
+  background-attachment:fixed}
+*{box-sizing:border-box}
+@layer utilities{
+ .mt-3{margin-top:.75rem}.mt-2{margin-top:.5rem}.ml-2{margin-left:.5rem}
+ .align-middle{vertical-align:middle}.inline-block{display:inline-block}
+ .space-y-4>*+*{margin-top:1rem}
+ .max-w-\[1500px\]{max-width:1500px}
+ .w-5{width:1.25rem}.h-5{height:1.25rem}
+}
+/* finta pagina: il contenuto del CRM sta dentro la shell, con l'imbottitura vera */
+#shell{padding:22px 26px}
+</style></head>
+<body class="antialiased"><div id="shell"><div class="max-w-[1500px]"><div class="rvTesta"><h1 class="rvTit">📦 Magazzino</h1>
+ <div class="rvPillRow">
+  <button class="rvPill rvPill-on">📦 Giacenze</button>
+  <button class="rvPill">🚚 Trasferimenti</button>
+  <button class="rvPill">📚 Articoli</button></div></div><div class="space-y-4"><div class="rvBox"><div class="rvBoxT">🔎 Cosa guardo</div>
+ <div class="rvBarra rvBarra-c">
+  <button class="rvPill rvPill-sm rvPill-on">🏠 Magliana W3</button>
+  <button class="rvPill rvPill-sm">🌐 Tutti i negozi</button>
+  <div class="rvCampo rvCampo-lg"><input class="rvIn" placeholder="Scegli i punti vendita — vuoto = tutti"></div>
+ </div>
+ <div class="rvBarra rvBarra-c mt-3"><button class="rvPill rvPill-sm">🟢 Disponibili</button><button class="rvPill rvPill-sm">📦 In arrivo</button><button class="rvPill rvPill-sm rvPill-on">🧾 Venduti</button></div>
+ <div class="rvBarra mt-3">
+  <label class="rvCampo rvCampo-lg"><span class="rvLab">Cerca</span>
+   <input class="rvIn" placeholder="codice, descrizione o IMEI — puoi spararlo col lettore"></label>
+  <div class="rvCampo rvCampo-md"><span class="rvLab">Operatore</span>
+   <input class="rvIn" placeholder="Tutti — scrivi per filtrare"></div>
+  <div class="rvCampo rvCampo-lg"><span class="rvLab">Azienda</span>
+   <input class="rvIn" placeholder="Tutte le società"></div>
+  <label class="rvCampo rvCampo-sm"><span class="rvLab">Venduto dal</span>
+      <input type="date" value="2026-08-01" class="rvIn"></label>
+    <label class="rvCampo rvCampo-sm"><span class="rvLab">al</span>
+      <input type="date" value="2026-08-31" class="rvIn"></label>
+    <button class="rvPill rvPill-sm">✕ tutto</button>
+  <span class="rvSpazio"></span>
+  <button class="rvAzione rvAzione-sm">⬇ Excel</button>
+ </div></div><div class="rvTabBox"><table class="rvTab">
+ <thead><tr><th class="rvTab-ord">IMEI / seriale<i>↑</i></th><th class="rvTab-ord">Descrizione</th><th class="rvTab-ord">Negozio</th><th class="rvTab-ord">Venduto il</th><th class="rvTab-ord">Venduto da</th><th class="rvTab-ord rvTab-c">A listino</th><th class="rvTab-ord rvTab-c">Venduto a</th></tr></thead><tbody><tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">866271061892340</button></td>
+ <td class="rvTab-nome">Samsung Galaxy A16 5G 128GB Blu Nero<span class="rvBadge rvBadge-acc ml-2 align-middle">WIND3</span></td>
+ <td class="rvTab-min">Magliana W3</td><td class="rvTab-min">28/08/2026</td><td class="rvTab-min">g.dinardo</td>
+ <td class="rvTab-n">149,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-ko">129,00 €<span class="rvTab-min"> (-20,00 €)</span></td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">353916110992817</button></td>
+ <td class="rvTab-nome">Apple iPhone 15 128GB Nero</td>
+ <td class="rvTab-min">Ostia 3</td><td class="rvTab-min">27/08/2026</td><td class="rvTab-min">f.casella</td>
+ <td class="rvTab-n">879,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-si">899,00 €<span class="rvTab-min"> (+20,00 €)</span></td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">866271061774555</button></td>
+ <td class="rvTab-nome">ZTE Blade A36 64GB Nero<span class="rvBadge rvBadge-acc ml-2 align-middle">WIND3</span></td>
+ <td class="rvTab-min">Magliana W3</td><td class="rvTab-min">26/08/2026</td><td class="rvTab-min">g.dinardo</td>
+ <td class="rvTab-n">79,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-si">79,00 €</td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">352011550119348</button></td>
+ <td class="rvTab-nome">Samsung Galaxy A56 5G 256GB Grafite<span class="rvBadge rvBadge-acc ml-2 align-middle">WIND3</span></td>
+ <td class="rvTab-min">Castani</td><td class="rvTab-min">24/08/2026</td><td class="rvTab-min">m.rossi</td>
+ <td class="rvTab-n">399,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-ko">349,00 €<span class="rvTab-min"> (-50,00 €)</span></td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">866271062003881</button></td>
+ <td class="rvTab-nome">Modem Fastweb NeXXt Gate FWA<span class="rvBadge rvBadge-acc ml-2 align-middle">FASTWEB</span></td>
+ <td class="rvTab-min">Ostia 3</td><td class="rvTab-min">22/08/2026</td><td class="rvTab-min">f.casella</td>
+ <td class="rvTab-n">—</td>
+ <td class="rvTab-n rvGiac rvGiac-si">0,00 €</td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">354019113558200</button></td>
+ <td class="rvTab-nome">Samsung Galaxy S24 FE 256GB Grigio<span class="rvBadge rvBadge-acc ml-2 align-middle">WIND3</span></td>
+ <td class="rvTab-min">Magliana W3</td><td class="rvTab-min">19/08/2026</td><td class="rvTab-min">l.perrotta</td>
+ <td class="rvTab-n">599,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-ko">559,00 €<span class="rvTab-min"> (-40,00 €)</span></td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">866271061990772</button></td>
+ <td class="rvTab-nome">Apple iPhone 15 128GB Nero</td>
+ <td class="rvTab-min">Castani</td><td class="rvTab-min">12/08/2026</td><td class="rvTab-min">m.rossi</td>
+ <td class="rvTab-n">879,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-si">879,00 €</td></tr>
+<tr class="rvTab-riga">
+ <td class="rvTab-cod"><button class="rvSerial" title="Tutta la storia di questo pezzo">357140880012349</button></td>
+ <td class="rvTab-nome">ZTE Blade A36 64GB Nero<span class="rvBadge rvBadge-acc ml-2 align-middle">WIND3</span></td>
+ <td class="rvTab-min">Ostia 3</td><td class="rvTab-min">05/08/2026</td><td class="rvTab-min">f.casella</td>
+ <td class="rvTab-n">79,00 €</td>
+ <td class="rvTab-n rvGiac rvGiac-ko">69,90 €<span class="rvTab-min"> (-9,10 €)</span></td></tr></tbody></table></div></div></div></div><div class="rvFattaSfondo"><div class="rvStoria">
+ <div class="rvStoria-t"><div>
+   <div class="rvStoria-tit">Samsung Galaxy A16 5G 128GB Blu Nero</div>
+   <div class="rvStoria-sot"><span class="rvDettR-mono">866271061892340</span> · cod. 8806094898484 · 🧾 Venduto</div>
+  </div><button class="rvPill rvPill-sm">✕ Chiudi</button></div>
+ <div class="rvBarra rvBarra-c"><span class="rvTag">📍 Magliana W3</span>
+  <span class="rvTag">🏢 T1</span><span class="rvTag">🏷 a listino 149,00 €</span>
+  <span class="rvTag">🧾 venduto a 129,00 €</span></div>
+ <div class="rvTml"><div class="rvTml-r"><div class="rvTml-p">🧾</div>
+ <div class="rvTml-c rvTml-cl">
+  <div class="rvTml-q">31/08/2026, 11:24</div>
+  <div class="rvTml-e">Venduto<span class="rvTml-fr">▴</span></div>
+  <div class="rvTml-d">Magliana W3 · g.dinardo</div><div class="rvTml-x">
+   <div class="rvDettR"><span class="rvTab-min">documento</span><span class="rvDove-fine">DDT-2026-000418</span></div>
+   <div class="rvDettR"><span class="rvTab-min">prezzo di vendita</span><span class="rvDove-fine">129,00 €</span></div>
+   <div class="rvDettR"><span class="rvTab-min">cliente</span><span class="rvDove-fine">ROSSI MARIO</span></div>
+   <div class="rvTab-min">Consegnato in negozio, cliente presente.</div>
+   <a href="#" class="rvAzione rvAzione-sm mt-2 inline-block">🧾 Apri la vendita</a></div></div></div></div>
+</div></div></body></html>

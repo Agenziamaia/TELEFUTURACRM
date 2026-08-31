@@ -43,7 +43,7 @@ import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
-import { ddtHtml, type AziendaDdt, type NegozioDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
+import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
 import { storiaCompleta, pezzoOra, NOME_EVENTO, type EventoPezzo } from "@/lib/magazzinoStoria";
 /* Il RAGIONAMENTO sui trasferimenti — le situazioni in cui della merce si
    muove fra punti vendita, e cosa deve succedere in ognuna — sta tutto in
@@ -1146,7 +1146,7 @@ async function prendiInCarico(
     const esiti: Record<string, string> = {};
     const avvisi: string[] = [];
     const mov: Record<string, unknown>[] = [];
-    const presi: string[] = [];      // le righe che ho DAVVERO preso io
+    let presi: string[] = [];        // le righe che ho DAVVERO preso io
     const vive = righe.filter(x => x.stato === "in_viaggio");
     const storie = await storieCorrenti(vive.map(r => r.unita_id || ""));
     const quando = oraIso();
@@ -1224,7 +1224,17 @@ async function prendiInCarico(
             await supabase.from("mag_ddt_righe").update({ stato: "in_viaggio", quantita_accettata: null, chiusa_il: null, chiusa_da: null })
                 .in("id", presi).is("unita_id", null);
             avvisi.push(`le quantità non sono entrate a magazzino (${error.message}): quelle righe sono tornate «in viaggio», riprova`);
-            presi.filter(id => !righe.find(r => r.id === id)?.unita_id).forEach(id => { delete esiti[id]; });
+            /* E VANNO TOLTE ANCHE DA `presi` (revisore 31/08). Qui il filtro
+               veniva calcolato e BUTTATO VIA: si svuotava `esiti` ma `presi`
+               restava pieno, quindi il documento si chiudeva lo stesso come
+               «parziale» mentre le sue righe erano tornate «in viaggio». Da
+               quel momento non c'era più nessun bottone che le recuperasse —
+               «accetta» e «annulla» vogliono un documento in transito — e la
+               merce restava fuori da ogni negozio: uscita dal mittente, mai
+               entrata dal destinatario. Misurato: 6 kit SIM in nessun luogo. */
+            const aQuantita = presi.filter(id => !righe.find(r => r.id === id)?.unita_id);
+            aQuantita.forEach(id => { delete esiti[id]; });
+            presi = presi.filter(id => !aQuantita.includes(id));
         }
     }
 
@@ -1293,17 +1303,29 @@ async function rimandaIndietro(
         }
     }
 
+    let quantitaOk = true;
     if (mov.length) {
         const { error } = await supabase.from("mag_movimenti").insert(mov);
         if (error) {
+            quantitaOk = false;
             await supabase.from("mag_ddt_righe").update({ stato: "in_viaggio", chiusa_il: null, chiusa_da: null })
                 .in("id", presi).is("unita_id", null);
             avvisi.push(`le quantità non sono rientrate a magazzino (${error.message}): quelle righe sono tornate «in viaggio», riprova`);
         }
     }
-    await supabase.from("mag_ddt").update({
-        stato: esito, motivo: motivo.trim() || et, chiuso_da: utente, chiuso_il: quando,
-    }).eq("id", d.id).eq("stato", "in_transito");
+    /* IL DOCUMENTO SI CHIUDE SOLO SE LA MERCE È TORNATA DAVVERO (revisore
+       31/08). Prima si chiudeva comunque: le righe tornavano «in viaggio» ma
+       il documento risultava annullato, e da lì non c'era più nessun bottone
+       che le riprendesse — «accetta» e «annulla» vogliono un documento in
+       transito. La merce restava fuori da ogni negozio. Ora, se le quantità
+       non sono rientrate, il documento resta in viaggio e si riprova. */
+    if (quantitaOk) {
+        await supabase.from("mag_ddt").update({
+            stato: esito, motivo: motivo.trim() || et, chiuso_da: utente, chiuso_il: quando,
+        }).eq("id", d.id).eq("stato", "in_transito");
+    } else {
+        avvisi.push(`il documento n.${d.numero} resta IN VIAGGIO: riprova quando il magazzino accetta il rientro`);
+    }
     return avvisi;
 }
 
@@ -1581,7 +1603,11 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        `ddtHtml` esisteva ma non era attaccata a nessun pulsante: il DDT che
        usciva era la tabellina scritta a mano dentro questa pagina, senza
        partita IVA, senza indirizzi, senza le tre copie. */
-    const stampa = (d: Ddt) => {
+    /* I DATI DI UN DOCUMENTO PER LA STAMPA, in una funzione sola: li usano il
+       pulsante «DDT» di una riga e l'archivio del periodo. Prima stavano dentro
+       `stampa`, e l'archivio avrebbe dovuto rifarli — due copie della stessa
+       regola, che divergono al primo ritocco (il reso a fornitore ne è pieno). */
+    const perStampa = (d: Ddt) => {
         const rs = righeDi(d.id);
         const dati: DatiDdt = {
             numero: d.numero, anno: d.anno ?? new Date(d.creato_il).getFullYear(), creato_il: d.creato_il,
@@ -1618,16 +1644,49 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                 cap: d.destinatario_cap, citta: d.destinatario_citta, provincia: d.destinatario_provincia,
             },
         } : negDati;
-        const stampabili: RigaStampa[] = rs.map(r => ({
-            codice: r.codice, descrizione: r.descrizione, seriale: r.seriale, quantita: pezziDi(r),
-        }));
+        /* SUL DOCUMENTO CI VA SOLO LA MERCE CHE VIAGGIA (revisore 31/08).
+           Qui finivano TUTTE le righe: se fra la spunta e il clic un telefono
+           veniva venduto al banco, il codice se ne accorgeva e lo segnava «mai
+           partita» — ma il DDT stampato elencava lo stesso tre IMEI e scriveva
+           «Totale beni 3» mentre nel pacco ce n'erano due. Un documento di
+           trasporto che descrive merce che non viaggia è un documento falso. */
+        const stampabili: RigaStampa[] = rs
+            .filter(r => !["mai_partita", "annullata_in_viaggio"].includes(r.stato))
+            .map(r => ({
+                codice: r.codice, descrizione: r.descrizione, seriale: r.seriale, quantita: pezziDi(r),
+            }));
+        return { d: dati, righe: stampabili, az: azStampa, neg: negStampa };
+    };
+
+    /** Apre una finestra col documento e chiede la stampa. */
+    const apriPerStampa = (html: string) => {
         const w = window.open("", "_blank");
         if (!w) { alert("Il browser ha bloccato la finestra della stampa: sbloccala e riprova."); return; }
         // il generatore fa il documento, non chiede la stampa: la finestra di
         // stampa è quello che si aspetta chi preme «DDT», e le copie sono tre
         const chiedi = "<" + "script>window.addEventListener('load',function(){window.print()})<" + "/script>";
-        w.document.write(ddtHtml(dati, stampabili, azStampa, negStampa).replace("</body>", chiedi + "</body>"));
+        w.document.write(html.replace("</body>", chiedi + "</body>"));
         w.document.close();
+    };
+
+    const stampa = (d: Ddt) => {
+        const x = perStampa(d);
+        apriPerStampa(ddtHtml(x.d, x.righe, x.az, x.neg));
+    };
+
+    /* ARCHIVIO DEI DOCUMENTI DEL PERIODO (Luca 31/08): «tutto lo storico delle
+       DDT, dove possiamo anche fare un export complessivo dei PDF
+       mensilmente». Prende i documenti che stanno a schermo — cioè quelli che
+       i filtri hanno selezionato, periodo compreso — e ne fa UN file, ognuno a
+       pagina nuova. Dal più vecchio al più recente: un archivio si legge
+       nell'ordine in cui le cose sono successe, non al contrario. */
+    const stampaArchivio = () => {
+        if (!visibili.length) return;
+        if (visibili.length > 60 && !confirm(`Stai per mettere ${visibili.length} documenti in un file solo (${visibili.length * 3} pagine). Vado avanti?`)) return;
+        const ordinati = [...visibili].sort((a, b) => String(a.creato_il).localeCompare(String(b.creato_il)));
+        const p = PERIODI.find(x => x.id === periodo);
+        const quando = dal || al ? `${dal || "inizio"} — ${al || "oggi"}` : (p ? p.et.toLowerCase() : "");
+        apriPerStampa(ddtRaccolta(ordinati.map(perStampa), `Documenti di trasporto — ${quando} (${ordinati.length})`));
     };
 
     const esporta = () => {
@@ -1780,6 +1839,10 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                 )}
                 <button onClick={esporta} disabled={!merce.length} className="rvPill rvPill-sm">
                     <FileDown size={14} className="inline-block align-[-2px] mr-1.5" />Excel</button>
+                {/* l'archivio dei documenti del periodo, in un file solo */}
+                <button onClick={stampaArchivio} disabled={!visibili.length} className="rvPill rvPill-sm"
+                    title="Tutti i documenti che vedi, in un unico PDF — uno per pagina">
+                    📄 PDF di tutti ({visibili.length})</button>
             </div>
 
             {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}
@@ -2174,9 +2237,17 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
         if (fuori || !a || !soc) return soc;
         // 1. il negozio di arrivo ha un registratore di quella società
         if (casse.some(c => c.negozio === a && c.azienda === soc)) return soc;
-        // 2. oppure ne ha già la merce a scaffale
-        if (unita.some(u => u.negozio === a && u.azienda === soc)) return soc;
-        if (quantita.some(g => g.negozio === a && g.azienda === soc)) return soc;
+        /* 2. oppure ne ha già la merce A SCAFFALE — e «a scaffale» vuol dire
+              disponibile (revisore 31/08). `unita` arriva senza filtro di
+              stato: dentro ci sono i venduti, gli annullati e soprattutto i
+              pezzi IN VIAGGIO, che per convenzione portano già il negozio di
+              destinazione. Senza questo filtro, il secondo DDT sulla stessa
+              tratta trovava il pezzo del PRIMO — ancora in viaggio, non ancora
+              accettato — e concludeva che quel negozio ha già merce di quella
+              società: stessa tratta, due esiti fiscali diversi, e il secondo
+              senza fattura. */
+        if (unita.some(u => u.negozio === a && u.azienda === soc && u.stato === "disponibile")) return soc;
+        if (quantita.some(g => g.negozio === a && g.azienda === soc && Number(g.quantita) > 0)) return soc;
         // 3. altrimenti è la sua, e allora è una cessione
         const suo = negDati[a]?.azienda
             || casse.filter(c => c.negozio === a).sort((x, y) => Number(y.is_default) - Number(x.is_default))[0]?.azienda;
@@ -2325,7 +2396,23 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
                     ddt_id: d.id, operatore: utente,
                     nota: fuori ? `reso a ${aNome} — DDT n.${d.numero}` : `trasferimento a ${aNome} — DDT n.${d.numero}`,
                 })));
-                if (em) { uscitaOk = false; alert("Il documento è partito, ma le quantità non sono uscite dal magazzino: " + em.message); }
+                if (em) {
+                    uscitaOk = false;
+                    /* LE RIGHE A QUANTITÀ SI CHIUDONO SUBITO (revisore 31/08).
+                       La guardia esisteva ma copriva SOLO i gemelli: fuori da
+                       lì il documento partiva con le righe «in viaggio» e la
+                       giacenza del mittente intatta. Chi riceve preme
+                       «accetta» e scrive il +n senza che sia mai esistito il
+                       −n: venti cover in più nel gruppo, nate dal nulla.
+                       Ora quelle righe nascono già chiuse come «mai partita»,
+                       che è la verità: dal magazzino non è uscito niente. */
+                    await supabase.from("mag_ddt_righe").update({
+                        stato: "mai_partita", quantita_accettata: 0,
+                        motivo: `la merce non è uscita dal magazzino di ${da}: ${em.message}`,
+                        chiusa_il: oraIso(), chiusa_da: utente,
+                    }).eq("ddt_id", d.id).is("unita_id", null);
+                    alert(`Il documento n.${d.numero} è emesso, ma le quantità NON sono uscite dal magazzino:\n\n${em.message}\n\nQuelle righe sono segnate «mai partita»: la merce è rimasta a ${da}. Rifai il trasferimento quando è sistemato.`);
+                }
             }
 
             /* I GEMELLI: la merce non si muove, il documento si chiude subito.

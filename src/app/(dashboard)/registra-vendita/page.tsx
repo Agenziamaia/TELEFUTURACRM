@@ -897,7 +897,13 @@ const conPrezzo=(m,v)=>{
   // se è un usato con UN pezzo, il prezzo va anche nell'unità: è quello che
   // finisce su Gestione Usati come prezzo di vendita
   const units=(Array.isArray(m.units)&&m.units.length===1)?[{...m.units[0],prezzo:v}]:m.units;
-  return {...m,importo:v,price:v,units,margin:marg,totalMargin:marg==null?null:marg*q};
+  /* MARCATO A MANO (revisore 31/08). Serve al ricalcolo delle voci auto per
+     sapere che quella cifra l'ha scritta una persona. Dedurlo dal confronto
+     fra `importo` e `price` non funzionava — qui si scrivono ENTRAMBI col
+     valore digitato, quindi il confronto era sempre falso e la guardia non si
+     accendeva mai: il prezzo del negozio veniva riscritto al primo prodotto
+     aggiunto al carrello, e nessuno se ne accorgeva. */
+  return {...m,importo:v,price:v,units,margin:marg,totalMargin:marg==null?null:marg*q,prezzoAMano:true};
 };
 const emS = () => ({active:true,fields:{},contract:{},gnp:false,gnpNum:"",gnpOp:"",secondaLinea:false,gnp2L:null,gnp2LBrand:"",gnp2LNum:"",domiciliazione:false,opProvenienza:"",codiceOverride:"",addons:{},domiciliato:null,convergente:null,tipMob:null,mnp:null,easyPay:null,tnpGa:null,tnpTipo:"",tnpModello:"",tnpImei:"",tnpCount:null,tnpModelli:[],tnpImeis:[],packAccessori:null,packAccessoriVal:"",packAccessoriQta:"",cbTnp:false,cbTnpTipo:"",cbTnpModello:"",cbTnpImei:"",cbTnpCount:null,cbTnpModelli:[],cbTnpImeis:[],cbPackAccessori:null,cbPackAccessoriVal:"",cbPackAccessoriQta:"",cbTnpCell:"",cbTnpCC:"",cbTnpCodIns:"",cbTnpReload:null,cbTnpReloadSel:{},cbCambio:false,cbCambioVal:"",cbCambioCell:"",cbCambioCC:"",cbCambioCodIns:"",cbAddon:false,cbAddonSel:{},rfModello:"",rfImei:"",cbRf:false,cbAddonCodIns:"",cbAddonSecCell:"",cbAddonRoCell:"",cbAddonRoImei:"",cbRfCodIns:"",tnpGaReload:null,tnpGaReloadSel:{},reloadForever:null,securitySel:{},voceCasaCb:null,protectaCodIns:"",vfOffers:{},vfContratti:{},vfOffer:null,vfMnp:null,vfMnpBrand:"",vfMnpNum:"",vfDomicilio:null,vfConvergenza:null,vfNumFisso:"",vfTnp:null,vfTnpList:[],dcNumProv:"",dcNum:"",dcIccid:"",dcCodIns:"",dcRicaricaAuto:null,vfSecurity:null,cbTnpList:[],cbTraslochi:false,cbTraslochiNum:"",cbTraslochiCodIns:"",cbSecurityCodIns:"",vfFIccid:"",cbCellulare:"",cbCodContratto:"",cbCodIns2:"",cbTaglia:null,dcCbNumProv:"",dcCbIccid:"",cbCambio2:false,cbCambioCell:"",cbCambioNumMod:"",cbCambioCodIns2:"",cbSecurity:false,cbSecurityCell:"",vfFLockIn:null,vfFConvergenza:null,vfFGnp:null,vfFGnpBrand:"",vfFGnpNum:"",vfFAddons:{},vfFCodIns:"",vfFNumProvVisorio:"",vfFNumDef:"",vfbOffer:null,vfbMnp:null,vfbMnpBrand:"",vfbMnpNum:"",vfbTnp:null,vfbModello:"",vfbImei:"",vfbRataPiva:null,vfbKaskoSel:{},vfbCodIns:"",vfbCbOn:false,vfbCbCell:"",vfbCbCodIns:"",vfbFGnp:null,vfbFGnpBrand:"",vfbFGnpNum:"",vfbFCodIns:"",vfbFNumProv:"",vfbFNumDef:"",vfbFMnp:null,vfbFMnpBrand:"",vfbFMnpNum:"",vfbFCombNumProv:"",vfbFCombIccid:"",vfbNum:"",vfbIccid:"",vfbFIccid:"",vfSolDigCodIns:"",verisureCodIns:"",kfCodIns:"",vcCodIns:"",fwOffer:null,fwMnp:null,fwFSecLineCount:0,fwFSecLines:[],fwMnpBrand:"",fwMnpNum:"",fwCodIns:"",fwNumProv:"",fwNumDef:"",fwIccid:"",fwFGnp:null,fwFGnpBrand:"",fwFGnpNum:"",fwFCodIns:"",fwFNumProv:"",fwFNumDef:"",fwPod:"",fwPdr:"",fwEnCodIns:"",ilOffer:null,ilMnp:null,ilDom:null,ilMnpBrand:"",ilMnpNum:"",ilCodIns:"",ilNumProv:"",ilNumDef:"",ilIccid:"",ilFGnp:null,ilFCodIns:"",ilFNumProv:"",ilFNumDef:"",ilFwaCodIns:"",ilFwaIccid:"",ilBizOffer:null,ilBizMnp:null,ilBizMnpBrand:"",ilBizDom:null,ilBizNum:"",ilBizIccid:"",ilBizNumDef:"",ilBizCodIns:"",enCodIns:"",enPod:"",enPdr:"",enProv:"",fwEnProv:"",w3SostCell:"",w3SostIccid:"",w3SostCodContr:"",w3SostCodIns:"",fwSostCell:"",fwSostIccid:"",fwSostCodContr:"",fwSostCodIns:"",vfSostCell:"",vfSostCodIns:"",timOffer:null,timMnp:null,timMnpBrand:"",timMnpNum:"",timTnp:null,timModello:"",timSpedizione:null,timFinanziato:null,timCodPratica:"",timVisionBox:null,timVisionTaglia:null,timVisionNumContr:"",timImei:"",timNumProv:"",timNum:"",timIccid:"",timCodIns:"",timFOffer:null,timFGnp:null,timFGnpBrand:"",timFGnpNum:"",timFNumProv:"",timFCodIns:"",timFVision:null,timFVisionTaglia:null,timFVisionNumContr:"",timTpTwin:null,timTpSeriale:"",timTpRecapito:"",timTpCodIns:"",veryOffer:null,veryMnp:null,veryMnpBrand:"",veryMnpNum:"",veryRicaricaAuto:null,veryFascia:null,veryCodIns:"",veryNumProv:"",veryNum:"",veryIccid:"",hoOffer:null,hoMnp:null,hoMnpBrand:"",hoMnpNum:"",hoRicaricaAuto:null,hoFascia:null,hoCodIns:"",hoNumProv:"",hoNum:"",hoIccid:"",kenaOffer:null,kenaMnp:null,kenaMnpBrand:"",kenaMnpNum:"",kenaRicaricaAuto:null,kenaFascia:null,kenaCodIns:"",kenaNumProv:"",kenaNum:"",kenaIccid:""});
 
@@ -1400,8 +1406,12 @@ const chiaveListino = (s) => String(s || "").toUpperCase()
      («Galaxy S24+»), e sopprimerlo faceva costare l'S24+ come l'S24: 200 € in
      meno. La differenza è se la cifra prima del «+» sta da sola o è incollata
      a delle lettere. */
-  .replace(/(?<![A-Z0-9])(\d{1,2})\s*\+\s*(\d{2,4})(?![0-9])/g, "$1 $2")
-  .replace(/([A-Z0-9])\s*\+/g, "$1 PLUS")
+  /* Il lookbehind `(?<!…)` non c'è su Safari prima della 16.4, e una pagina
+     che non si carica è peggio di un prezzo mancante: la stessa cosa si dice
+     catturando il carattere davanti e rimettendolo. E il taglio si scrive
+     anche «8GB+256GB», non solo «8+256». */
+  .replace(/(^|[^A-Z0-9])(\d{1,2})\s*(?:GB)?\s*\+\s*(\d{2,4})\s*(?:GB)?(?![0-9])/g, "$1$2 $3 ")
+  .replace(/([A-Z0-9])\s*\+/g, "$1 PLUS ")
   .replace(/[^A-Z0-9]+/g, " ")
   .replace(/\b(\d+)\s+(GB|TB|G)\b/g, "$1$2")
   .replace(/\b(\d+)(GB|G)\b/g, "$1")
@@ -5535,10 +5545,16 @@ function CRM() {
          inventato è peggio di un prezzo mancante, perché nessuno lo controlla. */
       const cand=_listiniTutti.filter(x=>chiaveListino(x.modello)===k&&(!lb||_compBrand(x.brand)===lb));
       const prezzi=[...new Set(cand.map(x=>Number(x.prezzo||0)))];
+      /* E NEMMENO IL MARGINE (revisore 31/08). La regola era stata messa sul
+         prezzo e dimenticata sul margine: due righe con lo STESSO prezzo e
+         `margine_pct` diverso — l'iPhone Air 1TB sta al 5% fra gli ordinabili
+         e al 4% a magazzino — facevano vincere quella che il database
+         restituiva per prima, cioè nessuna scelta. */
+      const margini=[...new Set(cand.map(x=>Number(x.margine_pct??4)))];
       if(cand.length&&prezzi.length===1){
         const r=cand[0];
         const pz=Number(r.prezzo||0);
-        const pct=_senzaMargine()?0:Number(r.margine_pct??4);
+        const pct=_senzaMargine()||margini.length>1?0:Number(r.margine_pct??4);
         const mg=pz*pct/100;
         return {model:mod,price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false,fontePrezzo:"listino"};
       }
@@ -5553,12 +5569,24 @@ function CRM() {
       const imei=String(det["IMEI"]||"").replace(/\D/g,"");
       const pezzo=imei?magVendita?.perImei?.get(imei):null;
       const pMag=Number(pezzo?.prezzo||0);
-      if(pMag>=20){
+      /* UN USATO NON HA UN PREZZO DI LISTINO (revisore 31/08). Il valore che
+         un telefono ritirato in permuta porta a magazzino è simbolico — 100 €
+         ripetuto su tutti — e il suo nome può agganciare per somiglianza il
+         listino del NUOVO: un Moto G06 usato proposto a 119,99 € col
+         lucchetto. Su un usato il prezzo lo fa il negozio, sempre. */
+      const usato=String(pezzo?.provenienza||"")==="usato";
+      if(!usato&&pMag>=20){
         const pct=_senzaMargine()?0:Number(_marginePerMagazzino(brandLabel)??0);
         const mg=pMag*pct/100;
         return {model:mod,price:pMag,importo:pMag,margin:mg,totalMargin:mg,priceLocked:false,priceRequired:false,fontePrezzo:"magazzino"};
       }
-      return {model:mod};
+      /* E QUANDO NON SI SA IL PREZZO, LO SI CHIEDE (revisore 31/08). Qui si
+         tornava il solo modello: l'`extra` non conteneva `priceLocked`, che
+         nel `push` del telefono a rate vale `true` — quindi la riga entrava a
+         «€ 0,00, margine € 0,00», SENZA campo per correggerla, e
+         `margPriceMissing` la saltava proprio perché bloccata. Vendita
+         registrata a zero, telefono scaricato, premio zero. */
+      return {model:mod,priceLocked:false,priceRequired:true,fontePrezzo:usato?"usato":null};
     }catch(e){console.error("[TNP-LISTINO]",e);return null;}};   // mai far sparire la voce per un dato storto
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
@@ -5646,14 +5674,25 @@ function CRM() {
       if((_nNew[a.product]||0)<(_nOld[a.product]||0))return a;   // calo: no eredità
       const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&(m.autoKey||m.product+"#1")===a.autoKey);
       if(!old)return a;
+      /* SE È STATO SCRITTO A MANO, RESTA — e resta TUTTO (revisore 31/08).
+         Non basta tenere `importo`: tenendo `margin` e `price` di `a` si
+         mostrava il prezzo del negozio col margine calcolato sul prezzo di
+         listino, e passando da «magazzino» a «listino» la riga ereditava
+         `priceLocked:true` da `a`, cioè la cifra scritta a mano diventava non
+         più correggibile.
+         Cambiando telefono, invece, la proposta riprende il sopravvento: quel
+         prezzo era di un altro modello. */
+      const aMano=!old.priceLocked&&old.prezzoAMano&&old.importo!=null&&old.importo!==""
+        &&String(old.model||"")===String(a.model||"");
+      if(aMano)return {...a,importo:old.importo,price:old.price,margin:old.margin,totalMargin:old.totalMargin,
+                       priceLocked:false,priceRequired:false,prezzoAMano:true,fontePrezzo:old.fontePrezzo};
       /* IL PREZZO SCRITTO A MANO NON SI RISCRIVE (31/08). Il prezzo dal
          magazzino è una PROPOSTA, quindi resta modificabile — ma il ricalcolo
          scatta a ogni prodotto aggiunto, e senza questo la cifra del negozio
          tornava indietro da sola. «Modificato a mano» vuol dire: il campo
          contiene un numero diverso da quello che avevamo proposto (`price`).
          Cambiando IMEI la proposta cambia e riprende il sopravvento. */
-      const aMano=!old.priceLocked&&old.importo!=null&&old.importo!==""&&Number(old.importo)!==Number(old.price||0);
-      return {...a,importo:aMano?old.importo:(a.importo!=null?a.importo:old.importo)};
+      return {...a,importo:a.importo!=null?a.importo:old.importo};
     });
     return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
   };
@@ -6281,17 +6320,41 @@ function CRM() {
     scan(sales);
   };
 
-  const telefoniARate = () => {
+  /* IL PREZZO CHE VA IN MAGAZZINO È QUELLO DEL CARRELLO (revisore 31/08).
+     Qui si passava `pezzo.prezzo`, cioè `mag_unita.valore`: il valore con cui
+     il pezzo è ENTRATO. Ma quello che il cliente paga è la cifra che sta nel
+     carrello — dal listino, o corretta a mano dal negozio — e in
+     `mag_unita.prezzo_vendita` finiva l'altra. Misurato sui quattro negozi in
+     prova: 53 pezzi con le due cifre diverse, fino a 119,99 € di scarto, e
+     tutti i 14 Fastweb. Poi l'amministrazione ci calcola il margine reale.
+     Si prende dalla voce di carrello del telefono a rate, agganciata per
+     MODELLO (è la stessa stringa: il nome dell'articolo a magazzino finisce in
+     «Modello Terminale» e da lì in `model`). Due telefoni uguali nella stessa
+     vendita si consumano in ordine. Se la voce non si trova — non dovrebbe
+     succedere — si torna al valore di carico, che è meglio di niente. */
+  const telefoniARate = (margList = margItems) => {
     if (!magVendita?.vincola) return [];
+    const daCarrello = new Map();
+    (margList || []).forEach(m => {
+      if (!m || m.model == null || m.model === "") return;
+      const k = String(m.model);
+      const v = m.importo != null && m.importo !== "" ? Number(m.importo)
+        : (m.price != null ? Number(m.price) : null);
+      if (v == null || !isFinite(v)) return;
+      if (!daCarrello.has(k)) daCarrello.set(k, []);
+      daCarrello.get(k).push(v);
+    });
     const out = [], visti = new Set();
     perOgniTelefonoARate((imei) => {
       if (visti.has(imei)) return;   // lo stesso pezzo si scarica una volta sola
       visti.add(imei);
       const pezzo = magVendita.perImei.get(imei);
       if (!pezzo) return;
+      const coda = daCarrello.get(String(pezzo.nome || ""));
+      const prezzo = coda && coda.length ? coda.shift() : (pezzo.prezzo ?? null);
       out.push({
         product: pezzo.nome, seriale: imei, codice: pezzo.codice || null,
-        scaricaMagazzino: true, qty: 1, price: pezzo.prezzo ?? null,
+        scaricaMagazzino: true, qty: 1, price: prezzo,
       });
     });
     return out;
@@ -6834,7 +6897,7 @@ function CRM() {
            resterebbe a scaffale nel software — vendibile una seconda volta.
            Si passa il SERIALE: `scaricaVendita` marca il pezzo venduto e non
            tocca nessuna quantità, che per un pezzo singolo non esiste. */
-        const _rate = telefoniARate();
+        const _rate = telefoniARate(margList);
         const _sc = await scaricaVendita([...margList, ..._rate], selNeg, contractRows[0]?.id || null, selVend);
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
@@ -7651,8 +7714,9 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                   {margItems.map((m,mi)=>(
                     <div key={mi} className="rvMiniRiga" style={{justifyContent:"space-between"}}>
                       <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}{m.model&&<span style={{color:"var(--tf-94a3b8)",fontWeight:700}}> · {m.model}</span>}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}{/* da dove viene il prezzo: il negozio deve poterlo sapere senza chiedere */}
-                        {m.fontePrezzo==="listino"&&<span title="prezzo e margine dal listino ufficiale del brand" style={{fontSize:8,fontWeight:800,color:"var(--tf-34d399)",border:"1px solid rgba(52,211,153,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>💰 LISTINO</span>}
-                        {m.fontePrezzo==="magazzino"&&<span title="il listino del brand non copre questo modello: prezzo del pezzo a magazzino, modificabile" style={{fontSize:8,fontWeight:800,color:"var(--tf-fbbf24)",border:"1px solid rgba(251,191,36,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>🏬 MAGAZZINO</span>}</div>
+                        {m.fontePrezzo==="listino"&&<span className="rvBadge rvBadge-ok rvBadge-mini" title="prezzo e margine dal listino ufficiale del brand">💰 LISTINO</span>}
+                        {m.fontePrezzo==="magazzino"&&<span className="rvBadge rvBadge-warn rvBadge-mini" title="il listino del brand non copre questo modello: prezzo del pezzo a magazzino, modificabile">🏬 MAGAZZINO</span>}
+                        {m.fontePrezzo==="usato"&&<span className="rvBadge rvBadge-empty rvBadge-mini" title="è un telefono usato: il prezzo lo fa il negozio">♻️ USATO</span>}</div>
                       {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>€ {Number(m.importo||0).toFixed(2)}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
                       :m.prezzoModificabile===false?<div style={{fontSize:10.5,fontWeight:800,color:"var(--tf-e2e8f0)",whiteSpace:"nowrap"}}>🔒 € {Number(m.importo??0).toFixed(2)}</div>
                       :(m.auto||m.priceRequired||m.linked||m.natura)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>

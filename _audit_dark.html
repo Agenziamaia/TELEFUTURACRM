@@ -1,4 +1,4 @@
-@import "tailwindcss";
+<!doctype html><html class="dark" lang="it"><head><meta charset="utf-8"><style>
 
 @theme {
   --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif,
@@ -1967,3 +1967,87 @@ html.light .rvTml-fr{color:#59647a}
 .rvTml-d{font-size:12px;color:var(--tf-8892b0);margin-top:2px;line-height:1.5}
 .rvTml-x{margin-top:9px;padding-top:9px;border-top:1px solid var(--tf-w60);
   display:flex;flex-direction:column;gap:5px}
+</style><style>html,body{margin:0}body{font-family:Outfit,system-ui,sans-serif;background-color:#0f111a;color:#f8fafc;
+ background-image:radial-gradient(ellipse at top left,rgba(79,70,229,.15),transparent 50%),radial-gradient(ellipse at bottom right,rgba(236,72,153,.15),transparent 50%);background-attachment:fixed}
+*{box-sizing:border-box}#out{font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre;padding:14px;color:#fff;background:#000}
+html.light #out{color:#000;background:#fff}</style></head><body class="x">
+<div id="scena" style="padding:20px">
+ <div class="rvBox" id="box"><div class="rvBoxT">🔎 Cosa guardo</div>
+  <div class="rvBarra rvBarra-c">
+   <button class="rvPill rvPill-sm rvPill-on" id="pillOn">🟢 Disponibili</button>
+   <button class="rvPill rvPill-sm" id="pillOff">🧾 Venduti</button>
+   <span class="rvSep" id="sep"></span>
+  </div></div>
+ <div class="rvTabBox" id="tabbox"><table class="rvTab"><tbody id="tb">
+  <tr class="rvTab-riga"><td class="rvTab-cod"><button class="rvSerial" id="serial">866271061892340</button></td>
+   <td class="rvTab-n rvGiac rvGiac-si" id="cellKo">129,00 €<span class="rvTab-min" id="scost"> (-20,00 €)</span></td></tr>
+ </tbody></table></div>
+ <div class="rvStoria" id="storia">
+  <div class="rvStoria-t"><div><div class="rvStoria-tit" id="tit">Titolo</div>
+   <div class="rvStoria-sot" id="sot">sottotitolo</div></div></div>
+  <div class="rvTml" id="tml"><div class="rvTml-r"><div class="rvTml-p" id="nodo">📦</div>
+   <div class="rvTml-c rvTml-cl" id="card">
+    <div class="rvTml-q" id="q">31/08/2026, 11:24</div>
+    <div class="rvTml-e" id="e">Venduto <span class="rvTml-fr" id="fr">▾</span></div>
+    <div class="rvTml-d" id="d">Magliana W3 · g.dinardo</div>
+    <div class="rvTml-x" id="x"><div class="rvDettR" id="dettr"><span class="rvTab-min">documento</span></div>
+    <a href="#" class="rvAzione rvAzione-sm mt-2 inline-block" id="azione">Apri</a></div>
+   </div></div></div>
+  <div class="rvSerial" id="serialModal">866271061892340</div>
+ </div>
+</div>
+<div id="out"></div>
+<script>
+function px(c){const m=c.match(/[\d.]+/g).map(Number); return m.length>3?[m[0],m[1],m[2],m[3]]:[m[0],m[1],m[2],1];}
+function over(fg,bg){const a=fg[3];return [fg[0]*a+bg[0]*(1-a),fg[1]*a+bg[1]*(1-a),fg[2]*a+bg[2]*(1-a),1];}
+function lum(c){const f=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+ return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2]);}
+function cr(a,b){const l1=lum(a),l2=lum(b);const [h,lo]=l1>l2?[l1,l2]:[l2,l1];return (h+0.05)/(lo+0.05);}
+// fondo effettivo: risale i genitori compositando ogni background-color
+function fondo(el){
+ let stack=[],n=el;
+ while(n && n!==document.documentElement){const bg=px(getComputedStyle(n).backgroundColor);
+  if(bg[3]>0) stack.push(bg); n=n.parentElement;}
+ // fondo pagina vero
+ let base = document.documentElement.classList.contains('light') ? [238,240,246,1] : [15,17,26,1];
+ for(let i=stack.length-1;i>=0;i--) base=over(stack[i],base);
+ return base;
+}
+function riga(id,nome){const el=document.getElementById(id);if(!el)return nome+" MANCA";
+ const cs=getComputedStyle(el); const f=px(cs.color); const b=fondo(el.parentElement);
+ const fc=over(f,b); const v=cr(fc,b);
+ const bordo=cs.borderBottomColor||cs.borderColor;
+ return (nome+"                          ").slice(0,26)+" col="+cs.color.padEnd(24)+
+  " fondo=rgb("+b.slice(0,3).map(x=>Math.round(x)).join(",")+")".padEnd(6)+
+  " size="+cs.fontSize.padEnd(7)+" CR="+v.toFixed(2)+(v<4.5?"  ✗ SOTTO 4,5":"  ok");}
+function bordoRiga(id,nome,prop){const el=document.getElementById(id);const cs=getComputedStyle(el);
+ const c=px(cs[prop]); const b=fondo(el.parentElement); const fc=over(c,b);
+ return (nome+"                          ").slice(0,26)+" "+prop+"="+cs[prop].padEnd(24)+
+  " fondo=rgb("+b.slice(0,3).map(x=>Math.round(x)).join(",")+")"+" CR="+cr(fc,b).toFixed(2)+(cr(fc,b)<3?"  ✗ SOTTO 3 (non-testo)":"  ok");}
+const R=[];
+R.push("TEMA: "+(document.documentElement.className||"dark"));
+R.push("── TESTO ─────────────────────────────────────────────────────────");
+[["serial",".rvSerial (in tabella)"],["serialModal",".rvSerial (nel modale)"],
+ ["tit",".rvStoria-tit"],["sot",".rvStoria-sot"],["q",".rvTml-q"],["e",".rvTml-e"],
+ ["fr",".rvTml-fr"],["d",".rvTml-d"],["scost","span .rvTab-min in cella"],
+ ["pillOff",".rvPill (spenta)"],["pillOn",".rvPill-on"]].forEach(([a,b])=>R.push(riga(a,b)));
+R.push("── LINEE E BORDI (soglia 3:1) ────────────────────────────────────");
+R.push(bordoRiga("tml",".rvTml linea","borderLeftColor"));
+R.push(bordoRiga("card",".rvTml-c bordo","borderTopColor"));
+R.push(bordoRiga("nodo",".rvTml-p bordo","borderTopColor"));
+R.push(bordoRiga("sep",".rvSep","backgroundColor"));
+R.push(bordoRiga("x",".rvTml-x filo","borderTopColor"));
+R.push(bordoRiga("storia",".rvStoria bordo","borderTopColor"));
+R.push(bordoRiga("serial",".rvSerial sottolineatura","borderBottomColor"));
+R.push("── SUPERFICI (differenza card/contenuto) ─────────────────────────");
+["card","dettr","storia","nodo"].forEach(id=>{const el=document.getElementById(id);
+ R.push(("  "+id+"            ").slice(0,16)+" bg="+getComputedStyle(el).backgroundColor.padEnd(30)+
+  " composito=rgb("+fondo(el).slice(0,3).map(x=>Math.round(x)).join(",")+")");});
+R.push("── GEOMETRIE ─────────────────────────────────────────────────────");
+["azione","card","dettr","tml","storia"].forEach(id=>{const r=document.getElementById(id).getBoundingClientRect();
+ const cs=getComputedStyle(document.getElementById(id));
+ R.push(("  "+id+"            ").slice(0,16)+" w="+Math.round(r.width)+" h="+Math.round(r.height)+
+  " display="+cs.display+" radius="+cs.borderRadius+" alignSelf="+cs.alignSelf);});
+document.getElementById("out").textContent=R.join("\n");
+</script>
+</body></html>
