@@ -71,7 +71,7 @@ type Unita = {
 };
 /** Quello che l'anagrafica dice di un codice. `gruppo` e `marca` non sono
  *  decorazione: da lì si ricava l'operatore telefonico. */
-type DatiArticolo = { descrizione: string; prezzo: number | null; gruppo: string | null; marca: string | null };
+type DatiArticolo = { descrizione: string; prezzo: number | null; costo_ultimo?: number | null; gruppo: string | null; marca: string | null };
 type Articolo = {
     codice: string; barcode: string | null; descrizione: string;
     gruppo: string | null; sottogruppo: string | null; marca: string | null;
@@ -125,14 +125,18 @@ const STATI_FILTRO: { id: string; et: string; spiega: string }[] = [
    «Venduti» e niente «In viaggio» — `mag_unita` ha zero venduti e non c'è
    nessun DDT in transito: sarebbero due riquadri che dicono sempre zero, e
    restano pastiglie-vista. */
-const QUADRI: { id: string; icona: string; et: string; sotto: string; tinta: string; spiega: string }[] = [
-    { id: "_all", icona: "📊", et: "Totale", sotto: "articoli", tinta: "rvT-indaco", spiega: "Tutto quello che rientra nei filtri, in qualunque stato" },
-    { id: "disponibile", icona: "🟢", et: "Disponibili", sotto: "pezzi", tinta: "rvT-verde", spiega: "Quello che c'è adesso sullo scaffale" },
-    { id: "in_arrivo", icona: "📦", et: "In arrivo", sotto: "in ordine", tinta: "rvT-ciano", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
-    { id: "altrove", icona: "🌐", et: "Altrove", sotto: "negli altri PV", tinta: "rvT-viola", spiega: "Quello che qui non c'è ma sta in un altro negozio: si può farsi mandare" },
+const QUADRI: { id: string; icona: string; et: string; sotto: string; tinta: string; spiega: string; vista?: string; euro?: boolean }[] = [
+    { id: "_all", icona: "📦", et: "Tutto", sotto: "articoli qui", tinta: "rvT-indaco", spiega: "Tutti gli articoli che toccano i punti vendita che stai guardando, in qualunque stato" },
+    { id: "disponibile", icona: "🟢", et: "Disponibili", sotto: "articoli", tinta: "rvT-verde", spiega: "Gli articoli con giacenza maggiore di zero: quello che c'è adesso sullo scaffale" },
+    { id: "in_arrivo", icona: "🚛", et: "In arrivo", sotto: "articoli", tinta: "rvT-ciano", spiega: "Ordinato o in viaggio verso qui: non si vende ancora" },
+    { id: "trasferiti", icona: "🚚", et: "Trasferiti", sotto: "documenti", tinta: "rvT-viola", spiega: "La merce partita da qui e non ancora accettata dall'altro negozio", vista: "trasferiti" },
+    { id: "venduto", icona: "🧾", et: "Venduti", sotto: "pezzi usciti", tinta: "rvT-rosa", spiega: "Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita", vista: "venduto" },
+    { id: "altrove", icona: "🌐", et: "Altrove", sotto: "articoli", tinta: "rvT-grigio", spiega: "Quello che qui non c'è ma sta in un altro punto vendita: si può farsi mandare" },
     { id: "sotto_zero", icona: "⚠️", et: "Sotto zero", sotto: "da controllare", tinta: "rvT-rosso", spiega: "Righe a saldo negativo: è uscito qualcosa che a magazzino non c'era" },
-    { id: "valore", icona: "💰", et: "Valore", sotto: "a listino", tinta: "rvT-ambra", spiega: "Valore della merce mostrata, ai prezzi di listino dell'anagrafica" },
+    { id: "val_vendita", icona: "💰", et: "Valore di vendita", sotto: "ai prezzi di listino", tinta: "rvT-ambra", spiega: "Quanto vale la merce mostrata se venduta ai prezzi di listino", euro: true },
+    { id: "val_acquisto", icona: "🏷️", et: "Valore d'acquisto", sotto: "a costo", tinta: "rvT-bronzo", spiega: "Quanto è costata la merce mostrata", euro: true },
 ];
+
 
 /* IL VENDUTO NON È UNO STATO, È UN'ALTRA DOMANDA (revisore design 31/08).
    Premendolo cambiano le colonne, il filtro di data cambia mestiere, due
@@ -140,6 +144,11 @@ const QUADRI: { id: string; icona: string; et: string; sotto: string; tinta: str
    schermata travestito da filtro. Il CRM ha già il posto giusto — la fila
    «📄 Documenti / 📦 Merce mossa» dei Trasferimenti — e con lei arriva il
    conteggio, che nelle Giacenze non c'era da nessuna parte. */
+/** Euro TONDI, per i riquadri di sintesi. Su mezzo milione i centesimi non
+ *  dicono niente e allungano il numero fuori dal riquadro (Luca 01/09). Nelle
+ *  tabelle invece `eur()` resta com'è: lì il centesimo è il conto. */
+const eurTondo = (n: number) => "€ " + Math.round(Number(n) || 0).toLocaleString("it-IT");
+
 const gg = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleDateString("it-IT") : "—";
 const gghh = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -227,7 +236,7 @@ export default function MagazzinoPage() {
         const anag = new Map<string, DatiArticolo>();
         for (let i = 0; i < codici.length; i += 300) {
             const { data } = await supabase.from("mag_articoli")
-                .select("codice,descrizione,prezzo,gruppo,marca").in("codice", codici.slice(i, i + 300));
+                .select("codice,descrizione,prezzo,costo_ultimo,gruppo,marca").in("codice", codici.slice(i, i + 300));
             (data ?? []).forEach((a: DatiArticolo & { codice: string }) =>
                 anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo, gruppo: a.gruppo, marca: a.marca }));
         }
@@ -237,6 +246,15 @@ export default function MagazzinoPage() {
             inArrivo: Number(r.in_arrivo || 0),
             descrizione: anag.get(r.codice)?.descrizione || r.codice,
             valore: Number(anag.get(r.codice)?.prezzo || 0) * Number(r.quantita),
+            /* IL COSTO, separato dal prezzo. Prima esisteva un solo campo
+               «valore» e ci finivano dentro tutti e due: le quantità al PREZZO
+               DI LISTINO e i pezzi con seriale al COSTO D'ACQUISTO, sommati.
+               Quel totale non era né l'uno né l'altro (576.648,99 € contro i
+               590.905 di vendita e i 407.116 di acquisto).
+               `costo_ultimo` sopra i 5.000 € non è un costo: è un codice a
+               barre finito nel campo sbagliato — ce n'era uno, un caricatore
+               da 39,95 € con 8.018.420.000.000 di costo. */
+            costo: (() => { const c = Number(anag.get(r.codice)?.costo_ultimo || 0); return c > 0 && c <= 5000 ? c * Number(r.quantita) : 0; })(),
         })));
         setLoading(false);
     }, []);
@@ -294,7 +312,7 @@ export default function MagazzinoPage() {
 /** Una riga di giacenza a QUANTITÀ: gli accessori, il materiale di consumo.
  *  Non hanno un seriale, quindi non stanno in mag_unita — ma sono magazzino
  *  esattamente come un telefono (Luca 29/08: «il magazzino è l'unica fonte»). */
-type RigaQta = { codice: string; descrizione: string; negozio: string; azienda: string; quantita: number; inArrivo: number; valore: number };
+type RigaQta = { codice: string; descrizione: string; negozio: string; azienda: string; quantita: number; inArrivo: number; valore: number; costo: number };
 
 /* GLI OPERATORI TELEFONICI (Luca 31/08). «Ci sono articoli che corrispondono
    a un operatore telefonico, altri che non sono associati a un operatore.»
@@ -470,7 +488,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        negli altri negozi, che può richiedere». */
     type Riga = {
         chiave: string; codice: string; descrizione: string;
-        giacenza: number; inArrivo: number; altrove: number; valore: number;
+        giacenza: number; inArrivo: number; altrove: number;
+        /** quanto vale se lo vendo ai prezzi di listino */ valore: number;
+        /** quanto mi è costato */ costo: number;
         operatore: string | null;
         pezzi: { id: string; seriale: string; negozio: string; stato: string; valore: number | null }[];
         /* le quantità, negozio per negozio e società per società: il cestino
@@ -483,7 +503,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         const m = new Map<string, Riga>();
         const nuova = (codice: string, descrizione: string): Riga => ({
             chiave: `${codice}|${descrizione}`, codice: codice || "—", descrizione,
-            giacenza: 0, inArrivo: 0, altrove: 0, valore: 0,
+            giacenza: 0, inArrivo: 0, altrove: 0, valore: 0, costo: 0,
             operatore: operatoreDi(anagrafica.get(codice), descrizione, codice),
             pezzi: [], qtaPer: [], altrovePer: {},
         });
@@ -517,7 +537,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             const k = `${u.codice || ""}|${u.descrizione}`;
             const r = m.get(k) || nuova(u.codice || "", u.descrizione);
             if (nelloScopo(u.negozio)) {
-                if (vivo) { r.giacenza++; r.valore += Number(u.valore || 0); r.pezzi.push({ id: u.id, seriale: u.seriale, negozio: u.negozio, stato: u.stato, valore: u.valore }); }
+                if (vivo) { r.giacenza++; r.costo += Number(u.valore || 0); r.valore += Number(anagrafica.get(u.codice || "")?.prezzo || 0); r.pezzi.push({ id: u.id, seriale: u.seriale, negozio: u.negozio, stato: u.stato, valore: u.valore }); }
                 if (arrivo) { r.inArrivo++; r.pezzi.push({ id: u.id, seriale: u.seriale, negozio: u.negozio, stato: u.stato, valore: u.valore }); }
             } else if (vivo) {
                 r.altrove++;
@@ -554,6 +574,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     // sullo scaffale non c'è. Ma sapere che arriva serve.
                     r.inArrivo += Number(g.inArrivo || 0);
                     r.valore += Number(g.valore || 0);
+                    r.costo += Number(g.costo || 0);
                 } else if (Number(g.quantita) > 0) {
                     r.altrove += Number(g.quantita);
                     r.altrovePer[g.negozio] = (r.altrovePer[g.negozio] || 0) + Number(g.quantita);
@@ -597,17 +618,40 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* I QUADRATONI CONTANO PRIMA DEL PROPRIO FILTRO (è la regola di Gestione
        Usati, dove `kpiData` applica tutto tranne gli stati): se contassero
        dopo, il riquadro spento direbbe zero e nessuno lo premerebbe mai. */
+    /* OGNI RIQUADRO DICE QUANTE RIGHE VEDRAI PREMENDOLO. È l'unica regola che
+       tiene: prima «Totale» diceva 1667 anche stando a Mazzini, che di articoli
+       ne ha 135, perché contava pure quelli che stanno negli altri negozi.
+       E «Disponibili» contava PEZZI mentre «Totale» contava ARTICOLI: due
+       riquadri identici, due unità diverse, nessun rapporto fra i numeri.
+       Adesso il numero grande è sempre lo stesso mestiere — quante righe —
+       e i pezzi stanno nella riga piccola sotto, dove sono un dettaglio. */
     const conteggi = useMemo(() => {
-        const t = { _all: 0, disponibile: 0, in_arrivo: 0, altrove: 0, sotto_zero: 0, valore: 0 };
+        const t = { _all: 0, disponibile: 0, in_arrivo: 0, altrove: 0, sotto_zero: 0, val_vendita: 0, val_acquisto: 0 };
+        const pz = { disponibile: 0, in_arrivo: 0, altrove: 0 };
         for (const r of righeGrezze) {
-            t._all++;
-            if (r.giacenza > 0) t.disponibile += r.giacenza;
+            const qui = r.giacenza !== 0 || r.inArrivo > 0;
+            if (qui) t._all++;
+            if (r.giacenza > 0) { t.disponibile++; pz.disponibile += r.giacenza; }
             if (r.giacenza < 0) t.sotto_zero++;
-            t.in_arrivo += r.inArrivo;
-            t.altrove += r.altrove;
-            t.valore += r.valore;
+            if (r.inArrivo > 0) { t.in_arrivo++; pz.in_arrivo += r.inArrivo; }
+            if (!qui && r.altrove > 0) { t.altrove++; pz.altrove += r.altrove; }
+            if (qui) { t.val_vendita += r.valore; t.val_acquisto += r.costo; }
         }
-        return t;
+        return { ...t, pz };
+    }, [righeGrezze]);
+
+    /* QUANTA MERCE RESTA FUORI DAI DUE VALORI, e si dice invece di tacere
+       (regola 7). Oggi: 32 pezzi con seriale non hanno un prezzo di listino e
+       2.420 pezzi a quantità non hanno un costo d'acquisto — i due totali sono
+       calcolati su quello che c'è, e chi legge deve saperlo. */
+    const { senzaPrezzo, senzaCosto } = useMemo(() => {
+        let p = 0, c = 0;
+        for (const r of righeGrezze) {
+            if (r.giacenza === 0 && r.inArrivo === 0) continue;
+            if (!r.valore && r.giacenza > 0) p += r.giacenza;
+            if (!r.costo && r.giacenza > 0) c += r.giacenza;
+        }
+        return { senzaPrezzo: p, senzaCosto: c };
     }, [righeGrezze]);
 
     const righe = useMemo(() => {
@@ -765,20 +809,29 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* PREMERE UN QUADRATONE. Stessa logica di Gestione Usati: i riquadri di
        stato si sommano in OR, e l'ultimo acceso non si spegne — una tabella
        senza nemmeno uno stato non mostra niente e sembra rotta. */
+    /* PREMERE UN RIQUADRO ISOLA QUEL GRUPPO. Non si sommano: «se non voglio
+       vedere i disponibili ma i venduti, mi passa dai disponibili ai venduti»
+       (Luca). Due di loro — Trasferiti e Venduti — sono un'altra schermata:
+       cambiano colonne, filtri di data ed Excel, e stanno nella stessa fila
+       perché per chi guarda sono la stessa domanda, «cosa c'è e dov'è finito». */
     const premiQuadro = (id: string) => {
+        if (id === "trasferiti") { setVista(vistaTrasf ? "giacenze" : "trasferiti"); return; }
+        if (id === "venduto") { setVista(vistaVenduto ? "giacenze" : "venduto"); return; }
         if (vistaVenduto || vistaTrasf) setVista("giacenze");
-        if (id === "valore") return;                                   // è un numero, non un filtro
-        if (id === "_all") { setStati(["disponibile", "in_arrivo"]); setSoloDisponibili(false); setSottoZero(false); return; }
-        if (id === "altrove") { setSoloDisponibili(v => !v); return; }
-        if (id === "sotto_zero") { setSottoZero(v => !v); return; }
-        setStati(p => p.includes(id) ? (p.length > 1 ? p.filter(x => x !== id) : p) : [...p, id]);
+        setSottoZero(id === "sotto_zero");
+        setSoloDisponibili(id !== "altrove" && id !== "_all");
+        setStati(id === "disponibile" ? ["disponibile"]
+            : id === "in_arrivo" ? ["in_arrivo"]
+                : ["disponibile", "in_arrivo"]);
     };
     const quadroAcceso = (id: string) =>
-        id === "_all" ? (!sottoZero && !soloDisponibili && stati.length === 2)
-            : id === "altrove" ? !soloDisponibili
-                : id === "sotto_zero" ? sottoZero
-                    : id === "valore" ? false
-                        : stati.includes(id);
+        id === "trasferiti" ? vistaTrasf
+            : id === "venduto" ? vistaVenduto
+                : (vistaTrasf || vistaVenduto) ? false
+                    : id === "_all" ? (!sottoZero && !soloDisponibili && stati.length === 2)
+                        : id === "altrove" ? (!soloDisponibili && !sottoZero && stati.length === 2 ? false : !soloDisponibili)
+                            : id === "sotto_zero" ? sottoZero
+                                : stati.length === 1 && stati[0] === id && soloDisponibili && !sottoZero;
 
     /* RIMETTERE TUTTO COM'ERA ENTRANDO. In Gestione Usati c'è, qui mancava: con
        otto filtri addosso, ricordarsi quale si è toccato è un lavoro. */
@@ -844,20 +897,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     {/* le pastiglie di quello che hai scelto le disegna già
                         `SelectMulti`: rifarle qui le raddoppiava, con due
                         grafiche diverse (revisore 31/08) */}
-                    <span className="rvSpazio" />
-                    {/* LE ALTRE SCHERMATE stanno qui, non fra i quadratoni: non
-                        sono conteggi di giacenza, sono un'altra domanda —
-                        premendole cambiano le colonne, i filtri e l'Excel. */}
-                    <button onClick={() => setVista(vistaTrasf ? "giacenze" : "trasferiti")}
-                        title="La merce partita da qui e non ancora accettata dall'altro negozio"
-                        className={cn("rvPill rvPill-sm", vistaTrasf && "rvPill-on")}>
-                        🚚 Trasferiti{vistaTrasf ? " ✓" : ""}{vistaTrasf && inViaggio ? <b className="rvPillN">{inViaggio.length}</b> : null}
-                    </button>
-                    <button onClick={() => setVista(vistaVenduto ? "giacenze" : "venduto")}
-                        title="Il venduto, pezzo per pezzo, con l'IMEI e il prezzo di uscita"
-                        className={cn("rvPill rvPill-sm", vistaVenduto && "rvPill-on")}>
-                        🧾 Venduti{vistaVenduto ? " ✓" : ""}{vistaVenduto ? <b className="rvPillN">{venduti.length}</b> : null}
-                    </button>
                 </div>
                 {/* ── OGNI ASSE COL SUO NOME (revisore design 31/08) ──
                     Erano cinque pastiglie identiche in fila, tre accese,
@@ -874,19 +913,35 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     riquadri a zero restano a schermo, spenti: zero è
                     un'informazione — «Sotto zero: 0» vuol dire che i conti
                     tornano, e non vederlo non è la stessa cosa. */}
+                {/* ═══ I QUADRATONI ═══════════════════════════════════════
+                    OGNUNO DICE QUANTE RIGHE VEDRAI PREMENDOLO, e premerlo
+                    ISOLA quel gruppo (Luca 01/09: «se non voglio vedere i
+                    disponibili ma i venduti, mi passa dai disponibili ai
+                    venduti; se clicco su Totale me li fai vedere tutti»).
+                    Prima si sommavano fra loro e partivano in due accesi: il
+                    primo clic su «In arrivo» lo SPEGNEVA e la tabella non
+                    cambiava — sembrava rotto.
+                    E il numero grande fa sempre lo stesso mestiere: quante
+                    righe. I pezzi stanno nella riga piccola, dove sono un
+                    dettaglio; prima «Totale 1667 articoli» e «Disponibili
+                    12.546 pezzi» stavano affiancati come se fossero un
+                    rapporto, e non lo erano. */}
                 <div className="rvCampo rvCampo-flex mt-3"><span className="rvLab">Cosa c&apos;è in magazzino</span>
                     <div className="rvRapidoG">
                         {QUADRI.map(q => {
                             const on = quadroAcceso(q.id);
-                            const n = (conteggi as Record<string, number>)[q.id] ?? 0;
-                            const premibile = q.id !== "valore";
+                            const n = q.id === "trasferiti" ? (inViaggio?.length ?? 0)
+                                : q.id === "venduto" ? venduti.length
+                                    : (conteggi as unknown as Record<string, number>)[q.id] ?? 0;
+                            const pezzi = (conteggi.pz as Record<string, number>)[q.id];
+                            const premibile = !q.euro;
                             const cls = cn("rvRapido", q.tinta, !premibile && "rvRapido-statico",
                                 on && "rvRapido-on", !on && !n && "rvRapido-off");
                             const dentro = (
                                 <>
-                                    <em>{q.id === "valore" ? eur(n) : n.toLocaleString("it-IT")}</em>
+                                    <em className={q.euro ? "rvRapido-euro" : undefined}>{q.euro ? eurTondo(n) : n.toLocaleString("it-IT")}</em>
                                     <b>{q.icona} {q.et}{on ? " ✓" : ""}</b>
-                                    <small>{q.sotto}</small>
+                                    <small>{pezzi ? `${pezzi.toLocaleString("it-IT")} pezzi` : q.sotto}</small>
                                 </>
                             );
                             return premibile
@@ -895,8 +950,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         })}
                     </div>
                     <div className="rvHint">
-                        «In arrivo» è ordinato o in viaggio verso qui: non si vende ancora.
+                        Premi un riquadro per vedere solo quello. «In arrivo» è ordinato o in viaggio verso qui e non si vende ancora;
                         «Altrove» è quello che qui non c&apos;è ma sta in un altro punto vendita.
+                        {senzaPrezzo > 0 || senzaCosto > 0 ? ` I due valori escludono ${senzaPrezzo ? `${senzaPrezzo} pezzi senza prezzo di listino` : ""}${senzaPrezzo && senzaCosto ? " e " : ""}${senzaCosto ? `${senzaCosto} senza costo d'acquisto` : ""}.` : ""}
                     </div>
                 </div>
                 {/* I FILTRI FINI */}

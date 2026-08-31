@@ -925,6 +925,12 @@ html.light .rvFatta-o.rvFatta-att-o{color:#9a5b00;background:rgba(154,91,0,.10);
 .rvT-ciano{--rv-acc:var(--tf-0ea5e9)}
 .rvT-ambra{--rv-acc:var(--tf-f59e0b)}
 .rvT-rosso{--rv-acc:var(--tf-ef4444)}
+.rvT-rosa{--rv-acc:var(--tf-f472b6)}
+.rvT-grigio{--rv-acc:var(--tf-94a3b8)}
+.rvT-bronzo{--rv-acc:var(--tf-c084fc)}
+html.light .rvT-rosa{--rv-acc:#a5195e}
+html.light .rvT-grigio{--rv-acc:#4b5a75}
+html.light .rvT-bronzo{--rv-acc:#6d28d9}
 .rvT-viola{--rv-acc:var(--tf-8b5cf6)}
 html.light .rvT-verde{--rv-acc:#0f7a4d}
 html.light .rvT-ambra{--rv-acc:#9a5b00}
@@ -934,6 +940,9 @@ html.light .rvT-ciano{--rv-acc:#0e6a94}
    Regola 7: una cosa che non si può fare non si finge cliccabile. Il
    riquadro del valore è un numero, non un filtro: niente manina, niente
    reazione al passaggio del mouse. */
+/* UN IMPORTO A SEI CIFRE NON STA IN 28px: usciva dal bordo (Luca 01/09).
+   Il numero degli euro ha il suo corpo, e comunque non va mai a capo. */
+.rvRapido-euro{font-size:19px;letter-spacing:-.2px;white-space:nowrap}
 .rvRapido-statico{cursor:default}
 .rvRapido-statico:hover{transform:none;box-shadow:none;border-color:var(--tf-w60)}
 html.light .rvRapido-statico:hover{border-color:rgba(15,23,42,.12)}
