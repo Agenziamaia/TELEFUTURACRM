@@ -14,6 +14,7 @@ import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { dbError, notify } from "../../amministrazione/_views/toast";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 
 type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null; soglie_pct?: number | null; soglie_max?: number | null };
 type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null; bonus?: number | null };
@@ -181,7 +182,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
     const emojiPista = (nome: string): string => {
         const n = String(nome || "").toLowerCase();
         const fam =
-            /mobile|\bsim\b/.test(n) ? "📱" :
+            /mobile|\bsim\b/.test(n) ? SIM_TESTO :
             /wireline|fisso|fwa/.test(n) ? "🏠" :
             /smartphone|telefon|device/.test(n) ? "📞" :
             /\bvas\b|soluzioni|digital/.test(n) ? "🧩" :
@@ -714,7 +715,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                 const mostra = manuali ? mie : scalaAz;
                                                 return (
                                                     <tr key={px.id} className="border-t border-white/5">
-                                                        <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{emojiPista(px.nome)} {px.nome} <span className="text-slate-500 font-normal text-xs">({px.um})</span>
+                                                        <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{conSim(emojiPista(px.nome))} {px.nome} <span className="text-slate-500 font-normal text-xs">({px.um})</span>
                                                             {/* la QUOTA delle soglie sotto gli occhi (Luca 26/08:
                                                                 «se non me la ricordo devo andare su azienda e
                                                                 tornare qui») */}
@@ -839,7 +840,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         return (
                             <div key={px.id} className="glass-panel rounded-2xl overflow-hidden">
                                 <button onClick={() => toggleTab(`der|${px.chiave}`)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
-                                    <span className="text-sm font-bold text-white">{emojiPista(px.nome)} {px.nome}</span>
+                                    <span className="text-sm font-bold text-white">{conSim(emojiPista(px.nome))} {px.nome}</span>
                                     {/* COMMISSIONING MANUALE (Luca 25/08): con gli € fissi il
                                         «× 100%» mentiva — se gli importi sono inseriti a mano
                                         la % di derivazione non c'entra più. Vale per TUTTI
@@ -912,7 +913,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 {/* % delle piste-gettone (gas/telefoni): qui in sola
                                     lettura, si imposta dal lato azienda */}
                                 {derivato.piste.filter(px => gettoni.some(g => g.pista === px.chiave)).map(px => (
-                                    <span key={px.id} className="text-[11px] text-amber-300/80 font-semibold">{emojiPista(px.nome)} × {px.perc_ragazzi ?? 100}%</span>
+                                    <span key={px.id} className="text-[11px] text-amber-300/80 font-semibold">{conSim(emojiPista(px.nome))} × {px.perc_ragazzi ?? 100}%</span>
                                 ))}
                             </button>
                             <div className={apertaG ? "" : "hidden"}>
@@ -1030,7 +1031,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                         const pays = ctx === "windtre" && lato === "azienda" && !conBonus ? payPerSoglia(p.chiave, maxT) : [];
                                         return (
                                         <tr key={p.id} className="border-t border-white/5">
-                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{emojiPista(p.nome)} {p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{lato === "ragazzi" && (der
+                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{conSim(emojiPista(p.nome))} {p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{lato === "ragazzi" && (der
                                                 ? <span className="ml-1.5 text-[10px] font-bold text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-full px-2 py-0.5" title="Le soglie dei ragazzi sono quelle dell'azienda scalate di questa percentuale (impostata sul lato azienda)">× {eurIt(der.pct)}% dell&apos;azienda</span>
                                                 : <span className="ml-1.5 text-[10px] font-bold text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-full px-2 py-0.5" title="Soglie scritte a mano su questo lato: non seguono l'azienda">✍️ a mano</span>)}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
                                             {Array.from({ length: maxT }, (_, i) => {
@@ -1126,7 +1127,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         {/* header stile Commissioning W3 (Luca 25/08): chiuso
                             dice quante voci contiene, il click esplode */}
                         <button onClick={() => toggleTab(p.chiave)} className="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2">
-                            <span className="text-sm font-bold text-white">{emojiPista(p.nome)} {p.nome}</span>
+                            <span className="text-sm font-bold text-white">{conSim(emojiPista(p.nome))} {p.nome}</span>
                             {/* TABELLARE RAGAZZI STORICO: pay a mano, non collegati
                                 in % all'azienda — va detto accanto al nome (Luca
                                 25/08). Solo se un lato azienda ESISTE: su TIM/Kena
@@ -1228,7 +1229,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                 STESSA % della pista, stesso salvataggio */}
                             {piste.filter(px => righe.some(r => r.pista === px.chiave && r.gettone) && !pisteRagazziKeys.has(px.chiave)).map(px => (
                                 <label key={px.id} className="text-[11px] text-amber-300/90" title={`Quota dei gettoni «${px.nome}» girata ai ragazzi (vuota = 100%). È la stessa % della pista: governa anche le righe a soglia. Occhio: 0 = niente ai ragazzi, le voci spariscono dal loro tabellare.`}>
-                                    {emojiPista(px.nome)} {px.nome} ×
+                                    {conSim(emojiPista(px.nome))} {px.nome} ×
                                     <input value={percDraft[px.id] ?? (px.perc_ragazzi == null ? "" : String(px.perc_ragazzi))}
                                         onChange={e => setPercDraft(prev => ({ ...prev, [px.id]: e.target.value }))}
                                         className={inputCls + " ml-1 w-14"} placeholder="100" />%

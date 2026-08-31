@@ -2,7 +2,7 @@
 
 /* CANONI OFFERTE (Luca 13/08, cantiere W3 in terminal — v2 sul suo feedback):
    il canone serve SOLO dove il pay è a moltiplicatore, cioè mobile e fisso.
-   Stile catalogo: scegli il brand, poi due pulsanti «📱 Mobile» e «🏠 Fisso»
+   Stile catalogo: scegli il brand, poi due pulsanti «Mobile» e «Fisso»
    che esplodono tutte le offerte da prezzare (le categorie mobile — Ricarica
    Automatica e Wallet — stanno insieme sotto Mobile, distinte dalla colonna
    Prodotto perché il canone può differire tra le due). Le OPZIONI con pay
@@ -17,6 +17,7 @@ import { esclusaDalleGare } from "@/lib/commissioning";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { dbError, notify } from "./toast";
 import { cn } from "@/utils";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 
 // ad oggi l'UNICO brand che paga a moltiplicatore sul canone del cliente è
 // Wind3 (Luca 13/08): il pannello vive solo su di lui — quando un altro
@@ -30,7 +31,7 @@ interface OffRow { id: string; prodotto_id: string; nome: string; attivo: boolea
 interface OpzRow { id: string; offerta_id: string; nome: string; attivo: boolean; canone_mensile: number | null }
 
 const GRUPPI = [
-    { id: "mobile", label: "📱 Mobile", match: /mobile/i },
+    { id: "mobile", label: `${SIM_TESTO} Mobile`, match: /mobile/i },
     { id: "fisso", label: "🏠 Fisso", match: /fisso/i },
 ] as const;
 
@@ -186,7 +187,7 @@ export function CanoniView({ brands, cats }: { brands: Brand[]; cats: Cat[] }) {
                     <button key={g.id} onClick={() => setGruppoSel(g.id)}
                         className={cn("px-5 py-2.5 rounded-xl border text-sm font-bold transition-all",
                             gruppoSel === g.id ? "border-emerald-400/70 bg-emerald-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25")}>
-                        {g.label}
+                        {conSim(g.label)}
                     </button>
                 ))}
                 {!gruppiAttivi.length && !loading && <span className="text-sm text-slate-500">Questo brand non ha categorie a canone (mobile/fisso).</span>}

@@ -27,3 +27,21 @@ export function IconaSim({ px = 14, className = "" }: { px?: number; className?:
         </svg>
     );
 }
+
+/** Il ponte fra le due (Luca: «se la disegnamo, perché non puoi usarla anche
+ *  nei campi di testo?»).
+ *
+ *  La risposta onesta è che un disegno non entra in una stringa: una stringa
+ *  finisce in un `title=`, in un template literal, in una colonna del database
+ *  — e un elemento React, lì, diventa «[object Object]» (è già successo, nei
+ *  tooltip dell'Analisi). Quindi il dato resta 📶, che nel CRM è già il segno
+ *  della SIM, e chi DISEGNA lo fa passare da qui: sullo schermo appare la SIM
+ *  vera, nel dato resta un carattere.
+ *
+ *  Uso: `{conSim(riga.label)}` al posto di `{riga.label}`. */
+export function conSim(v: unknown, px = 14): React.ReactNode {
+    const t = String(v ?? "");
+    if (!t.includes(SIM_TESTO)) return t;
+    const pezzi = t.split(SIM_TESTO);
+    return pezzi.flatMap((p, i) => (i === 0 ? [p] : [<IconaSim key={`s${i}`} px={px} />, p]));
+}

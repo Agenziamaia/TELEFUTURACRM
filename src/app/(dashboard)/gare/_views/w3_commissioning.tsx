@@ -17,6 +17,7 @@ import { Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { esclusaDalleGare, matchComponenti, matchRigaTabellare, matchRigheGaraParallela, puntiPerRighe, PayRiga , caricaTabellare } from "@/lib/commissioning";
 import { cn } from "@/utils";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 
 interface OffCanone {
     id: string; nome: string; canone: number; prodotto: string; tipo_cliente: string; categoria: string;
@@ -32,7 +33,7 @@ interface OffCanone {
 // della lettera (telefoni, Luce&Gas, Customer Base) vivono QUI in celle
 // EDITABILI — di serie li riempirà l'upload della gara mensile.
 const SEZIONI = [
-    { id: "mobile", label: "📱 Mobile", tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
+    { id: "mobile", label: `${SIM_TESTO} Mobile`, tipo: "canone", sub: "canone × componenti (base + MNP + Tied + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
     { id: "device", label: "📞 Telefoni & device", tipo: "device", sub: "gettoni one-shot della lettera per fascia di prezzo e finanziamento — editabili; l'analisi li aggancia al modello scelto in Registra Vendita" },
     { id: "fisso", label: "🏠 Fisso", tipo: "canone", sub: "canone × componenti (base + Convergenza + FWA + P.IVA) + contrattuale — le colonne 💼 sono il premio a evento della gara Business, in aggiunta" },
     { id: "fisso_extra", label: "🎁 Extra fisso", tipo: "device", sub: "gettoni delle opzioni (Netflix, Cloud, Più Sicuri Ufficio, FRITZ!Box) — editabili; si accendono da soli dalle opzioni della vendita e si sommano al pay del fisso" },
@@ -502,7 +503,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
-                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} voci`}</span>
+                                {conSim(sez.label)} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} voci`}</span>
                             </button>
                             <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
                             {aperta && (
@@ -564,7 +565,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
-                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${gruppi.length} offerte`}</span>
+                                {conSim(sez.label)} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${gruppi.length} offerte`}</span>
                             </button>
                             <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub} — ogni offerta con le sue diramazioni GA/MNP · Untied/Tied</p>
                             {aperta && (
@@ -691,7 +692,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
-                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${gruppiF.length} offerte`}</span>
+                                {conSim(sez.label)} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${gruppiF.length} offerte`}</span>
                             </button>
                             <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub} — ogni offerta con le sue declinazioni: GA/GNP · FTTC/FTTH · con/senza Chiamate Illimitate</p>
                             {aperta && (
@@ -819,7 +820,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
-                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} offerte`}</span>
+                                {conSim(sez.label)} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} offerte`}</span>
                             </button>
                             <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
                             {aperta && (
@@ -927,7 +928,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                     return (
                         <div key={sez.id} className="mb-3 last:mb-0">
                             <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
-                                {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} voci`}</span>
+                                {conSim(sez.label)} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} voci`}</span>
                             </button>
                             <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
                             {aperta && (
@@ -1008,7 +1009,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
                 return (
                     <div key={sez.id} className="mb-3 last:mb-0">
                         <button onClick={() => toggle(sez.id)} className="text-sm font-bold text-white flex items-center gap-2 mb-0.5">
-                            {sez.label} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} eventi`}</span>
+                            {conSim(sez.label)} <span className="text-xs font-normal text-slate-500">{aperta ? "▾" : `▸ ${rr.length} eventi`}</span>
                         </button>
                         <p className="text-[10px] text-slate-500 mb-1.5">{sez.sub}</p>
                         {aperta && (
@@ -1094,7 +1095,7 @@ export function W3CommissioningPanel({ mese, colore, ragazzi = false }: { mese: 
    per soglia). Piste a gettone (CB, Protetti): % unica (perc_ragazzi).
    Vuoto = 100%. Il tabellare ragazzi si rideriva da solo. ═══════════════ */
 const PISTE_SOGLIA: { chiave: string; label: string; attivabile?: boolean }[] = [
-    { chiave: "mobile", label: "📱 Mobile" },
+    { chiave: "mobile", label: `${SIM_TESTO} Mobile` },
     { chiave: "fisso", label: "🏠 Fisso" },
     { chiave: "lucegas", label: "⚡ Luce & Gas" },
     // ATTIVABILE (Luca 25/08 sera: «non posso impostare una % sulle
@@ -1216,7 +1217,7 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {PISTE_SOGLIA.map((p) => (
                     <div key={p.chiave} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-xs font-bold text-slate-200 mb-2">{p.label}</p>
+                        <p className="text-xs font-bold text-slate-200 mb-2">{conSim(p.label)}</p>
                         <div className="flex items-center gap-2">
                             {[1, 2, 3].map((t) => (
                                 <label key={t} className="flex-1 text-center">
@@ -1235,7 +1236,7 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
                 ))}
                 {PISTE_UNICHE.map((p) => (
                     <div key={p.chiave} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-xs font-bold text-slate-200 mb-2">{p.label}</p>
+                        <p className="text-xs font-bold text-slate-200 mb-2">{conSim(p.label)}</p>
                         <label className="block max-w-[140px]">
                             <span className="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">tutte le soglie</span>
                             <span className="flex items-center gap-1">
@@ -1263,7 +1264,7 @@ export function W3PercRagazzi({ mese }: { mese: string }) {
    placeholder; tutte vuote e niente derivate = gara senza soglie (si paga
    la colonna base). ═══════════════════════════════════════════════════ */
 const NOME_PISTA_SOGLIE: Record<string, string> = {
-    mobile: "📱 Mobile", fisso: "🏠 Fisso", lucegas: "⚡ Luce & Gas",
+    mobile: `${SIM_TESTO} Mobile`, fisso: "🏠 Fisso", lucegas: "⚡ Luce & Gas",
     // le assicurazioni compaiono ai ragazzi solo con la % impostata nella
     // card 👥; le soglie però si possono già definire qui (derivate azienda
     // 30/45/60 come riferimento quando la pista è attiva)
@@ -1355,7 +1356,7 @@ export function W3RagazziSoglie({ mese }: { mese: string }) {
                     const haManuali = [1, 2, 3].some(t => String(manuali[k]?.[t] ?? "").trim() !== "");
                     return (
                     <div key={k} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-xs font-bold text-slate-200 mb-2">{NOME_PISTA_SOGLIE[k]} <span className="text-[10px] text-slate-500 font-normal">({um[k] || "punti"})</span></p>
+                        <p className="text-xs font-bold text-slate-200 mb-2">{conSim(NOME_PISTA_SOGLIE[k])} <span className="text-[10px] text-slate-500 font-normal">({um[k] || "punti"})</span></p>
                         <div className="flex items-center gap-2">
                             {[1, 2, 3].map(t => (
                                 <label key={t} className="flex-1 text-center">

@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbError, notify } from "../../amministrazione/_views/toast";
 import { cn } from "@/utils";
+import { SIM_TESTO, conSim } from "@/components/IconaSim";
 
 interface TargetPdv {
     id: string; cod_gara: string; negozio: string;
@@ -247,12 +248,12 @@ export function W3PdvPanel({ mese, colore, seg: segProp, onSeg }: { mese: string
                             </thead>
                             <tbody>
                                 {([
-                                    { campo: "mobile" as const, label: "📱 Mobile", cluster: target.cluster_mobile, peso: target.peso_mobile, arr: target.soglie_mobile, lett: target.soglie_mobile_lettera },
+                                    { campo: "mobile" as const, label: `${SIM_TESTO} Mobile`, cluster: target.cluster_mobile, peso: target.peso_mobile, arr: target.soglie_mobile, lett: target.soglie_mobile_lettera },
                                     { campo: "fisso" as const, label: "🏠 Fisso", cluster: target.cluster_fisso, peso: target.peso_fix, arr: target.soglie_fisso, lett: target.soglie_fisso_lettera },
                                 ]).map(riga => (
                                     <tr key={riga.campo} className="border-t border-white/5">
                                         <td className="px-3 py-2 whitespace-nowrap">
-                                            <span className="font-semibold text-white">{riga.label}</span>
+                                            <span className="font-semibold text-white">{conSim(riga.label)}</span>
                                             <span className="text-[11px] text-slate-500"> · 🏬 {target.negozio}{riga.cluster ? ` · ${riga.cluster}` : ""}{riga.peso != null && riga.peso !== 1 ? ` · peso ${riga.peso}` : ""}</span>
                                         </td>
                                         {Array.from({ length: maxT }, (_, i) => {

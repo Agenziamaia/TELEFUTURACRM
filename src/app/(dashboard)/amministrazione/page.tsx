@@ -212,7 +212,7 @@ type Sezione = { id: string; label: string; icon: React.ComponentType<{ classNam
 const SEZIONI: Sezione[] = [
     { id: "costi", label: "Costi", icon: Euro, desc: "Il mini-hub dei costi: Negozi, Costi condivisi e Altri costi — in sequenza, con permessi separati per ogni sezione." },
     { id: "utenti", label: "Utenti", icon: Users, desc: "Lista utenti con costi e allegati; permessi di visibilità per ruolo; ruoli e organigramma." },
-    { id: "negozi", label: "Negozi", icon: StoreIcon, gruppo: "costi", desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
+    { id: "negozi", label: "Costi per negozio", icon: StoreIcon, gruppo: "costi", desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
     // DA «ORARI & CHIUSURE» A «NEGOZI» (Luca 31/08): dentro ci sono finiti
     // indirizzo, CAP, città, società e registratore fiscale, e il nome vecchio
     // raccontava solo un pezzo. È la scheda del punto vendita, e da qui in poi

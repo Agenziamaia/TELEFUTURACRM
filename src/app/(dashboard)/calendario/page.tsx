@@ -493,11 +493,13 @@ export default function Calendario() {
         deepTask.current = true;
         const t = tasks.find((x) => String(x.id) === id);
         if (!t) return;
-        if (t.date) {
-            setSelectedDate(t.date);
-            const [aa, mm] = String(t.date).split("-").map(Number);
-            if (aa && mm) { setViewYear(aa); setViewMonth(mm - 1); }
-        }
+        /* `vaiAlGiorno`, non solo mese e anno (revisore 31/08): viewYear e
+           viewMonth comandano la SOLA vista Mese, ma il calendario si apre su
+           «tre giorni», guidata da `treStart`. Spostare il mese e lasciare
+           ferma la finestra dei tre giorni funzionava per combinazione — la
+           task di Emanuele cade dopodomani, che ci sta dentro — e sarebbe
+           tornato a non funzionare con una task fra cinque giorni. */
+        if (t.date) vaiAlGiorno(String(t.date));
         setExpandedTaskId(Number(t.id));
     }, [tasks]);
 

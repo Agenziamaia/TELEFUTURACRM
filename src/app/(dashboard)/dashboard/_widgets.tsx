@@ -63,6 +63,7 @@ import { CoronaOro } from "@/components/IconaCorona";
 // solo `export from` la Home si apriva su «isCtr is not defined» — e il
 // @ts-nocheck in cima ha impedito al build di accorgersene (29/08, mio errore).
 import { isCtr, isExt, validaProduzione, qtyDi, giornoDi } from "@/lib/produzione";
+import { IconaSim } from "@/components/IconaSim";
 export { isCtr, isExt, validaProduzione, qtyDi, giornoDi };
 
 const norm = (s) => (s || "").trim().toLowerCase();
@@ -760,8 +761,8 @@ function WidgetSky({ ctx, size }) {
                                     oggi +{oggiN}{!ctx.oggiContato && <span className="font-normal opacity-60">· nei punti dalle {ctx.gl?.oraScatto ?? 19}</span>}
                                 </span>
                             )}
-                            <ChipSonda tono="neutro" testo={<>📱 MNP <b className="font-mono text-slate-100">{per.mobMnp}</b></>} righe={["SIM Sky Mobile in portabilità: 0,5 punti l\u2019una."]} />
-                            <ChipSonda tono="neutro" testo={<>📱 GA <b className="font-mono text-slate-100">{per.mobGa}</b></>} righe={["SIM Sky Mobile nuove attivazioni:", "0,5 punti (Ric. Automatica) · 0 punti (ricarica pura)."]} />
+                            <ChipSonda tono="neutro" testo={<><IconaSim px={12} /> MNP <b className="font-mono text-slate-100">{per.mobMnp}</b></>} righe={["SIM Sky Mobile in portabilità: 0,5 punti l\u2019una."]} />
+                            <ChipSonda tono="neutro" testo={<><IconaSim px={12} /> GA <b className="font-mono text-slate-100">{per.mobGa}</b></>} righe={["SIM Sky Mobile nuove attivazioni:", "0,5 punti (Ric. Automatica) · 0 punti (ricarica pura)."]} />
                             {per.senzaPay > 0 && <ChipSonda testo={"⚠ " + per.senzaPay + " senza punti"} righe={senzaPayRighe} />}
                         </div>
                         {size >= 2 && <Sparkline perGiorno={per.puntiGiorno} ym={ctx.rangeShown ? null : ymSky} range={ctx.rangeShown} color={color} ctx={ctx} />}

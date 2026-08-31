@@ -217,7 +217,13 @@ export const NAVIGATION: NavEntry[] = [
             {
                 name: "Costi", sez: "costi", icon: Euro, roles: ["admin", "dev"], esplodi: true, subsSez: true,
                 subs: [
-                    { id: "negozi", name: "Negozi", roles: ["admin", "dev"], emoji: "🏬" },
+                    /* «Costi per negozio», non «Negozi» (revisore 31/08): dal
+                       31/08 c'è una sezione che si chiama Negozi — la scheda del
+                       punto vendita — e due voci con lo stesso nome nello stesso
+                       menu, e nella matrice dei permessi, sono due permessi
+                       diversi indistinguibili. L'`id` resta «negozi»: è la chiave
+                       dei permessi e dei link salvati. */
+                    { id: "negozi", name: "Costi per negozio", roles: ["admin", "dev"], emoji: "🏬" },
                     { id: "condivisi", name: "Costi condivisi", roles: ["admin", "dev"], emoji: "🤝" },
                     { id: "altri", name: "Altri costi", roles: ["admin", "dev"], emoji: "🧾" },
                 ],

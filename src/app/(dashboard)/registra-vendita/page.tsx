@@ -52,6 +52,7 @@ import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { numeroNazionale } from "@/lib/telefono";
 import { useAuth } from "@/context/AuthContext";
 import QRCode from "qrcode";
+import { IconaSim, SIM_TESTO, conSim } from "@/components/IconaSim";
 const ReqCtx = createContext(null);
 const SubKeyCtx = createContext(null);
 /* IL MAGAZZINO DENTRO IL MODULO DI VENDITA (Luca 31/08).
@@ -1528,7 +1529,7 @@ const cercaModelliCatalogo = async (term) => {
 const getW3 = (tc) => {
   const biz = tc === "business";
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:"var(--rv-acc)", radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:"var(--rv-acc)", radio:true, subs:[
       { id:"ga", title:"MOBILE", hasContract:true, ct:"ga",
         isMobile: !biz,
         isMobileBiz: biz,
@@ -1576,7 +1577,7 @@ const getW3 = (tc) => {
 const getVF = (tc) => {
   const biz = tc === "business";
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:"var(--tf-e60000)", radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:"var(--tf-e60000)", radio:true, subs:[
       { id:"ga", title:biz?"MOBILE":"MOBILE GA", hasContract:true, ct:"ga",
         isVFMobile: !biz,
         isVFBizMobile: biz,
@@ -1892,7 +1893,7 @@ const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
   const content = (
     <div style={{borderBottom:ii<total-1?"1px solid var(--tf-w50)":"none"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",flexWrap:"wrap"}}>
-        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:999,background:`color-mix(in srgb, ${it.macroColor} 13%, transparent)`,border:`1px solid color-mix(in srgb, ${it.macroColor} 36%, transparent)`,fontSize:11,fontWeight:800,color:it.macroColor}}>{it.macroIcon} {it.macro}</span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:999,background:`color-mix(in srgb, ${it.macroColor} 13%, transparent)`,border:`1px solid color-mix(in srgb, ${it.macroColor} 36%, transparent)`,fontSize:11,fontWeight:800,color:it.macroColor}}>{conSim(it.macroIcon,12)} {it.macro}</span>
         <span style={{fontSize:13.5,fontWeight:700,color:"var(--tf-f8fafc)"}}>{it.sub}</span>
         {it.details&&it.details.hasContract&&<span style={{fontSize:9,fontWeight:800,color:"#fff",background:it.macroColor,padding:"2px 8px",borderRadius:5,letterSpacing:.5}}>CONTRATTO</span>}
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
@@ -1937,7 +1938,7 @@ const FW_GNP_BRANDS = ["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi"
 const getFW = (tc) => {
   const biz = tc === "business";
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:FW_C, radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:FW_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isFWMobile:true, fwBiz:biz, hasContract:true, ct:"ga", fields:[] },
       // Segnalazione 34: mancava la sostituzione SIM, presente su WindTre e Vodafone.
       { id:"sost_sim", title:"Sostituzione Sim", isFWSostSim:true, hasContract:true, ct:"multi", fields:[] },
@@ -2852,12 +2853,12 @@ const IL_BIZ_MOBILE_OFFERS = ["Giga300","Dati180"];
 const getIL = (tc) => {
   const biz = tc === "business";
   if(biz) return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:IL_C, radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:IL_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isILBizMobile:true, hasContract:true, ct:"ga", fields:[] },
     ]},
   ];
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:IL_C, radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:IL_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isILMobile:true, hasContract:true, ct:"ga", fields:[] },
     ]},
     { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:
@@ -3264,7 +3265,7 @@ const getTIM = (tc) => {
   const biz = tc === "business";
   if(biz) return [];
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:TIM_C, radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:TIM_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isTimMobile:true, hasContract:true, ct:"ga", fields:[] },
     ]},
     { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:[
@@ -3421,12 +3422,12 @@ const TIMTelepass = ({sd, uP, sc}) => {
 };
 
 const getVERY = (tc) => (tc==="business")?[]:[
-  { id:"mobile", title:"MOBILE", icon:"📱", color:VERY_C, radio:true, subs:[
+  { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:VERY_C, radio:true, subs:[
     { id:"ga", title:"MOBILE", isVeryMobile:true, hasContract:true, ct:"ga", fields:[] },
   ]},
 ];
 const getHO = (tc) => (tc==="business")?[]:[
-  { id:"mobile", title:"MOBILE", icon:"📱", color:HO_C, radio:true, subs:[
+  { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:HO_C, radio:true, subs:[
     { id:"ga", title:"MOBILE", isHoMobile:true, hasContract:true, ct:"ga", fields:[] },
   ]},
 ];
@@ -3440,7 +3441,7 @@ const getDOJO = () => [
 ];
 
 const getKena = (tc) => (tc==="business")?[]:[
-  { id:"mobile", title:"MOBILE", icon:"📱", color:KENA_C, radio:true, subs:[
+  { id:"mobile", title:"MOBILE", icon:SIM_TESTO, color:KENA_C, radio:true, subs:[
     { id:"ga", title:"MOBILE", isKenaMobile:true, hasContract:true, ct:"ga", fields:[] },
   ]},
 ];
@@ -7555,7 +7556,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
                       <div key={ii} className="rvMiniRiga">
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{it.macroIcon} {it.sub}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> · vendita {it.saleNum}</span></div>
+                          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{conSim(it.macroIcon,12)} {it.sub}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> · vendita {it.saleNum}</span></div>
                           {off&&<div style={{fontSize:10,color:"var(--tf-8892b0)",marginTop:1}}>{String(off)}</div>}
                         </div>
                         {/* 🗑 anche sugli articoli brand (Luca 11/08): via la voce messa per errore */}
@@ -7879,7 +7880,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
             {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} className="rvCat" style={{"--rv-acc":group.color}}>
               <div className="rvCatT">
-                <span style={{fontSize:23}}>{iconW3Cat(group)}</span>
+                <span style={{fontSize:23}}>{conSim(iconW3Cat(group),20)}</span>
                 <b>{group.title}</b>
                 {cc.tot>0&&<span style={{fontSize:10,fontWeight:800,color:"var(--tf-8892b0)",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"var(--tf-28a745)"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"var(--tf-f59e0b)"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
               </div>
@@ -7924,7 +7925,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         return <div onClick={()=>setProdModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"var(--tf-12141f)",border:"1px solid color-mix(in srgb, "+group.color+" 38%, transparent)",borderRadius:18,boxShadow:"0 18px 50px rgba(0,0,0,.55)","--rv-acc":group.color}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid var(--tf-w80)",position:"sticky",top:0,background:"var(--tf-12141f)",zIndex:1}}>
-              <span style={{fontSize:21}}>{iconW3Cat(group)}</span>
+              <span style={{fontSize:21}}>{conSim(iconW3Cat(group),18)}</span>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:15.5,fontWeight:800,color:"var(--tf-f8fafc)",letterSpacing:.1}}>{sub.title}</div>
                 <div className="rvCardT" style={{color:group.color,marginBottom:0,fontSize:10.5}}>{group.title} · Vendita #{prodModal.si+1}</div>
@@ -8032,7 +8033,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
 
           {/* ── BOX MOBILE — solo privato ── */}
           {tipoCliente!=="business"&&<div className="rvCard" style={{borderLeft:"4px solid "+SKY_COLOR}}>
-            <div className="rvCardT" style={{color:SKY_COLOR,marginBottom:12}}>📱 Mobile</div>
+            <div className="rvCardT" style={{color:SKY_COLOR,marginBottom:12}}><IconaSim px={15}/> Mobile</div>
             {skyS.map((sale,si)=><div key={si} className="rvSub" style={{marginBottom:6,borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyMob(sale)))}
               <div style={{display:"flex",gap:6}}>
