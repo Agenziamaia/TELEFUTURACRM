@@ -805,7 +805,7 @@ ${mie.map((u, i) => `<tr><td>${i + 1}</td><td>${u.codice || ""}</td><td>${u.desc
                                     <td>{d.stato === "in_transito" ? "🚚 In transito" : d.stato === "accettato" ? `✅ Accettato da ${d.accettato_da} il ${gg(d.accettato_il)}` : d.stato}</td>
                                     <td className="rvTab-min">{gghh(d.creato_il)}{d.creato_da ? ` · ${d.creato_da}` : ""}</td>
                                     <td className="rvTab-c">
-                                        <span className="rvPillRow flex-nowrap justify-center">
+                                        <span className="rvPillRow rvPillRow-dritta justify-center">
                                             <button onClick={() => stampa(d)} className="rvPill rvPill-sm">🖨 DDT</button>
                                             {gestisce && d.stato === "in_transito" && (
                                                 <button onClick={() => accetta(d)} className="rvPill rvPill-sm rvPill-si">✓ Accetta</button>
@@ -868,7 +868,7 @@ function NuovoTrasferimento({ unita, negozi, utente, dopo }: { unita: Unita[]; n
                     </label>
                     <div className="rvDett max-h-64 overflow-y-auto mt-2 pr-1">
                         {disponibili.map(u => (
-                            <label key={u.id} className="rvDettR cursor-pointer">
+                            <label key={u.id} className="rvDettR rvDettR-cl">
                                 <input type="checkbox" checked={scelte.has(u.id)} onChange={e => setScelte(p => { const s = new Set(p); if (e.target.checked) s.add(u.id); else s.delete(u.id); return s; })} />
                                 <span className="rvTab-nome">{u.descrizione}</span>
                                 <span className="rvDettR-mono">{u.seriale}</span>
@@ -927,7 +927,10 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
             {/* TRE VOCI E UNA SOLA VALIDA: una tendina si può svuotare, e un
                 carico senza tipo di seriale finirebbe a DB con il campo vuoto.
                 Le pastiglie non hanno lo stato «niente» (regola 7). */}
-            <div className="mt-3">
+            {/* `.rvCampo`, non un <div> nudo: `.rvLab` ha `margin-bottom`, e su
+                uno <span> INLINE quel margine non si applica — era l'unica
+                etichetta della pagina attaccata al suo controllo. */}
+            <div className="rvCampo mt-3">
                 <span className="rvLab">Tipo seriale</span>
                 <div className="rvPillRow">
                     {([["imei", "IMEI"], ["sim", "SIM (ICCID)"], ["seriale", "Seriale"]] as const).map(([k, l]) => (

@@ -87,6 +87,24 @@ sotto 2.
 
 ## 4. Le specificità che mordono
 
+**Una utility Tailwind non corregge una proprietà che una `.rv*` scrive già.**
+Le utility di Tailwind v4 stanno in `@layer utilities`; `globals.css` è **fuori
+da ogni layer**, e in CSS lo stile fuori dai layer vince sempre su quello
+dentro. Quindi:
+
+- `mt-3`, `justify-end`, `ml-2` accanto a una `.rv*` **funzionano** — aggiungono
+  una proprietà che la classe non scrive;
+- `flex-nowrap` su un `.rvPillRow` **non fa niente**, perché `.rvPillRow`
+  scrive già `flex-wrap: wrap`. Misurato: `flexWrap` restava `wrap`, e la
+  protezione scritta per non spezzare «🖨 DDT / ✓ Accetta» semplicemente non
+  esisteva. Non dà errore, non si vede in revisione: si vede solo a schermo,
+  quando la riga va a capo.
+
+Quando serve **correggere** una proprietà della cassetta, si aggiunge una
+variante alla cassetta (`.rvPillRow-dritta`), non si mette una utility sopra.
+
+
+
 - **`.rvIn:focus` vale (0,2,0).** Uno stato scritto come classe singola perde:
   il bordo rosso dell'errore spariva appena entravi nel campo per correggerlo.
   → Gli stati si scrivono raddoppiati — `.rvIn.rvIn-err` — e **dopo** il
