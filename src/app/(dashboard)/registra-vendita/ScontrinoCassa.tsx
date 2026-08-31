@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
-import { arrotonda5, totaleRighe, FORME_PAGAMENTO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
+import { arrotonda5, totaleRighe, FORME_PAGAMENTO, FORME_A_MANO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
 
 /* Modale "Incasso & Scontrino" — l'output fiscale di Registra Vendita.
    Si apre a vendita registrata: si compone il pagamento (fino a 3 forme, spec #2),
@@ -314,7 +314,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const addRiga = () => setRighe((rs) => {
         if (rs.length >= 3) return rs;
         const usate = new Set(rs.map((r) => r.forma));
-        const next = FORME_PAGAMENTO.find((f) => !usate.has(f.code)) || FORME_PAGAMENTO[1];
+        const next = FORME_A_MANO.find((f) => !usate.has(f.code)) || FORME_A_MANO[1];
         const manca = +(totaleDaPagare - rs.reduce((s, r) => s + (Number(r.importo) || 0), 0)).toFixed(2);
         return [...rs, { forma: next.code, importo: manca > 0 ? manca : 0 }];
     });
@@ -398,13 +398,36 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         <div className="space-y-2">
                             <p className="text-[11px] text-slate-500">Forme di pagamento (max 3)</p>
                             {righe.map((r, i) => (
-                                <div key={i} className="flex gap-2 items-center">
-                                    <select value={r.forma} onChange={(e) => setForma(i, e.target.value)}
-                                        className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-2.5 py-2 outline-none focus:border-violet-400/60">
-                                        {FORME_PAGAMENTO.map((f) => (
-                                            <option key={f.code} value={f.code} className="bg-slate-800">{f.label}</option>
-                                        ))}
-                                    </select>
+                                /* TRE PULSANTI, NON UNA TENDINA (Luca 31/08). Il pagamento è
+                                   l'ultimo gesto di una vendita e si fa di fretta, col cliente
+                                   davanti: una tendina costa due clic e una lettura. Qui si
+                                   preme quello che serve.
+                                   La forma scelta dal carrello — credito, finanziamento — non
+                                   ha un pulsante: si mostra com'è, e non si cambia a mano. */
+                                <div key={i} className="flex gap-2 items-center flex-wrap">
+                                    {FORME_A_MANO.some((f) => f.code === r.forma) ? (
+                                        <div className="flex gap-1.5 flex-1 min-w-0">
+                                            {FORME_A_MANO.map((f) => {
+                                                const on = r.forma === f.code;
+                                                return (
+                                                    <button key={f.code} type="button" onClick={() => setForma(i, f.code)}
+                                                        className={"flex-1 min-w-0 flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors "
+                                                            + (on
+                                                                ? "bg-violet-500/25 border-violet-400/70 text-white"
+                                                                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200")}>
+                                                        <span className="text-base leading-none">{f.icona}</span>
+                                                        <span className="truncate">{f.label}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <span className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm px-2.5 py-2.5">
+                                            {FORME_PAGAMENTO.find((f) => f.code === r.forma)?.icona}{" "}
+                                            {FORME_PAGAMENTO.find((f) => f.code === r.forma)?.label || r.forma}
+                                            <span className="text-[10px] text-slate-500 ml-1.5">deciso dal carrello</span>
+                                        </span>
+                                    )}
                                     <div className="relative w-28 shrink-0">
                                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
                                         <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
@@ -443,9 +466,19 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                     {cashRounded > 0 ? "Incassa ed emetti" : "Emetti scontrino"}
                                 </button>
                             </div>
-                            <button type="button" onClick={onDone} className="w-full text-[11px] text-slate-500 hover:text-slate-300">
-                                {data.sospesoId ? "Chiudi (resta in sospeso)" : "Chiudi senza scontrino"}
-                            </button>
+                            {/* VIA «CHIUDI SENZA SCONTRINO» (Luca 31/08: «non ha alcun
+                                senso»). Aveva ragione: era l'uscita che lasciava una vendita
+                                registrata e nessuno scontrino emesso — merce uscita, magari
+                                col commissioning già pagato sopra, e niente di fiscale.
+                                Chi non incassa adesso ha «Tieni in sospeso», che quel conto
+                                lo tiene in vista finché il cliente non torna a pagare.
+                                Riprendendo un sospeso, invece, chiudere è legittimo: il conto
+                                resta dov'era. */}
+                            {data.sospesoId && (
+                                <button type="button" onClick={onDone} className="w-full text-[11px] text-slate-500 hover:text-slate-300">
+                                    Chiudi (resta in sospeso)
+                                </button>
+                            )}
                         </div>
                     </>
                 )}

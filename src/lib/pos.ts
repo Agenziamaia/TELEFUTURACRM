@@ -35,17 +35,29 @@ export interface FormaPagamento {
     riscosso: boolean;
     cash?: boolean;
     autoRate?: "finanziato" | "rate";
+    /** l'icona del pulsante */
+    icona?: string;
+    /** si può scegliere a mano? le altre le decide il carrello */
+    manuale?: boolean;
 }
 // "Altro" è stato SOSTITUITO dal Coupon (spec Francesco 12/08): il coupon non è una
 // forma di pagamento ma uno SCONTO che abbassa l'imponibile (vedi ScontrinoCassa +
 // /api/vendita/coupon + lib/coupons). Le forme qui sono i tender veri.
+/* SI SCELGONO A MANO SOLO TRE FORME (Luca 31/08): contanti, carta, bonifico.
+   «Credito» e «finanziamento» restano — servono, e lo scontrino li sa emettere
+   — ma non si scelgono più da un elenco: li deciderà il carrello, quando
+   contiene una voce che li prevede. Finché quell'automatismo non c'è, toglierli
+   dalla scelta a mano evita che qualcuno li prenda per sbaglio: uno scontrino
+   «non riscosso» è merce uscita senza soldi. */
 export const FORME_PAGAMENTO: FormaPagamento[] = [
-    { code: "CONTANTI", label: "Contanti", short: "CONTANTE", paymentType: 0, riscosso: true, cash: true },
-    { code: "CARTA", label: "Carta", short: "CARTA", paymentType: 2, riscosso: true },
-    { code: "NON_RISCOSSO", label: "Non Riscosso / Credito", short: "NON RISCOSSO", paymentType: 4, riscosso: false, autoRate: "rate" },
-    { code: "BONIFICO", label: "Bonifico", short: "BONIFICO", paymentType: 2, riscosso: true },
-    { code: "FINANZIAMENTO", label: "Finanziamento", short: "FINANZIAMENTO", paymentType: 4, riscosso: false, autoRate: "finanziato" },
+    { code: "CONTANTI", label: "Contanti", short: "CONTANTE", paymentType: 0, riscosso: true, cash: true, icona: "💶", manuale: true },
+    { code: "CARTA", label: "Carta", short: "CARTA", paymentType: 2, riscosso: true, icona: "💳", manuale: true },
+    { code: "BONIFICO", label: "Bonifico", short: "BONIFICO", paymentType: 2, riscosso: true, icona: "🏦", manuale: true },
+    { code: "NON_RISCOSSO", label: "Non Riscosso / Credito", short: "NON RISCOSSO", paymentType: 4, riscosso: false, autoRate: "rate", icona: "📄" },
+    { code: "FINANZIAMENTO", label: "Finanziamento", short: "FINANZIAMENTO", paymentType: 4, riscosso: false, autoRate: "finanziato", icona: "🏛️" },
 ];
+/** Le tre che l'operatore può premere. Le altre le decide il carrello. */
+export const FORME_A_MANO = FORME_PAGAMENTO.filter((f) => f.manuale);
 export const formaPagamento = (code: string): FormaPagamento | undefined =>
     FORME_PAGAMENTO.find((f) => f.code === code);
 export const isFormaCash = (code: string): boolean => !!formaPagamento(code)?.cash;
