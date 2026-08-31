@@ -1657,8 +1657,14 @@ const ImeiMagazzino = ({l,r,v,o,nt,onModello}) => {
   const hits = useMemo(()=>{
     const t=q.trim().toLowerCase(); if(t.length<2||!mag?.pezzi) return [];
     const cifre=t.replace(/\D/g,"");
+    /* SOLO PEZZI CON UN IMEI VERO, 15 cifre (revisore 31/08). Fra i pezzi a
+       magazzino ci sono orologi, occhiali Meta e iPad col seriale
+       alfanumerico: sceglierli scriveva nel campo un valore che poi nessuno
+       ritrovava — il pezzo risultava non scelto e la vendita si bloccava con
+       un messaggio che non spiegava niente. Un telefono a rate ha un IMEI. */
     return mag.pezzi.filter(x=>
-      x.nome.toLowerCase().includes(t) || (cifre.length>=3 && x.seriale.includes(cifre))
+      /^\d{15}$/.test(x.seriale) &&
+      (x.nome.toLowerCase().includes(t) || (cifre.length>=3 && x.seriale.includes(cifre)))
     ).slice(0,8);
   },[q,mag]);
 
@@ -3756,6 +3762,23 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
   // davvero il campo GNP Si'/No (fisso VFB, mig. 152); quando arriva dall'OPZIONE
   // GNP del catalogo (W3/VF/FW/Sky) deve comparire sempre ed essere obbligatoria.
   const hasCampoGnp=campi.some(c=>/^gnp$/i.test(c.nome));
+  /* SCEGLIERE IL TERMINALE, DA QUALUNQUE STRADA. Lo stesso gesto arriva da due
+     parti — il menù a tendina e il pezzo scelto dal magazzino — e deve fare la
+     stessa cosa: nella gara Fastweb il modello preseleziona la FASCIA, che è
+     un'opzione obbligatoria del finanziamento. Scrivendo il modello dritto,
+     quella derivazione si spegneva proprio sulla strada nuova. */
+  const setModelloTerminale=(v)=>{
+    setF("Modello Terminale",v);
+    // extra gara telefoni FW: il modello preseleziona la fascia (opzione del
+    // gruppo «fascia» — resta correggibile a mano). Su «Altro»/deselezione o
+    // modello non derivabile il gruppo si SVUOTA: mai lasciare la fascia del
+    // modello precedente (rilievo revisore 25/08 — restava appesa in silenzio)
+    if(sub.catBrand==="fastweb"&&offSel&&offSel.opzioni.some(x=>x.gruppo==="fascia")){
+      const senzaFascia=()=>{const next={...(f.__opzioni||{})};offSel.opzioni.forEach(x=>{if(x.gruppo==="fascia")delete next[x.nome];});return next;};
+      if(!v||/^altro/i.test(String(v))){setF("__opzioni",senzaFascia());}
+      else _fasciaGaraFW(v).then(fx=>{const next=senzaFascia();if(fx)next[fx]=true;setF("__opzioni",next);});
+    }
+  };
   const pageBrand=sub.catBrand==="s4"?"energy":sub.catBrand;
   const codici=_codiciDi(pageBrand);
   // MOD-15 (Luca 10/08): SIMULATORE PESO VOLUMETRICO per le spedizioni Kipoint
@@ -3917,24 +3940,18 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili,simConv,onConvergenza,simCo
             if(cmp.nome==="IMEI"&&sub.catCategoria==="Telefono a Rate"&&magazzinoVincola)
               return <ImeiMagazzino key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""}
                 o={v=>setF(cmp.nome,v)} nt={cmp.nota||undefined}
-                onModello={(nome)=>{ if(nome&&campi.some(c=>c.nome==="Modello Terminale")) setF("Modello Terminale",nome); }}/>;
+                /* lo stesso percorso del menù a tendina: scriverlo dritto
+                   spegneva la derivazione della fascia nella gara Fastweb, che
+                   è obbligatoria proprio sul finanziamento (revisore 31/08).
+                   E con nome vuoto («✕ cambia») il modello si SVUOTA, se no
+                   resta quello del pezzo di prima. */
+                onModello={(nome)=>{ if(campi.some(c=>c.nome==="Modello Terminale")) setModelloTerminale(nome||""); }}/>;
             if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
             if(/^operatore gnp$/i.test(cmp.nome)&&hasCampoGnp&&(f["GNP"]||"")!=="Sì")return null;
             // CAT-02: se la regola porta i suoi valori (jsonb valori:[…]) vincono quelli, altrimenti il lookup storico
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={Array.isArray(cmp.valori)&&cmp.valori.length?cmp.valori:_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
             if(cmp.tipo==="data")return (<div key={cmp.nome}><div className="rvLab">{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-f87171)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} className="rvIn"/>{cmp.nota&&<div className="rvHint">{cmp.nota}</div>}</div>);
-            if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);
-              // extra gara telefoni FW: il modello preseleziona la fascia
-              // (opzione del gruppo «fascia» — resta correggibile a mano).
-              // Su «Altro»/deselezione o modello non derivabile il gruppo si
-              // SVUOTA: mai lasciare la fascia del modello precedente
-              // (rilievo revisore 25/08 — restava appesa in silenzio)
-              if(sub.catBrand==="fastweb"&&offSel&&offSel.opzioni.some(x=>x.gruppo==="fascia")){
-                const senzaFascia=()=>{const next={...(f.__opzioni||{})};offSel.opzioni.forEach(x=>{if(x.gruppo==="fascia")delete next[x.nome];});return next;};
-                if(!v||/^altro/i.test(String(v))){setF("__opzioni",senzaFascia());}
-                else _fasciaGaraFW(v).then(fx=>{const next=senzaFascia();if(fx)next[fx]=true;setF("__opzioni",next);});
-              }
-            }} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
+            if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={setModelloTerminale} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
             if(/^rata mensile$/i.test(cmp.nome)){
               const zero=Object.keys(opz).some(k=>opz[k]&&/^rata mensile 0/i.test(k));
               return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={zero?"0":(f[cmp.nome]||"")}
@@ -5853,17 +5870,36 @@ function CRM() {
     setMagVendita(null);
     if (!selNeg) return;
     (async () => {
-      const { data: st } = await supabase.from("stores").select("magazzino_vincolante").eq("name", selNeg).maybeSingle();
+      /* NON SO ≠ NON VINCOLATO (revisore 31/08). L'errore non veniva guardato:
+         un buco di rete e il negozio tornava all'IMEI a testo libero, senza
+         scarico, per tutta la sessione e senza che nessuno lo sapesse. È la
+         stessa regola scritta in `magazzinoScarico.ts`, violata qui. Se non
+         si sa, si resta a `null`: il campo è quello di prima, ma non si
+         dichiara «libero» un negozio che magari libero non è. */
+      const { data: st, error: errSt } = await supabase.from("stores").select("magazzino_vincolante").eq("name", selNeg).maybeSingle();
+      if (errSt) return;
       const vincola = st?.magazzino_vincolante === true;
       if (!vincola) { if (vivo) setMagVendita({ vincola: false, negozio: selNeg, pezzi: [], perImei: new Map() }); return; }
       // i gemelli condividono il locale e il magazzino: un pezzo di Magliana
       // Multi è a due passi da chi vende a Magliana W3
       const nomi = negozi.filter(n => stessoMagazzino(n, selNeg));
-      const { data } = await supabase.from("cassa_seriali")
-        .select("seriale,nome,negozio,stato,prezzo,provenienza,codice")
+      const { data, error: errPz } = await supabase.from("cassa_seriali")
+        .select("seriale,nome,negozio,stato,prezzo,provenienza,codice,azienda")
         .in("negozio", nomi.length ? nomi : [selNeg]).eq("stato", "disponibile").limit(3000);
-      if (!vivo) return;
-      const pezzi = (data || []).map(x => ({ ...x, seriale: String(x.seriale || "") }));
+      // e nemmeno al contrario: una lettura fallita non deve far diventare
+      // rosso ogni IMEI del negozio
+      if (errPz || !vivo) return;
+      /* LA SOCIETÀ CONTA ANCHE QUI (revisore 31/08). La cassa rifiuta il pezzo
+         del gemello quando è di un'altra società — «battilo sull'altra
+         insegna» — perché lo scontrino lo emette quella. Un telefono a rate
+         non passa dallo scontrino, ma la merce esce lo stesso dall'inventario
+         dell'altra società: senza questo filtro un pezzo di Telefutura 2 se ne
+         andava con un contratto di Telefutura 1, senza documento. */
+      const { data: rt } = await supabase.from("pos_rt").select("azienda").eq("negozio", selNeg);
+      const mie = new Set((rt || []).map(r => r.azienda));
+      const pezzi = (data || [])
+        .filter(x => !x.azienda || mie.size === 0 || mie.has(x.azienda))
+        .map(x => ({ ...x, seriale: String(x.seriale || "") }));
       setMagVendita({ vincola: true, negozio: selNeg, pezzi, perImei: new Map(pezzi.map(x => [x.seriale, x])) });
     })();
     return () => { vivo = false; };
@@ -6144,23 +6180,50 @@ function CRM() {
   /** I telefoni a rate di questa vendita, nella forma che lo scarico capisce.
    *  Vuoto dove il negozio non è vincolato: lì l'IMEI è ancora testo libero e
    *  non corrisponde per forza a un pezzo nostro. */
-  const telefoniARate = () => {
-    if (!magVendita?.vincola) return [];
-    const out = [];
-    cats.forEach(g => (sales[g.id] || []).forEach(row => {
+  /* OGNI TELEFONO A RATE DI QUESTA VENDITA — CARRELLO COMPRESO.
+     `addCart` svuota `sales` e mette la fotografia dentro `cart[i].sv.sales`
+     (revisore 31/08): guardando solo `sales` si vedeva il brand IN CORSO e
+     NIENTE di quello già messo in carrello. Cioè, sulla strada normale —
+     «Vai al carrello →» e poi salva — il telefono non veniva scaricato e il
+     controllo non girava proprio. È lo schema che `podPdrMap` usa da sempre
+     due funzioni più su: si scorrono i gruppi del carrello E quello aperto. */
+  const perOgniTelefonoARate = (cb) => {
+    const scan = (sl) => cats.forEach(g => (sl?.[g.id] || []).forEach(row => {
       if (!row) return;
       g.subs.forEach(sub => {
         const d = row[sub.id];
         if (!(d && d.active) || sub.catCategoria !== "Telefono a Rate") return;
         const imei = String((d.fields || {})["IMEI"] || "").replace(/\D/g, "");
-        const pezzo = imei && magVendita.perImei.get(imei);
-        if (!pezzo) return;
-        out.push({
-          product: pezzo.nome, seriale: imei, codice: pezzo.codice || null,
-          scaricaMagazzino: true, qty: 1, price: pezzo.prezzo ?? null,
-        });
+        if (imei) cb(imei);
       });
     }));
+    cart.forEach(g => { if (g.sv) scan(g.sv.sales); });
+    scan(sales);
+  };
+
+  const telefoniARate = () => {
+    if (!magVendita?.vincola) return [];
+    const out = [], visti = new Set();
+    perOgniTelefonoARate((imei) => {
+      if (visti.has(imei)) return;   // lo stesso pezzo si scarica una volta sola
+      visti.add(imei);
+      const pezzo = magVendita.perImei.get(imei);
+      if (!pezzo) return;
+      out.push({
+        product: pezzo.nome, seriale: imei, codice: pezzo.codice || null,
+        scaricaMagazzino: true, qty: 1, price: pezzo.prezzo ?? null,
+      });
+    });
+    return out;
+  };
+
+  /** Gli IMEI a rate che a magazzino non ci sono. Vuoto = tutto a posto. */
+  const rateSenzaMagazzino = () => {
+    if (!magVendita?.vincola) return [];
+    const out = [];
+    perOgniTelefonoARate((imei) => {
+      if (!magVendita.perImei.has(imei) && !out.includes(imei)) out.push(imei);
+    });
     return out;
   };
 
@@ -6195,19 +6258,8 @@ function CRM() {
        segnala già da sé come incompleto — e quindi la scheda del prodotto
        diventa gialla — ma «campi mancanti o non validi» non dice PERCHÉ.
        Qui si dice, e si dice dove. */
-    if (magVendita?.vincola) {
-      cats.forEach(g => (sales[g.id] || []).forEach((row, si) => {
-        if (!row) return;
-        g.subs.forEach(sub => {
-          const d = row[sub.id];
-          if (!(d && d.active) || sub.catCategoria !== "Telefono a Rate") return;
-          const imei = String((d.fields || {})["IMEI"] || "").replace(/\D/g, "");
-          if (!imei) return;
-          if (!magVendita.perImei.has(imei))
-            out.push({ ico: "📵", testo: `il telefono a rate ${imei} non è nel magazzino di ${selNeg}: un telefono che non hai non si può rateizzare`, dove: "prodotti" });
-        });
-      }));
-    }
+    rateSenzaMagazzino().forEach(imei =>
+      out.push({ ico: "📵", testo: `il telefono a rate ${imei} non è nel magazzino di ${selNeg}: un telefono che non hai non si può rateizzare`, dove: "prodotti" }));
     // 2. i dati che si ripetono o non tornano: qui il salvataggio si ferma
     if (hasDupCodContr) out.push({ ico: "🔁", testo: "un codice contratto è ripetuto su due prodotti", dove: "prodotti" });
     if (hasDupPodPdr) out.push({ ico: "🔁", testo: "un POD o un PDR è ripetuto", dove: "prodotti" });
@@ -6243,6 +6295,19 @@ function CRM() {
   };
   const _finalSubmitInner = async (margList = margItems) => {
     if(blockSaveAll){sT(hasIncomplete?"⚠ Ci sono prodotti Incompleti: completali prima di salvare":(hasDupPodPdr?"⚠ POD/PDR duplicato: correggi prima di salvare":(hasDupCodContr?"⚠ Codice contratto duplicato: correggi prima di salvare":"⚠ Un numero o un ICCID non ha le cifre giuste")));setShowCart(false);setVistaStep("prodotti");return;}
+    /* E QUI SI FERMA DAVVERO (revisore 31/08). Il controllo era finito solo
+       in `cosaManca()`, che governa il COLORE del bottone nel carrello — ma
+       quel bottone resta cliccabile per scelta. La guardia vera è questa, e
+       non sapeva niente dell'IMEI: si poteva battere un IMEI inventato,
+       leggere l'avviso rosso, chiudere la scheda e salvare lo stesso. */
+    {
+      const _rate = rateSenzaMagazzino();
+      if (_rate.length) {
+        setShowCart(false); setVistaStep("prodotti");
+        sT(`⛔ ${_rate.length === 1 ? "Il telefono a rate " + _rate[0] + " non è" : "Questi telefoni a rate non sono"} nel magazzino di ${selNeg}: un telefono che non hai non si può rateizzare.`);
+        return;
+      }
+    }
     {
       // il gate vale per il ramo BRAND (la marginalità pura passa da saveMargOnly)
       const _manca = mancanzeVendita();
@@ -7070,7 +7135,13 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
      se ne accorgeva, perché fra un colpo e l'altro `mag_unita` non cambia —
      cambia solo al salvataggio. Lo scontrino ne batteva due e lo scarico ne
      marcava venduto uno. Di quel telefono ce n'è UNO. */
-  const serialiInCarrello=useMemo(()=>new Set(margItems.map(x=>x&&x.seriale).filter(Boolean)),[margItems]);
+  const serialiInCarrello=useMemo(()=>{
+    const s=new Set(margItems.map(x=>x&&x.seriale).filter(Boolean));
+    // anche i telefoni a rate: lo stesso pezzo non si vende due volte nella
+    // stessa vendita, né come rata né in cassa (revisore 31/08)
+    try{ perOgniTelefonoARate((im)=>s.add(im)); }catch{}
+    return s;
+  },[margItems,cart,sales,cats]);
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
   // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
   // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
