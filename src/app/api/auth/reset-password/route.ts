@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { decifraSegreto, verificaCodice } from "@/lib/totp";
-import { inviaEmail } from "@/lib/email";
+import { inviaCredenziali, passwordProvvisoria } from "@/lib/emailCredenziali";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,13 +31,6 @@ function segna(chiave: string) {
     else r.n += 1;
 }
 
-// password provvisoria leggibile, senza caratteri ambigui (0/O, 1/I/l)
-function passwordProvvisoria(): string {
-    const alf = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    const blocco = (n: number) => Array.from({ length: n }, () => alf[Math.floor(Math.random() * alf.length)]).join("");
-    return `TF-${blocco(4)}-${blocco(4)}`;
-}
-
 export async function POST(request: Request) {
     try {
         const { email, code, newPassword, mode } = await request.json();
@@ -54,24 +47,16 @@ export async function POST(request: Request) {
             // utente inesistente: stessa risposta di quello esistente (neutra)
             if (!row) return NextResponse.json({ ok: true });
 
-            // casella mittente: amministrazione@ se attiva, altrimenti la prima attiva
-            const { data: caselle } = await supabase.from("email_accounts").select("*").eq("status", "attiva");
-            const mittente = (caselle ?? []).find((a: { email_address?: string }) => String(a.email_address || "").startsWith("amministrazione@")) || (caselle ?? [])[0];
-            if (!mittente) return NextResponse.json({ ok: false, error: "Invio email non disponibile: avvisa l'amministrazione." });
-
+            // IL TESTO E' UNO SOLO (revisione 31/08): stava qui in copia, e le
+            // due versioni erano gia' divergenti — una salutava col nome
+            // proprio, l'altra col nome e cognome, e solo una aveva il link
+            // cliccabile. Adesso lo scrive `inviaCredenziali`, che conosce i
+            // tre toni: qui il tono e' «me la sono chiesta io».
             const temp = passwordProvvisoria();
             // prima la MAIL, poi la password: se l'invio fallisce la vecchia
             // password resta valida e nessuno rimane chiuso fuori
-            try {
-                await inviaEmail(mittente, {
-                    to: row.email,
-                    subject: "CRM Telefutura — la tua password provvisoria",
-                    text: `Ciao ${row.full_name || ""},\n\nla tua password provvisoria per il CRM è:\n\n    ${temp}\n\nAccedi su https://crm.telefuturasrl.com — al primo accesso ti verrà chiesto di impostare una password personale.\n\nSe non hai richiesto tu il reset, ignora questa email: la tua password attuale resta valida finché non usi quella provvisoria.`,
-                    html: `<p>Ciao ${row.full_name || ""},</p><p>la tua password provvisoria per il CRM è:</p><p style="font-size:20px;font-weight:bold;font-family:monospace;letter-spacing:2px;background:#f4f4f8;padding:12px 16px;border-radius:8px;display:inline-block">${temp}</p><p>Accedi su <a href="https://crm.telefuturasrl.com">crm.telefuturasrl.com</a> — al primo accesso ti verrà chiesto di impostare una password personale.</p><p style="color:#888;font-size:12px">Se non hai richiesto tu il reset, ignora questa email: la tua password attuale resta valida finché non usi quella provvisoria.</p>`,
-                });
-            } catch (e) {
-                return NextResponse.json({ ok: false, error: "Invio email non riuscito: riprova o avvisa l'amministrazione. (" + (e instanceof Error ? e.message : "errore") + ")" });
-            }
+            const esito = await inviaCredenziali({ a: row.email, nome: row.full_name, password: temp, tono: "reset_self" });
+            if (!esito.ok) return NextResponse.json({ ok: false, error: "Invio email non riuscito: riprova o avvisa l'amministrazione. (" + esito.errore + ")" });
             // admin_set_password: hash bcrypt + must_change_password=true (la cambia al primo accesso)
             const { error: e1 } = await supabase.rpc("admin_set_password", { p_user_id: row.id, p_new: temp });
             if (e1) return NextResponse.json({ ok: false, error: "Salvataggio non riuscito: riprova." });

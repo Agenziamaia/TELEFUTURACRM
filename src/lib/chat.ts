@@ -261,7 +261,9 @@ export function subscribeReactions(convId: string, onChange: () => void) {
  * Permette di scrivere "ho sentito @Mario Rossi per @CTR_0001" con il tag nel punto giusto.
  */
 export const REF_TOKEN_RE = /@\[(cliente|contratto|appuntamento|persona):([^\]|]+)\|([^\]]+)\]/g;
-export const refToken = (r: ChatRef) => `@[${r.type}:${r.id}|${r.label}]`;
+// le parentesi e la barra dentro l'etichetta romperebbero il token e
+// farebbero uscire mezzo nome come testo: si neutralizzano scrivendolo
+export const refToken = (r: ChatRef) => `@[${r.type}:${r.id}|${String(r.label).replace(/[\]|[]/g, " ")}]`;
 
 /** Spezza il corpo del messaggio in testo semplice + tag, mantenendo l'ordine. */
 export function splitBody(body: string): Array<{ text: string } | { ref: ChatRef }> {
@@ -278,6 +280,15 @@ export function splitBody(body: string): Array<{ text: string } | { ref: ChatRef
   return out;
 }
 
+/** Il messaggio in TESTO PIATTO: ogni tag diventa la sua etichetta. Serve
+ *  dove non c'è spazio per renderli — avvisi, anteprime, notifiche — perché il
+ *  token grezzo `@[persona:<uuid>|Nome]` a video non lo capisce nessuno. */
+export function testoPiatto(body: string | null): string {
+  return splitBody(body || "")
+    .map((p) => ("text" in p ? p.text : (p.ref.label || "").split(" · ")[0]))
+    .join("").replace(/\s+/g, " ").trim();
+}
+
 /** Etichette coerenti fra ricerca e suggerimenti. */
 const clientLabel = (c: any) =>
   [c.ragione_sociale || [c.nome, c.cognome].filter(Boolean).join(" "), c.cf_piva].filter(Boolean).join(" · ") || c.id;
@@ -290,7 +301,7 @@ const apptLabel = (a: any) =>
  * Suggerimenti mostrati appena si digita "@", senza ancora aver scritto nulla:
  * i record piu' recenti, cosi' il caso comune ("l'ultimo contratto") e' a un tasto.
  */
-export async function recentEntities(dentro: string[] = []): Promise<ChatRef[]> {
+export async function recentEntities(dentro: string[] = [], meId?: string | null): Promise<ChatRef[]> {
   const [cl, ct, ap] = await Promise.all([
     supabase.from("clients").select("id, nome, cognome, ragione_sociale, cf_piva")
       .order("created_at", { ascending: false }).limit(5).then((r) => r.data || [], () => []),
@@ -306,7 +317,7 @@ export async function recentEntities(dentro: string[] = []): Promise<ChatRef[]> 
   ]);
   // premendo «@» e basta, in un gruppo, la cosa che si vuole quasi sempre e'
   // chiamare uno dei presenti: i partecipanti aprono l'elenco
-  const persone = dentro.length ? await searchPersone("", dentro).catch(() => []) : [];
+  const persone = dentro.length ? await searchPersone("", dentro, meId).catch(() => []) : [];
   return [
     ...persone.filter((p) => dentro.includes(p.id)),
     ...cl.map((c: any) => ({ type: "cliente" as const, id: c.id, label: clientLabel(c) })),
@@ -316,12 +327,12 @@ export async function recentEntities(dentro: string[] = []): Promise<ChatRef[]> 
 }
 
 /** Ricerca su tutti e tre i tipi insieme (usata dall'autocomplete con "@"). */
-export async function searchAllEntities(q: string, dentro: string[] = []): Promise<ChatRef[]> {
+export async function searchAllEntities(q: string, dentro: string[] = [], meId?: string | null): Promise<ChatRef[]> {
   // LE PERSONE PER PRIME. Scrivendo «@alex» in un gruppo si sta chiamando un
   // collega, non cercando un cliente che si chiama Alexandra: i colleghi
   // stanno in cima, i record del CRM restano sotto.
   const [p, a, b, c] = await Promise.all([
-    searchPersone(q, dentro).catch(() => []),
+    searchPersone(q, dentro, meId).catch(() => []),
     searchEntities("cliente", q).catch(() => []),
     searchEntities("contratto", q).catch(() => []),
     searchEntities("appuntamento", q).catch(() => []),
@@ -333,19 +344,31 @@ export async function searchAllEntities(q: string, dentro: string[] = []): Promi
  *  conversazione: vengono per primi, perche' in un gruppo si tagga quasi
  *  sempre uno che e' dentro — gli altri restano raggiungibili scrivendone il
  *  nome, che serve per dire «ne parlo con Tizio» anche se Tizio non c'e'. */
-export async function searchPersone(q: string, dentro: string[] = []): Promise<ChatRef[]> {
+export async function searchPersone(q: string, dentro: string[] = [], meId?: string | null): Promise<ChatRef[]> {
   const s = q.trim();
-  const sel = supabase.from("app_users").select("id, full_name, role, primary_store").eq("active", true);
-  const { data } = s
-    ? await sel.ilike("full_name", `%${s}%`).order("full_name").limit(12)
-    : await sel.order("full_name").limit(60);
-  const righe = (data || []) as { id: string; full_name: string; role: string | null; primary_store: string | null }[];
-  const dentroSet = new Set(dentro);
-  const peso = (u: { id: string }) => (dentroSet.has(u.id) ? 0 : 1);
-  return righe
-    .sort((a, b) => peso(a) - peso(b) || String(a.full_name).localeCompare(String(b.full_name), "it"))
-    .slice(0, s ? 8 : 10)
-    .map((u) => ({ type: "persona" as RefKind, id: u.id, label: u.full_name }));
+  const base = () => {
+    let sel = supabase.from("app_users").select("id, full_name").eq("active", true);
+    if (meId) sel = sel.neq("id", meId);        // taggare se stessi non serve a niente
+    return sel;
+  };
+  // DUE QUERY, NON UNA. Con una sola, il `limit` del database taglia PRIMA che
+  // l'ordinamento possa portare su i partecipanti: in un gruppo di cinque
+  // persone, digitando «@a» — 46 colleghi che combaciano — dei quattro dentro
+  // la conversazione ne arrivava uno solo. I partecipanti si chiedono a parte.
+  const [dent, tutti] = await Promise.all([
+    dentro.length
+      ? (s ? base().in("id", dentro).ilike("full_name", `%${s}%`) : base().in("id", dentro)).order("full_name").limit(8)
+      : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+    (s ? base().ilike("full_name", `%${s}%`) : base()).order("full_name").limit(s ? 12 : 40),
+  ]);
+  const visti = new Set<string>();
+  const out: ChatRef[] = [];
+  for (const u of [...((dent.data || []) as { id: string; full_name: string }[]), ...((tutti.data || []) as { id: string; full_name: string }[])]) {
+    if (visti.has(u.id)) continue;
+    visti.add(u.id);
+    out.push({ type: "persona" as RefKind, id: u.id, label: u.full_name });
+  }
+  return out.slice(0, s ? 8 : 10);
 }
 
 /** Ricerca record del CRM da taggare in chat (cliente / contratto / appuntamento). */

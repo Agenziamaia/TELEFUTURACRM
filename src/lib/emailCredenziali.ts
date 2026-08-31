@@ -22,12 +22,13 @@ export function passwordProvvisoria(): string {
     return `TF-${blocco(4)}-${blocco(4)}`;
 }
 
-/** La casella da cui parte: amministrazione@ se c'è, altrimenti la prima
- *  attiva. È la posta con cui l'azienda parla già ai dipendenti. */
+/** La casella da cui parte: SOLO amministrazione@. Il ripiego «la prima
+ *  attiva» era pericoloso: le caselle attive sono ventitré e quasi tutte di
+ *  punto vendita, condivise — le credenziali del CRM sarebbero partite dalla
+ *  posta di un negozio, in un ordine per giunta deciso dal database. */
 export async function casellaMittente() {
     const { data } = await supabaseAdmin.from("email_accounts").select("*").eq("status", "attiva");
-    const tutte = data ?? [];
-    return tutte.find((a: { email_address?: string }) => String(a.email_address || "").startsWith("amministrazione@")) || tutte[0] || null;
+    return (data ?? []).find((a: { email_address?: string }) => String(a.email_address || "").startsWith("amministrazione@")) || null;
 }
 
 const SITO = "https://crm.telefuturasrl.com";
@@ -37,30 +38,51 @@ const SITO = "https://crm.telefuturasrl.com";
  *  vecchia password resta valida finché non usa questa.
  *  Non lancia: torna l'esito, perché chi chiama deve poter decidere cosa fare
  *  se la posta non parte (di norma: non toccare la password). */
+/** TRE toni, non due. Il reset fatto dall'AMMINISTRAZIONE non è quello che
+ *  l'utente si fa da solo: lì la password è già cambiata, quindi non si può
+ *  scrivere «la tua password attuale resta valida finché non usi questa» — chi
+ *  ignora la mail prova la vecchia e non entra. Era il testo copiato dal
+ *  self-service, dove invece è vero. */
+export type ToneCredenziali = "benvenuto" | "reset_admin" | "reset_self";
+
+const esc = (v: string) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+
 export async function inviaCredenziali(opts: {
-    a: string; nome?: string | null; password: string; benvenuto?: boolean;
+    a: string; nome?: string | null; password: string; tono: ToneCredenziali;
 }): Promise<{ ok: true; da: string } | { ok: false; errore: string }> {
     const dest = String(opts.a || "").trim();
     if (!dest) return { ok: false, errore: "l'utente non ha un indirizzo email" };
     const mittente = await casellaMittente();
-    if (!mittente) return { ok: false, errore: "nessuna casella email attiva nel CRM" };
+    if (!mittente) return { ok: false, errore: "la casella amministrazione@ non è collegata al CRM" };
 
     const nome = (opts.nome || "").trim().split(/\s+/)[0] || "";
-    const apertura = opts.benvenuto
-        ? `Ciao ${nome},\n\nti abbiamo creato l'accesso al CRM Telefutura. La tua password provvisoria è:`
-        : `Ciao ${nome},\n\nla tua password provvisoria per il CRM è:`;
-    const chiusura = opts.benvenuto
-        ? `Entra su ${SITO} con questa email e la password qui sopra: al primo accesso ti verrà chiesto di sceglierne una tua.`
-        : `Accedi su ${SITO} — al primo accesso ti verrà chiesto di impostare una password personale.\n\nSe non hai richiesto tu il reset, ignora questa email: la tua password attuale resta valida finché non usi quella provvisoria.`;
+    const T = {
+        benvenuto: {
+            oggetto: "CRM Telefutura — il tuo accesso",
+            apertura: `Ciao ${nome},\n\nti abbiamo creato l'accesso al CRM Telefutura. La tua password provvisoria è:`,
+            chiusura: `Entra su ${SITO} con questa email e la password qui sopra: al primo accesso ti verrà chiesto di sceglierne una tua.`,
+        },
+        reset_admin: {
+            oggetto: "CRM Telefutura — la tua password è stata reimpostata",
+            apertura: `Ciao ${nome},\n\nl'amministrazione ha reimpostato il tuo accesso al CRM. La tua nuova password provvisoria è:`,
+            chiusura: `Da adesso vale solo questa: accedi su ${SITO} e al primo accesso ti verrà chiesto di sceglierne una tua.\n\nSe non te l'aspettavi, avvisa l'amministrazione.`,
+        },
+        reset_self: {
+            oggetto: "CRM Telefutura — la tua password provvisoria",
+            apertura: `Ciao ${nome},\n\nla tua password provvisoria per il CRM è:`,
+            chiusura: `Accedi su ${SITO} — al primo accesso ti verrà chiesto di impostare una password personale.\n\nSe non hai richiesto tu il reset, ignora questa email: la tua password attuale resta valida finché non usi quella provvisoria.`,
+        },
+    }[opts.tono];
 
     try {
         await inviaEmail(mittente as never, {
             to: dest,
-            subject: opts.benvenuto ? "CRM Telefutura — il tuo accesso" : "CRM Telefutura — la tua password provvisoria",
-            text: `${apertura}\n\n    ${opts.password}\n\n${chiusura}`,
-            html: `<p>${apertura.replace(/\n/g, "<br>")}</p>`
-                + `<p style="font-size:20px;font-weight:bold;font-family:monospace;letter-spacing:2px;background:#f4f4f8;padding:12px 16px;border-radius:8px;display:inline-block">${opts.password}</p>`
-                + `<p>${chiusura.replace(/\n\n/g, "</p><p style=\"color:#888;font-size:12px\">").replace(/\n/g, "<br>")}</p>`,
+            subject: T.oggetto,
+            text: `${T.apertura}\n\n    ${opts.password}\n\n${T.chiusura}`,
+            html: `<p>${esc(T.apertura).replace(/\n/g, "<br>")}</p>`
+                + `<p style="font-size:20px;font-weight:bold;font-family:monospace;letter-spacing:2px;background:#f4f4f8;padding:12px 16px;border-radius:8px;display:inline-block">${esc(opts.password)}</p>`
+                + `<p>${esc(T.chiusura).replace(/\n\n/g, "</p><p style=\"color:#888;font-size:12px\">").replace(/\n/g, "<br>")}</p>`
+                    .replace(/crm\.telefuturasrl\.com/g, `<a href="${SITO}">crm.telefuturasrl.com</a>`),
         });
         return { ok: true, da: String((mittente as { email_address?: string }).email_address || "") };
     } catch (e) {

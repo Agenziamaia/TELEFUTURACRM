@@ -67,7 +67,11 @@ function snippetMatch(body: string, q: string): { prima: string; match: string; 
 const REF_UI = {
   // la persona ha il viola della chat, e non il verde dei clienti: in un
   // gruppo si deve capire al volo che quello e' un collega chiamato in causa
-  persona: { Icon: AtSign, cls: "bg-indigo-500/20 text-indigo-100 border-indigo-400/40 hover:bg-indigo-500/30 font-semibold" },
+  // PIENO, NON VELATO. Il velo di indaco sopra una bolla indaco è lo stesso
+  // colore: misurato, il chip si staccava dallo sfondo per 1,8 di ΔE — «appena
+  // percettibile» — proprio dentro la bolla dei messaggi propri, ed era l'unico
+  // dei quattro tag pensato per farsi notare. Pieno chiaro: ΔE 34,9.
+  persona: { Icon: AtSign, cls: "bg-indigo-300 text-indigo-950 border-indigo-200 hover:bg-indigo-200 font-semibold" },
   cliente: { Icon: User, cls: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30 hover:bg-emerald-500/25" },
   contratto: { Icon: FileText, cls: "bg-sky-500/15 text-sky-200 border-sky-500/30 hover:bg-sky-500/25" },
   appuntamento: { Icon: CalendarDays, cls: "bg-amber-500/15 text-amber-200 border-amber-500/30 hover:bg-amber-500/25" },
@@ -546,7 +550,14 @@ function ChatPageInner() {
     const p = searchParams.get("persona");
     if (!p || !meId || p === meId) return;
     let vivo = true;
-    getOrCreateDM(meId, p).then((id) => { if (vivo && id) setSelId(id); }).catch(() => { /* niente */ });
+    getOrCreateDM(meId, p).then((id) => {
+      if (!vivo || !id) return;
+      setSelId(id);
+      // via il parametro dall'indirizzo: se resta, ricliccare lo STESSO tag non
+      // fa più niente (l'indirizzo non cambia, l'effetto non riparte) e un
+      // ricaricamento della pagina riapre quel DM invece dell'ultima chat
+      window.history.replaceState(null, "", "/chat");
+    }).catch(() => { /* niente */ });
     return () => { vivo = false; };
   }, [searchParams, meId]);
 
@@ -705,7 +716,7 @@ function ChatPageInner() {
       // i PARTECIPANTI alla conversazione aperta: in un gruppo, «@» seguito da
       // un nome vuol dire quasi sempre «chiamo uno di voi»
       const dentro = (parts || []).map((x) => x.user_id).filter(Boolean);
-      const p = q.length === 0 ? recentEntities(dentro) : searchAllEntities(q, dentro);
+      const p = q.length === 0 ? recentEntities(dentro, meId) : searchAllEntities(q, dentro, meId);
       p.then(setMentionRows).catch(() => setMentionRows([]));
     }, q.length === 0 ? 0 : 200);
     return () => clearTimeout(t);
@@ -1127,7 +1138,7 @@ function ChatPageInner() {
                         </span>
                         <span className="flex-1 min-w-0">
                           <span className="block text-sm text-white truncate">{r.label}</span>
-                          <span className="block text-[10px] text-slate-500">
+                          <span className="block text-[10px] text-slate-400">
                             {r.type === "persona" ? (parts || []).some((x) => x.user_id === r.id) ? "in questa conversazione" : "collega" : r.type}
                           </span>
                         </span>

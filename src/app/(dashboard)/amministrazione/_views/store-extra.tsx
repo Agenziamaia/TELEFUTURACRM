@@ -570,7 +570,10 @@ export function OrariChiusureView() {
                                         «Telefutura 2 S.R.I». Adesso l'etichetta sta sopra e
                                         la tendina ha tutta la larghezza della scheda. */}
                                     <div className="flex flex-col gap-1">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Società</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Società</span>
+                                            {rt.length === 0 && <span className="text-[10px] text-slate-500" title="Il registratore non è ancora configurato: la società resta scritta e verrà usata quando lo sarà">· senza cassa</span>}
+                                        </div>
                                         <div className="flex items-center gap-2">
                                         {/* SI SCEGLIE SEMPRE (Luca 31/08): «sui negozi dove non
                                             c'è registratore fiscale dammi comunque la
@@ -586,12 +589,15 @@ export function OrariChiusureView() {
                                         ) : (
                                             <select value={n.azienda || ""} onChange={e => salvaSocieta(n.name, e.target.value)}
                                                 title="La società a cui appartiene il punto vendita: possiede la merce a magazzino e firma i documenti di trasporto"
-                                                className="glass-input !h-7 !px-2 text-[11px] flex-1">
+                                                // la ragione sociale finiva sotto la freccia e usciva
+                                                // «Telefutura 2 S.R.I»: serve aria a destra (la freccia
+                                                // sta lì) e un filo di altezza in più per non tagliare
+                                                // i punti della sigla
+                                                className="glass-input !h-8 !pl-2 !pr-7 text-[11px] w-full">
                                                 <option value="">— da scegliere —</option>
                                                 {aziende.map(a => <option key={a.codice} value={a.codice}>{a.ragione_sociale}</option>)}
                                             </select>
                                         )}
-                                        {rt.length === 0 && <span className="text-[10px] text-slate-500 shrink-0" title="Il registratore non è ancora configurato: la società resta scritta e verrà usata quando lo sarà">senza cassa</span>}
                                         </div>
                                     </div>
                                     {mancaPerDdt && (

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { inviaCredenziali } from "@/lib/emailCredenziali";
+import { inviaCredenziali, passwordProvvisoria } from "@/lib/emailCredenziali";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,9 +37,17 @@ export async function POST(request: Request) {
     }
     if (azione === "reset_password") {
         if (!amministra) return NextResponse.json({ error: "Non hai i permessi per questa operazione" });
-        if (!bersaglio || !nuova) return NextResponse.json({ error: "Dati mancanti" });
-        const { data, error } = await supabase.rpc("admin_set_password", { p_user_id: bersaglio, p_new: nuova });
+        if (!bersaglio) return NextResponse.json({ error: "Dati mancanti" });
+        // LA PASSWORD LA GENERA IL SERVER. Prima la faceva il browser e la
+        // mandava in chiaro nel corpo della richiesta: un giro in più per un
+        // segreto, e due alfabeti diversi (il browser senza trattini, il
+        // self-service col formato TF-XXXX-XXXX dettabile al telefono).
+        // `nuova` resta accettata per chi passa una password scelta a mano.
+        const pw = String(nuova || "").trim() || passwordProvvisoria();
+        if (pw.length < 8) return NextResponse.json({ error: "La password deve avere almeno 8 caratteri" });
+        const { data, error } = await supabase.rpc("admin_set_password", { p_user_id: bersaglio, p_new: pw });
         if (error) return NextResponse.json({ error: error.message });
+        if (data === false) return NextResponse.json({ error: "Utente non trovato" });
         // …E LA PASSWORD ARRIVA ALL'INTERESSATO (Luca 31/08). Prima restava a
         // video sulla scheda dell'amministrazione, che doveva dettarla. Adesso
         // parte dalla casella aziendale — amministrazione@, la stessa via del
@@ -50,8 +58,8 @@ export async function POST(request: Request) {
         // contrario: lì si spedisce prima, perché se la mail non arriva
         // l'utente resterebbe chiuso fuori con una password che non conosce.)
         const { data: chi } = await supabase.from("app_users").select("email, full_name").eq("id", bersaglio).maybeSingle();
-        const esito = await inviaCredenziali({ a: chi?.email || "", nome: chi?.full_name, password: String(nuova), benvenuto: !!benvenuto });
-        return NextResponse.json({ ok: true, risultato: data, email: esito.ok ? esito.da : null, emailErrore: esito.ok ? null : esito.errore });
+        const esito = await inviaCredenziali({ a: chi?.email || "", nome: chi?.full_name, password: pw, tono: benvenuto ? "benvenuto" : "reset_admin" });
+        return NextResponse.json({ ok: true, risultato: data, password: pw, email: esito.ok ? esito.da : null, emailErrore: esito.ok ? null : esito.errore });
     }
     if (azione === "alias") {
         if (!amministra) return NextResponse.json({ error: "Non hai i permessi per questa operazione" });

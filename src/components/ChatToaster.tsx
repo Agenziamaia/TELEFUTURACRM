@@ -11,7 +11,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { markDelivered } from "@/lib/chat";
+import { markDelivered, testoPiatto } from "@/lib/chat";
 import { useAuth } from "@/context/AuthContext";
 import { seesAllStores } from "@/lib/roles";
 import { matchNegozi, useVisibleStores } from "@/lib/visibleStores";
@@ -65,14 +65,31 @@ export function ChatToaster() {
                 if (!part) return;
                 // consegnato: il mio client ha ricevuto il messaggio (anche fuori da /chat)
                 markDelivered(m.conversation_id, user.id);
-                if (inChat()) return; // dentro /chat lo vedi live
+                // SE TI HANNO CHIAMATO, L'AVVISO ARRIVA COMUNQUE (31/08). Dentro
+                // /chat l'avviso si tace, perché il messaggio lo vedi arrivare —
+                // ma solo se stai guardando QUELLA conversazione: in un gruppo
+                // dove ti nominano mentre leggi un'altra chat non se ne accorge
+                // nessuno. Il riconoscimento costa niente: la colonna `refs`
+                // porta già `{type:"persona", id}` e arriva nel payload.
+                const chiamato = Array.isArray(m.refs) && m.refs.some((r: { type?: string; id?: string }) => r?.type === "persona" && r?.id === user.id);
+                if (inChat() && !chiamato) return; // dentro /chat lo vedi live
                 const [{ data: su }, { data: conv }] = await Promise.all([
                     supabase.from("app_users").select("full_name").eq("id", m.sender_id).maybeSingle(),
                     supabase.from("chat_conversations").select("type,title").eq("id", m.conversation_id).maybeSingle(),
                 ]);
                 const senderName = su?.full_name || "Nuovo messaggio";
                 const titolo = conv?.type === "group" && conv?.title ? `${senderName} · ${conv.title}` : senderName;
-                aggiungi({ id: `chat-${m.id}`, fonte: "chat", titolo, testo: m.body || "📎 Allegato", href: `/chat?c=${m.conversation_id}` }, 7000);
+                // I TAG NON SI MOSTRANO GREZZI. Il corpo contiene i token
+                // `@[persona:<uuid>|Nome]`, e nell'avviso arrivavano tali e
+                // quali: adesso di ogni tag resta la sua etichetta, come nelle
+                // anteprime della chat. Da quando si taggano anche le persone
+                // sarebbe diventata la norma.
+                aggiungi({
+                    id: `chat-${m.id}`, fonte: "chat",
+                    titolo: chiamato ? `@ ${titolo} ti ha nominato` : titolo,
+                    testo: testoPiatto(m.body) || "📎 Allegato",
+                    href: `/chat?c=${m.conversation_id}`,
+                }, chiamato ? 12000 : 7000);
             })
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_messages" }, async (payload) => {
                 const m: any = payload.new; // eslint-disable-line @typescript-eslint/no-explicit-any

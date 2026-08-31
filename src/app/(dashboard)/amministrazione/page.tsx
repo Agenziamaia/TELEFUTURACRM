@@ -1178,17 +1178,29 @@ function UserForm({
         // aziendale — amministrazione@ — insieme all'indirizzo del CRM.
         // Resta a video comunque: se la posta non parte (utente senza email,
         // casella scollegata) l'amministrazione la vede e la comunica a mano.
-        if (!editing && userId && String(f.email || "").trim()) {
-            const provvisoria = genPassword();
+        // …ANCHE SENZA EMAIL. Prima la guardia chiedeva l'indirizzo: senza,
+        // non si generava niente e non si diceva niente — l'utente nasceva
+        // senza password e nessuno lo sapeva. Adesso la password si imposta
+        // sempre; se l'indirizzo non c'è, il riquadro lo dice e la mostra.
+        let esito: { pw: string | null; email: string | null; errore: string | null } | null = null;
+        if (!editing && userId) {
             const r = await fetch("/api/auth/azioni", {
                 method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ azione: "reset_password", userId, nuova: provvisoria, benvenuto: true }),
+                body: JSON.stringify({ azione: "reset_password", userId, benvenuto: true }),
             }).then((x) => x.json()).catch(() => null);
-            setEsitoCredenziali(r?.ok
-                ? { pw: provvisoria, email: r.email || null, errore: r.emailErrore || null }
-                : { pw: null, email: null, errore: r?.error || "non è stato possibile impostare la password" });
+            esito = r?.ok
+                ? { pw: r.password || null, email: r.email || null, errore: r.emailErrore || null }
+                : { pw: null, email: null, errore: r?.error || "non è stato possibile impostare la password" };
+            setEsitoCredenziali(esito);
         }
         setSaving(false);
+        // LA MODALE NON SI CHIUDE SE C'È UNA PASSWORD DA LEGGERE. `onSaved()`
+        // smonta questo form, e con lui il riquadro: la password non si vedeva
+        // per un solo fotogramma — i due setState finiscono nello stesso
+        // render. Se la mail non parte, quella password non la sa nessuno.
+        // se c'è una password da leggere, la modale resta aperta: si chiude col
+        // tasto del riquadro, che è `onSaved` e ricarica l'elenco come sempre
+        if (esito && (!esito.email || esito.pw)) return;
         onSaved();
     };
 
@@ -1225,8 +1237,11 @@ function UserForm({
                             <p className="text-amber-200">⚠️ La password è stata impostata ma l&apos;email non è partita{esitoCredenziali.errore ? ` (${esitoCredenziali.errore})` : ""}: comunicala tu.</p>
                         )}
                         {esitoCredenziali.pw && (
-                            <p className="mt-1.5 text-slate-300">Password provvisoria: <b className="font-mono tracking-wider text-white">{esitoCredenziali.pw}</b> — al primo accesso dovrà cambiarla.</p>
+                            <p className="mt-1.5 text-slate-300">Password provvisoria: <b className="font-mono tracking-wider text-white select-all">{esitoCredenziali.pw}</b> — al primo accesso dovrà cambiarla.</p>
                         )}
+                        <button type="button" onClick={onSaved} className="mt-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white">
+                            Ho preso nota, chiudi
+                        </button>
                     </div>
                 )}
 
