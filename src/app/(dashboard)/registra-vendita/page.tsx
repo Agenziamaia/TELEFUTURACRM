@@ -5505,6 +5505,21 @@ function CRM() {
   // checkout); Sostituzione Sim -> voce Sost; telefono TNP -> prodotto a prezzo di listino.
   const AUTO_SIM={windtre:"Sim Wind3",vodafone:"Sim Vodafone",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very",kena:"Sim Kena"};
   const AUTO_SOST={windtre:"Sost Wind3",fastweb:"Sost Fastweb",tim:"Sost TIM",vodafone:"Sost Vodafone",very:"Sost Very"};
+  /* I PEZZI DEL NEGOZIO, per il campo IMEI del telefono a rate (Luca 31/08).
+     Sono poche centinaia per negozio: si tengono in memoria e il campo cerca
+     lì, senza una query per tasto. `vincola` viene da `stores`: è
+     l'interruttore che Luca accende negozio per negozio.
+     STA QUI, IN ALTO, E NON PIÙ SOTTO (incidente 31/08). Serve a
+     `_tnpDaListino` e all'array di dipendenze dell'effetto che ricalcola le
+     voci automatiche: un array di dipendenze si valuta DURANTE il render, non
+     dopo — quindi nominarla prima della sua `useState` faceva esplodere la
+     pagina intera a ogni render, con «Cannot access 'magVendita' before
+     initialization». Non è un dettaglio di stile: Registra Vendita rispondeva
+     500 e i negozi non potevano registrare una vendita.
+     Il corpo di una funzione, invece, può nominare quello che vuole: gira
+     dopo. È la differenza che mi era sfuggita. */
+  const [magVendita, setMagVendita] = useState(null);
+
   const computeAutoMarg=(prev,brandId,brandLabel,items)=>{
     if(!brandLabel)return prev;
     const adds=[];
@@ -5979,11 +5994,7 @@ function CRM() {
      Chiudere una porta per volta lascia sempre la prossima aperta: qui c'è
      la RETE, letta sul carrello finito, subito prima di salvare. */
   const [giacNegozio, setGiacNegozio] = useState(null);   // null = non ancora letto
-  /* I PEZZI DEL NEGOZIO, per il campo IMEI del telefono a rate (Luca 31/08).
-     Sono poche centinaia per negozio: si tengono in memoria e il campo cerca
-     lì, senza una query per tasto. `vincola` viene da `stores`: è
-     l'interruttore che Luca accende negozio per negozio. */
-  const [magVendita, setMagVendita] = useState(null);
+  // `magVendita` è dichiarato più in alto, prima dell'effetto che lo usa
   useEffect(() => {
     let vivo = true;
     setMagVendita(null);
