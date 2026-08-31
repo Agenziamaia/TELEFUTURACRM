@@ -7770,53 +7770,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
               </div>
               {tel.length>0&&<div style={{fontSize:10,color:"var(--tf-w600)",fontWeight:700,marginTop:2,textAlign:"right"}}>telefoni a listino € {telListino.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})} → il margine è nel valore</div>}
             </div>);})()}
-          {/* ═══ IL COUPON, SUL CARRELLO ═══════════════════════════════════
-              Luca 31/08: «lo applico sul carrello e mi sconta il carrello
-              ancora prima che vado in cassa». Compare solo quando c'è
-              qualcosa da incassare: su un carrello di sole pratiche — senza
-              voci prezzate — uno sconto non vuol dire niente.
-              Il numero qui non è il «valore carrello» qui sopra, che è il
-              MARGINE nostro: è quello che paga il cliente, cioè le stesse
-              righe che andranno sullo scontrino. */}
-          {(()=>{
-            const righeCassa = buildScontrinoItems(margItems);
-            const daIncassare = righeCassa.reduce((t,r)=>t+(Number(r.unitPrice)||0)*(Number(r.qty)>0?Number(r.qty):1),0);
-            if (daIncassare <= 0) return null;
-            const sc = couponCart ? Math.min(Number(couponCart.sconto)||0, daIncassare) : 0;
-            const resta = Math.round((daIncassare - sc) * 100) / 100;
-            const eur2 = (n)=>"€ "+Number(n||0).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2});
-            return (
-              <div className="rvCoup">
-                <div className="rvCoup-tot">
-                  <span className="rvCoup-t">🧾 DA INCASSARE</span>
-                  <span>
-                    {sc>0 && <s>{eur2(daIncassare)}</s>}{" "}
-                    <b>{eur2(resta)}</b>
-                  </span>
-                </div>
-                {couponCart ? (
-                  <div className="rvCoup-r">
-                    <span className="rvCoup-ok">🎟 {couponCart.code} — sconto {eur2(sc)}
-                      {Number(couponCart.valore) > sc ? ` (residuo ${eur2(Number(couponCart.valore)-sc)}: torna in un coupon nuovo)` : ""}</span>
-                    <span style={{marginLeft:"auto"}} />
-                    <button type="button" className="rvCoup-b"
-                      onClick={()=>{setCouponCart(null);setCouponCartMsg("");}}>✕ Togli</button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="rvCoup-r">
-                      <input className="rvCoup-in" value={couponCartIn} placeholder="CPN-XXX-XXXX"
-                        onChange={e=>setCouponCartIn(e.target.value)}
-                        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();applicaCouponCart(daIncassare);}}} />
-                      <button type="button" className="rvCoup-b" disabled={couponCartBusy||!couponCartIn.trim()}
-                        onClick={()=>applicaCouponCart(daIncassare)}>{couponCartBusy?"…":"Applica"}</button>
-                    </div>
-                    {couponCartMsg && <div className="rvCoup-ko">{couponCartMsg}</div>}
-                  </>
-                )}
-              </div>
-            );
-          })()}
+
         </div>
         <div style={{padding:14,flex:1}}>
           {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].length===0&&margItems.length===0?(
@@ -7869,6 +7823,59 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             </div>
           )}
         </div>
+        {/* ═══ DA INCASSARE, E IL COUPON — DUE COSE DIVERSE ══════════════════
+            Luca 31/08: «questo da incassare spostamelo sotto, perché c'è il
+            valore del carrello che potrebbe portare confusione — quel valore
+            poi dobbiamo trasformarlo nel valore utile che stiamo generando per
+            l'azienda, anche in termini di commissioning. È brutto avere due
+            importi così. E il da incassare scollegalo dal coupon: prima da
+            incassare, poi uno spazio per il coupon».
+            Aveva ragione due volte: erano due numeri grossi a dieci centimetri
+            l'uno dall'altro che dicono cose opposte — quello che entra in cassa
+            e quello che ci guadagniamo — e il coupon dentro lo stesso riquadro
+            li faceva sembrare la stessa cosa. Qui stanno in fondo, dove si
+            guarda prima di chiudere, e sono due riquadri. */}
+        {(()=>{
+          const righeCassa = buildScontrinoItems(margItems);
+          const daIncassare = righeCassa.reduce((t,r)=>t+(Number(r.unitPrice)||0)*(Number(r.qty)>0?Number(r.qty):1),0);
+          if (daIncassare <= 0) return null;
+          const sc = couponCart ? Math.min(Number(couponCart.sconto)||0, daIncassare) : 0;
+          const resta = Math.round((daIncassare - sc) * 100) / 100;
+          const eur2 = (n)=>"€ "+Number(n||0).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2});
+          return (
+            <div style={{padding:"0 14px"}}>
+              <div className="rvCoup">
+                <div className="rvCoup-tot">
+                  <span className="rvCoup-t">🧾 DA INCASSARE</span>
+                  <span>{sc>0 && <s>{eur2(daIncassare)}</s>}{" "}<b>{eur2(resta)}</b></span>
+                </div>
+              </div>
+              <div className="rvCoup">
+                <div className="rvCoup-t">🎟 CODICE COUPON</div>
+                {couponCart ? (
+                  <div className="rvCoup-r">
+                    <span className="rvCoup-ok">{couponCart.code} — sconto {eur2(sc)}
+                      {Number(couponCart.valore) > sc ? ` (residuo ${eur2(Number(couponCart.valore)-sc)}: torna in un coupon nuovo)` : ""}</span>
+                    <span style={{marginLeft:"auto"}} />
+                    <button type="button" className="rvCoup-b"
+                      onClick={()=>{setCouponCart(null);setCouponCartMsg("");}}>✕ Togli</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rvCoup-r">
+                      <input className="rvCoup-in" value={couponCartIn} placeholder="CPN-XXX-XXXX"
+                        onChange={e=>setCouponCartIn(e.target.value)}
+                        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();applicaCouponCart(daIncassare);}}} />
+                      <button type="button" className="rvCoup-b" disabled={couponCartBusy||!couponCartIn.trim()}
+                        onClick={()=>applicaCouponCart(daIncassare)}>{couponCartBusy?"…":"Applica"}</button>
+                    </div>
+                    {couponCartMsg && <div className="rvCoup-ko">{couponCartMsg}</div>}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         <div style={{padding:14,borderTop:"1px solid var(--tf-w60)"}}>
           <button onClick={()=>setShowCart(true)} className="rvAzione" style={{width:"100%",padding:"11px 0",background:bG,color:inchiostroSu(ultimoColore(bG)),boxShadow:"none"}}>🛒 Riepilogo carrello →</button>
         </div>
