@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { arrotonda5, totaleRighe, FORME_PAGAMENTO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
@@ -58,6 +58,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // (b) Commit differito: lo scontrino è emesso ma il salvataggio a DB è fallito →
     // si offre il retry del SOLO salvataggio (senza riemettere lo scontrino).
     const [commitFail, setCommitFail] = useState(false);
+    // Annulla incasso (spec Francesco 31/08): un flag che ferma l'attesa dei contanti
+    // dal CRM. Ref e non stato: il loop di poll lo legge subito, senza aspettare un re-render.
+    const cancelCashRef = useRef(false);
 
     // Firma STABILE della vendita. Il reset qui sotto azzera anche la ragione sociale
     // scelta dall'operatore: deve scattare SOLO quando cambia DAVVERO la vendita, non a
@@ -72,7 +75,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setFase("scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
-        setCouponInput(""); setCoupon(null); setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false);
+        setCouponInput(""); setCoupon(null); setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false); cancelCashRef.current = false;
         const neg = data?.negozio;
         if (!neg) return;
         supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
@@ -112,6 +115,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
         setFase("incasso");
+        cancelCashRef.current = false;
         setMsg(`In attesa di ${eur(amount)} — il cliente inserisce i contanti nella cassa.`);
         try {
             const res = await fetch("/api/vendita/incasso", {
@@ -125,6 +129,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             const start = Date.now();
             for (;;) {
                 await new Promise((r) => setTimeout(r, POLL_MS));
+                // Annulla dal CRM (spec Francesco): l'operatore ferma l'attesa. Il cliente
+                // deve annullare anche sullo schermo della cassa se aveva già iniziato.
+                if (cancelCashRef.current) return { ok: false, cancelled: true, erroreMsg: "annullato dall'operatore" };
                 const { data: row } = await supabase.from("print_jobs").select("status, result").eq("id", jobId).single();
                 if (row && (row.status === "done" || row.status === "error")) {
                     let out: any = {};
@@ -195,16 +202,25 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         }
         // Incasso contanti (una sola volta) se c'è una quota contanti e non è già fatta.
         if (cashRounded > 0 && !cashDone) {
-            const r = await incassaContanti(cashRounded, data.negozio);
-            if (!r || !r.ok) {
-                setFase("errore");
-                setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato"));
-                return;
+            if (chk?.testMode) {
+                /* PROVA / gestionale (spec Francesco 31/08): NON si chiama la cassa
+                   automatica. Si segna l'importo come pagato in contanti — lo scontrino
+                   gestionale riporta comunque la riga contanti — così il test scorre
+                   senza inserire soldi veri nella macchina. */
+                setIncassato(cashRounded); setResto(0); setCashDone(true); setPaidCash(cashRounded);
+            } else {
+                const r = await incassaContanti(cashRounded, data.negozio);
+                if (!r || !r.ok) {
+                    if (r?.cancelled) { setFase("scelta"); setMsg(""); return; }  // annullato: si torna al pagamento
+                    setFase("errore");
+                    setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato"));
+                    return;
+                }
+                setIncassato(r.incassato ?? cashRounded);
+                setResto(r.resto ?? 0);
+                setCashDone(true);
+                setPaidCash(cashRounded);
             }
-            setIncassato(r.incassato ?? cashRounded);
-            setResto(r.resto ?? 0);
-            setCashDone(true);
-            setPaidCash(cashRounded);
         }
         const p = await stampaScontrino(pagamenti, coupon ? { code: coupon.code, sconto: scontoCoupon } : undefined);
         setEsclusi(Array.isArray(p.esclusi) ? p.esclusi : []);
@@ -249,6 +265,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setFase("fatto");
         setMsg("Vendita registrata. Scontrino già emesso.");
     };
+
+    // Annulla l'attesa dei contanti dal CRM (spec Francesco 31/08). Il loop di poll
+    // legge il flag e si ferma; si torna alla scelta del pagamento.
+    const annullaIncasso = () => { cancelCashRef.current = true; setMsg("Annullo incasso…"); };
 
     // "Tieni in sospeso": salva il conto per completarlo dopo (il cliente torna a pagare).
     const tieniInSospeso = async () => {
@@ -434,7 +454,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     <div className="space-y-3 text-center py-3">
                         <div className="text-3xl animate-pulse">💶</div>
                         <p className="text-sm text-slate-300">{msg}</p>
-                        <p className="text-[11px] text-slate-500">Per annullare, usa lo schermo della cassa.</p>
+                        <button type="button" onClick={annullaIncasso}
+                            className="mx-auto px-5 py-2 rounded-xl bg-rose-500/15 border border-rose-400/40 text-rose-200 hover:bg-rose-500/25 text-sm font-semibold">
+                            Annulla incasso
+                        </button>
+                        <p className="text-[11px] text-slate-500">Se il cliente ha già iniziato a inserire i contanti, annulla <b>anche</b> dallo schermo della cassa.</p>
                     </div>
                 )}
 
