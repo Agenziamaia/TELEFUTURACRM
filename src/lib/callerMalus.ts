@@ -55,6 +55,26 @@ export function lavorativiDopo(da: Date, a: Date, operativi?: Set<string> | null
     return n;
 }
 
+/** IL PRIMO GIORNO IN CUI LA PRATICA È DAVVERO IN MANO AL CALLER (Luca 31/08).
+ *  Un appuntamento fissato di domenica, o durante le ferie di chi deve
+ *  lavorarlo, non gli arriva quel giorno: gli arriva la prima volta che timbra.
+ *  Da lì parte il conto, e QUEL giorno è il giorno in cui la lavora — non un
+ *  giorno di ritardo.
+ *  `null` = da allora non ha ancora timbrato: la pratica resta sospesa e non
+ *  matura niente. Senza il registro dei badge (`operativi` assente) vale il
+ *  giorno di riferimento, cioè il comportamento di prima. */
+export function primoGiornoBadge(rif: Date, operativi?: Set<string> | null, oggi = new Date()): Date | null {
+    if (!operativi) return rif;
+    const d = new Date(rif); d.setHours(12, 0, 0, 0);
+    const fine = new Date(oggi); fine.setHours(12, 0, 0, 0);
+    let guardia = 0;
+    while (d <= fine && guardia++ < 500) {
+        if (operativi.has(ymdLoc(d))) return new Date(d);
+        d.setDate(d.getDate() + 1);
+    }
+    return null;
+}
+
 /** Il giorno che cade `n` giorni operativi dopo `da`; null se col set badge
  *  quei giorni non sono ancora maturati (il malus non e' iniziato). */
 export function aggiungiLavorativi(da: Date, n: number, operativi?: Set<string> | null): Date | null {

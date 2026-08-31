@@ -26,7 +26,7 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
-import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, primoGiornoBadge, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
 import { ArchivioMalusCaller } from "./_components/ArchivioMalusCaller";
@@ -1065,14 +1065,26 @@ function CallerPageInner() {
         // segue il flusso NATURALE (lun-sab: la pratica ci deve andare comunque);
         // warning e malus scorrono SOLO nei giorni in cui il caller ha timbrato —
         // niente valanghe di malus al rientro da ferie/assenze.
+        /* IL CONTO PARTE DAL GIORNO IN CUI LA PRATICA GLI ARRIVA IN MANO
+           (Luca 31/08, caso Lorenzini). L'appuntamento era fissato per domenica
+           30 agosto: il caller quel giorno non ha timbrato — non poteva — e il
+           lunedì si è ritrovato la pratica già in penale, senza mai vederla in
+           warning. Il giorno segnato sul calendario non è il giorno in cui la
+           pratica diventa sua: quello è il PRIMO giorno di badge da lì in poi,
+           e quel giorno è il giorno in cui la lavora, non un giorno di ritardo.
+           Se da allora non ha ancora timbrato — ferie, malattia, riposo — la
+           pratica resta sospesa e non matura niente.
+           «Da lavorare» invece segue il flusso naturale: il cliente aspettava
+           una chiamata quel giorno, e vederla in coda è giusto. */
+        const partenza = primoGiornoBadge(rif, operativi, oggi);
         const gNaturali = lavorativiDopo(rif, oggi, null);
-        const gBadge = lavorativiDopo(rif, oggi, operativi);
+        const gBadge = partenza ? lavorativiDopo(partenza, oggi, operativi) : 0;
         const fase: FaseCaller = r.esente ? "ok"
-            : (r.giorni_malus != null && gBadge >= r.giorni_malus) ? "malus"
-                : (r.giorni_warning != null && gBadge >= r.giorni_warning) ? "warning"
+            : (partenza && r.giorni_malus != null && gBadge >= r.giorni_malus) ? "malus"
+                : (partenza && r.giorni_warning != null && gBadge >= r.giorni_warning) ? "warning"
                     : (r.giorni_lavorare != null && gNaturali >= r.giorni_lavorare) ? "da_lavorare"
                         : "ok";
-        const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus, operativi) : null;
+        const dalMalus = fase === "malus" && r.giorni_malus != null && partenza ? aggiungiLavorativi(partenza, r.giorni_malus, operativi) : null;
         const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi, operativi) + 1 : 0;
         return { fase: dalMalus || fase !== "malus" ? fase : "warning", giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
     }, [regoleCaller, RIC_STATI, APP_STATI, giorniBadge, comportamenti]);
