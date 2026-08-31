@@ -479,6 +479,28 @@ export default function Calendario() {
     const [tasks, setTasks] = useState<CalendarTask[]>([]);
     const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
     const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
+    /* …E LO STESSO PER LE TASK: /calendario?task=<id> (Luca 31/08).
+       Il fulmine ⚡ mandava a `/calendario` e basta, cioè al giorno di OGGI:
+       una task fissata per dopodomani non era da nessuna parte, e la
+       segnalazione era «ho la notifica da tre giorni, la clicco, si apre il
+       calendario e non la vedo». Adesso il link porta al SUO giorno e la
+       apre. */
+    const deepTask = useRef(false);
+    useEffect(() => {
+        if (deepTask.current || tasks.length === 0) return;
+        const id = new URLSearchParams(window.location.search).get("task");
+        if (!id) return;
+        deepTask.current = true;
+        const t = tasks.find((x) => String(x.id) === id);
+        if (!t) return;
+        if (t.date) {
+            setSelectedDate(t.date);
+            const [aa, mm] = String(t.date).split("-").map(Number);
+            if (aa && mm) { setViewYear(aa); setViewMonth(mm - 1); }
+        }
+        setExpandedTaskId(Number(t.id));
+    }, [tasks]);
+
 
     // MOD-8 (Luca 08/08): il negozio esita un appuntamento come "Da richiamare" →
     // fissa il giorno → si genera un appuntamento telefonico (type "richiamo") al

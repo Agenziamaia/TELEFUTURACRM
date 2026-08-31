@@ -119,15 +119,30 @@ export function UrgentTasks() {
                quanto aspetta sono l'informazione che serve per decidere. */
             for (const t of (mie?.data ?? []) as { id: string; title: string; notes: string | null; date: string | null; created_by: string | null; assegnata_il: string | null; created_at: string }[]) {
                 const da = t.assegnata_il || t.created_at;
-                const giorni = Math.floor((Date.now() - new Date(da).getTime()) / 864e5);
-                const quando = giorni <= 0 ? "oggi" : giorni === 1 ? "da ieri" : `da ${giorni} giorni`;
+                // QUANDO VA FATTA, non da quanto sta lì (Luca 31/08). Prima si
+                // scriveva «da 4 giorni» contando dall'assegnazione, e una task
+                // fissata per dopodomani sembrava in ritardo di quattro giorni;
+                // poi il link portava a `/calendario` e basta, cioè al giorno di
+                // OGGI, dove quella task non c'è. «Ho la notifica da tre giorni,
+                // la clicco, si apre il calendario e non la vedo.»
+                const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+                const g = t.date ? new Date(t.date + "T00:00") : null;
+                const fraGiorni = g ? Math.round((g.getTime() - oggi.getTime()) / 864e5) : null;
+                const quando = fraGiorni == null
+                    ? (() => { const n = Math.floor((Date.now() - new Date(da).getTime()) / 864e5); return n <= 0 ? "assegnata oggi" : n === 1 ? "assegnata ieri" : `assegnata ${n} giorni fa`; })()
+                    : fraGiorni < -1 ? `scaduta da ${-fraGiorni} giorni`
+                        : fraGiorni === -1 ? "scaduta ieri"
+                            : fraGiorni === 0 ? "da fare oggi"
+                                : fraGiorni === 1 ? "per domani"
+                                    : `per ${g!.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}`;
                 list.push({
                     id: `cal-${t.id}`,
                     synthetic: true,
                     created_at: da,
-                    link: "/calendario",
+                    // il link porta al SUO giorno e la apre
+                    link: `/calendario?task=${t.id}`,
                     titolo: `📋 ${t.title}`,
-                    dettaglio: `Assegnata da ${t.created_by || "un collega"}, ${quando}.${t.notes ? " " + t.notes : ""} Resta qui finché non la segni fatta o la rimandi al mittente.`,
+                    dettaglio: `${quando.charAt(0).toUpperCase()}${quando.slice(1)} · assegnata da ${t.created_by || "un collega"}.${t.notes ? " " + t.notes : ""} Resta qui finché non la segni fatta o la rimandi al mittente.`,
                 });
             }
             setTasks(list);
