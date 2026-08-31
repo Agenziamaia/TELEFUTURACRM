@@ -9,7 +9,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // RT di fallback se il negozio non ha una mappa pos_rt (negozio non multi-societario).
-const DEFAULT_RT = process.env.RT_DEVICE_URL || "http://192.168.1.219";
+/* NIENTE STAMPANTE DI RIPIEGO (Luca 31/08). Qui c'era `DEFAULT_RT`, cioè
+   l'indirizzo VERO della cassa T1 di Donna: serviva da ultima spiaggia quando
+   non si sapeva su quale registratore stampare. Ma «non so su quale
+   stampante» non si risolve scegliendone una a caso in un altro negozio.
+   Quando il CRM non sa, non dice niente e decide l'agente del punto vendita,
+   che la sua stampante ce l'ha in configurazione. */
 
 // Emette lo/gli scontrino/i dal carrello di Registra Vendita → coda print_jobs.
 // MULTI-SOCIETARIO (spec Francesco #1): ogni prodotto ha un'azienda (marg_items.azienda,
@@ -73,17 +78,30 @@ export async function POST(req: Request) {
         });
     }
     /* MAI LA STAMPANTE DI UN ALTRO NEGOZIO (Luca 31/08, tre negozi in prova).
-       `DEFAULT_RT` è un indirizzo vero — la cassa T1 di Donna — e serviva da
-       ripiego quando la società della riga non ha un registratore in questo
-       negozio. Ma Magliana è DUE negozi nello stesso locale con una società
+       Il ripiego era un indirizzo VERO — la cassa T1 di Donna — e scattava
+       quando la società della riga non ha un registratore in questo negozio. Ma Magliana è DUE negozi nello stesso locale con una società
        ciascuno: Magliana W3 ha solo T1, Magliana Multi solo T2, e chi lavora
        in uno può leggere l'IMEI di un pezzo dell'altro (stesso magazzino
        fisico). Bastava quello: lo scontrino di una vendita fatta a Magliana
        sarebbe uscito dalla stampante di Donna, in un altro quartiere.
        Il ripiego resta solo dove il negozio non ha proprio nessun
        registratore configurato — lì non c'è niente da confondere. */
-    const rtFor = (az: string) => aziende[az]?.rt_url
-        || (Object.keys(aziende).length === 0 ? (b.deviceUrl || DEFAULT_RT) : null);
+    /* «CUSTOM» VUOL DIRE: LA STAMPANTE LA SA L'AGENTE (Luca 31/08).
+       Otto negozi su quindici hanno `rt_url = 'custom'` — Promontori, Acilia
+       VS, Baleniere, Castani, Collatina W3, Libia, Mazzini, Merulana — e non
+       è un segnaposto da riempire: è la convenzione per «qui la stampante è
+       una sola, e l'agente del negozio ce l'ha già in configurazione»
+       (`print-agent.ps1 -FiscalUrl http://…`, uno per punto vendita).
+       Il CRM deve dire QUALE stampante solo dove ce n'è più d'una: a Donna,
+       che ha una cassa per società. Altrove passa `null` e decide l'agente —
+       il suo commento lo dice da sempre: «-FiscalUrl resta solo come fallback
+       se il job non specifica il device».
+       Mandare la stringa «custom» come indirizzo era il modo di far fallire
+       la stampa in otto negozi: l'agente ci avrebbe provato — «custom» non è
+       vuoto — contro un indirizzo che non esiste. */
+    const indirizzoVero = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u)) ? u : null;
+    const rtFor = (az: string) => indirizzoVero(aziende[az]?.rt_url)
+        || (Object.keys(aziende).length === 0 ? indirizzoVero(b.deviceUrl) : null);
 
     /* DI CHI È LA MERCE, QUANDO LA RIGA NON LO DICE (revisore 29/08).
        Una riga che arriva da una scorciatoia porta il codice articolo ma non
@@ -273,7 +291,7 @@ export async function POST(req: Request) {
 
         const { data, error } = await supabase.from("print_jobs").insert({
             negozio,
-            device_url: rtFor(az) as string,
+            device_url: rtFor(az),
             kind,
             request_xml,
             status: "pending",
