@@ -562,8 +562,16 @@ export function OrariChiusureView() {
                                         <input defaultValue={n.provincia || ""} onBlur={e => { if ((e.target.value.trim().toUpperCase() || "") !== (n.provincia || "")) salvaCampoNegozio(n.name, "provincia", e.target.value.toUpperCase()); }}
                                             placeholder="PR" maxLength={2} className="glass-input !h-7 !px-2 text-[11px] w-[48px] uppercase" />
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0">Società</span>
+                                    {/* LA SOCIETÀ SU UNA RIGA SUA (Luca 31/08: «si legge un
+                                        po' male, forse dovrebbe essere leggermente più
+                                        larga»). Stava in fila con l'etichetta e col «senza
+                                        cassa», e quello che si stringeva era proprio la
+                                        tendina: «Telefutura 2 S.R.L.» arrivava tagliata a
+                                        «Telefutura 2 S.R.I». Adesso l'etichetta sta sopra e
+                                        la tendina ha tutta la larghezza della scheda. */}
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Società</span>
+                                        <div className="flex items-center gap-2">
                                         {/* SI SCEGLIE SEMPRE (Luca 31/08): «sui negozi dove non
                                             c'è registratore fiscale dammi comunque la
                                             possibilità di selezionare la società, così avrai
@@ -584,6 +592,7 @@ export function OrariChiusureView() {
                                             </select>
                                         )}
                                         {rt.length === 0 && <span className="text-[10px] text-slate-500 shrink-0" title="Il registratore non è ancora configurato: la società resta scritta e verrà usata quando lo sarà">senza cassa</span>}
+                                        </div>
                                     </div>
                                     {mancaPerDdt && (
                                         <p className="text-[10px] text-amber-300/80 leading-snug">

@@ -61,7 +61,19 @@ const SCENARIO_LABEL: Record<ScenarioWa, string> = {
     saltato: "🚪 Appuntamento saltato", generico: "💬 Generico",
 };
 
-const norm = (v: string) => String(v || "").trim().toLowerCase();
+const norm = (v: string) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+/** IL NOME BASE DEL NEGOZIO. Alcuni punti vendita hanno due schede — «Acilia
+ *  Multi» e «Acilia VS», «Collatina Multi» e «Collatina W3», «Magliana Multi»
+ *  e «Magliana W3» — perché sono due codici nello stesso posto: l'indirizzo è
+ *  lo stesso e sta compilato su una sola delle due. E nelle pratiche il negozio
+ *  a volte è scritto senza il suffisso («Acilia», «Magliana»).
+ *  Togliendo la coda si arriva comunque all'indirizzo giusto, e senza mostrare
+ *  due volte lo stesso posto (Luca 31/08). */
+const baseNegozio = (v: string) => norm(v).replace(/\s+(multi|vs|w3|wind ?3|vodafone|store)$/i, "");
+/** l'indirizzo del negozio: prima il nome esatto, poi il nome base (la scheda
+ *  gemella dello stesso posto). */
+const indirizzoDi = (m: Map<string, string>, nome: string) =>
+    m.get(norm(nome)) || m.get(baseNegozio(nome)) || "";
 /** un negozio, non un elenco: con le virgole dentro è una multiselezione */
 const unNegozio = (v?: string | null) => (String(v || "").includes(",") ? "" : String(v || "").trim());
 
@@ -111,7 +123,7 @@ function valoriPlaceholder(call: PraticaWa, callerName: string, indirizzi: Map<s
         // INDIRIZZO del negozio in gioco. Se non e' compilato in
         // Amministrazione → Negozi resta vuoto, e il testo si richiude da solo
         // sulla preposizione che lo precede (vedi `risolvi`).
-        indirizzo: indirizzi.get(norm(unNegozio(negozioApp) || unNegozio(call.negozio_pertinenza) || unNegozio(call.negozio_provenienza))) || "",
+        indirizzo: indirizzoDi(indirizzi, unNegozio(negozioApp) || unNegozio(call.negozio_pertinenza) || unNegozio(call.negozio_provenienza)),
         negozio_pertinenza: call.negozio_pertinenza || call.negozio_provenienza || "",
         data_appuntamento: fmtData(dataApp),
         ora_appuntamento: fmtOra(dataApp),
@@ -201,12 +213,23 @@ export function ModaleTemplateWa({ call, numero, scenario, userId, callerName, o
     // e se la colonna e' vuota il testo si richiude da solo
     useEffect(() => {
         (async () => {
-            // via E civico: l'anagrafica li tiene separati (servono al DDT), ma
-            // in un messaggio «di via Nomentana» senza numero non aiuta nessuno
+            // L'INDIRIZZO ARRIVA DA AMMINISTRAZIONE → ORARI E CHIUSURE, dove le
+            // schede dei negozi hanno via, civico, CAP e città (servono al DDT).
+            // Nel messaggio bastano via e civico: «di via Nomentana» senza il
+            // numero non aiuta nessuno, e il CAP allunga e basta.
             const { data } = await supabase.from("stores").select("name, address, civico");
-            setIndirizzi(new Map(((data ?? []) as { name: string; address: string | null; civico?: string | null }[])
-                .filter((r) => r.address?.trim())
-                .map((r) => [norm(r.name), [r.address!.trim(), (r.civico || "").trim()].filter(Boolean).join(" ")])));
+            const m = new Map<string, string>();
+            for (const r of ((data ?? []) as { name: string; address: string | null; civico?: string | null }[])) {
+                if (!r.address?.trim()) continue;
+                const via = [r.address.trim(), (r.civico || "").trim()].filter(Boolean).join(" ");
+                m.set(norm(r.name), via);
+                // il nome base vale come ripiego per la scheda gemella e per le
+                // pratiche che scrivono il negozio senza suffisso: la prima che
+                // ha l'indirizzo vince, le altre non lo sovrascrivono
+                const b = baseNegozio(r.name);
+                if (b && !m.has(b)) m.set(b, via);
+            }
+            setIndirizzi(m);
         })();
     }, []);
 

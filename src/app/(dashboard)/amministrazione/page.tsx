@@ -90,6 +90,7 @@ import {
     Receipt,
     Percent,
     MessageCircle,
+    Store,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -218,7 +219,13 @@ const SEZIONI: Sezione[] = [
     { id: "costi", label: "Costi", icon: Euro, desc: "Il mini-hub dei costi: Negozi, Costi condivisi e Altri costi — in sequenza, con permessi separati per ogni sezione." },
     { id: "utenti", label: "Utenti", icon: Users, desc: "Lista utenti con costi e allegati; permessi di visibilità per ruolo; ruoli e organigramma." },
     { id: "negozi", label: "Negozi", icon: StoreIcon, gruppo: "costi", desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
-    { id: "orari", label: "Orari & Chiusure", icon: Clock3, desc: "Orari di apertura dei punti vendita e chiusure straordinarie (base della sezione Turni)." },
+    // DA «ORARI & CHIUSURE» A «NEGOZI» (Luca 31/08): dentro ci sono finiti
+    // indirizzo, CAP, città, società e registratore fiscale, e il nome vecchio
+    // raccontava solo un pezzo. È la scheda del punto vendita, e da qui in poi
+    // è lì che si archiviano le sue informazioni.
+    // L'`id` resta «orari»: è nell'indirizzo delle pagine e nei permessi, e
+    // cambiarlo scollegherebbe i link salvati e le righe di role_permissions.
+    { id: "orari", label: "Negozi", icon: Store, desc: "La scheda di ogni punto vendita: indirizzo, società, registratore fiscale, orari di apertura e chiusure straordinarie (base della sezione Turni)." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, gruppo: "costi", desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, gruppo: "costi", desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
     // "marginalita" tolta dall'elenco (Luca 05/08): vive nel Catalogo come

@@ -346,8 +346,13 @@ async function bridgeVersoCaller(p: {
        dopo chi) non è deducibile dal solo `comportamento`. */
     const prossimoNR = (statoAttuale: string): string => {
         const s = String(statoAttuale || "").trim();
-        // primo esito: il cliente non era ancora stato lavorato
-        if (!s || s === "Nuovo") return "Cold NR1";
+        // primo esito: il cliente non era ancora stato lavorato.
+        // «Assegnata» conta come «Nuovo» (Luca 31/08): e' lo stato di una lead
+        // consegnata al caller e mai toccata — cambia il tempo che si concede
+        // prima del malus, non il fatto che la prima chiamata la fa uscire di
+        // li'. Senza questa riga una lead assegnata restava «Assegnata» per
+        // sempre anche dopo dieci tentativi andati a vuoto.
+        if (!s || s === "Nuovo" || s === "Assegnata") return "Cold NR1";
         // dentro la scala: avanza, conservando la temperatura
         const m = /^(Cold|Hot) NR([123])$/.exec(s);
         if (m) return `${m[1]} NR${Math.min(3, Number(m[2]) + 1)}`;
