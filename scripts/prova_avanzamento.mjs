@@ -104,5 +104,21 @@ dico("migliaia + decimali", 1234.5, F.numeroIt("1.234,5"));
     dico("nessuna pista", true, d2.senzaPiste);
 }
 
+// ── 8. i numeri INVENTATI trovati dal revisore ──────────────────────────────
+for (const [cella, atteso] of [
+    ["30/40", null], ["12,5 pt su 20", null], ["3 (di cui 1 biz)", null], ["25/08/2026", null],
+    ["1,234.5", 1234.5], ["(12,5)", -12.5], ["85%", 85], ["12,50 €", 12.5],
+    ["1'240", 1240], ["1 240", 1240], ["0,500", 0.5], ["1.234.567", 1234567],
+    ["30.5", 30.5], ["1.234,5", 1234.5], ["-3", -3], ["10 pz", 10], ["3 punti", 3],
+]) dico(`cella «${cella}»`, atteso, F.numeroIt(cella));
+
+// e le celle scartate si contano
+{
+    const g = [["MAGLIANA", "30/40", "12"], ["COLLATINA", "n.d.", "8"]];
+    const m = [F.COL_CODICE, "Mobile", "Fisso"];
+    dico("celle scartate elencate", ["30/40", "n.d."], F.celleScartate(g, m, PISTE).map((x) => x.valore));
+    dico("le righe buone restano", 2, F.righeDaGriglia(g, m, PISTE).length);
+}
+
 console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
 process.exit(ko ? 1 : 0);

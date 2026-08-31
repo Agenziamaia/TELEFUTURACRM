@@ -64,11 +64,17 @@ const SCENARIO_LABEL: Record<ScenarioWa, string> = {
 const norm = (v: string) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
 /** IL NOME BASE DEL NEGOZIO. Alcuni punti vendita hanno due schede — «Acilia
  *  Multi» e «Acilia VS», «Collatina Multi» e «Collatina W3», «Magliana Multi»
- *  e «Magliana W3» — perché sono due codici nello stesso posto: l'indirizzo è
- *  lo stesso e sta compilato su una sola delle due. E nelle pratiche il negozio
- *  a volte è scritto senza il suffisso («Acilia», «Magliana»).
- *  Togliendo la coda si arriva comunque all'indirizzo giusto, e senza mostrare
- *  due volte lo stesso posto (Luca 31/08). */
+ *  e «Magliana W3» — perché sono due codici nello stesso posto, e nelle
+ *  pratiche il negozio a volte è scritto senza il suffisso («Acilia»).
+ *
+ *  ATTENZIONE, il presupposto «tanto l'indirizzo è lo stesso» è FALSO su due
+ *  coppie su tre (rilevato dal revisore 31/08): Acilia è al 9 e al 9/a,
+ *  Collatina addirittura al 80/80a e al 78A. Luca ha detto «prendine
+ *  tranquillamente una delle due», e va bene — ma dev'essere SEMPRE LA STESSA:
+ *  prima si ordinava per niente, cioè per l'ordine fisico della tabella, e
+ *  bastava salvare un orario perché l'indirizzo mandato ai clienti cambiasse
+ *  da solo. Adesso l'ordine è alfabetico e vince la prima: Acilia Multi,
+ *  Collatina Multi. */
 const baseNegozio = (v: string) => norm(v).replace(/\s+(multi|vs|w3|wind ?3|vodafone|store)$/i, "");
 /** l'indirizzo del negozio: prima il nome esatto, poi il nome base (la scheda
  *  gemella dello stesso posto). */
@@ -217,7 +223,9 @@ export function ModaleTemplateWa({ call, numero, scenario, userId, callerName, o
             // schede dei negozi hanno via, civico, CAP e città (servono al DDT).
             // Nel messaggio bastano via e civico: «di via Nomentana» senza il
             // numero non aiuta nessuno, e il CAP allunga e basta.
-            const { data } = await supabase.from("stores").select("name, address, civico");
+            // ORDINE ALFABETICO, non l'ordine dell'heap: è quello che rende
+            // stabile la scelta fra le due schede gemelle (vedi `baseNegozio`)
+            const { data } = await supabase.from("stores").select("name, address, civico").order("name");
             const m = new Map<string, string>();
             for (const r of ((data ?? []) as { name: string; address: string | null; civico?: string | null }[])) {
                 if (!r.address?.trim()) continue;

@@ -72,6 +72,10 @@ export async function ultimoAvanzamento(brand: string, monthISO: string): Promis
    una fotografia. */
 const memoria = new Map<string, Promise<ConfrontoUfficiale | null>>();
 const scordaConfronto = (brand: string, monthISO: string) => memoria.delete(`${brand}|${monthISO}`);
+/** Il tasto ↻ della pagina rifà anche questo conto: la produzione fermata alla
+ *  data non cambia da sola, ma cambia se qualcuno annulla o corregge un
+ *  contratto vecchio — e allora il modo di riallinearsi dev'esserci. */
+export const scordaConfronti = () => memoria.clear();
 
 export function confrontoUfficiale(brand: DirBrandId, monthISO: string): Promise<ConfrontoUfficiale | null> {
     const ch = `${brand}|${monthISO}`;
@@ -136,7 +140,7 @@ export function riepilogoScarti(conf: ConfrontoUfficiale | null): {
  *  un file sbagliato non deve sommarsi a quello vecchio. */
 export async function salvaAvanzamento(opts: {
     brand: string; monthISO: string; al: string; righe: RigaUfficiale[]; fileName?: string; chi?: string;
-}): Promise<{ ok: true; n: number } | { ok: false; errore: string }> {
+}): Promise<{ ok: true; n: number; avviso?: string } | { ok: false; errore: string }> {
     const righe = opts.righe.filter((r) => r.cod_gara && r.pista && (r.punti != null || r.pezzi != null));
     if (!righe.length) return { ok: false, errore: "nessuna riga da salvare" };
     /* PRIMA SI SCRIVE, POI SI RIPULISCE. Cancellare in testa e inserire dopo
@@ -155,9 +159,11 @@ export async function salvaAvanzamento(opts: {
     })), { onConflict: "brand,month,al,cod_gara,pista" });
     if (error) return { ok: false, errore: error.message };
     // i resti della fotografia precedente per la STESSA data
-    await supabase.from("avanzamenti_ufficiali")
+    const { error: ePul } = await supabase.from("avanzamenti_ufficiali")
         .delete().eq("brand", opts.brand).eq("month", opts.monthISO).eq("al", opts.al).lt("created_at", adesso);
     scordaConfronto(opts.brand, opts.monthISO);
+    // i numeri nuovi ci sono comunque: della pulizia mancata si avvisa e basta
+    if (ePul) return { ok: true, n: righe.length, avviso: "salvati, ma non ho potuto togliere i resti del caricamento precedente: ricontrolla lo storico" };
     return { ok: true, n: righe.length };
 }
 
@@ -193,4 +199,4 @@ export async function eliminaAvanzamento(brand: string, monthISO: string, al: st
 
 // La lettura del foglio vive in un file suo, senza dipendenze: si prova a
 // mano, senza browser e senza database (test in scripts/prova_avanzamento.mjs).
-export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, numeroIt, righeDaGriglia, diagnosiMappa } from "@/lib/avanzamentoFoglio";
+export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate } from "@/lib/avanzamentoFoglio";

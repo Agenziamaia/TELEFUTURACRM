@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import { Upload, X, Check, Loader2, Trash2 } from "lucide-react";
 import {
     salvaAvanzamento, storicoAvanzamenti, eliminaAvanzamento,
-    pulisciGriglia, trovaIntestazione, proponiMappa, righeDaGriglia, diagnosiMappa,
+    pulisciGriglia, trovaIntestazione, proponiMappa, righeDaGriglia, diagnosiMappa, celleScartate,
     COL_CODICE, COL_IGNORA, type RigaUfficiale, type FotoAvanzamento,
 } from "@/lib/avanzamentoUfficiale";
 import { cn } from "@/utils";
@@ -84,7 +84,12 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
     };
 
     const leggi = async (f: File) => {
+        /* IL FILE PRECEDENTE SI AZZERA SUBITO (revisore 31/08): se il secondo
+           file non si legge, prima restavano in piedi griglia e mappatura del
+           primo con il NOME del secondo — e si salvavano i numeri di uno sotto
+           il nome dell'altro. */
         setErrore(null); setFatto(null); setNomeFile(f.name);
+        setGriglia([]); setIntestazioni([]); setMappa([]);
         try {
             const XLSX = await import("xlsx");
             const buf = await f.arrayBuffer();
@@ -105,6 +110,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
 
     const righeUfficiali: RigaUfficiale[] = righeDaGriglia(griglia, mappa, piste);
     const diag = intestazioni.length ? diagnosiMappa(intestazioni, mappa, piste) : null;
+    const scartate = intestazioni.length ? celleScartate(griglia, mappa, piste) : [];
     const esempio = (i: number) => griglia.slice(0, 3).map((r) => r[i]).filter(Boolean).join(" · ") || "—";
     const mappate = mappa.map((m, i) => ({ i, m })).filter((x) => x.m !== IGNORA);
     const ignorate = mappa.map((m, i) => ({ i, m })).filter((x) => x.m === IGNORA);
@@ -113,6 +119,11 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
     const salva = async () => {
         if (!al) { setErrore("Serve la data a cui è fermo l'avanzamento."); return; }
         if (diag?.senzaCodice) { setErrore("⛔ Manca la colonna del codice di inserimento: senza quella non so a quale negozio attribuire i numeri."); return; }
+        /* DUE COLONNE «CODICE» NON SI SALVANO (revisore 31/08). Avvisare non
+           bastava: con «Cod. PDV» prima di «Cod. Ins.» vinceva quella
+           sbagliata e finivano a database righe su codici che non esistono —
+           in un caso misurato il numero del mobile diventava il codice. */
+        if (diag && diag.codici.length > 1) { setErrore("⛔ Due colonne dicono di essere il codice di inserimento: lasciane una sola e metti l'altra su «— ignora —»."); return; }
         if (diag?.senzaPiste) { setErrore("⛔ Nessuna colonna è associata a una pista: dimmi almeno quale colonna è il mobile."); return; }
         if (!righeUfficiali.length) { setErrore("Non c'è nessun numero da salvare: controlla la mappatura."); return; }
         setBusy(true); setErrore(null);
@@ -216,9 +227,18 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
                                             ⛔ {diag.codici.length} colonne dicono di essere il codice di inserimento ({diag.codici.map((i) => `«${intestazioni[i] || `col. ${i + 1}`}»`).join(", ")}): uso la prima. Metti le altre su «— ignora —».
                                         </p>
                                     )}
+                                    {scartate.length > 0 && (
+                                        <p className="mb-2 text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
+                                            ⚠️ {scartate.length} {scartate.length === 1 ? "cella non è un numero e la salto" : "celle non sono numeri e le salto"}: {[...new Set(scartate.map((x) => x.valore))].slice(0, 5).map((v) => `«${v}»`).join(", ")}{new Set(scartate.map((x) => x.valore)).size > 5 ? "…" : ""}. Se dovevano contare, sistemale nel file.
+                                        </p>
+                                    )}
                                     {diag?.sommate.map((s) => (
                                         <p key={s.pista} className="mb-2 text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
-                                            ➕ {s.colonne.map((c) => `«${c}»`).join(" e ")} finiscono tutte sulla pista <b>{s.pista}</b>: le sommo. Se non va bene, metti una delle due su «— ignora —».
+                                            ➕ {s.colonne.map((c) => `«${c}»`).join(" e ")} finiscono tutte sulla pista <b>{s.pista}</b>: le <b>sommo</b>{(() => {
+                                                const ch = piste.find((p) => p.nome === s.pista)?.chiave;
+                                                const r = righeUfficiali.find((x) => x.pista === ch);
+                                                return r ? ` (${r.cod_gara}: ${r.punti})` : "";
+                                            })()}. Se non va bene, metti una delle due su «— ignora —».
                                         </p>
                                     ))}
                                     {diag?.senzaCodice && (

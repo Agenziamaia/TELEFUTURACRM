@@ -274,18 +274,28 @@ export function OrariChiusureView() {
         const r = brandRules.find((x) => x.store === store && x.brand === b.id);
         return r ? !!r.registra : b.default_abilitato !== false;
     };
+    /** una riga scritta a mano c'è, oppure vale il default di rete */
+    const brandScelto = (store: string, id: string) => brandRules.some((x) => x.store === store && x.brand === id);
     const [brandBusy, setBrandBusy] = useState<string | null>(null);
     const toggleBrand = async (store: string, b: { id: string; default_abilitato?: boolean }) => {
         const acceso = !brandEff(store, b);
         setBrandBusy(store + "|" + b.id);
-        // registrare implica vedere, come nella sezione Brand × Negozio
+        /* SPEGNERE NON DEVE CANCELLARE IL «VEDE» (revisore 31/08). Brand ×
+           Negozio permette apposta la combinazione «vede ma non registra» —
+           il negozio consulta il catalogo di un brand che non può vendere — e
+           scrivendo sempre `vede: acceso` un click di spegnimento la
+           distruggeva in silenzio. Spegnendo si toglie solo il permesso di
+           REGISTRARE; accendendo si dà tutti e due, perché registrare implica
+           vedere. */
+        const vecchia = brandRules.find((x) => x.store === store && x.brand === b.id);
+        const vede = acceso ? true : (vecchia ? vecchia.vede : true);
         const { error } = await supabase.from("store_brand_rules")
-            .upsert({ store, brand: b.id, vede: acceso, registra: acceso, updated_at: new Date().toISOString() });
+            .upsert({ store, brand: b.id, vede, registra: acceso, updated_at: new Date().toISOString() });
         setBrandBusy(null);
         if (dbError("Brand del negozio", error)) return;
         setBrandRules((p) => {
             const altri = p.filter((x) => !(x.store === store && x.brand === b.id));
-            return [...altri, { store, brand: b.id, vede: acceso, registra: acceso }];
+            return [...altri, { store, brand: b.id, vede, registra: acceso }];
         });
     };
     const carica = useCallback(async () => {
@@ -598,6 +608,33 @@ export function OrariChiusureView() {
                                         <input defaultValue={n.civico || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.civico || "")) salvaCampoNegozio(n.name, "civico", e.target.value); }}
                                             placeholder="N." title="Numero civico" className="glass-input !h-7 !px-2 text-[11px] w-[62px]" />
                                     </div>
+                                    {/* LE SCHEDE GEMELLE (revisore 31/08). Acilia, Collatina e
+                                        Magliana hanno due schede — due codici nello stesso
+                                        posto — ma le pratiche del call center scrivono il
+                                        negozio senza il suffisso, e il messaggio al cliente
+                                        deve pescare UN indirizzo solo. Vince la prima in
+                                        ordine alfabetico. Quando i due indirizzi non
+                                        coincidono (Acilia 9 e 9/a, Collatina 80/80a e 78A)
+                                        va detto QUI, altrimenti resta una scelta muta che
+                                        nessuno sa di aver fatto. */}
+                                    {(() => {
+                                        const base = (v: string) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\s+(multi|vs|w3|wind ?3|vodafone|store)$/i, "");
+                                        const mio = base(n.name);
+                                        const gemelle = negozi.filter(x => base(x.name) === mio && x.address).sort((a, b2) => a.name.localeCompare(b2.name));
+                                        if (gemelle.length < 2) return null;
+                                        const via = (x: NegozioOrariRow) => [String(x.address || "").trim(), String(x.civico || "").trim()].filter(Boolean).join(" ");
+                                        const vince = gemelle[0];
+                                        const diversi = new Set(gemelle.map(via)).size > 1;
+                                        const io = vince.name === n.name;
+                                        return (
+                                            <p className={cn("text-[10px] leading-snug rounded-md px-2 py-1 border",
+                                                io ? "text-emerald-200 bg-emerald-500/10 border-emerald-500/25" : "text-slate-400 bg-white/[0.03] border-white/10")}>
+                                                {io
+                                                    ? <>✅ È questa la scheda che i messaggi WhatsApp usano per «{base(n.name)}»{diversi ? <> — l&apos;altra scheda ha un indirizzo diverso ({via(gemelle[1])})</> : null}.</>
+                                                    : <>↪ Per i messaggi WhatsApp l&apos;indirizzo di «{base(n.name)}» è quello di <b>{vince.name}</b>{diversi ? <> ({via(vince)}), che è diverso da questo</> : null}.</>}
+                                            </p>
+                                        );
+                                    })()}
                                     <div className="flex gap-1.5">
                                         <input defaultValue={n.cap || ""} onBlur={e => { if ((e.target.value.trim() || "") !== (n.cap || "")) salvaCampoNegozio(n.name, "cap", e.target.value); }}
                                             placeholder="CAP" className="glass-input !h-7 !px-2 text-[11px] w-[70px]" />

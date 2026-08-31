@@ -24,7 +24,7 @@ import {
     finestraBilancia, codiceBilancia, codiceAssociato,
     DIR_BRANDS, W3_PALETTO_BUSINESS, type DirBrandId, type Direzione,
 } from "@/lib/direzioneTargets";
-import { confrontoUfficiale, riepilogoScarti, type ConfrontoUfficiale } from "@/lib/avanzamentoUfficiale";
+import { confrontoUfficiale, riepilogoScarti, scordaConfronti, type ConfrontoUfficiale } from "@/lib/avanzamentoUfficiale";
 import { CaricaAvanzamento } from "@/components/CaricaAvanzamento";
 import { SogliaBar as SogliaBarRaw } from "@/app/(dashboard)/analisi/_charts";
 import { Compass, Loader2, Check, RotateCcw } from "lucide-react";
@@ -392,7 +392,7 @@ export function DirezioneInserimentoAdmin() {
                     <select value={monthISO} onChange={(e) => setMonthISO(e.target.value)} className="glass-input text-sm !h-10 min-w-[150px]">
                         {mesi.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
                     </select>
-                    <button onClick={() => setGiro((g) => g + 1)} title="Ricarica i numeri della pagina" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
+                    <button onClick={() => { scordaConfronti(); setGiro((g) => g + 1); }} title="Ricarica i numeri della pagina, compreso il confronto con l'avanzamento ufficiale" className="p-2 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"><RotateCcw className="w-4 h-4" /></button>
                 </div>
             </div>
 
@@ -1029,7 +1029,13 @@ export function DirezioneInserimentoAdmin() {
                                             quanti scarti ci sono dentro; dentro si vede quali. */}
                                         {(() => {
                                             if (!conf) return null;
-                                            const sc = pisteMostrate.map((p) => conf.scarti.get(`${k.cod_gara}|${p.chiave}`)).filter(Boolean) as { scarto: number }[];
+                                            /* TUTTE le piste di questo codice, non solo quelle
+                                               disegnate nella riga (revisore 31/08): luce&gas,
+                                               assicurazioni e device si possono caricare dal file
+                                               ma vivono nella card «Target di gruppo», e uno
+                                               scarto lì non deve sparire. Dove sia, lo dice la
+                                               striscia in testa. */
+                                            const sc = [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara);
                                             const piu = Math.round(sc.filter((x) => x.scarto >= 0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
                                             const meno = Math.round(sc.filter((x) => x.scarto <= -0.01).reduce((t, x) => t + x.scarto, 0) * 100) / 100;
                                             if (!piu && !meno) return null;
@@ -1059,7 +1065,7 @@ export function DirezioneInserimentoAdmin() {
                                                E sotto `lg` lo scarto con l'ufficiale entra QUI invece
                                                di prendersi un badge suo: misurato dal revisore, quel
                                                badge riduceva il nome del negozio a una lettera. */
-                                            const sc = conf ? pisteMostrate.map((p) => conf.scarti.get(`${k.cod_gara}|${p.chiave}`)?.scarto ?? 0) : [];
+                                            const sc = conf ? [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara).map((x) => x.scarto) : [];
                                             const scPiu = sc.some((x) => x >= 0.01), scMeno = sc.some((x) => x <= -0.01);
                                             return (
                                             <span className={cn("lg:hidden flex items-center gap-1.5 border rounded-md px-1.5 py-1.5",

@@ -67,19 +67,57 @@ export function diagnosiMappa(head: string[], mappa: string[], piste: { chiave: 
     };
 }
 
-/** Numero all'italiana: «1.234,5» → 1234.5.
- *  NULL, non zero, quando il numero non c'è: la cella vuota, un trattino o un
- *  «n.d.» significano «non me l'hanno mandato», e trattarli come zero
- *  inventerebbe uno scarto che non esiste (la prova lo aveva colto: «n.d.»
- *  diventava 0 e faceva comparire un −33 finto).
- *  Il punto si toglie solo quando separa le migliaia — «1.5» resta 1,5. */
+/** IL NUMERO DELLA CELLA, o niente.
+ *
+ *  La prima versione teneva le cifre e buttava via tutto il resto, e quindi
+ *  INVENTAVA numeri dove non ce n'erano (misure del revisore 31/08):
+ *    «30/40» (fatto su target) → 3040 · «12,5 pt su 20» → 12,52
+ *    «3 (di cui 1 biz)» → 31 · «25/08/2026» → 25082026
+ *  Nessuno se ne accorgeva, perché l'anteprima mostra il FILE, non il numero
+ *  che ne esce. Qui invece la cella o è un numero pulito, o è `null` — e la
+ *  finestra dice quante celle ha scartato.
+ *
+ *  NULL non è zero: la cella vuota, un trattino, un «n.d.» significano «non
+ *  me l'hanno mandato», e trattarli come zero inventerebbe uno scarto.
+ *
+ *  Separatori: la VIRGOLA in un file italiano è sempre decimale; il PUNTO è
+ *  decimale solo se non separa un gruppo di tre cifre — così «1.234» fa 1234 e
+ *  «30.5» resta 30,5 (le SIM Sky valgono mezzo punto l'una). */
+const CODA_UNITA = /\s*(?:%|pt|punti|pz|pezzi|€|eur)\.?$/i;
 export function numeroIt(v: unknown): number | null {
-    const t = String(v ?? "").trim();
+    let t = String(v ?? "").trim();
     if (!t) return null;
-    const pulito = t.replace(/[.\s](?=\d{3}(\D|$))/g, "").replace(",", ".").replace(/[^\d.-]/g, "");
-    if (!/\d/.test(pulito)) return null;
-    const n = Number(pulito);
-    return Number.isFinite(n) ? n : null;
+    let neg = false;
+    const par = /^\((.*)\)$/.exec(t);            // (12,5) = negativo contabile
+    if (par) { neg = true; t = par[1].trim(); }
+    t = t.replace(CODA_UNITA, "").trim();
+    if (t.startsWith("-")) { neg = !neg; t = t.slice(1).trim(); }
+    // da qui in poi deve restare SOLO un numero: se avanza altro, non è un numero
+    if (!/^[\d.,'\u2019\s]+$/.test(t)) return null;
+    const ultimo = Math.max(t.lastIndexOf(","), t.lastIndexOf("."));
+    let intero = t, dec = "";
+    if (ultimo >= 0) {
+        const dopo = t.slice(ultimo + 1).replace(/\D/g, "");
+        const decimale = t[ultimo] === "," || dopo.length !== 3;
+        if (decimale) { intero = t.slice(0, ultimo); dec = dopo; }
+    }
+    const ci = intero.replace(/\D/g, "");
+    if (!ci && !dec) return null;
+    const n = Number((ci || "0") + (dec ? "." + dec : ""));
+    if (!Number.isFinite(n)) return null;
+    return neg ? -n : n;
+}
+
+/** Le celle che AVEVANO qualcosa scritto e non erano numeri: la finestra le
+ *  dichiara, invece di lasciarle cadere in silenzio. */
+export function celleScartate(griglia: string[][], mappa: string[], piste: { chiave: string; nome: string }[]): { valore: string; colonna: number }[] {
+    const colonne = mappa.map((m, i) => ({ i, ok: piste.some((p) => p.nome === m) })).filter((x) => x.ok);
+    const out: { valore: string; colonna: number }[] = [];
+    for (const r of griglia) for (const { i } of colonne) {
+        const v = String(r[i] ?? "").trim();
+        if (v && numeroIt(v) == null) out.push({ valore: v, colonna: i });
+    }
+    return out;
 }
 
 /** Dalla griglia + mappatura alle righe da salvare.
