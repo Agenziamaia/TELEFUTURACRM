@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ChatToaster } from "@/components/ChatToaster";
 import { VerificaSpettro } from "@/components/VerificaSpettro";
+import { DoveLavoro } from "./_DoveLavoro";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { PageBackProvider } from "@/context/PageBackContext";
 import { PresenceProvider } from "@/context/PresenceContext";
@@ -54,6 +55,11 @@ export default function AuthLayout({
                     <main className="flex-1 w-full min-w-0 p-4 sm:p-6 md:p-8">
                         {children}
                         <VerificaSpettro />
+                        {/* «Dove stai lavorando oggi?» — una volta al giorno, e solo
+                            per chi sta dietro a un bancone. Sta nel layout perché la
+                            domanda non appartiene a una pagina: appartiene alla
+                            giornata. */}
+                        <DoveLavoro />
                     </main>
                 </div>
                 <ChatToaster />

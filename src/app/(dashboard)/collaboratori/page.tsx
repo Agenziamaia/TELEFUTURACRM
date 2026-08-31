@@ -1986,6 +1986,29 @@ function TurniSection({ dataIniziale }: { dataIniziale?: string }) {
     // gemella) o esclusione manuale del giorno (riga tipo 'escluso')
     const [assenze, setAssenze] = useState<AssenzaGiorno[]>([]);
     const [coperteOk, setCoperteOk] = useState<Set<string>>(new Set());
+    /* CHI HA CHIESTO DI LAVORARE ALTROVE (Luca 31/08). Sta QUI perché questa è
+       la schermata dove si guarda chi è in quale punto vendita: una seconda
+       pagina per la stessa domanda sarebbe un posto in più da ricordarsi. */
+    const [richieste, setRichieste] = useState<{ id: string; sede: string; sede_turno: string | null; motivo: string | null; app_users?: { full_name?: string } }[]>([]);
+    const caricaRichieste = useCallback(async () => {
+        try {
+            const r = await fetch("/api/turni/presenza");
+            const j = await r.json().catch(() => ({}));
+            setRichieste(Array.isArray(j.richieste) ? j.richieste : []);
+        } catch { setRichieste([]); }
+    }, []);
+    useEffect(() => { caricaRichieste(); }, [caricaRichieste]);
+    const decidi = async (id: string, esito: "approva" | "rifiuta") => {
+        try {
+            const r = await fetch("/api/turni/presenza", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, esito }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j.ok) throw new Error(j.error || "non riuscito");
+            await caricaRichieste();
+        } catch (e) { window.alert("Non sono riuscito a decidere: " + String((e as Error)?.message || e)); }
+    };
     const oggiYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
     // arrivo dal widget Coperture: ?data=YYYY-MM-DD apre il giorno giusto
     const [dataSel, setDataSel] = useState(dataIniziale && /^\d{4}-\d{2}-\d{2}$/.test(dataIniziale) ? dataIniziale : oggiYmd());
@@ -2075,6 +2098,36 @@ function TurniSection({ dataIniziale }: { dataIniziale?: string }) {
                     li tolgono da soli, la ✕ li esclude per il giorno. Le <b className="text-slate-300">coperture</b> si aggiungono anche a mezzo turno.
                 </p>
             </div>
+
+            {/* CHI CHIEDE DI LAVORARE ALTROVE. Compare solo se c'è qualcosa da
+                decidere: una striscia vuota tutti i giorni diventa invisibile, e
+                il giorno che serve nessuno la guarda. Fino all'ok quella persona
+                continua a lavorare dove è di turno — nessuno resta fermo davanti
+                a un cliente (scelta di Luca 31/08). */}
+            {richieste.length > 0 && (
+                <div className="glass-card p-4 mb-4 border border-amber-400/30">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-amber-300 mb-2">
+                        Chiedono di lavorare in un altro punto vendita
+                    </p>
+                    <div className="space-y-2">
+                        {richieste.map(r => (
+                            <div key={r.id} className="flex items-center gap-3 flex-wrap rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+                                <span className="text-sm font-semibold text-slate-100">{r.app_users?.full_name || "—"}</span>
+                                <span className="text-xs text-slate-400">
+                                    di turno a <b className="text-slate-300">{r.sede_turno || "nessuno"}</b> → chiede <b className="text-amber-200">{r.sede}</b>
+                                </span>
+                                {r.motivo && <span className="text-[11px] text-slate-500 italic">«{r.motivo}»</span>}
+                                <span className="ml-auto flex gap-2">
+                                    <button onClick={() => decidi(r.id, "approva")}
+                                        className="text-[11px] px-2.5 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 font-bold">✓ Approva</button>
+                                    <button onClick={() => decidi(r.id, "rifiuta")}
+                                        className="text-[11px] px-2.5 py-1 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 hover:bg-rose-500/25 font-bold">✕ Rifiuta</button>
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* RIGHE per SEDE (Luca 27/08): i multi-punto — Acilia, Collatina,
                 Magliana — sono un CALDERONE unico di persone; restano separati

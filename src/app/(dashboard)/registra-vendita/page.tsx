@@ -5209,6 +5209,27 @@ function CRM() {
     _loginPrefill.current=true;
     setSelVend(p=>p||user.name||"");
     setSelNeg(p=>p||user.negozio||"");
+    /* IL NEGOZIO DICHIARATO STAMATTINA VINCE (Luca 31/08). La schermata «dove
+       stai lavorando oggi» scrive una SEDE — «magliana», «donna» — perché le
+       insegne gemelle sono un magazzino solo. Qui si torna a un nome di
+       negozio: la propria insegna se sta in quella sede, se no la prima.
+       Quale società emette lo scontrino continua a deciderlo la MERCE.
+       Per ora è solo il valore di partenza, e il campo resta modificabile: il
+       blocco vero arriva quando avremo visto che la dichiarazione funziona per
+       tutti — chiudere il campo il giorno dell'apertura, se qualcuno resta
+       senza presenza, vorrebbe dire un negozio che non vende. */
+    (async () => {
+      try {
+        const { presenzaOggi } = await import("@/lib/doveLavoro");
+        const { sedeFisica } = await import("@/lib/negoziNomi");
+        const p = await presenzaOggi(user.id);
+        if (!p.attiva) return;
+        const dentro = negozi.filter(n => sedeFisica(n) === p.attiva.sede);
+        if (!dentro.length) return;
+        const mio = dentro.find(n => n === user.negozio) || dentro[0];
+        setSelNeg(mio);
+      } catch { /* se non si sa, resta il negozio in scheda */ }
+    })();
   },[user]);
   // ── MATRICE BRAND × NEGOZIO (Luca 06/08): il negozio vede/registra solo i
   // brand concessi da Amministrazione → Catalogo → Brand × Negozio. Senza riga
