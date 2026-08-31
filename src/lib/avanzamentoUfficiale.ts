@@ -143,7 +143,13 @@ export async function salvaAvanzamento(opts: {
 }): Promise<{ ok: true; n: number; avviso?: string } | { ok: false; errore: string }> {
     const righe = opts.righe.filter((r) => r.cod_gara && r.pista && (r.punti != null || r.pezzi != null));
     if (!righe.length) return { ok: false, errore: "nessuna riga da salvare" };
-    /* PRIMA SI SCRIVE, POI SI RIPULISCE. Cancellare in testa e inserire dopo
+    /* LA PULIZIA TOCCA SOLO LE PISTE DI QUESTO FILE (Luca 31/08). WindTre non
+       manda un foglio: ne manda tre, uno per il mobile, uno per il fisso e uno
+       per la partnership, tutti con la stessa data. Ripulendo per (brand,
+       mese, data) senza guardare la pista, il secondo file avrebbe cancellato
+       le righe del primo — e nessuno se ne sarebbe accorto, perché lo scarto
+       sarebbe semplicemente sparito da quella pista.
+       PRIMA SI SCRIVE, POI SI RIPULISCE. Cancellare in testa e inserire dopo
        — com'era — vuol dire che se l'inserimento fallisce (rete che cade, una
        riga malformata) la fotografia precedente è già persa e non si torna
        indietro: qui non c'è una transazione, le due chiamate sono due viaggi
@@ -159,15 +165,17 @@ export async function salvaAvanzamento(opts: {
     })), { onConflict: "brand,month,al,cod_gara,pista" });
     if (error) return { ok: false, errore: error.message };
     // i resti della fotografia precedente per la STESSA data
+    const pisteToccate = [...new Set(righe.map((r) => r.pista))];
     const { error: ePul } = await supabase.from("avanzamenti_ufficiali")
-        .delete().eq("brand", opts.brand).eq("month", opts.monthISO).eq("al", opts.al).lt("created_at", adesso);
+        .delete().eq("brand", opts.brand).eq("month", opts.monthISO).eq("al", opts.al)
+        .in("pista", pisteToccate).lt("created_at", adesso);
     scordaConfronto(opts.brand, opts.monthISO);
     // i numeri nuovi ci sono comunque: della pulizia mancata si avvisa e basta
     if (ePul) return { ok: true, n: righe.length, avviso: "salvati, ma non ho potuto togliere i resti del caricamento precedente: ricontrolla lo storico" };
     return { ok: true, n: righe.length };
 }
 
-export type FotoAvanzamento = { al: string; file: string | null; n: number; chi: string | null; quando: string | null };
+export type FotoAvanzamento = { al: string; file: string | null; n: number; chi: string | null; quando: string | null; piste: string[] };
 
 /** Le fotografie caricate: data, file, quanti valori, CHI e QUANDO.
  *  «Vale come verità fino alla sua data» è una regola che cambia i numeri su
@@ -176,17 +184,19 @@ export type FotoAvanzamento = { al: string; file: string | null; n: number; chi:
  *  (revisore 31/08). */
 export async function storicoAvanzamenti(brand: string, monthISO: string): Promise<FotoAvanzamento[]> {
     const { data } = await supabase.from("avanzamenti_ufficiali")
-        .select("al, file_name, caricato_da, created_at").eq("brand", brand).eq("month", monthISO).order("al", { ascending: false });
-    const per = new Map<string, FotoAvanzamento>();
+        .select("al, pista, file_name, caricato_da, created_at").eq("brand", brand).eq("month", monthISO).order("al", { ascending: false });
+    const per = new Map<string, FotoAvanzamento & { _p: Set<string> }>();
     (data || []).forEach((r0) => {
-        const r = r0 as { al: string; file_name: string | null; caricato_da: string | null; created_at: string | null };
+        const r = r0 as { al: string; pista: string; file_name: string | null; caricato_da: string | null; created_at: string | null };
         const al = ymd(r.al);
-        const v = per.get(al) || { al, file: r.file_name, n: 0, chi: r.caricato_da, quando: r.created_at };
-        v.n++;
+        const v = per.get(al) || { al, file: r.file_name, n: 0, chi: r.caricato_da, quando: r.created_at, piste: [], _p: new Set<string>() };
+        v.n++; v._p.add(r.pista);
         if (r.created_at && (!v.quando || r.created_at > v.quando)) { v.quando = r.created_at; v.chi = r.caricato_da; v.file = r.file_name; }
         per.set(al, v);
     });
-    return [...per.values()];
+    // le piste che quella fotografia copre: con tre file separati serve sapere
+    // che cosa è già arrivato e che cosa manca ancora
+    return [...per.values()].map(({ _p, ...v }) => ({ ...v, piste: [..._p] }));
 }
 
 /** Butta via una fotografia sbagliata. */
@@ -199,4 +209,4 @@ export async function eliminaAvanzamento(brand: string, monthISO: string, al: st
 
 // La lettura del foglio vive in un file suo, senza dipendenze: si prova a
 // mano, senza browser e senza database (test in scripts/prova_avanzamento.mjs).
-export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate } from "@/lib/avanzamentoFoglio";
+export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate } from "@/lib/avanzamentoFoglio";

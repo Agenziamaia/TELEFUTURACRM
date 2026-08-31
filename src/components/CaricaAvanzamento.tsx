@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import { Upload, X, Check, Loader2, Trash2 } from "lucide-react";
 import {
     salvaAvanzamento, storicoAvanzamenti, eliminaAvanzamento,
-    pulisciGriglia, trovaIntestazione, proponiMappa, righeDaGriglia, diagnosiMappa, celleScartate,
+    pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, righeDaGriglia, diagnosiMappa, celleScartate,
     COL_CODICE, COL_IGNORA, type RigaUfficiale, type FotoAvanzamento,
 } from "@/lib/avanzamentoUfficiale";
 import { cn } from "@/utils";
@@ -53,11 +53,18 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
     const [busy, setBusy] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
     const [fatto, setFatto] = useState<number | null>(null);
+    /* TRE FILE, NON UNO (Luca 31/08): «WindTre ci manda tre file diversi, uno
+       per il mobile, uno per il fisso e uno per la partnership». In quel caso
+       la pista non è una colonna, è il FILE: si sceglie qui, e del foglio
+       servono solo il codice e il valore. */
+    const [modo, setModo] = useState<"largo" | "una">("largo");
+    const [pistaUna, setPistaUna] = useState<string>(piste[0]?.nome || "");
     const [ignorateAperte, setIgnorateAperte] = useState(false);
     const [storico, setStorico] = useState<FotoAvanzamento[] | null>(null);
     const [pannello, setPannello] = useState<"carica" | "storico">("carica");
 
-    const opzioni = [IGNORA, CODICE, ...piste.map((p) => p.nome)];
+    const pisteInGioco = modo === "una" ? piste.filter((p) => p.nome === pistaUna) : piste;
+    const opzioni = [IGNORA, CODICE, ...pisteInGioco.map((p) => p.nome)];
 
     // se una fotografia c'è già, la finestra si apre su QUELLA: riaprirsi
     // vuota mentre un avanzamento è in vigore era il modo più sicuro per
@@ -101,16 +108,22 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
             const { head, corpo } = trovaIntestazione(pulite);
             setIntestazioni(head);
             setGriglia(corpo);
-            setMappa(proponiMappa(head, piste));
+            setMappa(modo === "una" && pistaUna ? proponiMappaUnaPista(head, corpo, pistaUna) : proponiMappa(head, piste));
             setPannello("carica");
         } catch (e) {
             setErrore("File non leggibile: " + (e instanceof Error ? e.message : "formato non riconosciuto") + ". Serve un Excel (.xlsx) o un CSV.");
         }
     };
 
-    const righeUfficiali: RigaUfficiale[] = righeDaGriglia(griglia, mappa, piste);
-    const diag = intestazioni.length ? diagnosiMappa(intestazioni, mappa, piste) : null;
-    const scartate = intestazioni.length ? celleScartate(griglia, mappa, piste) : [];
+    useEffect(() => {
+        if (!intestazioni.length) return;
+        setMappa(modo === "una" && pistaUna ? proponiMappaUnaPista(intestazioni, griglia, pistaUna) : proponiMappa(intestazioni, piste));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [modo, pistaUna]);
+
+    const righeUfficiali: RigaUfficiale[] = righeDaGriglia(griglia, mappa, pisteInGioco);
+    const diag = intestazioni.length ? diagnosiMappa(intestazioni, mappa, pisteInGioco) : null;
+    const scartate = intestazioni.length ? celleScartate(griglia, mappa, pisteInGioco) : [];
     const esempio = (i: number) => griglia.slice(0, 3).map((r) => r[i]).filter(Boolean).join(" · ") || "—";
     const mappate = mappa.map((m, i) => ({ i, m })).filter((x) => x.m !== IGNORA);
     const ignorate = mappa.map((m, i) => ({ i, m })).filter((x) => x.m === IGNORA);
@@ -124,7 +137,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
            sbagliata e finivano a database righe su codici che non esistono —
            in un caso misurato il numero del mobile diventava il codice. */
         if (diag && diag.codici.length > 1) { setErrore("⛔ Due colonne dicono di essere il codice di inserimento: lasciane una sola e metti l'altra su «— ignora —»."); return; }
-        if (diag?.senzaPiste) { setErrore("⛔ Nessuna colonna è associata a una pista: dimmi almeno quale colonna è il mobile."); return; }
+        if (diag?.senzaPiste) { setErrore(modo === "una" ? `⛔ Non ho trovato la colonna con i numeri di ${pistaUna}: scegliela qui sotto.` : "⛔ Nessuna colonna è associata a una pista: dimmi almeno quale colonna è il mobile."); return; }
         if (!righeUfficiali.length) { setErrore("Non c'è nessun numero da salvare: controlla la mappatura."); return; }
         setBusy(true); setErrore(null);
         const r = await salvaAvanzamento({ brand, monthISO, al, righe: righeUfficiali, fileName: nomeFile, chi: chi || undefined });
@@ -184,6 +197,17 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
                                 <div className="min-w-0 flex-1">
                                     <p className="text-sm font-bold text-white">al {gg(s.al)} <span className="text-[11px] font-normal text-slate-400">· {s.n} valori</span></p>
                                     <p className="text-[11px] text-slate-500 truncate">{s.file || "file senza nome"}{s.chi ? ` · ${s.chi}` : ""}{s.quando ? ` · ${quando(s.quando)}` : ""}</p>
+                                    {/* CON TRE FILE SEPARATI serve sapere che cosa è già
+                                        arrivato e che cosa manca ancora per quella data */}
+                                    <p className="text-[11px] text-slate-400 mt-0.5">
+                                        piste: {s.piste.map((k) => piste.find((p) => p.chiave === k)?.nome || k).join(", ")}
+                                        {(() => {
+                                            const manca = piste.filter((p) => !s.piste.includes(p.chiave));
+                                            return manca.length && manca.length <= 4
+                                                ? <span className="text-amber-200/80"> · manca {manca.map((p) => p.nome).join(", ")}</span>
+                                                : null;
+                                        })()}
+                                    </p>
                                     {i === 0 && <p className="text-[11px] text-indigo-200 mt-0.5">↑ è questa che comanda: fino al {gg(s.al)} valgono i suoi numeri</p>}
                                 </div>
                                 <button onClick={() => elimina(s)} title="Elimina questa fotografia"
@@ -194,6 +218,30 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
                     </div>
                 ) : (
                     <>
+                        {/* CHE COS'È QUESTO FILE. Si sceglie PRIMA, perché cambia
+                            il modo di leggerlo: in un foglio largo la pista è una
+                            colonna, in un foglio solo la pista è il file. */}
+                        <div className="px-5 pt-3 flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-full">Che file è</span>
+                            {([["largo", "📚 Un foglio con tutte le piste"], ["una", "📄 Un foglio per una pista sola"]] as const).map(([k, l]) => (
+                                <button key={k} type="button" onClick={() => setModo(k)}
+                                    className={cn("px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors",
+                                        modo === k ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100" : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/10")}>
+                                    {l}
+                                </button>
+                            ))}
+                            {modo === "una" && (
+                                <select value={pistaUna} onChange={(e) => setPistaUna(e.target.value)} className="glass-input !h-8 text-[11px] min-w-[160px]">
+                                    {piste.map((p) => <option key={p.chiave} value={p.nome}>{p.nome}</option>)}
+                                </select>
+                            )}
+                            <p className="w-full text-[10px] text-slate-500 mt-0.5">
+                                {modo === "una"
+                                    ? <>Del foglio mi servono due colonne sole: il codice di inserimento e i numeri di <b>{pistaUna}</b>. Le altre le ignoro.</>
+                                    : <>WindTre ne manda <b>tre separati</b> — mobile, fisso e partnership (che qui è la Customer Base): per quelli scegli «un foglio per una pista sola» e caricali uno alla volta, anche con la stessa data.</>}
+                            </p>
+                        </div>
+
                         <div className="px-5 py-3 flex flex-wrap items-end gap-3 border-b border-white/5">
                             <label className="flex flex-col gap-1">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">File dell&apos;operatore</span>

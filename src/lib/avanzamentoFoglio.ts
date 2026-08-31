@@ -120,6 +120,30 @@ export function celleScartate(griglia: string[][], mappa: string[], piste: { chi
     return out;
 }
 
+/** UN FOGLIO PER UNA PISTA SOLA (Luca 31/08: «WindTre ci manda tre file
+ *  diversi: uno per il mobile, uno per il fisso e uno per la partnership»).
+ *  Qui la pista non è una colonna, è il FILE: si sceglie prima, e del foglio
+ *  servono solo due colonne — il codice e il valore.
+ *
+ *  La proposta guarda il CONTENUTO, non i titoli: la colonna del valore in
+ *  questi file si chiama «Punti», «Totale», «Progressivo», «Agosto»… e non
+ *  c'è verso di indovinarla dal nome. Vince quella con più celle numeriche;
+ *  il codice è la prima colonna che di numeri non ne ha quasi. */
+export function proponiMappaUnaPista(head: string[], corpo: string[][], nomePista: string): string[] {
+    const n = head.length;
+    const quoteNum: number[] = [];
+    for (let i = 0; i < n; i++) {
+        const celle = corpo.map((r) => String(r[i] ?? "").trim()).filter(Boolean);
+        quoteNum[i] = celle.length ? celle.filter((c) => numeroIt(c) != null).length / celle.length : 0;
+    }
+    const perNome = head.findIndex((h) => /(^|\b)cod(ice|\.)?\b|cod\.?\s*ins|c\.?\s*ins\b|codins/i.test(String(h || "")));
+    let iCod = perNome >= 0 ? perNome : -1;
+    if (iCod < 0) for (let i = 0; i < n; i++) if (quoteNum[i] < 0.5) { iCod = i; break; }
+    let iVal = -1, meglio = 0.5;
+    for (let i = 0; i < n; i++) if (i !== iCod && quoteNum[i] > meglio) { meglio = quoteNum[i]; iVal = i; }
+    return head.map((_, i) => (i === iCod ? COL_CODICE : i === iVal ? nomePista : COL_IGNORA));
+}
+
 /** Dalla griglia + mappatura alle righe da salvare.
  *  Se due colonne puntano alla stessa pista si SOMMANO: «Mobile Consumer» e
  *  «Mobile Business» sono due colonne di un mobile solo. Prima uscivano due

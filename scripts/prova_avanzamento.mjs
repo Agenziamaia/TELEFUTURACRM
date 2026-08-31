@@ -120,5 +120,23 @@ for (const [cella, atteso] of [
     dico("le righe buone restano", 2, F.righeDaGriglia(g, m, PISTE).length);
 }
 
+// ── 9. il foglio di UNA pista sola (i tre file di WindTre) ──────────────────
+{
+    const head = ["Punto vendita", "Cod. Ins.", "Progressivo", "Note"];
+    const corpo = [["Magliana", "9000721835", "33", "ok"], ["Collatina", "9001426666", "18", ""]];
+    const m = F.proponiMappaUnaPista(head, corpo, "Mobile");
+    dico("una pista: codice e valore riconosciuti", [F.COL_IGNORA, F.COL_CODICE, "Mobile", F.COL_IGNORA], m);
+    dico("una pista: righe lette", [
+        { cod_gara: "9000721835", pista: "mobile", punti: 33, pezzi: null },
+        { cod_gara: "9001426666", pista: "mobile", punti: 18, pezzi: null },
+    ], F.righeDaGriglia(corpo, m, PISTE));
+}
+{
+    // senza una colonna che si chiami «codice»: vince la prima non numerica
+    const head = ["Negozio", "Agosto"];
+    const corpo = [["MAGLIANA", "30"], ["COLLATINA", "12"]];
+    dico("una pista: senza titolo «codice»", [F.COL_CODICE, "Fisso"], F.proponiMappaUnaPista(head, corpo, "Fisso"));
+}
+
 console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
 process.exit(ko ? 1 : 0);
