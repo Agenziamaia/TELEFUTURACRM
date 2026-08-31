@@ -6132,6 +6132,7 @@ function CRM() {
   const [couponCartIn, setCouponCartIn] = useState("");
   const [couponCartMsg, setCouponCartMsg] = useState("");
   const [couponCartBusy, setCouponCartBusy] = useState(false);
+  const [couponAperto, setCouponAperto] = useState(false);
   const applicaCouponCart = async (totaleDaIncassare) => {
     const code = String(couponCartIn || "").trim().toUpperCase();
     setCouponCartMsg("");
@@ -7850,8 +7851,17 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                   <span>{sc>0 && <s>{eur2(daIncassare)}</s>}{" "}<b>{eur2(resta)}</b></span>
                 </div>
               </div>
-              <div className="rvCoup">
-                <div className="rvCoup-t">🎟 CODICE COUPON</div>
+              {/* IL COUPON SI APRE AL CLIC (Luca 31/08: «togli la barra di ricerca,
+                  lascia solo il codice coupon con la freccettina che mi fa
+                  intendere che posso cliccarci sopra»). Un campo di testo sempre
+                  aperto chiede di essere riempito a ogni vendita, e nella
+                  stragrande maggioranza dei casi il coupon non c'è. */}
+              <div className="rvCoup rvCoup-lieve">
+                <button type="button" className="rvCoup-apri" aria-expanded={couponAperto||!!couponCart}
+                  onClick={()=>setCouponAperto(v=>!v)}>
+                  <span className="rvCoup-t">🎟 CODICE COUPON</span>
+                  <i>{couponCart ? "" : "›"}</i>
+                </button>
                 {couponCart ? (
                   <div className="rvCoup-r">
                     <span className="rvCoup-ok">{couponCart.code} — sconto {eur2(sc)}
@@ -7860,10 +7870,10 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     <button type="button" className="rvCoup-b"
                       onClick={()=>{setCouponCart(null);setCouponCartMsg("");}}>✕ Togli</button>
                   </div>
-                ) : (
+                ) : couponAperto ? (
                   <>
                     <div className="rvCoup-r">
-                      <input className="rvCoup-in" value={couponCartIn} placeholder="CPN-XXX-XXXX"
+                      <input className="rvCoup-in" autoFocus value={couponCartIn} placeholder="CPN-XXX-XXXX"
                         onChange={e=>setCouponCartIn(e.target.value)}
                         onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();applicaCouponCart(daIncassare);}}} />
                       <button type="button" className="rvCoup-b" disabled={couponCartBusy||!couponCartIn.trim()}
@@ -7871,7 +7881,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     </div>
                     {couponCartMsg && <div className="rvCoup-ko">{couponCartMsg}</div>}
                   </>
-                )}
+                ) : null}
               </div>
             </div>
           );

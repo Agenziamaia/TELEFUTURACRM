@@ -5,7 +5,12 @@
 // (valore - sconto applicato) RIGENERA un nuovo coupon da consegnare al cliente.
 
 import { randomBytes } from "crypto";
-import { supabase } from "@/lib/supabaseClient";
+/* IL RUOLO DI SERVIZIO, NON LA CHIAVE DEL BROWSER (31/08). L'intestazione di
+   questo file dice «SOLO server» da sempre, ma importava il client anon — e per
+   farlo funzionare la tabella `coupons` era rimasta scrivibile da chiunque
+   avesse fatto login: chi voleva poteva alzarsi il valore residuo di un coupon,
+   o farne rivivere uno annullato. Sono soldi. */
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
 // Alfabeto senza caratteri ambigui (niente 0/O/1/I) per codici leggibili a voce.
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

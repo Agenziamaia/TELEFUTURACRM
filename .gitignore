@@ -51,4 +51,6 @@ _*.sql
 # file di lavoro dei revisori: pagine di prova, scatti, generatori
 _*.html
 _*.py
-_*/
+# solo alla RADICE: `_views` e simili dentro src/ sono codice vero, e una
+# regola senza barra iniziale li avrebbe esclusi dal repo
+/_*/

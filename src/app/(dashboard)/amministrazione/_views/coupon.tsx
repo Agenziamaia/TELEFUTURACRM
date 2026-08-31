@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { isAdminOrAbove } from "@/lib/roles";
 
 /* Lista coupon (spec Francesco) — SOLO Amministrazione. Elenco dei coupon sconto
    emessi dai ritiri usati: emessi/attivi, riscattati, scaduti, annullati, con valore
@@ -35,19 +37,44 @@ export function CouponView() {
     const [errore, setErrore] = useState("");
     const [filtro, setFiltro] = useState<Filtro>("tutti");
     const [q, setQ] = useState("");
+    /* ANNULLARE UN COUPON (Luca 31/08: «dammi la possibilità, dall'amministrativo
+       in su, di poter cancellare dei codici coupon»). Il permesso vero lo
+       ricontrolla il server leggendo il ruolo dal database: qui si decide solo
+       se il pulsante si vede. */
+    const { user } = useAuth();
+    const puoAnnullare = isAdminOrAbove(user?.role);
+    const [annullando, setAnnullando] = useState<string | null>(null);
 
-    useEffect(() => {
-        (async () => {
-            setLoading(true); setErrore("");
-            try {
-                const res = await fetch("/api/vendita/coupon");
-                const j = await res.json().catch(() => ({}));
-                if (!res.ok || !j.ok) throw new Error(j.error || "caricamento fallito");
-                setCoupons(Array.isArray(j.coupons) ? j.coupons : []);
-            } catch (e: any) { setErrore(String(e?.message || e)); }
-            finally { setLoading(false); }
-        })();
+    const carica = useCallback(async () => {
+        setLoading(true); setErrore("");
+        try {
+            const res = await fetch("/api/vendita/coupon");
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) throw new Error(j.error || "caricamento fallito");
+            setCoupons(Array.isArray(j.coupons) ? j.coupons : []);
+        } catch (e: any) { setErrore(String(e?.message || e)); }
+        finally { setLoading(false); }
     }, []);
+    useEffect(() => { carica(); }, [carica]);
+
+    const annulla = async (code: string, valore: number) => {
+        /* IL PERCHÉ SI SCRIVE. Un coupon è un impegno verso un cliente che ha
+           lasciato un telefono: se un giorno si presenta col foglietto in mano,
+           la riga deve dire quanto valeva e perché è stato tolto. */
+        const motivo = window.prompt(`Annullare ${code} (${eur(valore)})?\n\nScrivi il perché: resta scritto accanto al coupon.`, "");
+        if (motivo === null) return;
+        setAnnullando(code);
+        try {
+            const res = await fetch("/api/vendita/coupon", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "annulla", code, motivo }),
+            });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) throw new Error(j.error || "annullamento non riuscito");
+            await carica();
+        } catch (e: any) { window.alert("Non sono riuscito ad annullarlo: " + String(e?.message || e)); }
+        finally { setAnnullando(null); }
+    };
 
     const stats = useMemo(() => {
         const s = { emessi: 0, attivi: 0, riscattati: 0, scaduti: 0, annullati: 0, valEmesso: 0, valResiduo: 0 };
@@ -122,6 +149,7 @@ export function CouponView() {
                                 <th className="text-left px-3 py-2">Negozio</th>
                                 <th className="text-left px-3 py-2">Emesso</th>
                                 <th className="text-left px-3 py-2">Riscattato</th>
+                                {puoAnnullare && <th className="px-3 py-2" />}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -137,10 +165,22 @@ export function CouponView() {
                                         <td className="px-3 py-2 text-slate-400">{c.negozio || "—"}</td>
                                         <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{dt(c.created_at)}</td>
                                         <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{dt(c.redeemed_at)}</td>
+                                        {puoAnnullare && (
+                                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                {/* solo su quelli ANCORA VALIDI: uno già riscattato ha
+                                                    scontato dei soldi a qualcuno, e non si riscrive */}
+                                                {st === "attivo" && (
+                                                    <button onClick={() => annulla(c.code, c.valore_residuo)} disabled={annullando === c.code}
+                                                        className="text-[11px] px-2 py-1 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 hover:bg-rose-500/25 font-bold disabled:opacity-40">
+                                                        {annullando === c.code ? "…" : "Annulla"}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        )}
                                     </tr>
                                 );
                             })}
-                            {!rows.length && <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-500">Nessun coupon.</td></tr>}
+                            {!rows.length && <tr><td colSpan={puoAnnullare ? 9 : 8} className="px-3 py-6 text-center text-slate-500">Nessun coupon.</td></tr>}
                         </tbody>
                     </table>
                 </div>
