@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin, serviceRolePresente } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,6 +88,16 @@ export async function GET(request: Request, ctx: { params: Promise<{ percorso: s
         if (data !== true) return NextResponse.json({ error: "Questo file non è tuo." }, { status: 403 });
     }
 
+    /* ⚠️ SENZA LA CHIAVE DI SERVIZIO NON SI FIRMA NIENTE, e va detto forte:
+       `supabaseAdmin` in sua assenza ripiega sulla chiave pubblica, che su un
+       deposito privato non può firmare. Il risultato sarebbe un «file non
+       trovato» misterioso su OGNI allegato dell'azienda, e mezz'ora persa a
+       cercarlo nel posto sbagliato. */
+    if (!serviceRolePresente()) {
+        console.error("[file] manca SUPABASE_SERVICE_ROLE_KEY: gli indirizzi non si possono firmare.");
+        return NextResponse.json(
+            { error: "Configurazione incompleta: manca la chiave di servizio." }, { status: 503 });
+    }
     const { data, error } = await supabaseAdmin.storage.from(deposito).createSignedUrl(dentro, 300);
     if (error || !data?.signedUrl) {
         return NextResponse.json({ error: "File non trovato." }, { status: 404 });
