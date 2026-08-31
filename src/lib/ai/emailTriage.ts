@@ -23,6 +23,7 @@
    valido o non attivo» a chiunque. Questo modulo gira solo lato server, e i
    permessi dell'utente li applica il codice (getScope + i filtri dei tool). */
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { registraConsumo } from "@/lib/ai/consumi";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
 
 export const EMAIL_TRIAGE_VERSIONE = 1;    // alzarla = riclassificare tutto
@@ -407,11 +408,17 @@ export async function corsaTriageEmail(opts?: { force?: boolean; max?: number })
             ? `${quandoRoma(adessoIso)} · DeepSeek senza credito: da ricaricare (classificate ${classificate})`
             : `${quandoRoma(adessoIso)} · ${classificate} con AI + ${dirette} dirette · 🗑 ${cestinate} cestinate · ${errori} errori · ${rimanenti} in coda · $${costoUsd.toFixed(4)}`;
         if (classificate > 0 || (errori > 0 && !senzaCredito)) {
-            supabase.from("ai_usage").insert({
-                user_id: null, model: MODEL_FAST, prompt_tokens: promptTok, completion_tokens: complTok,
-                cost_usd: costoUsd, latency_ms: Date.now() - inizio, tool_calls: 0,
-                ok: errori === 0, error: primoErrore,
-            }).then(() => { }, () => { });
+            /* ⚠️ FIRMATO. Scriveva `user_id: null` esattamente come il triage
+               delle chat: due motori, una riga uguale, e la domanda di Luca
+               — «quanto spende l'email» — non aveva risposta possibile. */
+            void registraConsumo({
+                sezione: "triage_email", funzione: "classifica_email", automatica: true,
+                modello: MODEL_FAST, chiamate: classificate,
+                tokenIn: promptTok, tokenOut: complTok,
+                durataMs: Date.now() - inizio,
+                esito: senzaCredito ? "senza_credito" : (errori === 0 ? "ok" : "errore"),
+                codiceErrore: primoErrore ? "vedi_ultimo_esito" : null,
+            });
         }
         await supabase.from("email_triage_stato").update({ in_corsa_da: null, ultima_corsa: new Date().toISOString(), ultimo_esito: esito }).eq("id", 1);
         return { ok: errori === 0, classificate, dirette, cestinate, quarantene, errori, rimanenti, costoUsd, esito };

@@ -10,6 +10,7 @@
 // poter leggere niente che l'utente non stesse già guardando.
 
 import { NextResponse } from "next/server";
+import { registraConsumo, codiceErrore } from "@/lib/ai/consumi";
 import { accesso } from "@/lib/permessiServer";
 import { chat, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
 
@@ -83,6 +84,7 @@ export async function POST(req: Request) {
         ].join("\n"),
     };
 
+    const inizio = Date.now();
     try {
         const r = await chat({
             messages: [{ role: "system", content: SISTEMA }, utente],
@@ -103,6 +105,21 @@ export async function POST(req: Request) {
         // la route rispondeva ok con tutti i campi vuoti e il riquadro
         // dell'assistente restava BIANCO. È il motivo per cui l'AI
         // dell'Omnichat non ha mai detto niente (Luca 27/08).
+        /* ⚠️ QUI NON SI REGISTRAVA NIENTE (31/08). Ogni volta che qualcuno
+           apriva una conversazione e chiedeva il recap si spendeva, e la spesa
+           non finiva da nessuna parte: era il quarto motore, l'unico invisibile
+           del tutto. `troncata` è la spia che vale di più — la risposta si è
+           interrotta per il tetto, cioè abbiamo pagato e all'utente è arrivata
+           una frase di scuse. */
+        const u = (r as { usage?: { prompt_tokens?: number; completion_tokens?: number } })?.usage;
+        void registraConsumo({
+            sezione: "omnichat", funzione: "recap", automatica: false,
+            modello: MODEL_FAST,
+            tokenIn: u?.prompt_tokens ?? 0, tokenOut: u?.completion_tokens ?? 0,
+            durataMs: Date.now() - inizio,
+            esito: (r as { finish_reason?: string })?.finish_reason === "length" ? "troncata" : "ok",
+        });
+
         const testo = String((r as { message?: { content?: string } })?.message?.content || "").trim();
         if (!testo) {
             return NextResponse.json({ ok: false, error: "l'AI ha risposto senza testo: riprova fra poco" }, { status: 200 });
@@ -121,6 +138,14 @@ export async function POST(req: Request) {
             risposte: (Array.isArray(out.risposte) ? out.risposte : []).slice(0, 3).map((x) => String(x).slice(0, 600)),
         });
     } catch (e) {
+        // anche quando fallisce: una chiamata andata male si è pagata lo stesso
+        void registraConsumo({
+            sezione: "omnichat", funzione: "recap", automatica: false,
+            modello: MODEL_FAST, tokenIn: 0, tokenOut: 0,
+            durataMs: Date.now() - inizio,
+            esito: codiceErrore(e) === "senza_credito" ? "senza_credito" : "errore",
+            codiceErrore: codiceErrore(e),
+        });
         return NextResponse.json({ ok: false, error: String((e as Error)?.message || e) }, { status: 200 });
     }
 }

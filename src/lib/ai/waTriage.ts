@@ -23,6 +23,7 @@
    valido o non attivo» a chiunque. Questo modulo gira solo lato server, e i
    permessi dell'utente li applica il codice (getScope + i filtri dei tool). */
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { registraConsumo } from "@/lib/ai/consumi";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
 
 export const TRIAGE_VERSIONE = 1;          // alzarla = riclassificare tutto
@@ -309,11 +310,19 @@ export async function corsaTriage(opts?: { force?: boolean; max?: number }): Pro
 
         if (classificate > 0 || (errori > 0 && !senzaCredito)) {   // il "senza credito" vive già in ultimo_esito: niente rumore nel registro
             // log costi nello stesso registro dell'assistente AI (user null = motore)
-            supabase.from("ai_usage").insert({
-                user_id: null, model: MODEL_FAST, prompt_tokens: promptTok, completion_tokens: complTok,
-                cost_usd: costoUsd, latency_ms: Date.now() - inizio, tool_calls: 0,
-                ok: errori === 0, error: primoErrore,
-            }).then(() => { }, () => { });
+            /* ⚠️ ADESSO SI SA CHE È IL TRIAGE DELLE CHAT. Prima scriveva
+               `user_id: null` e basta, esattamente come quello della posta:
+               erano indistinguibili, e «quanto spende WhatsApp» non si poteva
+               rispondere. `chiamate` dice quante conversazioni stanno in
+               questa riga — il triage ne accorpa fino a sessanta. */
+            void registraConsumo({
+                sezione: "triage_whatsapp", funzione: "classifica_chat", automatica: true,
+                modello: MODEL_FAST, chiamate: classificate,
+                tokenIn: promptTok, tokenOut: complTok,
+                durataMs: Date.now() - inizio,
+                esito: senzaCredito ? "senza_credito" : (errori === 0 ? "ok" : "errore"),
+                codiceErrore: primoErrore ? "vedi_ultimo_esito" : null,
+            });
         }
         await supabase.from("wa_triage_stato").update({ in_corsa_da: null, ultima_corsa: new Date().toISOString(), ultimo_esito: esito }).eq("id", 1);
         return { ok: errori === 0, classificate, dirette, errori, rimanenti, costoUsd, esito };

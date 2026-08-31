@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { registraConsumo, codiceErrore } from "@/lib/ai/consumi";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, hasKey, type ChatMessage } from "@/lib/ai/deepseek";
@@ -232,11 +233,17 @@ export async function POST(req: Request) {
     if (!answer) answer = "Non sono riuscito a completare la richiesta entro i passaggi disponibili.";
 
     const cost = costoChiamata(MODELLO, promptTokens, completionTokens);
-    supabase.from("ai_usage").insert({
-      user_id: scope.userId, model: MODELLO, prompt_tokens: promptTokens,
-      completion_tokens: completionTokens, cost_usd: cost, latency_ms: Date.now() - started,
-      tool_calls: toolCalls, ok: true,
-    }).then(() => {}, () => {});
+    /* il registro dei consumi, con tutto quello che serve al pannello: da
+       quale sezione, chiesta da chi, su quale «utenza» (qui la persona
+       stessa), e quanti passaggi ha fatto prima di rispondere */
+    void registraConsumo({
+      sezione: "assistente", funzione: "domanda", automatica: false,
+      modello: MODELLO, tokenIn: promptTokens, tokenOut: completionTokens,
+      userId: scope.userId, negozio: scope.stores?.[0] ?? null, ruolo: scope.role ?? null,
+      utenza: scope.userId ? { tipo: "utente" as const, id: scope.userId, label: scope.fullName || "" } : null,
+      durataMs: Date.now() - started, strumenti: toolCalls, passaggi: trace.length,
+      esito: "ok", conversazione: conversazioneId || null,
+    });
 
     // ── LA CONVERSAZIONE RESTA (Luca 28/08): domanda e risposta finiscono
     //    nello spazio personale, così la si ritrova da qualsiasi computer.
@@ -263,11 +270,19 @@ export async function POST(req: Request) {
       usage: { promptTokens, completionTokens, costUsd: Number(cost.toFixed(6)), ms: Date.now() - started },
     });
   } catch (e: any) {
-    supabase.from("ai_usage").insert({
-      user_id: scope.userId, model: MODELLO, prompt_tokens: promptTokens,
-      completion_tokens: completionTokens, latency_ms: Date.now() - started,
-      tool_calls: toolCalls, ok: false, error: String(e?.message || e).slice(0, 500),
-    }).then(() => {}, () => {});
+    /* ⚠️ UN CODICE, NON IL MESSAGGIO. Prima si salvava String(e.message)
+       troncato a 500 caratteri — e il messaggio del fornitore si porta dietro
+       300 caratteri del corpo della richiesta, cioè della DOMANDA. Un pezzo
+       di domanda finiva in una tabella che il browser poteva leggere. */
+    void registraConsumo({
+      sezione: "assistente", funzione: "domanda", automatica: false,
+      modello: MODELLO, tokenIn: promptTokens, tokenOut: completionTokens,
+      userId: scope.userId, negozio: scope.stores?.[0] ?? null, ruolo: scope.role ?? null,
+      utenza: scope.userId ? { tipo: "utente" as const, id: scope.userId, label: scope.fullName || "" } : null,
+      durataMs: Date.now() - started, strumenti: toolCalls,
+      esito: codiceErrore(e) === "senza_credito" ? "senza_credito" : "errore",
+      codiceErrore: codiceErrore(e), conversazione: conversazioneId || null,
+    });
     return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
   }
 }
