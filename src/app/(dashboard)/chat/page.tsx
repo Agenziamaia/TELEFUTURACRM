@@ -663,6 +663,11 @@ function ChatPageInner() {
   useEffect(() => {
     setShowMembers(false); setAddOpen(false); setAddQ(""); setInfoMsg(null);
     if (!selId) { setMessages([]); setParts([]); return; }
+    /* I PARTECIPANTI DELLA CHAT PRECEDENTE NON VALGONO QUI (revisore 31/08).
+       Restavano in memoria finché non rispondeva `getParticipants` della nuova,
+       e in quella finestra il menu del tag proponeva la gente dell'ALTRO
+       gruppo — cioè proprio il difetto segnalato, in forma nuova. */
+    setParts([]);
     reloadMessages(selId);
     loadParts();
     const offMsg = subscribeMessages(selId, () => reloadMessages(selId));
@@ -743,12 +748,21 @@ function ChatPageInner() {
          — resta scritto un nome che quella persona non leggerà mai. Se i
          partecipanti non sono ancora arrivati (`dentro` vuoto) vale l'elenco
          completo, altrimenti si resterebbe senza nessuno. */
-      const p = q.length === 0 ? recentEntities(dentro, meId) : searchAllEntities(q, dentro, meId, dentro.length > 0);
+      /* IL VINCOLO VALE NEI GRUPPI (revisore 31/08). In un messaggio diretto i
+         partecipanti sono due — io e l'altro — e taggare l'unica persona con
+         cui sto già parlando non serve a niente: chiudendo anche lì, il tag
+         diventava muto nel 92% delle conversazioni. Nel DM «ne parlo con
+         @Tizio» è invece la scorciatoia che apre la chat con Tizio, e resta.
+         Nel gruppo, finché i partecipanti non sono arrivati, meglio nessun
+         nome che i nomi sbagliati. */
+      const gruppo = selConv?.type === "group";
+      if (gruppo && dentro.length === 0) { setMentionRows([]); return; }
+      const p = q.length === 0 ? recentEntities(dentro, meId) : searchAllEntities(q, dentro, meId, gruppo);
       p.then(setMentionRows).catch(() => setMentionRows([]));
     }, q.length === 0 ? 0 : 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mention?.query, mention !== null, parts]);
+  }, [mention?.query, mention !== null, parts, selConv?.type]);
 
   const pickMention = (r) => {
     if (!mention) return;

@@ -455,15 +455,12 @@ export function DirezioneInserimentoAdmin() {
                         </button>
                         {riepilogoAperto && (
                             <div className="px-3 pb-3 space-y-2.5 border-t border-white/5 pt-2.5">
-                                {/* LE FONTI, UNA PER PISTA (Luca 31/08): i tre file non
-                                    arrivano lo stesso giorno, e ogni pista vale fino alla
-                                    data del SUO file. Dirlo qui evita di credere che tutto
-                                    sia fermo alla data in testa. */}
-                                <p className="text-[10px] text-slate-500">
-                                    {conf.fonti.map((f) => `${nomePista(f.pista)}: ${f.file || "file senza nome"} al ${f.al.slice(8, 10)}/${f.al.slice(5, 7)}`).join(" · ")}
-                                    {" · "}{conf.nRighe} valori · fino a quella data comanda il numero di {bMeta.label}, dopo il nostro
-                                    <button type="button" onClick={() => setModaleAvz(true)} className="ml-2 underline hover:text-slate-300">storico e caricamenti</button>
-                                </p>
+                                {/* NIENTE RIGHE DI SPIEGAZIONE (Luca 31/08: «questa
+                                    parte la puoi togliere, così recuperiamo spazio»).
+                                    Le date per pista stanno già scritte sulle colonne
+                                    quando sono diverse, i nomi dei file nello storico, e
+                                    il verso del segno lo dice il colore. Chi ha bisogno
+                                    del dettaglio apre 📊 in testa alla sezione. */}
                                 {/* UNA COLONNA PER PISTA (Luca 31/08): «la pagina è
                                     molto larga, sfrutta la larghezza». Con tre file —
                                     mobile, fisso, partnership — l'elenco unico diventava

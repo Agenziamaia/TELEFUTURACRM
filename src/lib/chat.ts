@@ -341,9 +341,14 @@ export async function searchAllEntities(q: string, dentro: string[] = [], meId?:
 }
 
 /** I COLLEGHI da taggare. `dentro` sono gli id dei partecipanti alla
- *  conversazione: vengono per primi, perche' in un gruppo si tagga quasi
- *  sempre uno che e' dentro — gli altri restano raggiungibili scrivendone il
- *  nome, che serve per dire «ne parlo con Tizio» anche se Tizio non c'e'. */
+ *  conversazione.
+ *
+ *  In un GRUPPO l'elenco si chiude ai presenti (`soloDentro`): proporre chi
+ *  non c'è vuol dire scrivere un nome che quella persona non leggerà, e Luca
+ *  l'ha chiesto esplicitamente il 31/08. In un messaggio DIRETTO no: lì i
+ *  partecipanti sono due e il tag serve per un'altra cosa — «ne parlo con
+ *  @Tizio» diventa un link che apre la chat con Tizio.
+ */
 export async function searchPersone(q: string, dentro: string[] = [], meId?: string | null, soloDentro = false): Promise<ChatRef[]> {
   const s = q.trim();
   /* DENTRO UNA CONVERSAZIONE SI TAGGA CHI C'È (Luca 31/08): «mi fa taggare
