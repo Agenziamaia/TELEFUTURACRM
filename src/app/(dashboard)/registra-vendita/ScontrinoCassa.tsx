@@ -31,7 +31,7 @@ const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
 
 type Fase = "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
-export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; onDone: () => void }) {
+export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: () => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
     const totale = data ? totaleRighe(data.items) : 0;
 
     // Pagamento come lista di forme (max 3). Default: tutto in contanti.
@@ -55,6 +55,9 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const [coupon, setCoupon] = useState<{ code: string; valore: number; sconto: number } | null>(null);
     const [couponMsg, setCouponMsg] = useState("");
     const [nuovoCoupon, setNuovoCoupon] = useState<{ code: string; valore: number } | null>(null);
+    // (b) Commit differito: lo scontrino è emesso ma il salvataggio a DB è fallito →
+    // si offre il retry del SOLO salvataggio (senza riemettere lo scontrino).
+    const [commitFail, setCommitFail] = useState(false);
 
     // Firma STABILE della vendita. Il reset qui sotto azzera anche la ragione sociale
     // scelta dall'operatore: deve scattare SOLO quando cambia DAVVERO la vendita, non a
@@ -69,7 +72,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         setFase("scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
-        setCouponInput(""); setCoupon(null); setCouponMsg(""); setNuovoCoupon(null);
+        setCouponInput(""); setCoupon(null); setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false);
         const neg = data?.negozio;
         if (!neg) return;
         supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
@@ -216,8 +219,35 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         if (data.sospesoId) {
             try { await fetch("/api/vendita/sospendi", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.sospesoId, stato: "completata" }) }); } catch { /* non bloccare l'esito */ }
         }
+        // (b) SALVATAGGIO DIFFERITO: ora che lo scontrino è EMESSO, scrivi la vendita a DB.
+        // Se fallisce, lo scontrino è comunque uscito → si offre il retry del solo salvataggio.
+        if (onCommit) {
+            setFase("stampa"); setMsg("Scontrino emesso — registro la vendita…");
+            const c = await onCommit();
+            if (!c || !c.ok) {
+                setCommitFail(true);
+                setFase("errore");
+                setMsg("⚠️ Scontrino EMESSO correttamente, ma la vendita NON è stata salvata (" + (c?.error || "errore") + "). Premi «Salva vendita» per riprovare SOLO il salvataggio — lo scontrino NON verrà riemesso.");
+                return;
+            }
+        }
         setFase("fatto");
         setMsg((p.testMode ? "Documento NON fiscale in stampa (prova)" : "Scontrino fiscale in stampa") + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
+    };
+
+    // (b) Retry del SOLO salvataggio quando lo scontrino è già uscito ma il commit è fallito.
+    const retrySalvataggio = async () => {
+        if (!onCommit) { setCommitFail(false); setFase("fatto"); return; }
+        setFase("stampa"); setMsg("Registro la vendita…");
+        const c = await onCommit();
+        if (!c || !c.ok) {
+            setCommitFail(true); setFase("errore");
+            setMsg("⚠️ Salvataggio ancora non riuscito (" + (c?.error || "errore") + "). Riprova o annota la vendita a mano. Lo scontrino è già stato emesso.");
+            return;
+        }
+        setCommitFail(false);
+        setFase("fatto");
+        setMsg("Vendita registrata. Scontrino già emesso.");
     };
 
     // "Tieni in sospeso": salva il conto per completarlo dopo (il cliente torna a pagare).
@@ -438,7 +468,9 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                         {cashDone && <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «Ristampa scontrino».</p>}
                         <div className="flex gap-2">
                             <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Chiudi</button>
-                            <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>
+                            {commitFail
+                                ? <button type="button" onClick={retrySalvataggio} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Salva vendita</button>
+                                : <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>}
                         </div>
                     </div>
                 )}

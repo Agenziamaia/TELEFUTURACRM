@@ -5711,6 +5711,18 @@ function CRM() {
   // due clic nello stesso tick leggerebbero entrambi lo stato ancora a false.
   const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
+  /* (b) SALVATAGGIO DIFFERITO (spec Francesco). Nei negozi con scontrino la
+     vendita a prodotti si scrive a DB SOLO dopo che lo scontrino è stato
+     emesso: qui si parcheggia la funzione di salvataggio, la esegue
+     ScontrinoCassa (onCommit) a scontrino riuscito. Premendo X / chiudendo
+     senza emettere, non viene scritto NIENTE. */
+  const pendingCommit = useRef<null | (() => Promise<any>)>(null);
+  const runPendingCommit = async () => {
+    const fn = pendingCommit.current;
+    if (!fn) return { ok: true as const };
+    try { const r = await fn(); pendingCommit.current = null; return { ok: true as const, rows: r }; }
+    catch (e: any) { return { ok: false as const, error: String(e?.message || e) }; }
+  };
   // POS: dati per il modale Incasso & Scontrino (si apre a vendita registrata).
   const [scontrino, setScontrino] = useState<ScontrinoData | null>(null);
   /* CONFERMA DI FINE VENDITA (Luca 28/08). Prima: un avviso volante di 3,5
@@ -5826,12 +5838,12 @@ function CRM() {
       codice: mi.codice ?? null,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
-  const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
+  const chiudiScontrino = () => { pendingCommit.current = null; setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
   const chiudiVenditaFatta = () => { setVenditaFatta(null); fullReset(); submitLock.current = false; setSubmitting(false); };
   // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
   // potrebbe avere una vendita in corso); rinfresca solo la lista dei sospesi.
-  const chiudiSospeso = () => { setScontrino(null); setSospesoReload((x) => x + 1); };
-  const riprendiSospeso = (s: SospesoRow) => setScontrino({ items: s.items, negozio: s.negozio, azienda: s.azienda, cliente: s.cliente, sospesoId: s.id });
+  const chiudiSospeso = () => { pendingCommit.current = null; setScontrino(null); setSospesoReload((x) => x + 1); };
+  const riprendiSospeso = (s: SospesoRow) => { pendingCommit.current = null; setScontrino({ items: s.items, negozio: s.negozio, azienda: s.azienda, cliente: s.cliente, sospesoId: s.id }); };
   // Univocita' cellulare (regola Luca): se il numero e' di un ALTRO cliente si
   // sceglie se spostarlo qui o cambiarlo — stessa logica della sezione Clienti.
   const [dupCellCliente, setDupCellCliente] = useState<{ id: string; label: string } | null>(null);
@@ -6524,6 +6536,8 @@ function CRM() {
       // pieno e un altro clic risalverebbe tutto.
       const _scRows = buildScontrinoItems(margList);
       if (_scRows.length && posScontrinoAbilitato(selNeg)) {
+        // flusso brand: i contratti sono GIÀ salvati qui sopra → nessun commit differito.
+        pendingCommit.current = null;
         clearDraft("crm_v9");
         setScontrino({ items: _scRows, negozio: selNeg });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
@@ -6701,6 +6715,13 @@ function CRM() {
         },{onConflict:"id"});
         if(ce)throw ce;
       }
+      // (b) La SCRITTURA della vendita — contratti + allegati + scarico magazzino —
+      // è impacchettata qui e, nei negozi CON scontrino, viene eseguita SOLO dopo
+      // che lo scontrino è stato emesso (ScontrinoCassa la chiama via onCommit).
+      // Premendo X sullo scontrino NON si salva niente. Il cliente/anagrafica è già
+      // stato risolto sopra: un contatto senza vendita è innocuo. In caso di errore
+      // la funzione LANCIA, così chi la chiama sa che il salvataggio non è riuscito.
+      const commitFn = async () => {
       const rows=margItems.map(mi=>_margRigaFin({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
         client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
@@ -6745,16 +6766,23 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
       } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
-      setMargSaveForm({...MARG_FORM_VUOTO});
-      setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
-      setMargSkipCli(false);
-      setShowMargSave(false);
+      return rows;
+      };
+      const _cliLabel=(margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim();
+      const _resetForm=()=>{ setMargSaveForm({...MARG_FORM_VUOTO}); setMargCliCerca("");setMargCliHits([]);setMargCliSel(null); setMargSkipCli(false); setShowMargSave(false); };
       // POS: apri Incasso & Scontrino sulle voci prezzate (solo negozi abilitati); fullReset alla chiusura.
       const _scRows = buildScontrinoItems(margItems);
-      if (_scRows.length && posScontrinoAbilitato(selNeg)) { clearDraft("crm_v9"); setScontrino({ items: _scRows, negozio: selNeg }); }
-      else { clearDraft("crm_v9"); setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length,
-        cliente: (margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim(),
-        negozio: selNeg, venditore: selVend }); }
+      if (_scRows.length && posScontrinoAbilitato(selNeg)) {
+        // DIFFERITO: apri lo scontrino; la vendita si scrive SOLO a scontrino emesso.
+        pendingCommit.current = commitFn;
+        _resetForm(); clearDraft("crm_v9");
+        setScontrino({ items: _scRows, negozio: selNeg });
+      } else {
+        // Negozio SENZA scontrino: si salva subito, come prima.
+        const rows = await commitFn();
+        _resetForm(); clearDraft("crm_v9");
+        setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length, cliente: _cliLabel, negozio: selNeg, venditore: selVend });
+      }
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
     }finally{setMargSaving(false);margLock.current=false;}
@@ -7145,7 +7173,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             title={_m.length?"Manca: "+_m.map(x=>x.testo).join(" · "):""}
             className={cn("rvAzione",_m.length&&tp>0&&"rvAzione-att")} style={{marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?`🔒 Manca ${_m.length===1?"una cosa":_m.length+" cose"}`:`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
-        <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} />
+        <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} onCommit={runPendingCommit} />
         {posScontrinoAbilitato(selNeg) && <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />}
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
