@@ -967,8 +967,21 @@ export function DirezioneInserimentoAdmin() {
                                 const nuda = tierScelto != null && scala[tierScelto - 1] != null ? scala[tierScelto - 1] : null;
                                 const tierDi = (v: number | null) => v == null ? null : scala.reduce((acc, sg, i) => (v >= sg ? i + 1 : acc), 0) || null;
                                 const siglaDi = (tier: number | null) => tier == null ? "—" : cbSem ? (tier === 1 ? "80%" : "100%") : `S${tier}`;
-                                // ADESSO: preso col cuscinetto / preso senza / non preso
-                                const statoOra = t <= 0 ? "vuoto" : f >= t ? "verde" : (nuda != null && f >= nuda) ? "arancione" : "rosso";
+                                /* ADESSO. Il pallino deve parlare della SIGLA che ha
+                                   accanto, non di un'altra cosa (Luca 31/08: «qui risulta
+                                   come se l'80% non fosse preso, ma sull'attuale l'80% è
+                                   preso»). Aveva ragione: la sigla diceva «80%» — la
+                                   soglia che HAI — e il pallino era rosso perché guardava
+                                   il TARGET, che è il 100%. Due discorsi diversi
+                                   nello stesso posto.
+                                     verde     = sei al target, cuscinetto compreso
+                                     arancione = sei alla soglia del target, senza il cuscinetto
+                                     giallo    = hai preso una soglia, ma più bassa del target
+                                     rosso     = non hai preso nessuna soglia */
+                                const tierOra = tierDi(f);
+                                const statoOra = t <= 0 ? "vuoto" : f >= t ? "verde"
+                                    : (nuda != null && f >= nuda) ? "arancione"
+                                        : tierOra != null ? "giallo" : "rosso";
                                 // PROIEZIONE: com'era, più l'arancione fra il giallo e il rosso
                                 const stato = t <= 0 ? "vuoto" : f >= t ? "verde" : pj == null ? "grigio"
                                     : pj >= t * 1.15 ? "viola" : pj >= t ? "giallo" : (nuda != null && pj >= nuda) ? "arancione" : "rosso";
@@ -977,7 +990,7 @@ export function DirezioneInserimentoAdmin() {
                                 const sigla = t <= 0 ? "" : tierScelto == null ? "✎" : siglaDi(tierScelto);
                                 return {
                                     chiave: p.chiave, nome: p.nome, t, f, pj, nuda, stato, sigla, statoOra,
-                                    siglaOra: t <= 0 ? "" : siglaDi(tierDi(f)),
+                                    siglaOra: t <= 0 ? "" : siglaDi(tierOra),
                                     siglaProj: t <= 0 ? "" : pj == null ? "—" : siglaDi(tierDi(pj)),
                                 };
                             });
@@ -1078,7 +1091,7 @@ export function DirezioneInserimentoAdmin() {
                                                 return (
                                                     <button key={sm.chiave} type="button"
                                                         onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
-                                                        title={`${tipPallino(sm)}\n\nADESSO: ${sm.siglaOra || "nessuna soglia"} — ${sm.statoOra === "verde" ? "target preso, cuscinetto compreso" : sm.statoOra === "arancione" ? "soglia presa, ma senza lo sfrido" : sm.statoOra === "vuoto" ? "nessun target" : "target non ancora preso"}\nA FINE MESE: ${sm.sigla || "nessun target"} — ${sm.stato === "verde" ? "già preso" : sm.stato === "viola" ? "lo supera di oltre il 15%" : sm.stato === "giallo" ? "in proiezione ci arriva" : sm.stato === "arancione" ? "in proiezione arriva alla soglia ma non allo sfrido" : sm.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione"}${delta != null ? `\n\n${delta < 0
+                                                        title={`${tipPallino(sm)}\n\nADESSO sei a ${sm.siglaOra && sm.siglaOra !== "—" ? sm.siglaOra : "nessuna soglia"} — ${sm.statoOra === "verde" ? "è il target, cuscinetto compreso" : sm.statoOra === "arancione" ? "è la soglia del target, ma senza lo sfrido" : sm.statoOra === "giallo" ? `una soglia c'è, ma il target è ${sm.sigla}` : sm.statoOra === "vuoto" ? "nessun target dato" : "nessuna soglia ancora presa"}\nA FINE MESE arrivi a ${sm.siglaProj && sm.siglaProj !== "—" ? sm.siglaProj : "nessuna soglia"} — ${sm.stato === "verde" ? "il target è già preso" : sm.stato === "viola" ? "supera il target di oltre il 15%" : sm.stato === "giallo" ? "in proiezione il target ci arriva" : sm.stato === "arancione" ? "arriva alla soglia del target ma non allo sfrido" : sm.stato === "grigio" ? "proiezione non ancora attiva" : `il target (${sm.sigla}) non ci arriva nemmeno in proiezione`}${delta != null ? `\n\n${delta < 0
                                                             ? `− ${it(Math.abs(delta))} punti DA TOGLIERE: li contiamo noi e ${bMeta.label}, al ${sc!.al.slice(8, 10)}/${sc!.al.slice(5, 7)}, non ce li riconosce. La soglia che credi presa potrebbe non esserlo.`
                                                             : `+ ${it(delta)} punti DA AGGIUNGERE: ce li conta ${bMeta.label} al ${sc!.al.slice(8, 10)}/${sc!.al.slice(5, 7)} e da noi non risultano. Pagano lo stesso, ma stanno su un altro codice.`}` : ""}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
                                                         className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
@@ -1106,7 +1119,7 @@ export function DirezioneInserimentoAdmin() {
                                                                 <span className="text-[9px] font-black text-slate-300 tabular-nums">{sm.siglaOra || "—"}</span>
                                                                 <span className="text-[8px] text-slate-600">→</span>
                                                                 <span className={cn("w-2 h-2 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
-                                                                <span className="text-[9px] font-black text-slate-200 tabular-nums">{sm.sigla || "—"}</span>
+                                                                <span className="text-[9px] font-black text-slate-200 tabular-nums">{sm.siglaProj || "—"}</span>
                                                             </span>
                                                         </span>
                                                     </button>
@@ -1368,10 +1381,10 @@ export function DirezioneInserimentoAdmin() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <div className="text-[10px] font-bold text-slate-500 uppercase">I due pallini dei codici</div>
-                                    <div className="text-slate-400 pb-1">Ogni pista ne ha <b className="text-white">due</b>, con la stessa legenda letta in due momenti: il primo è <b className="text-white">dove sei ADESSO</b>, il secondo <b className="text-white">dove arrivi a fine mese</b> con questo ritmo. La sigla accanto a ciascuno è la soglia: <span className="font-mono text-slate-200">S1 → S2</span> vuol dire «oggi hai la prima, chiudi con la seconda».</div>
+                                    <div className="text-slate-400 pb-1">Ogni pista ne ha <b className="text-white">due</b>: il primo è <b className="text-white">dove sei ADESSO</b>, il secondo <b className="text-white">dove arrivi a fine mese</b> con questo ritmo. La sigla accanto a ciascuno è la soglia di quel momento — <span className="font-mono text-slate-200">S1 → S2</span> vuol dire «oggi hai la prima, chiudi con la seconda» — e il colore dice se quella soglia è il tuo target o no.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#34d399", boxShadow: "0 0 7px #34d399" }} /> <b className="text-white">Verde</b> — target preso.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }} /> <b className="text-white">Viola</b> — in proiezione lo SUPERA di oltre il 15%: c&apos;è margine da spostare sui rossi.</div>
-                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }} /> <b className="text-white">Giallo</b> — non ancora preso, ma in proiezione ci arriva.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }} /> <b className="text-white">Giallo</b> — sul pallino di ADESSO: una soglia l&apos;hai presa, ma non è quella del target (sei a uno scalino sotto). Su quello di FINE MESE: il target non è ancora preso, ma in proiezione ci arrivi.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fb923c", boxShadow: "0 0 7px #fb923c88" }} /> <b className="text-white">Arancione</b> — la soglia c&apos;è, il cuscinetto no: sei sopra il numero nudo ma sotto il target con lo sfrido. Basta una pratica che cade e la soglia salta.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse" style={{ background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} /> <b className="text-white">Rosso</b> (pulsante) — nemmeno in proiezione: serve una spinta.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "rgba(148,163,184,.45)" }} /> <b className="text-white">Grigio</b> — proiezione non ancora attiva (primi giorni del mese).</div>
