@@ -43,6 +43,12 @@ const TIPOLOGIE = ["DTS", "Outbound", "Teleselling"] as const;
 const OBIETTIVI = ["Energia", "Sky", "CB", "Fisso", "Mobile", "Appuntamento"] as const;
 
 const STATI = [
+    // «Assegnata» = un blocco di lead che arriva sulla scrivania di un caller.
+    // Nasce prima di «Nuovo» perché è il primo stato della vita di una lista, e
+    // ha tempi propri (0/2/3 invece di 0/0/1): una lista appena assegnata non
+    // può essere in ritardo il giorno dopo. Qui è solo il RIPIEGO — le voci
+    // vere arrivano dal catalogo (caller_opzioni).
+    "Assegnata",
     "Nuovo",
     "Cold NR1", "Cold NR2", "Cold NR3",
     "Hot NR1", "Hot NR2", "Hot NR3",
@@ -317,6 +323,8 @@ function toLocalInput(d: Date | string): string {
 }
 
 function statoBadgeClasses(stato: string): string {
+    // Assegnata e Nuovo sono parenti: stesso azzurro, con l'assegnata più tenue
+    if (stato === "Assegnata") return "bg-sky-500/10 border-sky-500/25 text-sky-300";
     if (stato === "Nuovo") return "bg-blue-500/15 border-blue-500/30 text-blue-300";
     if (stato.startsWith("Cold")) return "bg-cyan-500/15 border-cyan-500/30 text-cyan-300";
     if (stato.startsWith("Hot")) return "bg-orange-500/15 border-orange-500/30 text-orange-300";
@@ -1679,7 +1687,7 @@ function CallerPageInner() {
         const statoRef = c.statoNew || c.stato;
         const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
         if (!statoRef || !idf) return;
-        const eDebole = (s: string) => s === "Nuovo" || NRD_STATI.includes(s);
+        const eDebole = (s: string) => s === "Nuovo" || s === "Assegnata" || NRD_STATI.includes(s);
         try {
             const campoIdf = c.tipo_cliente === "business" ? "piva" : "cf";
             const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId).order("created_at", { ascending: true });
@@ -2063,12 +2071,12 @@ function CallerPageInner() {
             cf: "", piva: "",
             numero: numeroNazionale(r.numero) || r.numero.trim(), cellulare: numeroNazionale(r.numero),
             brand: "", provenienza: "", tipologia: "", obiettivo: "",
-            stato: "Nuovo", data_chiamata: dataAssegnazione, caller: manCaller,
+            stato: "Assegnata", data_chiamata: dataAssegnazione, caller: manCaller,
             negozio_appuntamento: "", data_appuntamento: null, indirizzo: "", agente: "",
             segnalatore: "", campagna: "", negozio_provenienza: "", mese_provenienza: "", anno_provenienza: "",
             whatsapp: "", note: `Da lista: ${nome}`, data_richiamo: null,
             lista_origine: nome,
-            storico: [{ data: dataAssegnazione, caller: currentCaller, campo: "Assegnazione lista", da: "", a: `Nuovo (lista manuale: ${nome})` }],
+            storico: [{ data: dataAssegnazione, caller: currentCaller, campo: "Assegnazione lista", da: "", a: `Assegnata (lista manuale: ${nome})` }],
         }));
         const { error: ce } = await supabase.from("calls").insert(payloads);
         setManBusy(false);
@@ -2304,7 +2312,10 @@ function CallerPageInner() {
                     piva: listaTipo === "business" ? cella(riga, iPiva) : "",
                     numero: naz || grezzo, cellulare: naz,
                     brand: brandAuto, provenienza: listaProvenienza, tipologia: "", obiettivo: obiettivoAuto,
-                    stato: "Nuovo",
+                    // LE LISTE NASCONO «ASSEGNATE», non «Nuove» (Luca 31/08): con
+                    // «Nuovo» il warning scattava a 0 giorni e il malus a 1, e un
+                    // blocco appena consegnato al caller era in ritardo l'indomani.
+                    stato: "Assegnata",
                     data_chiamata: dataAssegnazione,
                     caller: split.caller,
                     negozio_appuntamento: "", data_appuntamento: null,
@@ -2316,7 +2327,7 @@ function CallerPageInner() {
                     anno_provenienza: listaInternoRows.map(r => r.anno).filter(Boolean).join(", "),
                     whatsapp: "", note: [cella(riga, iNote), `Da lista: ${listaNome}`].filter(Boolean).join(" · "), data_richiamo: null,
                     lista_origine: listaNome,
-                    storico: [{ data: dataAssegnazione, caller: currentCaller, campo: "Assegnazione lista", da: "", a: `Nuovo (lista: ${listaNome})` }]
+                    storico: [{ data: dataAssegnazione, caller: currentCaller, campo: "Assegnazione lista", da: "", a: `Assegnata (lista: ${listaNome})` }]
                 });
             }
         });
@@ -2361,7 +2372,9 @@ function CallerPageInner() {
     // scrive SOLO il match, con la finestra temporale delle Regole. A mano
     // resta «Attivato Anomalia» per i casi da segnalare.
     const AUTO_MATCH = ["Attivato", "Attivato Altro Negozio"];
-    const statiDisponibili = (isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo")).filter((s) => !AUTO_MATCH.includes(s));
+    // «Assegnata» come «Nuovo»: lo assegna il sistema quando arriva la lista,
+    // un caller non ci torna sopra — chiuderebbe il conto del proprio ritardo
+    const statiDisponibili = (isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo" && s !== "Assegnata")).filter((s) => !AUTO_MATCH.includes(s));
 
     /* ── Detail mode flags ── */
     // scenario del modello WhatsApp (CAL-01): dal COMPORTAMENTO dello stato in
@@ -3966,7 +3979,7 @@ function CallerPageInner() {
                             {listaStep === 5 && (
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-bold text-violet-300 uppercase tracking-widest mb-3">Step 5 di 5 — Assegna ai Caller</h3>
-                                    <p className="text-xs text-slate-500 mb-4">Suddividi le {listaRows} righe tra i caller. Stato iniziale: <strong className="text-blue-300">Nuovo</strong>.</p>
+                                    <p className="text-xs text-slate-500 mb-4">Suddividi le {listaRows} righe tra i caller. Stato iniziale: <strong className="text-sky-300">Assegnata</strong> — da lavorare subito, warning dopo 2 giorni di badge, malus dopo 3.</p>
                                     {listaSplits.map((split, idx) => (
                                         <div key={idx} className="flex gap-2 items-center">
                                             <div className="flex-[2]"><SelectPersona value={split.caller} onChange={(v) => updateSplit(idx, "caller", v)} opzioni={CALLERS} placeholder="Scrivi il caller…" className="glass-input rounded-lg py-2 w-full" /></div>
