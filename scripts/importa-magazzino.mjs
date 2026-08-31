@@ -80,13 +80,24 @@ let quantita=[];
 if(fDisp){
   const r=leggi(fDisp); const c=Object.keys(r[0]||{});
   const cCod=trova(c,/^cod/i), cQta=trova(c,/^disponibilit/i,/^disp/i,/giac/i,/^q\.?t[àa]/i),
-        cCosto=trova(c,/costo\s*ult/i)||trova(c,/costo/i), cDes=trova(c,/descr/i);
+        cCosto=trova(c,/costo\s*ult/i)||trova(c,/costo/i), cDes=trova(c,/descr/i),
+        // servono per creare l'articolo se in anagrafica non c'è (vedi sotto)
+        cBar=trova(c,/barcode/i), cIva=trova(c,/iva\s*v/i), cGrp=trova(c,/^gruppo/i),
+        cSot=trova(c,/sottogruppo/i), cMar=trova(c,/^marca/i), cPrz=trova(c,/^prezzo/i),
+        cArr=trova(c,/^arrivo/i);
   console.log(`${B}Disponibilità:${X} ${fDisp.split("/").pop()} — ${r.length} righe (colonna «${cQta}»)`);
   quantita=r.map(x=>({
     codice:String(x[cCod]??"").trim(),
     quantita:num(x[cQta]), costo:num(x[cCosto]),
     descrizione:String(x[cDes]??"").trim(),
-  })).filter(x=>x.codice&&x.quantita>0);
+    barcode:cBar?String(x[cBar]??"").trim():null,
+    iva:cIva?String(x[cIva]??"").trim():null,
+    gruppo:cGrp?String(x[cGrp]??"").trim():null,
+    sottogruppo:cSot?String(x[cSot]??"").trim():null,
+    marca:cMar?String(x[cMar]??"").trim():null,
+    prezzo:cPrz?num(x[cPrz]):null,
+    arrivo:cArr?(num(x[cArr])||0):0,
+  })).filter(x=>x.codice&&(x.quantita>0||x.arrivo>0));
   const prima=quantita.length;
   quantita=quantita.filter(x=>!conSeriale.has(x.codice));
   if(prima!==quantita.length)
@@ -104,6 +115,31 @@ await db.connect();
 const noti=new Set((await db.query("select codice from mag_articoli")).rows.map(r=>String(r.codice).trim()));
 const ignotiQ=quantita.filter(x=>!noti.has(x.codice));
 const ignotiP=pezzi.filter(x=>x.codice&&!noti.has(x.codice));
+
+/* L'ARTICOLO CHE MANCA SI CREA, NON SI SALTA (Luca 31/08, Magliana Multi).
+   Il file di disponibilità porta con sé tutto quello che serve — codice,
+   barcode, descrizione, regime IVA, gruppo, marca, prezzo, costo: sono le
+   stesse colonne del listino generale. Saltare la riga voleva dire lasciare
+   fuori merce vera che sullo scaffale c'è (una batteria Realme da 55 €), e
+   con undici negozi da caricare domani non è un caso isolato: è la regola.
+   Il reparto si ricava dal regime, come per il listino. */
+const REPARTO={"22":2,"4":3,"ART.36":7,"ART.74":1,"EX ART.15":5};
+for(const a of ignotiQ){
+  // in prova NON si scrive, ma il codice si conta lo stesso: una prova che
+  // annuncia numeri diversi da quelli veri non serve a controllare niente
+  noti.add(a.codice);
+}
+if(ignotiQ.length && !flag("prova")){
+  for(const a of ignotiQ){
+    await db.query(`insert into mag_articoli
+        (codice,barcode,descrizione,iva_vendita,reparto,gruppo,sottogruppo,marca,prezzo,costo_ultimo,attivo,fonte)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,'magazzino-negozio')
+      on conflict (codice) do nothing`,
+      [a.codice, a.barcode||null, a.descrizione||a.codice, a.iva||null,
+       REPARTO[String(a.iva||"").toUpperCase()] ?? null,
+       a.gruppo||null, a.sottogruppo||null, a.marca||null, a.prezzo, a.costo]);
+  }
+}
 quantita=quantita.filter(x=>noti.has(x.codice));
 // un pezzo con un seriale si carica anche senza codice in anagrafica: il
 // seriale lo identifica da solo, e non lasciarlo entrare vorrebbe dire un
@@ -114,7 +150,7 @@ console.log(`\n${B}Riepilogo${X}`);
 console.log(`   ${G}${pezzi.length}${X} pezzi con seriale (telefoni, modem, usato)`);
 console.log(`   ${G}${quantita.length}${X} articoli a quantità — ${quantita.reduce((s,x)=>s+x.quantita,0)} pezzi`);
 if(ignotiQ.length){
-  console.log(`   ${Y}${ignotiQ.length} codici a quantità NON in anagrafica: saltati${X}`);
+  console.log(`   ${Y}${ignotiQ.length} codici a quantità non erano in anagrafica: CREATI dal file${X}`);
   ignotiQ.slice(0,6).forEach(x=>console.log(`      · ${x.codice}  ${x.descrizione.slice(0,44)}`));
   if(ignotiQ.length>6) console.log(`      · …e altri ${ignotiQ.length-6}`);
 }
@@ -130,8 +166,9 @@ if(flag("prova")){ console.log(`\n${Y}${B}Prova: non ho scritto niente.${X}\n`);
 
 await db.query("begin");
 try{
-  for(let i=0;i<quantita.length;i+=200){
-    const l=quantita.slice(i,i+200); const v=[],p=[];
+  const conPezzi=quantita.filter(x=>x.quantita>0);
+  for(let i=0;i<conPezzi.length;i+=200){
+    const l=conPezzi.slice(i,i+200); const v=[],p=[];
     l.forEach((x,k)=>{const b=k*6; v.push(`($${b+1},$${b+2},$${b+3},'carico',$${b+4},$${b+5},$${b+6})`);
       p.push(x.codice,negozio,azienda,x.quantita,x.costo,`import ${(fDisp||"").split("/").pop()}`);});
     await db.query(`insert into mag_movimenti (codice,negozio,azienda,tipo,quantita,costo_unitario,nota) values ${v.join(",")}`,p);
@@ -143,9 +180,24 @@ try{
     await db.query(`insert into mag_unita (seriale,tipo_seriale,codice,descrizione,negozio,stato,azienda,valore,caricato_da) values ${v.join(",")}
                     on conflict do nothing`,p);
   }
+  /* LA MERCE IN ARRIVO (Luca 31/08). Lo script non leggeva affatto la colonna
+     «Arrivo»: i 96 pezzi in arrivo di Donna li avevo caricati a mano il 29,
+     e ogni import successivo li avrebbe persi in silenzio — a Magliana Multi
+     un display su cui il negozio conta.
+     Va in una colonna SUA, mai sommata alla giacenza: non si vende quello che
+     sullo scaffale non c'è ancora. Ma sapere che sta arrivando serve, se non
+     altro per non riordinarlo due volte. */
+  const inArrivo=quantita.filter(x=>x.arrivo>0);
+  for(const x of inArrivo){
+    await db.query(`insert into mag_giacenze (codice,negozio,azienda,quantita,in_arrivo)
+      values ($1,$2,$3,0,$4)
+      on conflict (codice,negozio,azienda) do update set in_arrivo = excluded.in_arrivo`,
+      [x.codice,negozio,azienda,x.arrivo]);
+  }
   await db.query("commit");
 }catch(e){ await db.query("rollback"); console.log(`\n${R}ANNULLATO: ${e.message}${X}\n`); process.exit(1); }
 
 const d=(await db.query("select coalesce(sum(quantita),0) pezzi, count(*) articoli from mag_disponibilita where negozio=$1 and azienda=$2",[negozio,azienda])).rows[0];
-console.log(`\n${G}${B}✓ Caricato.${X} ${negozio}/${azienda}: ${d.articoli} articoli, ${d.pezzi} pezzi.\n`);
+const arr=(await db.query("select coalesce(sum(in_arrivo),0) a from mag_giacenze where negozio=$1 and azienda=$2",[negozio,azienda])).rows[0].a;
+console.log(`\n${G}${B}✓ Caricato.${X} ${negozio}/${azienda}: ${d.articoli} articoli, ${d.pezzi} pezzi${Number(arr)>0?`, ${arr} in arrivo`:""}.\n`);
 await db.end();
