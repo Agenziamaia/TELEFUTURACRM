@@ -131,6 +131,19 @@ export function DoveLavoro() {
 
     useEffect(() => { guarda(); }, [guarda]);
 
+    /* LE ALTRE SCHEDE (revisore 31/08). Chi apre il CRM in due schede prima di
+       rispondere si ritrova il modale in tutte e due: risponde in una, l'altra
+       resta lì con la domanda aperta. Innocuo se poi conferma la stessa sede —
+       il server non riscrive — ma se in quella dimenticata sceglie un'altra
+       sede, quella diventa la presenza del giorno: e da lì dipendono scontrino,
+       cassa e magazzino. Il browser avvisa le altre schede quando la memoria
+       cambia: basta ascoltare e rifare il controllo, che le farà chiudere. */
+    useEffect(() => {
+        const altrove = (e: StorageEvent) => { if (e.key === "crm_dove_lavoro") guarda(); };
+        window.addEventListener("storage", altrove);
+        return () => window.removeEventListener("storage", altrove);
+    }, [guarda]);
+
     if (!serve || !user?.id || typeof document === "undefined") return null;
 
     const mie = diTurno ?? [];

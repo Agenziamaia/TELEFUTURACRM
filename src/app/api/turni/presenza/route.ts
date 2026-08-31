@@ -79,7 +79,17 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
         const { error } = await supabase.from("presenza_negozio").insert({
             user_id: userId, data, sede, origine: "turno", stato: "attiva",
         });
-        if (error) return { ok: false, error: error.message };
+        /* DOPPIO CLIC (revisore 31/08): due richieste partite nello stesso
+           istante leggono entrambe «nessuna attiva» e provano a scrivere; la
+           seconda sbatte sull'indice unico. Non è un errore da mostrare — è la
+           stessa dichiarazione arrivata due volte. Si guarda com'è finita: se
+           la presenza adesso è quella giusta, è andata bene. */
+        if (error) {
+            if (error.code !== "23505") return { ok: false, error: error.message };
+            const { data: ora } = await supabase.from("presenza_negozio")
+                .select("sede").eq("user_id", userId).eq("data", data).eq("stato", "attiva").maybeSingle();
+            if (ora?.sede !== sede) return { ok: false, error: "un'altra dichiarazione è arrivata prima: ricarica la pagina" };
+        }
         return { ok: true, stato: "attiva", cambiato: true };
     }
 
@@ -87,9 +97,15 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
        davanti a un cliente»), e la richiesta nasce in attesa. */
     const sedeTurno = mie[0] || null;
     if (!attiva && sedeTurno) {
-        await supabase.from("presenza_negozio").insert({
+        /* SE QUESTA FALLISCE NON SI TIRA DRITTO (revisore 31/08). Prima
+           l'errore non veniva guardato e la funzione rispondeva comunque
+           «ok»: il browser si segnava la risposta, il modale non tornava più,
+           e la persona restava senza NESSUNA presenza attiva — cioè senza il
+           dato per cui tutta questa schermata esiste. */
+        const { error } = await supabase.from("presenza_negozio").insert({
             user_id: userId, data, sede: sedeTurno, origine: "turno", stato: "attiva",
         });
+        if (error && error.code !== "23505") return { ok: false, error: error.message };
     }
     const giaChiesta = (righe ?? []).find((r) => r.stato === "in_attesa" && r.sede === sede);
     if (!giaChiesta) {
@@ -97,7 +113,7 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
             user_id: userId, data, sede, origine: "richiesta", stato: "in_attesa",
             sede_turno: sedeTurno, motivo: motivo || null,
         });
-        if (error) return { ok: false, error: error.message };
+        if (error && error.code !== "23505") return { ok: false, error: error.message };
         /* LA TASK ALL'AMMINISTRAZIONE la scrive il SERVER, non il browser: se
            la scrive il client, basta chiudere la scheda un attimo prima e la
            richiesta resta invisibile a chi la deve approvare. */
