@@ -35,6 +35,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
+import { famigliaDalNome } from "@/lib/cassaCatalogo";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { isAdminOrAbove } from "@/lib/roles";
@@ -2762,16 +2763,67 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
     );
 }
 
-/* ── 📚 ARTICOLI (task Luca 13/08) ───────────────────────────────────────
-   Anagrafica articoli dall'export giacenze del gestionale: SOLO i
-   riferimenti (niente disponibilità). La divisione "per brand" corre su due
-   assi: GRUPPO = listino/famiglia del gestionale (chips coi conteggi),
-   MARCA = produttore (tendina, valorizzata soprattutto sui device).
-   I costi li vede solo amministrazione in su; il prezzo lo vedono tutti. */
+/* ── 📚 ARTICOLI ─────────────────────────────────────────────────────────
+   Luca 31/08: «per quanto riguarda la selezione degli articoli c'è molta
+   confusione… mi piacerebbe riportare l'impostazione che abbiamo inserito
+   all'interno di registra vendita anche qui dentro articoli… devo poter
+   filtrare anche per brand per esempio».
+
+   PERCHÉ ERA CONFUSO, misurato sui 17.061 articoli veri: i «gruppi» del
+   gestionale non sono famiglie di prodotto, sono LISTINI DI FORNITORE —
+   «LISTINO SBS» (4.974 pezzi), «ACCESSORI SYSTEMAITALIA» (2.716). Chi cerca
+   una pellicola non pensa «SBS». E il sottogruppo manca su 10.702 articoli,
+   la marca su 13.454: non ci si può filtrare sopra.
+
+   COSA C'È ADESSO, come alla cassa: una fila di FAMIGLIE con l'icona e il
+   conteggio, e dentro ognuna le sue sotto-voci. Le famiglie non stanno a
+   database perché non sono una scelta di assortimento come i gruppi della
+   cassa: sono la lettura di un export che arriva già fatto così: se un
+   giorno il gestionale cambia, si cambia qui e si vede subito.
+
+   Tre assi di filtro, non uno: FAMIGLIA (cosa è), OPERATORE (di chi è il
+   listino — la stessa deduzione che usa Giacenze) e MARCA (chi lo produce).
+   ------------------------------------------------------------------------ */
+
+/** Le famiglie, in ordine: vince la PRIMA che riconosce l'articolo. Perciò
+ *  «Telefoni» sta prima di «Accessori»: gli smartphone dei listini operatore
+ *  hanno il gruppo del listino, e finirebbero fra gli accessori. */
+const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s: string) => boolean }[] = [
+    { id: "telefoni", icona: "📱", nome: "Telefoni", dentro: (_g, s) => /smartphone|^telefoni$|mobile phone/.test(s) },
+    { id: "usato", icona: "♻️", nome: "Usato", dentro: (g) => g === "usato" },
+    { id: "sim", icona: "🔗", nome: "SIM ed eSIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
+    { id: "internet", icona: "🛜", nome: "Internet e router", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
+    { id: "indossabili", icona: "⌚", nome: "Wearable e smart device", dentro: (_g, s) => /wearable|smart device|smart pass|iot/.test(s) },
+    { id: "tablet", icona: "💻", nome: "Tablet e computer", dentro: (_g, s) => /tablet|mini pc|console|camera/.test(s) },
+    { id: "servizi", icona: "🧾", nome: "Servizi e ricariche", dentro: (g, s) => /^(servizi|ricariche|kpoint)$/.test(g) || /ricariche|carte servizi|^servizi$/.test(s) },
+    { id: "accessori", icona: "🎧", nome: "Accessori", dentro: (g, s) => /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s) },
+];
+const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
+
+/** La famiglia di un articolo. Mai `null`: quello che non si riconosce sta in
+ *  «Altro», che è una risposta onesta — nasconderlo no. */
+/* NOMI CHE DICONO IL DISPOSITIVO, non l'articolo. Dentro «Accessori» il nome
+   porta quasi sempre il telefono a cui l'accessorio serve — «Book Case for
+   Samsung Galaxy A34» — e una sotto-voce «Telefoni» dentro gli accessori è
+   una bugia utile a nessuno: si preferisce ammettere di non sapere. */
+const NON_DICONO_COSA_E = new Set(["Telefoni", "Tablet", "SIM", "eSIM", "Usato"]);
+function sottoVoceDalNome(a: Articolo): string | null {
+    const f = famigliaDalNome(a.descrizione, a.codice);
+    return f && !NON_DICONO_COSA_E.has(f) ? f : null;
+}
+
+function famigliaDi(a: { gruppo: string | null; sottogruppo: string | null }): string {
+    const g = String(a.gruppo || "").toLowerCase();
+    const s = String(a.sottogruppo || "").toLowerCase();
+    return (FAMIGLIE.find(f => f.dentro(g, s)) || ALTRO).id;
+}
+
 function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
     const [articoli, setArticoli] = useState<Articolo[]>([]);
     const [loading, setLoading] = useState(true);
-    const [gruppo, setGruppo] = useState("");
+    const [famiglia, setFamiglia] = useState("");
+    const [sotto, setSotto] = useState("");
+    const [operatore, setOperatore] = useState("");
     const [marca, setMarca] = useState("");
     const [cerca, setCerca] = useState("");
 
@@ -2784,63 +2836,133 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
         })();
     }, []);
 
-    const gruppi = useMemo(() => {
-        const m = new Map<string, number>();
-        articoli.forEach(a => { const g = a.gruppo || "Senza gruppo"; m.set(g, (m.get(g) || 0) + 1); });
-        return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-    }, [articoli]);
-    const marche = useMemo(() =>
-        Array.from(new Set(articoli.map(a => a.marca).filter(Boolean))).sort() as string[], [articoli]);
+    /* Famiglia e operatore si calcolano UNA volta per articolo: su 17.000
+       righe rifarlo a ogni battuta nella ricerca si sente. */
+    const arricchiti = useMemo(() => articoli.map(a => ({
+        ...a,
+        _fam: famigliaDi(a),
+        _op: operatoreDi(a, a.descrizione, a.codice),
+        /* LA SOTTO-VOCE. Il sottogruppo quando c'è; se manca — 10.702
+           articoli su 17.061 — si legge dal NOME con la stessa lista che dà
+           le icone alla cassa: «Book Wallet Lite Case» è una custodia, non
+           «LISTINO SBS». Solo se non si riconosce nemmeno così si ripiega
+           sul listino del fornitore, che almeno dice da dove arriva. */
+        _sotto: (a.sottogruppo || "").trim()
+            || sottoVoceDalNome(a)
+            || (a.gruppo || "").trim() || "Senza sottogruppo",
+    })), [articoli]);
 
-    const filtrati = useMemo(() => articoli.filter(a => {
-        if (gruppo && (a.gruppo || "Senza gruppo") !== gruppo) return false;
+    const conteggi = useMemo(() => {
+        const m = new Map<string, number>();
+        arricchiti.forEach(a => m.set(a._fam, (m.get(a._fam) || 0) + 1));
+        return m;
+    }, [arricchiti]);
+
+    /* Le sotto-voci della famiglia scelta, con quante ne contengono. Se ce
+       n'è UNA sola non si mostra la fila: un pulsante che non divide niente
+       è solo una riga in più da leggere. */
+    const sottoVoci = useMemo(() => {
+        if (!famiglia) return [] as [string, number][];
+        const m = new Map<string, number>();
+        arricchiti.filter(a => a._fam === famiglia).forEach(a => m.set(a._sotto, (m.get(a._sotto) || 0) + 1));
+        const v = Array.from(m.entries()).sort((x, y) => y[1] - x[1]);
+        return v.length > 1 ? v : [];
+    }, [arricchiti, famiglia]);
+
+    /* Le tendine mostrano solo quello che esiste DENTRO la selezione: offrire
+       «Apple» quando si sta guardando le SIM è un filtro che dà zero righe. */
+    const nelPerimetro = useMemo(() =>
+        arricchiti.filter(a => (!famiglia || a._fam === famiglia) && (!sotto || a._sotto === sotto)),
+        [arricchiti, famiglia, sotto]);
+    const operatori = useMemo(() =>
+        Array.from(new Set(nelPerimetro.map(a => a._op).filter(Boolean))).sort() as string[], [nelPerimetro]);
+    const marche = useMemo(() =>
+        Array.from(new Set(nelPerimetro.map(a => a.marca).filter(Boolean))).sort() as string[], [nelPerimetro]);
+
+    const filtrati = useMemo(() => nelPerimetro.filter(a => {
+        if (operatore && a._op !== operatore) return false;
         if (marca && a.marca !== marca) return false;
         if (cerca) {
             const q = cerca.toLowerCase();
             if (!`${a.codice} ${a.barcode || ""} ${a.descrizione}`.toLowerCase().includes(q)) return false;
         }
         return true;
-    }), [articoli, gruppo, marca, cerca]);
+    }), [nelPerimetro, operatore, marca, cerca]);
 
     const TETTO = 300;
     const visibili = filtrati.slice(0, TETTO);
+    const nomeFam = (id: string) => (FAMIGLIE.find(f => f.id === id) || ALTRO).nome;
+
+    /* Cambiare famiglia azzera la sotto-voce e i filtri: restare con «Apple»
+       addosso passando da Telefoni a Servizi vuol dire una tabella vuota e
+       un minuto perso a capire perché. */
+    const scegliFamiglia = (id: string) => {
+        setFamiglia(f => (f === id ? "" : id));
+        setSotto(""); setOperatore(""); setMarca("");
+    };
 
     const esporta = () => {
         const dati: CellaXlsx[][] = filtrati.map(a => [
-            a.codice, a.barcode || "", a.descrizione, a.gruppo || "", a.sottogruppo || "", a.marca || "",
+            a.codice, a.barcode || "", a.descrizione, nomeFam(a._fam), a._sotto, a._op || "", a.marca || "",
             a.prezzo ?? "", ...(vedeCosti ? [a.costo_ultimo ?? ""] : []),
         ]);
-        scaricaXlsx(`articoli_${gruppo || "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
-            ["Codice", "Barcode", "Descrizione", "Gruppo", "Sottogruppo", "Marca", "Prezzo €", ...(vedeCosti ? ["Costo €"] : [])],
+        scaricaXlsx(`articoli_${famiglia || "tutti"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+            ["Codice", "Barcode", "Descrizione", "Famiglia", "Sottogruppo", "Operatore", "Marca", "Prezzo €", ...(vedeCosti ? ["Costo €"] : [])],
             dati, "Articoli");
     };
 
     if (loading) return <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico l&apos;anagrafica articoli…</div>;
     return (
         <div className="space-y-4">
-            {/* chips dei GRUPPI coi conteggi: la divisione per brand a colpo
-                d'occhio. `rvPillRow-fitta` stringe il contorno, non il testo:
-                i gruppi sono tanti e devono stare in poche righe. */}
-            <div className="rvPillRow rvPillRow-fitta">
-                <button onClick={() => setGruppo("")} className={cn("rvPill rvPill-sm", !gruppo && "rvPill-on")}>
-                    Tutti · {articoli.length}
+            {/* ── LE FAMIGLIE: la stessa impostazione della cassa ── */}
+            <div className="rvPillRow">
+                <button onClick={() => scegliFamiglia("")} className={cn("rvPill", !famiglia && "rvPill-on")}>
+                    Tutti <b className="rvPillN">{articoli.length.toLocaleString("it-IT")}</b>
                 </button>
-                {gruppi.map(([g, n]) => (
-                    <button key={g} onClick={() => setGruppo(gruppo === g ? "" : g)}
-                        className={cn("rvPill rvPill-sm", gruppo === g && "rvPill-on")}>
-                        {g} · {n}
-                    </button>
-                ))}
+                {[...FAMIGLIE, ALTRO].map(f => {
+                    const n = conteggi.get(f.id) || 0;
+                    if (!n) return null;   // una famiglia vuota non è un pulsante, è rumore
+                    return (
+                        <button key={f.id} onClick={() => scegliFamiglia(f.id)}
+                            className={cn("rvPill", famiglia === f.id && "rvPill-on")}>
+                            {f.icona} {f.nome} <b className="rvPillN">{n.toLocaleString("it-IT")}</b>
+                        </button>
+                    );
+                })}
             </div>
+
+            {/* ── LE SOTTO-VOCI della famiglia scelta ── */}
+            {sottoVoci.length > 0 && (
+                <div className="rvPillRow rvPillRow-fitta">
+                    <button onClick={() => setSotto("")} className={cn("rvPill rvPill-sm", !sotto && "rvPill-on")}>
+                        Tutta la famiglia
+                    </button>
+                    {sottoVoci.map(([v, n]) => (
+                        <button key={v} onClick={() => setSotto(sotto === v ? "" : v)}
+                            className={cn("rvPill rvPill-sm", sotto === v && "rvPill-on")}>
+                            {v} · {n.toLocaleString("it-IT")}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             <div className="rvBox">
                 <div className="rvBoxT">📚 Anagrafica articoli</div>
                 <div className="rvBarra">
-                    {/* la className SOSTITUISCE il default di SelectOpzioni: con
-                        `w-44` il campo restava senza vestito (niente bordo, né
-                        angoli, né imbottitura) — ci vuole `.rvIn` diretta. */}
-                    <div className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
-                        <SelectOpzioni value={marca} onChange={setMarca} opzioni={marche} placeholder="Tutte" className="rvIn" />
-                    </div>
+                    {/* OPERATORE = di chi è il listino. Non è un campo
+                        dell'anagrafica: si deduce dal gruppo e dal nome, con la
+                        stessa funzione che usa Giacenze — due letture diverse
+                        dello stesso dato divergono sempre. */}
+                    {operatori.length > 0 && (
+                        <div className="rvCampo rvCampo-sm"><span className="rvLab">Operatore</span>
+                            <SelectOpzioni value={operatore} onChange={setOperatore} opzioni={operatori} placeholder="Tutti" className="rvIn" />
+                        </div>
+                    )}
+                    {marche.length > 0 && (
+                        <div className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
+                            <SelectOpzioni value={marca} onChange={setMarca} opzioni={marche} placeholder="Tutte" className="rvIn" />
+                        </div>
+                    )}
                     <label className="rvCampo rvCampo-flex"><span className="rvLab">Cerca <span className="rvLabX">(codice, barcode, descrizione)</span></span>
                         <span className="rvCerca">
                             <Search size={16} />
@@ -2854,6 +2976,7 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                     </button>
                 </div>
             </div>
+
             <div className="rvTabBox">
                 <table className="rvTab">
                     <thead>
@@ -2862,6 +2985,7 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                             <th>Barcode</th>
                             <th>Descrizione</th>
                             <th>Sottogruppo</th>
+                            <th>Operatore</th>
                             <th>Marca</th>
                             <th className="rvTab-c">Prezzo</th>
                             {vedeCosti && <th className="rvTab-c">Costo ult.</th>}
@@ -2873,13 +2997,14 @@ function Articoli({ vedeCosti }: { vedeCosti: boolean }) {
                                 <td className="rvTab-cod">{a.codice}</td>
                                 <td className="rvTab-cod">{a.barcode || "—"}</td>
                                 <td className="rvTab-nome">{a.descrizione}</td>
-                                <td className="rvTab-min">{a.sottogruppo || "—"}</td>
+                                <td className="rvTab-min">{a._sotto}</td>
+                                <td className="rvTab-min">{a._op || "—"}</td>
                                 <td className="rvTab-min">{a.marca || "—"}</td>
                                 <td className="rvTab-n">{eur(a.prezzo)}</td>
                                 {vedeCosti && <td className="rvTab-n rvTab-min">{eur(a.costo_ultimo)}</td>}
                             </tr>
                         ))}
-                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 7 : 6} className="rvTab-vuoto">Nessun articolo con questi filtri.</td></tr>}
+                        {!filtrati.length && <tr><td colSpan={vedeCosti ? 8 : 7} className="rvTab-vuoto">Nessun articolo con questi filtri.</td></tr>}
                     </tbody>
                 </table>
                 {filtrati.length > TETTO && (

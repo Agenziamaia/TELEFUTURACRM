@@ -376,31 +376,56 @@ export function scordaGruppi() { _gruppi = null; }
    l'icona si ricava da com'è fatto l'articolo — è l'unica cosa che sappiamo
    di sicuro, il nome. Prima il termine più specifico: «cavo tipo C» è un
    cavo, non un tipo. */
-const ICONE: [RegExp, string][] = [
-    [/pellicol|vetro temp|tempered|glass|screen protect/i, "🪟"],
-    [/cover|custodi|flip|bumper|guscio/i, "🛡️"],
-    [/power\s*bank|batteri|accumulator/i, "🔋"],
-    [/auricolar|cuffi|ear\s*bud|headphone|airpod|headset/i, "🎧"],
-    [/speaker|cassa bluetooth|soundbar|altoparlant/i, "🔊"],
-    [/micro\s*sd|memory|memori|usb|pen\s*drive|pendrive|flash/i, "💾"],
-    [/caricabatteri|caricator|alimentator|trasformator|charger|adattatore di rete/i, "⚡"],
-    [/cavo|cable|type\s*-?c|lightning|micro\s*usb/i, "🔌"],
-    [/adattator|adapter|adatt\b/i, "🔗"],
-    [/modem|router|fwa|internet key|hotspot/i, "📡"],
-    [/tablet|ipad/i, "🧱"],
-    [/watch|orolog|band\b|smartband/i, "⌚"],
-    [/e-?sim|esim/i, "📲"],
-    [/\bsim\b|usim|iccid/i, "📶"],
-    [/smartphone|telefon|phone|iphone|galaxy|redmi|xiaomi|motorola/i, "📱"],
-    [/support|holder|stand|treppied/i, "📎"],
-    [/car\b|auto|ventol|parabrezza/i, "🚗"],
-    [/kasko|assicuraz|garanzi/i, "🧾"],
-    [/usato|ricondizion/i, "♻️"],
+/* Regola, emoji e NOME della famiglia. Il nome serve al magazzino: i 17.061
+   articoli del gestionale hanno il sottogruppo vuoto su 10.702 righe, e al
+   loro posto c'è il listino del fornitore — «LISTINO SBS», «Accessori». Chi
+   cerca una custodia non pensa «SBS». Quando il sottogruppo manca, la
+   famiglia si legge dal nome dell'articolo, con QUESTA lista: una sola, così
+   l'icona alla cassa e la voce in magazzino non possono dire due cose diverse.
+   L'ordine conta: vince la prima che riconosce, quindi il termine più
+   specifico sta prima — «cavo tipo C» è un cavo, non un tipo. */
+const TIPI: [RegExp, string, string][] = [
+    [/pellicol|vetro temp|tempered|glass|screen protect/i, "🪟", "Pellicole e vetri"],
+    [/cover|custodi|flip|bumper|guscio|book\b|wallet|jelly|handbag|\bcase\b/i, "🛡️", "Custodie e cover"],
+    [/power\s*bank|accumulator|batteria esterna/i, "🔋", "Power bank"],
+    /* LE BATTERIE DI RICAMBIO hanno il codice attaccato al modello —
+       `BATTREDMI9`, `battredminote11s` — e «batteri» non ci si aggancia:
+       finivano fra i «Telefoni» perché dentro c'era «redmi». */
+    [/^\s*batt|batteri(?!a esterna)/i, "🔋", "Batterie di ricambio"],
+    [/auricolar|cuffi|ear\s*bud|earphone|headphone|airpod|headset/i, "🎧", "Auricolari e cuffie"],
+    [/speaker|cassa bluetooth|soundbar|altoparlant/i, "🔊", "Speaker"],
+    [/micro\s*sd|memory|memori|usb|pen\s*drive|pendrive|flash/i, "💾", "Memorie e USB"],
+    [/caricabatteri|caricator|alimentator|trasformator|charger|adattatore di rete/i, "⚡", "Caricabatterie"],
+    [/cavo|cable|type\s*-?c|lightning|micro\s*usb/i, "🔌", "Cavi"],
+    [/adattator|adapter|adatt\b/i, "🔗", "Adattatori"],
+    [/modem|router|fwa|internet key|hotspot/i, "📡", "Modem e router"],
+    [/tablet|ipad/i, "🧱", "Tablet"],
+    [/watch|orolog|band\b|smartband/i, "⌚", "Orologi e band"],
+    [/e-?sim|esim/i, "📲", "eSIM"],
+    [/\bsim\b|usim|iccid/i, "📶", "SIM"],
+    [/smartphone|telefon|phone|iphone|galaxy|redmi|xiaomi|motorola/i, "📱", "Telefoni"],
+    /* i RICAMBI si chiamano «Display», «DISPLAY IPHONE4B», e la colla per
+       rimontarli. La regola è ancorata all'inizio apposta: «display 6.5"»
+       dentro la scheda di un telefono non deve farlo diventare un ricambio. */
+    [/^\s*display|^\s*glue|\bdisplay (iphone|samsung|per)\b/i, "🧩", "Ricambi"],
+    [/support|holder|stand|treppied|cardholder/i, "📎", "Supporti"],
+    [/charm|bijoux|portachiav|keyring/i, "✨", "Gadget e charm"],
+    [/car\b|auto|ventol|parabrezza/i, "🚗", "Auto"],
+    [/kasko|assicuraz|garanzi/i, "🧾", "Assicurazioni"],
+    [/usato|ricondizion/i, "♻️", "Usato"],
 ];
 
 /** L'emoji che descrive un articolo. Mai vuota: nel dubbio è una scatola. */
 export function iconaArticolo(...testi: (string | null | undefined)[]): string {
     const t = testi.filter(Boolean).join(" ");
-    for (const [rx, ico] of ICONE) if (rx.test(t)) return ico;
+    for (const [rx, ico] of TIPI) if (rx.test(t)) return ico;
     return "📦";
+}
+
+/** La FAMIGLIA di un articolo letta dal nome, quando il gestionale non la dice.
+ *  `null` se non si riconosce: inventarla sarebbe peggio che ammetterlo. */
+export function famigliaDalNome(...testi: (string | null | undefined)[]): string | null {
+    const t = testi.filter(Boolean).join(" ");
+    for (const [rx, , nome] of TIPI) if (rx.test(t)) return nome;
+    return null;
 }
