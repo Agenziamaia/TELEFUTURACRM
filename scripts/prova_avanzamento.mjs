@@ -190,5 +190,31 @@ for (const [cella, atteso] of [
     dico("classifica: col totale", 268, cl[0].totale);
 }
 
+// ── 12. i difetti misurati dal revisore del 31/08 sera ──────────────────────
+{
+    // (a) i codici NON numerici non devono fare da chiave: MB-T1-DONNA a cifre
+    //     e' «1», e una colonna di bandierine risultava «tutta nostra»
+    const NOSTRI = ["9000721835", "9001154565", "MB-T1-DONNA", "MB-T2-RS"];
+    dico("una colonna di 1 non e' fatta dei nostri codici", 0, F.quotaCodiciNoti(["1", "1", "0", "1"], NOSTRI));
+    dico("la colonna dei codici veri si riconosce", 1, F.quotaCodiciNoti(["9000721835", "9001154565"], NOSTRI));
+    // (b) file d'area: i nostri sono una minoranza, ma restano l'unica colonna di codici
+    const head = ["Ragione Sociale", "Flag", "COD_GARA", "Somma di PUNTI"];
+    const corpo = [];
+    for (let i = 0; i < 15; i++) corpo.push([`DEALER ${i}`, i % 2 ? "1" : "0", `800000000${i}`, String(10 + i)]);
+    corpo.push(["TELEFUTURA MAGLIANA", "1", "9000721835", "33"]);
+    corpo.push(["TELEFUTURA LIBIA", "0", "9001154565", "21"]);
+    const m = F.proponiMappaUnaPista(head, corpo, "Mobile", NOSTRI);
+    dico("file d'area: vince COD_GARA, non il flag", [F.COL_IGNORA, F.COL_IGNORA, F.COL_CODICE, "Mobile"], m);
+    // (c) «reward» non batte piu' «punti» sulla Customer Base
+    const h2 = ["COD_GARA", "Somma di REWARD MATURATO", "Somma di PUNTI PARTNERSHIP"];
+    const c2 = [["9000721835", "166", "165"], ["9001154565", "120", "119"]];
+    const cl = F.classificaColonneValore(h2, c2, "Customer Base", 0);
+    dico("CB: vince PUNTI, non REWARD", "Somma di PUNTI PARTNERSHIP", cl[0].titolo);
+    // (d) i sinonimi arrivano ai nomi VERI del tabellare
+    const h3 = ["COD_GARA", "Somma di KIT PROTEZIONE", "Somma di PUNTI"];
+    const c3 = [["9000721835", "17", "66"], ["9001154565", "12", "40"]];
+    dico("W3 Protetti riconosce il KIT", "Somma di KIT PROTEZIONE", F.classificaColonneValore(h3, c3, "W3 Protetti", 0)[0].titolo);
+}
+
 console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
 process.exit(ko ? 1 : 0);

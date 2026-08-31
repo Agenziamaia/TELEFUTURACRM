@@ -140,8 +140,16 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
        zero, la colonna è sbagliata — e adesso lo dice invece di lasciar salvare
        numeri attribuiti a codici che non esistono. */
     const codiciFile = [...new Set(righeUfficiali.map((r) => r.cod_gara))];
-    const notiSet = new Set(codiciNoti.map(soloCifre).filter(Boolean));
+    /* IL CODICE SI RICONOSCE A CIFRE MA SI SALVA COM'È SCRITTO — e il confronto
+       poi cerca l'uguaglianza esatta (revisore 31/08). Con «9.000.721.835»,
+       che è come Excel restituisce una cella formattata, la finestra diceva
+       «3 dei nostri» in verde e un minuto dopo la pagina diceva «3 codici del
+       file non sono fra i nostri». Qui si riporta il codice alla forma che
+       abbiamo in anagrafica. */
+    const canonico = new Map(codiciNoti.filter((c) => soloCifre(c).length >= 4).map((c) => [soloCifre(c), c]));
+    const notiSet = new Set(canonico.keys());
     const codiciRiconosciuti = notiSet.size ? codiciFile.filter((c) => notiSet.has(soloCifre(c))).length : null;
+    const righeDaSalvare = righeUfficiali.map((r) => ({ ...r, cod_gara: canonico.get(soloCifre(r.cod_gara)) ?? r.cod_gara }));
 
     const salva = async () => {
         if (!al) { setErrore("Serve la data a cui è fermo l'avanzamento."); return; }
@@ -155,10 +163,11 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNo
         if (!righeUfficiali.length) { setErrore("Non c'è nessun numero da salvare: controlla la mappatura."); return; }
         if (codiciRiconosciuti === 0) { setErrore(`⛔ Nessuno dei ${codiciFile.length} codici di questa colonna è fra i nostri: hai scelto la colonna sbagliata. I nostri sono ${codiciNoti.slice(0, 3).join(", ")}${codiciNoti.length > 3 ? "…" : ""}.`); return; }
         setBusy(true); setErrore(null);
-        const r = await salvaAvanzamento({ brand, monthISO, al, righe: righeUfficiali, fileName: nomeFile, chi: chi || undefined, file: fileObj });
+        const r = await salvaAvanzamento({ brand, monthISO, al, righe: righeDaSalvare, fileName: nomeFile, chi: chi || undefined, file: fileObj });
         setBusy(false);
         if (!r.ok) { setErrore(r.errore); return; }
         setFatto(r.n);
+        if (r.avviso) setErrore(`⚠️ ${r.avviso}`);
         storicoAvanzamenti(brand, monthISO).then(setStorico).catch(() => { });
         onFatto();
     };

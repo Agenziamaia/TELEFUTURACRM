@@ -473,7 +473,7 @@ export function DirezioneInserimentoAdmin() {
                                     <b className="text-rose-200"> −</b> da TOGLIERE, li contiamo noi e {bMeta.label} non ce li riconosce — la soglia che credi presa potrebbe non esserlo ·
                                     <b className="text-emerald-200"> +</b> da AGGIUNGERE, ce li conta {bMeta.label} e da noi non risultano: pagano lo stesso, ma stanno su un altro codice
                                 </p>
-                                <div className="grid gap-x-5 gap-y-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(240px, 1fr))` }}>
+                                <div className="grid gap-x-5 gap-y-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(240px, 1fr))` }}>
                                     {[...new Set([...R.daTogliere, ...R.daAggiungere].map((x) => x.pista))].map((pista) => {
                                         const righe = [...R.daTogliere.filter((x) => x.pista === pista), ...R.daAggiungere.filter((x) => x.pista === pista)];
                                         const netto = Math.round(righe.reduce((t, x) => t + x.scarto, 0) * 100) / 100;
@@ -955,12 +955,31 @@ export function DirezioneInserimentoAdmin() {
                                 // VIOLA (Luca 27/08-8, poi 15% «lo sfrido è già nelle
                                 // soglie»): proiezione oltre il target di +15% =
                                 // margine da SPOSTARE sui pallini rossi
-                                const stato = t <= 0 ? "vuoto" : f >= t ? "verde" : pj == null ? "grigio" : pj >= t * 1.15 ? "viola" : pj >= t ? "giallo" : "rosso";
+                                /* DUE PALLINI, NON UNO (Luca 31/08): «un pallino che mi
+                                   indica la proiezione e un pallino che mi indica
+                                   l'attuale — così a fine mese capisco subito, senza
+                                   aprire le righe». Stessa legenda, due situazioni.
+                                   La SOGLIA NUDA è quella della scala; il target della
+                                   direzione è la stessa soglia PIÙ lo sfrido, ed è la
+                                   distanza fra le due che fa l'arancione. */
+                                const scala = (k.soglie[p.chiave] || []).map(Number).filter((x) => Number.isFinite(x) && x > 0);
+                                const tierScelto = k.tiersScelti?.[p.chiave] || null;
+                                const nuda = tierScelto != null && scala[tierScelto - 1] != null ? scala[tierScelto - 1] : null;
+                                const tierDi = (v: number | null) => v == null ? null : scala.reduce((acc, sg, i) => (v >= sg ? i + 1 : acc), 0) || null;
+                                const siglaDi = (tier: number | null) => tier == null ? "—" : cbSem ? (tier === 1 ? "80%" : "100%") : `S${tier}`;
+                                // ADESSO: preso col cuscinetto / preso senza / non preso
+                                const statoOra = t <= 0 ? "vuoto" : f >= t ? "verde" : (nuda != null && f >= nuda) ? "arancione" : "rosso";
+                                // PROIEZIONE: com'era, più l'arancione fra il giallo e il rosso
+                                const stato = t <= 0 ? "vuoto" : f >= t ? "verde" : pj == null ? "grigio"
+                                    : pj >= t * 1.15 ? "viola" : pj >= t ? "giallo" : (nuda != null && pj >= nuda) ? "arancione" : "rosso";
                                 // la SIGLA della soglia impostata (S1..S4; CB 80%/100%):
                                 // da fuori si vede subito che soglia sto provando a prendere
-                                const tierScelto = k.tiersScelti?.[p.chiave] || null;
-                                const sigla = t <= 0 ? "" : tierScelto == null ? "✎" : (cbSem ? (tierScelto === 1 ? "80%" : "100%") : `S${tierScelto}`);
-                                return { chiave: p.chiave, nome: p.nome, t, f, stato, sigla };
+                                const sigla = t <= 0 ? "" : tierScelto == null ? "✎" : siglaDi(tierScelto);
+                                return {
+                                    chiave: p.chiave, nome: p.nome, t, f, pj, nuda, stato, sigla, statoOra,
+                                    siglaOra: t <= 0 ? "" : siglaDi(tierDi(f)),
+                                    siglaProj: t <= 0 ? "" : pj == null ? "—" : siglaDi(tierDi(pj)),
+                                };
                             });
                         /* ══ IL PALETTO, ACCANTO AL MOBILE (Luca 28/08) ═══════════
                            Le P.IVA mobile che tengono in piedi il premio della gara
@@ -988,20 +1007,34 @@ export function DirezioneInserimentoAdmin() {
                             // costante: se WindTre cambia il paletto, cambia da solo
                             const paletto = Number(dir.palettoBusiness) || W3_PALETTO_BUSINESS;
                             const obiettivo = paletto + sfridoPal;
-                            const stato = fatti >= obiettivo ? "verde" : fatti >= paletto ? "giallo" : "rosso";
+                            /* Il paletto ha già la sua scala di rischio (verde col
+                               cuscinetto, ambra col paletto salvo, rosso sotto): qui
+                               l'ARANCIONE è proprio quel «preso ma senza cuscinetto»,
+                               quindi l'ambra diventa arancione e la lettura è la stessa
+                               delle altre piste. La proiezione non c'entra — o i pezzi
+                               ci sono o non ci sono — quindi i due pallini coincidono. */
+                            const stato = fatti >= obiettivo ? "verde" : fatti >= paletto ? "arancione" : "rosso";
                             const iMobile = semafori.findIndex((x) => x.chiave === "mobile");
                             semafori.splice(iMobile < 0 ? 0 : iMobile + 1, 0, {
-                                chiave: "__paletto__", nome: "Paletto", t: obiettivo, f: fatti, stato,
-                                sigla: `${fatti}/${obiettivo}`,
+                                chiave: "__paletto__", nome: "Paletto", t: obiettivo, f: fatti, pj: null, nuda: paletto, stato,
+                                sigla: `${fatti}/${obiettivo}`, statoOra: stato,
+                                siglaOra: `${fatti}`, siglaProj: `${obiettivo}`,
                             });
                         }
                         const semCompatti = semafori.filter((x) => x.stato !== "vuoto");
+                        /* ARANCIONE: LA SOGLIA C'È, IL CUSCINETTO NO (Luca 31/08).
+                           Fra il rosso e il giallo mancava lo stato più frequente di
+                           fine mese: la soglia nuda è presa, ma non il target con lo
+                           sfrido — cioè il margine d'errore che la direzione si tiene
+                           per le pratiche che cadono. Non è un traguardo raggiunto e
+                           non è un rosso: è «ci sei, ma senza rete». */
                         const stilePallino = (stato: string) => stato === "verde" ? { background: "#34d399", boxShadow: "0 0 7px #34d399" }
                             : stato === "viola" ? { background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }
                                 : stato === "giallo" ? { background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }
-                                    : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
-                                        : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
-                                            : { background: "transparent", border: "1px solid rgba(148,163,184,.3)" };
+                                    : stato === "arancione" ? { background: "#fb923c", boxShadow: "0 0 7px #fb923c88" }
+                                        : stato === "grigio" ? { background: "rgba(148,163,184,.45)" }
+                                            : stato === "rosso" ? { background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }
+                                                : { background: "transparent", border: "1px solid rgba(148,163,184,.3)" };
                         const palettoW3 = Number(dir.palettoBusiness) || W3_PALETTO_BUSINESS;
                         const tipPallino = (x: { chiave?: string; nome: string; f: number; t: number; stato: string; sigla?: string }) =>
                             x.chiave === "__paletto__"
@@ -1037,7 +1070,7 @@ export function DirezioneInserimentoAdmin() {
                                            file caricati le piste in ballo sono cinque.
                                            Il riquadro cresce da 128 a 152px e «Customer
                                            Base», che si leggeva «Custo…», diventa CB. */
-                                        <div className="hidden lg:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "152px" }}>
+                                        <div className="hidden xl:grid grid-flow-col gap-2 shrink-0" style={{ gridAutoColumns: "152px" }}>
                                             {semafori.map((sm) => {
                                                 const solaQui = on && pistaSola === sm.chiave;
                                                 const sc = conf?.scarti.get(`${k.cod_gara}|${sm.chiave}`);
@@ -1045,23 +1078,37 @@ export function DirezioneInserimentoAdmin() {
                                                 return (
                                                     <button key={sm.chiave} type="button"
                                                         onClick={(e) => { e.stopPropagation(); apriSolaPista(k.cod_gara, sm.chiave); }}
-                                                        title={`${tipPallino(sm)}${delta != null ? `\n\n${delta < 0
-                                                            ? `− ${it(Math.abs(delta))} punti DA TOGLIERE: li contiamo noi e ${bMeta.label}, al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}, non ce li riconosce. La soglia che credi presa potrebbe non esserlo.`
-                                                            : `+ ${it(delta)} punti DA AGGIUNGERE: ce li conta ${bMeta.label} al ${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)} e da noi non risultano. Pagano lo stesso, ma stanno su un altro codice.`}` : ""}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
+                                                        title={`${tipPallino(sm)}\n\nADESSO: ${sm.siglaOra || "nessuna soglia"} — ${sm.statoOra === "verde" ? "target preso, cuscinetto compreso" : sm.statoOra === "arancione" ? "soglia presa, ma senza lo sfrido" : sm.statoOra === "vuoto" ? "nessun target" : "target non ancora preso"}\nA FINE MESE: ${sm.sigla || "nessun target"} — ${sm.stato === "verde" ? "già preso" : sm.stato === "viola" ? "lo supera di oltre il 15%" : sm.stato === "giallo" ? "in proiezione ci arriva" : sm.stato === "arancione" ? "in proiezione arriva alla soglia ma non allo sfrido" : sm.stato === "grigio" ? "proiezione non ancora attiva" : "nemmeno in proiezione"}${delta != null ? `\n\n${delta < 0
+                                                            ? `− ${it(Math.abs(delta))} punti DA TOGLIERE: li contiamo noi e ${bMeta.label}, al ${sc!.al.slice(8, 10)}/${sc!.al.slice(5, 7)}, non ce li riconosce. La soglia che credi presa potrebbe non esserlo.`
+                                                            : `+ ${it(delta)} punti DA AGGIUNGERE: ce li conta ${bMeta.label} al ${sc!.al.slice(8, 10)}/${sc!.al.slice(5, 7)} e da noi non risultano. Pagano lo stesso, ma stanno su un altro codice.`}` : ""}\n\n▸ clicca: apri SOLO questa pista di questo codice`}
                                                         className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors",
                                                             solaQui
                                                                 ? "bg-indigo-500/20 border-indigo-400/50"
                                                                 : delta != null && delta < 0
                                                                     ? "bg-rose-500/10 border-rose-400/35 hover:bg-rose-500/15"
                                                                     : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20")}>
-                                                        <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{conSim(EMOJI_PISTA(sm.nome))} {NOME_CORTO(sm.nome)}</span>
-                                                        {delta != null && (
-                                                            <span className={cn("text-[9px] font-black tabular-nums shrink-0", delta < 0 ? "text-rose-200" : "text-emerald-200")}>
-                                                                {delta > 0 ? "+" : "−"}{it(Math.abs(delta))}
+                                                        {/* DUE RIGHE, DUE LETTURE (Luca 31/08): sopra il KPI
+                                                            con lo scarto dall'ufficiale, sotto DOVE SONO ORA e
+                                                            DOVE ARRIVO. Stessa legenda di colori, applicata a
+                                                            due situazioni diverse: così a fine mese si legge
+                                                            tutto dalla riga chiusa, senza aprire niente. */}
+                                                        <span className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                                            <span className="flex items-center gap-1">
+                                                                <span className={cn("text-[10px] font-semibold truncate flex-1 text-left", solaQui ? "text-indigo-100" : "text-slate-400")}>{conSim(EMOJI_PISTA(sm.nome))} {NOME_CORTO(sm.nome)}</span>
+                                                                {delta != null && (
+                                                                    <span className={cn("text-[9px] font-black tabular-nums shrink-0", delta < 0 ? "text-rose-200" : "text-emerald-200")}>
+                                                                        {delta > 0 ? "+" : "−"}{it(Math.abs(delta))}
+                                                                    </span>
+                                                                )}
                                                             </span>
-                                                        )}
-                                                        {sm.sigla && <span className="text-[10px] font-black text-slate-200 tabular-nums shrink-0">{sm.sigla}</span>}
-                                                        <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
+                                                            <span className="flex items-center gap-1">
+                                                                <span className={cn("w-2 h-2 rounded-full shrink-0", sm.statoOra === "rosso" && "animate-pulse")} style={stilePallino(sm.statoOra)} />
+                                                                <span className="text-[9px] font-black text-slate-300 tabular-nums">{sm.siglaOra || "—"}</span>
+                                                                <span className="text-[8px] text-slate-600">→</span>
+                                                                <span className={cn("w-2 h-2 rounded-full shrink-0", sm.stato === "rosso" && "animate-pulse")} style={stilePallino(sm.stato)} />
+                                                                <span className="text-[9px] font-black text-slate-200 tabular-nums">{sm.sigla || "—"}</span>
+                                                            </span>
+                                                        </span>
                                                     </button>
                                                 );
                                             })}
@@ -1098,7 +1145,7 @@ export function DirezioneInserimentoAdmin() {
                                                 <span title={togliere
                                                     ? `${it(Math.abs(togliere))} punti DA TOGLIERE: li contiamo noi e ${bMeta.label} non ce li riconosce al ${gg}.${aggiungere ? ` (E ${it(aggiungere)} da aggiungere, che loro contano e noi no.)` : ""}`
                                                     : `${it(aggiungere)} punti DA AGGIUNGERE: ce li conta ${bMeta.label} al ${gg} e da noi non risultano.`}
-                                                    className={cn("hidden lg:inline-block px-1.5 py-0.5 rounded-md border text-[10px] font-black whitespace-nowrap",
+                                                    className={cn("hidden xl:inline-block px-1.5 py-0.5 rounded-md border text-[10px] font-black whitespace-nowrap",
                                                         togliere ? "bg-rose-500/15 border-rose-400/40 text-rose-200" : "bg-emerald-500/10 border-emerald-400/30 text-emerald-200")}>
                                                     {togliere ? `− ${it(Math.abs(togliere))}` : `+ ${it(aggiungere)}`}
                                                 </span>
@@ -1114,11 +1161,11 @@ export function DirezioneInserimentoAdmin() {
                                                di prendersi un badge suo: misurato dal revisore, quel
                                                badge riduceva il nome del negozio a una lettera. */
                                             const sc = conf ? [...conf.scarti.values()].filter((x) => x.cod_gara === k.cod_gara).map((x) => x.scarto) : [];
-                                            const scPiu = sc.some((x) => x <= -0.01), scMeno = sc.some((x) => x >= 0.01);
+                                            const daTogliere = sc.some((x) => x <= -0.01), daAggiungere = sc.some((x) => x >= 0.01);
                                             return (
-                                            <span className={cn("lg:hidden flex items-center gap-1.5 border rounded-md px-1.5 py-1.5",
-                                                scPiu ? "bg-rose-500/10 border-rose-400/40" : "bg-white/[0.04] border-white/10")}>
-                                                {(scPiu || scMeno) && <span className={cn("text-[10px] font-black leading-none", scPiu ? "text-rose-200" : "text-slate-300")}>≠</span>}
+                                            <span className={cn("xl:hidden flex items-center gap-1.5 border rounded-md px-1.5 py-1.5",
+                                                daTogliere ? "bg-rose-500/10 border-rose-400/40" : "bg-white/[0.04] border-white/10")}>
+                                                {(daTogliere || daAggiungere) && <span className={cn("text-[10px] font-black leading-none", daTogliere ? "text-rose-200" : "text-emerald-200")}>≠</span>}
                                                 {semCompatti.map((sm) => (
                                                     <span key={sm.chiave} title={tipPallino(sm)} className="flex items-center gap-0.5">
                                                         <span className="text-[11px] leading-none">{conSim(EMOJI_PISTA(sm.nome))}</span>
@@ -1182,7 +1229,7 @@ export function DirezioneInserimentoAdmin() {
                                                             (() => {
                                                                 const sc = conf?.scarti.get(`${k.cod_gara}|${p.chiave}`);
                                                                 if (!sc || Math.abs(sc.scarto) < 0.01) return null;
-                                                                const g = `${conf!.al.slice(8, 10)}/${conf!.al.slice(5, 7)}`;
+                                                                const g = `${sc.al.slice(8, 10)}/${sc.al.slice(5, 7)}`;
                                                                 return sc.scarto < 0
                                                                     ? `− ${it(Math.abs(sc.scarto))} pt da togliere: al ${g} ${bMeta.label} ne conta ${it(sc.ufficiale)}, noi ${it(sc.nostro)}`
                                                                     : `+ ${it(sc.scarto)} pt da aggiungere: al ${g} ${bMeta.label} ne conta ${it(sc.ufficiale)}, noi ${it(sc.nostro)}`;
@@ -1320,10 +1367,12 @@ export function DirezioneInserimentoAdmin() {
                                     <div><b className="text-white">🔒 Riservatezza</b>: il widget dei ragazzi dà SOLO il codice — mai target, avanzamenti o mancanti.</div>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <div className="text-[10px] font-bold text-slate-500 uppercase">I pallini dei codici</div>
+                                    <div className="text-[10px] font-bold text-slate-500 uppercase">I due pallini dei codici</div>
+                                    <div className="text-slate-400 pb-1">Ogni pista ne ha <b className="text-white">due</b>, con la stessa legenda letta in due momenti: il primo è <b className="text-white">dove sei ADESSO</b>, il secondo <b className="text-white">dove arrivi a fine mese</b> con questo ritmo. La sigla accanto a ciascuno è la soglia: <span className="font-mono text-slate-200">S1 → S2</span> vuol dire «oggi hai la prima, chiudi con la seconda».</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#34d399", boxShadow: "0 0 7px #34d399" }} /> <b className="text-white">Verde</b> — target preso.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#a78bfa", boxShadow: "0 0 7px #a78bfa" }} /> <b className="text-white">Viola</b> — in proiezione lo SUPERA di oltre il 15%: c&apos;è margine da spostare sui rossi.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fbbf24", boxShadow: "0 0 7px #fbbf2488" }} /> <b className="text-white">Giallo</b> — non ancora preso, ma in proiezione ci arriva.</div>
+                                    <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#fb923c", boxShadow: "0 0 7px #fb923c88" }} /> <b className="text-white">Arancione</b> — la soglia c&apos;è, il cuscinetto no: sei sopra il numero nudo ma sotto il target con lo sfrido. Basta una pratica che cade e la soglia salta.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse" style={{ background: "#f43f5e", boxShadow: "0 0 7px #f43f5e88" }} /> <b className="text-white">Rosso</b> (pulsante) — nemmeno in proiezione: serve una spinta.</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "rgba(148,163,184,.45)" }} /> <b className="text-white">Grigio</b> — proiezione non ancora attiva (primi giorni del mese).</div>
                                     <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ border: "1px solid rgba(148,163,184,.3)" }} /> <b className="text-white">Vuoto</b> — nessun target dato su quella pista.</div>

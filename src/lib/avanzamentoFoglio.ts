@@ -37,7 +37,13 @@ export const soloCifre = (v: unknown) => String(v ?? "").replace(/\D/g, "");
  *  non ha lo stacco fra «cod» e «gara», e «COD Lettera» sì (Luca 31/08). */
 export function quotaCodiciNoti(colonna: string[], noti: string[]): number {
     if (!noti.length) return 0;
-    const set = new Set(noti.map(soloCifre).filter(Boolean));
+    /* SOLO I CODICI VERI (revisore 31/08). Due dei nostri sono etichette
+       nostre — «MB-T1-DONNA», «MB-T2-RS» — e a cifre diventano «1» e «2»:
+       bastava che il foglio avesse una colonna di bandierine 0/1 perché
+       risultasse fatta al 100% dei nostri codici e vincesse lei. Misurato: su
+       un file d'area con venti dealer, le venti righe collassavano in una sola
+       con la somma di tutti, e il piede diceva «1 dei nostri» in verde. */
+    const set = new Set(noti.map(soloCifre).filter((c) => c.length >= 4));
     if (!set.size) return 0;
     const celle = colonna.map((c) => soloCifre(c)).filter(Boolean);
     if (!celle.length) return 0;
@@ -175,8 +181,12 @@ export function punteggioColonnaValore(celle: string[], titolo: string, nomePist
     const somma = num.reduce((t, n) => t + Math.abs(n), 0);
     const bandierine = num.every((n) => n === 0 || n === 1);
     const t = String(titolo || "").toLowerCase();
-    const parole = [...String(nomePista || "").toLowerCase().split(/\s+/).filter((w) => w.length > 2), ...SINONIMI_PISTA[String(nomePista || "").toLowerCase()] || []];
-    const generiche = ["progress", "totale", "punti", "pezzi", "avanz", "valore", "reward"];
+    const nome = String(nomePista || "").toLowerCase().replace(/[()]/g, " ").replace(/\bw3\b/g, " ");
+    const parole = [...nome.split(/[\s\-–]+/).filter((w) => w.length > 2), ...sinonimiDi(nome)];
+    // «reward» sta fra i SINONIMI della Customer Base, non fra le generiche:
+    // messo in tutte e due batteva la colonna dei punti per un centesimo di
+    // punteggio, e se il reward è in euro entravano gli euro (revisore 31/08)
+    const generiche = ["progress", "totale", "punti", "pezzi", "avanz", "valore"];
     let p = 0;
     if (parole.some((w) => t.includes(w))) p += 100;
     if (generiche.some((w) => t.includes(w))) p += 40;
@@ -186,14 +196,23 @@ export function punteggioColonnaValore(celle: string[], titolo: string, nomePist
     return p;
 }
 
-/** Sinonimi con cui gli operatori chiamano le nostre piste nei loro fogli. */
-const SINONIMI_PISTA: Record<string, string[]> = {
-    "customer base": ["partnership", "reward", "cb"],
-    "mobile": ["sim", "mnp", "linee"],
-    "fisso": ["fibra", "wireline", "fwa"],
-    "luce & gas": ["energia", "luce", "gas", "commodity"],
-    "protetti": ["kit", "protezione"],
-};
+/** Sinonimi con cui gli operatori chiamano le nostre piste nei loro fogli.
+ *  Si cercano DENTRO il nome, non per uguaglianza: i nomi veri del tabellare
+ *  sono «W3 Protetti», «Smartphone CB (extra 5G)», «Telefoni & device (nuova
+ *  attivazione)» — una tabella con le chiavi esatte non avrebbe mai combaciato
+ *  (revisore 31/08: kit e protezione non si accendevano mai). */
+const SINONIMI_PISTA: [RegExp, string[]][] = [
+    [/customer\s*base|(^|\s)cb(\s|$)/, ["partnership", "reward", "cb"]],
+    [/protett/, ["kit", "protezione", "protetti"]],
+    [/smartphone/, ["5g", "device", "telefon"]],
+    [/telefon|device/, ["device", "tnp"]],
+    [/mobile/, ["sim", "mnp", "linee"]],
+    [/fisso|wireline/, ["fibra", "wireline", "fwa"]],
+    [/luce|gas|energia/, ["energia", "luce", "gas", "commodity"]],
+    [/assicuraz/, ["polizze", "protezione"]],
+    [/business|p\.?iva/, ["piva", "business", "microbusiness"]],
+];
+const sinonimiDi = (nome: string) => SINONIMI_PISTA.filter(([re]) => re.test(nome)).flatMap(([, v]) => v);
 
 export function proponiMappaUnaPista(head: string[], corpo: string[][], nomePista: string, codiciNoti: string[] = []): string[] {
     const n = head.length;

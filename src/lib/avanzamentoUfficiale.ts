@@ -179,11 +179,12 @@ export async function salvaAvanzamento(opts: {
        salvataggio: i numeri valgono comunque, e il file è una comodità — al
        massimo lo storico non avrà il tasto per riscaricarlo. */
     let filePath: string | null = null;
+    let avviso: string | undefined;
     if (opts.file) {
         const nome = String(opts.file.name || "foglio.xlsx").replace(/[^a-zA-Z0-9._-]+/g, "_");
         const p = `${opts.brand}/${opts.monthISO.slice(0, 7)}/${opts.al}_${Date.now()}_${nome}`;
         const { error } = await supabase.storage.from("avanzamenti-files").upload(p, opts.file, { upsert: false });
-        if (!error) filePath = p;
+        if (!error) filePath = p; else avviso = "i numeri sono salvati, ma il foglio non si è depositato: dallo storico non si potrà riscaricare";
     }
     /* LA PULIZIA TOCCA SOLO LE PISTE DI QUESTO FILE (Luca 31/08). WindTre non
        manda un foglio: ne manda tre, uno per il mobile, uno per il fisso e uno
@@ -208,13 +209,21 @@ export async function salvaAvanzamento(opts: {
     if (error) return { ok: false, errore: error.message };
     // i resti della fotografia precedente per la STESSA data
     const pisteToccate = [...new Set(righe.map((r) => r.pista))];
+    /* I FOGLI CHE STIAMO PER SOSTITUIRE (revisore 31/08): ricaricando la stessa
+       data e la stessa pista, la riga vecchia sparisce e il suo file restava
+       nel deposito per sempre, senza che niente lo nominasse più. */
+    const { data: vecchi } = await supabase.from("avanzamenti_ufficiali")
+        .select("file_path").eq("brand", opts.brand).eq("month", opts.monthISO).eq("al", opts.al)
+        .in("pista", pisteToccate).not("file_path", "is", null);
+    const daButtare = [...new Set(((vecchi ?? []) as { file_path: string }[]).map((r) => r.file_path))].filter((x) => x && x !== filePath);
     const { error: ePul } = await supabase.from("avanzamenti_ufficiali")
         .delete().eq("brand", opts.brand).eq("month", opts.monthISO).eq("al", opts.al)
         .in("pista", pisteToccate).lt("created_at", adesso);
+    if (daButtare.length) await supabase.storage.from("avanzamenti-files").remove(daButtare);
     scordaConfronto(opts.brand, opts.monthISO);
     // i numeri nuovi ci sono comunque: della pulizia mancata si avvisa e basta
     if (ePul) return { ok: true, n: righe.length, avviso: "salvati, ma non ho potuto togliere i resti del caricamento precedente: ricontrolla lo storico" };
-    return { ok: true, n: righe.length };
+    return { ok: true, n: righe.length, avviso };
 }
 
 /** Il link per riscaricare il foglio: firmato e a scadenza, come per le liste
