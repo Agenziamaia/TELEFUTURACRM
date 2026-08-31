@@ -201,9 +201,12 @@ export function ModaleTemplateWa({ call, numero, scenario, userId, callerName, o
     // e se la colonna e' vuota il testo si richiude da solo
     useEffect(() => {
         (async () => {
-            const { data } = await supabase.from("stores").select("name, address");
-            setIndirizzi(new Map(((data ?? []) as { name: string; address: string | null }[])
-                .filter((r) => r.address?.trim()).map((r) => [norm(r.name), r.address!.trim()])));
+            // via E civico: l'anagrafica li tiene separati (servono al DDT), ma
+            // in un messaggio «di via Nomentana» senza numero non aiuta nessuno
+            const { data } = await supabase.from("stores").select("name, address, civico");
+            setIndirizzi(new Map(((data ?? []) as { name: string; address: string | null; civico?: string | null }[])
+                .filter((r) => r.address?.trim())
+                .map((r) => [norm(r.name), [r.address!.trim(), (r.civico || "").trim()].filter(Boolean).join(" ")])));
         })();
     }, []);
 
