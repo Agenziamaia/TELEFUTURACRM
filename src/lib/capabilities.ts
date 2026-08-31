@@ -744,4 +744,24 @@ export const AI_MODELLO_DI: Record<string, string> = {
     modello_flash: "deepseek-v4-flash",
 };
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT, CAP_WA_VISTA, CAP_CHAT_WA, CAP_AI_MODELLO, CAP_AI_LIBERTA];
+/* ─── MAGAZZINO: quanto vale quello che c'è ────────────────────────────────
+   Luca 01/09: «queste finestre riservale solo dall'amministrazione in su, e
+   mettilo settabile dalle rotelline dentro i permessi in utenti».
+   In cima alle Giacenze ci sono due numeri — il valore della merce ai prezzi
+   di listino e a quanto è costata — che messi accanto dicono il margine
+   dell'intero magazzino. Non è un dato da bancone: è un dato di direzione, e
+   chi lo vede si decide da qui invece che nel codice. */
+export const CAP_MAGAZZINO_VALORI: CapDef = {
+    id: "valori",
+    label: "Vede quanto vale il magazzino",
+    desc: "In cima alle Giacenze compaiono il valore della merce ai prezzi di listino e quello a costo d'acquisto. Affiancati dicono il margine del magazzino: spento, i due riquadri non ci sono proprio.",
+    default: (role) => ["amministrativo", "direttore_generale", "admin", "dev"].includes(role),
+};
+export const CAP_MAGAZZINO: CapGroupFlags = {
+    mode: "flags",
+    section: "/magazzino",
+    sectionLabel: "Magazzino — cosa si vede",
+    caps: [CAP_MAGAZZINO_VALORI],
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_TRACKING, CAP_BADGE, CAP_CALLER, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_WHATSAPP_ADMIN, CAP_EMAIL_ADMIN, CAP_CHAT, CAP_WA_VISTA, CAP_CHAT_WA, CAP_AI_MODELLO, CAP_AI_LIBERTA, CAP_MAGAZZINO];

@@ -44,6 +44,8 @@ import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_MAGAZZINO, CAP_MAGAZZINO_VALORI } from "@/lib/capabilities";
 import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
 import { storiaCompleta, pezzoOra, NOME_EVENTO, type EventoPezzo } from "@/lib/magazzinoStoria";
 /* Il RAGIONAMENTO sui trasferimenti — le situazioni in cui della merce si
@@ -167,6 +169,13 @@ const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleStri
 
 export default function MagazzinoPage() {
     const { user } = useAuth();
+    /* CHI VEDE QUANTO VALE IL MAGAZZINO (Luca 01/09). I due riquadri in cima
+       alle Giacenze, affiancati, dicono il margine dell'intero magazzino: non
+       è un dato da bancone. Il diritto si decide dalla rotellina in
+       Amministrazione → Utenti → Permessi, come tutte le altre capacità, e di
+       partenza è dall'amministrativo in su. */
+    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const vedeValori = !!user && capAllowed(user.role, CAP_MAGAZZINO.section, CAP_MAGAZZINO_VALORI, perms);
     // consultazione per tutti; trasferimenti per chi gestisce; il CARICO
     // merce solo amministrazione in su (segnalazione Francesco 12/08)
     const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
@@ -306,7 +315,7 @@ export default function MagazzinoPage() {
                 <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico il magazzino…</div>
             ) : tab === "giacenze" ? (
                 <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
-                    anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare}
+                    anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare} vedeValori={vedeValori}
                     ricarica={carica} utente={user?.name || "—"} />
             ) : tab === "articoli" ? (
                 <Articoli vedeCosti={puoCaricare} puoDefinire={puoCaricare} />
@@ -370,10 +379,13 @@ function operatoreDi(a: DatiArticolo | undefined, descrizione: string, codice?: 
     return null;
 }
 
-function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, ricarica, utente }: {
+function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, vedeValori, ricarica, utente }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
-    mioNegozio: string; puoCancellare: boolean; ricarica: () => void; utente: string;
+    mioNegozio: string; puoCancellare: boolean;
+    /** vede i due riquadri col valore del magazzino? (rotellina Permessi) */
+    vedeValori: boolean;
+    ricarica: () => void; utente: string;
 }) {
     /* IL MIO NEGOZIO, GIÀ SPUNTATO (Luca 31/08, «un pochettino come funziona
        Gestione Usato»): chi lavora al banco entra e vede la SUA merce, senza
@@ -920,7 +932,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 <div className="rvBoxTop">
                     <div className="rvBoxT">🔎 Cosa guardo</div>
                     <div className="rvValori">
-                        {QUADRI.filter(q => q.euro).map(q => (
+                        {(vedeValori ? QUADRI.filter(q => q.euro) : []).map(q => (
                             <div key={q.id} className={cn("rvValore", q.tinta)} title={q.spiega}>
                                 <em>{eurTondo(q.id === "val_vendita" ? conteggi.val_vendita : conteggi.val_acquisto)}</em>
                                 <b>{q.icona} {q.et}</b>
@@ -2358,28 +2370,19 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                         {apertaQui && (
                                             <tr className="rvTab-det"><td colSpan={4}>
                                                 <div className="rvDett">
-                                                    <div className="rvDettT">Il documento</div>
-                                                    <div className="rvDettR">
-                                                        <span className="rvTab-min">Causale</span><span>{d.causale || "—"}</span>
-                                                        <span className="rvSep" />
-                                                        <span className="rvTab-min">Aspetto</span><span>{d.aspetto || "—"}</span>
-                                                        <span className="rvSep" />
-                                                        <span className="rvTab-min">Trasporto</span><span>{d.trasporto || "—"}</span>
-                                                        {d.colli != null && <><span className="rvSep" /><span className="rvTab-min">Colli</span><span>{d.colli}</span></>}
-                                                    </div>
+{/* CAUSALE, ASPETTO, TRASPORTO E NOTE NON SI MOSTRANO PIÙ (Luca 01/09:
+                                                        «queste informazioni non servono, quando apro un
+                                                        trasferimento mostrami solo il contenuto»).
+                                                        Restano nel documento e finiscono sul DDT stampato,
+                                                        dove servono davvero: a schermo chi apre una riga
+                                                        vuole sapere cosa c'è dentro, non com'è confezionato.
+                                                        Il destinatario esterno resta, quando c'è: quello
+                                                        dice a CHI sta andando la merce, che è contenuto. */}
                                                     {d.destinatario && (
                                                         <div className="rvDettR">
                                                             <span className="rvTab-min">Destinatario</span>
                                                             <span><b>{d.destinatario}</b>{d.destinatario_piva ? ` · P.IVA ${d.destinatario_piva}` : ""}</span>
-                                                            <span className="rvTab-min">
-                                                                {[[d.destinatario_indirizzo, d.destinatario_civico].filter(Boolean).join(", "),
-                                                                [d.destinatario_cap, d.destinatario_citta, d.destinatario_provincia ? `(${d.destinatario_provincia})` : null].filter(Boolean).join(" ")]
-                                                                    .filter(Boolean).join(" — ")}
-                                                            </span>
                                                         </div>
-                                                    )}
-                                                    {d.note && (
-                                                        <div className="rvDettR"><span className="rvTab-min">Note</span><span>{d.note}</span></div>
                                                     )}
                                                     {eCessione(d) && (
                                                         <div className="rvDettR">
