@@ -9,15 +9,19 @@ export const dynamic = "force-dynamic";
 // L'agente riporta l'esito di un job dopo averlo inviato alla stampante.
 //   POST { id, ok:boolean, response?:string }
 export async function POST(req: Request) {
-    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        const _s = richiedeSessione(req);
-        if (!_s) return rispostaSessioneNonValida();
-    }
-
+  // L'AGENTE del negozio si autentica col TOKEN (Bearer), NON con la sessione
+  // firmata del browser. La blindatura-sessione (28/08) rifiutava il callback
+  // dell'agente su /result: i job restavano "sent" per sempre e — peggio — i
+  // FALLIMENTI di stampa non venivano registrati come "error". Quindi: se il
+  // token agente e' valido si prosegue; la sessione firmata resta richiesta solo
+  // per eventuali chiamate NON-agente.
   const auth = agentAuthorized(req);
   if (auth === null) return NextResponse.json({ error: "PRINT_AGENT_TOKEN non configurato" }, { status: 503 });
-  if (!auth) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+  if (!auth) {
+    const _s = richiedeSessione(req);
+    if (!_s) return rispostaSessioneNonValida();
+    return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+  }
 
   const b = await req.json().catch(() => ({} as any));
   if (!b.id) return NextResponse.json({ error: "id mancante" }, { status: 400 });
