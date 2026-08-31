@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { chatSua, numeriDi, nonEtuo } from "@/lib/waPerimetro";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoContatti, elencoMessaggi, scaricaMedia, aggiornaWebhook, elencoIstanze, numeroDaIstanza, nomeDaIstanza } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
@@ -64,7 +65,12 @@ export async function GET(request: Request) {
     const { data } = await supabase.from("wa_instances")
         .select("id, instance_name, display_name, owner_user_id, wa_number, status, created_at")
         .order("created_at", { ascending: false });
-    return NextResponse.json({ instances: data ?? [] });
+    /* ⚠️ SOLO I SUOI (31/08). Girando con la chiave di servizio questa rotta
+       consegnava a chiunque fosse collegato l'elenco completo dei numeri
+       aziendali — nome, titolare, numero di telefono — compresi i personali
+       protetti da lucchetto, che è esattamente ciò che il lucchetto nega. */
+    const miei = new Set(await numeriDi(_g.sess.id));
+    return NextResponse.json({ instances: (data ?? []).filter((i) => miei.has(String(i.id))) });
 }
 
 export async function POST(request: Request) {
@@ -259,6 +265,10 @@ export async function POST(request: Request) {
             const instanceName = b.instanceName;
             const conversationId = b.conversationId;
             if (!conversationId) return NextResponse.json({ error: "conversationId obbligatorio" }, { status: 400 });
+            /* ⚠️ e dev'essere una conversazione SUA: con un id qualunque si
+               tiravano giù cinquanta messaggi e i loro allegati da una chat
+               di un altro negozio (31/08). */
+            if (!(await chatSua(_s.id, String(conversationId)))) return nonEtuo();
             const { data: conv } = await supabase.from("wa_conversations")
                 .select("id, chat_jid, customer_number, is_group").eq("id", conversationId).maybeSingle();
             if (!conv) return NextResponse.json({ error: "conversazione non trovata" }, { status: 404 });

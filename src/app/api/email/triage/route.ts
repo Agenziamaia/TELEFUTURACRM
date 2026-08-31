@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { eUnLavoroAutomatico } from "@/lib/cronParola";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { corsaTriageEmail, EMAIL_TRIAGE_VERSIONE } from "@/lib/ai/emailTriage";
 
@@ -14,6 +15,14 @@ export const runtime = "nodejs";
  * regola della route WhatsApp). GET = stato + censimento per la diagnosi.
  */
 export async function POST(req: Request) {
+    /* ⚠️ O UNA PERSONA, O IL LAVORO AUTOMATICO (31/08). Il GET l'avevo chiuso
+       stamattina e questo POST era rimasto aperto a chiunque su Internet — e
+       ogni corsa costa denaro vero e può far cestinare posta in automatico.
+       Il cron delle 10-in-10 non ha una sessione: si presenta con la parola. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "email/triage");
+        if (!_g.ok) return _g.risposta;
+    }
     let body: any = {};
     try { body = await req.json(); } catch { }
     const tokenOk = !!process.env.TRIAGE_ADMIN_TOKEN

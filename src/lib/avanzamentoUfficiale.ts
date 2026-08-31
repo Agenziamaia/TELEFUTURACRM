@@ -26,6 +26,7 @@
 // Salvarlo vorrebbe dire tenersi una fotografia che invecchia da sola.
 
 import { supabase } from "@/lib/supabaseClient";
+import { fileUrlDa } from "@/lib/fileUrl";
 import { caricaDirezione, type DirBrandId } from "@/lib/direzioneTargets";
 
 export type RigaUfficiale = { cod_gara: string; pista: string; punti: number | null; pezzi: number | null };
@@ -226,12 +227,14 @@ export async function salvaAvanzamento(opts: {
     return { ok: true, n: righe.length, avviso };
 }
 
-/** Il link per riscaricare il foglio: firmato e a scadenza, come per le liste
- *  del call center — il deposito è chiuso, dentro ci sono i numeri di gara di
- *  tutti i punti vendita. */
-export async function linkFoglio(filePath: string): Promise<string | null> {
-    const { data, error } = await supabase.storage.from("avanzamenti-files").createSignedUrl(filePath, 120);
-    return error ? null : (data?.signedUrl ?? null);
+/** Il link per riscaricare il foglio — dal CUSTODE, non firmato qui.
+ *  Il deposito è chiuso e dentro ci sono i numeri di gara di tutti i punti
+ *  vendita. ⚠️ Firmarselo dal browser sembrava prudente ed era il contrario:
+ *  per poterlo fare, il deposito deve lasciar LEGGERE a chiunque sia
+ *  collegato — e allora chiunque si firma qualunque file, di qualunque
+ *  deposito. Il permesso di leggere resta al solo server (31/08). */
+export function linkFoglio(filePath: string): string {
+    return fileUrlDa("avanzamenti-files", filePath);
 }
 
 export type FotoAvanzamento = { al: string; file: string | null; filePath: string | null; n: number; chi: string | null; quando: string | null; piste: string[] };

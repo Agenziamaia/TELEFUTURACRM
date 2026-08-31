@@ -50,6 +50,7 @@ const REGOLE: Record<string, "sessione" | "casella" | "numero"> = {
     "qr-uploads": "sessione",
     avatars: "sessione",
     "liste-files": "sessione",
+    "avanzamenti-files": "sessione",
 };
 
 /** Il pezzo di percorso che identifica il gruppo: per la posta e per WhatsApp

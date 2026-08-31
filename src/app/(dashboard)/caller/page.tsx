@@ -11,6 +11,7 @@ import {
     Building, ChevronRight
 } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
+import { fileUrlDa } from "@/lib/fileUrl";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
@@ -4145,9 +4146,10 @@ function CallerPageInner() {
                                 <button
                                     onClick={async () => {
                                         if (!listaDetail.filePath) { alert("Percorso file non disponibile"); return; }
-                                        const { data, error } = await supabase.storage.from("liste-files").createSignedUrl(listaDetail.filePath, 60);
-                                        if (error || !data) { alert("Errore download: " + (error?.message || "URL non disponibile")); return; }
-                                        window.open(data.signedUrl, "_blank");
+                                        /* dal custode (31/08): firmarsi il file da soli voleva dire
+                                           poter firmare QUALUNQUE file dell'azienda, perché la regola
+                                           del deposito chiedeva solo di essere collegati */
+                                        window.open(fileUrlDa("liste-files", listaDetail.filePath), "_blank");
                                     }}
                                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-500/30 text-violet-300 text-xs font-bold uppercase tracking-widest hover:bg-violet-500/10"
                                 >

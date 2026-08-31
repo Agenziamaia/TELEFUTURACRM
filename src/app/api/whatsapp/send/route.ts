@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaTesto, inviaMedia } from "@/lib/evolution";
+import { chatSua, nonEtuo } from "@/lib/waPerimetro";
 
 export const dynamic = "force-dynamic";
 
-// Invia un messaggio WhatsApp in uscita su una conversazione. Il gating per
-// ruolo/proprieta' e' lato client (come il resto del CRM); qui si registra
-// subito il messaggio in uscita e si aggiorna l'anteprima.
+// Invia un messaggio WhatsApp in uscita su una conversazione.
+// ⚠️ Il commento diceva «il gating per ruolo/proprietà è lato client»: cioè
+// nessuno, perché il client si aggira aprendo la console. Con la chiave di
+// servizio si scriveva al cliente di un altro negozio USCENDO DAL SUO NUMERO.
+// Dal 31/08 la conversazione dev'essere fra quelle che questa persona vede.
 //   { conversationId, text, userId }                         -> testo
 //   { conversationId, text?, userId, mediaUrl, mediaMime, fileName } -> allegato
 export async function POST(request: Request) {
@@ -19,6 +22,7 @@ export async function POST(request: Request) {
 
     try {
         const { conversationId, text, mediaUrl, mediaMime, fileName } = await request.json();
+        if (!(await chatSua(_s.id, String(conversationId || "")))) return nonEtuo();
         // 🔒 chi invia è chi ha la sessione, non chi lo dichiara
         const userId = _s.id;
         const testo = (text || "").trim();
@@ -37,8 +41,28 @@ export async function POST(request: Request) {
 
         let waId: string | null = null;
         try {
+            /* ⚠️ L'ALLEGATO DEVE ESSERE RAGGIUNGIBILE DA FUORI (31/08).
+               Da quando i depositi sono privati, il client manda un indirizzo
+               che passa dal nostro custode — «/api/file/…» — e il custode
+               pretende una sessione. Ma a scaricare il file qui non siamo
+               noi: è il servizio che manda i messaggi, che sta fuori e di
+               sessioni non ne ha. Con l'indirizzo relativo non ci arriva
+               nemmeno. Quindi si firma qui, adesso: un indirizzo vero, che
+               vale un'ora — il tempo di consegnarlo e nemmeno un minuto in
+               più. È un errore che avevo introdotto stamattina intercettando
+               getPublicUrl senza pensare a chi sta dall'altra parte. */
+            let mediaFirmato: string | null = mediaUrl || null;
+            const m = String(mediaUrl || "").match(/^\/api\/file\/([^/]+)\/(.+)$/);
+            if (m) {
+                const { data: f } = await supabase.storage.from(m[1]).createSignedUrl(decodeURIComponent(m[2]), 3600);
+                if (!f?.signedUrl) {
+                    return NextResponse.json({ error: "allegato non recuperabile" }, { status: 500 });
+                }
+                mediaFirmato = f.signedUrl;
+            }
+
             const res = mediaUrl
-                ? await inviaMedia(inst.instance_name, destinatario, { media: mediaUrl, mimetype: mediaMime, fileName, caption: testo })
+                ? await inviaMedia(inst.instance_name, destinatario, { media: mediaFirmato as string, mimetype: mediaMime, fileName, caption: testo })
                 : await inviaTesto(inst.instance_name, destinatario, testo);
             waId = res?.key?.id || null;
         } catch (e) {

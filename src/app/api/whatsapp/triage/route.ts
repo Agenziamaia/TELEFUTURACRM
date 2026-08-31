@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { accesso } from "@/lib/permessiServer";
+import { eUnLavoroAutomatico } from "@/lib/cronParola";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { corsaTriage, TRIAGE_VERSIONE } from "@/lib/ai/waTriage";
 
@@ -18,6 +20,16 @@ export const runtime = "nodejs";
  * GET → stato dell'ultimo giro + censimento per stato (diagnosi).
  */
 export async function POST(req: Request) {
+    /* ⚠️ NON C'ERA NESSUNA GUARDIA (31/08): chiunque su Internet faceva
+       partire un giro di classificazione — che costa denaro vero a ogni
+       chiamata — e poteva far cestinare chat in automatico. */
+    /* ⚠️ O UNA PERSONA, O IL LAVORO AUTOMATICO. Il triage lo fa partire anche
+       un cron ogni dieci minuti, che una sessione non ce l'ha: chiudere con
+       la sola sessione avrebbe spento il motore invece di proteggerlo. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "whatsapp/triage");
+        if (!_g.ok) return _g.risposta;
+    }
     let body: any = {};
     try { body = await req.json(); } catch { }
     const tokenOk = !!process.env.TRIAGE_ADMIN_TOKEN
@@ -35,7 +47,9 @@ async function conta(filtro?: (q: any) => any): Promise<number> {
     return count || 0;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+    const _g = await accesso(request, "whatsapp/triage");
+    if (!_g.ok) return _g.risposta;
     const [{ data: stato }, totale, diVersione, rispondere, attesa, programmate, niente] = await Promise.all([
         supabase.from("wa_triage_stato").select("in_corsa_da, ultima_corsa, ultimo_esito").eq("id", 1).maybeSingle(),
         conta(),

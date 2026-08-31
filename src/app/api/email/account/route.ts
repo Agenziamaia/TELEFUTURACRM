@@ -270,12 +270,17 @@ export async function POST(request: Request) {
             // GOVERNANCE 26/08: STRETTA alla sola amministrazione — prima potevano
             // anche il proprietario della casella e lo store manager del negozio.
             const id = String(b.id || "");
-            const userId = String(b.userId || "");
-            if (!id || !userId) return NextResponse.json({ error: "id e userId obbligatori" }, { status: 400 });
+            if (!id) return NextResponse.json({ error: "id obbligatorio" }, { status: 400 });
             const { data: acc } = await supabase.from("email_accounts")
                 .select("id, owner_user_id, negozio").eq("id", id).maybeSingle();
             if (!acc) return NextResponse.json({ error: "casella non trovata" }, { status: 404 });
-            if (!(await eAmministrazione(userId))) {
+            /* ⚠️ DALLA SESSIONE (31/08, secondo giro di revisione). Le altre
+               tre azioni le avevo corrette stamattina e questa mi era
+               sfuggita — proprio quella che CANCELLA una casella con tutte
+               le sue conversazioni, i suoi messaggi e i suoi allegati.
+               Bastava mandare l'uuid di un admin, che chiunque legge da
+               app_users, per far sparire la posta di un collega. */
+            if (!(await eAmministrazione(_s.id))) {
                 return NextResponse.json({ error: "le caselle si eliminano solo dal pannello Email dell'amministrazione" }, { status: 403 });
             }
 
