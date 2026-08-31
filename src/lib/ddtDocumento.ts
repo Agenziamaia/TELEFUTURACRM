@@ -142,7 +142,11 @@ export function ddtHtml(
           <div>
             <div class="rs">${esc(mit?.ragione_sociale || d.azienda_da)}</div>
             <div class="rsDati">${sedeSoc(mit) ? esc(sedeSoc(mit)) : `<span class="manca">manca la sede legale</span>`}</div>
-            <div class="rsDati">C.F. / P. IVA ${oManca(mit?.piva, "la partita IVA")}${mit?.rea ? ` — REA ${esc(mit.rea)}` : ""}</div>
+            <!-- niente REA (Luca 31/08): «non serve che lo metti dentro i
+                documenti di trasporto». Sul DDT la società si identifica con
+                la partita IVA, e per una S.R.L. il codice fiscale è lo stesso
+                numero — infatti la casella qui sotto ci ricade da sola. -->
+            <div class="rsDati">C.F. / P. IVA ${oManca(mit?.piva, "la partita IVA")}</div>
           </div>
         </div>
         <div class="des">
@@ -159,9 +163,12 @@ export function ddtHtml(
       </div>
 
       <div class="partenza">
-        <b>In partenza da:</b> ${esc(d.da_negozio)} —
-        ${viaCivico(negDa) ? esc(viaCivico(negDa)) : `<span class="manca">manca l'indirizzo</span>`}
-        ${rigaCitta(negDa) ? ", " + esc(rigaCitta(negDa)) : ""}
+        <!-- l'indirizzo si compone in UNA espressione: spezzato su più righe,
+             l'HTML trasformava gli a capo del template in spazi e usciva
+             «Via della Magliana, 263 , 00146 Roma» -->
+        <b>In partenza da:</b> ${esc(d.da_negozio)} — ${viaCivico(negDa)
+            ? esc([viaCivico(negDa), rigaCitta(negDa)].filter(Boolean).join(", "))
+            : `<span class="manca">manca l'indirizzo</span>`}
         <span class="copiaEt">${esc(copia.et)} · ${esc(copia.per)}</span>
       </div>
 
