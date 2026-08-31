@@ -102,6 +102,25 @@ export function DisponibilitaFerie() {
         carica();
     };
 
+    const [leggo, setLeggo] = useState(false);
+    const [esitoLettura, setEsitoLettura] = useState<string | null>(null);
+    const leggiBuste = async () => {
+        setLeggo(true); setEsitoLettura(null);
+        try {
+            const r = await fetch("/api/ferie/leggi-buste", {
+                method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mese: meseNuovo }),
+            }).then((x) => x.json());
+            setEsitoLettura(r?.error ? `⛔ ${r.error}`
+                : r.buste === 0 ? `Nessuna busta paga archiviata per ${nomeMese(meseNuovo)}: caricale dalla scheda della persona.`
+                    : `📄 Lette ${r.letti} buste paga su ${r.buste}${r.nonLetti ? ` — ${r.nonLetti} non hanno il riquadro RATEI leggibile, quelle vanno scritte a mano` : ""}.`);
+            await carica();
+        } catch (e) {
+            setEsitoLettura("⛔ " + (e instanceof Error ? e.message : "lettura non riuscita"));
+        }
+        setLeggo(false);
+    };
+
     const viste = useMemo(() => {
         const s = q.trim().toLowerCase();
         const f = (righe || []).filter((r) => !s || r.nome.toLowerCase().includes(s) || r.negozio.toLowerCase().includes(s));
@@ -129,6 +148,15 @@ export function DisponibilitaFerie() {
                         </button>
                     ))}
                 </div>
+                {/* IL NUMERO STA DENTRO LA BUSTA PAGA (Luca 31/08): «giù in basso
+                    sulle buste paga hai sempre il saldo ferie». Infatti — riquadro
+                    RATEI, riga FERIE, colonna Saldo, in giorni. Questo bottone le
+                    apre tutte e lo scrive, invece di farlo battere a mano. */}
+                <button onClick={leggiBuste} disabled={leggo}
+                    title={`Apre le buste paga di ${nomeMese(meseNuovo)} e legge il saldo ferie dal riquadro RATEI`}
+                    className="px-3 py-2 rounded-xl text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
+                    {leggo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "📄"} Leggi dalle buste paga
+                </button>
                 <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                     mensilità
                     <input type="month" value={meseNuovo.slice(0, 7)} onChange={(e) => setMeseNuovo(e.target.value ? `${e.target.value}-01` : meseNuovo)}
@@ -137,9 +165,12 @@ export function DisponibilitaFerie() {
                 </label>
             </div>
 
+            {esitoLettura && (
+                <p className={`text-[11px] rounded-lg px-3 py-2 border ${esitoLettura.startsWith("⛔") ? "text-rose-200 bg-rose-500/10 border-rose-500/25" : "text-emerald-200 bg-emerald-500/10 border-emerald-500/25"}`}>{esitoLettura}</p>
+            )}
             {senzaDato > 0 && (
                 <p className="text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
-                    ⚠️ Per {senzaDato} {senzaDato === 1 ? "collaboratore manca" : "collaboratori manca"} il residuo di partenza. Scrivilo qui a fianco leggendolo dalla busta paga di <b>{nomeMese(meseNuovo)}</b>: da lì in poi il conto lo tiene il CRM da solo.
+                    ⚠️ Per {senzaDato} {senzaDato === 1 ? "collaboratore manca" : "collaboratori manca"} il residuo di partenza. Premi <b>«Leggi dalle buste paga»</b>: il saldo sta nel riquadro RATEI del cedolino di <b>{nomeMese(meseNuovo)}</b>. Chi non ha la busta archiviata si scrive a mano qui a fianco.
                 </p>
             )}
 

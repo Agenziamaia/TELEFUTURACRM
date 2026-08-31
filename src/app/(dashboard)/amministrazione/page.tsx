@@ -2368,6 +2368,8 @@ function UserAttachments({ userId }: { userId: string }) {
     const [names, setNames] = useState<Record<string, string>>({});
     // la mensilità scelta al caricamento, per le categorie che la vogliono
     const [mesi, setMesi] = useState<Record<string, string>>({ busta_paga: MESI_SCELTA[0]?.iso || "" });
+    // le buste paga nascono chiuse: sono quelle che diventano lunghe
+    const [chiuse, setChiuse] = useState<Record<string, boolean>>({ busta_paga: true });
     const [savingCat, setSavingCat] = useState<string | null>(null);
     const [err, setErr] = useState("");
 
@@ -2446,7 +2448,17 @@ function UserAttachments({ userId }: { userId: string }) {
                 const list = items.filter((a) => (a.category || "altri") === cat.id);
                 return (
                     <div key={cat.id} className="space-y-2">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">{cat.label}</h4>
+                        {/* SI PUÒ CHIUDERE (Luca 31/08): «visto che diventerà molto
+                            lunga, dammi la possibilità di raccoglierla». Le buste paga
+                            crescono di dodici righe l'anno per persona; le altre
+                            sezioni restano aperte, che è come le si usa. */}
+                        <button type="button" onClick={() => setChiuse((p) => ({ ...p, [cat.id]: !p[cat.id] }))}
+                            className="w-full flex items-center gap-2 text-left group">
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 group-hover:text-slate-300">{cat.label}</h4>
+                            <span className="text-[10px] text-slate-600">{list.length || ""}</span>
+                            <span className={`ml-auto text-slate-600 text-xs transition-transform ${chiuse[cat.id] ? "" : "rotate-180"}`}>▾</span>
+                        </button>
+                        {!chiuse[cat.id] && (<>
                         {loading ? (
                             <div className="flex justify-center py-4 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /></div>
                         ) : list.length ? (
@@ -2469,7 +2481,7 @@ function UserAttachments({ userId }: { userId: string }) {
                                     )}
                                     <div className="space-y-1.5">
                                 {dentro.map((a) => (
-                                    <div key={a.id} className="glass-card p-3 rounded-lg flex items-center gap-3">
+                                    <div key={a.id} className="glass-card p-3 rounded-lg flex flex-wrap items-center gap-2 sm:gap-3">
                                         <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm text-white truncate">{a.note || a.file_name}</p>
@@ -2485,7 +2497,7 @@ function UserAttachments({ userId }: { userId: string }) {
                                                     await supabase.from("user_attachments").update({ mese: v }).eq("id", a.id);
                                                     load();
                                                 }}
-                                                className={`glass-input !h-7 !px-2 text-[11px] w-[140px] shrink-0 ${a.mese ? "" : "!border-amber-400/50"}`}>
+                                                className={`glass-input !h-7 !px-1.5 text-[11px] w-[128px] shrink-0 ${a.mese ? "" : "!border-amber-400/50"}`}>
                                                 <option value="">— mensilità —</option>
                                                 {MESI_SCELTA.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
                                             </select>
@@ -2504,21 +2516,26 @@ function UserAttachments({ userId }: { userId: string }) {
                         ) : (
                             <p className="text-xs text-slate-600 px-1">Nessun allegato.</p>
                         )}
-                        <div className="glass-card p-3 rounded-lg flex flex-col sm:flex-row gap-2 sm:items-center">
-                            <input type="text" value={names[cat.id] || ""} onChange={(e) => setNames((p) => ({ ...p, [cat.id]: e.target.value }))} placeholder="Nome allegato" className="glass-input text-sm flex-1" />
+                        {/* `flex-wrap` e larghezze minime (Luca 31/08: «il pulsante
+                            salva esce un pochettino fuori»): con la tendina della
+                            mensilità in più la riga non ci stava e il tasto usciva dal
+                            riquadro. Adesso va a capo invece di sbordare. */}
+                        <div className="glass-card p-3 rounded-lg flex flex-wrap gap-2 items-center">
+                            <input type="text" value={names[cat.id] || ""} onChange={(e) => setNames((p) => ({ ...p, [cat.id]: e.target.value }))} placeholder="Nome allegato" className="glass-input text-sm flex-1 min-w-[160px]" />
                             <input type="file" onChange={(e) => setFiles((p) => ({ ...p, [cat.id]: e.target.files?.[0] || null }))} className="text-xs text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-indigo-500/20 file:text-indigo-200 file:text-xs" />
                             {cat.mensile && (
                                 <select value={mesi[cat.id] || ""} onChange={(e) => setMesi((p) => ({ ...p, [cat.id]: e.target.value }))}
                                     title="Di che mensilità è questa busta paga"
-                                    className="glass-input text-sm sm:w-[170px]">
+                                    className="glass-input text-sm w-[150px] shrink-0">
                                     <option value="">— mensilità —</option>
                                     {MESI_SCELTA.map((m) => <option key={m.iso} value={m.iso}>{m.label}</option>)}
                                 </select>
                             )}
-                            <button onClick={() => save(cat.id)} disabled={savingCat === cat.id} className="primary-btn text-xs px-3 whitespace-nowrap flex items-center gap-1 justify-center">
+                            <button onClick={() => save(cat.id)} disabled={savingCat === cat.id} className="primary-btn text-xs px-3 whitespace-nowrap flex items-center gap-1 justify-center shrink-0">
                                 {savingCat === cat.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Salva
                             </button>
                         </div>
+                        </>)}
                     </div>
                 );
             })}

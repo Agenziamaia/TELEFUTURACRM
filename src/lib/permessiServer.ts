@@ -45,6 +45,8 @@ export const SEZIONE_DI: Record<string, string> = {
     // sezioni operative da cui prendono il nome
     "pos/reparti": "/amministrazione",
     "usati/sync-prices": "/amministrazione",
+    // legge i cedolini degli altri: è roba da amministrazione, non da negozio
+    "ferie/leggi-buste": "/amministrazione",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".
