@@ -26,16 +26,45 @@ export function trovaIntestazione(pulite: string[][]): { i: number; head: string
     return { i, head: pulite[i] || [], corpo: pulite.slice(i + 1) };
 }
 
+/** Le cifre di un codice, per confrontarlo con i nostri: «9.000.721.835» e
+ *  «9000721835» sono lo stesso codice scritto da due Excel diversi. */
+export const soloCifre = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+
+/** Quante celle di questa colonna sono UN CODICE CHE CONOSCIAMO.
+ *  È il riconoscimento che vale più di ogni titolo: il file di WindTre ha una
+ *  colonna «COD_GARA» (che sono i nostri codici) e una «COD Lettera di Gara»
+ *  (che sono altri numeri), e dal nome vinceva la seconda — perché «COD_GARA»
+ *  non ha lo stacco fra «cod» e «gara», e «COD Lettera» sì (Luca 31/08). */
+export function quotaCodiciNoti(colonna: string[], noti: string[]): number {
+    if (!noti.length) return 0;
+    const set = new Set(noti.map(soloCifre).filter(Boolean));
+    if (!set.size) return 0;
+    const celle = colonna.map((c) => soloCifre(c)).filter(Boolean);
+    if (!celle.length) return 0;
+    return celle.filter((c) => set.has(c)).length / celle.length;
+}
+
 /** Una PROPOSTA di mappatura leggendo i titoli: chi carica la conferma o la
  *  corregge davanti all'anteprima — non la subisce.
  *  Il riconoscimento del codice è STRETTO: `/ins/` nudo prendeva anche
  *  «Insegna», e tre colonne finivano a dire di essere il codice (rilievo del
  *  revisore 31/08). Meglio proporre «ignora» e farsi correggere, che proporre
  *  la colonna sbagliata e non farsi correggere. */
-export function proponiMappa(head: string[], piste: { chiave: string; nome: string }[]): string[] {
-    return head.map((h) => {
+export function proponiMappa(head: string[], piste: { chiave: string; nome: string }[], corpo: string[][] = [], codiciNoti: string[] = []): string[] {
+    // PRIMA I NUMERI, POI I TITOLI: se una colonna contiene i codici che
+    // abbiamo in anagrafica, è quella, comunque si chiami.
+    let iCod = -1, meglio = 0.3;
+    if (codiciNoti.length && corpo.length) {
+        for (let i = 0; i < head.length; i++) {
+            const q = quotaCodiciNoti(corpo.map((r) => r[i]), codiciNoti);
+            if (q > meglio) { meglio = q; iCod = i; }
+        }
+    }
+    const perTitolo = (n: string) => /(^|\b)cod(ice|\.)?\b|cod\.?\s*ins|c\.?\s*ins\b|codins|cod_/.test(n) && !/prod/.test(n);
+    return head.map((h, i) => {
         const n = String(h || "").toLowerCase().trim();
-        if (/(^|\b)cod(ice|\.)?\b|cod\.?\s*ins|c\.?\s*ins\b|codins/.test(n) && !/prod/.test(n)) return COL_CODICE;
+        if (iCod >= 0) { if (i === iCod) return COL_CODICE; }
+        else if (perTitolo(n)) return COL_CODICE;
         const p = piste.find((x) => n.includes(x.chiave) || n.includes(String(x.nome || "").toLowerCase().split(" ")[0]));
         return p ? p.nome : COL_IGNORA;
     });
@@ -129,18 +158,32 @@ export function celleScartate(griglia: string[][], mappa: string[], piste: { chi
  *  questi file si chiama «Punti», «Totale», «Progressivo», «Agosto»… e non
  *  c'è verso di indovinarla dal nome. Vince quella con più celle numeriche;
  *  il codice è la prima colonna che di numeri non ne ha quasi. */
-export function proponiMappaUnaPista(head: string[], corpo: string[][], nomePista: string): string[] {
+export function proponiMappaUnaPista(head: string[], corpo: string[][], nomePista: string, codiciNoti: string[] = []): string[] {
     const n = head.length;
     const quoteNum: number[] = [];
     for (let i = 0; i < n; i++) {
         const celle = corpo.map((r) => String(r[i] ?? "").trim()).filter(Boolean);
         quoteNum[i] = celle.length ? celle.filter((c) => numeroIt(c) != null).length / celle.length : 0;
     }
-    const perNome = head.findIndex((h) => /(^|\b)cod(ice|\.)?\b|cod\.?\s*ins|c\.?\s*ins\b|codins/i.test(String(h || "")));
-    let iCod = perNome >= 0 ? perNome : -1;
+    // ① la colonna che contiene i NOSTRI codici, comunque si chiami
+    let iCod = -1, mCod = 0.3;
+    for (let i = 0; i < n; i++) {
+        const q = quotaCodiciNoti(corpo.map((r) => r[i]), codiciNoti);
+        if (q > mCod) { mCod = q; iCod = i; }
+    }
+    // ② altrimenti il titolo, ③ altrimenti la prima colonna che di numeri non ne ha
+    if (iCod < 0) iCod = head.findIndex((h) => /(^|\b)cod(ice|\.)?\b|cod\.?\s*ins|c\.?\s*ins\b|codins|cod_/i.test(String(h || "")));
     if (iCod < 0) for (let i = 0; i < n; i++) if (quoteNum[i] < 0.5) { iCod = i; break; }
-    let iVal = -1, meglio = 0.5;
-    for (let i = 0; i < n; i++) if (i !== iCod && quoteNum[i] > meglio) { meglio = quoteNum[i]; iVal = i; }
+    // la colonna del valore: prima il titolo che parla di quella pista o di un
+    // avanzamento, poi la più numerica che resta
+    const chiavi = [String(nomePista || "").toLowerCase().split(" ")[0], "progress", "totale", "punti", "pezzi", "avanz", "valore"].filter(Boolean);
+    let iVal = -1;
+    for (let i = 0; i < n; i++) {
+        if (i === iCod || quoteNum[i] < 0.5) continue;
+        const t = String(head[i] || "").toLowerCase();
+        if (chiavi.some((k) => t.includes(k))) { iVal = i; break; }
+    }
+    if (iVal < 0) { let m = 0.5; for (let i = 0; i < n; i++) if (i !== iCod && quoteNum[i] > m) { m = quoteNum[i]; iVal = i; } }
     return head.map((_, i) => (i === iCod ? COL_CODICE : i === iVal ? nomePista : COL_IGNORA));
 }
 

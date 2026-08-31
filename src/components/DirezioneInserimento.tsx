@@ -1292,6 +1292,7 @@ export function DirezioneInserimentoAdmin() {
                 <CaricaAvanzamento
                     brand={brand} brandLabel={bMeta.label} monthISO={monthISO}
                     piste={dir.pisteTab.map((p) => ({ chiave: p.chiave, nome: p.nome }))}
+                    codiciNoti={dir.codici.map((k) => k.cod_gara).filter(Boolean)}
                     chi={user?.name}
                     onChiudi={() => setModaleAvz(false)}
                     onFatto={() => { confrontoUfficiale(brand, monthISO).then(setConf).catch(() => { }); }}

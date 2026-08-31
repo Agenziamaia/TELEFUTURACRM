@@ -138,5 +138,32 @@ for (const [cella, atteso] of [
     dico("una pista: senza titolo «codice»", [F.COL_CODICE, "Fisso"], F.proponiMappaUnaPista(head, corpo, "Fisso"));
 }
 
+// ── 10. il caso vero di WindTre: due colonne che si chiamano «COD» ──────────
+{
+    const NOSTRI = ["9000721835", "9001154565", "9001297833", "9001426666", "9001302496"];
+    const head = ["Ragione Sociale", "COD_GARA", "COD Lettera di Gara", "Canale", "Mobile Progressivo"];
+    const corpo = [
+        ["TELEFUTURA MAGLIANA", "9000721835", "8000788537", "Franchising", "33"],
+        ["TELEFUTURA LIBIA", "9001154565", "8000299986", "Franchising", "21"],
+        ["TELEFUTURA MAZZINI", "9001297833", "8000003219", "Franchising", "12"],
+    ];
+    // anche senza i nostri codici, adesso «COD_GARA» vince: il titolo la
+    // riconosce (prima lo stacco di «COD Lettera di Gara» la batteva)
+    const senza = F.proponiMappaUnaPista(head, corpo, "Mobile");
+    dico("senza i codici noti: vince COD_GARA", [F.COL_CODICE, F.COL_IGNORA], [senza[1], senza[2]]);
+    // con i codici noti vince la colonna che li contiene davvero
+    const con = F.proponiMappaUnaPista(head, corpo, "Mobile", NOSTRI);
+    dico("con i codici noti: COD_GARA è il codice", F.COL_CODICE, con[1]);
+    dico("con i codici noti: la lettera si ignora", F.COL_IGNORA, con[2]);
+    dico("con i codici noti: il valore è il progressivo", "Mobile", con[4]);
+    dico("righe lette", [
+        { cod_gara: "9000721835", pista: "mobile", punti: 33, pezzi: null },
+        { cod_gara: "9001154565", pista: "mobile", punti: 21, pezzi: null },
+        { cod_gara: "9001297833", pista: "mobile", punti: 12, pezzi: null },
+    ], F.righeDaGriglia(corpo, con, PISTE));
+    // e i codici con i punti di migliaia si riconoscono lo stesso
+    dico("codice con i punti", 1, Math.round(F.quotaCodiciNoti(["9.000.721.835"], NOSTRI)));
+}
+
 console.log(ko ? `\n✗ ${ko} controlli falliti` : "\n✓ tutti i controlli passati");
 process.exit(ko ? 1 : 0);

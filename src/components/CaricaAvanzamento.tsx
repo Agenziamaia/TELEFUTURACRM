@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import { Upload, X, Check, Loader2, Trash2 } from "lucide-react";
 import {
     salvaAvanzamento, storicoAvanzamenti, eliminaAvanzamento,
-    pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, righeDaGriglia, diagnosiMappa, celleScartate,
+    pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, righeDaGriglia, diagnosiMappa, celleScartate, soloCifre,
     COL_CODICE, COL_IGNORA, type RigaUfficiale, type FotoAvanzamento,
 } from "@/lib/avanzamentoUfficiale";
 import { cn } from "@/utils";
@@ -39,9 +39,13 @@ const quando = (t: string | null) => {
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} alle ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onFatto, onChiudi }: {
+export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, codiciNoti = [], chi, onFatto, onChiudi }: {
     brand: string; brandLabel?: string; monthISO: string;
     piste: { chiave: string; nome: string }[];
+    /** i codici di inserimento che abbiamo in anagrafica: servono a riconoscere
+     *  la colonna giusta senza fidarsi dei titoli (Luca 31/08 — nel file W3
+     *  «COD_GARA» sono i nostri, «COD Lettera di Gara» sono altri numeri) */
+    codiciNoti?: string[];
     chi?: string | null;
     onFatto: () => void; onChiudi: () => void;
 }) {
@@ -108,7 +112,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
             const { head, corpo } = trovaIntestazione(pulite);
             setIntestazioni(head);
             setGriglia(corpo);
-            setMappa(modo === "una" && pistaUna ? proponiMappaUnaPista(head, corpo, pistaUna) : proponiMappa(head, piste));
+            setMappa(modo === "una" && pistaUna ? proponiMappaUnaPista(head, corpo, pistaUna, codiciNoti) : proponiMappa(head, piste, corpo, codiciNoti));
             setPannello("carica");
         } catch (e) {
             setErrore("File non leggibile: " + (e instanceof Error ? e.message : "formato non riconosciuto") + ". Serve un Excel (.xlsx) o un CSV.");
@@ -117,7 +121,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
 
     useEffect(() => {
         if (!intestazioni.length) return;
-        setMappa(modo === "una" && pistaUna ? proponiMappaUnaPista(intestazioni, griglia, pistaUna) : proponiMappa(intestazioni, piste));
+        setMappa(modo === "una" && pistaUna ? proponiMappaUnaPista(intestazioni, griglia, pistaUna, codiciNoti) : proponiMappa(intestazioni, piste, griglia, codiciNoti));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [modo, pistaUna]);
 
@@ -129,6 +133,15 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
     const ignorate = mappa.map((m, i) => ({ i, m })).filter((x) => x.m === IGNORA);
     const fineMese = (() => { const d = new Date(monthISO); d.setMonth(d.getMonth() + 1); d.setDate(0); return d.toISOString().slice(0, 10); })();
 
+    /* LA CONTROPROVA (Luca 31/08): «mi chiede due cose e non ho capito». Il
+       modo più veloce per sapere se la colonna del codice è quella giusta non è
+       leggere il titolo, è vedere quanti di quei codici sono nostri. Se sono
+       zero, la colonna è sbagliata — e adesso lo dice invece di lasciar salvare
+       numeri attribuiti a codici che non esistono. */
+    const codiciFile = [...new Set(righeUfficiali.map((r) => r.cod_gara))];
+    const notiSet = new Set(codiciNoti.map(soloCifre).filter(Boolean));
+    const codiciRiconosciuti = notiSet.size ? codiciFile.filter((c) => notiSet.has(soloCifre(c))).length : null;
+
     const salva = async () => {
         if (!al) { setErrore("Serve la data a cui è fermo l'avanzamento."); return; }
         if (diag?.senzaCodice) { setErrore("⛔ Manca la colonna del codice di inserimento: senza quella non so a quale negozio attribuire i numeri."); return; }
@@ -139,6 +152,7 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
         if (diag && diag.codici.length > 1) { setErrore("⛔ Due colonne dicono di essere il codice di inserimento: lasciane una sola e metti l'altra su «— ignora —»."); return; }
         if (diag?.senzaPiste) { setErrore(modo === "una" ? `⛔ Non ho trovato la colonna con i numeri di ${pistaUna}: scegliela qui sotto.` : "⛔ Nessuna colonna è associata a una pista: dimmi almeno quale colonna è il mobile."); return; }
         if (!righeUfficiali.length) { setErrore("Non c'è nessun numero da salvare: controlla la mappatura."); return; }
+        if (codiciRiconosciuti === 0) { setErrore(`⛔ Nessuno dei ${codiciFile.length} codici di questa colonna è fra i nostri: hai scelto la colonna sbagliata. I nostri sono ${codiciNoti.slice(0, 3).join(", ")}${codiciNoti.length > 3 ? "…" : ""}.`); return; }
         setBusy(true); setErrore(null);
         const r = await salvaAvanzamento({ brand, monthISO, al, righe: righeUfficiali, fileName: nomeFile, chi: chi || undefined });
         setBusy(false);
@@ -275,6 +289,16 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
                                             ⛔ {diag.codici.length} colonne dicono di essere il codice di inserimento ({diag.codici.map((i) => `«${intestazioni[i] || `col. ${i + 1}`}»`).join(", ")}): uso la prima. Metti le altre su «— ignora —».
                                         </p>
                                     )}
+                                    {codiciRiconosciuti === 0 && codiciFile.length > 0 && (
+                                        <p className="mb-2 text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/25 rounded-lg px-3 py-2">
+                                            ⛔ Nessuno dei {codiciFile.length} codici di questa colonna è fra i nostri ({codiciNoti.slice(0, 3).join(", ")}{codiciNoti.length > 3 ? "…" : ""}): è la colonna sbagliata. Cercane una che contenga quei numeri.
+                                        </p>
+                                    )}
+                                    {codiciRiconosciuti != null && codiciRiconosciuti > 0 && codiciRiconosciuti < codiciFile.length && (
+                                        <p className="mb-2 text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
+                                            ⚠️ Di {codiciFile.length} codici ne riconosco {codiciRiconosciuti}: gli altri non sono fra i nostri e le loro righe non entreranno in nessun confronto.
+                                        </p>
+                                    )}
                                     {scartate.length > 0 && (
                                         <p className="mb-2 text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
                                             ⚠️ {scartate.length} {scartate.length === 1 ? "cella non è un numero e la salto" : "celle non sono numeri e le salto"}: {[...new Set(scartate.map((x) => x.valore))].slice(0, 5).map((v) => `«${v}»`).join(", ")}{new Set(scartate.map((x) => x.valore)).size > 5 ? "…" : ""}. Se dovevano contare, sistemale nel file.
@@ -342,7 +366,16 @@ export function CaricaAvanzamento({ brand, brandLabel, monthISO, piste, chi, onF
 
                         <div className="px-5 py-3 border-t border-white/10 flex items-center justify-between gap-2">
                             <span className="text-[10px] text-slate-600">
-                                {intestazioni.length ? `${mappate.length} colonne su ${intestazioni.length} riconosciute · ${new Set(righeUfficiali.map((r) => r.cod_gara)).size} codici` : ""}
+                                {intestazioni.length ? (
+                                    <>
+                                        {mappate.length} colonne su {intestazioni.length} riconosciute · {codiciFile.length} codici
+                                        {codiciRiconosciuti != null && (
+                                            <span className={cn("ml-1 font-bold", codiciRiconosciuti === 0 ? "text-rose-300" : codiciRiconosciuti < codiciFile.length ? "text-amber-300" : "text-emerald-300")}>
+                                                · {codiciRiconosciuti} dei nostri
+                                            </span>
+                                        )}
+                                    </>
+                                ) : ""}
                             </span>
                             <div className="flex items-center gap-2">
                                 <button onClick={chiudi} className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">Annulla</button>

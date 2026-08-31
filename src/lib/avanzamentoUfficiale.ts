@@ -209,4 +209,4 @@ export async function eliminaAvanzamento(brand: string, monthISO: string, al: st
 
 // La lettura del foglio vive in un file suo, senza dipendenze: si prova a
 // mano, senza browser e senza database (test in scripts/prova_avanzamento.mjs).
-export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate } from "@/lib/avanzamentoFoglio";
+export { COL_IGNORA, COL_CODICE, pulisciGriglia, trovaIntestazione, proponiMappa, proponiMappaUnaPista, numeroIt, righeDaGriglia, diagnosiMappa, celleScartate, soloCifre, quotaCodiciNoti } from "@/lib/avanzamentoFoglio";
