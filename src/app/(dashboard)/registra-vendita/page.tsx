@@ -5203,6 +5203,19 @@ function CRM() {
   const { user, viewAsUser } = useAuth();
   const [selVend,setSelVend]=useState("");
   const [selNeg,setSelNeg]=useState("");
+  /* IL NEGOZIO DICHIARATO ALL'ACCESSO. Il campo resta modificabile — Luca
+     31/08: «lasciamolo, dallo precompilato, e nel momento in cui vanno a
+     registrare una pratica per un altro punto vendita devono cambiarlo loro
+     manualmente, gli deve uscire un pop-up» — ma cambiarlo dev'essere un
+     gesto, non uno scivolone: da questo campo dipendono lo scontrino, la
+     cassa che incassa e il magazzino da cui esce la merce. */
+  const negDichiarato = useRef("");
+  const [cambioNeg,setCambioNeg]=useState<{da:string;a:string}|null>(null);
+  const chiediCambioNegozio = (v) => {
+    const nuovo = String(v || "");
+    if (!nuovo || nuovo === selNeg) { setSelNeg(nuovo); return; }
+    setCambioNeg({ da: selNeg, a: nuovo });
+  };
   const _loginPrefill=useRef(false);
   useEffect(()=>{
     if(_loginPrefill.current||!user)return;
@@ -5227,6 +5240,7 @@ function CRM() {
         const dentro = negozi.filter(n => sedeFisica(n) === p.attiva.sede);
         if (!dentro.length) return;
         const mio = dentro.find(n => n === user.negozio) || dentro[0];
+        negDichiarato.current = mio;
         setSelNeg(mio);
       } catch { /* se non si sa, resta il negozio in scheda */ }
     })();
@@ -7562,6 +7576,40 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
      qualcosa lo chiudesse, il blocco anti-doppio-salvataggio non cadrebbe
      più e non si potrebbe registrare altro fino al ricarico della pagina. */
   /* LA VENDITA È REGISTRATA: resta finché non la chiude il venditore */
+  /* «STAI CAMBIANDO IL PUNTO VENDITA» (Luca 31/08). Non un avviso generico:
+     dice le tre cose che cambiano davvero — chi emette lo scontrino, quale
+     cassa incassa, da quale magazzino esce la merce — perché è esattamente
+     quello che si sbaglia quando si cambia negozio per sbaglio. */
+  const pannelloCambioNegozio = cambioNeg && createPortal(
+    <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)setCambioNeg(null);}}>
+      <div className="rvStoria">
+        <div className="rvStoria-t">
+          <div>
+            <div className="rvStoria-tit">Stai cambiando il punto vendita selezionato</div>
+            <div className="rvStoria-sot">
+              Da <b>{cambioNeg.da || "—"}</b> a <b>{cambioNeg.a}</b>
+              {negDichiarato.current && cambioNeg.a !== negDichiarato.current
+                ? <> — all&apos;accesso hai dichiarato di lavorare a <b>{negDichiarato.current}</b>.</>
+                : "."}
+            </div>
+          </div>
+        </div>
+        <div className="rvNota rvNota-att">
+          <div className="rvNota-t">Cosa cambia con il negozio</div>
+          <div className="rvNota-s">
+            Lo scontrino lo emette la società di quel punto vendita, l&apos;incasso finisce
+            nella sua cassa e la merce esce dal suo magazzino. Cambialo solo se questa
+            pratica è davvero dell&apos;altro negozio.
+          </div>
+        </div>
+        <div className="rvBarra rvBarra-c">
+          <button type="button" className="rvPill" onClick={()=>setCambioNeg(null)}>Lascia {cambioNeg.da || "com'è"}</button>
+          <button type="button" className="rvAzione" onClick={()=>{setSelNeg(cambioNeg.a);setCambioNeg(null);}}>
+            Sì, registro per {cambioNeg.a}
+          </button>
+        </div>
+      </div>
+    </div>, document.body);
   const pannelloVenditaFatta = venditaFatta && createPortal(
     <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)chiudiVenditaFatta();}}>
       <div className="rvFatta">
@@ -7857,7 +7905,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           </div>
         </div>}
         {/* #124: popup di conferma reset anche dentro il carrello */}
-        {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
+        {pannelloCambioNegozio}{pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
       </div>
     );
     return cartContent;
@@ -8676,7 +8724,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div className="rvCard" style={{borderLeft:"4px solid #28a745"}}>
           <div className="rvCardT" style={{color:"var(--tf-28a745)",marginBottom:14}}>🏪 Attribuzione</div>
           <div className="rvG3">
-            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
+            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={chiediCambioNegozio} vals={negozi} nt="Dalla presenza dichiarata — si può cambiare"/>
             <div><div className="rvLab">Data <span style={{color:"var(--tf-f87171)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn"/></div>
           </div>
         </div>}
@@ -8704,7 +8752,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       </div>}
 
       {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
-      {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
+      {pannelloCambioNegozio}{pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(
