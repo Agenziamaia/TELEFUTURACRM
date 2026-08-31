@@ -315,6 +315,17 @@ export function OrariChiusureView() {
        vende, e cambiarla da qui vorrebbe dire scegliere per lui. */
     const salvaSocieta = async (store: string, nuova_: string) => {
         const az = aziende.find(a => a.codice === nuova_);
+        /* «— DA SCEGLIERE —» NON È UNA SOCIETÀ (revisore 31/08). Sceglierla
+           scriveva la stringa VUOTA dentro `pos_rt.azienda`, che è NOT NULL ma
+           accetta "" — e siccome quella colonna fa parte della chiave primaria,
+           la riga del registratore spariva: `(negozio, 'T1')` non esisteva più.
+           Da lì il server non trovava più nessuna cassa per quel negozio,
+           scartava ogni voce dello scontrino e rispondeva «nessuna voce
+           stampabile». Il punto vendita smetteva di emettere scontrini — e
+           siccome la vendita si salva solo a scontrino emesso, smetteva di
+           vendere. Con un clic, senza un messaggio che lo dicesse.
+           Sul NEGOZIO il vuoto va bene: vuol dire «non ancora deciso». Sul
+           registratore no: quello o ha una società o non esiste. */
         // la società sta sul NEGOZIO: ce l'ha anche prima di avere una cassa
         const { error } = await supabase.from("stores").update({ azienda: nuova_ || null }).eq("name", store);
         if (dbError("Società del negozio", error)) return;
@@ -324,7 +335,7 @@ export function OrariChiusureView() {
            Dove ce ne sono DUE (Donna) non si tocca niente: lì la società
            dello scontrino la sceglie il pezzo che si vende. */
         const righe = registratori.filter(r => r.negozio === store);
-        if (righe.length === 1 && righe[0].azienda !== nuova_) {
+        if (nuova_ && righe.length === 1 && righe[0].azienda !== nuova_) {
             const { error: e2 } = await supabase.from("pos_rt")
                 .update({ azienda: nuova_, ragione_sociale: az?.ragione_sociale ?? null, piva: az?.piva ?? null })
                 .eq("negozio", store).eq("azienda", righe[0].azienda);
@@ -582,11 +593,21 @@ export function OrariChiusureView() {
                                             Un negozio la società ce l'ha anche prima della
                                             cassa: è quella che possiede la merce a magazzino
                                             e che firma i documenti di trasporto. */}
-                                        {rt.length > 1 ? (
-                                            <span className="text-[11px] text-slate-300 flex-1" title="Due società in questo negozio: la società dello scontrino la sceglie il pezzo che si vende">
-                                                {soc.map(nome).join(" + ")}
+                                        {/* ANCHE DOVE LE SOCIETÀ SONO DUE si sceglie
+                                            (revisore 31/08). Prima Donna vedeva solo una
+                                            scritta di sola lettura: il suo dato era
+                                            sbagliato — diceva T2 mentre il 90% della
+                                            merce è T1 — e non c'era modo di correggerlo.
+                                            Qui si dice a quale società appartiene il
+                                            NEGOZIO; le casse restano due e quale delle
+                                            due emette lo scontrino continua a deciderlo
+                                            il pezzo che si vende. */}
+                                        {rt.length > 1 && (
+                                            <span className="text-[10px] text-slate-500 shrink-0" title="Questo negozio ha due registratori: la cassa che emette lo scontrino la sceglie il pezzo venduto">
+                                                casse {soc.join("+")}
                                             </span>
-                                        ) : (
+                                        )}
+                                        {((
                                             <select value={n.azienda || ""} onChange={e => salvaSocieta(n.name, e.target.value)}
                                                 title="La società a cui appartiene il punto vendita: possiede la merce a magazzino e firma i documenti di trasporto"
                                                 // la ragione sociale finiva sotto la freccia e usciva
@@ -597,7 +618,7 @@ export function OrariChiusureView() {
                                                 <option value="">— da scegliere —</option>
                                                 {aziende.map(a => <option key={a.codice} value={a.codice}>{a.ragione_sociale}</option>)}
                                             </select>
-                                        )}
+                                        ))}
                                         </div>
                                     </div>
                                     {mancaPerDdt && (

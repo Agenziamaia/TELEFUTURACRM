@@ -251,14 +251,14 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        negozi contemporaneamente». Lista vuota = tutti, che è la stessa cosa
        ma si scrive una volta sola invece di spuntarne quindici. */
     const [scelti, setScelti] = useState<string[]>(mioNegozio && negozi.includes(mioNegozio) ? [mioNegozio] : []);
-    const togliNegozio = (n: string) => setScelti(scelti.filter(x => x !== n));
+
     const [azienda, setAzienda] = useState("");
     const [stato, setStato] = useState("");
     /* ANCHE GLI OPERATORI A PIÙ SELEZIONI (Luca 31/08): «lo stesso vale per la
        tendina dell'operatore». Chi cerca «cosa ho di WindTre e Fastweb» lo
        chiede una volta, non due. Vuoto = tutti. */
     const [operatori, setOperatori] = useState<string[]>([]);
-    const togliOperatore = (o: string) => setOperatori(operatori.filter(x => x !== o));
+
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
        compaiono anche quelli che qui non ci sono ma stanno in un altro
        negozio: serve a chi vuole sapere se può farsi mandare un pezzo. */
@@ -484,10 +484,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         values={scelti} onChange={setScelti} opzioni={negozi}
                         maxVoci={30} tuttiLabel="🌐 Tutti i negozi"
                         placeholder="Scegli i punti vendita — vuoto = tutti" /></div>
-                    {scelti.map(n => (
-                        <button key={n} onClick={() => togliNegozio(n)} title="Togli questo punto vendita"
-                            className="rvPill rvPill-sm rvPill-on">{n} ✕</button>
-                    ))}
+                    {/* le pastiglie di quello che hai scelto le disegna già
+                        `SelectMulti`: rifarle qui le raddoppiava, con due
+                        grafiche diverse (revisore 31/08) */}
                     <span className="rvSep" />
                     <button onClick={() => setSoloDisponibili(true)} className={cn("rvPill rvPill-sm", soloDisponibili && "rvPill-on")}>📗 Solo disponibili</button>
                     <button onClick={() => setSoloDisponibili(false)} className={cn("rvPill rvPill-sm", !soloDisponibili && "rvPill-on")}
@@ -504,14 +503,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             opzioni={[...operatoriPresenti, "(nessuno)"]}
                             maxVoci={20} tuttiLabel="Tutti gli operatori"
                             placeholder="Tutti — scrivi per filtrare" /></div>
-                    {operatori.length > 0 && (
-                        <div className="rvPillRow" style={{ gap: 5 }}>
-                            {operatori.map(o => (
-                                <button key={o} onClick={() => togliOperatore(o)} title="Togli questo operatore"
-                                    className="rvPill rvPill-sm rvPill-on">{o} ✕</button>
-                            ))}
-                        </div>
-                    )}
                     <div className="rvCampo rvCampo-lg"><span className="rvLab">Azienda</span>
                         <SelectOpzioni className="rvIn"
                             value={azienda ? (nomiAzienda[azienda] || azienda) : ""}

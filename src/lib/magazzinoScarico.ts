@@ -146,7 +146,11 @@ export async function scaricaVendita(
         const conSeriale = daFare.filter((r) => r.seriale);
         for (const r of conSeriale) {
             const { data, error } = await supabase.from("mag_unita")
-                .update({ stato: "venduto", venduto_il: adesso, venduto_da: operatore || null, contract_id: contractId })
+                /* IL PREZZO DI VENDITA, non il valore di carico (Luca 31/08):
+                   `valore` dice quanto costava entrando, e sono due numeri
+                   diversi — è la differenza fra i due che è il margine. */
+                .update({ stato: "venduto", venduto_il: adesso, venduto_da: operatore || null,
+                          contract_id: contractId, prezzo_vendita: r.price ?? r.importo ?? null })
                 /* SOLO SE È ANCORA DISPONIBILE (revisore 31/08). Era
                    `neq('venduto')`, che lasciava passare anche «annullato» e
                    «in_transito»: una bozza ripresa poteva vendere un pezzo
