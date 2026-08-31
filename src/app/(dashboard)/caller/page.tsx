@@ -2458,6 +2458,11 @@ function CallerPageInner() {
                             // nuova: lasciarlo la farebbe comparire in due code
                             data_richiamo: null,
                             lista_origine: listaNome,
+                            // marchio del ripescaggio: questa scheda NON nasce
+                            // dalla lista, le è stata affidata — e il cestino
+                            // della lista non deve portarsela via
+                            ripescata_il: new Date().toISOString(),
+                            lista_precedente: (vecchia as unknown as { lista_origine?: string | null })?.lista_origine || null,
                             note: [vecchia?.note, notaLista].filter(Boolean).join(" · "),
                             storico: [
                                 ...((vecchia?.storico as unknown[]) || []),
@@ -2497,15 +2502,6 @@ function CallerPageInner() {
                 });
             }
         });
-        /* prima le ripescate, poi le nuove: se una ripescata fallisce nessuna
-           scheda doppia è nata, e il conto lo diciamo a voce alta */
-        let ripescateKo = 0;
-        for (let i = 0; i < ripescaggi.length; i += 20) {
-            const esiti = await Promise.all(ripescaggi.slice(i, i + 20).map((r) =>
-                supabase.from("calls").update(r.patch).eq("id", r.id).then(({ error }) => !error)
-            ));
-            ripescateKo += esiti.filter((ok) => !ok).length;
-        }
         if (callsPayloads.length > 0) {
             // a blocchi da 500 (pattern import listini) — e su errore ROLLBACK
             // pulito: via le pratiche già inserite e la lista appena creata,
@@ -2517,12 +2513,27 @@ function CallerPageInner() {
             }
             if (errore) {
                 try {
-                    await supabase.from("calls").delete().eq("lista_origine", listaNome);
+                    // .is(ripescata_il, null): le schede riaperte non si
+                    // cancellano MAI, nemmeno per errore — esistevano prima
+                    await supabase.from("calls").delete().eq("lista_origine", listaNome).is("ripescata_il", null);
                     await supabase.from("liste").delete().eq("file_path", filePath);
                 } catch { /* best-effort */ }
                 alert("Errore creazione pratiche: " + errore + " — nessuna pratica creata, riprova.");
                 return;
             }
+        }
+
+        /* I RIPESCAGGI PER ULTIMI, e non è un dettaglio: il rollback qui sopra
+           cancella le pratiche per `lista_origine`, e una scheda ripescata
+           porta lo stesso nome di lista. Facendoli prima, un errore sugli
+           insert avrebbe cancellato schede storiche con anni di lavorazione
+           dentro. Qui, se si arriva, gli insert sono già andati bene. */
+        let ripescateKo = 0;
+        for (let i = 0; i < ripescaggi.length; i += 20) {
+            const esiti = await Promise.all(ripescaggi.slice(i, i + 20).map((r) =>
+                supabase.from("calls").update(r.patch).eq("id", r.id).then(({ error }) => !error)
+            ));
+            ripescateKo += esiti.filter((ok) => !ok).length;
         }
 
         await Promise.all([fetchCalls(), fetchListe()]);
@@ -3205,15 +3216,24 @@ function CallerPageInner() {
                                                         <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                             <button title="Cancella la lista e tutte le pratiche importate da lei (attivazioni comprese)"
                                                                 onClick={async () => {
-                                                                    const { data: agganciate } = await supabase.from("calls").select("id, stato").eq("lista_origine", l.nome);
-                                                                    const righe = (agganciate || []) as { id: string; stato: string | null }[];
+                                                                    const { data: agganciate } = await supabase.from("calls").select("id, stato, ripescata_il, lista_precedente").eq("lista_origine", l.nome);
+                                                                    const tutte = (agganciate || []) as { id: string; stato: string | null; ripescata_il: string | null; lista_precedente: string | null }[];
+                                                                    // le RIPESCATE non sono nate qui: la lista le aveva solo in
+                                                                    // affido. Cancellarle vorrebbe dire buttare via lo storico
+                                                                    // di un cliente vero — tornano da dove venivano.
+                                                                    const ripescate = tutte.filter((r) => r.ripescata_il);
+                                                                    const righe = tutte.filter((r) => !r.ripescata_il);
                                                                     const attivate = righe.filter((r) => /^attivat/i.test(String(r.stato || ""))).length;
                                                                     const dettaglio = righe.length
                                                                         ? ` e le sue ${righe.length} pratiche importate${attivate ? ` (comprese ${attivate} attivate, che escono anche dal conteggio cooperation)` : ""}`
-                                                                        : " (nessuna pratica agganciata)";
-                                                                    if (!window.confirm(`Cancello la lista «${l.nome}»${dettaglio}? Operazione definitiva.`)) return;
+                                                                        : " (nessuna pratica importata)";
+                                                                    const nota = ripescate.length ? `\n\n${ripescate.length} schede erano state riaperte da questa lista, non create: NON vengono cancellate, tornano alla lista di prima.` : "";
+                                                                    if (!window.confirm(`Cancello la lista «${l.nome}»${dettaglio}?${nota}\n\nOperazione definitiva.`)) return;
+                                                                    for (const r of ripescate) {
+                                                                        await supabase.from("calls").update({ lista_origine: r.lista_precedente, ripescata_il: null, lista_precedente: null }).eq("id", r.id);
+                                                                    }
                                                                     if (righe.length) {
-                                                                        const { error: eC } = await supabase.from("calls").delete().eq("lista_origine", l.nome);
+                                                                        const { error: eC } = await supabase.from("calls").delete().eq("lista_origine", l.nome).is("ripescata_il", null);
                                                                         if (eC) { alert("Pratiche non cancellate: " + eC.message); return; }
                                                                     }
                                                                     const { error: eL } = await supabase.from("liste").delete().eq("id", l.id);
