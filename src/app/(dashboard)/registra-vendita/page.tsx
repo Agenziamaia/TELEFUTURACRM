@@ -6881,139 +6881,172 @@ function CRM() {
         }, mi));
       });
 
-      // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
-      if (notaOn && promData) {
-        await supabase.from("calendar_tasks").insert({
-          title: `Promemoria contratto — ${ana.cognome || ana.ragioneSociale || "cliente"}`,
-          date: promData,
-          time: promOra || null,
-          status: "da_fare",
-          notes: promDesc || nota || null,
-          client_ref: clientId,
-          created_by: user?.name || selVend || "—",
-          created_by_user_id: user?.id || null,
-          assigned_to: selVend || user?.name || "—",
-          assigned_to_store: promNeg || selNeg || null,
-          is_demo: false,
-        });
-      }
+      /* ═══ LA VENDITA SI REGISTRA DOPO IL PAGAMENTO (Luca 31/08) ═══════════
+         «Dobbiamo eliminare la possibilità che la vendita si salvi ancor prima
+          che venga effettuato il pagamento: se seleziono contanti, la cash
+          machine incassa, il CRM resta in attesa della conferma, e solo dopo
+          conclude lo scontrino e registra la vendita. Se no rischi che io esca
+          senza pagare, la vendita resta registrata e magari ci abbiamo pure
+          pagato del commissioning sopra.»
 
-      // 5. Insert contracts then link attachments
-      if (contractRows.length > 0) {
-        const { error: contractErr } = await supabase.from("contracts").insert(contractRows);
-        if (contractErr) throw contractErr;
-
-        // ALLEGATI PER CONTRATTO (Luca 05/08): prima TUTTI gli allegati
-        // finivano sul primo contratto del carrello. Ora:
-        //  - documento d'identita' (caricato o riusato): replicato su OGNI
-        //    PRATICA BRAND (righe CTR-) della vendita — stesso file_url, una
-        //    riga per contratto, cosi' ogni pratica e' completa nel modale di
-        //    Ricerca Vendite. MAI sulle voci marginalita' EXT- (caso D'Atria
-        //    07/08: 4 documenti × 5 righe = 23 allegati in scheda cliente);
-        //    senza righe CTR (solo marginalita' nel carrello brand) fallback
-        //    su tutte, altrimenti il documento resterebbe orfano;
-        //  - contratto/altro: sulla riga corrispondente via rowKey; se la
-        //    riga non esiste piu' (orfano) fallback sul primo contratto;
-        //  - fattura (energia): sui contratti energia, o primo se non ce ne sono.
-        if (uploadedFiles.length > 0) {
-          const _tuttiIds = contractRows.map(r => r.id);
-          const _ctrIds = _tuttiIds.filter(id => String(id).startsWith("CTR-"));
-          const _primoId = _tuttiIds[0];
-          const attendanceRows = [];
-          uploadedFiles.forEach(f => {
-            const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, client_id: contractRows[0]?.client_id || null, file_url: f.url, file_name: f.name, file_type: f.type });
-            if (f.type === "documento") (_ctrIds.length ? _ctrIds : _tuttiIds).forEach(aggiungi);
-            else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
-            else {
-          aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
-          // contratto UNICO (10/08): stesso file_url anche sulle righe rate
-          // associate alla riga principale (riferimento, non copia)
-          if (f.type === "contratti" && f.rowKey) {
-            righeCarrello().filter(r => r.contratto === "associato" && r._mainKey === f.rowKey && _ctrIdPerRiga[r.key])
-              .forEach(r => aggiungi(_ctrIdPerRiga[r.key]));
-          }
-        }
+         Il flusso a soli prodotti lo faceva già; questo — la vendita di tutti i
+         giorni — no: scriveva tutto e POI apriva la cassa.
+         Da qui in giù c'è tutto ciò che rende la vendita ufficiale: promemoria,
+         contratti, allegati, usati venduti, scarico di magazzino. Diventa una
+         funzione che si esegue DOPO, chiamata dal modale quando lo scontrino è
+         uscito — cioè, coi contanti, dopo che la macchina ha confermato.
+         Dove lo scontrino non si fa (negozio senza cassa, o nessuna voce
+         prezzata) si esegue subito, come prima.
+         I numeri di pratica esistono GIÀ qui sopra — `contractRows` è costruito
+         prima dell'insert — quindi il modale se li porta dietro anche se la
+         scrittura non è ancora avvenuta: è per questo che la task del bonifico
+         continua a puntare alla vendita giusta. */
+      const commitFn = async () => {
+        // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
+        if (notaOn && promData) {
+          await supabase.from("calendar_tasks").insert({
+            title: `Promemoria contratto — ${ana.cognome || ana.ragioneSociale || "cliente"}`,
+            date: promData,
+            time: promOra || null,
+            status: "da_fare",
+            notes: promDesc || nota || null,
+            client_ref: clientId,
+            created_by: user?.name || selVend || "—",
+            created_by_user_id: user?.id || null,
+            assigned_to: selVend || user?.name || "—",
+            assigned_to_store: promNeg || selNeg || null,
+            is_demo: false,
           });
-          const { error: attErr } = await supabase.from("contract_attachments").insert(attendanceRows);
-          if (attErr) console.error("Attachment Meta Error:", attErr);
         }
 
-        // DOCUMENTI — ESITO RIUSO (Luca 05/08 + MOD-14 08/08): al salvataggio
-        // della vendita coi NUOVI documenti, le righe vecchie cambiano stato in
-        // base all'esito scelto in verifica. SOLO se sono stati davvero caricati
-        // nuovi documenti. Idempotente. 'altro' = restano validi (niente update):
-        //   · scaduti  → documento_archiviato (vecchio, fuori dai validi)
-        //   · smarrito → documento_smarrito  (fuori dai validi, visibile ad admin)
-        //   · altro    → nessuna modifica: i vecchi restano validi in parallelo
-        if (docRiuso && (docRiuso.esito === "scaduti" || docRiuso.esito === "smarrito") && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
-          const nuovoType = docRiuso.esito === "smarrito" ? "documento_smarrito" : "documento_archiviato";
-          const { error: archErr } = await supabase.from("contract_attachments")
-            .update({ file_type: nuovoType })
-            .in("id", docRiuso.docs.map(d => d.id));
-          if (archErr) console.error("Aggiornamento stato documenti riuso error:", archErr);
-        }
-        // MATCH APPUNTAMENTO (cantiere 08/08): se questa vendita chiude un
-        // appuntamento del call center (stesso CF, entro 30gg dalla data
-        // fissata) lo aggancia. STESSO negozio + venditore che ci lavora →
-        // POPUP: il venditore decide se associare (cooperation al caller).
-        // ALTRO negozio → automatico "attivato_diverso_negozio" (visibilita',
-        // niente cooperation). Non blocca MAI il salvataggio.
-        try {
-          const _ctrDaMatch = contractRows.filter(r => String(r.id).startsWith("CTR-")).map(r => r.id);
-          if (_ctrDaMatch.length && (ana.cf || ana.cfRef)) {
-            const cand = await trovaAppuntamentoDaAgganciare(ana.cf, ana.cfRef || null, selNeg, dateStr);
-            if (cand) {
-              const radiceApp = cand.appuntamento.store ? _storeRoot(cand.appuntamento.store) : null;
-              const vendOk = !radiceApp || await venditoreLavoraIn(selVend || user?.name || null, radiceApp);
-              if (cand.stessoNegozio && vendOk) {
-                // stesso negozio: chiedo al venditore (popup dopo il reset)
-                setMatchPending({ app: cand.appuntamento, contractIds: _ctrDaMatch, firma: user?.name || selVend || "match" });
-              } else {
-                // altro negozio: attivato ma senza cooperation, in automatico
-                await agganciaVenditaAppuntamento(cand.appuntamento.id, _ctrDaMatch, user?.name || selVend || "match", false);
-              }
+        // 5. Insert contracts then link attachments
+        if (contractRows.length > 0) {
+          const { error: contractErr } = await supabase.from("contracts").insert(contractRows);
+          if (contractErr) throw contractErr;
+
+          // ALLEGATI PER CONTRATTO (Luca 05/08): prima TUTTI gli allegati
+          // finivano sul primo contratto del carrello. Ora:
+          //  - documento d'identita' (caricato o riusato): replicato su OGNI
+          //    PRATICA BRAND (righe CTR-) della vendita — stesso file_url, una
+          //    riga per contratto, cosi' ogni pratica e' completa nel modale di
+          //    Ricerca Vendite. MAI sulle voci marginalita' EXT- (caso D'Atria
+          //    07/08: 4 documenti × 5 righe = 23 allegati in scheda cliente);
+          //    senza righe CTR (solo marginalita' nel carrello brand) fallback
+          //    su tutte, altrimenti il documento resterebbe orfano;
+          //  - contratto/altro: sulla riga corrispondente via rowKey; se la
+          //    riga non esiste piu' (orfano) fallback sul primo contratto;
+          //  - fattura (energia): sui contratti energia, o primo se non ce ne sono.
+          if (uploadedFiles.length > 0) {
+            const _tuttiIds = contractRows.map(r => r.id);
+            const _ctrIds = _tuttiIds.filter(id => String(id).startsWith("CTR-"));
+            const _primoId = _tuttiIds[0];
+            const attendanceRows = [];
+            uploadedFiles.forEach(f => {
+              const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, client_id: contractRows[0]?.client_id || null, file_url: f.url, file_name: f.name, file_type: f.type });
+              if (f.type === "documento") (_ctrIds.length ? _ctrIds : _tuttiIds).forEach(aggiungi);
+              else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
+              else {
+            aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
+            // contratto UNICO (10/08): stesso file_url anche sulle righe rate
+            // associate alla riga principale (riferimento, non copia)
+            if (f.type === "contratti" && f.rowKey) {
+              righeCarrello().filter(r => r.contratto === "associato" && r._mainKey === f.rowKey && _ctrIdPerRiga[r.key])
+                .forEach(r => aggiungi(_ctrIdPerRiga[r.key]));
             }
           }
-        } catch (e) { console.error("[MATCH-APP]", e); }
-      }
+            });
+            const { error: attErr } = await supabase.from("contract_attachments").insert(attendanceRows);
+            if (attErr) console.error("Attachment Meta Error:", attErr);
+          }
 
-      // scarico magazzino usati: i telefoni scelti dal magazzino passano a
-      // "venduto" su Gestione Usati, con prezzo effettivo e cliente collegato
-      await scaricaUsatiVenduti(margList, clientId, dateStr, selVend);
-      /* SCARICO DEL MAGAZZINO (Luca 29/08). Va DOPO: la vendita è già scritta
-         e lo scontrino può essere già stampato — se il movimento non parte si
-         annota e si prosegue. Un magazzino disallineato si sistema, una
-         vendita persa no. */
-      try {
-        /* IL TELEFONO A RATE ESCE DAL MAGAZZINO (Luca 31/08). Il suo IMEI sta
-           nei dati del contratto, non fra le voci del carrello: senza questa
-           riga la vendita sarebbe registrata, la rata partita, e il telefono
-           resterebbe a scaffale nel software — vendibile una seconda volta.
-           Si passa il SERIALE: `scaricaVendita` marca il pezzo venduto e non
-           tocca nessuna quantità, che per un pezzo singolo non esiste. */
-        const _rate = telefoniARate(margList);
-        const _sc = await scaricaVendita([...margList, ..._rate], selNeg, contractRows[0]?.id || null, selVend);
-        const _av = avvisiScarico(_sc);
-        if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
-      } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
+          // DOCUMENTI — ESITO RIUSO (Luca 05/08 + MOD-14 08/08): al salvataggio
+          // della vendita coi NUOVI documenti, le righe vecchie cambiano stato in
+          // base all'esito scelto in verifica. SOLO se sono stati davvero caricati
+          // nuovi documenti. Idempotente. 'altro' = restano validi (niente update):
+          //   · scaduti  → documento_archiviato (vecchio, fuori dai validi)
+          //   · smarrito → documento_smarrito  (fuori dai validi, visibile ad admin)
+          //   · altro    → nessuna modifica: i vecchi restano validi in parallelo
+          if (docRiuso && (docRiuso.esito === "scaduti" || docRiuso.esito === "smarrito") && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
+            const nuovoType = docRiuso.esito === "smarrito" ? "documento_smarrito" : "documento_archiviato";
+            const { error: archErr } = await supabase.from("contract_attachments")
+              .update({ file_type: nuovoType })
+              .in("id", docRiuso.docs.map(d => d.id));
+            if (archErr) console.error("Aggiornamento stato documenti riuso error:", archErr);
+          }
+          // MATCH APPUNTAMENTO (cantiere 08/08): se questa vendita chiude un
+          // appuntamento del call center (stesso CF, entro 30gg dalla data
+          // fissata) lo aggancia. STESSO negozio + venditore che ci lavora →
+          // POPUP: il venditore decide se associare (cooperation al caller).
+          // ALTRO negozio → automatico "attivato_diverso_negozio" (visibilita',
+          // niente cooperation). Non blocca MAI il salvataggio.
+          try {
+            const _ctrDaMatch = contractRows.filter(r => String(r.id).startsWith("CTR-")).map(r => r.id);
+            if (_ctrDaMatch.length && (ana.cf || ana.cfRef)) {
+              const cand = await trovaAppuntamentoDaAgganciare(ana.cf, ana.cfRef || null, selNeg, dateStr);
+              if (cand) {
+                const radiceApp = cand.appuntamento.store ? _storeRoot(cand.appuntamento.store) : null;
+                const vendOk = !radiceApp || await venditoreLavoraIn(selVend || user?.name || null, radiceApp);
+                if (cand.stessoNegozio && vendOk) {
+                  // stesso negozio: chiedo al venditore (popup dopo il reset)
+                  setMatchPending({ app: cand.appuntamento, contractIds: _ctrDaMatch, firma: user?.name || selVend || "match" });
+                } else {
+                  // altro negozio: attivato ma senza cooperation, in automatico
+                  await agganciaVenditaAppuntamento(cand.appuntamento.id, _ctrDaMatch, user?.name || selVend || "match", false);
+                }
+              }
+            }
+          } catch (e) { console.error("[MATCH-APP]", e); }
+        }
 
-      setUploading(false);
-      sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
+        // scarico magazzino usati: i telefoni scelti dal magazzino passano a
+        // "venduto" su Gestione Usati, con prezzo effettivo e cliente collegato
+        await scaricaUsatiVenduti(margList, clientId, dateStr, selVend);
+        /* SCARICO DEL MAGAZZINO (Luca 29/08). Va DOPO: la vendita è già scritta
+           e lo scontrino può essere già stampato — se il movimento non parte si
+           annota e si prosegue. Un magazzino disallineato si sistema, una
+           vendita persa no. */
+        try {
+          /* IL TELEFONO A RATE ESCE DAL MAGAZZINO (Luca 31/08). Il suo IMEI sta
+             nei dati del contratto, non fra le voci del carrello: senza questa
+             riga la vendita sarebbe registrata, la rata partita, e il telefono
+             resterebbe a scaffale nel software — vendibile una seconda volta.
+             Si passa il SERIALE: `scaricaVendita` marca il pezzo venduto e non
+             tocca nessuna quantità, che per un pezzo singolo non esiste. */
+          const _rate = telefoniARate(margList);
+          const _sc = await scaricaVendita([...margList, ..._rate], selNeg, contractRows[0]?.id || null, selVend);
+          const _av = avvisiScarico(_sc);
+          if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
+        } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
+        clearDraft("crm_v9");   // adesso sì: la vendita esiste
+        return contractRows;
+      };
+
+
       // POS: se ci sono voci prezzate, apri Incasso & Scontrino (il reset avviene
       // alla chiusura del modale, chiudiScontrino). Altrimenti reset come prima.
       // Il blocco resta attivo fino al reset: altrimenti il carrello e' ancora
       // pieno e un altro clic risalverebbe tutto.
       const _scRows = buildScontrinoItems(margList);
       if (_scRows.length && posScontrinoAbilitato(selNeg)) {
-        // flusso brand: i contratti sono GIÀ salvati qui sopra → nessun commit differito.
-        pendingCommit.current = null;
-        clearDraft("crm_v9");
+        /* DIFFERITO: la vendita si scrive quando lo scontrino è uscito. E niente
+           «✅ Salvato!» qui: non è ancora vero, e dirlo sarebbe la cosa peggiore
+           — l'operatore leggerebbe che è fatta mentre non è successo niente. */
+        pendingCommit.current = commitFn;
+        setUploading(false);
+        /* LA BOZZA RESTA finché la vendita non è scritta. Se il cliente ci
+           ripensa davanti alla cassa, o qualcosa va storto, il lavoro di dieci
+           minuti dev'essere ancora lì: cancellarla adesso vorrebbe dire
+           buttare una vendita che non è mai stata registrata. */
         /* IL NUMERO DELLA VENDITA VIAGGIA COL MODALE (Luca 31/08): la task
            del bonifico deve riportare l'amministrazione ALLO SCONTRINO che è
            stato fatto, non alla lista di tutte le vendite. */
-        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart });
+        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
+        // niente scontrino da fare: si registra subito, come prima
+        await commitFn();
+        setUploading(false);
+        sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
         // niente più reset a orologeria: la conferma resta finché non la
         // chiude il venditore, e il blocco cade con lei
         clearDraft("crm_v9");   // la vendita è salvata: la bozza non serve più

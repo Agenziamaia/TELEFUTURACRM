@@ -30,6 +30,8 @@ export interface ScontrinoData {
     /** coupon GIÀ applicato sul carrello (Luca 31/08): qui arriva applicato,
      *  non si richiede al cliente di ripeterlo alla cassa */
     coupon?: { code: string; valore: number; sconto: number } | null;
+    /** la vendita NON è ancora scritta: si registra a scontrino emesso */
+    daRegistrare?: boolean;
 }
 
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
@@ -407,7 +409,17 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         {/* X per uscire dal modale PRIMA di emettere (spec Francesco): non durante
                             l'incasso/stampa in corso, per non lasciare un'operazione a metà. */}
                         {fase !== "incasso" && fase !== "stampa" && (
-                            <button type="button" onClick={onDone} title="Chiudi senza emettere" aria-label="Chiudi"
+                            /* USCIRE ADESSO BUTTA LA VENDITA (Luca 31/08). Da quando la
+                               registrazione è differita, chiudere qui non lascia niente a
+                               database: è la cosa giusta — non è stata né pagata né
+                               scontrinata — ma va DETTA, perché fino a ieri chiudere
+                               lasciava la vendita salvata, e chi lavora ha quell'abitudine
+                               in mano. */
+                            <button type="button" onClick={() => {
+                                if (data.daRegistrare && fase === "scelta"
+                                    && !window.confirm("Questa vendita NON è ancora registrata: si scrive quando lo scontrino è emesso.\n\nUscendo adesso la perdi.\n\nSe il cliente paga più tardi, usa «Tieni in sospeso».")) return;
+                                onDone();
+                            }} title="Chiudi senza emettere" aria-label="Chiudi"
                                 className="shrink-0 w-7 h-7 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 text-lg leading-none flex items-center justify-center">×</button>
                         )}
                     </div>
