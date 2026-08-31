@@ -54,3 +54,7 @@ _*.py
 # solo alla RADICE: `_views` e simili dentro src/ sono codice vero, e una
 # regola senza barra iniziale li avrebbe esclusi dal repo
 /_*/
+
+# attrezzi da terminal (script usa-e-getta che parlano col database)
+_*.js
+_*.cjs

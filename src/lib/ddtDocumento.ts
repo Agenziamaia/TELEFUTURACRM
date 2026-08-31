@@ -318,8 +318,11 @@ const STILE = `
   @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
   body { font-family: "Helvetica Neue", Arial, sans-serif; color: #000; margin: 0; font-size: 10.5px; }
-  .pag { page-break-after: always; }
-  .pag:last-child { page-break-after: auto; }
+  /* l'interruzione va TRA un foglio e l'altro, mai dopo l'ultimo: con
+     «page-break-after» sull'ultimo usciva un foglio bianco in coda, e la
+     guardia :last-child non reggeva perché chi apre la stampa infila uno
+     <script> dopo la sezione — quella non era più l'ultima figlia. */
+  .pag + .pag { break-before: page; page-break-before: always; }
 
   /* testata */
   .testa { display: flex; gap: 14px; align-items: flex-start; }

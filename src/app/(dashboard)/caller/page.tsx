@@ -2162,6 +2162,7 @@ function CallerPageInner() {
     }
 
     function openLista() {
+        scordaScelteDoppioni();
         setListaStep(1);
         setListaTipo("consumer");
         setListaNome("");
@@ -2245,6 +2246,10 @@ function CallerPageInner() {
     function toggleHeaderLista(v: boolean) {
         const dati = v ? listaDatiFull.slice(1) : listaDatiFull;
         if (!dati.length) return;
+        // togliere o rimettere l'intestazione SPOSTA TUTTE LE RIGHE DI UNO:
+        // le decisioni prese per riga (che vanno per posizione) finirebbero
+        // sulla persona sbagliata, in silenzio. Si ricomincia.
+        scordaScelteDoppioni();
         setListaHeaderSaltata(v);
         setListaDati(dati);
         setListaRows(dati.length);
@@ -2282,9 +2287,15 @@ function CallerPageInner() {
     /* LA DECISIONE. I gemelli non si votano: due schede per la stessa persona
        non devono esistere in nessun caso, quindi la copia in più esce sempre e
        la prima riga resta. Per tutto il resto: riga → gruppo → «da decidere». */
-    const decisioneDi = useCallback((d: Doppione): Decisione => (
-        d.dentroIlFile ? "salta" : (sceltaRiga[d.riga] ?? sceltaGruppo[d.stato] ?? null)
-    ), [sceltaRiga, sceltaGruppo]);
+    /* Un gemello agganciato per CODICE FISCALE è la stessa persona due volte:
+       esce, e non si discute. Ma un gemello agganciato SOLO DAL NUMERO può
+       essere un'altra persona sullo stesso fisso — casa, ufficio: sul campione
+       vero erano 15 righe su 3.156. Quelle si possono tenere, dicendolo. */
+    const gemelloDaSciogliere = (d: Doppione) => d.dentroIlFile && d.perNumero;
+    const decisioneDi = useCallback((d: Doppione): Decisione => {
+        if (d.dentroIlFile) return d.perNumero ? (sceltaRiga[d.riga] ?? "salta") : "salta";
+        return sceltaRiga[d.riga] ?? sceltaGruppo[d.stato] ?? null;
+    }, [sceltaRiga, sceltaGruppo]);
     const daDecidere = useMemo(() => doppioni.filter((d) => decisioneDi(d) === null).length, [doppioni, decisioneDi]);
 
     /* LE RIPESCATE. «Assegna comunque» non crea una scheda nuova: riapre
@@ -2309,9 +2320,13 @@ function CallerPageInner() {
         for (const d of doppioni) {
             const scelta = decisioneDi(d);
             if (scelta === "riassegna" && riusaPerRiga.has(d.riga)) continue;
+            // il gemello sciolto («è un'altra persona») entra come riga nuova:
+            // non c'è nessuna scheda da riaprire, è un cliente che non abbiamo
+            if (scelta === "riassegna" && gemelloDaSciogliere(d)) continue;
             s.add(d.riga);
         }
         return s;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [doppioni, decisioneDi, riusaPerRiga]);
     const righeSaltate = righeEscluse;
     const righeTenuteIdx = useMemo(() => listaDati.map((_, i) => i).filter((i) => !righeEscluse.has(i)), [listaDati, righeEscluse]);
@@ -2435,7 +2450,7 @@ function CallerPageInner() {
            comunque NON diventano pratiche nuove: si riapre quella che c'è
            già, con il suo storico attaccato (Luca 31/08: «non deve crearne
            una nuova, non ci devono mai essere schede duplicate»). */
-        const ripescaggi: { id: string; patch: Record<string, unknown> }[] = [];
+        const ripescaggi: { id: string; caller: string }[] = [];
         let rowIdx = 0;
         listaSplits.filter((s) => s.caller && s.quantita > 0).forEach((split) => {
             for (let i = 0; i < split.quantita && rowIdx < righeTenute.length; i++) {
@@ -2443,33 +2458,10 @@ function CallerPageInner() {
                 const idOriginale = riusaPerRiga.get(righeTenuteIdx[rowIdx]);
                 rowIdx++;
                 if (idOriginale) {
-                    const vecchia = calls.find((c) => c.id === idOriginale);
-                    const notaLista = `Da lista: ${listaNome}`;
-                    ripescaggi.push({
-                        id: idOriginale,
-                        patch: {
-                            // la scheda resta la sua: nome, numero, codice
-                            // fiscale e storico non si toccano. Cambia solo di
-                            // chi è e da quando riparte il conto.
-                            stato: "Assegnata",
-                            caller: split.caller,
-                            data_chiamata: dataAssegnazione,
-                            // il richiamo vecchio è superato dall'assegnazione
-                            // nuova: lasciarlo la farebbe comparire in due code
-                            data_richiamo: null,
-                            lista_origine: listaNome,
-                            // marchio del ripescaggio: questa scheda NON nasce
-                            // dalla lista, le è stata affidata — e il cestino
-                            // della lista non deve portarsela via
-                            ripescata_il: new Date().toISOString(),
-                            lista_precedente: (vecchia as unknown as { lista_origine?: string | null })?.lista_origine || null,
-                            note: [vecchia?.note, notaLista].filter(Boolean).join(" · "),
-                            storico: [
-                                ...((vecchia?.storico as unknown[]) || []),
-                                { data: dataAssegnazione, caller: currentCaller, campo: "Riassegnazione lista", da: vecchia?.stato || "", a: `Assegnata (lista: ${listaNome})` },
-                            ],
-                        },
-                    });
+                    // niente patch qui: la scheda va riletta FRESCA al momento
+                    // dell'update — il wizard può restare aperto mezz'ora e nel
+                    // frattempo il caller di prima ci scrive dentro
+                    ripescaggi.push({ id: idOriginale, caller: split.caller });
                     continue;
                 }
                 const grezzo = cella(riga, iNumero);
@@ -2529,11 +2521,64 @@ function CallerPageInner() {
            insert avrebbe cancellato schede storiche con anni di lavorazione
            dentro. Qui, se si arriva, gli insert sono già andati bene. */
         let ripescateKo = 0;
-        for (let i = 0; i < ripescaggi.length; i += 20) {
-            const esiti = await Promise.all(ripescaggi.slice(i, i + 20).map((r) =>
-                supabase.from("calls").update(r.patch).eq("id", r.id).then(({ error }) => !error)
-            ));
-            ripescateKo += esiti.filter((ok) => !ok).length;
+        if (ripescaggi.length > 0) {
+            // ① rilettura fresca: note e storico si accodano a quello che c'è
+            //    ADESSO nel database, non alla copia che il wizard aveva in
+            //    memoria quando è stato aperto
+            type Fresca = { id: string; note: string | null; storico: unknown[] | null; stato: string | null; lista_origine: string | null; appointment_id: string | number | null; richiamo_event_id: string | number | null };
+            const fresche = new Map<string, Fresca>();
+            const ids = ripescaggi.map((r) => r.id);
+            for (let i = 0; i < ids.length; i += 200) {
+                const { data } = await supabase.from("calls")
+                    .select("id, note, storico, stato, lista_origine, appointment_id, richiamo_event_id")
+                    .in("id", ids.slice(i, i + 200));
+                ((data || []) as Fresca[]).forEach((r) => fresche.set(String(r.id), r));
+            }
+            const patch: { id: string; dati: Record<string, unknown> }[] = [];
+            for (const r of ripescaggi) {
+                const v = fresche.get(r.id);
+                if (!v) { ripescateKo++; continue; }   // sparita nel frattempo
+                // ② il RICHIAMO vecchio si cancella davvero, evento compreso:
+                //    lasciarlo in agenda vuol dire un promemoria per una
+                //    telefonata che nessuno farà più. Se non si riesce a
+                //    toglierlo dal calendario, si lascia tutto com'è.
+                let richiamoTolto = false;
+                if (v.richiamo_event_id) {
+                    const { error } = await supabase.from("appointments").delete().eq("id", v.richiamo_event_id);
+                    richiamoTolto = !error;
+                } else richiamoTolto = true;
+                const notaLista = `Da lista: ${listaNome}`;
+                patch.push({
+                    id: r.id,
+                    dati: {
+                        stato: "Assegnata",
+                        caller: r.caller,
+                        data_chiamata: dataAssegnazione,
+                        lista_origine: listaNome,
+                        ripescata_il: new Date().toISOString(),
+                        lista_precedente: v.lista_origine || null,
+                        // ③ l'APPUNTAMENTO vecchio si stacca dalla scheda: se
+                        //    il negozio lo esita domani, la sincronizzazione lo
+                        //    cerca per appointment_id e riscriverebbe lo stato
+                        //    della scheda appena riaffidata — il caller nuovo se
+                        //    la vedrebbe cambiare sotto gli occhi. L'evento in
+                        //    calendario resta: il cliente potrebbe presentarsi.
+                        appointment_id: null,
+                        ...(richiamoTolto ? { data_richiamo: null, richiamo_event_id: null } : {}),
+                        note: [v.note, notaLista].filter(Boolean).join(" · "),
+                        storico: [
+                            ...((v.storico as unknown[]) || []),
+                            { data: dataAssegnazione, caller: currentCaller, campo: "Riassegnazione lista", da: v.stato || "", a: `Assegnata (lista: ${listaNome})${v.appointment_id ? " · appuntamento precedente staccato" : ""}${v.richiamo_event_id && richiamoTolto ? " · richiamo precedente annullato" : ""}` },
+                        ],
+                    },
+                });
+            }
+            for (let i = 0; i < patch.length; i += 20) {
+                const esiti = await Promise.all(patch.slice(i, i + 20).map((r) =>
+                    supabase.from("calls").update(r.dati).eq("id", r.id).then(({ error }) => !error)
+                ));
+                ripescateKo += esiti.filter((ok) => !ok).length;
+            }
         }
 
         await Promise.all([fetchCalls(), fetchListe()]);
@@ -4244,7 +4289,7 @@ function CallerPageInner() {
                                                                 ))}
                                                             </div>
                                                         )}
-                                                        {gemelli && <span className="ml-auto text-[10px] font-bold text-rose-200 bg-rose-500/20 px-2 py-1 rounded-md">⏭ le copie escono sempre</span>}
+                                                        {gemelli && <span className="ml-auto text-[10px] font-bold text-rose-200 bg-rose-500/20 px-2 py-1 rounded-md">⏭ le copie escono{righe.some((d) => d.perNumero) ? ", tranne quelle che sciogli tu" : " sempre"}</span>}
                                                     </div>
                                                     <p className="text-[10px] text-slate-500 mt-1">
                                                         {et.spiega}
@@ -4268,9 +4313,19 @@ function CallerPageInner() {
                                                                         <span className="text-slate-500 truncate max-w-[110px]">{d.statoPratica}</span>
                                                                         {d.caller !== "—" && <span className="text-slate-600 truncate max-w-[90px]">{d.caller}</span>}
                                                                         {d.giorni != null && <span className="text-slate-600 tabular-nums">{d.giorni}g</span>}
-                                                                        {d.perNumero && !d.dentroIlFile && <span className="text-amber-300/70" title="agganciata dal solo numero di telefono: potrebbe essere un fisso di famiglia o d'ufficio">≈</span>}
-                                                                        {gemelli ? (
-                                                                            <span className="text-rose-300/70 shrink-0">copia in più</span>
+                                                                        {d.perNumero && <span className="text-amber-300/70" title="agganciata dal solo numero di telefono: potrebbe essere un fisso di famiglia o d'ufficio">≈</span>}
+                                                                        {gemelli && !d.perNumero ? (
+                                                                            <span className="text-rose-300/70 shrink-0">stessa persona</span>
+                                                                        ) : gemelli ? (
+                                                                            <div className="flex gap-0.5 shrink-0">
+                                                                                {([["salta", "⏭"], ["riassegna", "➕"]] as const).map(([v, l]) => (
+                                                                                    <button key={v} onClick={() => setSceltaRiga((p) => ({ ...p, [d.riga]: v }))}
+                                                                                        title={v === "salta" ? "è la stessa persona: non importarla" : "è un'ALTRA persona sullo stesso telefono (casa, ufficio): importala come riga nuova"}
+                                                                                        className={`px-1.5 py-0.5 rounded font-bold transition-colors ${eff === v ? (v === "salta" ? "bg-rose-500/30 text-rose-100" : "bg-sky-500/30 text-sky-100") : "text-slate-600 hover:text-slate-300"}`}>
+                                                                                        {l}
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
                                                                         ) : (
                                                                             <div className="flex gap-0.5 shrink-0">
                                                                                 {([["salta", "⏭"], ["riassegna", "↻"]] as const).map(([v, l]) => (

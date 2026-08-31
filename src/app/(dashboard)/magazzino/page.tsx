@@ -1807,7 +1807,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        nell'ordine in cui le cose sono successe, non al contrario. */
     const stampaArchivio = () => {
         if (!visibili.length) return;
-        if (visibili.length > 60 && !confirm(`Stai per mettere ${visibili.length} documenti in un file solo (${visibili.length * 3} pagine). Vado avanti?`)) return;
+        if (visibili.length > 60 && !confirm(`Stai per mettere ${visibili.length} documenti in un file solo (${visibili.length} pagine, una per documento). Vado avanti?`)) return;
         const ordinati = [...visibili].sort((a, b) => String(a.creato_il).localeCompare(String(b.creato_il)));
         const p = PERIODI.find(x => x.id === periodo);
         const quando = dal || al ? `${dal || "inizio"} — ${al || "oggi"}` : (p ? p.et.toLowerCase() : "");
