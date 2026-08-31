@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { eUnLavoroAutomatico } from "@/lib/cronParola";
+import { numeroAutomatismo } from "@/lib/automatismiConfig";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { corsaTriage, TRIAGE_VERSIONE } from "@/lib/ai/waTriage";
 
@@ -26,15 +27,25 @@ export async function POST(req: Request) {
     /* ⚠️ O UNA PERSONA, O IL LAVORO AUTOMATICO. Il triage lo fa partire anche
        un cron ogni dieci minuti, che una sessione non ce l'ha: chiudere con
        la sola sessione avrebbe spento il motore invece di proteggerlo. */
+    let daPersona = false;
     if (!(await eUnLavoroAutomatico(req))) {
         const _g = await accesso(req, "whatsapp/triage");
         if (!_g.ok) return _g.risposta;
+        daPersona = true;
     }
     let body: any = {};
     try { body = await req.json(); } catch { }
     const tokenOk = !!process.env.TRIAGE_ADMIN_TOKEN
         && req.headers.get("x-triage-token") === process.env.TRIAGE_ADMIN_TOKEN;
-    const esito = await corsaTriage({ force: !!body?.force && tokenOk, max: Number(body?.max) || undefined });
+    // il tetto per corsa si regola dall'hub Automatismi; il corpo della
+    // richiesta lo scavalca solo per una prova mirata
+    const maxPannello = await numeroAutomatismo("wa-triage", "max", 1, 60);
+    /* IL «FORZA» VALE ANCHE PER UNA PERSONA (01/09). Serve al bottone «fai una
+       corsa adesso» dell'hub Automatismi: fra due corse c'è un freno di quattro
+       minuti, e premendo il bottone in un momento a caso non partiva quasi mai
+       — l'hub diceva «fatte 0» e sembrava un guasto. Forzare salta solo il
+       freno, e ci arriva soltanto chi ha già passato il controllo dei permessi. */
+    const esito = await corsaTriage({ force: !!body?.force && (tokenOk || daPersona), max: Number(body?.max) || maxPannello });
     return NextResponse.json(esito);
 }
 

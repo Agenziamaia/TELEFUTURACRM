@@ -90,13 +90,13 @@ export const AUTOMATISMI: Automatismo[] = [
         lavori: [{ nome: "wa-triage", ruolo: "la corsa, ogni 10 minuti" }],
         rotta: "/api/whatsapp/triage",
         parametri: [
-            { chiave: "max", tipo: "numero", nome: "Chat per corsa", spiega: "Quante conversazioni classificare in un giro. Più alto = più veloce a smaltire l'arretrato, ma costa di più.", predefinito: 40, min: 5, max: 300 },
+            { chiave: "max", tipo: "numero", nome: "Chat per corsa", spiega: "Quante conversazioni classificare in un giro. Più alto = più veloce a smaltire l'arretrato, ma costa di più. Il motore non ne fa comunque più di 60 per volta.", predefinito: 40, min: 1, max: 60 },
         ],
         prova: {
             etichetta: "Fai una corsa adesso",
-            corpo: { max: 3 },
+            corpo: { max: 3, force: true },
             sicura: false,
-            spiega: "Classifica davvero tre chat, adesso. Consuma un pezzetto di credito AI ed è il modo più diretto di vedere se il motore risponde.",
+            spiega: "Classifica davvero tre chat, adesso, scavalcando il freno che impedisce due corse ravvicinate. Consuma un pezzetto di credito AI.",
         },
     },
     {
@@ -108,13 +108,13 @@ export const AUTOMATISMI: Automatismo[] = [
         lavori: [{ nome: "email-triage", ruolo: "la corsa, ogni 10 minuti" }],
         rotta: "/api/email/triage",
         parametri: [
-            { chiave: "max", tipo: "numero", nome: "Email per corsa", spiega: "Quante email classificare in un giro.", predefinito: 40, min: 5, max: 300 },
+            { chiave: "max", tipo: "numero", nome: "Email per corsa", spiega: "Quante email classificare in un giro. Il motore non ne fa comunque più di 60 per volta.", predefinito: 40, min: 1, max: 60 },
         ],
         prova: {
             etichetta: "Fai una corsa adesso",
-            corpo: { max: 3 },
+            corpo: { max: 3, force: true },
             sicura: false,
-            spiega: "Classifica davvero tre email, adesso. Consuma un pezzetto di credito AI.",
+            spiega: "Classifica davvero tre email, adesso, scavalcando il freno fra due corse. Consuma un pezzetto di credito AI.",
         },
     },
     {
@@ -143,7 +143,7 @@ export function leggiPianificazione(cron: string): string {
     const nMin = ogniN(min);
     if (nMin && ora === "*") {
         const m = min.match(/^(\d+)-/);
-        return `ogni ${nMin} minuti${m ? ` (al minuto ${m[1]}, ${nMin + 1 > 60 ? "" : ""}sfalsato)` : ""}`;
+        return `ogni ${nMin} minuti${m && m[1] !== "0" ? ` (sfalsato: parte al minuto ${m[1]})` : ""}`;
     }
     if (/^\d+$/.test(min) && /^\d+$/.test(ora)) {
         const orario = `${String(ora).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
@@ -155,11 +155,20 @@ export function leggiPianificazione(cron: string): string {
     return s;
 }
 
-/** L'ora italiana di un orario UTC (l'Italia è UTC+2 d'estate, +1 d'inverno). */
-export function oraItaliana(cron: string, quando = new Date()): string | null {
+/** L'ora italiana di un orario UTC. Lo scarto si chiede al fuso, non si
+ *  indovina dal mese — e si chiede per la PROSSIMA volta che il lavoro gira,
+ *  non per oggi: un lavoro mensile a cavallo del cambio dell'ora legale
+ *  altrimenti mostrerebbe un'ora che quel giorno non sarà vera. */
+export function oraItaliana(cron: string, adesso = new Date()): string | null {
     const p = String(cron || "").trim().split(/\s+/);
     if (p.length !== 5 || !/^\d+$/.test(p[0]) || !/^\d+$/.test(p[1])) return null;
-    // lo scarto vero, chiesto al fuso invece che indovinato dal mese
-    const utc = new Date(Date.UTC(quando.getFullYear(), quando.getMonth(), quando.getDate(), Number(p[1]), Number(p[0])));
-    return utc.toLocaleTimeString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" });
+    const min = Number(p[0]), ora = Number(p[1]);
+    const giorno = /^\d+$/.test(p[2]) ? Number(p[2]) : null;
+    let d = new Date(Date.UTC(adesso.getUTCFullYear(), adesso.getUTCMonth(), giorno ?? adesso.getUTCDate(), ora, min));
+    if (d.getTime() <= adesso.getTime()) {
+        d = giorno
+            ? new Date(Date.UTC(adesso.getUTCFullYear(), adesso.getUTCMonth() + 1, giorno, ora, min))
+            : new Date(d.getTime() + 864e5);
+    }
+    return d.toLocaleTimeString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" });
 }

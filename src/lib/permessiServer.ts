@@ -54,6 +54,8 @@ export const SEZIONE_DI: Record<string, string> = {
     "ferie/leggi-buste": "/amministrazione",
     // manda il registro assenze al consulente del lavoro: stessa stanza
     "assenze/report-mensile": "/amministrazione",
+    // apre le caselle dei codici: roba da amministrazione, non da negozio
+    "passwords/pulizia-otp": "/amministrazione",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { eUnLavoroAutomatico } from "@/lib/cronParola";
+import { numeroAutomatismo } from "@/lib/automatismiConfig";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { corsaTriageEmail, EMAIL_TRIAGE_VERSIONE } from "@/lib/ai/emailTriage";
 
@@ -19,15 +20,25 @@ export async function POST(req: Request) {
        stamattina e questo POST era rimasto aperto a chiunque su Internet — e
        ogni corsa costa denaro vero e può far cestinare posta in automatico.
        Il cron delle 10-in-10 non ha una sessione: si presenta con la parola. */
+    let daPersona = false;
     if (!(await eUnLavoroAutomatico(req))) {
         const _g = await accesso(req, "email/triage");
         if (!_g.ok) return _g.risposta;
+        daPersona = true;
     }
     let body: any = {};
     try { body = await req.json(); } catch { }
     const tokenOk = !!process.env.TRIAGE_ADMIN_TOKEN
         && req.headers.get("x-triage-token") === process.env.TRIAGE_ADMIN_TOKEN;
-    const esito = await corsaTriageEmail({ force: !!body?.force && tokenOk, max: Number(body?.max) || undefined });
+    // il tetto per corsa si regola dall'hub Automatismi; il corpo della
+    // richiesta lo scavalca solo per una prova mirata
+    const maxPannello = await numeroAutomatismo("email-triage", "max", 1, 60);
+    /* IL «FORZA» VALE ANCHE PER UNA PERSONA (01/09). Serve al bottone «fai una
+       corsa adesso» dell'hub Automatismi: fra due corse c'è un freno di quattro
+       minuti, e premendo il bottone in un momento a caso non partiva quasi mai
+       — l'hub diceva «fatte 0» e sembrava un guasto. Forzare salta solo il
+       freno, e ci arriva soltanto chi ha già passato il controllo dei permessi. */
+    const esito = await corsaTriageEmail({ force: !!body?.force && (tokenOk || daPersona), max: Number(body?.max) || maxPannello });
     return NextResponse.json(esito);
 }
 

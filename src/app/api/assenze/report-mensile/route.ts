@@ -33,18 +33,31 @@ export const dynamic = "force-dynamic";
    li ha toccati da Amministrazione → Automatismi. */
 const DESTINATARI_DI_PARTENZA = ["telefuturasrl@hotmail.com", "studioandreavincioni@gmail.com"];
 
-async function destinatari(): Promise<string[]> {
+/* ⚠️ IL RIPIEGO VALE SOLO SE NESSUNO HA SCELTO (rilievo del revisore).
+   Prima, una lista svuotata a mano o sbagliata tornava zitta ai due indirizzi
+   di fabbrica: chi scriveva «mandalo solo a me» con un refuso si ritrovava il
+   registro del personale spedito al commercialista esterno, e il pannello
+   aveva risposto «✓ Salvato». Adesso: riga assente = valori di fabbrica;
+   riga presente ma inservibile = NON si manda, e si scrive perché. */
+async function destinatari(): Promise<{ a: string[]; scartati: string[]; errore?: string }> {
     try {
         const { data } = await supabase.from("automatismi_config")
             .select("parametri").eq("id", "assenze-report-mensile").maybeSingle();
         const v = (data?.parametri as { destinatari?: unknown })?.destinatari;
-        const puliti = Array.isArray(v)
-            ? v.map((x) => String(x || "").trim()).filter((x) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(x))
-            : [];
-        // una lista vuota o tutta sbagliata NON deve zittire il report: si
-        // torna ai due indirizzi di sempre invece di spedire a nessuno
-        return puliti.length ? puliti : DESTINATARI_DI_PARTENZA;
-    } catch { return DESTINATARI_DI_PARTENZA; }
+        if (!Array.isArray(v)) return { a: DESTINATARI_DI_PARTENZA, scartati: [] };
+        const grezzi = v.map((x) => String(x || "").trim()).filter(Boolean);
+        const buoni = grezzi.filter((x) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(x));
+        const scartati = grezzi.filter((x) => !buoni.includes(x));
+        if (!buoni.length) {
+            return {
+                a: [], scartati,
+                errore: grezzi.length
+                    ? `i destinatari impostati nell'hub non sono indirizzi validi (${scartati.join(", ")}): report NON inviato`
+                    : "l'elenco dei destinatari nell'hub è vuoto: report NON inviato",
+            };
+        }
+        return { a: buoni, scartati };
+    } catch { return { a: DESTINATARI_DI_PARTENZA, scartati: [] }; }
 }
 
 async function xlsx(fogli: FoglioExcel[]): Promise<Buffer> {
@@ -95,7 +108,17 @@ export async function POST(req: Request) {
         if (gia && gia.esito === "inviato") return NextResponse.json({ ok: true, saltato: "già inviato", mese: mese.iso });
     }
 
-    const DEST = await destinatari();
+    const dest = await destinatari();
+    const DEST = dest.a;
+    if (dest.errore) {
+        if (!provaA && !prova) {
+            await supabase.from("report_assenze_inviati").upsert({
+                mese: mese.iso, esito: "destinatari", errore: dest.errore,
+                destinatari: "", righe_ferie: 0, righe_malattia: 0, inviato_il: new Date().toISOString(),
+            }, { onConflict: "mese" });
+        }
+        return NextResponse.json({ ok: false, errore: dest.errore }, { status: 503 });
+    }
 
     // ── i dati: le stesse fonti del bottone Excel ──────────────────────────
     const [fes, fer, mal] = await Promise.all([
@@ -149,7 +172,7 @@ export async function POST(req: Request) {
             ok: true, prova: true, mese: mese.iso, etichetta,
             ferie: { righe: righeFerie.length, persone: fogliF[1].righe.length },
             malattia: { righe: righeMal.length, persone: fogliM[1].righe.length },
-            destinatari: DEST,
+            destinatari: DEST, scartati: dest.scartati,
         });
     }
 

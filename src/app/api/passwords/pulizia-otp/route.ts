@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { eUnLavoroAutomatico } from "@/lib/cronParola";
 import { accesso } from "@/lib/permessiServer";
+import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { cestinaCodiciScaduti } from "@/lib/email";
 import { profiloOtp, mailAccettabile, CARTELLA_OTP } from "@/lib/otpProfili";
 
@@ -17,15 +18,21 @@ export const dynamic = "force-dynamic";
    arrivo. Un giro apre ogni casella usata per i codici e butta nel cestino
    quelle vecchie dei mittenti attesi. La posta di lavoro non si tocca.
 
-   Si chiama in POST dal cron, come il triage: niente `accesso()`, perché non
-   c'è nessun utente collegato — è una macchina.
-   ⚠️ RESTANDO APERTA VA FRENATA. Ogni giro apre una connessione IMAP su OGNI
+   Si chiama in POST dal cron: nessun utente collegato, è una macchina — quindi
+   O una sessione di amministrazione O la parola d'ordine dei lavori (01/09).
+   Era l'ULTIMA delle cinque rimasta aperta a chiunque su Internet: le altre
+   quattro l'avevano già presa, questa no.
+   ⚠️ E VA FRENATA LO STESSO. Ogni giro apre una connessione IMAP su OGNI
    casella dei codici, e i server di posta le contano: martellandola si
    arriverebbe al blocco, cioè i negozi senza codici. Un giro ogni cinque
    minuti basta e avanza (il cron ne chiede uno ogni dieci). */
 const MINUTI_FRA_UN_GIRO_E_L_ALTRO = 5;
 
 export async function POST(req: Request) {
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "passwords/pulizia-otp");
+        if (!_g.ok) return _g.risposta;
+    }
     let corpo: { force?: boolean } = {};
     try { corpo = await req.json(); } catch { /* corpo vuoto: è il cron */ }
     // il «force» lo può chiedere solo chi ha il token di servizio
