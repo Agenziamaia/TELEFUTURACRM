@@ -449,7 +449,7 @@ export default function ReportGiornaliero({ dati, resa = RESA_PREDEFINITA }) {
             e non si disegna. `pointer-events: none` perché è decorazione. */}
         {R.protezioni ? (
           <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: G.head + 60,
-            pointerEvents: "none",
+            pointerEvents: "none", zIndex: -1,
             background: "linear-gradient(180deg, rgba(8,10,20,0.78) 0%, rgba(8,10,20,0.42) 58%, rgba(8,10,20,0) 100%)" }} />
         ) : null}
 
@@ -515,7 +515,7 @@ export default function ReportGiornaliero({ dati, resa = RESA_PREDEFINITA }) {
         {/* stessa cortesia in fondo: là sotto il commento è chiaro su vetro */}
         {R.protezioni ? (
           <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: G.ai + G.marg,
-            pointerEvents: "none",
+            pointerEvents: "none", zIndex: -1,
             background: "linear-gradient(0deg, rgba(8,10,20,0.62) 0%, rgba(8,10,20,0.28) 62%, rgba(8,10,20,0) 100%)" }} />
         ) : null}
         {minori.length > 0 ? <Rail minori={minori} R={R} /> : null}
