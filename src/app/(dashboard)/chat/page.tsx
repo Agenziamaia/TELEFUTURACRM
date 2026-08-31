@@ -472,6 +472,29 @@ function ChatPageInner() {
     // finestra bassa, aprire in giu' per forza sfonderebbe dall'altra parte
     return sopra < alto + 8 && sotto > sopra;
   };
+  /** …E IL VERSO ORIZZONTALE. Il menu è largo ~200px e sta dentro una lista
+   *  con `overflow-hidden`: sull'ultimo messaggio a destra sbordava di 41px su
+   *  una colonna da 640 (misura del revisore 31/08) e quei 41px non si vedevano
+   *  proprio. Il verso alto/basso era calcolato, quello destra/sinistra no.
+   *  Qui si misura il menu appena montato e lo si riporta dentro; sul telefono
+   *  non serve, perché lì è ancorato ai bordi dello schermo. */
+  const dentroLaLista = (el: HTMLDivElement | null, altezzaLibera = false) => {
+    if (!el || typeof window === "undefined" || window.innerWidth < 640) return;
+    el.style.transform = "";
+    const lista = scrollRef.current?.getBoundingClientRect();
+    if (!lista) return;
+    const r = el.getBoundingClientRect();
+    const m = 8;
+    let dx = 0;
+    if (r.right > lista.right - m) dx = (lista.right - m) - r.right;
+    if (r.left + dx < lista.left + m) dx = (lista.left + m) - r.left;
+    if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+    // il picker completo non deve sfondare nemmeno in altezza su una finestra bassa
+    if (altezzaLibera) {
+      const spazio = Math.max(120, Math.min(r.top - lista.top, lista.bottom - r.top) - 12);
+      el.style.maxHeight = `${Math.round(spazio)}px`;
+    }
+  };
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);   // dragenter/leave scattano anche sui figli: conta la profondita'
@@ -932,7 +955,7 @@ function ChatPageInner() {
                       // e il menu diventava alto 248px invece di 36. Ecco perche' il
                       // ribaltamento sembrava non bastare: la soglia era giusta, era
                       // il menu a essere sei volte piu' alto del previsto.
-                      <div className={`fixed sm:absolute left-3 right-3 bottom-20 z-30 flex flex-wrap sm:flex-nowrap sm:w-max justify-center sm:justify-start gap-0.5 px-1.5 py-1 mb-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${reactGiu ? "sm:top-full sm:bottom-auto sm:mt-1" : "sm:bottom-full sm:top-auto sm:mb-1"} ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
+                      <div ref={(el) => dentroLaLista(el)} className={`fixed sm:absolute left-3 right-3 bottom-20 z-30 flex flex-wrap sm:flex-nowrap sm:w-max justify-center sm:justify-start gap-0.5 px-1.5 py-1 mb-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${reactGiu ? "sm:top-full sm:bottom-auto sm:mt-1" : "sm:bottom-full sm:top-auto sm:mb-1"} ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
                         {QUICK_REACTIONS.map((e) => (
                           <button key={e} type="button" onClick={() => onReact(m.id, e)}
                             className="text-lg leading-none p-1 rounded-full hover:bg-white/10 hover:scale-125 transition-transform">{e}</button>
@@ -945,7 +968,7 @@ function ChatPageInner() {
                       </div>
                     )}
                     {reactFor === m.id && reactPickerFor === m.id && (
-                      <div className={`fixed sm:absolute left-3 right-3 bottom-20 z-30 w-auto sm:w-64 max-h-48 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl ${reactGiu ? "sm:top-full sm:bottom-auto sm:mt-1" : "sm:bottom-full sm:top-auto sm:mb-1"} ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
+                      <div ref={(el) => dentroLaLista(el, true)} className={`fixed sm:absolute left-3 right-3 bottom-20 z-30 w-auto sm:w-64 max-h-48 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl ${reactGiu ? "sm:top-full sm:bottom-auto sm:mt-1" : "sm:bottom-full sm:top-auto sm:mb-1"} ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
                         {recentiEmoji.length > 0 && <div className="grid grid-cols-8 gap-0.5 mb-1 pb-1 border-b border-white/10">
                           {recentiEmoji.map((e) => (
                             <button key={"r" + e} type="button" onClick={() => { setReactPickerFor(null); onReact(m.id, e); registraEmojiRecente(e); }}

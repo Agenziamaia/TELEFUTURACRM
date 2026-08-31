@@ -32,7 +32,7 @@ const COMPORTAMENTI: { id: string; label: string }[] = [
 ];
 
 const CATEGORIE: { id: string; label: string; hint: string }[] = [
-    { id: "stato", label: "Stati / Esiti", hint: "La lista che i caller scelgono quando esitano una chiamata. La tendina a destra decide l'AUTOMATISMO della voce: Appuntamento = chiede data/negozio e va sul calendario; Richiamo = chiede la data e crea il promemoria; Non risposto = chiede il WhatsApp; 🏁 Definitivo = ARCHIVIA la pratica (esce dal lavoro, niente malus — si rivede col toggle 🗂 Archiviate)." },
+    { id: "stato", label: "Stati / Esiti", hint: "La lista che i caller scelgono quando esitano una chiamata. La tendina a destra decide l'AUTOMATISMO della voce: 📅 Appuntamento = chiede data/negozio e va sul calendario; ☎ Richiamo = chiede la data e crea il promemoria; 📵 Non risposto = apre il WhatsApp con i messaggi «ti ho cercato»; 🚪 Appuntamento saltato = apre il WhatsApp con i messaggi che propongono di riprogrammare (il cliente non si è presentato); 🏁 Definitivo = ARCHIVIA la pratica (esce dal lavoro, niente malus — si rivede col toggle 🗂 Archiviate)." },
     { id: "provenienza", label: "Provenienze", hint: "Da dove arriva il lead." },
     { id: "tipologia", label: "Tipologie", hint: "Il tipo di attività della chiamata." },
     { id: "obiettivo", label: "Obiettivi", hint: "Cosa si vuole vendere/ottenere." },
