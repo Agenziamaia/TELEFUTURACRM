@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { conversazioneSua, nonEtua } from "@/lib/emailPerimetro";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { flagLetteImap } from "@/lib/email";
 
@@ -14,18 +15,20 @@ export const dynamic = "force-dynamic";
 // (il poll riallineerà al giro dopo).
 export async function POST(request: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        // 🔒 sessione firmata + permesso della sezione, come nel pannello
-        const _g = await accesso(request, "email/seen");
-        if (!_g.ok) return _g.risposta;
-        const _s = _g.sess;
-    }
+    // 🔒 sessione firmata + permesso della sezione, come nel pannello
+    const _g = await accesso(request, "email/seen");
+    if (!_g.ok) return _g.risposta;
+    const _s = _g.sess;
 
     try {
         const b = await request.json().catch(() => ({}));
         const convId = String(b?.conversationId || "");
         const seen = b?.seen !== false;
         if (!convId) return NextResponse.json({ error: "conversationId mancante" }, { status: 400 });
+        /* ⚠️ e che sia SUA (31/08): con la chiave di servizio si segnavano
+           lette — o da leggere — le conversazioni di chiunque, e la
+           differenza fra «404» e «fatto» diceva pure quali esistono. */
+        if (!(await conversazioneSua(_s.id, convId))) return nonEtua();
 
         const { data: conv } = await supabase.from("email_conversations").select("id, account_id").eq("id", convId).maybeSingle();
         if (!conv) return NextResponse.json({ error: "conversazione non trovata" }, { status: 404 });

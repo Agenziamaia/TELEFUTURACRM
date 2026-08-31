@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { caselleDi, casellaSua, nonEtua } from "@/lib/emailPerimetro";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiNuove, leggiSentNuove, EmailInAtt, oggettoRadice, pareRisposta, nonLetteInbox } from "@/lib/email";
 
@@ -262,16 +263,21 @@ let pollTutteInCorso = false;
 
 export async function POST(request: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        // 🔒 sessione firmata + permesso della sezione, come nel pannello
-        const _g = await accesso(request, "email/poll");
-        if (!_g.ok) return _g.risposta;
-        const _s = _g.sess;
-    }
+    // 🔒 sessione firmata + permesso della sezione, come nel pannello
+    const _g = await accesso(request, "email/poll");
+    if (!_g.ok) return _g.risposta;
+    const _s = _g.sess;
 
     try {
         const b = await request.json().catch(() => ({}));
-        if (b?.accountId) return NextResponse.json(await pollAccount(b.accountId, b?.force === true));
+        if (b?.accountId) {
+            /* ⚠️ SOLO LE SUE (31/08): con un id qualunque si aveva il
+               contatore in tempo reale di una casella altrui — quante mail
+               nuove, quante importate — e si faceva lavorare il server per
+               conto proprio su una casella protetta. */
+            if (!(await casellaSua(_s.id, String(b.accountId)))) return nonEtua();
+            return NextResponse.json(await pollAccount(b.accountId, b?.force === true));
+        }
         if (pollTutteInCorso) return NextResponse.json({ ok: true, skipped: "giro precedente ancora in corso" });
         pollTutteInCorso = true;
         try {
@@ -281,7 +287,13 @@ export async function POST(request: Request) {
                 try { results.push({ id: a.id, ...(await pollAccount(a.id)) }); }
                 catch (e) { results.push({ id: a.id, error: e instanceof Error ? e.message : String(e) }); }
             }
-            return NextResponse.json({ ok: true, results });
+            /* ⚠️ IL GIRO resta su tutte — è manutenzione, e serve che ogni
+               casella venga scaricata anche quando il suo titolare non è
+               collegato (le caselle di servizio dei codici comprese, che
+               nessuno «possiede»). Quello che torna INDIETRO no: chi ha
+               chiesto vede i numeri delle sue e basta. */
+            const mie = new Set(await caselleDi(_s.id));
+            return NextResponse.json({ ok: true, results: results.filter((r) => mie.has(String(r.id))) });
         } finally { pollTutteInCorso = false; }
     } catch (err) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Internal Server Error" }, { status: 500 });

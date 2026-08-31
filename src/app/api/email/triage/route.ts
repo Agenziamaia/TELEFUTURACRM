@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { corsaTriageEmail, EMAIL_TRIAGE_VERSIONE } from "@/lib/ai/emailTriage";
 
@@ -28,7 +29,12 @@ async function conta(filtro?: (q: any) => any): Promise<number> {
     return count || 0;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+    /* ⚠️ NON AVEVA NESSUNA GUARDIA (31/08): i conteggi del triage — quante
+       email da rispondere, quante spazzatura, quante cestinate — uscivano a
+       chiunque conoscesse l'indirizzo, senza nemmeno essere collegati. */
+    const _g = await accesso(request, "email/triage");
+    if (!_g.ok) return _g.risposta;
     const [{ data: stato }, totale, rispondere, daLeggere, niente, spazzatura, cestinate] = await Promise.all([
         supabase.from("email_triage_stato").select("in_corsa_da, ultima_corsa, ultimo_esito").eq("id", 1).maybeSingle(),
         conta(),

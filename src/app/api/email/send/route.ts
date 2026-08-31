@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { casellaSua, nonEtua } from "@/lib/emailPerimetro";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaEmail, appendSuSent } from "@/lib/email";
 
@@ -34,6 +35,14 @@ export async function POST(request: Request) {
         dest = String(dest || "").trim().toLowerCase();
         if (!accId || !dest || !text?.trim()) return NextResponse.json({ error: "destinatario, casella e testo obbligatori" }, { status: 400 });
         subj = subj || "(senza oggetto)";
+        /* ⚠️ E LA CASELLA DEV'ESSERE SUA (31/08). Il mittente registrato era
+           già quello della sessione — quello era fatto bene — ma la CASELLA
+           da cui parte la mail arrivava dal browser senza controlli: si
+           spediva dalla casella di un collega, e si rispondeva dentro un
+           thread protetto da lucchetto. Vale per tutt'e due le strade, la
+           conversazione e la casella diretta. */
+        if (!(await casellaSua(userId, String(accId)))) return nonEtua();
+
         const { data: acc } = await supabase.from("email_accounts").select("*").eq("id", accId).maybeSingle();
         if (!acc) return NextResponse.json({ error: "casella non trovata" }, { status: 404 });
 

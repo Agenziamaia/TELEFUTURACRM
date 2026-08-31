@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { caselleDi } from "@/lib/emailPerimetro";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { impostazioniPer, cifra, testConnessione } from "@/lib/email";
 import { seesAllStores } from "@/lib/roles";
@@ -36,8 +37,19 @@ export async function GET(request: Request) {
     const { data } = await supabase.from("email_accounts")
         .select("id, negozio, owner_user_id, email_address, display_name, status, last_error, created_at, uso_sistema")
         .order("created_at", { ascending: false });
-    const tutte = (data ?? []) as { uso_sistema?: boolean | null }[];
-    const accounts = tutte.filter((a) => !!a.uso_sistema === soloSistema);
+    const tutte = (data ?? []) as { id: string; uso_sistema?: boolean | null }[];
+    let accounts = tutte.filter((a) => !!a.uso_sistema === soloSistema);
+
+    /* ⚠️ IL PERIMETRO, che qui non c'era (31/08). Questa rotta gira con la
+       chiave di servizio, che scavalca le regole del database: restituiva
+       TUTTE e diciotto le caselle dell'azienda a chiunque fosse loggato —
+       indirizzo, titolare, e soprattutto l'`id` che serve a tutte le altre
+       rotte per operarci sopra. Le caselle protette da lucchetto comprese.
+       Chi chiede vede le sue, con la stessa regola dell'Inbox. */
+    if (!soloSistema) {
+        const mie = new Set(await caselleDi(_g.sess.id));
+        accounts = accounts.filter((a) => mie.has(String(a.id)));
+    }
 
     if (!soloSistema) return NextResponse.json({ accounts });
 
@@ -103,20 +115,21 @@ async function agganciaUtenzeInAttesa(accountId: string, email: string): Promise
 }
 
 export async function POST(request: Request) {
-    // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        // 🔒 sessione firmata + permesso della sezione, come nel pannello
-        const _g = await accesso(request, "email/account");
-        if (!_g.ok) return _g.risposta;
-        const _s = _g.sess;
-    }
+    /* 🔒 sessione firmata + permesso della sezione, come nel pannello.
+       ⚠️ FUORI dal blocco: prima `_s` viveva dentro due graffe e non lo usava
+       nessuno — ed è per questo che l'identità di chi collega o cancella una
+       casella veniva presa da `b.userId`, cioè da quello che dichiarava il
+       browser. Adesso serve, quindi sta dove si vede. */
+    const _g = await accesso(request, "email/account");
+    if (!_g.ok) return _g.risposta;
+    const _s = _g.sess;
 
     try {
         const b = await request.json();
         const action = b?.action;
 
         if (action === "connect" || action === "test") {
-            if (!(await eAmministrazione(String(b.userId || "")))) {
+            if (!(await eAmministrazione(_s.id))) {   // ⚠️ dalla SESSIONE, non da b.userId: bastava mandare l'uuid di un admin — che chiunque legge da app_users — per collegare o CANCELLARE una casella con tutto il suo storico
                 return NextResponse.json({ error: "le caselle si collegano solo dal pannello Email dell'amministrazione" }, { status: 403 });
             }
             const email = String(b.email || "").trim().toLowerCase();
@@ -213,7 +226,7 @@ export async function POST(request: Request) {
            gli occhi — sbagliarlo scrivendo è normale, e non deve costare
            scollegare e ricollegare con tanto di password. */
         if (action === "rinomina") {
-            if (!(await eAmministrazione(String(b.userId || "")))) {
+            if (!(await eAmministrazione(_s.id))) {   // ⚠️ dalla SESSIONE, non da b.userId: bastava mandare l'uuid di un admin — che chiunque legge da app_users — per collegare o CANCELLARE una casella con tutto il suo storico
                 return NextResponse.json({ error: "Le caselle si governano dal pannello Email dell'amministrazione." }, { status: 403 });
             }
             const nome = String(b.displayName || "").trim().slice(0, 80);
@@ -226,7 +239,7 @@ export async function POST(request: Request) {
             // PROVA CONNESSIONE con le credenziali GIÀ salvate (pannello Email):
             // decifra la password e ritenta login IMAP+SMTP, aggiornando lo
             // stato — per capire al volo se una casella «in errore» è guarita.
-            if (!(await eAmministrazione(String(b.userId || "")))) {
+            if (!(await eAmministrazione(_s.id))) {   // ⚠️ dalla SESSIONE, non da b.userId: bastava mandare l'uuid di un admin — che chiunque legge da app_users — per collegare o CANCELLARE una casella con tutto il suo storico
                 return NextResponse.json({ error: "riservato al pannello Email dell'amministrazione" }, { status: 403 });
             }
             const id = String(b.id || "");

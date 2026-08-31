@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { casellaSua, nonEtua } from "@/lib/emailPerimetro";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiBloccoStorico, CartellaBackfill, EmailIn, EmailInAtt, oggettoRadice } from "@/lib/email";
 
@@ -210,15 +211,17 @@ async function backfillAccount(acc: any, block: number, scadenza: number) {
 
 export async function POST(request: Request) {
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
-    {
-        // 🔒 sessione firmata + permesso della sezione, come nel pannello
-        const _g = await accesso(request, "email/backfill");
-        if (!_g.ok) return _g.risposta;
-        const _s = _g.sess;
-    }
+    // 🔒 sessione firmata + permesso della sezione, come nel pannello
+    const _g = await accesso(request, "email/backfill");
+    if (!_g.ok) return _g.risposta;
+    const _s = _g.sess;
 
     try {
         const b = await request.json().catch(() => ({}));
+        /* ⚠️ con un id qualunque si forzava lo scarico dello storico IMAP di
+           una casella protetta — non restituisce contenuti, ma li tira giù e
+           fa lavorare il server per conto di chi non doveva (31/08). */
+        if (b?.accountId && !(await casellaSua(_s.id, String(b.accountId)))) return nonEtua();
         const block = Math.min(200, Math.max(50, Number(b?.block) || 100));
         const maxMs = Math.min(240000, Math.max(10000, Number(b?.maxMs) || 55000));
         const scadenza = Date.now() + maxMs;
