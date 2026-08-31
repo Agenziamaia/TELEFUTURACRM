@@ -1952,7 +1952,21 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        se guardi «questo mese», «in ritardo» deve dire quanti sono in ritardo
        questo mese — se no il numero della pastiglia e quello che vedi dopo
        averla premuta non coincidono. */
-    const filtrati = useMemo(() => ddt.filter(passaFiltri), [ddt, passaFiltri]);
+    /* ═══ OGNUNO VEDE I SUOI (Luca 01/09) ══════════════════════════════════
+       «Francesco di Donna Olimpia vede anche i trasferimenti di altri
+       negozi.» Vero: qui non c'era nessun perimetro. I filtri «da negozio» e
+       «a negozio» sono SCELTE di chi guarda, non una barriera — servono a
+       restringere, non a proteggere — e senza niente sotto la lista mostrava
+       i documenti di tutti a chiunque.
+       Un documento riguarda due negozi: chi lo manda e chi lo riceve. Chi sta
+       a un bancone vede quelli, e i gemelli contano come uno.
+       Chi non ha un negozio in scheda — direzione commerciale, chi gira — non
+       viene ristretto: bloccarlo sul nulla sarebbe peggio del problema che
+       stiamo risolvendo. Chi vede tutti i negozi per ruolo continua a vederli. */
+    const nelMioRaggio = useCallback((d: Ddt) =>
+        puoCaricare || !miei.length || mio(d.da_negozio) || mio(d.a_negozio),
+        [puoCaricare, miei.length, mio]);
+    const filtrati = useMemo(() => ddt.filter(d => nelMioRaggio(d) && passaFiltri(d)), [ddt, passaFiltri, nelMioRaggio]);
     const conteggi = useMemo(() => {
         const ora = Date.now();
         const out = {} as Record<Situazione, number>;
