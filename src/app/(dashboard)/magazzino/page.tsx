@@ -278,6 +278,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         negozio: string; azienda?: string; quantita?: number;
     }>(null);
     const [motivo, setMotivo] = useState("");
+    /* QUANTI NE TOLGO (Luca 31/08). Azzerare tutta la giacenza era una scure:
+       se di dodici cover se ne rompono due, se ne tolgono DUE. Parte pieno col
+       totale — il caso più comune resta «tolgo tutto» — ma si può correggere. */
+    const [quantiTolgo, setQuantiTolgo] = useState("");
     const [cestinando, setCestinando] = useState(false);
 
     const cestina = async () => {
@@ -295,14 +299,16 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             } else {
                 // la quantità si azzera con una rettifica: il saldo lo rifà il
                 // trigger, e resta scritto CHI ha tolto quanto e perché
+                const tot = daCestinare.quantita || 0;
+                const n = Math.min(Math.abs(parseInt(quantiTolgo, 10) || tot), Math.abs(tot)) * (tot < 0 ? -1 : 1);
                 const { error } = await supabase.from("mag_movimenti").insert({
                     codice: daCestinare.codice, negozio: daCestinare.negozio, azienda: daCestinare.azienda,
-                    tipo: "rettifica", quantita: -(daCestinare.quantita || 0), operatore: utente,
-                    nota: `tolto dal magazzino${motivo.trim() ? ": " + motivo.trim() : ""}`,
+                    tipo: "rettifica", quantita: -n, operatore: utente,
+                    nota: `tolti ${Math.abs(n)} dal magazzino${motivo.trim() ? ": " + motivo.trim() : ""}`,
                 });
                 if (error) throw error;
             }
-            setDaCestinare(null); setMotivo("");
+            setDaCestinare(null); setMotivo(""); setQuantiTolgo("");
             ricarica();
         } catch (e) {
             alert("Non sono riuscito a toglierlo: " + ((e as Error)?.message || "errore"));
@@ -545,19 +551,29 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             <b>{daCestinare.titolo}</b><br />
                             {daCestinare.seriale
                                 ? "Il pezzo non sarà più vendibile né trasferibile, ma la sua storia resta."
-                                : "La giacenza va a zero con una rettifica: il movimento resta scritto."}
+                                : "La giacenza scende con una rettifica: il movimento resta scritto."}
                         </p>
                         {/* niente sparisce davvero: resta scritto chi, quando e perché */}
                         <div className="rvFatta-d">
-                            <div><span>{daCestinare.seriale ? "Pezzo" : "Quantità"}</span>
+                            <div><span>{daCestinare.seriale ? "Pezzo" : "A magazzino"}</span>
                                 <span>{daCestinare.seriale ? daCestinare.seriale : `${daCestinare.quantita} pezzi`}</span></div>
                             <div><span>Negozio</span><span>{daCestinare.negozio}</span></div>
                         </div>
+                        {/* QUANTI NE TOLGO: di dodici cover se ne rompono due, non
+                            dodici. Parte col totale, perché «tolgo tutto» resta il
+                            caso più comune. */}
+                        {!daCestinare.seriale && (
+                            <label className="rvCampo"><span className="rvLab">Quanti ne togli</span>
+                                <input type="number" min={1} max={Math.abs(daCestinare.quantita || 1)}
+                                    value={quantiTolgo === "" ? String(Math.abs(daCestinare.quantita || 0)) : quantiTolgo}
+                                    onChange={e => setQuantiTolgo(e.target.value)}
+                                    className="rvIn" /></label>
+                        )}
                         <label className="rvCampo"><span className="rvLab">Perché lo togli</span>
                             <input value={motivo} onChange={e => setMotivo(e.target.value)} autoFocus
                                 placeholder="rubato, rotto, mai arrivato…" className="rvIn" /></label>
                         <div className="rvBarra rvBarra-c mt-4 justify-end">
-                            <button onClick={() => { setDaCestinare(null); setMotivo(""); }} disabled={cestinando}
+                            <button onClick={() => { setDaCestinare(null); setMotivo(""); setQuantiTolgo(""); }} disabled={cestinando}
                                 className="rvPill">Annulla</button>
                             <button onClick={cestina} disabled={cestinando} className="rvAzione rvAzione-no">
                                 {cestinando && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}Sì, toglilo
@@ -578,7 +594,17 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     </thead>
                     <tbody>
                         {righe.map((r) => {
-                            const apribile = r.pezzi.length > 0 || r.altrove > 0;
+                            /* SI APRE ANCHE LA MERCE A QUANTITÀ (Luca 31/08):
+                               «il cestino me l'hai messo solo in corrispondenza
+                               degli IMEI, così non posso cestinare gli articoli
+                               che un IMEI non ce l'hanno».
+                               Era `pezzi.length > 0 || altrove > 0`: un articolo a
+                               sola quantità, presente solo dove stai guardando, non
+                               si apriva — e dentro c'era il suo cestino, che quindi
+                               non esisteva. Sono la stragrande maggioranza del
+                               magazzino: 1.548 articoli, di cui appena 73 codici
+                               hanno un seriale. */
+                            const apribile = r.pezzi.length > 0 || r.qtaPer.length > 0 || r.altrove > 0;
                             const apertaQui = aperta === r.chiave;
                             return (
                                 <Fragment key={r.chiave}>
