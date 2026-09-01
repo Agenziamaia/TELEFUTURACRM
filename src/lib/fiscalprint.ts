@@ -41,10 +41,17 @@ export function xmlQueryRtStatus(): string {
 
 /** Chiusura fiscale giornaliera — Report Z (spec Francesco #4): stampa la chiusura
  *  e trasmette i corrispettivi all'Agenzia delle Entrate. ⚠️ azione FISCALE
- *  IRREVERSIBILE. Schema ePOS da CONFERMARE sul RT reale (Epson RT: printerFiscalReport
- *  con zReport). L'agente lo esegue via fpmate come gli altri comandi Epson. */
+ *  IRREVERSIBILE. Comando ePOS CORRETTO (guida EpsonFpMate): il sotto-elemento è
+ *  `printZReport`, NON `zReport` — con `zReport` fpMate risponde «non valid XML
+ *  command» (verificato su San Paolo .238: `printXReport` = success, 02/09).
+ *  L'agente lo esegue via fpmate come gli altri comandi Epson. */
 export function xmlZReport(operator = "1"): string {
-  return `<printerFiscalReport><zReport operator="${esc(operator)}" /></printerFiscalReport>`;
+  return `<printerFiscalReport><printZReport operator="${esc(operator)}" /></printerFiscalReport>`;
+}
+
+/** Report X (lettura giornaliera, NON azzera): utile per diagnostica/anteprima. */
+export function xmlXReport(operator = "1"): string {
+  return `<printerFiscalReport><printXReport operator="${esc(operator)}" /></printerFiscalReport>`;
 }
 
 // ── Documento NON fiscale (di cortesia) ─────────────────────────────────────
