@@ -5,6 +5,7 @@ import { moduloHtml, type DatiModulo } from "@/lib/moduloPratica";
 import { contrattoUsatoHtml, type DatiUsato } from "@/lib/moduloUsato";
 import { inviaEmail } from "@/lib/email";
 import { pdfjsServer, paginePdf } from "@/lib/pdfServer";
+import { leggiRegistro, dispositivoDaUA } from "@/lib/dispositivoFirma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -246,6 +247,8 @@ export async function POST(req: Request) {
         let registro: { nome: string; path: string } | null = null;
         let archivioErrore: string | null = null;
         let copiaInviata = false;
+        let dispositivo: string | null = null;
+        let daComputer = false;
         if (finito) {
             const proto = String(rich.protocollo || "senza-protocollo").replace(/[^A-Za-z0-9._-]+/g, "_");
             const docUrl = (j?.documents || [])[0]?.url || (submitters[0]?.documents || [])[0]?.url || null;
@@ -269,36 +272,44 @@ export async function POST(req: Request) {
                     if (res2.ok) pdfFirmato = Buffer.from(await res2.arrayBuffer());
                 }
                 if (pdfFirmato) archiviato = await metti(pdfFirmato, `modulo-firmato-${proto}.pdf`);
-                if (auditUrl) registro = await porta(auditUrl, `registro-firme-${proto}.pdf`);
+                if (auditUrl) {
+                    const res3 = await fetch(auditUrl);
+                    if (!res3.ok) throw new Error(`scaricamento non riuscito (${res3.status})`);
+                    const bufReg = Buffer.from(await res3.arrayBuffer());
+                    registro = await metti(bufReg, `registro-firme-${proto}.pdf`);
+                    /* ⚠️ DA QUALE DISPOSITIVO. L'API di DocuSeal non dà né IP né
+                       browser: stanno solo qui dentro. Ce l'abbiamo già in mano,
+                       tanto vale leggerlo — un computer, quando il link è partito
+                       per SMS verso un telefono, vuol dire che ha firmato il
+                       banco. */
+                    try {
+                        const pdfjs = await pdfjsServer();
+                        const d2 = await pdfjs.getDocument({ data: new Uint8Array(bufReg) }).promise;
+                        let testo = "";
+                        for (let pg = 1; pg <= Math.min(d2.numPages, 3); pg++) {
+                            const tc = await (await d2.getPage(pg)).getTextContent();
+                            testo += " " + (tc.items as { str?: string }[]).map((it) => it.str || "").join(" ");
+                        }
+                        const letto = leggiRegistro(testo);
+                        const dev = dispositivoDaUA(letto.ua);
+                        if (dev || letto.ip) {
+                            dispositivo = dev ? dev.etichetta : null;
+                            daComputer = dev ? dev.daComputer : false;
+                            await supabaseAdmin.from("firme_richieste")
+                                .update({ dispositivo, indirizzo_ip: letto.ip || null })
+                                .eq("submission_id", body.submissionId);
+                        }
+                    } catch { /* il registro è archiviato lo stesso */ }
+                }
             } catch (e) { archivioErrore = e instanceof Error ? e.message : "archiviazione non riuscita"; }
 
-            /* ⚠️ E ANCHE NELL'ANAGRAFICA DEL CLIENTE. Archiviare sulla pratica
-               non basta: la pratica prima o poi si chiude e nessuno la riapre,
-               mentre la scheda del cliente è il posto dove uno va a cercare
-               «che cosa ha firmato costui». Ci finiscono tutti gli altri
-               documenti (documento d'identità, contratti, dichiarazioni usato),
-               e ci deve finire anche questo, col suo registro di firma —
-               che è l'unica prova di *come* è stata raccolta la firma.
-               `contract_id` resta vuoto: ha una chiave esterna su `contracts`,
-               e una pratica non è una vendita. */
-            if (rich.cliente_id && rich.tipo !== "usato") {
-                const righe = [
-                    archiviato && { tipo: "contratti", f: archiviato, nome: `Documento firmato — ${rich.protocollo || proto}` },
-                    registro && { tipo: "altro", f: registro, nome: `Registro di firma — ${rich.protocollo || proto}` },
-                ].filter(Boolean) as { tipo: string; f: { nome: string; path: string }; nome: string }[];
-                for (const r2 of righe) {
-                    try {
-                        const url = `/api/file/pratiche-allegati/${r2.f.path}`;
-                        const { data: gia } = await supabaseAdmin.from("contract_attachments")
-                            .select("id").eq("client_id", rich.cliente_id).eq("file_url", url).limit(1);
-                        if (gia && gia.length > 0) continue;   // il controllo stato ripassa: non moltiplichiamo le righe
-                        await supabaseAdmin.from("contract_attachments").upsert({
-                            client_id: rich.cliente_id, contract_id: null,
-                            file_url: url, file_name: r2.nome, file_type: r2.tipo,
-                        }, { onConflict: "client_id,file_url" });
-                    } catch { /* l'archivio della pratica ce l'ha comunque */ }
-                }
-            }
+            /* ⚠️ LE RIGHE NELLA SCHEDA DEL CLIENTE NON SI SCRIVONO QUI.
+               Ci ho provato, e sbagliava momento: la firma arriva PRIMA che la
+               pratica sia salvata, quindi un giro abbandonato avrebbe lasciato
+               nella scheda del cliente i documenti di una pratica che non
+               esiste. Le scrive chi salva — PraticheSezione per ordini e
+               assistenze, la sezione Usati per i ritiri — che ha cliente,
+               protocollo e percorsi tutti insieme, e le etichette giuste. */
 
             /* ⚠️ LA COPIA AL CLIENTE. Con `send_email: false` DocuSeal non manda
                niente al firmatario — è così che ci siamo tolti il marchio di
@@ -343,7 +354,7 @@ export async function POST(req: Request) {
         }
 
         return NextResponse.json({
-            ok: true, firmato: finito, copiaInviata,
+            ok: true, firmato: finito, copiaInviata, dispositivo, daComputer,
             stato: submitters[0]?.status || "in attesa",
             completatoIl: submitters[0]?.completed_at || null,
             archiviato, registro, archivioErrore,

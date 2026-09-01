@@ -175,6 +175,11 @@ export type Firma = {
     controllo?: { stato: string } | null;
     /** dove è stata mandata la richiesta: email, SMS o WhatsApp del negozio */
     canale?: "email" | "sms" | "whatsapp";
+    /** da quale dispositivo è stata raccolta la firma, letto dal registro:
+     *  un computer, quando il link è partito verso un telefono, vuol dire che
+     *  ha firmato il banco */
+    dispositivo?: string | null;
+    daComputer?: boolean;
     /** la richiesta DocuSeal, quando si firma col codice */
     submissionId?: number | null;
     link?: string | null;

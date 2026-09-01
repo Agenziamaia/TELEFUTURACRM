@@ -394,6 +394,26 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
             if (error) throw new Error(error.message);
             creata = nuovaP as { id: string; protocollo: string };
 
+            /* ⚠️ I DOCUMENTI VANNO ANCHE NELLA SCHEDA DEL CLIENTE.
+               Restavano solo dentro la pratica: aprendo il cliente, del
+               contratto che aveva appena firmato non c'era traccia. Si fa qui
+               — dove ci sono cliente, protocollo e percorsi tutti insieme — e
+               non nella rotta della firma, che di una pratica salvata non sa
+               niente e sparerebbe righe anche per i giri abbandonati. */
+            try {
+                const eti = sezione === "assistenze" ? "Assistenza" : "Ordine";
+                const righeDoc = [
+                    firma.firmato && { p: firma.firmato.path, n: `Modulo firmato — ${eti} ${creata.protocollo}`, t: "contratti" },
+                    firma.modulo && { p: firma.modulo.path, n: `Modulo firmato — ${eti} ${creata.protocollo}`, t: "contratti" },
+                    firma.registro && { p: firma.registro.path, n: `Registro di firma — ${eti} ${creata.protocollo}`, t: "altro" },
+                    firma.identita && { p: firma.identita.path, n: `Documento identità — ${eti} ${creata.protocollo}`, t: "documento" },
+                ].filter(Boolean) as { p: string; n: string; t: string }[];
+                if (righeDoc.length) await supabase.from("contract_attachments").upsert(righeDoc.map((r) => ({
+                    contract_id: null, client_id: cliente.id,
+                    file_url: `/api/file/pratiche-allegati/${r.p}`, file_name: r.n, file_type: r.t,
+                })), { onConflict: "client_id,file_url" });
+            } catch { /* la pratica è salva: i documenti restano comunque in archivio */ }
+
             if (perArticoli && righe.length) {
                 const { error: er } = await supabase.from("pratiche_righe").insert(righe.map((r) => ({
                     pratica_id: creata!.id, tipo: "articolo", codice: r.codice || null,
@@ -1188,7 +1208,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
         try {
             const r = await fetch("/api/pratiche/firma", {
                 method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ azione: "manda", dati: modulo, canale }),
+                body: JSON.stringify({ azione: "manda", dati: modulo, canale, clienteId: cliente ? cliente.id : "" }),
             });
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "invio non riuscito");
@@ -1238,6 +1258,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                     onCambia((prec) => ({
                         ...prec, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString(),
                         firmato: j.archiviato || null, registro: j.registro || null,
+                        dispositivo: j.dispositivo || null, daComputer: !!j.daComputer,
                     }));
                     /* se il documento non è ancora nel nostro archivio si continua
                        a guardare: prima ci si fermava qui, e la riga «sto portando
@@ -1294,6 +1315,12 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                             <div style={{ flex: "1 1 240px" }}>
                                 <div style={{ fontSize: 14, fontWeight: 800, color: "var(--tf-34d399)" }}>Firmato dal cliente</div>
                                 <div className="rvTab-min">identità verificata col codice inviato a {cliente ? cliente.email : "—"}</div>
+                                {firma.dispositivo && (
+                                    <div className={cn("rvTab-min", firma.daComputer && "rvFirmaBanco")}>
+                                        {firma.daComputer ? "⚠️ firmata da un computer" : "📱 firmata da"} {firma.dispositivo}
+                                        {firma.daComputer ? " — se il link l'ha aperto il banco, quella firma non è del cliente" : ""}
+                                    </div>
+                                )}
                                 <div className="rvTab-min">
                                     {firma.firmato
                                         ? "📄 modulo firmato e registro delle firme archiviati sulla pratica · copia inviata al cliente"
@@ -1443,7 +1470,9 @@ function Riepilogo({ protocollo, sezione, tipologia, cliente, righe, dev, imei, 
                     accImporto > 0 ? "text-emerald-300" : "text-slate-400")}
                 {dato("Saldo alla consegna", eur(saldo), accImporto > 0 ? "secondo documento, richiama il primo" : "tutto alla consegna")}
                 {imei ? dato("IMEI", imei) : null}
-                {dato("Firma", firma.via === "otp" ? "📲 col codice" : "🖊️ su carta", "documento d'identità archiviato", "text-emerald-300")}
+                {dato("Firma", firma.via === "otp" ? "📲 col codice" : "🖊️ su carta",
+                    firma.dispositivo ? `${firma.daComputer ? "⚠️ da un computer" : "da"} ${firma.dispositivo} · documento archiviato` : "documento d'identità archiviato",
+                    "text-emerald-300")}
                 {dato("Tempi", `${medio} gg medi`, `termine massimo ${TERMINE_MAX_GG} giorni lavorativi`)}
             </div>
             {righe.length > 0 && (
@@ -1502,6 +1531,41 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
         window.open(data.signedUrl, "_blank", "noopener");
     };
 
+    /* ═══ CANCELLARE UNA PRATICA (Luca 01/09) ══════════════════════════════
+       Solo admin — il database lo permetteva già (`tf_pratiche_del`), ma in
+       schermata non c'era il modo. Si porta via TUTTO quello che la pratica
+       si è lasciata dietro: le righe (in cascata), i documenti dal secchio e
+       le righe che li mostrano nella scheda del cliente. Lasciare i file
+       orfani vorrebbe dire un documento d'identità che resta in giro senza
+       più niente a cui appartenere.
+       Si scrive il protocollo per confermare: un clic solo, su una lista, è
+       come si cancella la pratica sbagliata. */
+    const cancella = async () => {
+        const conferma = window.prompt(
+            `Cancellare ${pratica.protocollo}?\n\nSparisce la pratica, i suoi documenti e le righe nella scheda del cliente. Non si torna indietro.\n\nScrivi il protocollo per confermare:`);
+        if (!conferma) return;
+        if (conferma.trim().toUpperCase() !== pratica.protocollo.toUpperCase()) { window.alert("Protocollo diverso: non ho cancellato niente."); return; }
+        setBusy(true);
+        try {
+            const f = (pratica.firma || {}) as Firma;
+            const percorsi = [f.firmato?.path, f.modulo?.path, f.registro?.path, f.identita?.path].filter(Boolean) as string[];
+            if (percorsi.length) {
+                try { await supabase.storage.from("pratiche-allegati").remove(percorsi); } catch { }
+                try {
+                    await supabase.from("contract_attachments").delete()
+                        .in("file_url", percorsi.map((x) => `/api/file/pratiche-allegati/${x}`));
+                } catch { }
+            }
+            const { error } = await supabase.from("pratiche").delete().eq("id", pratica.id);
+            if (error) throw new Error(error.message);
+            await onFatto(`🗑️ ${pratica.protocollo} cancellata`);
+            onChiudi();
+        } catch (e) {
+            window.alert("Non sono riuscito a cancellarla: " + (e instanceof Error ? e.message : "riprova"));
+        }
+        setBusy(false);
+    };
+
     const scrivi = async (patch: Record<string, unknown>, testo: string, msg: string) => {
         setBusy(true);
         const storia = (pratica.storia || []).concat([{ at: oggiIso(), chi: operatore, txt: testo }]);
@@ -1550,9 +1614,16 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                         {!chiusa && <span className={ggAperta > TERMINE_MAX_GG ? "text-rose-300" : ""}> · {ggAperta} giorni lavorativi</span>}
                     </p>
                 </div>
-                <button onClick={onChiudi} className="rvPill">
-                    <ArrowLeft className="w-4 h-4 inline mr-1.5 -mt-0.5" /> Elenco
-                </button>
+                <div className="flex items-center gap-2">
+                    {eAdmin && (
+                        <button onClick={cancella} disabled={busy} className="rvPill rvPill-ko" title="Cancella la pratica e i suoi documenti">
+                            🗑️ Cancella
+                        </button>
+                    )}
+                    <button onClick={onChiudi} className="rvPill">
+                        <ArrowLeft className="w-4 h-4 inline mr-1.5 -mt-0.5" /> Elenco
+                    </button>
+                </div>
             </div>
 
             {/* pipeline */}

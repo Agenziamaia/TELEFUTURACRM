@@ -23,9 +23,11 @@ export type FirmaInfo = {
     submissionId?: number | null;
     firmata_il?: string | null;
     registro?: string | null;
+    dispositivo?: string | null;
+    daComputer?: boolean;
 };
 
-export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRegistro, firma, onFirma, onQr }: {
+export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRegistro, firma, onFirma, onQr, clienteId }: {
     dati: DatiUsato | null;
     mancano: string[];
     contratto: File | null;
@@ -34,6 +36,9 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
     firma: FirmaInfo | null;
     onFirma: (f: FirmaInfo | null) => void;
     onQr: () => void;
+    /** serve solo al registro delle richieste: i documenti dell'usato li
+     *  deposita la sezione Usati, con le sue etichette */
+    clienteId?: string;
 }) {
     const [canale, setCanale] = useState<Canale>("email");
     const [manda, setManda] = useState(false);
@@ -61,7 +66,7 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
         try {
             const r = await fetch("/api/pratiche/firma", {
                 method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ azione: "manda", tipo: "usato", datiUsato: dati, canale }),
+                body: JSON.stringify({ azione: "manda", tipo: "usato", datiUsato: dati, canale, clienteId }),
             });
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "invio non riuscito");
@@ -133,7 +138,8 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
                     const reg = await porta(j.registro.path, `registro-firme-${proto}.pdf`);
                     if (reg) onRegistro(reg);
                 }
-                onFirma({ via: "otp", canale, submissionId: firma.submissionId, firmata_il: j.completatoIl || new Date().toISOString() });
+                onFirma({ via: "otp", canale, submissionId: firma.submissionId, firmata_il: j.completatoIl || new Date().toISOString(),
+                    dispositivo: j.dispositivo || null, daComputer: !!j.daComputer });
             } catch { /* si riprova al giro dopo */ }
             finally { dentro = false; }
         }, 4000);
@@ -198,6 +204,12 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
                                 <div className="rvTab-min">
                                     identità verificata col codice · copia firmata e registro delle firme archiviati
                                 </div>
+                                {firma?.dispositivo && (
+                                    <div className={cn("rvTab-min", firma.daComputer && "rvFirmaBanco")}>
+                                        {firma.daComputer ? "⚠️ firmata da un computer" : "📱 firmata da"} {firma.dispositivo}
+                                        {firma.daComputer ? " — se il link l'ha aperto il banco, quella firma non è del venditore" : ""}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ) : attesa ? (

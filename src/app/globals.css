@@ -2373,3 +2373,10 @@ html.light .rvSotto-f{color:#1e2952}
 .rvFattaIc{font-size:26px}
 /* il segno della ricarica nata da un'attivazione: piccolo, accanto al taglio */
 .psConSim{margin-left:7px;font-size:10px;opacity:.75}
+/* l'azione che non si torna indietro: rossa, e non accanto a quelle di tutti i giorni */
+.rvPill-ko{color:#fca5a5;border-color:rgba(239,68,68,.38);background:rgba(239,68,68,.10)}
+.rvPill-ko:hover{background:rgba(239,68,68,.20);border-color:rgba(239,68,68,.6)}
+html.light .rvPill-ko{color:#b91c1c;border-color:rgba(185,28,28,.35);background:rgba(185,28,28,.07)}
+/* la firma raccolta al banco: si vede, e ciò che si vede si corregge */
+.rvFirmaBanco{color:#fbbf24 !important;font-weight:700}
+html.light .rvFirmaBanco{color:#9a5b00 !important}

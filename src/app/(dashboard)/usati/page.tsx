@@ -1809,7 +1809,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         <FirmaUsato
           dati={datiContratto} mancano={mancaPerFirma}
           contratto={allegDich} onContratto={setAllegDich} onRegistro={setAllegRegistro}
-          firma={firmaU} onFirma={(f) => { setFirmaU(f); if (f) setFirmaDecaduta(false); }} onQr={() => openQr("dich")} />
+          clienteId={selClientId || ""} firma={firmaU} onFirma={(f) => { setFirmaU(f); if (f) setFirmaDecaduta(false); }} onQr={() => openQr("dich")} />
 
         {isUploading && (
           <div className="text-center py-2">

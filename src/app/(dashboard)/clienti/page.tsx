@@ -323,6 +323,22 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cliente.id]);
 
+    /* ORDINI CLIENTE e ASSISTENZE (Luca 01/09: «non c'è nemmeno sulla timeline
+       il fatto che io abbia firmato oggi un'assistenza»). Le pratiche sono
+       nate ieri e nella Timeline 360° non erano mai state collegate: un
+       cliente poteva avere un'assistenza aperta e, aprendo la sua scheda, non
+       vederne traccia. */
+    const [praticheCliente, setPraticheCliente] = useState<{ id: string; protocollo: string; sezione: string | null; tipologia: string | null; stato: string | null; valore: number | null; negozio: string | null; created_at: string | null; dispositivo: { marca?: string; modello?: string } | null; imei: string | null }[]>([]);
+    useEffect(() => {
+        (async () => {
+            const { data, error } = await supabase.from("pratiche")
+                .select("id, protocollo, sezione, tipologia, stato, valore, negozio, created_at, dispositivo, imei")
+                .eq("client_id", cliente.id);
+            setPraticheCliente(error ? [] : ((data ?? []) as typeof praticheCliente));
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cliente.id]);
+
     // ── TIMELINE INTERATTIVA (TML-01, Luca 04/08) ──
     // CHIAMATE del cliente (call_events, già agganciate per client_id): voce
     // compatta per giorno+direzione+interlocutore; il click porta allo storico
@@ -519,6 +535,25 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 desc: [u.imei ? `IMEI ${u.imei}` : null, u.purchase_price != null ? `${Number(u.purchase_price).toLocaleString("it-IT")} €` : null, u.store].filter(Boolean).join(" · ") + (docsRitiro ? ` · 📎 ${docsRitiro}` : ""),
                 stato: null as string | null,
                 docsN: docsRitiro || undefined, docsLabel: "del ritiro",
+            };
+        }),
+        // ordini cliente e assistenze: i loro documenti (modulo firmato,
+        // registro, identità) stanno DENTRO la voce, come per i ritiri
+        ...praticheCliente.filter((pr) => pr.created_at).map((pr) => {
+            const ass = pr.sezione === "assistenze";
+            const docsPr = docs.filter((d) => (d.file_name || "").includes(pr.protocollo)).length;
+            const cosa = pr.dispositivo && (pr.dispositivo.marca || pr.dispositivo.modello)
+                ? [pr.dispositivo.marca, pr.dispositivo.modello].filter(Boolean).join(" ")
+                : String(pr.tipologia || "").replace(/_/g, " ");
+            return {
+                key: "pr" + pr.id, when: String(pr.created_at),
+                color: ass ? "var(--tf-f59e0b)" : "var(--tf-818cf8)", icon: ass ? "🛠️" : "📦",
+                title: `${ass ? "Assistenza" : "Ordine cliente"} — ${cosa || pr.protocollo}`,
+                desc: [pr.protocollo, pr.imei ? `IMEI ${pr.imei}` : null,
+                    pr.valore != null && Number(pr.valore) > 0 ? `${Number(pr.valore).toLocaleString("it-IT")} €` : null,
+                    pr.negozio].filter(Boolean).join(" · ") + (docsPr ? ` · 📎 ${docsPr}` : ""),
+                stato: pr.stato ? String(pr.stato).replace(/_/g, " ") : null,
+                docsN: docsPr || undefined, docsLabel: ass ? "dell'assistenza" : "dell'ordine",
             };
         }),
         // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
