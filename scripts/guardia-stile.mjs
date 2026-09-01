@@ -125,7 +125,12 @@ const files = SEZIONI.flatMap(d => file(d));
    questo controllo e' l'unico punto in cui le due cose si incontrano. */
 {
     console.log(`\n${B}5. Ogni classe .rv* usata esiste davvero nella cassetta${X}`);
-    const css = readFileSync("src/app/globals.css", "utf8");
+    /* SENZA I COMMENTI: `definite` si costruiva sul file intero, quindi un nome
+       CITATO in un commento passava per definito. In globals.css ce ne sono gia'
+       due cosi' (`rvRapido-euro`, dove e' scritto che non funzionava, e
+       `rvGiac-`): scrivendoli in un className la guardia diceva «a posto» e
+       l'elemento usciva nudo — cioe' esattamente il caso che deve prendere. */
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const definite = new Set([...css.matchAll(/\.(rv[A-Za-z0-9_-]+)/g)].map(m => m[1]));
     const orfane = new Map();
     for (const f of files) {
@@ -145,7 +150,7 @@ const files = SEZIONI.flatMap(d => file(d));
             }
         });
     }
-    regola("", "queste classi NON esistono in globals.css: l'elemento esce nudo. Aggiungile alla cassetta, o usa quella giusta", [...orfane.values()]);
+    regola("classi .rv* inventate", "queste classi NON esistono in globals.css: l'elemento esce nudo. Aggiungile alla cassetta, o usa quella giusta", [...orfane.values()]);
 }
 
 console.log("");

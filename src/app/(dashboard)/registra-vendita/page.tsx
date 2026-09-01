@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
+import { rigaConImei } from "@/lib/rigaScontrino";
 import { createPortal } from "react-dom";
 import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
@@ -6700,15 +6701,13 @@ function CRM() {
    perché la descrizione del bene è l'elemento obbligatorio; l'IMEI è
    un'aggiunta utile, e un'aggiunta che non ci sta si toglie.
    L'IMEI resta comunque sulla vendita, nel carrello e nella pratica. */
-const MAX_RIGA_SCONTRINO = 38;
-const _descrizioneConImei = (modello, seriale, fallback) => {
-  const m = String(modello || "").trim();
-  if (!m) return fallback;
-  const im = String(seriale || "").trim();
-  if (!im) return m;
-  const intera = `${m} · IMEI ${im}`;
-  return intera.length <= MAX_RIGA_SCONTRINO ? intera : m;
-};
+/* ⚠️ QUI SI DECIDEVA DI BUTTARE L'IMEI, ed è per questo che il 01/09 SETTE
+   telefoni su otto sono usciti senza. La riga non ci stava e questo codice
+   teneva il nome intero, scartando il numero — poi il server non poteva più
+   rimetterlo, perché gli arrivava una descrizione già senza.
+   Chi taglia PRIMA decide: adesso la regola è una sola, sta in
+   `@/lib/rigaScontrino`, e dice che l'IMEI vince sul nome. */
+const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello, seriale, fallback);
 
   const buildScontrinoItems = (list) => (list || [])
     .filter((mi) => !_fuoriScontrino(mi))

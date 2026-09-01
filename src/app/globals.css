@@ -838,6 +838,7 @@ html.light .rvCarica-n{color:#0e7490}
 html.light .rvCatT b,html.light .rvAggiungi{color:color-mix(in srgb,var(--rv-acc) 60%,#08101f)}
 html.light .rvBadge-warn,html.light .rvReq-todo{color:#9a5b00;background:rgba(154,91,0,.10);border-color:rgba(154,91,0,.35)}
 html.light .rvNota-att{--rv-nota:#9a5b00}
+html.light .rvNota-ko{--rv-nota:#9a1010}
 html.light .rvNota-info{--rv-nota:#1257a8}
 html.light .rvNota-scelta{--rv-nota:#5b21b6}
 .rvQta{width:52px;padding:6px 6px;border-radius:9px;border:1px solid var(--tf-w150);background:var(--tf-w40);color:var(--tf-f8fafc);font-size:12.5px;font-weight:700;text-align:center;outline:none}
@@ -1072,7 +1073,13 @@ html.light .rvDove{color:#5a6580}
 .rvIn.rvIn-err{border-color:#ef4444;border-width:1.5px;background:rgba(239,68,68,.10)}
 .rvIn.rvIn-lock{border-color:rgba(34,211,238,.45);border-width:1.5px;background:rgba(23,162,184,.10);color:var(--tf-7dd3fc);font-style:italic}
 .rvIn.rvIn-alt{border-color:rgba(139,92,246,.6);border-width:1.5px;background:rgba(111,66,193,.10)}
-.rvHint{font-size:11px;color:var(--tf-64748b);margin-top:3px;line-height:1.45}
+/* IL GRIGIO DEI SUGGERIMENTI ERA SOTTO SOGLIA IN ENTRAMBI I TEMI: `--tf-64748b`
+   e' lo stesso identico colore nello scuro e nel chiaro (nessun rimappaggio),
+   e misurava 3,3-3,7:1 contro i 4,5 richiesti — in dieci punti fra Registra
+   Vendita, Magazzino e Documenti, dove ci sono spiegazioni che contano (per
+   esempio «46 documenti non risultano emessi»). */
+.rvHint{font-size:11px;color:var(--tf-94a3b8);margin-top:3px;line-height:1.45}
+html.light .rvHint{color:#55637a}
 .rvHint-lock{color:var(--tf-67e8f9)}
 .rvErr{font-size:11px;color:var(--tf-f87171);margin-top:3px;font-weight:700}
 /* ── LE PASTIGLIE: UNA LINGUA SOLA ────────────────────────────────────
@@ -2085,6 +2092,15 @@ html.light .rvStoria{box-shadow:0 18px 44px rgba(18,28,54,.16)}
    stanno due tabelle — dove sta il pezzo e cosa gli è successo — più il
    modulo di modifica: a 660px andavano tutte a capo. Solo misure, nessun
    colore: il tema chiaro non ha niente da rimappare. */
+/* CON POCHE TESSERE SI USA `auto-fit`, NON `auto-fill`: con tre riquadri la
+   griglia apriva otto colonne e ne lasciava cinque vuote — 800px di niente a
+   1366px. `auto-fit` chiude le colonne vuote e allarga quelle che ci sono. */
+.rvRapidoG-pochi{grid-template-columns:repeat(auto-fit,minmax(min(100%,146px),1fr))}
+/* I SOLDI SI INCOLONNANO A DESTRA. `rvTab-n` centra, e va bene per le quantita'
+   corte del Magazzino; su una colonna di valuta le migliaia e i decimali non si
+   allineano piu' e due importi non si confrontano a occhio (33px di frastaglio,
+   misurati). */
+.rvTab-eur{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rvScheda{max-width:980px;padding:26px 26px 30px}
 .rvScheda .rvStoria-tit{font-size:19px}
 .rvScheda .rvStoria-sot{font-size:13px}

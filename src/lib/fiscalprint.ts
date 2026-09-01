@@ -134,9 +134,43 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | F
   const pays = (Array.isArray(payment) ? payment : [payment]).filter(Boolean);
   const list: FiscalPayment[] = pays.length ? pays : [{}];
   const singolo = list.length === 1;
+
+  /* ⭐ I PAGAMENTI DEVONO FARE ESATTAMENTE IL TOTALE DELLA MERCE (01/09, sera).
+     Garbatella, 19:03: un articolo da 119.89 e due pagamenti, 10.00 + 109.90 =
+     119.90. UN CENTESIMO di troppo. Il registratore non accetta un incasso che
+     supera il dovuto: rifiuta l'ultima riga, e il documento resta APERTO — le
+     righe della merce le ha gia' stampate, quindi dal rullo esce mezzo
+     scontrino e sul display resta «DIFFERENZA 109,89», cioe' quello che lui
+     ancora aspetta. E' la fotografia che ha mandato Luca.
+
+     DA DOVE VIENE IL CENTESIMO: l'importo finanziato lo dichiara l'operatore
+     (la rata che paga il cliente), il prezzo della riga arriva dal listino.
+     Sono due numeri di provenienza diversa, e ogni tanto non combaciano.
+
+     LA REGOLA GIUSTA e' anche la piu' semplice: su un documento commerciale il
+     NON RISCOSSO **e' per definizione quello che resta** — non un numero a
+     parte, ma la differenza. Quindi la riga del non riscosso si ricalcola:
+     totale della merce meno quello che e' stato davvero incassato. Se di righe
+     «non riscosso» non ce n'e', si aggiusta l'ultima, ma SOLO per pochi
+     centesimi: uno scarto di euro non e' un arrotondamento, e' un errore che
+     deve venire a galla invece di essere nascosto. */
+  const importoDi = (p: FiscalPayment) => p.amount != null ? Number(p.amount) : (singolo ? totaleItems : 0);
+  {
+    const somma = list.reduce((s2, p) => s2 + importoDi(p), 0);
+    const scarto = +(totaleItems - somma).toFixed(2);
+    if (Math.abs(scarto) >= 0.01) {
+      const i = list.findIndex((p) => Number(p.paymentType ?? 0) === 4);
+      if (i >= 0) list[i] = { ...list[i], amount: +(importoDi(list[i]) + scarto).toFixed(2) };
+      else if (Math.abs(scarto) <= 0.05) {
+        const u = list.length - 1;
+        list[u] = { ...list[u], amount: +(importoDi(list[u]) + scarto).toFixed(2) };
+      }
+    }
+  }
+
   const total = list.map((p) => {
     // pagamento singolo senza amount → intero totale; altrimenti l'importo esplicito.
-    const paid = p.amount != null ? Number(p.amount) : (singolo ? totaleItems : 0);
+    const paid = importoDi(p);
     // ⭐ RISCOSSO/ELETTRONICO (01/09): la carta usciva «Non riscosso» perché mancavano
     // `option="1"` e l'`index` giusto. Copiato dal driver SuiteMobile decompilato
     // (MiraOposDll FP90X `stampa_riga_pagamenti`): contanti=index"00", assegni="01",

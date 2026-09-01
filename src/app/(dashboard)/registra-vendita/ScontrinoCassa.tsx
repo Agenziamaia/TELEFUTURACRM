@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { rigaConImei } from "@/lib/rigaScontrino";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { arrotonda5, totaleRighe, FORME_PAGAMENTO, FORME_A_MANO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
@@ -275,7 +276,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         .map(t => ({
             /* INTERO O NIENTE, come per le altre righe: il registratore taglia
                a 38 caratteri e taglierebbe proprio l'IMEI. */
-            description: (() => { const d = `${t.descrizione} · IMEI ${t.imei}`; return t.imei && d.length <= 38 ? d : String(t.descrizione || ""); })(),
+            description: rigaConImei(t.descrizione, t.imei, String(t.descrizione || "")),
             unitPrice: +(_n(importi[t.chiave]?.anticipo) + _n(importi[t.chiave]?.resto)).toFixed(2),
             qty: 1, reparto: 2, codice: t.codice,
         }))

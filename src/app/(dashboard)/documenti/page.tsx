@@ -40,7 +40,8 @@
  *    apertamente perché il numero manca.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useVisibleStores, stessoMagazzino, negozioInValues } from "@/lib/visibleStores";
@@ -81,9 +82,9 @@ type PagDoc = { descrizione: string; importo: number; tipo: number };
 
 const dec = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 
-function leggiXml(xml: string | null): { righe: RigaDoc[]; pagamenti: PagDoc[]; diagnostica: boolean } {
+function leggiXml(xml: string | null): { righe: RigaDoc[]; pagamenti: PagDoc[]; diagnostica: boolean; totaleDichiarato: number | null } {
     const righe: RigaDoc[] = [], pagamenti: PagDoc[] = [];
-    if (!xml) return { righe, pagamenti, diagnostica: false };
+    if (!xml) return { righe, pagamenti, diagnostica: false, totaleDichiarato: null };
     const attr = (t: string, n: string) => { const m = t.match(new RegExp(`${n}="([^"]*)"`)); return m ? dec(m[1]) : ""; };
 
     for (const m of xml.matchAll(/<printRecItem\b[^>]*\/>/g)) {
@@ -100,30 +101,38 @@ function leggiXml(xml: string | null): { righe: RigaDoc[]; pagamenti: PagDoc[]; 
         pagamenti.push({ descrizione: attr(t, "description"), importo: Number(attr(t, "payment")) || 0, tipo: Number(attr(t, "paymentType")) || 0 });
     }
 
-    /* IL NON FISCALE. Le righe sono testo battuto a macchina: si prende il
-       prezzo in coda, la quantità dal «xN», e quel che resta è la voce. */
-    let diagnostica = false;
+    /* IL NON FISCALE È UN FOGLIO BATTUTO A MACCHINA, non un elenco di articoli:
+       dentro ci sono intestazioni, separatori, il totale e i pagamenti. Prima
+       si prendeva OGNI riga come un articolo — 488 righe su 675 non lo erano —
+       e dove mancava `meta.total` il documento veniva contato DOPPIO, perché
+       la riga «TOTALE» finiva fra la merce. Si legge a sezioni, come è scritto. */
+    let diagnostica = false, totaleDichiarato: number | null = null;
     if (!righe.length) {
+        let neiPagamenti = false;
         for (const m of xml.matchAll(/<printNormal\b[^>]*\/>/g)) {
             const t = dec(m[0].match(/data="([^"]*)"/)?.[1] || "");
             if (!t.trim()) continue;
             /* LE PROVE DI COLLEGAMENTO NON SONO DOCUMENTI: «== CHECK COLLATINA
-               W3 ==» è il tasto che verifica se la cassa risponde. In elenco
-               sembravano scontrini rotti — totale «—», nessun numero. */
+               W3 ==» è il tasto che verifica se la cassa risponde. */
             if (/^\s*=+\s*CHECK/i.test(t)) { diagnostica = true; continue; }
+            if (/^\s*[-=_.*]{3,}\s*$/.test(t)) continue;                 // separatore
+            if (/^\s*\*{2,}/.test(t)) continue;                          // intestazione
+            if (/^\s*\(PROVA\)/i.test(t)) continue;
+            if (/^\s*azienda\s*:/i.test(t)) continue;
+            if (/non valido ai fini fiscali|documento non fiscale/i.test(t)) continue;
+            if (/^\s*pagament/i.test(t)) { neiPagamenti = true; continue; }
+
             const p = t.match(/EUR\s*([0-9]+(?:[.,][0-9]+)?)\s*$/i);
+            const importo = p ? Number(p[1].replace(",", ".")) || 0 : 0;
             const q = t.match(/\sx\s*([0-9]+)\b/i);
             const desc = t.replace(/EUR\s*[0-9]+(?:[.,][0-9]+)?\s*$/i, "").replace(/\sx\s*[0-9]+\b/i, "").trim();
-            if (!desc) continue;
-            righe.push({
-                descrizione: desc,
-                quantita: q ? Number(q[1]) || 1 : 1,
-                prezzo: p ? Number(p[1].replace(",", ".")) || 0 : 0,
-                reparto: null,
-            });
+            if (/^\s*tot(ale)?\b/i.test(desc)) { totaleDichiarato = importo; continue; }
+            if (!desc || !p) continue;      // senza prezzo non è né merce né pagamento
+            if (neiPagamenti) pagamenti.push({ descrizione: desc, importo, tipo: /cart|elettron|pos\b/i.test(desc) ? 2 : 0 });
+            else righe.push({ descrizione: desc, quantita: q ? Number(q[1]) || 1 : 1, prezzo: importo, reparto: null });
         }
     }
-    return { righe, pagamenti, diagnostica };
+    return { righe, pagamenti, diagnostica, totaleDichiarato };
 }
 
 /** Il numero del documento. L'Epson lo riporta nel suo XML di risposta; il
@@ -165,6 +174,14 @@ function esitoDi(stato: string, result: string | null): Esito | null {
     if (stato === "error") {
         if (/esito mai ricevuto|chiuso d'ufficio/i.test(result || ""))
             return { et: "esito ignoto", tono: "rvBadge-warn", spiega: "la cassa l'ha ritirato ma non ha mai detto com'è andata: la carta può essere uscita lo stesso. Prima di rifarlo, guarda lo scontrino." };
+        /* «NON USCITO» ERA FALSO, e Luca l'ha fotografato: a Garbatella il
+           rullo aveva stampato l'articolo e il totale, e il display chiedeva
+           ancora «DIFFERENZA 109,89». Quando la cassa rifiuta a metà, le righe
+           della merce SONO GIÀ USCITE e il documento resta APERTO: dirgli che
+           non è uscito lo porta a rifarlo, cioè a scontrinare due volte. */
+        if (/PRINTER ERROR/i.test(result || ""))
+            return { et: "rimasto aperto", tono: "rvBadge-ko",
+                spiega: "la cassa ha stampato le righe e poi ha rifiutato il totale: dal rullo esce mezzo scontrino e il documento resta aperto. Chiudilo o annullalo DALLA CASSA prima di rifarlo, se no lo batti due volte." };
         return { et: "non uscito", tono: "rvBadge-ko", spiega: "la cassa ha risposto con un errore: il documento non è stato emesso." };
     }
     return { et: stato, tono: "rvBadge-empty", spiega: "" };
@@ -192,17 +209,30 @@ type Doc = {
 };
 
 const NOME_PAG: Record<number, string> = { 0: "Contanti", 1: "Assegno", 2: "Carta / elettronico", 3: "Ticket", 4: "Non riscosso" };
-const TETTO = 3000;
+/* MILLE, non tremila: e' il `max-rows` di PostgREST su questo progetto —
+   provato, `.limit(3000)` restituisce comunque 1000. Scrivendo 3000 l'avviso
+   di troncamento non sarebbe uscito MAI, e a una settimana di documenti per
+   l'amministrazione (~1.250) l'elenco si sarebbe tagliato in silenzio.
+   Il conteggio esatto arriva a parte (`count`), cosi' la pagina non dice
+   «1.000 documenti» quando ce ne sono quattromila. */
+const TETTO = 1000;
 
-export default function DocumentiPage() {
+/* ELENCO CHIUSO. `SelectOpzioni` e' una casella a testo libero: svuotandola si
+   poteva mandare in amministrazione «Il cliente ha invece pagato: » — una
+   richiesta che non chiede niente. Il bottone si spegne se il valore non e'
+   uno di questi. */
+const FORME_PAGAMENTO = ["Contanti", "Carta", "Bonifico", "Non riscosso / credito", "Finanziamento"];
+
+function Documenti() {
     const { user } = useAuth();
     const { seesAll, stores: negoziVisibili, loaded: visibilitaPronta } = useVisibleStores();
 
     const [docs, setDocs] = useState<Doc[] | null>(null);
     const [errore, setErrore] = useState("");
     const [caricando, setCaricando] = useState(false);
-    const [troncato, setTroncato] = useState(false);
+    const [quantiInTutto, setQuantiInTutto] = useState<number | null>(null);
     const [tuttiNegozi, setTuttiNegozi] = useState<string[]>([]);
+    const [uffici, setUffici] = useState<string[]>([]);
 
     /* ── I FILTRI ──────────────────────────────────────────────────────────── */
     const [tipo, setTipo] = useState<"" | "scontrino" | "fattura">("");
@@ -219,18 +249,25 @@ export default function DocumentiPage() {
        La richiesta di correzione porta con sé id e data: senza, Claudia apriva
        «/documenti» e trovava la giornata corrente dei SUOI negozi — cioè non il
        documento. È lo stesso errore già corretto il 31/08 sul bonifico. */
+    /* `useSearchParams` E NON `window.location`, che e' la prassi di casa
+       altrove: qui l'indirizzo cambia SENZA che la pagina si rimonti — chi e'
+       gia' su Documenti e clicca un'altra task resterebbe fermo sul documento
+       di prima. Il nonce `t=` che mette UrgentTasks serve proprio a questo, e
+       con `window.location` letto una volta sola non sarebbe servito a niente. */
+    const parametri = useSearchParams();
     useEffect(() => {
-        const p = new URLSearchParams(window.location.search);
-        const d = p.get("doc"), g = p.get("giorno");
+        const d = parametri.get("doc"), g = parametri.get("giorno");
         if (g && /^\d{4}-\d{2}-\d{2}$/.test(g)) { setDal(g); setAl(g); }
         if (d) setAperto(d);
-    }, []);
+    }, [parametri]);
 
     /* TUTTI I NOMI DEI NEGOZI, che servono per trovare i gemelli di sede
        fisica: «Collatina W3» e «Collatina Multi» sono lo stesso bancone. */
     useEffect(() => {
-        supabase.from("stores").select("name").order("name").then(({ data }) => {
-            setTuttiNegozi(((data ?? []) as { name: string }[]).map(r => r.name).filter(Boolean));
+        supabase.from("stores").select("name, is_ufficio").order("name").then(({ data }) => {
+            const righe = (data ?? []) as { name: string; is_ufficio?: boolean }[];
+            setTuttiNegozi(righe.map(r => r.name).filter(Boolean));
+            setUffici(righe.filter(r => r.is_ufficio).map(r => r.name));
         });
     }, []);
 
@@ -252,7 +289,7 @@ export default function DocumentiPage() {
         setCaricando(true); setErrore("");
         try {
             let q = supabase.from("print_jobs")
-                .select("id, negozio, kind, status, result, request_xml, meta, created_at")
+                .select("id, negozio, kind, status, result, request_xml, meta, created_at", { count: "exact" })
                 .in("kind", ["fiscal_receipt", "non_fiscal", "fiscal_void"])
                 .gte("created_at", inizioGiorno(dal))
                 .lte("created_at", fineGiorno(al))
@@ -262,17 +299,17 @@ export default function DocumentiPage() {
                `.in("negozio", [])` → zero righe, che è la risposta giusta per
                chi non ha negozi. Prima, zero negozi significava vedere tutto. */
             if (ambito) q = q.in("negozio", ambito);
-            const { data, error } = await q;
+            const { data, error, count } = await q;
             if (error) throw error;
             type Riga = { id: string; negozio: string; kind: string; status: string; result: string | null; request_xml: string | null; meta: Record<string, unknown> | null; created_at: string };
             const grezze = (data ?? []) as Riga[];
-            setTroncato(grezze.length >= TETTO);
+            setQuantiInTutto(count ?? null);
             /* LE PROVE DI COLLEGAMENTO FUORI SUBITO: «== CHECK COLLATINA W3 ==»
                e' il tasto che verifica se la cassa risponde, non un documento. */
             const lette = grezze.map(r => ({ r, x: leggiXml(r.request_xml) })).filter(o => !o.x.diagnostica);
             setDocs(lette.map(({ r, x }) => {
                 const m = (r.meta || {}) as Record<string, unknown>;
-                const { righe, pagamenti } = x;
+                const { righe, pagamenti, totaleDichiarato } = x;
                 return {
                     id: r.id,
                     quando: r.created_at,
@@ -283,7 +320,12 @@ export default function DocumentiPage() {
                     prova: m.testMode === true,
                     stato: r.status,
                     result: r.result,
-                    totale: m.total != null ? Number(m.total) : (righe.reduce((s, x) => s + x.prezzo * x.quantita, 0) || null),
+                    /* IL TOTALE, in ordine di attendibilita': quello che abbiamo
+                       scritto noi nel `meta`, poi quello STAMPATO sul documento,
+                       e solo per ultimo la somma delle righe. */
+                    totale: m.total != null ? Number(m.total)
+                        : totaleDichiarato != null ? totaleDichiarato
+                        : (righe.reduce((a, r) => a + r.prezzo * r.quantita, 0) || null),
                     numero: numeroDoc(r.result),
                     matricola: matricolaDoc(r.result),
                     cliente: (m.cliente as string) || null,
@@ -308,8 +350,17 @@ export default function DocumentiPage() {
         return Array.from(s).filter(Boolean).sort();
     }, [seesAll, tuttiNegozi, ambito, docs]);
 
-    const miei = useMemo(() =>
-        user?.negozio ? negozi.filter(n => stessoMagazzino(n, user.negozio as string)) : [], [negozi, user?.negozio]);
+    /* «I MIEI NEGOZI» PER CHI STA IN UFFICIO NON ESISTE. Claudia e Sandra hanno
+       `primary_store = "Ufficio"`: preselezionando il loro negozio, il filtro
+       scartava OGNI documento e Documenti si apriva vuota — 171 documenti letti,
+       0 a schermo. E la task di correzione le portava proprio li'. Un ufficio
+       non batte scontrini: per loro non si preseleziona niente, e vedono tutto
+       quello che gli e' stato dato. */
+    const miei = useMemo(() => {
+        const n = user?.negozio as string | undefined;
+        if (!n || uffici.some(u => stessoMagazzino(u, n))) return [];
+        return negozi.filter(x => stessoMagazzino(x, n));
+    }, [negozi, user?.negozio, uffici]);
 
     /* GIÀ SUL PROPRIO NEGOZIO ALL'INGRESSO, una volta sola: dietro il bancone la
        domanda è «cosa ho battuto io», non «cosa ha battuto il gruppo». Se poi
@@ -346,12 +397,18 @@ export default function DocumentiPage() {
     const conta = useMemo(() => {
         const s = base.filter(d => d.tipo === "scontrino");
         const f = base.filter(d => d.tipo === "fattura");
-        const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova).reduce((a, d) => a + (d.totale || 0) * (d.storno ? -1 : 1), 0);
+        /* GLI ANNULLI RESTANO FUORI DAL CONTO. Un `fiscal_void` e' solo un
+           riferimento al documento annullato (`VOID 0012 0034 …`): non porta
+           ne' righe ne' totale, quindi non si sa quanto vale. Moltiplicarlo
+           per −1 sottraeva zero e faceva credere che il conto ne tenesse
+           conto. Meglio dirlo sotto che fingerlo qui. */
+        const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova && !d.storno).reduce((a, d) => a + (d.totale || 0), 0);
         return {
             scontrini: s.length, fatture: f.length,
             valScontrini: somma(s), valFatture: somma(f),
             incerti: base.filter(d => d.stato !== "done").length,
             senzaNumero: base.filter(d => d.stato === "done" && !d.numero).length,
+            storni: base.filter(d => d.storno && d.stato === "done").length,
         };
     }, [base]);
 
@@ -360,7 +417,10 @@ export default function DocumentiPage() {
         const chiave = (d: Doc): string | number => {
             switch (sort.col) {
                 case 1: return d.negozio || "";
-                case 2: return d.numero || d.matricola || "";
+                /* «n. 12» dopo «n. 3», non prima: come testo l'ordine e'
+                   quello dell'alfabeto, e su un elenco di scontrini non vuol
+                   dire niente. */
+                case 2: return d.numero ? Number(d.numero) || d.numero : (d.matricola || "");
                 case 3: return d.righe.map(r => r.descrizione).join(" ");
                 case 4: return d.operatore || "";
                 case 5: return d.totale ?? -1;
@@ -428,7 +488,7 @@ export default function DocumentiPage() {
             });
             if (error) throw error;
             setFatta("Richiesta inviata all'amministrazione: la trovano nelle loro cose da fare, col documento allegato.");
-            setChiedendo(null); setPerche("");
+            setPerche("");
         } catch (e) {
             setFallita("Non sono riuscito a inviarla: " + ((e as Error)?.message || "riprova"));
         } finally { setInviando(false); }
@@ -491,17 +551,56 @@ export default function DocumentiPage() {
                     {/* LA CORREZIONE SI CHIEDE SOLO SU UN DOCUMENTO USCITO: su
                         uno mai emesso, o di prova, non c'è niente da correggere
                         — e la richiesta farebbe perdere tempo a due persone. */}
-                    {d.stato === "done" && !d.prova && d.fiscale ? (
-                        <button onClick={(e) => { e.stopPropagation(); setChiedendo(d); setNuovaForma("Contanti"); setFatta(""); setFallita(""); }}
-                            className="rvPill rvPill-sm">✏️ Chiedi la correzione del pagamento</button>
+                    {d.stato === "done" && !d.prova && d.fiscale && !d.storno ? (
+                        <button onClick={(e) => { e.stopPropagation(); setChiedendo(chiedendo?.id === d.id ? null : d); setNuovaForma("Contanti"); setFatta(""); setFallita(""); }}
+                            className={cn("rvPill rvPill-sm", chiedendo?.id === d.id && "rvPill-on")}>✏️ Chiedi la correzione del pagamento</button>
                     ) : (
                         <span className="rvTab-min">
-                            {d.prova ? "Documento di prova: non c'è niente da correggere."
+                            {d.storno ? "Questo è un annullo: non ha una forma di pagamento da correggere."
+                                : d.prova ? "Documento di prova: non c'è niente da correggere."
                                 : !d.fiscale ? "Documento non fiscale: la forma di pagamento non c'è."
                                     : "Documento non emesso: non c'è niente da correggere."}
                         </span>
                     )}
                 </div>
+
+                {/* ═══ LA CORREZIONE SI CHIEDE QUI, SOTTO IL SUO BOTTONE ═══
+                    Stava in fondo alla pagina, e il revisore l'ha misurato: con
+                    una giornata di un negozio a schermo il bottone era a 1.107px
+                    e il modulo a 4.589 — QUATTRO SCHERMATE più sotto. È lo stesso
+                    errore che avevo appena corretto per il dettaglio, rifatto
+                    venti righe dopo. Il documento non si tocca: si chiede, e lo
+                    si chiede guardandolo. */}
+                {chiedendo?.id === d.id && (
+                    <div className="rvDett mt-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="rvDettT">✏️ Correzione della forma di pagamento</div>
+                        <div className="rvNota rvNota-info">
+                            <div className="rvNota-s">
+                                Lo scontrino emesso non si modifica: questa è una <b>richiesta</b> che arriva
+                                all&apos;amministrazione, con dentro cosa risulta, cosa dici tu e il documento allegato.
+                            </div>
+                        </div>
+                        <div className="rvBarra mt-2">
+                            <div className="rvCampo rvCampo-md"><span className="rvLab">Il cliente ha pagato con</span>
+                                <SelectOpzioni className="rvIn" value={nuovaForma} onChange={setNuovaForma}
+                                    opzioni={FORME_PAGAMENTO} /></div>
+                            <label className="rvCampo rvCampo-lg"><span className="rvLab">Cosa è successo</span>
+                                <input value={perche} onChange={e => setPerche(e.target.value)} className="rvIn"
+                                    placeholder="es. la cassa dava errore" /></label>
+                        </div>
+                        <div className="rvPillRow mt-2">
+                            <button onClick={inviaRichiesta} disabled={inviando || !FORME_PAGAMENTO.includes(nuovaForma)} className="rvPill rvPill-on">
+                                {inviando ? "invio…" : "Invia all'amministrazione"}
+                            </button>
+                            <button onClick={() => setChiedendo(null)} className="rvPill rvPill-sm">Annulla</button>
+                        </div>
+                        {/* L'ESITO STA ACCANTO AL BOTTONE che l'ha prodotto. In cima
+                            al riquadro era a 4.298px di distanza: chi premeva
+                            «Invia» non vedeva né il «fatto» né l'errore. */}
+                        {fatta && <div className="rvNota rvNota-info"><div className="rvNota-t">✓ Richiesta inviata</div><div className="rvNota-s">{fatta}</div></div>}
+                        {fallita && <div className="rvNota rvNota-ko"><div className="rvNota-t">Richiesta non inviata</div><div className="rvNota-s">{fallita}</div></div>}
+                    </div>
+                )}
             </div>
         );
     };
@@ -523,7 +622,7 @@ export default function DocumentiPage() {
             <div className="rvBox">
                 {/* ═══ I RIQUADRI ═══ premendone uno si vede solo quello. */}
                 <div className="rvCampo rvCampo-flex"><span className="rvLab">Cosa è stato emesso</span>
-                    <div className="rvRapidoG rvRapidoG-kpi">
+                    <div className="rvRapidoG rvRapidoG-kpi rvRapidoG-pochi">
                         {QUADRI.map(q => {
                             const t = q.n.toLocaleString("it-IT");
                             return (
@@ -563,8 +662,6 @@ export default function DocumentiPage() {
                 <div className="rvHint">L&apos;IMEI puoi spararlo col lettore dentro «Cerca»: lo trova dentro le voci dello scontrino.</div>
 
                 {errore && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-t">Non sono riuscito a leggere i documenti</div><div className="rvNota-s">{errore}</div></div>}
-                {fatta && <div className="rvNota rvNota-info mt-3"><div className="rvNota-t">✓ Richiesta inviata</div><div className="rvNota-s">{fatta}</div></div>}
-                {fallita && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-t">Richiesta non inviata</div><div className="rvNota-s">{fallita}</div></div>}
 
                 {/* ═══ LE FATTURE ═══ la spiegazione sta PRIMA della tabella: chi
                     preme «Fatture» e trova vuoto deve leggere subito perché, non
@@ -589,7 +686,7 @@ export default function DocumentiPage() {
                             <thead>
                                 <tr>
                                     {COLONNE.map((c, i) => (
-                                        <th key={i} className={cn("rvTab-ord", i === 5 && "rvTab-c")}
+                                        <th key={i} className={cn("rvTab-ord", i === 5 && "rvTab-eur")}
                                             onClick={() => setSort(s => ({ col: i, desc: s.col === i ? !s.desc : i === 0 || i === 5 }))}>
                                             {c}{sort.col === i ? <i>{sort.desc ? "↓" : "↑"}</i> : null}
                                         </th>))}
@@ -620,10 +717,15 @@ export default function DocumentiPage() {
                                                         : d.matricola ? <span>cassa {d.matricola}</span>
                                                             : <span>senza numero</span>}
                                                     <br />
+                                                    {/* LA PASTIGLIA VERDE SOLO SU UN DOCUMENTO DAVVERO
+                                                        EMESSO: «fiscale» accanto a «rimasto aperto» sono
+                                                        due affermazioni che si contraddicono nella stessa
+                                                        cella (revisione design). */}
                                                     {d.storno ? <span className="rvBadge rvBadge-ko">annullo</span>
                                                         : d.prova ? <span className="rvBadge rvBadge-warn">di prova</span>
-                                                            : d.fiscale ? <span className="rvBadge rvBadge-ok">fiscale</span>
-                                                                : <span className="rvBadge rvBadge-empty">non fiscale</span>}
+                                                            : !d.fiscale ? <span className="rvBadge rvBadge-empty">non fiscale</span>
+                                                                : d.stato === "done" ? <span className="rvBadge rvBadge-ok">fiscale</span>
+                                                                    : <span className="rvBadge rvBadge-empty">fiscale</span>}
                                                     {es && <span className={cn("rvBadge ml-1", es.tono)}>{es.et}</span>}
                                                 </td>
                                                 <td className="rvTab-nome">
@@ -633,7 +735,7 @@ export default function DocumentiPage() {
                                                     {d.cliente && <><br /><span className="rvTab-min">cliente: {d.cliente}</span></>}
                                                 </td>
                                                 <td className="rvTab-min">{d.operatore || "—"}</td>
-                                                <td className="rvTab-n">{d.storno && d.totale ? "−" : ""}{eur(d.totale)}</td>
+                                                <td className="rvTab-eur">{eur(d.totale)}</td>
                                             </tr>
                                             {apertaQui && (
                                                 <tr className="rvTab-det"><td colSpan={6}>{dettaglio(d)}</td></tr>
@@ -647,39 +749,22 @@ export default function DocumentiPage() {
                             Un elenco troncato in silenzio è un elenco che mente. */}
                         <div className="rvTab-pie">
                             {righe.length.toLocaleString("it-IT")} document{righe.length === 1 ? "o" : "i"}
-                            {troncato ? ` — ne mostro ${TETTO.toLocaleString("it-IT")}, il massimo: stringi l'intervallo di date, perché i più vecchi del periodo non sono in questo elenco né nei riquadri.` : ""}
+{quantiInTutto != null && quantiInTutto > (docs?.length || 0)
+                                ? ` — ma nel periodo scelto ce ne sono ${quantiInTutto.toLocaleString("it-IT")}: il database ne consegna al massimo ${TETTO.toLocaleString("it-IT")} per volta, e i più vecchi restano fuori da questo elenco e dai riquadri. Stringi l'intervallo di date.`
+                                : ""}
                             {conta.senzaNumero > 0 ? ` · ${conta.senzaNumero} senza numero: i registratori Custom non lo riportano al CRM, e quei documenti si cercano per matricola.` : ""}
+                            {conta.storni > 0 ? ` · ${conta.storni} annull${conta.storni === 1 ? "o" : "i"}: restano fuori dagli incassi, perché il documento di annullo non porta con sé l'importo.` : ""}
                         </div>
                     </div>
                 )}
 
-                {/* ═══ LA RICHIESTA ═══ il documento non si tocca: si chiede. */}
-                {chiedendo && (
-                    <div className="rvStoria rvScheda mt-3">
-                        <div className="rvDettT">✏️ Correzione della forma di pagamento</div>
-                        <div className="rvNota rvNota-info">
-                            <div className="rvNota-s">
-                                Lo scontrino emesso non si modifica: questa è una <b>richiesta</b> che arriva
-                                all&apos;amministrazione, con dentro cosa risulta, cosa dici tu e il documento allegato.
-                            </div>
-                        </div>
-                        <div className="rvBarra mt-2">
-                            <div className="rvCampo rvCampo-md"><span className="rvLab">Il cliente ha pagato con</span>
-                                <SelectOpzioni className="rvIn" value={nuovaForma} onChange={setNuovaForma}
-                                    opzioni={["Contanti", "Carta", "Bonifico", "Non riscosso / credito", "Finanziamento"]} /></div>
-                            <label className="rvCampo rvCampo-lg"><span className="rvLab">Cosa è successo</span>
-                                <input value={perche} onChange={e => setPerche(e.target.value)} className="rvIn"
-                                    placeholder="es. la cassa dava errore e ho battuto carta" /></label>
-                        </div>
-                        <div className="rvPillRow mt-2">
-                            <button onClick={inviaRichiesta} disabled={inviando} className="rvPill rvPill-on">
-                                {inviando ? "invio…" : "Invia all'amministrazione"}
-                            </button>
-                            <button onClick={() => setChiedendo(null)} className="rvPill rvPill-sm">Annulla</button>
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );
+}
+
+/* IL CONFINE DI ATTESA lo chiede Next per `useSearchParams`: senza, la pagina
+   non si costruisce. */
+export default function DocumentiPage() {
+    return <Suspense fallback={<div className="rvCarico">Carico i documenti…</div>}><Documenti /></Suspense>;
 }
