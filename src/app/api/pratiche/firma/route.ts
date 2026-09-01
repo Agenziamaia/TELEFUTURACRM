@@ -76,6 +76,59 @@ function htmlInvito(d: DatiModulo, link: string, email: string): string {
 </div>`;
 }
 
+/* Trova nel PDF appena generato i tre marcatori e ci mette sopra i campi.
+   Le coordinate di DocuSeal sono RELATIVE (0-1) con l'origine in alto a
+   sinistra; pdfjs le dà in punti con l'origine in basso, quindi la y si
+   ribalta. */
+async function posizionaCampi(k: string, tpl: Record<string, unknown>): Promise<{ errore?: string }> {
+    try {
+        const doc = ((tpl.documents as { url?: string; uuid?: string }[]) || [])[0];
+        const campi = (tpl.fields as Record<string, unknown>[]) || [];
+        if (!doc?.url || campi.length === 0) return { errore: "il modello non ha documento o campi" };
+
+        const res = await fetch(doc.url);
+        if (!res.ok) return { errore: `PDF non scaricabile (${res.status})` };
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const pdf = await pdfjs.getDocument({ data: new Uint8Array(await res.arrayBuffer()), isEvalSupported: false, useSystemFonts: false }).promise;
+
+        const trovati: Record<string, { page: number; x: number; y: number }> = {};
+        for (let p = 1; p <= pdf.numPages; p++) {
+            const pagina = await pdf.getPage(p);
+            const vp = pagina.getViewport({ scale: 1 });
+            const cont = await pagina.getTextContent();
+            for (const it of cont.items as { str: string; transform: number[] }[]) {
+                const m = String(it.str || "").match(/@@(FIRMA1|FIRMA2|DATA)@@/);
+                if (!m || trovati[m[1]]) continue;
+                trovati[m[1]] = { page: p - 1, x: it.transform[4] / vp.width, y: 1 - it.transform[5] / vp.height };
+            }
+        }
+        if (!trovati.FIRMA1 || !trovati.FIRMA2) return { errore: "non ho trovato i marcatori delle firme nel PDF" };
+
+        const uuid = doc.uuid;
+        const area = (t: { page: number; x: number; y: number }, w: number, h: number) => ([{
+            page: t.page, attachment_uuid: uuid,
+            x: Math.max(0, Math.min(0.95, t.x)),
+            // il marcatore sta sulla riga della firma: il riquadro va SOPRA
+            y: Math.max(0, Math.min(0.95, t.y - h)),
+            w, h,
+        }]);
+        const conAree = campi.map((c) => {
+            const nome = String(c.name || "");
+            if (/^Firma del Cliente$/i.test(nome)) return { ...c, areas: area(trovati.FIRMA1, 0.34, 0.075) };
+            if (/^Seconda/i.test(nome)) return { ...c, areas: area(trovati.FIRMA2, 0.34, 0.075) };
+            if (/^Data/i.test(nome) && trovati.DATA) return { ...c, areas: area(trovati.DATA, 0.16, 0.022) };
+            return c;
+        });
+
+        const patch = await fetch(`${DOCUSEAL}/templates/${tpl.id}`, {
+            method: "PATCH", headers: { "X-Auth-Token": k, "Content-Type": "application/json" },
+            body: JSON.stringify({ fields: conAree }),
+        });
+        if (!patch.ok) return { errore: `DocuSeal ha rifiutato le posizioni (${patch.status})` };
+        return {};
+    } catch (e) { return { errore: e instanceof Error ? e.message : "posizionamento non riuscito" }; }
+}
+
 export async function POST(req: Request) {
     const g = await accesso(req, "pratiche/firma");
     if (!g.ok) return g.risposta;
@@ -153,12 +206,38 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "il cliente non ha un cellulare in anagrafica: scegli l'email, o aggiungilo." }, { status: 400 });
     }
 
-    const r = await fetch(`${DOCUSEAL}/submissions/html`, {
+    /* ═══ TRE PASSI, NON UNO ═══════════════════════════════════════════
+       ① si crea il MODELLO dall'HTML: DocuSeal ci mette dentro il documento,
+          ma i campi firma nascono senza posizione (provato: `areas: []` sia
+          coi tag <signature-field> sia coi text tag). Senza posizione la firma
+          viene raccolta e non stampata: il cliente riceve un PDF vuoto.
+       ② si scarica il PDF appena generato e si CERCANO I MARCATORI che il
+          modulo porta scritti in bianco (@@FIRMA1@@, @@DATA@@, @@FIRMA2@@):
+          da lì escono le coordinate vere, qualunque impaginazione abbia fatto
+          DocuSeal e su qualunque pagina siano finite.
+       ③ si dice a DocuSeal dove stanno i campi, e solo allora si manda.
+       Un giro in più, ma è la differenza fra un contratto e un foglio bianco. */
+    const tpl = await fetch(`${DOCUSEAL}/templates/html`, {
         method: "POST",
         headers: { "X-Auth-Token": k, "Content-Type": "application/json" },
         body: JSON.stringify({
             name: `Modulo di accettazione ${d.protocollo}`,
             documents: [{ name: `modulo-${d.protocollo}`, html: moduloHtml(d, true), size: "A4" }],
+        }),
+    });
+    const tj = await tpl.json().catch(() => ({}));
+    if (!tpl.ok) return NextResponse.json({ error: tj?.error || `DocuSeal ha risposto ${tpl.status} creando il modello` }, { status: 502 });
+
+    const posato = await posizionaCampi(k, tj);
+    if (posato.errore) {
+        return NextResponse.json({ error: "non sono riuscito a mettere i campi firma sul documento (" + posato.errore + "): la richiesta NON è partita, meglio far firmare su carta." }, { status: 502 });
+    }
+
+    const r = await fetch(`${DOCUSEAL}/submissions`, {
+        method: "POST",
+        headers: { "X-Auth-Token": k, "Content-Type": "application/json" },
+        body: JSON.stringify({
+            template_id: tj.id,
             submitters: [{
                 role: "Cliente",
                 name: String(d.cliente?.etichetta || "Cliente"),

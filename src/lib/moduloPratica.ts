@@ -37,11 +37,28 @@ export function moduloHtml(d: DatiModulo, perFirmaDigitale = false): string {
     const conDispositivo = !!t && t.contenuto === "dispositivo";
     const cli = d.cliente || {};
 
-    const firma = (nome: string) => perFirmaDigitale
-        ? `<signature-field name="${esc(nome)}" role="Cliente" style="width:230px;height:70px;"></signature-field>`
+    /* ⚠️ NIENTE TAG DI DOCUSEAL NELL'HTML. Provati tutti e due i modi che la
+       loro documentazione descrive — <signature-field> e i text tag {{…}} —
+       e sull'host europeo i campi nascono SENZA POSIZIONE (`areas: []`):
+       DocuSeal raccoglie la firma e poi non la stampa da nessuna parte, e il
+       cliente si ritrova un PDF senza firme. È successo davvero, sulla prova
+       di Luca.
+       Quindi qui si mettono dei MARCATORI di testo, invisibili sul foglio
+       (bianco su bianco) ma leggibili dal PDF: la rotta di firma li ritrova
+       con le loro coordinate esatte e mette lì i campi. Deterministico, e non
+       dipende da come DocuSeal impagina. */
+    /* ⚠️ SERVONO TUTTI E DUE. Il tag <signature-field> fa nascere il campo e
+       il firmatario; da solo pero' nasce SENZA POSIZIONE (`areas: []`) e la
+       firma raccolta non finisce sul foglio — provato, ed e' quello che e'
+       successo alla prima prova di Luca: PDF senza firme.
+       Il marcatore accanto — scritto in bianco su bianco, invisibile ma
+       leggibile dal testo del PDF — dice alla rotta DOVE mettere quel campo,
+       qualunque impaginazione faccia DocuSeal. */
+    const firma = (nome: string, segno: string) => perFirmaDigitale
+        ? `<div class="riga-firma"><span class="segno">${segno}</span><signature-field name="${esc(nome)}" role="Cliente" style="width:1px;height:1px;"></signature-field></div>`
         : `<div class="riga-firma"></div>`;
     const dataFirma = perFirmaDigitale
-        ? `<date-field name="Data firma" role="Cliente" style="width:130px;height:20px;"></date-field>`
+        ? `<span class="riga-mini"><span class="segno">@@DATA@@</span><date-field name="Data firma" role="Cliente" style="width:1px;height:1px;"></date-field></span>`
         : `<span class="riga-mini"></span>`;
 
     const righeArticoli = (d.righe || []).map((r) => `
@@ -79,6 +96,8 @@ export function moduloHtml(d: DatiModulo, perFirmaDigitale = false): string {
   .firme > div { flex: 1; }
   .nota { font-size: 8.4pt; color: #555; margin-top: 1.5mm; }
   .pie { margin-top: 6mm; font-size: 8pt; color: #777; border-top: 1px solid #ddd; padding-top: 2mm; }
+  /* i marcatori: ci sono nel testo del PDF, non sul foglio */
+  .segno { color: #fff; font-size: 6pt; }
 </style></head><body>
 
 <div class="testa">
@@ -189,13 +208,13 @@ trattenuto come corrispettivo ma si trasforma in un buono acquisto, secondo la c
   <div>
     <div class="muto"><b>Prima firma — accettazione della pratica</b></div>
     <div class="nota">Il cliente dichiara di aver letto e accettato tutto quanto precede.</div>
-    ${firma("Firma del Cliente")}
+    ${firma("Firma del Cliente", "@@FIRMA1@@")}
     <div class="nota">Data: ${dataFirma}</div>
   </div>
   <div>
     <div class="muto"><b>Seconda firma — clausole della sezione 7</b></div>
     <div class="nota">Ai sensi degli artt. 1341 e 1342 c.c. approva specificamente le clausole 7.1 · 7.2 · 7.3 · 7.4 · 7.5 · 7.6.</div>
-    ${firma("Seconda sottoscrizione (artt. 1341-1342 c.c.)")}
+    ${firma("Seconda sottoscrizione", "@@FIRMA2@@")}
   </div>
 </div>
 
