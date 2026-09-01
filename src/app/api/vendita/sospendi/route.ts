@@ -71,6 +71,10 @@ export async function POST(req: Request) {
         negozio: neg,
         cliente: b.cliente ?? null,
         items,
+        /* I TELEFONI VIAGGIANO COL CONTO (revisore 01/09). Senza, riprendendolo
+           la divisione del pagamento spariva e la cassa chiedeva al cliente il
+           prezzo pieno del telefono invece del solo anticipo. */
+        telefoni: Array.isArray(b.telefoni) ? b.telefoni : null,
         totale: b.totale != null ? Number(b.totale) : null,
         azienda: b.azienda ?? null,
         note: b.note ?? null,
@@ -111,7 +115,7 @@ export async function GET(req: Request) {
        negozio: sarebbe stata una regressione visibile solo alla scala che
        stiamo per raggiungere. */
     let q = supabase.from("vendite_sospese")
-        .select("id, negozio, cliente, items, totale, azienda, note, created_by, created_at")
+        .select("id, negozio, cliente, items, telefoni, totale, azienda, note, created_by, created_at")
         .eq("stato", "in_sospeso").order("created_at", { ascending: false }).limit(500);
     if (!vis.tutti) {
         if (!vis.negozi.length) return NextResponse.json({ ok: true, sospesi: [] });

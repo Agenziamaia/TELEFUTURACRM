@@ -1544,7 +1544,14 @@ const _brandListino = (b) => _compBrand(b);
    Le righe WindTre che il listino porta SOPRA il 5% (6, 10, 15, 20%) si
    tengono: sono poche e sono chiaramente volute, e schiacciarle a 5 vorrebbe
    dire cancellare una promozione. */
-const _FUORI_MARGINE_VF = /iphone|ipad|apple|airpods|watch|galaxy\s*s\d|galaxy\s*z|fold|flip/i;
+/* CHI RESTA FUORI DAL 4% VODAFONE. La prima versione sbagliava otto modelli
+   veri del listino (revisore 01/09): prendeva `HONOR 600 + WATCH` e
+   `ZTE NUBIA FLIP` — che Apple e Samsung non sono — e si perdeva tutta la
+   serie S scritta «SAMSUNG S25», non «GALAXY S25», che è come sta scritta nel
+   listino Vodafone. Sei modelli fino a 1.619 €: 64,80 € di margine inventato
+   per pezzo. Qui «watch», «fold» e «flip» valgono solo attaccati al loro
+   produttore. */
+const _FUORI_MARGINE_VF = /iphone|ipad|airpods|\bapple\b|(?:samsung|galaxy)\s*s\d|galaxy\s*z|(?:samsung|galaxy)[^,;]*(?:fold|flip)/i;
 const _pctMargine = (brandComp, modello, pctListino) => {
   const pl = Number(pctListino ?? 0);
   if (brandComp === "WINDTRE") return Math.max(pl, 5);
@@ -6378,10 +6385,35 @@ function CRM() {
          chi è la merce. */
       const nomiSede = negozi.filter(n => stessoMagazzino(n, selNeg));
       const { data: gia } = await supabase.from("mag_giacenze")
-        .select("codice,azienda")
+        .select("codice,azienda,quantita,negozio")
         .in("negozio", nomiSede.length ? nomiSede : [selNeg]).limit(5000);
+      /* SOLO DOVE I PEZZI CI SONO DAVVERO (revisore 01/09). Prima vinceva la
+         PRIMA riga che capitava, anche a quantità zero, e la query non ha un
+         ordinamento: a Promontori — che ha una società sola — «Sim Wind3»
+         risultava di Telefutura 1 per una riga vuota, mentre i 26 pezzi sono
+         di Telefutura 2. Risultato: registri un'attivazione WindTre, aggiungi
+         un qualsiasi prodotto, e il CRM rifiuta una vendita legittima dicendo
+         che sono due società. E la risposta cambiava da sola col passare dei
+         movimenti.
+         Adesso: conta chi i pezzi ce li ha, e a parità il negozio dove si sta
+         battendo. Se nessuno ne ha, non si sa — e non sapere non è un motivo
+         per bloccare una vendita. */
       const perCodice = new Map();
-      (gia || []).forEach(r => { if (r.codice && r.azienda && !perCodice.has(r.codice)) perCodice.set(String(r.codice), String(r.azienda)); });
+      {
+        const vince = new Map();
+        (gia || []).forEach(r => {
+          if (!r.codice || !r.azienda) return;
+          const q = Number(r.quantita) || 0;
+          const a = vince.get(r.codice);
+          const meglio = !a ? q > 0
+            : (q > 0) !== (a.q > 0) ? q > 0
+              : r.negozio === selNeg ? true
+                : a.negozio === selNeg ? false
+                  : q > a.q;
+          if (meglio) vince.set(r.codice, { q, negozio: r.negozio, azienda: r.azienda });
+        });
+        vince.forEach((v, cod) => { if (v.q > 0) perCodice.set(String(cod), String(v.azienda)); });
+      }
 
       if (!vincola) { if (vivo) setMagVendita({ vincola: false, negozio: selNeg, pezzi: [], perImei: new Map(), perCodice }); return; }
       // i gemelli condividono il locale e il magazzino: un pezzo di Magliana
@@ -6599,7 +6631,10 @@ function CRM() {
   // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
   // potrebbe avere una vendita in corso); rinfresca solo la lista dei sospesi.
   const chiudiSospeso = () => { pendingCommit.current = null; setScontrino(null); setSospesoReload((x) => x + 1); };
-  const riprendiSospeso = (s: SospesoRow) => { pendingCommit.current = null; setScontrino({ items: s.items, negozio: s.negozio, azienda: s.azienda, cliente: s.cliente, sospesoId: s.id }); };
+  /* RIPRENDENDO UN CONTO, TORNANO ANCHE I TELEFONI (revisore 01/09): se no la
+     divisione del pagamento sparisce e la cassa chiede al cliente il prezzo
+     pieno del telefono invece del solo anticipo. */
+  const riprendiSospeso = (s: SospesoRow) => { pendingCommit.current = null; setScontrino({ items: s.items, telefoni: (s as { telefoni?: unknown }).telefoni as never, negozio: s.negozio, azienda: s.azienda, cliente: s.cliente, sospesoId: s.id }); };
   // Univocita' cellulare (regola Luca): se il numero e' di un ALTRO cliente si
   // sceglie se spostarlo qui o cambiarlo — stessa logica della sezione Clienti.
   const [dupCellCliente, setDupCellCliente] = useState<{ id: string; label: string } | null>(null);
@@ -6881,6 +6916,15 @@ function CRM() {
              «Tel. Rate» al posto del modello. */
           descrizione: pezzo?.nome || String(f["Modello Terminale"] || f["Modello"] || prod).trim() || prod,
           codice: pezzo?.codice || null,
+          /* L'APPARATO FWA NON HA UNA RIGA IN CARRELLO (revisore 01/09): la
+             voce automatica del telefono nasce solo dalla categoria «Telefono
+             a Rate», e il fisso non ne genera nessuna. Senza dirlo, il modale
+             finiva in un vicolo cieco — importo scritto, totale zero, il
+             server rispondeva «carrello vuoto» e non si usciva più.
+             Qui la riga la costruisce il modale dagli importi: è l'unico caso
+             in cui lo fa, e non può raddoppiare niente perché una riga da
+             raddoppiare non c'è. */
+          creaRiga: modo === "w3_fwa",
         });
       });
     }));
@@ -7033,6 +7077,20 @@ function CRM() {
        quel bottone resta cliccabile per scelta. La guardia vera è questa, e
        non sapeva niente dell'IMEI: si poteva battere un IMEI inventato,
        leggere l'avviso rosso, chiudere la scheda e salvare lo stesso. */
+    /* DUE SOCIETÀ NON SI SALVANO (revisore 01/09). Il controllo era finito
+       solo in `cosaManca()`, che governa il COLORE del bottone: si premeva lo
+       stesso e la vendita passava. Il server allora produce DUE scontrini con
+       DUE partite IVA, e con due gruppi ignora le forme di pagamento —
+       stampano entrambi «CONTANTE» anche col cliente che paga con carta — e
+       scarta il coupon dopo che il cliente ha già pagato lo scontato. */
+    {
+      const _soc = societaInCarrello(margList);
+      if (_soc.length > 1) {
+        setShowCart(true);
+        sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}: sono due società e servono due scontrini. Togli una delle due e falla in una vendita a parte.`);
+        return;
+      }
+    }
     {
       const _rate = rateSenzaMagazzino();
       if (_rate.length) {
@@ -7636,6 +7694,10 @@ function CRM() {
   const margMinOk=!!(_celMargOk&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
   const margLock=useRef(false);
   const saveMargOnly=async()=>{
+    { // due società non si scontrinano insieme: vale anche qui
+      const _soc = societaInCarrello(margItems);
+      if (_soc.length > 1) { sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}: sono due società e servono due scontrini.`); margLock.current=false; return; }
+    }
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); margLock.current=false;return; }
     /* ⚠️ E SENZA NUMERO NON SI INCASSA (revisione 01/09): lo scontrino

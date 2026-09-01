@@ -27,6 +27,8 @@ export type ModoTelefono = "w3_finanziato" | "w3_rate" | "w3_fwa" | "vf_finanzia
 export interface TelefonoScontrino {
     chiave: string;
     imei: string;
+    /** non ha una riga nel carrello: la riga dello scontrino la fa il modale */
+    creaRiga?: boolean;
     modo: ModoTelefono;
     brand: string;
     categoria: string;
@@ -158,7 +160,19 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         descrizione: r.telefono.descrizione, imei: r.telefono.imei, importo: r.importo, forma: r.forma,
     })), [contoTerzi]);
 
-    const itemsTutte = useMemo<RigaScontrino[]>(() => data?.items || [], [data]);
+    /* LE RIGHE CHE MANCANO. Solo per i telefoni che nel carrello una riga non
+       ce l'hanno — oggi il solo apparato FWA: per tutti gli altri la riga c'è
+       già e aggiungerne una seconda vorrebbe dire scontrinare due volte. */
+    const righeOrfane = useMemo<RigaScontrino[]>(() => telefoni
+        .filter(t => t.creaRiga && DOMANDE_TELEFONO[t.modo].scontrino)
+        .map(t => ({
+            description: `${t.descrizione}${t.imei ? ` · IMEI ${t.imei}` : ""}`,
+            unitPrice: +(_n(importi[t.chiave]?.anticipo) + _n(importi[t.chiave]?.resto)).toFixed(2),
+            qty: 1, reparto: 2, codice: t.codice,
+        }))
+        .filter(r => r.unitPrice > 0), [telefoni, importi]);
+
+    const itemsTutte = useMemo<RigaScontrino[]>(() => [...(data?.items || []), ...righeOrfane], [data, righeOrfane]);
 
     /* LE RIGHE DI PAGAMENTO SI RICOSTRUISCONO SEMPRE COSÌ (revisore 01/09):
        prima le forme già decise — finanziato, rateizzato: quelle non le
@@ -545,7 +559,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         try {
             const res = await fetch("/api/vendita/sospendi", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ negozio: data.negozio, cliente: data.cliente ?? null, items: itemsTutte, totale, azienda: aziendaSel }),
+                body: JSON.stringify({ negozio: data.negozio, cliente: data.cliente ?? null, items: itemsTutte, telefoni, totale, azienda: aziendaSel }),
             });
             const j = await res.json().catch(() => ({}));
             if (!res.ok || !j.ok) throw new Error(j.error || "salvataggio non riuscito");

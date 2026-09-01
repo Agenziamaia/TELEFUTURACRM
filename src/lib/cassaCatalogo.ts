@@ -70,6 +70,8 @@ export type Giacenza = {
     codice: string;
     quantita: number;
     soglia_min: number | null;
+    /** da quale insegna viene la società segnata: serve al pareggio fra gemelli */
+    negozioAzienda?: string | null;
     /** LE DUE FORME, SEPARATE (revisore 29/08). `mag_disponibilita` somma le
      *  quantità sfuse e i pezzi con seriale, e sommate sembrano la stessa
      *  cosa: ma di un telefono si vende IL PEZZO, sparando l'IMEI — cliccarlo
@@ -266,12 +268,12 @@ export async function caricaGiacenze(negozio: string, azienda?: string | null): 
     const nomi = await negoziDellaSede(negozio);
     for (let da = 0; ; da += PAGINA) {
         let q = supabase.from("mag_disponibilita")
-            .select("codice,quantita,azienda,pezzi_con_seriale,pezzi_a_quantita").in("negozio", nomi);
+            .select("codice,quantita,azienda,negozio,pezzi_con_seriale,pezzi_a_quantita").in("negozio", nomi);
         if (azienda) q = q.eq("azienda", azienda);
         const { data, error } = await q.range(da, da + PAGINA - 1);
         if (error) return { mappa: m, errore: error.message };
         if (!data?.length) break;
-        (data as { codice: string; quantita: number; azienda: string | null; pezzi_con_seriale: number; pezzi_a_quantita: number }[]).forEach((g) => {
+        (data as { codice: string; quantita: number; azienda: string | null; negozio: string; pezzi_con_seriale: number; pezzi_a_quantita: number }[]).forEach((g) => {
             const gia = m.get(g.codice);
             const q = Number(g.quantita) || 0;
             /* DI CHI È LA MERCE. Senza filtro di società lo stesso articolo
@@ -280,14 +282,33 @@ export async function caricaGiacenze(negozio: string, azienda?: string | null): 
                nessun codice sta in due società (verificato), quindi il caso
                ambiguo non si presenta — ma se un domani si presenta la cassa
                non deve tirare a indovinare. */
+            /* CHI HA I PEZZI, E A PARITÀ IL NEGOZIO DOVE SI STA BATTENDO
+               (revisore 01/09). La regola di prima era «vince la prima riga
+               con pezzi», senza guardare da dove si vende — e questa società
+               VIAGGIA con l'articolo fino al server, dove ha la precedenza su
+               quella calcolata lì. Cioè: la regola sbagliata vinceva su quella
+               giusta. A Magliana ci sono tre codici con pezzi in tutte e due
+               le insegne e società diverse, e su quelli lo scontrino poteva
+               uscire con la partita IVA dell'altra — con il movimento di
+               scarico scritto su una riga che non esiste, cioè una giacenza
+               fantasma a −1 che nessuno vede. */
             const primaAz = gia?.azienda ?? null;
             const teneva = Number(gia?.quantita || 0) > 0;
-            const azienda = q > 0 ? (teneva && primaAz && primaAz !== g.azienda ? primaAz : g.azienda) : primaAz;
+            const suo = g.negozio === negozio;
+            const suoPrima = gia?.negozioAzienda === negozio;
+            const azienda = q > 0
+                ? (!teneva ? g.azienda
+                    : suo ? g.azienda
+                        : suoPrima ? primaAz
+                            : (q > Number(gia?.quantita || 0) ? g.azienda : primaAz))
+                : primaAz;
+            const negozioAzienda = azienda === g.azienda && q > 0 ? g.negozio : (gia?.negozioAzienda ?? null);
             m.set(g.codice, {
                 codice: g.codice,
                 quantita: q + Number(gia?.quantita || 0),
                 soglia_min: null,
                 azienda: azienda ?? null,
+                negozioAzienda,
                 ambigua: teneva && q > 0 && !!primaAz && primaAz !== g.azienda,
                 pezziConSeriale: Number(g.pezzi_con_seriale || 0) + Number(gia?.pezziConSeriale || 0),
                 pezziAQuantita: Number(g.pezzi_a_quantita || 0) + Number(gia?.pezziAQuantita || 0),
