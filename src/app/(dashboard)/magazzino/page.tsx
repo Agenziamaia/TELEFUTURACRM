@@ -718,6 +718,18 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* I RIQUADRI, invece, contano DENTRO la categoria scelta: il numero grande
        promette «tante righe vedrai premendomi», e con una categoria accesa
        quelle righe sono meno. */
+    /* QUALI CATEGORIE ESISTONO QUI. Come `famiglieVive` in Articoli: una
+       pastiglia per una famiglia che in questo magazzino non c'è proprio è
+       solo una riga in più da leggere — e le pastiglie erano dodici, che a
+       schermo stretto diventavano tre righe e mangiavano 152px. Si guarda
+       `righeGrezze` INTERO, non il quadratone acceso, così la fila non balla
+       mentre si clicca. */
+    const categorieVive = useMemo(() => {
+        const m = new Set<string>();
+        righeGrezze.forEach(r => m.add(r.famiglia));
+        return m;
+    }, [righeGrezze]);
+
     const righeInCategoria = useMemo(
         () => famiglia ? righeGrezze.filter(r => r.famiglia === famiglia) : righeGrezze,
         [righeGrezze, famiglia]);
@@ -1110,7 +1122,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             const euro = false;
                             // il numero grande: quante righe vedrai premendo
                             const n = q.id === "trasferiti" ? (inViaggioInCategoria?.length ?? 0)
-                                : q.id === "venduto" ? venduti.length
+                                : q.id === "venduto" ? vendutiInCategoria.length
                                     : euro ? (q.id === "val_vendita" ? conteggi.val_vendita : conteggi.val_acquisto)
                                         : conteggi.righe[q.id as FiltroId];
                             const testo = euro ? eurTondo(n) : n.toLocaleString("it-IT");
@@ -1139,6 +1151,14 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         Premi un riquadro per vedere solo quello; il numero grande dice quante righe vedrai.
                         I due col filetto e la freccia ↗ non filtrano questa tabella: aprono la loro lista,
                         con le sue colonne e il suo Excel — premili di nuovo per tornare qui.
+                        {/* CHE RAPPORTO C'È FRA LE DUE FILE DI NUMERI (revisione design
+                            01/09): i riquadri contano dentro la categoria scelta, le
+                            pastiglie della categoria contano dentro il riquadro acceso.
+                            Premendo una qualsiasi si muovono i numeri dell'altra fila, e
+                            senza una riga che lo dica «cosa filtra cosa» resta una
+                            domanda aperta. */}
+                        {" "}I riquadri e le categorie qui sotto si restringono a vicenda: ognuno conta dentro
+                        la scelta dell&apos;altro.
                         {senzaPrezzo > 0 || senzaCosto > 0 ? ` I due valori escludono ${senzaPrezzo ? `${senzaPrezzo} pezzi senza prezzo di listino` : ""}${senzaPrezzo && senzaCosto ? " e " : ""}${senzaCosto ? `${senzaCosto} senza costo d'acquisto` : ""}.` : ""}
                     </div>
                 </div>
@@ -1155,17 +1175,30 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     la categoria stessa — se no ogni pastiglia spenta direbbe
                     zero e nessuno la premerebbe. Le vuote restano a schermo,
                     smorzate: «Ricambi 0» in un negozio è un'informazione. */}
-                <div className="rvCampo rvCampo-flex mt-3"><span className="rvLab">Categoria</span>
-                    <div className="rvPillRow rvPillRow-fitta">
+                {/* LE PASTIGLIE SONO QUELLE DI ARTICOLI, alla lettera: stesso
+                    contenitore `.rvPillRow`, stessa `.rvPill` piena, stesso
+                    conteggio nel chip, stesse categorie nascoste quando in
+                    magazzino non esistono proprio.
+                    NIENTE `rvPillRow-fitta` NÉ `rvPill-sm`: è la trappola che
+                    questo stesso file documenta più sotto — l'imbottitura di
+                    `-fitta` (0,2,0) scavalca quella di `-sm` (0,1,0), e la
+                    fila «piccola» veniva alta 33,8px contro i 27,8 di quella
+                    accanto, con la stessa identica className.
+                    E NIENTE stato «vuota»: il tratteggio che avevo messo
+                    misurava 1,11:1 contro il fondo nel tema chiaro, cioè non
+                    si vedeva — e riscriveva pure il bordo dell'hover. Il «0»
+                    nel chip lo dice già, come in Articoli. */}
+                <div className="rvCampo mt-3"><span className="rvLab">Categoria</span>
+                    <div className="rvPillRow">
                         <button onClick={() => setFamiglia("")}
-                            className={cn("rvPill rvPill-sm", !famiglia && "rvPill-on")}>
-                            Tutte<b className="rvPillN">{perCategoria.tutte.toLocaleString("it-IT")}</b></button>
+                            className={cn("rvPill", !famiglia && "rvPill-on")}>
+                            Tutte <b className="rvPillN">{perCategoria.tutte.toLocaleString("it-IT")}</b></button>
                         {[...FAMIGLIE, ALTRO].map(f => {
+                            if (!categorieVive.has(f.id)) return null;   // in magazzino non c'è proprio
                             const n = perCategoria.m[f.id] || 0;
                             return (
                                 <button key={f.id} onClick={() => setFamiglia(x => x === f.id ? "" : f.id)}
-                                    title={n ? `${n} articoli` : "Qui non ce n'è nessuno, con questi filtri"}
-                                    className={cn("rvPill rvPill-sm", famiglia === f.id && "rvPill-on", !n && famiglia !== f.id && "rvPill-vuota")}>
+                                    className={cn("rvPill", famiglia === f.id && "rvPill-on")}>
                                     {f.icona} {f.nome}<b className="rvPillN">{n.toLocaleString("it-IT")}</b></button>
                             );
                         })}
@@ -1234,7 +1267,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
                         ↺ Reset
                     </button>
-                    <button onClick={esporta} disabled={vistaVenduto ? !venduti.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
+                    <button onClick={esporta} disabled={vistaVenduto ? !vendutiInCategoria.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
                         <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
                 </div>
@@ -1437,9 +1470,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                             vedere tutti quelli come lui». */}
                                         <td className="rvTab-min">
                                             <button className={cn("rvCatTag", famiglia === r.famiglia && "rvCatTag-on")}
-                                                title={famiglia === r.famiglia ? "Togli il filtro" : `Mostra solo ${etichettaFamiglia(r.famiglia).nome}`}
+                                                title={famiglia === r.famiglia ? "Togli il filtro" : `Mostra solo: ${etichettaFamiglia(r.famiglia).nome}`}
                                                 onClick={(e) => { e.stopPropagation(); setFamiglia(f => f === r.famiglia ? "" : r.famiglia); }}>
-                                                {etichettaFamiglia(r.famiglia).icona} {etichettaFamiglia(r.famiglia).nome}
+                                                {etichettaFamiglia(r.famiglia).icona} {etichettaFamiglia(r.famiglia).breve}
                                             </button>
                                         </td>
                                         <td className={cn("rvTab-n rvGiac", r.giacenza > 0 ? "rvGiac-si" : r.giacenza < 0 ? "rvGiac-ko" : "rvGiac-zero")}>{r.giacenza}</td>
@@ -3252,12 +3285,18 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
 /** Le famiglie, in ordine: vince la PRIMA che riconosce l'articolo. Perciò
  *  «Telefoni» sta prima di «Accessori»: gli smartphone dei listini operatore
  *  hanno il gruppo del listino, e finirebbero fra gli accessori. */
-const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s: string, d: string, c: string) => boolean }[] = [
-    { id: "telefoni", icona: "📱", nome: "Telefoni", dentro: (_g, s) => /smartphone|^telefoni$|mobile phone/.test(s) },
+/* IL NOME CORTO SERVE ALLA TABELLA (revisione design 01/09). «⌚ Wearable e
+   smart device» in una cella con `nowrap` occupa 171px e non cede mai: la
+   colonna Categoria diventava larga 199px fissi, rubandoli tutti alla
+   Descrizione — che a 1366px passava da 500 a 346px, mandando i nomi a capo e
+   dimezzando le righe visibili, da otto a quattro. Le pastiglie sopra tengono
+   il nome per esteso, che è dove uno lo legge davvero. */
+const FAMIGLIE: { id: string; icona: string; nome: string; breve: string; dentro: (g: string, s: string, d: string, c: string) => boolean }[] = [
+    { id: "telefoni", icona: "📱", nome: "Telefoni", breve: "Telefoni", dentro: (_g, s) => /smartphone|^telefoni$|mobile phone/.test(s) },
     /* `RITUSATO.xx.yyy` è il codice del RITiro dell'USATO: 3.030 pezzi, di cui
        3.025 il gestionale li chiama già «usato» e cinque no — nati dall'import
        dei magazzini, che il gruppo non ce l'ha. Sono la stessa cosa. */
-    { id: "usato", icona: "♻️", nome: "Usato", dentro: (g, _s, _d, c) => g === "usato" || /^ritusato/.test(c) },
+    { id: "usato", icona: "♻️", nome: "Usato", breve: "Usato", dentro: (g, _s, _d, c) => g === "usato" || /^ritusato/.test(c) },
     /* I RICAMBI SONO UNA FAMIGLIA A SÉ (Luca 01/09: «fanno parte del mondo
        dell'assistenza tecnica, così come display e tutto il resto»). Nel
        gestionale non esistono come categoria: stanno dentro «Accessori» (391)
@@ -3271,7 +3310,7 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
        attaccato al modello: 279 su 291). Il resto dei ricambi, se c'è,
        nell'export non si vede — e inventarlo sarebbe peggio che dirlo. */
     {
-        id: "ricambi", icona: "🧩", nome: "Ricambi", dentro: (_g, _s, d, c) =>
+        id: "ricambi", icona: "🧩", nome: "Ricambi", breve: "Ricambi", dentro: (_g, _s, d, c) =>
             /^\s*display|^\s*glue\b|display (iphone|samsung|per|redmi|xiaomi)|nudo batterie/.test(d)
             || /^batt/.test(c)
             /* `DSP…` È COME IL NEGOZIO SCRIVE «DISPLAY» (misurato 01/09 su
@@ -3282,10 +3321,10 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
                non lo trova chi ripara. Sta qui, sopra Accessori, apposta. */
             || /^dsp/.test(c) || /^dsp[a-z0-9]/.test(d),
     },
-    { id: "sim", icona: "📶", nome: "SIM ed eSIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
-    { id: "internet", icona: "🛜", nome: "Internet e router", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
-    { id: "indossabili", icona: "⌚", nome: "Wearable e smart device", dentro: (_g, s) => /wearable|smart device|smart pass|iot/.test(s) },
-    { id: "tablet", icona: "💻", nome: "Tablet e computer", dentro: (_g, s) => /tablet|mini pc|console|camera/.test(s) },
+    { id: "sim", icona: "📶", nome: "SIM ed eSIM", breve: "SIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
+    { id: "internet", icona: "🛜", nome: "Internet e router", breve: "Internet", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
+    { id: "indossabili", icona: "⌚", nome: "Wearable e smart device", breve: "Wearable", dentro: (_g, s) => /wearable|smart device|smart pass|iot/.test(s) },
+    { id: "tablet", icona: "💻", nome: "Tablet e computer", breve: "Tablet", dentro: (_g, s) => /tablet|mini pc|console|camera/.test(s) },
     /* UTILITY (Luca 01/09: «questi non sono articoli, questi devono essere
        Utily, cose come acconto ecc»). Dentro il gruppo «SERVIZI» del gestionale
        convivono due cose diverse: i SERVIZI che si vendono davvero — assistenza
@@ -3298,12 +3337,12 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
        suffisso `_GENERICO`. Sta PRIMA di «Servizi» perché quasi tutte hanno
        proprio quel gruppo. */
     {
-        id: "utility", icona: "🧮", nome: "Utility", dentro: (_g, _s, d, c) =>
+        id: "utility", icona: "🧮", nome: "Utility", breve: "Utility", dentro: (_g, _s, d, c) =>
             /^\$/.test(c) || /_generico$/.test(c) || /acconto|caparra|anticipo/.test(d),
     },
-    { id: "servizi", icona: "🧾", nome: "Servizi e ricariche", dentro: (g, s) => /^(servizi|ricariche|kpoint)$/.test(g) || /ricariche|carte servizi|^servizi$/.test(s) },
+    { id: "servizi", icona: "🧾", nome: "Servizi e ricariche", breve: "Servizi", dentro: (g, s) => /^(servizi|ricariche|kpoint)$/.test(g) || /ricariche|carte servizi|^servizi$/.test(s) },
     {
-        id: "accessori", icona: "🧰", nome: "Accessori", dentro: (g, s, _d, c) =>
+        id: "accessori", icona: "🧰", nome: "Accessori", breve: "Accessori", dentro: (g, s, _d, c) =>
             /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s)
             /* `CC…` `CN…` `CP…` SONO COVER E PELLICOLE nel modo in cui le
                scrive il negozio. Misurato: 1.194 codici, 1.015 dei quali il
@@ -3314,7 +3353,7 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
             || /^(cc|cn|cp)[a-z0-9]/.test(c),
     },
 ];
-const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
+const ALTRO = { id: "altro", icona: "📦", nome: "Altro", breve: "Altro" };
 
 /** La famiglia di un articolo. Mai `null`: quello che non si riconosce sta in
  *  «Altro», che è una risposta onesta — nasconderlo no. */
@@ -3338,7 +3377,7 @@ function sottoVoceDalNome(a: Articolo, fam: string): string | null {
  *  stessa emoji: due nomi diversi per la stessa merce e nessuno si fida più
  *  del filtro. È una `function` (non una `const`) apposta — viene chiamata da
  *  `Giacenze`, che nel file sta prima. */
-function etichettaFamiglia(id: string): { icona: string; nome: string } {
+function etichettaFamiglia(id: string): { icona: string; nome: string; breve: string } {
     return FAMIGLIE.find(f => f.id === id) || ALTRO;
 }
 
