@@ -7,6 +7,45 @@ import { formaPagamento } from "@/lib/pos";
 import { validaCoupon, redimiCoupon } from "@/lib/coupons";
 import { repartoFisico } from "@/lib/posRepartoMap";
 
+/* ═══ L'IMEI NON SI TAGLIA MAI A META' ═══════════════════════════════════════
+   Il registratore stampa 38 caratteri per riga, e fino a stasera qui c'era uno
+   `slice(0, 38)` secco. Risultato misurato sugli scontrini VERI del 01/09:
+
+     "Apple iPhone 14 Pro Max 128GB · IMEI 3"        ← 1 cifra su 15
+     "SAMSUNG GALAXY A56 128GB EE · IMEI 350"        ← 3 su 15
+     "XIAOMI REDMI 12C 64GB · IMEI 866257067"        ← 9 su 15
+
+   Quattro scontrini su cinque sono usciti dal negozio con un IMEI mutilato: per
+   il cliente che domani porta il telefono in garanzia quel numero non vale
+   niente, e nel CRM non si ritrova cercandolo.
+
+   LA REGOLA: l'IMEI vince sul nome. Se non ci sta tutto, si accorcia il
+   MODELLO — che e' scritto anche nella vendita, nel magazzino e sulla scatola —
+   e mai il numero. Se accorciando il modello non resta abbastanza da
+   riconoscere cosa si e' venduto, allora l'IMEI si toglie del tutto: intero o
+   niente, mai a meta'.
+
+   Perche' non su due righe, che e' come l'aveva chiesta Luca: la riga
+   descrittiva in piu' e' `printRecMessage messageType="4"`, che su questi RT
+   oggi usiamo SOLO per gli annulli, e i Custom ignorano le opzioni. Mandarlo
+   dentro uno scontrino normale stasera, su 14 registratori di due famiglie
+   diverse e con le casse gia' in sofferenza, si prova prima su una. */
+const RIGA_SCONTRINO = 38;
+const MODELLO_MINIMO = 12;
+
+export function descrizioneScontrino(d: unknown): string {
+    const t = String(d || "ARTICOLO").trim();
+    if (t.length <= RIGA_SCONTRINO) return t;
+    const m = t.match(/^(.*?)\s*[·|-]\s*IMEI\s*([0-9]{8,})$/i);
+    if (m) {
+        const coda = ` · IMEI ${m[2]}`;
+        const spazio = RIGA_SCONTRINO - coda.length;
+        if (spazio >= MODELLO_MINIMO) return (m[1].slice(0, spazio).trim() + coda).slice(0, RIGA_SCONTRINO);
+        return m[1].slice(0, RIGA_SCONTRINO).trim();   // l'IMEI non ci sta: si toglie intero
+    }
+    return t.slice(0, RIGA_SCONTRINO);
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -35,14 +74,6 @@ export async function POST(req: Request) {
         if (!_g.ok) return _g.risposta;
         _sess = _g.sess;
     }
-    /* CHI HA BATTUTO LO SCONTRINO. Si legge dal database con l'id della
-       sessione firmata, non da quello che manda il browser: su un documento
-       fiscale il nome di chi l'ha emesso non lo si prende sulla fiducia. */
-    {
-        const { data } = await supabase.from("app_users").select("full_name").eq("id", _sess?.id || "").maybeSingle();
-        _chiSono = (data as { full_name?: string } | null)?.full_name || null;
-    }
-
     const b: any = await req.json().catch(() => ({}));
     const righe: any[] = Array.isArray(b.items) ? b.items : [];
     if (!righe.length) return NextResponse.json({ error: "carrello vuoto" }, { status: 400 });
@@ -295,7 +326,7 @@ export async function POST(req: Request) {
            resta la possibilità di correggere quando serve. */
         const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")]
             || azDellaMerce || b.azienda || azRicaricheSciolte || defaultAzienda || "__def";
-        const desc = String(r.description || "ARTICOLO").slice(0, 38);
+        const desc = descrizioneScontrino(r.description);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;
         if (!va) { esclusi.push({ description: desc, motivo: "esclusa dallo scontrino" }); continue; }
@@ -341,6 +372,19 @@ export async function POST(req: Request) {
             }, { status: 400 });
         }
         return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), esclusi, testMode });
+    }
+
+    /* CHI HA BATTUTO LO SCONTRINO. Si legge dal database con l'id della
+       sessione firmata, non da quello che manda il browser: su un documento
+       fiscale il nome di chi l'ha emesso non lo si prende sulla fiducia.
+       STA QUI, DOPO IL `dryRun` (revisione 01/09): messo in cima, girava
+       anche sulla verifica preventiva — cioe' due letture in piu' su
+       `app_users` per ogni vendita, in serie, col cliente davanti al banco.
+       Se il giro fallisce non si ferma niente: lo scontrino esce senza il nome
+       dell'operatore, che e' molto meglio di uno scontrino che non esce. */
+    {
+        const { data } = await supabase.from("app_users").select("full_name").eq("id", _sess?.id || "").maybeSingle();
+        _chiSono = (data as { full_name?: string } | null)?.full_name || null;
     }
 
     const paymentDescr = b.paymentDescription || (Number(b.paymentType) === 2 ? "CARTA" : "CONTANTE");

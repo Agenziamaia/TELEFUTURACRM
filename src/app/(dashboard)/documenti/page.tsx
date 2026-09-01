@@ -4,55 +4,88 @@
  *
  * Luca 01/09 sera: «dobbiamo creare una sezione di documenti dentro il lab di
  * vendite, dove mettiamo tutti gli scontrini che un negozio fa, ma anche le
- * fatture. Il senso è dare la possibilità di vedere tutti gli scontrini fatti
- * ai punti vendita: ogni punto vendita vede i suoi, l'amministrazione li vede
- * tutti. Se qualcosa non torna, o non si ricordano se hanno fatto uno
- * scontrino, cliccano e si apre il dettaglio di quello che c'era nel carrello
- * coi dati del cliente. E il punto vendita può fare una richiesta di modifica
- * del pagamento, che arriva in amministrazione.»
+ * fatture. Ogni punto vendita vede i suoi, l'amministrazione li vede tutti. Se
+ * qualcosa non torna, cliccano e si apre il dettaglio di quello che hanno
+ * scontrinato. E il punto vendita può fare una richiesta di modifica del
+ * pagamento, che arriva in amministrazione.»
  *
  * DA DOVE VENGONO I DOCUMENTI. Non da una tabella nuova: dalla coda di stampa
  * (`print_jobs`), che è l'unico posto dove un documento esiste davvero — con
- * dentro l'XML mandato al registratore. Quell'XML è la fonte più fedele che
- * abbiamo: contiene le righe una per una, i reparti IVA e le forme di
- * pagamento ESATTAMENTE come sono finite sulla carta. Una tabella parallela
- * avrebbe potuto divergere dallo scontrino vero; questa no, per costruzione.
+ * dentro l'XML mandato al registratore. Quell'XML contiene le righe una per
+ * una, i reparti IVA e le forme di pagamento ESATTAMENTE come sono finite
+ * sulla carta. Una tabella parallela avrebbe potuto divergere dallo scontrino
+ * vero; questa no, per costruzione.
  *
- * IL DESIGN È QUELLO DI REGISTRA VENDITA (richiesta di Luca: «siamo dentro il
- * lab delle vendite, dobbiamo andare in continuità»): stessa cassetta di
- * classi `rv*`, stessi campi, stessa tabella. I riquadri in alto sono quelli
- * del Magazzino — quelli che filtrano premendoli — perché lì la forma è già
- * stata provata sul campo oggi.
+ * ═══ COSA HA CAMBIATO LA REVISIONE DI STASERA ═══════════════════════════════
+ * Due agenti — uno sulla sostanza, uno sul disegno — hanno trovato quindici
+ * difetti su misura. I tre che contano davvero, e come sono chiusi qui:
+ *
+ *  ① CHI NON HA NEGOZI VEDEVA TUTTO. `if (!seesAll && stores.length)`: con la
+ *    lista vuota il filtro non veniva applicato e la query tornava l'intero
+ *    parco. Non è teorico — c'è un utente attivo con zero negozi assegnati che
+ *    vedeva tutti e 14 i punti vendita. Sotto non c'è nessuna rete: la policy
+ *    di `print_jobs` è «basta essere loggati». Ora si fallisce CHIUSI: lista
+ *    vuota significa «non ho negozi», non «non ho restrizioni».
+ *
+ *  ② I GEMELLI SI SPEZZAVANO. Lo scontrino è archiviato sotto il negozio
+ *    PROPRIETARIO del registratore, non sotto quello che vende: chi è
+ *    assegnato al solo Collatina W3 vedeva 3 documenti su 6 fatti dal suo
+ *    stesso bancone. L'ambito si espande ora ai gemelli di sede fisica, come
+ *    fa già tutto il resto della pagina.
+ *
+ *  ③ IL NUMERO NON C'È SU META' DEL PARCO. Sui registratori Custom l'esito è
+ *    `{"ok":true,"msg":"fiscale stampato","matricola":"…"}`: il numero non lo
+ *    riporta — misurato su 224 documenti veri, zero. Non lo si inventa e non
+ *    si finge: quei documenti si cercano per matricola, ora, e la pagina dice
+ *    apertamente perché il numero manca.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { useVisibleStores, stessoMagazzino } from "@/lib/visibleStores";
-import { SelectMulti } from "@/components/SelectPersona";
-import { FileDown, RefreshCw } from "lucide-react";
+import { useVisibleStores, stessoMagazzino, negozioInValues } from "@/lib/visibleStores";
+import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
+import { FileDown, RefreshCw, Receipt, Loader2 } from "lucide-react";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
-const eur = (n: number | null | undefined) =>
-    n == null ? "—" : "€ " + Number(n).toFixed(2).replace(".", ",");
+/** Gli euro come li scrive il resto del CRM: col punto delle migliaia. Prima
+ *  questa tabella diceva «€ 1249,00» e quella del Magazzino «1.249,00 €». */
+const eur = (n: number | null | undefined) => n == null ? "—"
+    : Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 const eurTondo = (n: number) =>
     new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(n) || 0);
 const gg = (s: string | null) => (s ? new Date(s).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—");
 const ora = (s: string | null) => (s ? new Date(s).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "");
+/** Il corpo del numero segue la LUNGHEZZA DELLA STRINGA, non la cifra: è la
+ *  regola scritta nella cassetta (globals 985), ed è la stessa che usa il
+ *  Magazzino. Decidendo sul valore, «1.000» usciva a 17px invece che a 24. */
+const corpoNumero = (t: string) => t.length >= 11 ? "rvNum-s" : t.length >= 8 ? "rvNum-m" : undefined;
+
+/* GIORNO LOCALE → ISTANTE UTC. Il database vive in UTC: chiedere
+   `>= '2026-09-01T00:00:00'` significa chiedere dalle 02:00 di Roma. Con gli
+   orari di negozio non si nota, ma la prima chiusura fatta a mezzanotte
+   finirebbe nel giorno sbagliato — e una chiusura nel giorno sbagliato è un
+   problema fiscale, non estetico. */
+const inizioGiorno = (d: string) => new Date(`${d}T00:00:00`).toISOString();
+const fineGiorno = (d: string) => new Date(`${d}T23:59:59.999`).toISOString();
 
 /* ── COSA C'È DENTRO UN DOCUMENTO ────────────────────────────────────────────
    L'XML del registratore si legge una volta sola, qui, e diventa righe e
-   pagamenti. È volutamente tollerante: un documento vecchio, o di un modello
-   diverso, non deve far sparire la riga dall'elenco — al massimo si apre e
-   dice che il dettaglio non c'è. */
+   pagamenti. Due dialetti, non uno:
+     · FISCALE     <printRecItem …/> + <printRecTotal …/>
+     · NON FISCALE <printerNonFiscal><printNormal data="E.Telefono  x1  EUR 1.00"/>
+   Il secondo prima non veniva letto affatto: 73 documenti su 224 si aprivano
+   dicendo «dettaglio non disponibile» mentre il dettaglio era lì dentro. */
 type RigaDoc = { descrizione: string; quantita: number; prezzo: number; reparto: number | null };
 type PagDoc = { descrizione: string; importo: number; tipo: number };
 
-function leggiXml(xml: string | null): { righe: RigaDoc[]; pagamenti: PagDoc[] } {
+const dec = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+
+function leggiXml(xml: string | null): { righe: RigaDoc[]; pagamenti: PagDoc[]; diagnostica: boolean } {
     const righe: RigaDoc[] = [], pagamenti: PagDoc[] = [];
-    if (!xml) return { righe, pagamenti };
-    const dec = (s: string) => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+    if (!xml) return { righe, pagamenti, diagnostica: false };
     const attr = (t: string, n: string) => { const m = t.match(new RegExp(`${n}="([^"]*)"`)); return m ? dec(m[1]) : ""; };
+
     for (const m of xml.matchAll(/<printRecItem\b[^>]*\/>/g)) {
         const t = m[0];
         righe.push({
@@ -66,12 +99,37 @@ function leggiXml(xml: string | null): { righe: RigaDoc[]; pagamenti: PagDoc[] }
         const t = m[0];
         pagamenti.push({ descrizione: attr(t, "description"), importo: Number(attr(t, "payment")) || 0, tipo: Number(attr(t, "paymentType")) || 0 });
     }
-    return { righe, pagamenti };
+
+    /* IL NON FISCALE. Le righe sono testo battuto a macchina: si prende il
+       prezzo in coda, la quantità dal «xN», e quel che resta è la voce. */
+    let diagnostica = false;
+    if (!righe.length) {
+        for (const m of xml.matchAll(/<printNormal\b[^>]*\/>/g)) {
+            const t = dec(m[0].match(/data="([^"]*)"/)?.[1] || "");
+            if (!t.trim()) continue;
+            /* LE PROVE DI COLLEGAMENTO NON SONO DOCUMENTI: «== CHECK COLLATINA
+               W3 ==» è il tasto che verifica se la cassa risponde. In elenco
+               sembravano scontrini rotti — totale «—», nessun numero. */
+            if (/^\s*=+\s*CHECK/i.test(t)) { diagnostica = true; continue; }
+            const p = t.match(/EUR\s*([0-9]+(?:[.,][0-9]+)?)\s*$/i);
+            const q = t.match(/\sx\s*([0-9]+)\b/i);
+            const desc = t.replace(/EUR\s*[0-9]+(?:[.,][0-9]+)?\s*$/i, "").replace(/\sx\s*[0-9]+\b/i, "").trim();
+            if (!desc) continue;
+            righe.push({
+                descrizione: desc,
+                quantita: q ? Number(q[1]) || 1 : 1,
+                prezzo: p ? Number(p[1].replace(",", ".")) || 0 : 0,
+                reparto: null,
+            });
+        }
+    }
+    return { righe, pagamenti, diagnostica };
 }
 
-/** Il numero del documento, che il registratore restituisce nell'esito e ogni
- *  famiglia scrive a modo suo: il Custom in chiaro («fiscale stampato (n. 12)»),
- *  l'Epson dentro il suo XML di risposta. Se non c'è, non si inventa. */
+/** Il numero del documento. L'Epson lo riporta nel suo XML di risposta; il
+ *  Custom NON lo riporta affatto (verificato su 224 documenti: zero). Se non
+ *  c'è, non si inventa — e la pagina lo dice, invece di lasciare una colonna
+ *  misteriosamente vuota su nove negozi su quattordici. */
 function numeroDoc(result: string | null): string | null {
     if (!result) return null;
     const a = result.match(/\(n\.\s*([0-9-]+)\)/i);
@@ -82,14 +140,46 @@ function numeroDoc(result: string | null): string | null {
     return c ? c[1] : null;
 }
 
+/** La matricola del registratore. Il Custom la mette nel suo JSON, l'Epson in
+ *  `<serialNumber>`: prima si leggeva solo la prima, e sui documenti Epson non
+ *  restava NIENTE con cui cercare — né numero né matricola. */
+function matricolaDoc(result: string | null): string | null {
+    if (!result) return null;
+    return result.match(/"matricola"\s*:\s*"([^"]+)"/)?.[1]
+        || result.match(/<serialNumber>([^<]+)</i)?.[1]?.trim()
+        || null;
+}
+
+/* ── COM'È ANDATA DAVVERO ────────────────────────────────────────────────────
+   `error` non vuol dire «non è uscito». Su 46 fallimenti, 40 hanno questo
+   esito: «esito mai ricevuto: l'agente del negozio ha ritirato il lavoro ma
+   non ha mai riportato com'è andata». Significa ESITO IGNOTO — la carta può
+   benissimo essere uscita. Dire «non uscito» a un negozio che sta cercando di
+   capire se ha fatto uno scontrino è la risposta sbagliata, e su quella
+   risposta uno rifà lo scontrino e batte due volte. */
+type Esito = { et: string; tono: string; spiega: string };
+function esitoDi(stato: string, result: string | null): Esito | null {
+    if (stato === "done") return null;
+    if (stato === "pending") return { et: "in coda", tono: "rvBadge-warn", spiega: "è ancora in attesa che la cassa lo ritiri." };
+    if (stato === "sent") return { et: "in stampa", tono: "rvBadge-warn", spiega: "la cassa l'ha ritirato e sta stampando: fra poco si saprà com'è andata." };
+    if (stato === "error") {
+        if (/esito mai ricevuto|chiuso d'ufficio/i.test(result || ""))
+            return { et: "esito ignoto", tono: "rvBadge-warn", spiega: "la cassa l'ha ritirato ma non ha mai detto com'è andata: la carta può essere uscita lo stesso. Prima di rifarlo, guarda lo scontrino." };
+        return { et: "non uscito", tono: "rvBadge-ko", spiega: "la cassa ha risposto con un errore: il documento non è stato emesso." };
+    }
+    return { et: stato, tono: "rvBadge-empty", spiega: "" };
+}
+
 type Doc = {
     id: string;
     quando: string;
     negozio: string;
     tipo: "scontrino" | "fattura";
     fiscale: boolean;
+    storno: boolean;
     prova: boolean;
     stato: string;
+    result: string | null;
     totale: number | null;
     numero: string | null;
     matricola: string | null;
@@ -102,6 +192,7 @@ type Doc = {
 };
 
 const NOME_PAG: Record<number, string> = { 0: "Contanti", 1: "Assegno", 2: "Carta / elettronico", 3: "Ticket", 4: "Non riscosso" };
+const TETTO = 3000;
 
 export default function DocumentiPage() {
     const { user } = useAuth();
@@ -110,51 +201,91 @@ export default function DocumentiPage() {
     const [docs, setDocs] = useState<Doc[] | null>(null);
     const [errore, setErrore] = useState("");
     const [caricando, setCaricando] = useState(false);
+    const [troncato, setTroncato] = useState(false);
+    const [tuttiNegozi, setTuttiNegozi] = useState<string[]>([]);
 
     /* ── I FILTRI ──────────────────────────────────────────────────────────── */
     const [tipo, setTipo] = useState<"" | "scontrino" | "fattura">("");
     const [scelti, setScelti] = useState<string[]>([]);
-    const [cerca, setCerca] = useState("");        // numero documento o IMEI o descrizione
+    const [cerca, setCerca] = useState("");
     const [utenti, setUtenti] = useState<string[]>([]);
-    const oggi = new Date().toISOString().slice(0, 10);
+    const oggi = new Date().toLocaleDateString("sv-SE");
     const [dal, setDal] = useState(oggi);
     const [al, setAl] = useState(oggi);
     const [aperto, setAperto] = useState<string | null>(null);
+    const [sort, setSort] = useState<{ col: number; desc: boolean }>({ col: 0, desc: true });
 
-    /* ── LA LETTURA ────────────────────────────────────────────────────────
-       Si legge per INTERVALLO DI DATE, non «gli ultimi N»: un negozio che
-       cerca lo scontrino di martedì non deve scoprire che l'elenco si ferma a
-       ieri. Il filtro dei negozi è quello della visibilità dell'utente, che è
-       la stessa regola di tutto il resto del CRM. */
+    /* CHI ARRIVA DA UNA TASK ATTERRA SUL DOCUMENTO, non sull'elenco di oggi.
+       La richiesta di correzione porta con sé id e data: senza, Claudia apriva
+       «/documenti» e trovava la giornata corrente dei SUOI negozi — cioè non il
+       documento. È lo stesso errore già corretto il 31/08 sul bonifico. */
+    useEffect(() => {
+        const p = new URLSearchParams(window.location.search);
+        const d = p.get("doc"), g = p.get("giorno");
+        if (g && /^\d{4}-\d{2}-\d{2}$/.test(g)) { setDal(g); setAl(g); }
+        if (d) setAperto(d);
+    }, []);
+
+    /* TUTTI I NOMI DEI NEGOZI, che servono per trovare i gemelli di sede
+       fisica: «Collatina W3» e «Collatina Multi» sono lo stesso bancone. */
+    useEffect(() => {
+        supabase.from("stores").select("name").order("name").then(({ data }) => {
+            setTuttiNegozi(((data ?? []) as { name: string }[]).map(r => r.name).filter(Boolean));
+        });
+    }, []);
+
+    /* L'AMBITO: i negozi visibili PIÙ i loro gemelli. `null` = nessun limite
+       (solo per chi vede tutto). Un array VUOTO è un limite legittimo, e la
+       query deve rispettarlo tornando zero righe. */
+    const ambito = useMemo<string[] | null>(() => {
+        if (seesAll) return null;
+        const out = new Set(negoziVisibili);
+        negoziVisibili.forEach(v => tuttiNegozi.forEach(n => { if (stessoMagazzino(n, v)) out.add(n); }));
+        return negozioInValues(Array.from(out));
+    }, [seesAll, negoziVisibili, tuttiNegozi]);
+
+    /* ── LA LETTURA ──────────────────────────────────────────────────────────
+       Per INTERVALLO DI DATE, non «gli ultimi N»: un negozio che cerca lo
+       scontrino di martedì non deve scoprire che l'elenco si ferma a ieri. */
     const carica = useCallback(async () => {
         if (!visibilitaPronta) return;
         setCaricando(true); setErrore("");
         try {
             let q = supabase.from("print_jobs")
                 .select("id, negozio, kind, status, result, request_xml, meta, created_at")
-                .in("kind", ["fiscal_receipt", "non_fiscal"])
-                .gte("created_at", `${dal}T00:00:00`)
-                .lte("created_at", `${al}T23:59:59`)
+                .in("kind", ["fiscal_receipt", "non_fiscal", "fiscal_void"])
+                .gte("created_at", inizioGiorno(dal))
+                .lte("created_at", fineGiorno(al))
                 .order("created_at", { ascending: false })
-                .limit(2000);
-            if (!seesAll && negoziVisibili.length) q = q.in("negozio", negoziVisibili);
+                .limit(TETTO);
+            /* SI FALLISCE CHIUSI. Senza l'`if` sulla lunghezza: lista vuota →
+               `.in("negozio", [])` → zero righe, che è la risposta giusta per
+               chi non ha negozi. Prima, zero negozi significava vedere tutto. */
+            if (ambito) q = q.in("negozio", ambito);
             const { data, error } = await q;
             if (error) throw error;
             type Riga = { id: string; negozio: string; kind: string; status: string; result: string | null; request_xml: string | null; meta: Record<string, unknown> | null; created_at: string };
-            setDocs(((data ?? []) as Riga[]).map((r) => {
+            const grezze = (data ?? []) as Riga[];
+            setTroncato(grezze.length >= TETTO);
+            /* LE PROVE DI COLLEGAMENTO FUORI SUBITO: «== CHECK COLLATINA W3 ==»
+               e' il tasto che verifica se la cassa risponde, non un documento. */
+            const lette = grezze.map(r => ({ r, x: leggiXml(r.request_xml) })).filter(o => !o.x.diagnostica);
+            setDocs(lette.map(({ r, x }) => {
                 const m = (r.meta || {}) as Record<string, unknown>;
-                const { righe, pagamenti } = leggiXml(r.request_xml);
+                const { righe, pagamenti } = x;
                 return {
                     id: r.id,
                     quando: r.created_at,
                     negozio: r.negozio,
                     tipo: "scontrino" as const,
-                    fiscale: r.kind === "fiscal_receipt",
+                    fiscale: r.kind !== "non_fiscal",
+                    storno: r.kind === "fiscal_void",
                     prova: m.testMode === true,
                     stato: r.status,
+                    result: r.result,
                     totale: m.total != null ? Number(m.total) : (righe.reduce((s, x) => s + x.prezzo * x.quantita, 0) || null),
                     numero: numeroDoc(r.result),
-                    matricola: (r.result || "").match(/"matricola"\s*:\s*"([^"]+)"/)?.[1] || null,
+                    matricola: matricolaDoc(r.result),
                     cliente: (m.cliente as string) || null,
                     operatore: (m.operatore as string) || null,
                     contrattoId: (m.contrattoId as string) || null,
@@ -165,17 +296,17 @@ export default function DocumentiPage() {
         } catch (e) {
             setErrore((e as Error)?.message || "non sono riuscito a leggere i documenti");
         } finally { setCaricando(false); }
-    }, [dal, al, seesAll, negoziVisibili, visibilitaPronta]);
+    }, [dal, al, ambito, visibilitaPronta]);
 
     useEffect(() => { carica(); }, [carica]);
 
-    /* I NEGOZI CHE SI POSSONO SCEGLIERE sono quelli visibili all'utente: chi ne
-       ha tre in assegnazione ne sceglie fra tre, l'amministrazione fra tutti. */
+    /* I NEGOZI CHE SI POSSONO SCEGLIERE sono quelli visibili all'utente, gemelli
+       compresi: chi ne ha tre ne sceglie fra tre, l'amministrazione fra tutti. */
     const negozi = useMemo(() => {
-        const s = new Set<string>(negoziVisibili);
+        const s = new Set<string>(seesAll ? tuttiNegozi : (ambito || []));
         (docs || []).forEach(d => s.add(d.negozio));
         return Array.from(s).filter(Boolean).sort();
-    }, [negoziVisibili, docs]);
+    }, [seesAll, tuttiNegozi, ambito, docs]);
 
     const miei = useMemo(() =>
         user?.negozio ? negozi.filter(n => stessoMagazzino(n, user.negozio as string)) : [], [negozi, user?.negozio]);
@@ -208,29 +339,48 @@ export default function DocumentiPage() {
         return true;
     }, [scelti, utenti, cerca]);
 
-    /* I RIQUADRI CONTANO PRIMA DEL PROPRIO FILTRO — la regola di Magazzino e di
-       Gestione Usati: un riquadro spento deve dire quanti ce ne sarebbero, se no
-       nessuno lo preme mai. */
+    /* I RIQUADRI CONTANO PRIMA DEL PROPRIO FILTRO — la regola di Magazzino: un
+       riquadro spento deve dire quanti ce ne sarebbero, se no non lo preme
+       nessuno. */
     const base = useMemo(() => (docs || []).filter(passa), [docs, passa]);
     const conta = useMemo(() => {
         const s = base.filter(d => d.tipo === "scontrino");
         const f = base.filter(d => d.tipo === "fattura");
-        const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova).reduce((a, d) => a + (d.totale || 0), 0);
+        const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova).reduce((a, d) => a + (d.totale || 0) * (d.storno ? -1 : 1), 0);
         return {
             scontrini: s.length, fatture: f.length,
             valScontrini: somma(s), valFatture: somma(f),
-            falliti: base.filter(d => d.stato === "error").length,
+            incerti: base.filter(d => d.stato !== "done").length,
+            senzaNumero: base.filter(d => d.stato === "done" && !d.numero).length,
         };
     }, [base]);
 
-    const righe = useMemo(() => (tipo ? base.filter(d => d.tipo === tipo) : base), [base, tipo]);
+    const righe = useMemo(() => {
+        const l = tipo ? base.filter(d => d.tipo === tipo) : base;
+        const chiave = (d: Doc): string | number => {
+            switch (sort.col) {
+                case 1: return d.negozio || "";
+                case 2: return d.numero || d.matricola || "";
+                case 3: return d.righe.map(r => r.descrizione).join(" ");
+                case 4: return d.operatore || "";
+                case 5: return d.totale ?? -1;
+                default: return d.quando;
+            }
+        };
+        return [...l].sort((a, b) => {
+            const x = chiave(a), y = chiave(b);
+            const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "it");
+            return sort.desc ? -c : c;
+        });
+    }, [base, tipo, sort]);
 
     const esporta = () => {
         const righeCsv = [
-            ["Data", "Ora", "Negozio", "Tipo", "Numero", "Totale €", "Cliente", "Operatore", "Stato", "Voci"].join(";"),
-            ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio, d.fiscale ? "Fiscale" : "Non fiscale",
-                d.numero || "", String(d.totale ?? "").replace(".", ","), d.cliente || "", d.operatore || "",
-                d.stato, d.righe.map(r => r.descrizione).join(" + ")].join(";")),
+            ["Data", "Ora", "Negozio", "Tipo", "Numero", "Matricola", "Totale €", "Cliente", "Operatore", "Esito", "Voci"].join(";"),
+            ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio,
+                d.storno ? "Annullo" : d.fiscale ? "Fiscale" : "Non fiscale",
+                d.numero || "", d.matricola || "", String(d.totale ?? "").replace(".", ","), d.cliente || "", d.operatore || "",
+                esitoDi(d.stato, d.result)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
         ].join("\n");
         const a = document.createElement("a");
         a.href = URL.createObjectURL(new Blob(["﻿" + righeCsv], { type: "text/csv;charset=utf-8" }));
@@ -239,8 +389,8 @@ export default function DocumentiPage() {
 
     /* ── LA RICHIESTA DI CORREZIONE ───────────────────────────────────────────
        Luca: «il punto vendita può fare una richiesta di modifica del pagamento
-       — in questo caso ha esito carta e si è sbagliato — cambiandola per
-       contanti; questa modifica arriva in amministrazione».
+       — ha esito carta e si è sbagliato — cambiandola per contanti; questa
+       modifica arriva in amministrazione».
        Il documento NON si tocca: uno scontrino emesso è emesso. Si apre una
        richiesta, e chi di dovere decide. È successo davvero oggi a Merulana:
        la cassa dava errore, il venditore ha battuto «carta» per far uscire lo
@@ -250,63 +400,145 @@ export default function DocumentiPage() {
     const [perche, setPerche] = useState("");
     const [inviando, setInviando] = useState(false);
     const [fatta, setFatta] = useState("");
+    const [fallita, setFallita] = useState("");
 
     const inviaRichiesta = async () => {
         if (!chiedendo || inviando) return;
-        setInviando(true);
+        setInviando(true); setFatta(""); setFallita("");
         try {
             const vecchia = chiedendo.pagamenti.map(p => `${p.descrizione} ${eur(p.importo)}`).join(" + ") || "—";
+            const giorno = new Date(chiedendo.quando).toLocaleDateString("sv-SE");
             const { error } = await supabase.from("admin_tasks").insert({
                 tipo: "correzione_pagamento",
                 titolo: `🧾 ${chiedendo.negozio}: correggere il pagamento di uno scontrino da ${eur(chiedendo.totale)}`,
+                /* IL DETTAGLIO PORTA LA CHIAVE CERTA. Il numero non c'è sui
+                   Custom, l'ora da sola non basta (a Merulana alle 17:37 ci
+                   sono più documenti): l'id del lavoro di stampa è l'unica
+                   cosa che identifica un documento senza ambiguità. */
                 dettaglio: `${user?.name || "un operatore"} chiede di correggere la forma di pagamento del documento del `
-                    + `${gg(chiedendo.quando)} alle ${ora(chiedendo.quando)}${chiedendo.numero ? ` (n. ${chiedendo.numero})` : ""}.\n`
+                    + `${gg(chiedendo.quando)} alle ${ora(chiedendo.quando)}`
+                    + `${chiedendo.numero ? ` (n. ${chiedendo.numero})` : chiedendo.matricola ? ` (cassa ${chiedendo.matricola})` : ""}.\n`
                     + `Sullo scontrino risulta: ${vecchia}.\nIl cliente ha invece pagato: ${nuovaForma}.\n`
                     + (perche.trim() ? `Motivo: ${perche.trim()}\n` : "")
-                    + `Voci: ${chiedendo.righe.map(r => `${r.descrizione} ${eur(r.prezzo)}`).join(" · ")}`,
-                link: "/documenti",
+                    + `Voci: ${chiedendo.righe.map(r => `${r.descrizione} ${eur(r.prezzo)}`).join(" · ")}\n`
+                    + `Documento: ${chiedendo.id}`,
+                link: `/documenti?doc=${encodeURIComponent(chiedendo.id)}&giorno=${giorno}`,
                 target_role: "amministrativo",
                 created_by: user?.name || null,
             });
             if (error) throw error;
-            setFatta("Richiesta inviata all'amministrazione.");
+            setFatta("Richiesta inviata all'amministrazione: la trovano nelle loro cose da fare, col documento allegato.");
             setChiedendo(null); setPerche("");
         } catch (e) {
-            setFatta("Non sono riuscito a inviarla: " + ((e as Error)?.message || "riprova"));
+            setFallita("Non sono riuscito a inviarla: " + ((e as Error)?.message || "riprova"));
         } finally { setInviando(false); }
     };
 
     const QUADRI = [
-        { id: "" as const, icona: "🧾", et: "Tutti i documenti", n: conta.scontrini + conta.fatture, val: conta.valScontrini + conta.valFatture, tinta: "rvT-indaco" },
+        { id: "" as const, icona: "🧾", et: "Tutti", n: conta.scontrini + conta.fatture, val: conta.valScontrini + conta.valFatture, tinta: "rvT-indaco" },
         { id: "scontrino" as const, icona: "🧾", et: "Scontrini", n: conta.scontrini, val: conta.valScontrini, tinta: "rvT-verde" },
         { id: "fattura" as const, icona: "📄", et: "Fatture", n: conta.fatture, val: conta.valFatture, tinta: "rvT-ciano" },
     ];
+    const COLONNE = ["Quando", "Punto vendita", "Documento", "Contenuto", "Operatore", "Totale"];
+
+    /* IL DETTAGLIO, che si apre DENTRO la riga: un pannello in fondo alla
+       tabella, con trecento righe caricate, compare a migliaia di pixel dalla
+       riga che l'ha aperto — cioè fuori schermo. */
+    const dettaglio = (d: Doc) => {
+        const es = esitoDi(d.stato, d.result);
+        return (
+            <div className="rvDett">
+                {es && (
+                    <div className={cn("rvNota", es.tono === "rvBadge-ko" ? "rvNota-ko" : "rvNota-att")}>
+                        <div className="rvNota-t">Questo documento è «{es.et}»</div>
+                        <div className="rvNota-s">{es.spiega}</div>
+                        {d.result && <div className="rvTab-min">La cassa ha risposto: {d.result.slice(0, 300)}</div>}
+                    </div>
+                )}
+                <div className="rvDettT">
+                    Cosa è stato scontrinato
+                    {d.matricola ? ` · cassa ${d.matricola}` : ""}
+                    {d.cliente ? ` · cliente ${d.cliente}` : ""}
+                </div>
+                {d.righe.length ? d.righe.map((r, i) => (
+                    <div key={i} className="rvDettR">
+                        <span>{r.descrizione}</span>
+                        {r.quantita > 1 && <span className="rvTab-min">× {r.quantita}</span>}
+                        {r.reparto != null && <span className="rvBadge rvBadge-acc">reparto {r.reparto}</span>}
+                        <span className="rvDove-fine">{eur(r.prezzo * r.quantita)}</span>
+                    </div>
+                )) : <div className="rvTab-min">Di questo documento non abbiamo il dettaglio delle righe.</div>}
+
+                <div className="rvDettT mt-2">Come è stato pagato</div>
+                {d.pagamenti.length ? d.pagamenti.map((p, i) => (
+                    <div key={i} className="rvDettR">
+                        <span>{p.descrizione || NOME_PAG[p.tipo] || "—"}</span>
+                        <span className="rvTab-min">{NOME_PAG[p.tipo] || `tipo ${p.tipo}`}</span>
+                        <span className="rvDove-fine">{eur(p.importo)}</span>
+                    </div>
+                )) : (
+                    <div className="rvTab-min">
+                        {d.fiscale ? "Nessuna forma di pagamento registrata." : "I documenti non fiscali non registrano la forma di pagamento."}
+                    </div>
+                )}
+
+                <div className="rvPillRow mt-2">
+                    {d.contrattoId && (
+                        <a href={`/ricerca-vendite?id=${encodeURIComponent(d.contrattoId)}`} className="rvPill rvPill-sm">
+                            ↗ Apri la vendita
+                        </a>
+                    )}
+                    {/* LA CORREZIONE SI CHIEDE SOLO SU UN DOCUMENTO USCITO: su
+                        uno mai emesso, o di prova, non c'è niente da correggere
+                        — e la richiesta farebbe perdere tempo a due persone. */}
+                    {d.stato === "done" && !d.prova && d.fiscale ? (
+                        <button onClick={(e) => { e.stopPropagation(); setChiedendo(d); setNuovaForma("Contanti"); setFatta(""); setFallita(""); }}
+                            className="rvPill rvPill-sm">✏️ Chiedi la correzione del pagamento</button>
+                    ) : (
+                        <span className="rvTab-min">
+                            {d.prova ? "Documento di prova: non c'è niente da correggere."
+                                : !d.fiscale ? "Documento non fiscale: la forma di pagamento non c'è."
+                                    : "Documento non emesso: non c'è niente da correggere."}
+                        </span>
+                    )}
+                </div>
+            </div>
+        );
+    };
 
     return (
-        <div className="rvWrap">
-            <div className="rvBox">
-                <div className="rvTitolo">
-                    <h2>🧾 Documenti emessi</h2>
-                    <p>Gli scontrini e le fatture dei punti vendita. Apri un documento per vedere cosa c&apos;era nel carrello.</p>
+        <div className="max-w-[1500px]">
+            <div className="rvTesta">
+                <h1 className="rvTit"><Receipt size={25} /> Documenti</h1>
+                <div className="rvPillRow">
+                    <button onClick={carica} disabled={caricando} className="rvPill rvPill-sm">
+                        <RefreshCw size={13} className="inline-block align-[-2px] mr-1" />{caricando ? "carico…" : "aggiorna"}
+                    </button>
+                    <button onClick={esporta} disabled={!righe.length} className="rvAzione rvAzione-sm">
+                        <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
+                    </button>
                 </div>
+            </div>
 
-                {/* ═══ I RIQUADRI ═══ premendone uno si vede solo quello. Il numero
-                    grande dice quante righe vedrai; sotto, quanto valgono i
-                    documenti riusciti e non di prova. */}
-                <div className="rvCampo rvCampo-flex mt-3"><span className="rvLab">Cosa è stato emesso</span>
+            <div className="rvBox">
+                {/* ═══ I RIQUADRI ═══ premendone uno si vede solo quello. */}
+                <div className="rvCampo rvCampo-flex"><span className="rvLab">Cosa è stato emesso</span>
                     <div className="rvRapidoG rvRapidoG-kpi">
-                        {QUADRI.map(q => (
-                            <button key={q.id || "tutti"} type="button" onClick={() => setTipo(t => (t === q.id ? "" : q.id) as typeof tipo)}
-                                className={cn("rvRapido", q.tinta, tipo === q.id && "rvRapido-on", !q.n && tipo !== q.id && "rvRapido-off")}>
-                                <em className={q.n > 999 ? "rvNum-s" : "rvNum-m"}>{q.n.toLocaleString("it-IT")}</em>
-                                <b>{q.icona} {q.et}{tipo === q.id ? " ✓" : ""}</b>
-                                <small>{eurTondo(q.val)} incassati</small>
-                            </button>
-                        ))}
+                        {QUADRI.map(q => {
+                            const t = q.n.toLocaleString("it-IT");
+                            return (
+                                <button key={q.id || "tutti"} type="button" onClick={() => setTipo(x => (x === q.id ? "" : q.id) as typeof tipo)}
+                                    className={cn("rvRapido", q.tinta, tipo === q.id && "rvRapido-on", !q.n && tipo !== q.id && "rvRapido-off")}>
+                                    <em className={corpoNumero(t)}>{t}</em>
+                                    <b>{q.icona} {q.et}</b>
+                                    <small>{eurTondo(q.val)} incassati</small>
+                                </button>
+                            );
+                        })}
                     </div>
                     <div className="rvHint">
                         I valori contano solo i documenti riusciti e non di prova.
-                        {conta.falliti > 0 ? ` ${conta.falliti} non sono usciti dalla stampante: restano in elenco perché il tentativo c'è stato.` : ""}
+                        {conta.incerti > 0 ? ` ${conta.incerti} non risultano emessi: restano in elenco perché il tentativo c'è stato — apri la riga per sapere cos'ha risposto la cassa.` : ""}
                     </div>
                 </div>
 
@@ -314,10 +546,10 @@ export default function DocumentiPage() {
                 <div className="rvBarra mt-3">
                     <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
                         <input value={cerca} onChange={e => setCerca(e.target.value)} className="rvIn"
-                            placeholder="numero documento, IMEI, articolo o cliente — l'IMEI puoi spararlo col lettore" /></label>
+                            placeholder="numero, IMEI, articolo o cliente" /></label>
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Punto vendita</span>
                         <SelectMulti className="rvIn" values={scelti} onChange={setScelti} opzioni={negozi}
-                            maxVoci={30} tuttiLabel="🌐 Tutti i miei negozi" placeholder="vuoto = tutti quelli che vedo" /></div>
+                            maxVoci={30} tuttiLabel="🌐 Tutti i miei negozi" placeholder="tutti quelli che vedo" /></div>
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
                         <SelectMulti className="rvIn" values={utenti} onChange={setUtenti} opzioni={operatori}
                             maxVoci={30} tuttiLabel="Tutti" placeholder="chiunque" /></div>
@@ -327,132 +559,117 @@ export default function DocumentiPage() {
                         <input type="date" value={al} min={dal} onChange={e => setAl(e.target.value)} className="rvIn" /></label>
                     <button onClick={() => { setTipo(""); setCerca(""); setUtenti([]); setScelti(miei); setDal(oggi); setAl(oggi); }}
                         className="rvPill rvPill-sm" title="Rimette tutto com'è entrando: i miei negozi, oggi">↺ Reset</button>
-                    <button onClick={carica} disabled={caricando} className="rvPill rvPill-sm">
-                        <RefreshCw size={13} className="inline-block align-[-2px] mr-1" />{caricando ? "carico…" : "aggiorna"}
-                    </button>
-                    <button onClick={esporta} disabled={!righe.length} className="rvAzione rvAzione-sm">
-                        <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
-                    </button>
                 </div>
+                <div className="rvHint">L&apos;IMEI puoi spararlo col lettore dentro «Cerca»: lo trova dentro le voci dello scontrino.</div>
 
-                {errore && <div className="rvNota rvNota-ko mt-3">{errore}</div>}
-                {fatta && <div className="rvNota mt-3">{fatta}</div>}
+                {errore && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-t">Non sono riuscito a leggere i documenti</div><div className="rvNota-s">{errore}</div></div>}
+                {fatta && <div className="rvNota rvNota-info mt-3"><div className="rvNota-t">✓ Richiesta inviata</div><div className="rvNota-s">{fatta}</div></div>}
+                {fallita && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-t">Richiesta non inviata</div><div className="rvNota-s">{fallita}</div></div>}
+
+                {/* ═══ LE FATTURE ═══ la spiegazione sta PRIMA della tabella: chi
+                    preme «Fatture» e trova vuoto deve leggere subito perché, non
+                    scoprirlo in fondo alla pagina dopo aver cambiato le date. */}
+                {tipo === "fattura" && !conta.fatture && (
+                    <div className="rvNota rvNota-att mt-3">
+                        <div className="rvNota-t">Le fatture non sono ancora emesse dal CRM</div>
+                        <div className="rvNota-s">
+                            Il posto è questo e il filtro le aspetta: manca la parte che le crea —
+                            numerazione, dati fiscali del cliente e invio allo SdI. Non dipende dalle
+                            date: allargarle non farà comparire niente.
+                        </div>
+                    </div>
+                )}
 
                 {/* ═══ L'ELENCO ═══ */}
-                <div className="rvTabBox mt-3">
-                    <table className="rvTab">
-                        <thead>
-                            <tr>
-                                <th>Quando</th><th>Punto vendita</th><th>Documento</th>
-                                <th>Contenuto</th><th>Operatore</th><th className="rvTab-c">Totale</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {docs === null && <tr><td colSpan={6} className="rvTab-vuoto">Carico…</td></tr>}
-                            {docs !== null && !righe.length && (
-                                <tr><td colSpan={6} className="rvTab-vuoto">
-                                    Nessun documento con questi filtri. Prova ad allargare le date: l&apos;elenco parte da oggi.
-                                </td></tr>
-                            )}
-                            {righe.map(d => {
-                                const apertaQui = aperto === d.id;
-                                return (
-                                    <tr key={d.id} onClick={() => setAperto(apertaQui ? null : d.id)}
-                                        className={cn("rvTab-riga rvTab-cl", apertaQui && "rvTab-on")}>
-                                        <td className="rvTab-min">{gg(d.quando)}<br /><b>{ora(d.quando)}</b></td>
-                                        <td className="rvTab-min">{d.negozio}{d.azienda ? <><br /><span className="rvBadge rvBadge-acc">{d.azienda}</span></> : null}</td>
-                                        <td className="rvTab-min">
-                                            {d.numero ? <b>n. {d.numero}</b> : <span className="rvTab-min">senza numero</span>}
-                                            <br />
-                                            {d.prova
-                                                ? <span className="rvBadge rvBadge-warn">di prova</span>
-                                                : d.fiscale ? <span className="rvBadge rvBadge-ok">fiscale</span>
-                                                    : <span className="rvBadge">non fiscale</span>}
-                                            {d.stato === "error" && <span className="rvBadge rvBadge-ko ml-1">non uscito</span>}
-                                            {d.stato === "pending" && <span className="rvBadge rvBadge-warn ml-1">in coda</span>}
-                                        </td>
-                                        <td className="rvTab-nome">
-                                            {d.righe.length
-                                                ? d.righe.map(r => r.descrizione).join(" · ")
-                                                : <span className="rvTab-min">dettaglio non disponibile</span>}
-                                            {d.cliente && <><br /><span className="rvTab-min">cliente: {d.cliente}</span></>}
-                                        </td>
-                                        <td className="rvTab-min">{d.operatore || "—"}</td>
-                                        <td className="rvTab-n">{eur(d.totale)}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* ═══ IL DETTAGLIO ═══ quello che c'era nel carrello, come è
-                    finito sulla carta: righe, reparti IVA e forme di pagamento
-                    lette dall'XML mandato al registratore. */}
-                {aperto && (() => {
-                    const d = righe.find(x => x.id === aperto);
-                    if (!d) return null;
-                    return (
-                        <div className="rvScheda mt-3">
-                            <div className="rvDettT">
-                                🧾 {d.negozio} · {gg(d.quando)} alle {ora(d.quando)}
-                                {d.numero ? ` · documento n. ${d.numero}` : ""}
-                                {d.matricola ? ` · matricola ${d.matricola}` : ""}
-                            </div>
-                            <div className="rvDett">
-                                {d.righe.length ? d.righe.map((r, i) => (
-                                    <div key={i} className="rvDettR">
-                                        <span>{r.descrizione}</span>
-                                        {r.quantita > 1 && <span className="rvTab-min">× {r.quantita}</span>}
-                                        {r.reparto != null && <span className="rvBadge rvBadge-acc">reparto {r.reparto}</span>}
-                                        <span className="rvDove-fine">{eur(r.prezzo * r.quantita)}</span>
-                                    </div>
-                                )) : <div className="rvTab-min">Di questo documento non abbiamo il dettaglio delle righe.</div>}
-                            </div>
-                            <div className="rvDett">
-                                <div className="rvDettT">Come è stato pagato</div>
-                                {d.pagamenti.length ? d.pagamenti.map((p, i) => (
-                                    <div key={i} className="rvDettR">
-                                        <span>{p.descrizione || NOME_PAG[p.tipo] || "—"}</span>
-                                        <span className="rvTab-min">{NOME_PAG[p.tipo] || `tipo ${p.tipo}`}</span>
-                                        <span className="rvDove-fine">{eur(p.importo)}</span>
-                                    </div>
-                                )) : <div className="rvTab-min">Nessuna forma di pagamento registrata.</div>}
-                            </div>
-                            <div className="rvPillRow mt-2">
-                                {d.contrattoId && (
-                                    <a href={`/ricerca-vendite?id=${encodeURIComponent(d.contrattoId)}`} className="rvPill rvPill-sm">
-                                        ↗ Apri la vendita
-                                    </a>
+                {docs === null ? (
+                    <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico i documenti…</div>
+                ) : (
+                    <div className="rvTabBox mt-3">
+                        <table className="rvTab rvTab-large">
+                            <thead>
+                                <tr>
+                                    {COLONNE.map((c, i) => (
+                                        <th key={i} className={cn("rvTab-ord", i === 5 && "rvTab-c")}
+                                            onClick={() => setSort(s => ({ col: i, desc: s.col === i ? !s.desc : i === 0 || i === 5 }))}>
+                                            {c}{sort.col === i ? <i>{sort.desc ? "↓" : "↑"}</i> : null}
+                                        </th>))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {!righe.length && (
+                                    <tr><td colSpan={6} className="rvTab-vuoto">
+                                        {tipo === "fattura"
+                                            ? "Le fatture non sono ancora emesse dal CRM: qui non comparirà niente finché non ci sarà la parte che le crea."
+                                            : "Nessun documento con questi filtri. Prova ad allargare le date: l'elenco parte da oggi."}
+                                    </td></tr>
                                 )}
-                                <button onClick={() => { setChiedendo(d); setNuovaForma("Contanti"); setFatta(""); }} className="rvPill rvPill-sm">
-                                    ✏️ Chiedi la correzione del pagamento
-                                </button>
-                            </div>
+                                {righe.map(d => {
+                                    const apertaQui = aperto === d.id;
+                                    const es = esitoDi(d.stato, d.result);
+                                    return (
+                                        <Fragment key={d.id}>
+                                            <tr onClick={() => setAperto(apertaQui ? null : d.id)}
+                                                className={cn("rvTab-riga rvTab-cl", apertaQui && "rvTab-on")}>
+                                                <td className="rvTab-min">
+                                                    <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>
+                                                    {gg(d.quando)} <b>{ora(d.quando)}</b>
+                                                </td>
+                                                <td className="rvTab-min">{d.negozio}{d.azienda ? <><br /><span className="rvBadge rvBadge-acc">{d.azienda}</span></> : null}</td>
+                                                <td className="rvTab-min">
+                                                    {d.numero ? <b>n. {d.numero}</b>
+                                                        : d.matricola ? <span>cassa {d.matricola}</span>
+                                                            : <span>senza numero</span>}
+                                                    <br />
+                                                    {d.storno ? <span className="rvBadge rvBadge-ko">annullo</span>
+                                                        : d.prova ? <span className="rvBadge rvBadge-warn">di prova</span>
+                                                            : d.fiscale ? <span className="rvBadge rvBadge-ok">fiscale</span>
+                                                                : <span className="rvBadge rvBadge-empty">non fiscale</span>}
+                                                    {es && <span className={cn("rvBadge ml-1", es.tono)}>{es.et}</span>}
+                                                </td>
+                                                <td className="rvTab-nome">
+                                                    {d.righe.length
+                                                        ? d.righe.map(r => r.descrizione).join(" · ")
+                                                        : <span className="rvTab-min">dettaglio non disponibile</span>}
+                                                    {d.cliente && <><br /><span className="rvTab-min">cliente: {d.cliente}</span></>}
+                                                </td>
+                                                <td className="rvTab-min">{d.operatore || "—"}</td>
+                                                <td className="rvTab-n">{d.storno && d.totale ? "−" : ""}{eur(d.totale)}</td>
+                                            </tr>
+                                            {apertaQui && (
+                                                <tr className="rvTab-det"><td colSpan={6}>{dettaglio(d)}</td></tr>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                        {/* IL PIÈ DI PAGINA DICE QUANTI E, SE MANCA QUALCOSA, CHE MANCA.
+                            Un elenco troncato in silenzio è un elenco che mente. */}
+                        <div className="rvTab-pie">
+                            {righe.length.toLocaleString("it-IT")} document{righe.length === 1 ? "o" : "i"}
+                            {troncato ? ` — ne mostro ${TETTO.toLocaleString("it-IT")}, il massimo: stringi l'intervallo di date, perché i più vecchi del periodo non sono in questo elenco né nei riquadri.` : ""}
+                            {conta.senzaNumero > 0 ? ` · ${conta.senzaNumero} senza numero: i registratori Custom non lo riportano al CRM, e quei documenti si cercano per matricola.` : ""}
                         </div>
-                    );
-                })()}
+                    </div>
+                )}
 
                 {/* ═══ LA RICHIESTA ═══ il documento non si tocca: si chiede. */}
                 {chiedendo && (
-                    <div className="rvScheda mt-3">
+                    <div className="rvStoria rvScheda mt-3">
                         <div className="rvDettT">✏️ Correzione della forma di pagamento</div>
-                        <div className="rvNota">
-                            Lo scontrino emesso non si modifica: questa è una <b>richiesta</b> che arriva
-                            all&apos;amministrazione, con dentro cosa risulta e cosa dici tu.
+                        <div className="rvNota rvNota-info">
+                            <div className="rvNota-s">
+                                Lo scontrino emesso non si modifica: questa è una <b>richiesta</b> che arriva
+                                all&apos;amministrazione, con dentro cosa risulta, cosa dici tu e il documento allegato.
+                            </div>
                         </div>
                         <div className="rvBarra mt-2">
-                            <label className="rvCampo rvCampo-md"><span className="rvLab">Il cliente ha pagato con</span>
-                                <select value={nuovaForma} onChange={e => setNuovaForma(e.target.value)} className="rvIn">
-                                    <option>Contanti</option>
-                                    <option>Carta</option>
-                                    <option>Bonifico</option>
-                                    <option>Non riscosso / credito</option>
-                                    <option>Finanziamento</option>
-                                </select></label>
+                            <div className="rvCampo rvCampo-md"><span className="rvLab">Il cliente ha pagato con</span>
+                                <SelectOpzioni className="rvIn" value={nuovaForma} onChange={setNuovaForma}
+                                    opzioni={["Contanti", "Carta", "Bonifico", "Non riscosso / credito", "Finanziamento"]} /></div>
                             <label className="rvCampo rvCampo-lg"><span className="rvLab">Cosa è successo</span>
                                 <input value={perche} onChange={e => setPerche(e.target.value)} className="rvIn"
-                                    placeholder="es. la cassa dava errore e ho battuto carta per far uscire lo scontrino" /></label>
+                                    placeholder="es. la cassa dava errore e ho battuto carta" /></label>
                         </div>
                         <div className="rvPillRow mt-2">
                             <button onClick={inviaRichiesta} disabled={inviando} className="rvPill rvPill-on">
@@ -460,17 +677,6 @@ export default function DocumentiPage() {
                             </button>
                             <button onClick={() => setChiedendo(null)} className="rvPill rvPill-sm">Annulla</button>
                         </div>
-                    </div>
-                )}
-
-                {/* ═══ LE FATTURE ═══ ci sono nei filtri perché il posto è questo,
-                    ma il CRM non ne emette ancora: dirlo è meglio che lasciare un
-                    riquadro a zero che sembra un guasto. */}
-                {tipo === "fattura" && !conta.fatture && (
-                    <div className="rvNota rvNota-warn mt-3">
-                        <b>Le fatture non sono ancora emesse dal CRM.</b> Il posto è questo e i filtri le
-                        aspettano: manca la parte che le crea — numerazione, dati fiscali del cliente e
-                        invio allo SdI. Appena c&apos;è, compaiono qui insieme agli scontrini.
                     </div>
                 )}
             </div>

@@ -28,6 +28,12 @@ let violazioni = 0;
 const SEZIONI = [
     "src/app/(dashboard)/registra-vendita",
     "src/app/(dashboard)/magazzino",
+    /* DOCUMENTI, dalla sera del 01/09. Nasce con la cassetta `rv*` e nasce
+       sorvegliata: la revisione del giorno stesso ha trovato quattro classi
+       INVENTATE (`rvWrap`, `rvTitolo`, `rvNota-ko`, `rvNota-warn`) che il CSS
+       non aveva — e una classe che non esiste non da' nessun errore, esce solo
+       un elemento nudo. Questa e' l'unica rete che le prende. */
+    "src/app/(dashboard)/documenti",
 ];
 
 function file(dir, out = []) {
@@ -108,6 +114,38 @@ const files = SEZIONI.flatMap(d => file(d));
     } else {
         console.log(`   ${G}${n} stili a mano (tetto ${TETTO})${X}`);
     }
+}
+
+/* ── 5. UNA CLASSE INVENTATA NON DA' NESSUN ERRORE ───────────────────────────
+   E' il difetto trovato la sera del 01/09 su Documenti: `rvWrap`, `rvTitolo`,
+   `rvNota-ko`, `rvNota-warn` non esistevano in globals.css. Niente si e'
+   lamentato — sono usciti quattro elementi NUDI: il titolo di sezione era due
+   righe di testo normale, l'errore usciva grigio come una nota qualunque.
+   TypeScript non guarda dentro le stringhe e il CSS non sa chi lo chiama:
+   questo controllo e' l'unico punto in cui le due cose si incontrano. */
+{
+    console.log(`\n${B}5. Ogni classe .rv* usata esiste davvero nella cassetta${X}`);
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const definite = new Set([...css.matchAll(/\.(rv[A-Za-z0-9_-]+)/g)].map(m => m[1]));
+    const orfane = new Map();
+    for (const f of files) {
+        righe(f).forEach((r, i) => {
+            /* solo dentro le stringhe di classi: className="…" e cn("…") */
+            for (const m of r.matchAll(/["'`]([^"'`]*\brv[A-Za-z0-9_-]+[^"'`]*)["'`]/g)) {
+                for (const c of m[1].split(/\s+/)) {
+                    if (!/^rv[A-Za-z0-9_-]+$/.test(c) || definite.has(c)) continue;
+                    /* «"rvBadge-"+b.st» e' un nome COMPOSTO a runtime, non uno
+                       inventato: qui si vede solo il pezzo davanti. Chi lo
+                       compone lo fa da un elenco chiuso di toni, e a guardarlo
+                       da fuori non si puo' dire di piu'. */
+                    if (c.endsWith("-")) continue;
+                    const k = `${c}  —  ${f.replace("src/app/(dashboard)/", "")}:${i + 1}`;
+                    if (!orfane.has(c)) orfane.set(c, k);
+                }
+            }
+        });
+    }
+    regola("", "queste classi NON esistono in globals.css: l'elemento esce nudo. Aggiungile alla cassetta, o usa quella giusta", [...orfane.values()]);
 }
 
 console.log("");

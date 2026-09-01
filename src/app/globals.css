@@ -850,6 +850,11 @@ html.light .rvNota-scelta{--rv-nota:#5b21b6}
 .rvNota-info{--rv-nota:var(--tf-60a5fa)}
 .rvNota-scelta{--rv-nota:var(--tf-a78bfa)}
 .rvNota-att{--rv-nota:var(--tf-fbbf24)}
+/* IL TONO DELL'ERRORE mancava alla famiglia: senza, un fallimento usciva
+   grigio identico a una nota neutra — «Richiesta inviata» e «Non sono riuscito
+   a inviarla» avevano lo stesso riquadro (revisione design 01/09). Il rosso
+   in tema chiaro arriva gia' scurito dal token (#d91212). */
+.rvNota-ko{--rv-nota:var(--tf-f87171)}
 /* la card di uno step: era riscritta 10 volte, e l'ombra del tema chiaro
    (--rv-shadow) era finita su UNA sola — le altre nove restavano piatte */
 /* il sotto-riquadro neutro: raggruppa domande dentro una sezione. Non
@@ -1830,6 +1835,11 @@ html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1
 html.light .rvTabBox{background:linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%);border-color:rgba(18,28,54,.10);
   box-shadow:0 1px 2px rgba(18,28,54,.05),0 10px 26px rgba(58,64,120,.10),0 34px 64px rgba(58,64,120,.06),inset 0 1px 0 rgba(255,255,255,.9)}
 .rvTab{width:100%;border-collapse:collapse;text-align:left;font-size:13.5px}
+/* UNA TABELLA CHE NON SI SCHIACCIA. Sotto i 1100px le colonne `nowrap` si
+   prendono tutto e quella del contenuto crolla del 75%: una riga sola diventa
+   alta mezza schermata. Con una larghezza minima il `rvTabBox` scorre — che e'
+   la risposta onesta: meglio una barra che un testo spappolato. */
+.rvTab-large{min-width:920px}
 .rvTab thead th{padding:11px 14px;white-space:nowrap;font-size:10.5px;font-weight:800;letter-spacing:.75px;text-transform:uppercase;
   color:var(--tf-8892b0);background:var(--tf-w50);border-bottom:1px solid var(--tf-w80)}
 /* `html.light thead th` (riga ~601) è `!important`: senza !important qui

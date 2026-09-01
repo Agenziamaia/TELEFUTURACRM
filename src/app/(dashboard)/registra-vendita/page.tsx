@@ -7843,7 +7843,13 @@ const _descrizioneConImei = (modello, seriale, fallback) => {
         /* IL NUMERO DELLA VENDITA VIAGGIA COL MODALE (Luca 31/08): la task
            del bonifico deve riportare l'amministrazione ALLO SCONTRINO che è
            stato fatto, non alla lista di tutte le vendite. */
-        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true, telefoni: _telefoni });
+        /* IL NOME DEL CLIENTE VIAGGIA COL MODALE (revisione 01/09). Senza,
+           `meta.cliente` restava vuoto su OGNI vendita normale — lo portavano
+           solo i conti sospesi ripresi — e in Documenti la colonna cliente era
+           vuota e la ricerca per cliente inutile. Il nome era gia' calcolato
+           venti righe piu' sotto, per la conferma a schermo. */
+        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true, telefoni: _telefoni,
+          cliente: (ana.ragioneSociale || `${ana.nome || ""} ${ana.cognome || ""}`.trim() || ana.cf || "").trim() || null });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
         /* NIENTE SCONTRINO: ma il venditore deve sapere PERCHÉ (Luca 31/08:
@@ -8143,7 +8149,11 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         /* `daRegistrare` ANCHE QUI (revisore 31/08): il differimento è nato in
            questo flusso, ma l'avviso di chiusura era finito solo sull'altro.
            Accessori e telefoni in contanti passano di qui tutto il giorno. */
-        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true, telefoni: _telMarg });
+        /* ANCHE QUI IL CLIENTE, e anche il numero della vendita: senza
+           `contrattoId` il dettaglio in Documenti non offriva nemmeno il
+           collegamento «Apri la vendita» (revisione 01/09). */
+        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true, telefoni: _telMarg,
+          cliente: _cliLabel || null });
       } else {
         // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
         // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).
