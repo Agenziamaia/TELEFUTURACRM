@@ -15,6 +15,10 @@
 
 # next.js
 /.next/
+# le cartelle del deploy atomico: si costruisce in `.next-build` e si scambia
+# solo alla fine, cosi' il sito vivo non legge mai una cartella a meta'
+/.next-build/
+/.next-old/
 /out/
 
 # production
