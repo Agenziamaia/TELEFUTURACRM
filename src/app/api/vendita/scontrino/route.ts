@@ -5,6 +5,7 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
 import { buildRequestXml } from "@/lib/fiscalprint";
 import { formaPagamento } from "@/lib/pos";
 import { validaCoupon, redimiCoupon } from "@/lib/coupons";
+import { repartoFisico } from "@/lib/posRepartoMap";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -300,7 +301,10 @@ export async function POST(req: Request) {
             esclusi.push({ description: desc, motivo: `${az} non ha un registratore in questo negozio` });
             continue;
         }
-        (gruppi[az] ||= []).push({ description: desc, quantity: qty, unitPrice: price, department: (reparto ?? 0) as number });
+        // Il reparto LOGICO del CRM va tradotto nel reparto FISICO del registratore
+        // di QUESTO negozio (la numerazione può differire — vedi posRepartoMap).
+        const repFisico = repartoFisico(negozio, (reparto ?? 0) as number);
+        (gruppi[az] ||= []).push({ description: desc, quantity: qty, unitPrice: price, department: repFisico });
     }
 
     const totalPrintable = Object.values(gruppi).reduce((n, a) => n + a.length, 0);
