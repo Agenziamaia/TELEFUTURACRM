@@ -198,7 +198,6 @@ const SEZIONI: Sezione[] = [
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, gruppo: "setup", desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, gruppo: "setup", desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
     { id: "trackingesiti", label: "Tracking PDA", icon: Radar, gruppo: "setup", desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
-    { id: "paystore", label: "PayStore", icon: Smartphone, gruppo: "setup", desc: "Le ricariche telefoniche vendute dai negozi — quante, per quanto, dove — e il listino dei tagli per operatore. Esenti IVA, reparto 1." },
     // PANNELLO WHATSAPP (Luca 25/08): numeri collegati, verifica, ricollega col QR,
     // collegamento a QUALSIASI utente o negozio — sempre da selezione, mai testo libero
     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "I numeri WhatsApp del CRM: stato e verifica live, ricollega col QR, collega numeri nuovi intestati a un utente (anche caller) o a un negozio — condivisione automatica per visibilità." },
@@ -208,6 +207,7 @@ const SEZIONI: Sezione[] = [
     // SPESA E USO DELL'AI (Luca 31/08): «un resoconto dei token che stiamo
     // utilizzando, di quanto stiamo spendendo diviso per categorie, e posso
     // filtrare per utenza». Il tetto è 30 € al mese.
+    { id: "paystore", label: "PayStore", icon: Smartphone, desc: "Le ricariche telefoniche vendute dai negozi — quante, per quanto, dove, e quali non sono partite — più il listino dei tagli per operatore." },
     { id: "ai", label: "AI", icon: Sparkles, desc: "Quanto costa l'intelligenza artificiale e chi la usa: spesa del mese contro il tetto, divisa fra quello che chiede una persona e quello che gira da solo, per utenza e per sezione." },
     /* HUB AUTOMATISMI (Luca 31/08): «nel futuro ne costruiremo tanti, quindi
        crealo già come Hub». Un lavoro che gira di notte non si lamenta: se
@@ -235,7 +235,7 @@ const SEZIONI: Sezione[] = [
 const COSTI_IDS = ["negozi", "condivisi", "altri"];
 // ordine FISSO del mini-hub Fiscalità (Luca 24/08)
 const FISC_IDS = ["reparti", "cassascontrini", "coupon"];
-const SETUP_IDS = ["catalogo", "callcenter", "ordinemerce", "calendario", "trackingesiti", "paystore"];
+const SETUP_IDS = ["catalogo", "callcenter", "ordinemerce", "calendario", "trackingesiti"];
 
 function AmministrazioneInner() {
     const { user } = useAuth();
@@ -639,7 +639,7 @@ function AmministrazioneInner() {
                        vecchi link diretti (?sez=catalogo…) continuano a
                        funzionare, solo che ora arrivano dentro il gruppo. */
                     const attiva = SETUP_IDS.includes(sez || "") ? (sez as string) : (sezioniSetup[0]?.id ?? "catalogo");
-                    const EMO: Record<string, string> = { catalogo: "🗂️", callcenter: "📞", ordinemerce: "📦", calendario: "🗓️", trackingesiti: "🛰️", paystore: "📲" };
+                    const EMO: Record<string, string> = { catalogo: "🗂️", callcenter: "📞", ordinemerce: "📦", calendario: "🗓️", trackingesiti: "🛰️" };
                     return (
                         <>
                             <div className="flex gap-2 flex-wrap">
@@ -660,8 +660,6 @@ function AmministrazioneInner() {
                                 <CalendarioEsitiView />
                             ) : attiva === "trackingesiti" ? (
                                 <TrackingEsitiView />
-                            ) : attiva === "paystore" ? (
-                                <PayStoreAdminView />
                             ) : (
                                 <CatalogoView />
                             )}
@@ -670,6 +668,8 @@ function AmministrazioneInner() {
                 })()
             ) : sez === "whatsapp" ? (
                 <WhatsAppAdminView />
+            ) : sez === "paystore" ? (
+                <PayStoreAdminView />
             ) : sez === "ai" ? (
                 <AiAdminView />
             ) : sez === "automatismi" ? (

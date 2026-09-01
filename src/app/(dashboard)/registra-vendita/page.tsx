@@ -28,7 +28,8 @@ import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 import { CassaProdotti } from "./CassaProdotti";
 import { scaricaVendita, avvisiScarico } from "@/lib/magazzinoScarico";
-import PayStore from "./PayStore";
+import PayStore, { CompositoreTagli, usaCatalogoPayStore, descrizioneRicarica, totaleComposto,
+    quanteRicariche, nomeOperatore, OPERATORE_DEL_BRAND } from "./PayStore";
 import { caricaGiacenze, iconaArticolo } from "@/lib/cassaCatalogo";
 // il selettore del CRM, quello che si cerca scrivendo: le tendine di sistema
 // aprono il menu del sistema operativo, che non si può vestire (Luca 28/08)
@@ -4972,6 +4973,25 @@ function CRM() {
      del listino Prodotti & Marginalità si apre il pannello delle ricariche,
      dove il numero è obbligatorio. */
   const [psFlow,setPsFlow]=useState(false);
+  /* IL CATALOGO PAYSTORE, letto una volta sola: i tagli del fornitore e le
+     voci che portano il reparto esente. Serve al pannello delle ricariche
+     sciolte E al carrello, dove la ricarica associata alla SIM chiede
+     l'importo. Due letture separate darebbero due verità. */
+  const {tagli:psTagli,voci:psVoci}=usaCatalogoPayStore();
+  // quale riga di ricarica ha il compositore aperto nel carrello
+  const [psAperta,setPsAperta]=useState(null);
+  /* Compone l'importo di una ricarica del carrello. Tocca TRE cose insieme —
+     i pezzi, il totale e il margine — e devono restare d'accordo: un importo
+     senza i pezzi non si può eseguire, i pezzi senza l'importo non si possono
+     incassare. */
+  const _componiRicarica=(idx,pezzi)=>setMargItems(p=>p.map((m,i)=>{
+    if(i!==idx||!m.paystore)return m;
+    const tot=totaleComposto(pezzi);
+    const pct=Number(psVoci[m.paystore.operatore]?.margin_percent||0);
+    const mg=tot*pct/100;
+    return {...m,paystore:{...m.paystore,pezzi,importo:tot},
+      importo:tot>0?tot:null,price:tot,margin:mg,totalMargin:mg};
+  }));
   const [margSkipPopup,setMargSkipPopup]=useState(false);
   const [margEditItem,setMargEditItem]=useState(null);
   const [showMargList,setShowMargList]=useState(false);
@@ -5600,7 +5620,25 @@ function CRM() {
      è un registro, non un prerequisito — ma si urla in console e all'utente,
      perché una ricarica incassata e non registrata nessuno la ritrova. */
   const registraRicariche=async(items,contractId)=>{
-    const voci=(items||[]).filter(m=>m&&m.paystore).map(m=>({...m.paystore,contractId}));
+    /* ⚠️ UNA RIGA PER RICARICA VERA, non per voce di carrello. Quaranta euro
+       composti da due tagli da venti sono DUE operazioni che il fornitore
+       deve eseguire, e domani saranno due chiamate all'API. Sullo scontrino
+       resta una riga sola — per il cliente è una ricarica da 40 — ma il
+       registro deve poter dire «questa è partita, quest'altra no». */
+    const voci=[];
+    for(const m of (items||[])){
+      if(!m||!m.paystore)continue;
+      const ps=m.paystore;
+      const pezzi=Array.isArray(ps.pezzi)&&ps.pezzi.length
+        ? ps.pezzi
+        : [{etichetta:ps.taglio||null,valore:Number(m.importo||ps.importo||0),n:1}];
+      for(const pz of pezzi){
+        for(let k=0;k<(Number(pz.n)||1);k++){
+          voci.push({operatore:ps.operatore,operatoreNome:ps.operatoreNome,numero:ps.numero,
+            taglio:pz.etichetta,importo:Number(pz.valore)||0,contractId});
+        }
+      }
+    }
     if(!voci.length)return;
     try{
       const r=await fetch("/api/vendita/paystore",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -5634,6 +5672,39 @@ function CRM() {
   // checkout); Sostituzione Sim -> voce Sost; telefono TNP -> prodotto a prezzo di listino.
   const AUTO_SIM={windtre:"Sim Wind3",vodafone:"Sim Vodafone",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very",kena:"Sim Kena"};
   const AUTO_SOST={windtre:"Sost Wind3",fastweb:"Sost Fastweb",tim:"Sost TIM",vodafone:"Sost Vodafone",very:"Sost Very"};
+  /* ═══ QUANDO LA RICARICA VA ASSOCIATA ALLA SIM (Luca 01/09) ═════════════
+     «Nel momento in cui viene effettuata una vendita di una SIM Wind3 senza
+     ricarica automatica, quindi wallet, in quel caso va sempre messa
+     automaticamente la ricarica direttamente sul numero provvisorio che viene
+     scaricato all'interno della vendita, quindi deve essere già tutto
+     preflaggato e bisogna chiedere solo l'importo. Per tutte le SIM Wind3 con
+     ricarica automatica non c'è bisogno, perché poi il cliente pagherà
+     direttamente sul conto corrente. Tutte le SIM Fastweb, a prescindere,
+     non vanno mai ricaricate. Le Vodafone seguono la stessa regola di Wind3,
+     e anche quelle con ricarica automatica vanno ricaricate: l'unico caso in
+     cui non si ricarica è se è stata attivata con carta di credito.»
+
+     La distinzione wallet / ricarica automatica NON è un campo da compilare:
+     è già nella CATEGORIA del catalogo — «Mobile Wallet» e «Mobile Ric.
+     Auto» esistono da sempre per tutti e tre i brand. Si legge quella, e
+     nessuno deve rispondere a una domanda in più.
+
+     Per Vodafone con ricarica automatica la ricarica si mette COMUNQUE, e nel
+     carrello c'è il pulsante «pagata con carta di credito» che la toglie: è
+     il modo che ha chiesto Luca, e ha una ragione — dimenticare di aggiungere
+     è invisibile, dimenticare di togliere si vede nel totale. */
+  const RICARICA_CON_SIM={
+    windtre:{"Mobile Wallet":true,"Mobile Ric. Auto":false},
+    vodafone:{"Mobile Wallet":true,"Mobile Ric. Auto":true},
+    fastweb:{"Mobile Wallet":false,"Mobile Ric. Auto":false},
+  };
+  /* Il numero da ricaricare. Su una GA è il numero nuovo che si scarica in
+     negozio; su una MNP è il PROVVISORIO — il definitivo arriva a
+     portabilità fatta, giorni dopo, e ricaricarlo oggi non si può. */
+  const _numeroDaRicaricare=(det)=>{
+    const v=String(det["Numero Provvisorio"]||det["Numero di Cellulare"]||det["Numero Definitivo"]||"").replace(/\D/g,"");
+    return v.length>=7&&v.length<=11?v:"";
+  };
   /* I PEZZI DEL NEGOZIO, per il campo IMEI del telefono a rate (Luca 31/08).
      Sono poche centinaia per negozio: si tengono in memoria e il campo cerca
      lì, senza una query per tasto. `vincola` viene da `stores`: è
@@ -5746,6 +5817,35 @@ function CRM() {
       else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)){
         if(brandId==="vodafone")push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
         else if(AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+        /* LA RICARICA CHE SEGUE LA SIM (Luca 01/09). Nasce già flaggata e col
+           numero dentro: al banco resta da scegliere solo l'importo, che si
+           compone coi tagli del fornitore. Senza numero non si aggiunge —
+           sarebbe una riga incassata che nessuno può eseguire — e allora la
+           si dice, invece di far finta di niente. */
+        const _cat=String(it.catalogo?.categoria||"");
+        const _serve=RICARICA_CON_SIM[brandId]?.[_cat];
+        if(_serve){
+          const _op=OPERATORE_DEL_BRAND[brandId];
+          const _voce=psVoci[_op];
+          const _num=_numeroDaRicaricare(it.details||{});
+          if(_voce){
+            push(_voce.name,false,{
+              productId:"mi_"+_voce.id,
+              /* il numero si vede accanto al nome nel carrello: è il campo che
+                 il carrello mostra già per il modello, e qui è il dato che
+                 conta di più */
+              model:_num||"⚠ numero mancante",
+              reparto:_voce.reparto??1,azienda:_voce.azienda??null,
+              codice:null,scaricaMagazzino:false,
+              importo:null,priceRequired:true,
+              paystore:{operatore:_op,operatoreNome:nomeOperatore(_op),numero:_num,pezzi:[],importo:0,
+                daSim:true,catSim:_cat,
+                /* solo su Vodafone si può dire «l'ha pagata con la carta»:
+                   sugli altri brand la ricarica o serve o non c'è proprio */
+                puoCartaCredito:brandId==="vodafone"},
+            });
+          }
+        }
       }
       else if(brandId==="vodafone"&&macro.includes("FISSO"))push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
       const det=it.details||{};
@@ -5818,6 +5918,22 @@ function CRM() {
       if((_nNew[a.product]||0)<(_nOld[a.product]||0))return a;   // calo: no eredità
       const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&(m.autoKey||m.product+"#1")===a.autoKey);
       if(!old)return a;
+      /* ⚠️ LA RICARICA SI PORTA DIETRO I TAGLI, non solo l'importo. Il
+         ricalcolo scatta a ogni prodotto aggiunto al gruppo: senza questo
+         ramo, l'eredità generica qui sotto teneva l'IMPORTO (45 €) e buttava
+         via i PEZZI che lo compongono — e il registro avrebbe scritto una
+         ricarica da 45 € che PayStore non vende, invece delle tre vere. Il
+         numero invece si riprende sempre dalla vendita: se il negozio corregge
+         il numero provvisorio, la ricarica deve seguirlo. */
+      if(a.paystore&&old.paystore){
+        const pz=Array.isArray(old.paystore.pezzi)?old.paystore.pezzi:[];
+        const tot=pz.reduce((t,x)=>t+Number(x.valore||0)*(Number(x.n)||0),0);
+        if(!pz.length)return a;
+        const pct=Number(psVoci[a.paystore.operatore]?.margin_percent||0);
+        const mg=tot*pct/100;
+        return {...a,paystore:{...a.paystore,pezzi:pz,importo:tot},
+          importo:tot>0?tot:null,price:tot,margin:mg,totalMargin:mg};
+      }
       /* SE È STATO SCRITTO A MANO, RESTA — e resta TUTTO (revisore 31/08).
          Non basta tenere `importo`: tenendo `margin` e `price` di `a` si
          mostrava il prezzo del negozio col margine calcolato sul prezzo di
@@ -6342,7 +6458,14 @@ function CRM() {
   const buildScontrinoItems = (list) => (list || [])
     .map((mi) => ({
       productId: mi.productId || null,
-      description: mi.product,
+      /* LA RICARICA SI DESCRIVE DA SÉ (Luca 01/09). Nel carrello la voce si
+         chiama come la voce di catalogo — «Ricarica WindTre» — perché è così
+         che il server la riconosce anche senza `productId`; sullo scontrino
+         invece deve esserci quello che il cliente contesta se sbagliamo:
+         quanto e su che numero. */
+      description: mi.paystore
+        ? descrizioneRicarica(mi.paystore.operatore, Number(mi.importo || 0), mi.paystore.numero || "")
+        : mi.product,
       unitPrice: (mi.importo != null ? mi.importo : mi.price),
       qty: mi.qty || 1,
       /* IL REPARTO IVA. Senza, il registratore telematico non sa dove mettere
@@ -7933,7 +8056,8 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             <button onClick={()=>{setMargEditItem(null);setShowMargPOS(true)}} className="rvPillLuce">+ Aggiungi</button>
           </div>
           {margItems.map((item,idx)=>(
-            <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--tf-w30)"}}>
+            <div key={idx}>
+            <div className={cn("psRigaCart",item.paystore&&psAperta===idx&&"psRigaCart-aperta")}>
               <div>
                 <span style={{fontWeight:700,fontSize:13}}>{item.product}</span>
                 {item.model&&<span style={{fontSize:11,color:"var(--tf-64748b)",marginLeft:6}}>{item.model}</span>}
@@ -7946,7 +8070,21 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                 {item.prezzoModificabile===false&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:"var(--tf-e2e8f0)"}}>
                   🔒 € {Number(item.importo??0).toFixed(2)}
                 </span>}
-                {(item.auto||item.priceRequired||item.linked||item.natura)&&!item.priceLocked&&item.prezzoModificabile!==false&&<span style={{display:"flex",alignItems:"center",gap:4}}>
+                {/* LA RICARICA NON HA UN PREZZO DA SCRIVERE (Luca 01/09): ha un
+                    importo da COMPORRE coi tagli del fornitore. Un campo
+                    libero qui farebbe passare importi che PayStore non vende,
+                    e la ricarica non partirebbe. */}
+                {item.paystore&&<span style={{display:"flex",alignItems:"center",gap:6}}>
+                  {item.paystore.puoCartaCredito&&<button onClick={()=>{if(window.confirm("La SIM è stata attivata con carta di credito?\n\nTolgo la ricarica dal carrello."))setMargItems(p=>p.filter((_,i)=>i!==idx));}}
+                    title="Attivata con carta di credito: la ricarica non serve" className="psCarta">💳 carta di credito</button>}
+                  <button onClick={()=>setPsAperta(psAperta===idx?null:idx)}
+                    className={cn("psImporto",Number(item.importo||0)>0&&"psImporto-ok")}>
+                    {Number(item.importo||0)>0
+                      ? <>€ {Number(item.importo).toFixed(2)}{quanteRicariche(item.paystore.pezzi||[])>1?` · ${quanteRicariche(item.paystore.pezzi)} ric.`:""} ✎</>
+                      : <>scegli l&apos;importo</>}
+                  </button>
+                </span>}
+                {(item.auto||item.priceRequired||item.linked||item.natura)&&!item.priceLocked&&!item.paystore&&item.prezzoModificabile!==false&&<span style={{display:"flex",alignItems:"center",gap:4}}>
                   <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
                     onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?conPrezzo(m,v):m))}}
                     className={cn("rvPrezzo",(item.importo==null||item.importo==="")?"rvPrezzo-manca":"rvPrezzo-ok")} style={{width:92}}/>
@@ -7963,6 +8101,19 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                 {item.auto||item.natura?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 :<span style={{display:"inline-flex",gap:6}}><button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button><button onClick={()=>{const it=margItems[idx];if(window.confirm("Eliminare \""+(it?.product||"voce")+"\" dal carrello?"))setMargItems(p=>p.filter((_,i)=>i!==idx));}} title="Elimina la voce" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.10)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑️</button></span>}
               </div>
+            </div>
+            {/* IL COMPOSITORE, sotto la riga. Si apre solo quando serve: nel
+                carrello di una vendita normale queste righe sono una o due, e
+                tenerle sempre aperte allungherebbe la lista di tre schermate. */}
+            {item.paystore&&psAperta===idx&&<div className="psInCarrello">
+              <div className="psInCarrelloT">
+                <b>{nomeOperatore(item.paystore.operatore)}</b>
+                <span>{item.paystore.numero||"⚠ numero mancante"}</span>
+                {item.paystore.daSim&&<i>ricarica della SIM appena venduta</i>}
+              </div>
+              <CompositoreTagli compatto operatore={item.paystore.operatore} tagli={psTagli}
+                pezzi={item.paystore.pezzi||[]} onCambia={(pz)=>_componiRicarica(idx,pz)} />
+            </div>}
             </div>
           ))}
         </div>}
@@ -8381,9 +8532,9 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                 S4 e Dojo (i tondi) restano com'erano; Kipoint renderizza più
                 basso perché il suo file è già tutto contenuto. */}
             {(()=>{const tondo=b.id==="energy"||b.id==="dojo";
-              const ZOOM={windtre:2.0,tim:2.2,kena:2.2,fastweb:1.9,vodafone:1.7,sky:1.35,iliad:1.14,very:1.14,ho:1.14,kipoint:1};
+              const ZOOM={windtre:2.0,tim:2.2,kena:2.2,fastweb:1.9,vodafone:1.7,sky:1.35,iliad:1.14,very:1.14,ho:1.14,kipoint:1,paystore:1};
               const z=ZOOM[b.id]??1.14;
-              const hh=b.id==="kipoint"?58:(tondo?84:88);
+              const hh=b.id==="kipoint"?58:(b.id==="paystore"?60:(tondo?84:88));
               return(
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:hh,width:"auto",maxWidth:tondo?"92%":"98%",objectFit:"contain",transform:(tondo||z===1)?"none":"scale("+z+")",transformOrigin:"center"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>);})()}
           </button>)}

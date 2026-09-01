@@ -164,17 +164,17 @@ export async function POST(req: Request) {
     const stripId = (pid: any) => { const s = String(pid || ""); return s.startsWith("mi_") ? s.slice(3) : s; };
     const ids = [...new Set(righe.map((r) => stripId(r.productId)).filter(isUuid))];
     const names = [...new Set(righe.map((r) => String(r.description || "").trim()).filter(Boolean))];
-    type Meta = { reparto: number | null; va: boolean; azienda: string | null };
+    type Meta = { reparto: number | null; va: boolean; azienda: string | null; paystore: string | null };
     const byId: Record<string, Meta> = {};
     const byName: Record<string, Meta> = {};
     if (ids.length) {
-        const { data, error } = await supabase.from("marg_items").select("id, reparto, va_in_scontrino, azienda").in("id", ids);
+        const { data, error } = await supabase.from("marg_items").select("id, reparto, va_in_scontrino, azienda, paystore_operatore").in("id", ids);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-        (data || []).forEach((m: any) => { byId[m.id] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false, azienda: m.azienda ?? null }; });
+        (data || []).forEach((m: any) => { byId[m.id] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false, azienda: m.azienda ?? null, paystore: m.paystore_operatore ?? null }; });
     }
     if (names.length) {
-        const { data } = await supabase.from("marg_items").select("name, reparto, va_in_scontrino, azienda").in("name", names);
-        (data || []).forEach((m: any) => { byName[String(m.name).trim()] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false, azienda: m.azienda ?? null }; });
+        const { data } = await supabase.from("marg_items").select("name, reparto, va_in_scontrino, azienda, paystore_operatore").in("name", names);
+        (data || []).forEach((m: any) => { byName[String(m.name).trim()] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false, azienda: m.azienda ?? null, paystore: m.paystore_operatore ?? null }; });
     }
 
     /* ═══ È LA MERCE A GUIDARE LA RAGIONE SOCIALE (Luca 31/08) ═══════════════
@@ -198,6 +198,35 @@ export async function POST(req: Request) {
     }
     const azDellaMerce = societaDelleRighe.size === 1 ? [...societaDelleRighe][0] : null;
 
+    /* ═══ LE RICARICHE SCIOLTE, DOVE IL NEGOZIO HA DUE SOCIETÀ ═══════════
+       Luca 01/09: «il contratto con PayStore lo abbiamo con tutte e due le
+       società, e la maggior parte delle volte la ricarica segue
+       l'attivazione. Nei negozi con due casse dentro lo stesso negozio ma
+       senza reparti separati — che di fatto è solo Donna Olimpia, perché su
+       Magliana, Collatina e Acilia i frazionamenti hanno già l'associazione
+       della cassa — se non c'è nient'altro nel carrello, e quindi l'unica
+       cosa da scontrinare è la ricarica, allora va su Telefutura SRL. In
+       alternativa segue sempre la SIM.»
+
+       ⚠️ LA REGOLA SI APPLICA SOLO DOVE LA DOMANDA ESISTE. In un negozio con
+       una sola società non c'è niente da scegliere, e forzare T1 lì
+       emetterebbe uno scontrino con la partita IVA sbagliata: si guarda
+       quante società hanno un registratore QUI. Dove ce n'è una sola, o
+       nessuna configurata, non si tocca niente.
+
+       ⚠️ E SOLO SE IL CARRELLO È DI SOLE RICARICHE. Basta un'altra riga —
+       una SIM, una cover — e la ricarica torna a seguire la merce, che è la
+       regola normale. */
+    const _ricarica = (r: typeof righe[number]) => {
+        const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
+        return !!(meta && meta.paystore);
+    };
+    const soloRicariche = righe.length > 0 && righe.every(_ricarica);
+    const societaQui = Object.keys(aziende);
+    const azRicaricheSciolte = soloRicariche && societaQui.length > 1
+        ? (societaQui.includes("T1") ? "T1" : null)
+        : null;
+
     // Costruisci le voci raggruppate per AZIENDA ("__def" = azienda di default / negozio non multi).
     type FI = { description: string; quantity: number; unitPrice: number; department: number };
     const gruppi: Record<string, FI[]> = {};
@@ -214,8 +243,11 @@ export async function POST(req: Request) {
            emettere QUELLA società — non quella che l'operatore ha lasciato
            selezionata. Le voci di un carrello misto finiscono già in gruppi
            separati qui sotto, quindi escono due scontrini, uno per società. */
+        /* l'ordine: quello che la voce dice di sé, poi la riga, poi la merce,
+           poi — se è un carrello di sole ricariche in un negozio con due
+           società — la regola PayStore, e per ultimo il default del negozio */
         const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")]
-            || azDellaMerce || b.azienda || defaultAzienda || "__def";
+            || azDellaMerce || azRicaricheSciolte || b.azienda || defaultAzienda || "__def";
         const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;

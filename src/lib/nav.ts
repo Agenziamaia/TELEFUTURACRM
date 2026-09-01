@@ -275,7 +275,7 @@ export const NAVIGATION: NavEntry[] = [
                una griglia da quindici riquadri erano indistinguibili dalle
                altre; raccolte sotto un nome si trovano.
                ⚠️ Gli `id` restano quelli di sempre (`catalogo`, `callcenter`,
-               `ordinemerce`, `calendario`, `trackingesiti`, `paystore`): sono la chiave dei
+               `ordinemerce`, `calendario`, `trackingesiti`): sono la chiave dei
                permessi in role_permissions e dei link salvati. Cambiarli
                significherebbe azzerare in silenzio i permessi già dati e
                rompere ogni scorciatoia che qualcuno si è messo fra i preferiti.
@@ -292,10 +292,6 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "calendario", name: "Calendario", roles: ["admin", "dev"], emoji: "🗓️" },
                     // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
                     { id: "trackingesiti", name: "Tracking PDA", roles: ["admin", "dev"], emoji: "🛰️" },
-                    // Ricariche PayStore (Luca 01/09): registro delle vendute e
-                    // listino dei tagli. Amministrativo in su: dentro ci sono i
-                    // numeri di cellulare dei clienti.
-                    { id: "paystore", name: "PayStore", roles: [...ADMINS, "amministrativo"], emoji: "📲" },
                 ],
             },
             // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
@@ -313,6 +309,13 @@ export const NAVIGATION: NavEntry[] = [
                una sezione come le altre: si assegna a chiunque dalla pagina
                Permessi, senza toccare il codice — richiesta esplicita di Luca. */
             { name: "AI", sez: "ai", icon: Sparkles, roles: ["admin", "dev"] },
+            /* PAYSTORE (Luca 01/09): «tiriamola fuori dall'hub di Setup, perché
+               non è un setup». Ha ragione: Setup dice COME lavora il CRM, questa
+               dice cosa è successo — le ricariche vendute, giorno per giorno.
+               Sta accanto ad AI, che è l'altra sezione che guarda i numeri di un
+               servizio. Amministrativo in su: dentro ci sono i numeri di
+               cellulare dei clienti. */
+            { name: "PayStore", sez: "paystore", icon: Smartphone, roles: [...ADMINS, "amministrativo"] },
             /* AUTOMATISMI (Luca 31/08): nasce ristretto come l'AI — da qui si
                spengono lavori che spediscono documenti del personale e si
                cambiano i destinatari di quelle email. Si allarga dalla pagina
