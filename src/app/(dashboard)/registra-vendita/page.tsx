@@ -5038,9 +5038,29 @@ function CRM() {
      eliminazione, cambio prodotto — e si toglie com'è stato messo. */
   const _escludiRicarica=(ps,escludi)=>{
     const v=ps&&ps.vend; if(!v)return;
+    let trovata=false;
     setSales(p=>{const arr=[...(p[v.gId]||[])];const sale=arr[v.saleIdx];if(!sale||!sale[v.subId])return p;
+      trovata=true;
       arr[v.saleIdx]={...sale,[v.subId]:{...sale[v.subId],psNoRicarica:!!escludi}};
       return {...p,[v.gId]:arr};});
+    /* ⚠️ E SE IL GRUPPO È GIÀ NEL CARRELLO, il segno va nella sua FOTOGRAFIA.
+       `addCart` azzera `sales` — è la porta normale, «🛒 Vai al carrello» —
+       quindi da lì in poi scrivere solo lì sopra non fa niente: la ricarica
+       spariva dalla lista ma rinasceva alla prima modifica del gruppo, e
+       l'operatore doveva riescluderla senza capire perché. Questa è la stessa
+       cosa che fa il 🗑 del carrello per togliere una voce a gruppo chiuso. */
+    if(trovata)return;
+    setCart(p=>p.map(g=>{
+      const i=(g.items||[]).findIndex(x=>x&&x.gId===v.gId&&x.saleIdx===v.saleIdx&&x.subId===v.subId);
+      if(i<0)return g;
+      const items=g.items.map((x,k)=>k===i?{...x,psNoRicarica:!!escludi}:x);
+      const sv=g.sv?{...g.sv,sales:(()=>{
+        const sl=JSON.parse(JSON.stringify(g.sv.sales||{}));
+        const arr=sl[v.gId];
+        if(Array.isArray(arr)&&arr[v.saleIdx]&&arr[v.saleIdx][v.subId])arr[v.saleIdx][v.subId].psNoRicarica=!!escludi;
+        return sl;})()}:g.sv;
+      return {...g,items,sv};
+    }));
   };
   /* Compone l'importo di una ricarica del carrello. Tocca TRE cose insieme —
      i pezzi, il totale e il margine — e devono restare d'accordo: un importo
@@ -8350,7 +8370,10 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
               di credito» per abitudine — è dietro una conferma, e le conferme si
               danno in automatico — non avrebbe più nessun modo di accorgersene
               né di tornare indietro, se non buttando via la vendita. */}
-          {colItems().filter(it=>it.psNoRicarica&&RICARICA_CON_SIM[brand]?.[String(it.catalogo?.categoria||"")]).map((it,k)=>(
+          {[...colItems().map(it=>({it,br:brand})),
+            ...cart.flatMap(g=>(g.items||[]).map(it=>({it,br:g.brandId})))]
+            .filter(({it,br})=>it.psNoRicarica&&RICARICA_CON_SIM[br]?.[String(it.catalogo?.categoria||"")])
+            .map(({it},k)=>(
             <div key={"esc"+k} className="psEsclusa">
               <span>💳 <b>{it.sub}</b> — ricarica esclusa: pagata con carta di credito</span>
               <button onClick={()=>_escludiRicarica({vend:{gId:it.gId,saleIdx:it.saleIdx,subId:it.subId}},false)}>
