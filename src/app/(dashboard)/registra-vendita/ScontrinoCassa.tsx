@@ -137,23 +137,63 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         .map(t => ({ telefono: t, importo: _n(importi[t.chiave]?.anticipo), forma: importi[t.chiave]?.forma || "" }))
         .filter(r => r.importo > 0), [telefoni, importi]);
 
-    /* ANTICIPO + RESTO = PREZZO DEL TELEFONO. Il prezzo è quello della riga che
-       sta già nel carrello: si riconosce dal modello, che è la parte della
-       descrizione prima dell'IMEI. Se non si trova non si dice niente — meglio
-       tacere che accusare — ma se si trova e i conti non tornano lo si scrive. */
-    const scarti = useMemo(() => {
-        const out: string[] = [];
-        telefoni.forEach(t => {
-            if (!DOMANDE_TELEFONO[t.modo].scontrino) return;
-            const i = importi[t.chiave]; if (!i || i.anticipo.trim() === "" || i.resto.trim() === "") return;
-            const somma = +(_n(i.anticipo) + _n(i.resto)).toFixed(2);
-            const riga = (data?.items || []).find(r => /telefono/i.test(String(r.description || "")) || String(r.description || "").toLowerCase().includes(String(t.descrizione || "").toLowerCase()));
-            const prezzo = riga ? +(Number(riga.unitPrice) * (Number(riga.qty) > 0 ? Number(riga.qty) : 1)).toFixed(2) : null;
-            if (prezzo != null && Math.abs(prezzo - somma) > 0.02)
-                out.push(`${t.descrizione}: anticipo + resto fa ${somma.toFixed(2).replace(".", ",")} €, ma nel carrello il telefono è ${prezzo.toFixed(2).replace(".", ",")} €.`);
+    /* ═══ IL TELEFONO SULLO SCONTRINO VALE QUELLO CHE PAGA IL CLIENTE ═══════
+       Luca 01/09, con una vendita bloccata davanti: «stai confondendo il
+       valore del telefono sul quale calcoliamo la marginalità con quello che
+       poi paga il cliente e che andiamo a scontrinare».
+
+       Il LISTINO (159,90 € su un TCL K70) è il valore del bene, ed è la base
+       su cui l'azienda calcola il suo margine — quello NON si tocca.
+       Ma il cliente paga anticipo + rateizzato: 0 + 109,90. **La differenza se
+       la assorbe l'operatore**, perché è un cliente suo: quei 50 € non sono
+       soldi che deve incassare la cassa, e non sono un ammanco.
+
+       Prima la riga andava sullo scontrino al LISTINO, e il modale chiedeva di
+       incassare la differenza: nell'esempio segnava «Rimanente 50,00 €» su una
+       vendita in cui il cliente doveva solo i 10 € della SIM. I ragazzi non
+       riuscivano a chiudere lo scontrino e le vendite restavano in sospeso.
+
+       Adesso la riga del telefono vale ANTICIPO + RESTO. Nell'esempio lo
+       scontrino diventa: SIM 10,00 + TCL K70 109,90 = 119,90, di cui 109,90
+       non riscosso, e restano da incassare i 10 € della SIM — che è
+       esattamente quello che il cliente paga.
+
+       Vale per WindTre e per Vodafone, per tutte le tipologie: cambia solo la
+       forma del non riscosso, non il principio.
+
+       E NON C'È PIÙ NIENTE DA SEGNALARE: l'avviso «anticipo + resto non fa il
+       prezzo del telefono» nasceva dalla premessa sbagliata — che i due numeri
+       dovessero coincidere — e avrebbe gridato al lupo su ogni vendita
+       rateizzata fatta bene. */
+    const _telefoniConImporti = useMemo(() => telefoni.filter(t =>
+        DOMANDE_TELEFONO[t.modo].scontrino && !t.creaRiga
+        && importi[t.chiave] && (importi[t.chiave].anticipo.trim() !== "" || importi[t.chiave].resto.trim() !== "")
+    ), [telefoni, importi]);
+
+    /** La riga di carrello che porta questo telefono: prima per codice di
+     *  magazzino (certo), poi per modello dentro la descrizione. Una riga sola
+     *  per telefono: con due telefoni dello stesso modello, il secondo non può
+     *  riprendersi la riga del primo. */
+    const _righeCorrette = useMemo<RigaScontrino[]>(() => {
+        const usate = new Set<number>();
+        const base = (data?.items || []).map(r => ({ ...r }));
+        _telefoniConImporti.forEach(t => {
+            const cerca = (f: (r: RigaScontrino, i: number) => boolean) =>
+                base.findIndex((r, i) => !usate.has(i) && f(r, i));
+            let idx = t.codice ? cerca(r => !!r.codice && String(r.codice) === String(t.codice)) : -1;
+            if (idx < 0 && t.descrizione) {
+                const m = String(t.descrizione).toLowerCase();
+                idx = cerca(r => String(r.description || "").toLowerCase().includes(m));
+            }
+            if (idx < 0) return;   // niente riga da correggere: si lascia com'è
+            usate.add(idx);
+            const i = importi[t.chiave];
+            const paga = +(_n(i.anticipo) + _n(i.resto)).toFixed(2);
+            const qta = Number(base[idx].qty) > 0 ? Number(base[idx].qty) : 1;
+            base[idx] = { ...base[idx], unitPrice: +(paga / qta).toFixed(2) };
         });
-        return out;
-    }, [telefoni, importi, data]);
+        return base;
+    }, [data, _telefoniConImporti, importi]);
 
     /** Nella forma in cui va archiviato: importo, mezzo, e di quale telefono. */
     const contoTerziDaSalvare = useMemo(() => contoTerzi.map(r => ({
@@ -175,7 +215,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         }))
         .filter(r => r.unitPrice > 0), [telefoni, importi]);
 
-    const itemsTutte = useMemo<RigaScontrino[]>(() => [...(data?.items || []), ...righeOrfane], [data, righeOrfane]);
+    const itemsTutte = useMemo<RigaScontrino[]>(() => [..._righeCorrette, ...righeOrfane], [_righeCorrette, righeOrfane]);
 
     /* LE RIGHE DI PAGAMENTO SI RICOSTRUISCONO SEMPRE COSÌ (revisore 01/09):
        prima le forme già decise — finanziato, rateizzato: quelle non le
@@ -674,11 +714,13 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             il CRM sullo scontrino: la parte che non incassiamo esce come <b>non riscossa</b>,
                             così non finisce nei flussi di cassa.
                         </div>
-                        {/* IL CONTROLLO CHE MANCAVA (revisore 01/09): anticipo più
-                            resto devono fare il prezzo del telefono che sta nel
-                            carrello. Se non tornano, uno dei due è stato copiato
-                            male dal PDA — e senza dirlo la cassa chiedeva al
-                            cliente una cifra sbagliata col segno di spunta verde. */}
+                        {/* QUESTI DUE NUMERI FANNO IL PREZZO SULLO SCONTRINO, e non
+                            devono tornare col listino: la differenza la assorbe
+                            l'operatore telefonico, perché è un cliente suo. Un
+                            TCL K70 da 159,90 di listino, con anticipo 0 e
+                            rateizzato 109,90, sullo scontrino vale 109,90 — e
+                            al cliente si chiedono solo gli altri articoli del
+                            carrello. */}
                         {telefoni.map((t) => {
                             const q = DOMANDE_TELEFONO[t.modo];
                             const i = importi[t.chiave] || { anticipo: "", resto: "", forma: "" };
@@ -808,12 +850,6 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             className="w-full primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
                             Avanti · come si paga
                         </button>
-                        {scarti.length > 0 && (
-                            <div className="rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 text-xs text-amber-200">
-                                {scarti.map((x, i) => <div key={i}>⚠️ {x}</div>)}
-                                <div className="mt-1 text-amber-300/80">Controlla i numeri sul PDA: quello che il cliente paga in cassa dipende da questi.</div>
-                            </div>
-                        )}
                     </div>
                 )}
 
