@@ -26,12 +26,21 @@ export const dynamic = "force-dynamic";
 //   POST { negozio?, deviceUrl?, items:[{productId?,description,unitPrice,qty?,reparto?}],
 //          paymentType?, paymentDescription?, paidAmount?, dryRun? }
 export async function POST(req: Request) {
+    let _sess: { id: string; role: string; exp: number } | null = null;
+    let _chiSono: string | null = null;
     // 🔒 BLINDATURA (28/08): senza sessione firmata non si passa
     {
         // 🔒 sessione firmata + permesso della sezione, come nel pannello
         const _g = await accesso(req, "vendita/scontrino");
         if (!_g.ok) return _g.risposta;
-        const _s = _g.sess;
+        _sess = _g.sess;
+    }
+    /* CHI HA BATTUTO LO SCONTRINO. Si legge dal database con l'id della
+       sessione firmata, non da quello che manda il browser: su un documento
+       fiscale il nome di chi l'ha emesso non lo si prende sulla fiducia. */
+    {
+        const { data } = await supabase.from("app_users").select("full_name").eq("id", _sess?.id || "").maybeSingle();
+        _chiSono = (data as { full_name?: string } | null)?.full_name || null;
     }
 
     const b: any = await req.json().catch(() => ({}));
@@ -426,7 +435,18 @@ export async function POST(req: Request) {
             kind,
             request_xml,
             status: "pending",
-            meta: { total: netTotale, sconto: scontoGruppo || 0, azienda: az === "__def" ? null : az, items: items.length, testMode, coupon: couponCode || null },
+            /* ACCANTO AL DOCUMENTO RESTA A CHI APPARTIENE (Luca 01/09 sera).
+               La sezione Documenti deve poter aprire uno scontrino e mostrare
+               la vendita, il cliente e chi l'ha battuto: senza questi tre
+               riferimenti resta un elenco di totali, e quando un negozio non
+               si ricorda cosa ha fatto non lo aiuta. */
+            meta: {
+                total: netTotale, sconto: scontoGruppo || 0, azienda: az === "__def" ? null : az,
+                items: items.length, testMode, coupon: couponCode || null,
+                contrattoId: b.contrattoId ?? null,
+                cliente: (b as { cliente?: string | null }).cliente ?? null,
+                operatore: _chiSono || null,
+            },
         }).select("id").single();
         if (error) {
             await logPos("errore", { azienda: az === "__def" ? null : az, rt_url: rtFor(az) as string, errore: error.message, totale: netTotale, esclusi, dettagli: { fase: "coda-print_jobs" } });

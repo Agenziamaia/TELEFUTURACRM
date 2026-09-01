@@ -498,6 +498,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     azienda: soloServizi ? aziendaSel : null,
                     pagamenti,
                     contrattoId: data?.contrattoId ?? null,
+                    /* IL CLIENTE VIAGGIA COL DOCUMENTO (Luca 01/09 sera): la
+                       sezione Documenti deve poter aprire uno scontrino e dire
+                       a chi è stato fatto, se no è un elenco di numeri. */
+                    cliente: data?.cliente ?? null,
                     coupon: couponPayload,
                 }),
             });

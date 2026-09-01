@@ -106,6 +106,10 @@ export const NAVIGATION: NavEntry[] = [
         children: [
             { name: "Registra Vendita", href: "/registra-vendita", icon: FilePlus, roles: EVERYONE },
             { name: "Ricerca Vendite", href: "/ricerca-vendite", icon: Database, roles: EVERYONE },
+            /* DOCUMENTI sta nel lab delle vendite perché è lì che si cerca
+               (Luca 01/09): «se qualcosa non torna, o non si ricordano se hanno
+               fatto uno scontrino, cliccano e si apre il dettaglio». */
+            { name: "Documenti", href: "/documenti", icon: Receipt, roles: EVERYONE },
             { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: EVERYONE },
         ],
     },
