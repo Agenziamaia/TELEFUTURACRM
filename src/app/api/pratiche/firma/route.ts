@@ -27,12 +27,29 @@ export const dynamic = "force-dynamic";
  * pratica, e i due campi firma sono dentro il testo. Un modello a parte
  * avrebbe voluto dire tenere allineate due copie dello stesso contratto.
  */
-const DOCUSEAL = "https://api.docuseal.eu";
+/* ⚠️ L'HOST NON SI INDOVINA, SI CHIEDE. DocuSeal ha due case — quella europea
+   e quella globale — e una chiave vale su UNA sola: sull'altra risponde 401,
+   che si legge come «chiave sbagliata» e fa perdere mezza giornata (successo).
+   Cambiando account cambia anche la casa, quindi la si prova e la si ricorda:
+   una volta per avvio, non a ogni chiamata. */
+const CASE = ["https://api.docuseal.eu", "https://api.docuseal.com"];
+let _host: string | null = null;
 
 async function chiave(): Promise<string | null> {
     const { data } = await supabaseAdmin.from("impostazioni_servizio").select("docuseal_api_key").eq("id", 1).maybeSingle();
     const k = (data?.docuseal_api_key as string) || "";
     return k.trim() || null;
+}
+
+async function casa(k: string): Promise<string | null> {
+    if (_host) return _host;
+    for (const h of CASE) {
+        try {
+            const r = await fetch(`${h}/templates?limit=1`, { headers: { "X-Auth-Token": k } });
+            if (r.ok) { _host = h; return h; }
+        } catch { /* si prova l'altra */ }
+    }
+    return null;
 }
 
 /* ⚠️ DA AMMINISTRAZIONE, SEMPRE (Luca 01/09: «tutte queste email devono
@@ -88,7 +105,7 @@ function htmlInvito(d: DatiModulo, link: string, email: string): string {
    Le coordinate di DocuSeal sono RELATIVE (0-1) con l'origine in alto a
    sinistra; pdfjs le dà in punti con l'origine in basso, quindi la y si
    ribalta. */
-async function posizionaCampi(k: string, tpl: Record<string, unknown>): Promise<{ errore?: string }> {
+async function posizionaCampi(k: string, tpl: Record<string, unknown>, DOCUSEAL: string): Promise<{ errore?: string }> {
     try {
         const doc = ((tpl.documents as { url?: string; uuid?: string }[]) || [])[0];
         const campi = (tpl.fields as Record<string, unknown>[]) || [];
@@ -161,6 +178,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; nome?: string; submissionId?: number; canale?: string; protocollo?: string };
     const k = await chiave();
     if (!k) return NextResponse.json({ error: "la chiave DocuSeal non è configurata: si mette da Amministrazione." }, { status: 503 });
+    const DOCUSEAL = await casa(k);
+    if (!DOCUSEAL) return NextResponse.json({ error: "la chiave DocuSeal non è valida su nessuna delle due case (europea e globale): controllala." }, { status: 503 });
 
     /* ── com'è andata, e SI PORTA A CASA IL DOCUMENTO ─────────────────
        Il PDF firmato e il registro delle firme vivevano solo da DocuSeal:
@@ -253,7 +272,7 @@ export async function POST(req: Request) {
     const tj = await tpl.json().catch(() => ({}));
     if (!tpl.ok) return NextResponse.json({ error: tj?.error || `DocuSeal ha risposto ${tpl.status} creando il modello` }, { status: 502 });
 
-    const posato = await posizionaCampi(k, tj);
+    const posato = await posizionaCampi(k, tj, DOCUSEAL);
     if (posato.errore) {
         return NextResponse.json({ error: "non sono riuscito a mettere i campi firma sul documento (" + posato.errore + "): la richiesta NON è partita, meglio far firmare su carta." }, { status: 502 });
     }
