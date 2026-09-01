@@ -1,9 +1,39 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { buildRequestXml, type FiscalItem, type FiscalPayment } from "@/lib/fiscalprint";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/* RICOSTRUZIONE dell'XML di uno scontrino fiscale dai suoi stessi comandi ePOS.
+   Serve alla ristampa: NON si ricopia l'XML vecchio alla lettera (poteva avere il
+   bug del «non riscosso = servizi», index 00), ma si ri-passa dal costruttore
+   attuale, che applica gli indici giusti (carta 02, non riscosso 01=BENI) e ribilancia
+   i pagamenti al totale. Così un vecchio scontrino sbagliato si riemette CORRETTO. */
+const attr = (tag: string, a: string) => (tag.match(new RegExp(`${a}="([^"]*)"`)) || [])[1];
+// de-escape XML: le descrizioni salvate sono già escapate (&amp; ...); il costruttore
+// le ri-escapa, quindi qui vanno riportate in chiaro per non raddoppiare gli escape.
+const deEsc = (s: string) => (s ?? "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+function itemsDaXml(xml: string): FiscalItem[] {
+    return (xml.match(/<printRecItem\b[^>]*\/>/g) || []).map((t) => ({
+        description: deEsc(attr(t, "description") ?? ""),
+        quantity: Number(attr(t, "quantity") ?? "1") || 1,
+        unitPrice: Number(attr(t, "unitPrice") ?? "0"),
+        department: Number(attr(t, "department") ?? "0"),
+    }));
+}
+function pagamentiDaXml(xml: string): FiscalPayment[] {
+    return (xml.match(/<printRecTotal\b[^>]*\/>/g) || []).map((t) => ({
+        description: deEsc(attr(t, "description") ?? ""),
+        amount: Number(attr(t, "payment") ?? "0"),
+        paymentType: Number(attr(t, "paymentType") ?? "0"),
+    }));
+}
+function scontoDaXml(xml: string): number {
+    const m = xml.match(/<printRecSubtotalAdjustment\b[^>]*amount="([^"]*)"/);
+    return m ? Number(m[1]) || 0 : 0;
+}
 
 // RISTAMPA / riemissione di un documento che NON è uscito (Luca 01/09 sera:
 // «in Documenti, quando c'è scritto NON USCITO in rosso, un tasto per rifare lo
@@ -56,28 +86,40 @@ export async function POST(req: Request) {
         }, { status: 409 });
     }
 
-    /* ⛔ VECCHIO BUG «NON RISCOSSO = SERVIZI» (01/09): gli scontrini finanziati
-       emessi PRIMA del fix portano `paymentType="4" index="00"` (servizi) su un
-       BENE → il registratore rifiuta il totale e resta APERTO. Ri-inviarli tali e
-       quali RIPETE l'errore e ri-blocca la cassa. La ristampa copia l'XML alla
-       lettera, quindi qui si RIFIUTA e si manda a rifare la vendita da capo, che
-       ora costruisce `index="01"` (BENI) — verificato sul RT di Donna. */
-    if (orig.kind === "fiscal_receipt" && /paymentType="4"[^>]*index="00"/.test(orig.request_xml)) {
-        return NextResponse.json({
-            error: "Questo scontrino finanziato ha il vecchio errore del «non riscosso» (per questo si bloccava). "
-                + "NON rifarlo da qui: ripeterebbe l'errore. Chiudi/annulla il documento DALLA CASSA e RIFAI LA VENDITA in Registra Vendita — ora esce corretto.",
-        }, { status: 400 });
+    /* ── L'XML DA RIMETTERE IN CODA ──────────────────────────────────────────
+       Per uno SCONTRINO FISCALE si RICOSTRUISCE dai suoi comandi, così passa dagli
+       indici giusti di oggi (il vecchio bug «non riscosso = servizi/index 00» su un
+       telefono faceva rifiutare il totale e restare aperta la cassa): un vecchio
+       scontrino sbagliato si riemette CORRETTO. Per gli altri tipi (non fiscale,
+       annullo, Z) si ricopia tale e quale — non hanno quel problema.
+       ⚠️ Se la cassa è «rimasta aperta», l'XML corretto non basta: il documento
+       aperto va chiuso DALLA CASSA prima (la UI lo avvisa). */
+    let request_xml = orig.request_xml;
+    if (orig.kind === "fiscal_receipt") {
+        const items = itemsDaXml(orig.request_xml);
+        if (items.length) {
+            try {
+                const rifatto = buildRequestXml("fiscal_receipt", {
+                    items,
+                    payment: pagamentiDaXml(orig.request_xml),
+                    sconto: scontoDaXml(orig.request_xml),
+                });
+                if (rifatto) request_xml = rifatto;
+            } catch (e: any) {
+                return NextResponse.json({ error: "non riesco a ricostruire lo scontrino: " + (e?.message || "dati non validi") }, { status: 400 });
+            }
+        }
     }
 
-    // nuovo job = copia della stessa richiesta verso lo stesso registratore,
-    // con il riferimento all'originale nel meta (tracciabilità della ristampa).
+    // nuovo job verso lo STESSO registratore, con il riferimento all'originale nel
+    // meta (tracciabilità della ristampa; è anche la chiave del blocco «una sola volta»).
     const meta = { ...(orig.meta && typeof orig.meta === "object" ? orig.meta : {}), ristampaDi: b.jobId };
     const { data, error: e2 } = await supabase.from("print_jobs")
         .insert({
             negozio: orig.negozio,
             device_url: orig.device_url,
             kind: orig.kind,
-            request_xml: orig.request_xml,
+            request_xml,
             status: "pending",
             meta,
         }).select("id").single();
