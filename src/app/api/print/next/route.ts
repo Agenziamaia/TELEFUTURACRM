@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { agentAuthorized } from "@/lib/printAuth";
-import { queueKnownEmpty, markQueueEmpty, markQueueHasWork } from "@/lib/printQueueCache";
+import { queueKnownEmpty, markQueueEmpty, markQueueHasWork, markAgentSeen } from "@/lib/printQueueCache";
 
 /* Ogni quanto ripulire i job appesi, per negozio. Vive nel processo come la
    cache della coda: se il server riparte si riparte da zero, e va benissimo —
@@ -28,6 +28,7 @@ export async function GET(req: Request) {
   if (!auth) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
 
   const negozio = new URL(req.url).searchParams.get("negozio");
+  markAgentSeen(negozio); // heartbeat per il monitor negozi
 
   // (① anti-522) Se la coda di questo negozio è stata vista VUOTA pochi secondi
   // fa, rispondi senza toccare il DB: i poll a vuoto degli agenti non martellano

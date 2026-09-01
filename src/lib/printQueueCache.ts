@@ -32,3 +32,18 @@ export function markQueueHasWork(negozio: string | null): void {
   emptyUntil.delete(keyOf(negozio));
   emptyUntil.delete(KEY_ALL); // un poll senza filtro potrebbe pescarlo
 }
+
+// ── HEARTBEAT AGENTI (monitor negozi) ────────────────────────────────────────
+// Ogni poll dell'agente registra "visto ora" per il suo negozio. Il monitor
+// (/api/print/health) legge questa mappa per sapere quali agenti sono VIVI anche
+// quando non hanno nulla da stampare. In-memory: si azzera a ogni deploy, ma gli
+// agenti ripollano entro 4s → si ripopola subito.
+const lastSeen = new Map<string, number>();
+export function markAgentSeen(negozio: string | null): void {
+  if (negozio) lastSeen.set(negozio, Date.now());
+}
+export function agentiVisti(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of lastSeen) out[k] = v;
+  return out;
+}
