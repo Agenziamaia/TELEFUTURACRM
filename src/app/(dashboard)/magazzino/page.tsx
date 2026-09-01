@@ -841,22 +841,27 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        quello che è partito e di cui siamo ancora responsabili finché qualcuno
        non lo accetta. Si legge dai DDT in transito, che sono la prova
        documentale del passaggio. */
-    const [inViaggio, setInViaggio] = useState<{ id: string; numero: string | null; da_negozio: string; a_negozio: string; emesso_il: string; seriale: string | null; codice: string | null; descrizione: string | null; qta: number | null }[] | null>(null);
+    const [inViaggio, setInViaggio] = useState<{ id: string; numero: string | null; da_negozio: string; a_negozio: string; creato_il: string; seriale: string | null; codice: string | null; descrizione: string | null; quantita: number | null }[] | null>(null);
     useEffect(() => {
         // si carica al montaggio, non al clic: il riquadro deve poter contare
         let vivo = true;
         (async () => {
             const { data: ddt, error } = await supabase.from("mag_ddt")
-                .select("id,numero,da_negozio,a_negozio,emesso_il").eq("stato", "in_transito").order("emesso_il", { ascending: false }).limit(200);
+                /* I NOMI VERI DELLE COLONNE (revisore 01/09): `emesso_il` e `qta`
+                   non esistono — sono `creato_il` e `quantita`. La query non
+                   dava errore, restituiva semplicemente niente: il riquadro
+                   diceva sempre zero mentre in viaggio c'erano quattro
+                   documenti con venticinque pezzi. */
+                .select("id,numero,da_negozio,a_negozio,creato_il").eq("stato", "in_transito").order("creato_il", { ascending: false }).limit(200);
             if (error) console.error("ddt in transito:", error.message);
             const ids = (ddt ?? []).map((d: { id: string }) => d.id);
             const righeDdt = ids.length
-                ? (await supabase.from("mag_ddt_righe").select("ddt_id,seriale,codice,descrizione,qta").in("ddt_id", ids)).data ?? []
+                ? (await supabase.from("mag_ddt_righe").select("ddt_id,seriale,codice,descrizione,quantita").in("ddt_id", ids)).data ?? []
                 : [];
             if (!vivo) return;
             const perId = new Map((ddt ?? []).map((d: { id: string }) => [d.id, d]));
-            setInViaggio((righeDdt as { ddt_id: string; seriale: string | null; codice: string | null; descrizione: string | null; qta: number | null }[])
-                .map(r => { const d = perId.get(r.ddt_id) as { id: string; numero: string | null; da_negozio: string; a_negozio: string; emesso_il: string }; return { ...d, seriale: r.seriale, codice: r.codice, descrizione: r.descrizione, qta: r.qta }; })
+            setInViaggio((righeDdt as { ddt_id: string; seriale: string | null; codice: string | null; descrizione: string | null; quantita: number | null }[])
+                .map(r => { const d = perId.get(r.ddt_id) as { id: string; numero: string | null; da_negozio: string; a_negozio: string; creato_il: string }; return { ...d, seriale: r.seriale, codice: r.codice, descrizione: r.descrizione, quantita: r.quantita }; })
                 /* ANCHE QUELLI CHE ARRIVANO, non solo quelli partiti. La merce
                    che l'import ha trovato «in arrivo» viaggia con un documento
                    il cui mittente è «Import»: guardando solo `da_negozio`,
@@ -1206,9 +1211,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                 <tr key={`${r.id}-${r.seriale || r.codice || i}`} className="rvTab-riga">
                                     <td className="rvTab-cod">{r.numero || "—"}</td>
                                     <td className="rvTab-nome">{r.da_negozio} → {r.a_negozio}</td>
-                                    <td className="rvTab-min">{gg(r.emesso_il)}</td>
+                                    <td className="rvTab-min">{gg(r.creato_il)}</td>
                                     <td className="rvTab-nome">{r.descrizione || r.codice || "—"}{r.seriale ? <span className="rvTab-min"> · {r.seriale}</span> : null}</td>
-                                    <td className="rvTab-n">{r.seriale ? 1 : (r.qta ?? 1)}</td>
+                                    <td className="rvTab-n">{r.seriale ? 1 : (r.quantita ?? 1)}</td>
                                 </tr>
                             ))}
                         </tbody>
