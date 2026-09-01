@@ -217,12 +217,20 @@ const NOMI_OPERATORE: [string, string][] = [
 export function leggiRicaricaDaProdotto(prodotto: string | null | undefined):
     { operatore: string; operatoreNome: string; importo: number; numero: string } | null {
     const s = String(prodotto || "").trim();
+    const fatta = (nome: string, imp: string, num: string, esatto: boolean) => {
+        const N = nome.toUpperCase().trim();
+        const op = NOMI_OPERATORE.find(([n]) => N === n) || (esatto ? null : NOMI_OPERATORE.find(([n]) => N.startsWith(n)));
+        return op ? { operatore: op[1], operatoreNome: op[0], importo: Number(String(imp).replace(",", ".")), numero: num } : null;
+    };
     const m = s.match(/^RICARICA\s+(.+?)\s+([\d.,]+)\s+(\d{7,11})$/i);
-    if (!m) return null;
-    const nome = m[1].toUpperCase().trim();
-    const op = NOMI_OPERATORE.find(([n]) => nome === n) || NOMI_OPERATORE.find(([n]) => nome.startsWith(n));
-    if (!op) return null;
-    return { operatore: op[1], operatoreNome: op[0], importo: Number(String(m[2]).replace(",", ".")), numero: m[3] };
+    if (m) return fatta(m[1], m[2], m[3], false);
+    /* ⚠️ SENZA IL PREFISSO. A 38 caratteri la parola «RICARICA» non ci sta
+       sempre — «FASTWEB MOBILE 100 12345678901» è una ricarica da cento euro
+       — e senza questo ramo quelle righe non si riconoscerebbero. Qui il
+       nome deve combaciare ESATTAMENTE con un operatore: un prodotto
+       qualunque seguito da due numeri non deve diventare una ricarica. */
+    const m2 = s.match(/^(.+?)\s+([\d.,]+)\s+(\d{7,11})$/);
+    return m2 ? fatta(m2[1], m2[2], m2[3], true) : null;
 }
 
 /** È una voce di catalogo PayStore venduta SENZA passare dal pannello — cioè
