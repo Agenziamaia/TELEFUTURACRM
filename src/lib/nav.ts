@@ -127,6 +127,12 @@ export const NAVIGATION: NavEntry[] = [
         icon: Store,
         children: [
             { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: EVERYONE },
+            /* ORDINI CLIENTE e ASSISTENZE (01/09): due sezioni sorelle ma
+               separate — rotta e permesso indipendenti, perché un negozio può
+               fare ordini senza fare riparazioni. Nascono aperte a tutto il
+               negozio: chi sta al banco apre la pratica, e da lì si muove. */
+            { name: "Ordini Cliente", href: "/ordini-clienti", icon: ClipboardList, roles: EVERYONE },
+            { name: "Assistenze", href: "/assistenze", icon: Wrench, roles: EVERYONE },
             { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
             // REGISTRO CHIAMATE Aircall del negozio (AIR-01, Luca 04/08): il
