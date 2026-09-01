@@ -56,6 +56,19 @@ export async function POST(req: Request) {
         }, { status: 409 });
     }
 
+    /* ⛔ VECCHIO BUG «NON RISCOSSO = SERVIZI» (01/09): gli scontrini finanziati
+       emessi PRIMA del fix portano `paymentType="4" index="00"` (servizi) su un
+       BENE → il registratore rifiuta il totale e resta APERTO. Ri-inviarli tali e
+       quali RIPETE l'errore e ri-blocca la cassa. La ristampa copia l'XML alla
+       lettera, quindi qui si RIFIUTA e si manda a rifare la vendita da capo, che
+       ora costruisce `index="01"` (BENI) — verificato sul RT di Donna. */
+    if (orig.kind === "fiscal_receipt" && /paymentType="4"[^>]*index="00"/.test(orig.request_xml)) {
+        return NextResponse.json({
+            error: "Questo scontrino finanziato ha il vecchio errore del «non riscosso» (per questo si bloccava). "
+                + "NON rifarlo da qui: ripeterebbe l'errore. Chiudi/annulla il documento DALLA CASSA e RIFAI LA VENDITA in Registra Vendita — ora esce corretto.",
+        }, { status: 400 });
+    }
+
     // nuovo job = copia della stessa richiesta verso lo stesso registratore,
     // con il riferimento all'originale nel meta (tracciabilità della ristampa).
     const meta = { ...(orig.meta && typeof orig.meta === "object" ? orig.meta : {}), ristampaDi: b.jobId };
