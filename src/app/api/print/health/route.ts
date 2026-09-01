@@ -59,13 +59,24 @@ export async function GET(req: Request) {
   const seen = agentiVisti();
 
   const perNeg: Record<string, any> = {};
-  for (const n of negozi) perNeg[n] = { pending: 0, oldestPendingSec: null, ultimo: null, ultimoStato: null, errori: 0 };
+  for (const n of negozi) perNeg[n] = { pending: 0, oldestPendingSec: null, ultimo: null, ultimoStato: null, errori: 0, busy: false, ultimaAttivitaSec: null };
   for (const j of (jobs || [])) {
     const p = perNeg[j.negozio]; if (!p) continue;
     if (j.status === "pending") {
       p.pending++;
       const age = Math.round((now - new Date(j.created_at).getTime()) / 1000);
       if (p.oldestPendingSec == null || age > p.oldestPendingSec) p.oldestPendingSec = age;
+    }
+    // BUSY: un job "sent" recente = l'agente sta LAVORANDO (tipico: cassa che
+    // aspetta i soldi, fino a ~3 min). Non è "giù", è occupato → niente falso rosso.
+    if (j.status === "sent") {
+      const sentAge = Math.round((now - new Date(j.updated_at || j.created_at).getTime()) / 1000);
+      if (sentAge < 200) p.busy = true;
+    }
+    // ultima attività vera dell'agente (sent/done/error = ha risposto)
+    if (j.status !== "pending") {
+      const actAge = Math.round((now - new Date(j.updated_at || j.created_at).getTime()) / 1000);
+      if (p.ultimaAttivitaSec == null || actAge < p.ultimaAttivitaSec) p.ultimaAttivitaSec = actAge;
     }
     if (!p.ultimo) { p.ultimo = j.updated_at || j.created_at; p.ultimoStato = j.status + " · " + j.kind; }
     if (j.status === "error") p.errori++;
@@ -74,10 +85,14 @@ export async function GET(req: Request) {
   const stores = negozi.map((n) => {
     const p = perNeg[n];
     const lastSeenMs = seen[n] ? Math.round((now - seen[n]) / 1000) : null; // secondi fa
-    // stato: DOWN se ha job fermi da >20s; WARN se agente non visto da >30s; OK altrimenti
+    // "vivo" = ha pollato di recente OPPURE ha lavorato un job di recente (durante
+    // una cassa lunga l'agente non polla ma sta lavorando).
+    const vivo = (lastSeenMs != null && lastSeenMs <= 45) || p.busy || (p.ultimaAttivitaSec != null && p.ultimaAttivitaSec <= 45);
+    // DOWN = vendita ferma in coda da un po' E l'agente NON è vivo (né polla né lavora).
+    // WARN = agente silente (forse caduto) ma niente in coda. Altrimenti OK (incluso "occupato").
     let stato = "ok";
-    if (p.pending > 0 && (p.oldestPendingSec ?? 0) > 20) stato = "down";
-    else if (lastSeenMs == null || lastSeenMs > 40) stato = "warn";
+    if (p.pending > 0 && (p.oldestPendingSec ?? 0) > 25 && !vivo) stato = "down";
+    else if (!vivo && !p.busy) stato = "warn";
     return {
       negozio: n,
       custom: !!custom[n],
