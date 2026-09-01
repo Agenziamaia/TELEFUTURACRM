@@ -35,11 +35,28 @@ export async function POST(request: Request) {
     const g = await accesso(request, "vendita/paystore");
     if (!g.ok) return g.risposta;
 
-    let body: { negozio?: string; venditore?: string; azienda?: string | null; voci?: Voce[] };
+    let body: { negozio?: string; venditore?: string; azienda?: string | null; soleRicariche?: boolean; voci?: Voce[] };
     try { body = await request.json(); } catch { return NextResponse.json({ error: "corpo non valido" }, { status: 400 }); }
 
     const voci = Array.isArray(body.voci) ? body.voci : [];
     if (!voci.length) return NextResponse.json({ ok: true, scritte: 0 });
+
+    /* ⚠️ LA SOCIETÀ LA DECIDE QUI, non il browser. `marg_items.azienda` è
+       NULL su tutte le voci PayStore — di proposito, perché la ricarica segue
+       l'attivazione — quindi il client non ha niente da mandare e la colonna
+       restava sempre vuota: il registro non poteva dire con quale partita IVA
+       era stata fatturata una ricarica, che è esattamente il dato per cui la
+       regola di Donna esiste.
+       È la STESSA regola dello scontrino: sole ricariche + negozio con due
+       registratori PROPRI (uno solo ce l'ha: Donna) → Telefutura SRL;
+       altrimenti la società del negozio. */
+    let azienda: string | null = body.azienda || null;
+    if (!azienda && body.negozio) {
+        const { data: rt } = await supabase.from("pos_rt").select("azienda, is_default").eq("negozio", body.negozio);
+        const proprie = [...new Set((rt || []).map((r: { azienda: string }) => r.azienda))];
+        const def = (rt || []).find((r: { is_default: boolean }) => r.is_default)?.azienda || proprie[0] || null;
+        azienda = body.soleRicariche && proprie.length > 1 && proprie.includes("T1") ? "T1" : def;
+    }
 
     const righe = [];
     const scartate: { perche: string; voce: Voce }[] = [];
@@ -66,7 +83,7 @@ export async function POST(request: Request) {
             importo,
             stato: STATO_INIZIALE,
             contract_id: v.contractId || null,
-            azienda: body.azienda || null,
+            azienda,
         });
     }
 

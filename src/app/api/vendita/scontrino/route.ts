@@ -88,6 +88,14 @@ export async function POST(req: Request) {
        Luca chiede di scegliere solo dove vanno i SOLDI (la cash machine),
        non dove esce la carta. */
     const aziende: Record<string, { rt_url: string; negozio: string }> = {};
+    /* ⚠️ LE SOCIETÀ CHE HANNO UN REGISTRATORE PROPRIO QUI, senza i gemelli.
+       `aziende` non serve a questo: contiene anche le società dei negozi che
+       dividono il locale (Magliana W3 accanto a Magliana Multi), perché una
+       riga di merce dell'altra insegna deve poter uscire dalla sua cassa.
+       Per decidere «questo negozio ha due società?» quella lista mente:
+       Magliana Multi ha SOLO Telefutura 2, ma con il gemello ne conterebbe
+       due. */
+    const societaProprie: string[] = [];
     let defaultAzienda: string | null = null;
     if (negozio) {
         const { data: tuttiRt } = await supabase.from("pos_rt").select("negozio, azienda, rt_url, is_default");
@@ -98,7 +106,10 @@ export async function POST(req: Request) {
         [...qui, ...accanto].forEach((r: any) => {
             if (!aziende[r.azienda]) aziende[r.azienda] = { rt_url: r.rt_url, negozio: r.negozio };
         });
-        qui.forEach((r: any) => { if (r.is_default) defaultAzienda = r.azienda; });
+        qui.forEach((r: any) => {
+            if (r.is_default) defaultAzienda = r.azienda;
+            if (!societaProprie.includes(r.azienda)) societaProprie.push(r.azienda);
+        });
     }
     /* MAI LA STAMPANTE DI UN ALTRO NEGOZIO (Luca 31/08, tre negozi in prova).
        Il ripiego era un indirizzo VERO — la cassa T1 di Donna — e scattava
@@ -234,9 +245,15 @@ export async function POST(req: Request) {
         return !!(meta && meta.paystore);
     };
     const soloRicariche = righe.length > 0 && righe.every(_ricarica);
-    const societaQui = Object.keys(aziende);
-    const azRicaricheSciolte = soloRicariche && societaQui.length > 1
-        ? (societaQui.includes("T1") ? "T1" : null)
+    /* ⚠️ SOLO LE SOCIETÀ DI QUESTO NEGOZIO. Con `aziende` — che include i
+       gemelli di locale — la regola sarebbe scattata anche a Magliana Multi e
+       Collatina Multi, che di società ne hanno UNA (Telefutura 2): una
+       ricarica venduta lì sarebbe uscita a nome Telefutura SRL, dalla cassa
+       dell'insegna accanto. Documento fiscale della società sbagliata, tutti i
+       giorni. Misurato su `pos_rt`: l'unico negozio con due registratori
+       propri è Donna, ed è esattamente quello di cui parlava Luca. */
+    const azRicaricheSciolte = soloRicariche && societaProprie.length > 1
+        ? (societaProprie.includes("T1") ? "T1" : null)
         : null;
 
     // Costruisci le voci raggruppate per AZIENDA ("__def" = azienda di default / negozio non multi).
@@ -258,8 +275,16 @@ export async function POST(req: Request) {
         /* l'ordine: quello che la voce dice di sé, poi la riga, poi la merce,
            poi — se è un carrello di sole ricariche in un negozio con due
            società — la regola PayStore, e per ultimo il default del negozio */
+        /* ⚠️ LA SCELTA DELL'OPERATORE VIENE PRIMA DELLA REGOLA (revisione
+           01/09). Con la regola davanti a `b.azienda`, a Donna il modale
+           mostrava «Telefutura 2» — il default del negozio — e poi usciva uno
+           scontrino Telefutura SRL: la scelta letta a schermo e confermata
+           veniva ignorata in silenzio, che su un documento fiscale non si può
+           fare. Adesso la regola PayStore PREIMPOSTA la società nel modale
+           (`ScontrinoCassa`), così quello che si legge è quello che esce, e
+           resta la possibilità di correggere quando serve. */
         const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")]
-            || azDellaMerce || azRicaricheSciolte || b.azienda || defaultAzienda || "__def";
+            || azDellaMerce || b.azienda || azRicaricheSciolte || defaultAzienda || "__def";
         const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;

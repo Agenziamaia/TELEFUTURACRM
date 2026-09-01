@@ -2245,3 +2245,8 @@ html.light .rvCoup{box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 16%,tra
    riga sta ancora bloccando il salvataggio */
 .psImporto{padding:5px 12px;border-radius:8px;border:1px solid rgba(248,181,22,.6);background:rgba(248,181,22,.14);color:#f8b516;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
 .psImporto-ok{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12);color:var(--tf-34d399)}
+/* il numero dentro il pannellino della ricarica nel carrello */
+.psNumCart{display:inline-flex;align-items:center;gap:6px}
+.psNumCart>span{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--tf-8892b0)}
+.psNumCart .rvIn{width:150px;padding:5px 9px;font-size:13px;font-family:ui-monospace,monospace;letter-spacing:1px}
+.psNumCart-manca{border-color:rgba(239,68,68,.7)!important;background:rgba(239,68,68,.09)!important}

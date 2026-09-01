@@ -5007,12 +5007,33 @@ function CRM() {
      sciolte E al carrello, dove la ricarica associata alla SIM chiede
      l'importo. Due letture separate darebbero due verità. */
   const {tagli:psTagli,voci:psVoci}=usaCatalogoPayStore();
+  // quante voci PayStore conosciamo: serve solo a far rigirare il ricalcolo
+  // della marginalità quando il catalogo arriva (vedi l'effetto più sotto)
+  const psPronto=Object.keys(psVoci).length;
   // quale riga di ricarica ha il compositore aperto nel carrello
+  /* ⚠️ LA CHIAVE, non l'indice: cancellando una riga sopra, l'indice punta a
+     un'altra ricarica e il pannellino si apre su quella sbagliata. */
   const [psAperta,setPsAperta]=useState(null);
+  /* ⚠️ LE RICARICHE TOLTE A MANO RESTANO TOLTE. `computeAutoMarg` ricostruisce
+     da zero le voci automatiche del brand a OGNI prodotto aggiunto: senza
+     questa lapide, la ricarica tolta col pulsante «carta di credito»
+     rinasceva al primo ricalcolo, e la vendita Vodafone pagata con carta non
+     si chiudeva più — il salvataggio chiedeva un prezzo per una riga che
+     l'operatore aveva già cancellato, e ricancellarla non serviva a niente.
+     La chiave è l'`autoKey` (nome#occorrenza), la stessa con cui il ricalcolo
+     riconosce le voci fra loro. Si azzera col carrello. */
+  const psTolte=useRef(new Set());
   /* Compone l'importo di una ricarica del carrello. Tocca TRE cose insieme —
      i pezzi, il totale e il margine — e devono restare d'accordo: un importo
      senza i pezzi non si può eseguire, i pezzi senza l'importo non si possono
      incassare. */
+  /* IL NUMERO SI PUÒ SCRIVERE A MANO, e non è un ripiego: su Vodafone
+     Business le regole del catalogo SPENGONO i campi «Numero di Cellulare» e
+     «Numero Provvisorio» (regole del 04/08), quindi lì la ricarica nascerebbe
+     sempre senza numero. E capita anche che il numero arrivi storto. */
+  const _numeroRicarica=(idx,val)=>setMargItems(p=>p.map((m,i)=>
+    i===idx&&m.paystore?{...m,paystore:{...m.paystore,numero:String(val||"").replace(/\D/g,"").slice(0,11)},
+      model:String(val||"").replace(/\D/g,"")||"⚠ numero mancante"}:m));
   const _componiRicarica=(idx,pezzi)=>setMargItems(p=>p.map((m,i)=>{
     if(i!==idx||!m.paystore)return m;
     const tot=totaleComposto(pezzi);
@@ -5577,7 +5598,7 @@ function CRM() {
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
   const _pickBrand=(b)=>{if(!b.ready)return;setPsFlow(false);if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const fullReset=()=>{psTolte.current.clear();setPsAperta(null);setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
@@ -5671,7 +5692,12 @@ function CRM() {
     if(!voci.length)return;
     try{
       const r=await fetch("/api/vendita/paystore",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({negozio:selNeg,venditore:selVend,azienda:items.find(m=>m&&m.paystore)?.azienda||null,voci})});
+        body:JSON.stringify({negozio:selNeg,venditore:selVend,
+          azienda:items.find(m=>m&&m.paystore)?.azienda||null,
+          // se non c'era altro da scontrinare, il server sa che a Donna la
+          // ricarica va su Telefutura SRL: gli serve saperlo per scriverlo
+          soleRicariche:(items||[]).length>0&&(items||[]).every(m=>m&&m.paystore),
+          voci})});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||j.scartate?.length){
         console.error("ricariche PayStore non registrate:",j);
@@ -5761,7 +5787,14 @@ function CRM() {
     const _occ={};
     // niente doppioni con le voci MANUALI: ogni voce uguale aggiunta A MANO dal
     // pannello copre UNA occorrenza auto (prima ne copriva tutte: stesso collasso)
-    const push=(name,locked,extra)=>{const n=(_occ[name]=(_occ[name]||0)+1);if(n<=prev.filter(m=>!m.auto&&m.product===name).length)return;adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,autoKey:name+"#"+n,priceLocked:!!locked,priceRequired:!locked,
+    const push=(name,locked,extra)=>{const n=(_occ[name]=(_occ[name]||0)+1);if(n<=prev.filter(m=>!m.auto&&m.product===name).length)return;
+      /* la ricarica che l'operatore ha tolto non torna (vedi psTolte).
+         ⚠️ SOLO le ricariche: le altre voci automatiche — la SIM, il telefono
+         a rate — si sono sempre ricreate al ricalcolo, e cambiare quel
+         comportamento qui vorrebbe dire toccare vendite che con PayStore non
+         c'entrano niente. */
+      if(extra&&extra.paystore&&psTolte.current.has(name+"#"+n))return;
+      adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,autoKey:name+"#"+n,priceLocked:!!locked,priceRequired:!locked,
       /* IL REPARTO DELLE VOCI AUTO (revisore 29/08). «Telefono TNP
          (listino)», «Bundle N €», «Kipoint …» non esistono in marg_items:
          il server non trovava un reparto e le scartava. Da stamattina il
@@ -6005,6 +6038,15 @@ function CRM() {
      entravano in carrello, il magazzino li scaricava e lo scontrino li
      buttava via — merce uscita e riga assente dal fiscale (revisore 29/08). */
   const margPriceMissing=(list)=>list.filter(m=>(m.priceRequired||m.linked||m.natura)&&!m.priceLocked&&(m.importo==null||m.importo===""));
+  /* ⚠️ UNA RICARICA SENZA NUMERO NON SI INCASSA. Senza questo controllo la
+     riga passava lo stesso: lo scontrino stampava «RICARICA VODAFONE 20», i
+     venti euro entravano in cassa, e il registro delle ricariche SCARTAVA la
+     riga perché il numero non era valido — cliente pagato, credito mai
+     caricato, e da nessuna parte scritto che qualcuno lo doveva caricare.
+     Su Vodafone Business succedeva sempre, perché il catalogo spegne i campi
+     del numero. */
+  const _numeroRicaricaOk=(m)=>{const n=String(m?.paystore?.numero||"").replace(/\D/g,"");return n.length>=7&&n.length<=11;};
+  const margNumeroMancante=(list)=>(list||[]).filter(m=>m&&m.paystore&&!_numeroRicaricaOk(m));
   // live: le voci auto seguono in tempo reale la selezione dei prodotti del brand corrente
   useEffect(()=>{
     if(!bObj)return;
@@ -6016,7 +6058,14 @@ function CRM() {
     // il magazzino arriva dopo (lettura asincrona): quando c'è, il prezzo del
     // telefono a rate si ricalcola — se no la voce resta senza prezzo per un
     // pezzo che a scaffale ce l'ha
-  },[sales,skyS,brand,magVendita]); // eslint-disable-line react-hooks/exhaustive-deps
+    /* ⚠️ `psPronto` FRA LE DIPENDENZE, e non è un dettaglio: il catalogo
+       PayStore si legge in modo asincrono, e se il ricalcolo gira prima che
+       sia arrivato la ricarica non viene aggiunta — né recuperata mai più,
+       perché niente lo fa rigirare. È lo stesso motivo per cui qui sopra ci
+       sono i ricalcoli dei listini e dei valori CE. Succede sul serio: alla
+       ripresa di una bozza salvata, o con la linea lenta in negozio, la
+       ricarica sarebbe sparita in silenzio. */
+  },[sales,skyS,brand,magVendita,psPronto]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
   // ── RIUSO DOCUMENTI D'ARCHIVIO (Luca 05/08): se il cliente ha gia' un
@@ -6500,11 +6549,16 @@ function CRM() {
     .filter((mi) => !_fuoriScontrino(mi))
     .map((mi) => ({
       productId: mi.productId || null,
-      /* LA RICARICA SI DESCRIVE DA SÉ (Luca 01/09). Nel carrello la voce si
-         chiama come la voce di catalogo — «Ricarica WindTre» — perché è così
-         che il server la riconosce anche senza `productId`; sullo scontrino
-         invece deve esserci quello che il cliente contesta se sbagliamo:
-         quanto e su che numero. */
+      /* LA RICARICA SI DESCRIVE DA SÉ (Luca 01/09): sullo scontrino deve
+         esserci quello che il cliente contesta se sbagliamo — quanto e su che
+         numero — non il nome della voce di catalogo.
+         ⚠️ Cambiando la descrizione, il riconoscimento per NOME lato server
+         non vale più per queste righe: la ricarica si riconosce dal
+         `productId` (`mi_<uuid>`), che è sempre valorizzato sia dal pannello
+         sia dalla riga automatica. Se un giorno si perdesse, il reparto
+         reggerebbe lo stesso (la riga porta `reparto: 1`), ma la regola della
+         società a Donna smetterebbe di applicarsi in silenzio: è il motivo
+         per cui `productId` qui non è facoltativo. */
       /* IL NOME CHE LEGGE IL CLIENTE. Sulla riga del telefono usciva «Telefono
          TNP (listino)», che è il nome interno della voce automatica: la
          descrizione del bene è un elemento obbligatorio del documento
@@ -6528,6 +6582,10 @@ function CRM() {
          l'operatore ha lasciato selezionata. Il server raggruppa già per
          azienda, quindi un carrello misto esce come due scontrini. */
       azienda: mi.azienda ?? null,
+      /* serve SOLO al modale, per preimpostare la società giusta quando il
+         carrello è di sole ricariche: il server non lo legge (lì la ricarica
+         si riconosce dalla voce di catalogo, che è il dato autoritativo) */
+      ricarica: !!mi.paystore,
       // il codice serve al server per dedurre la società quando la riga non
       // la porta: la merce è di chi i pezzi ce li ha
       codice: mi.codice ?? null,
@@ -6901,6 +6959,7 @@ function CRM() {
     //    era rimasto fuori, quindi il suo bottone restava verde comunque
     if (margFlow && !brand) {
       margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
+      margNumeroMancante(margItems).forEach(m => out.push({ ico: "📲", testo: `manca il numero da ricaricare per «${m.product}»`, dove: "carrello" }));
       if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino non lo può stampare (Amministrazione → Fiscalità → Articoli)`, dove: "carrello" }));
       mancanzeMagazzino(margItems).forEach(x => out.push(x));
       if (margItems.some(_usatoFinanziato)) {
@@ -6955,6 +7014,12 @@ function CRM() {
     if (nextMarg !== margItems) setMargItems(nextMarg);
     const senzaPrezzo = margPriceMissing(nextMarg);
     if (senzaPrezzo.length) { setShowCart(true); sT("⚠️ Inserisci il prezzo di vendita per: " + senzaPrezzo.map(m => m.product).join(", ")); return; }
+    /* ⚠️ E SENZA NUMERO NON SI INCASSA. Sta qui accanto al prezzo perché è
+       la stessa cosa: una riga che non si può eseguire. Su Vodafone Business
+       il catalogo spegne i campi del numero, quindi senza questo controllo la
+       ricarica partiva vuota tutte le volte. */
+    const senzaNumero = margNumeroMancante(nextMarg);
+    if (senzaNumero.length) { setShowCart(true); sT("📲 Scrivi il numero da ricaricare per: " + senzaNumero.map(m=>m.product).join(", ")); return; }
     submitLock.current = true;
     setSubmitting(true);
     let ok = false;
@@ -6988,6 +7053,8 @@ function CRM() {
     }
     const _mm2 = margPriceMissing(margList);
     if(_mm2.length){setShowCart(true);sT("⚠️ Inserisci il prezzo di vendita per: "+_mm2.map(m=>m.product).join(", "));return;}
+    const _nn2 = margNumeroMancante(margList);
+    if(_nn2.length){setShowCart(true);sT("📲 Scrivi il numero da ricaricare per: "+_nn2.map(m=>m.product).join(", "));return;}
     const cur = colItems();
     // MATRICE BRAND×NEGOZIO sull'ATTRIBUZIONE (Luca 07/08): la griglia filtra
     // sul negozio dell'UTENTE loggato, ma il negozio della vendita si sceglie
@@ -7571,6 +7638,11 @@ function CRM() {
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); margLock.current=false;return; }
+    /* ⚠️ E SENZA NUMERO NON SI INCASSA (revisione 01/09): lo scontrino
+       sarebbe uscito lo stesso, i soldi entrati, e il registro delle ricariche
+       avrebbe scartato la riga perché il numero non è valido. */
+    const _nn = margNumeroMancante(margItems);
+    if (_nn.length) { sT("📲 Scrivi il numero da ricaricare per: " + _nn.map(m => m.product).join(", ")); margLock.current=false;return; }
     /* IL BLOCCO SUL RIFERIMENTO, NON SULLO STATO (revisore 29/08). È lo
        stesso difetto che questo file racconta di aver già pagato sui
        contratti: due clic nello stesso istante leggono entrambi `margSaving`
@@ -8122,7 +8194,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
           </div>
           {margItems.map((item,idx)=>(
             <div key={idx}>
-            <div className={cn("psRigaCart",item.paystore&&psAperta===idx&&"psRigaCart-aperta")}>
+            <div className={cn("psRigaCart",item.paystore&&psAperta===(item.autoKey||("riga#"+idx))&&"psRigaCart-aperta")}>
               <div>
                 <span style={{fontWeight:700,fontSize:13}}>{item.product}</span>
                 {item.model&&<span style={{fontSize:11,color:"var(--tf-64748b)",marginLeft:6}}>{item.model}</span>}
@@ -8140,9 +8212,10 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     libero qui farebbe passare importi che PayStore non vende,
                     e la ricarica non partirebbe. */}
                 {item.paystore&&<span style={{display:"flex",alignItems:"center",gap:6}}>
-                  {item.paystore.puoCartaCredito&&<button onClick={()=>{if(window.confirm("La SIM è stata attivata con carta di credito?\n\nTolgo la ricarica dal carrello."))setMargItems(p=>p.filter((_,i)=>i!==idx));}}
+                  {item.paystore.puoCartaCredito&&<button onClick={()=>{if(window.confirm("La SIM è stata attivata con carta di credito?\n\nTolgo la ricarica dal carrello."))
+                    {if(item.autoKey)psTolte.current.add(item.autoKey);setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx));}}}
                     title="Attivata con carta di credito: la ricarica non serve" className="psCarta">💳 carta di credito</button>}
-                  <button onClick={()=>setPsAperta(psAperta===idx?null:idx)}
+                  <button onClick={()=>{const k=item.autoKey||("riga#"+idx);setPsAperta(psAperta===k?null:k)}}
                     className={cn("psImporto",Number(item.importo||0)>0&&"psImporto-ok")}>
                     {Number(item.importo||0)>0
                       ? <>€ {Number(item.importo).toFixed(2)}{quanteRicariche(item.paystore.pezzi||[])>1?` · ${quanteRicariche(item.paystore.pezzi)} ric.`:""} ✎</>
@@ -8163,17 +8236,22 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     che nel listino di marginalità non esiste: non si
                     ripristinava nulla e la voce era persa. Su queste righe il
                     prezzo si corregge in riga, e per toglierle c'è il cestino. */}
-                {item.auto||item.natura?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                {item.auto||item.natura?<button onClick={()=>{if(item.paystore&&item.autoKey)psTolte.current.add(item.autoKey);setMargItems(p=>p.filter((_,i)=>i!==idx))}} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 :<span style={{display:"inline-flex",gap:6}}><button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button><button onClick={()=>{const it=margItems[idx];if(window.confirm("Eliminare \""+(it?.product||"voce")+"\" dal carrello?"))setMargItems(p=>p.filter((_,i)=>i!==idx));}} title="Elimina la voce" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.10)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑️</button></span>}
               </div>
             </div>
             {/* IL COMPOSITORE, sotto la riga. Si apre solo quando serve: nel
                 carrello di una vendita normale queste righe sono una o due, e
                 tenerle sempre aperte allungherebbe la lista di tre schermate. */}
-            {item.paystore&&psAperta===idx&&<div className="psInCarrello">
+            {item.paystore&&psAperta===(item.autoKey||("riga#"+idx))&&<div className="psInCarrello">
               <div className="psInCarrelloT">
                 <b>{nomeOperatore(item.paystore.operatore)}</b>
-                <span>{item.paystore.numero||"⚠ numero mancante"}</span>
+                <label className="psNumCart">
+                  <span>numero</span>
+                  <input value={item.paystore.numero||""} inputMode="numeric" placeholder="3XXXXXXXXX"
+                    onChange={e=>_numeroRicarica(idx,e.target.value)}
+                    className={cn("rvIn",!_numeroRicaricaOk(item)&&"psNumCart-manca")} />
+                </label>
                 {item.paystore.daSim&&<i>ricarica della SIM appena venduta</i>}
               </div>
               <CompositoreTagli compatto operatore={item.paystore.operatore} tagli={psTagli}
@@ -9028,7 +9106,9 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     {item.model&&<div style={{fontSize:11,color:"var(--tf-64748b)"}}>{item.model}</div>}
                     <div style={{fontSize:12,color:"var(--tf-8892b0)",marginTop:2}}>x{item.qty||1}{item.importo!=null&&<span style={{color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>}</div>
                   </div>
-                  <button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                  {/* anche da qui la ricarica tolta resta tolta: senza la
+                      lapide tornava al primo ricalcolo (vedi psTolte) */}
+                  <button onClick={()=>{if(item.paystore&&item.autoKey)psTolte.current.add(item.autoKey);setMargItems(p=>p.filter((_,i)=>i!==idx))}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 </div>
               ))
             }

@@ -275,7 +275,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             }));
             setAziende(list.map((x) => ({ code: x.code, label: x.label })));
             // se si RIPRENDE un sospeso con azienda già scelta, rispettala; altrimenti default.
-            const preset = data?.azienda && list.find((x) => x.code === data.azienda);
+            /* ⚠️ LE SOLE RICARICHE LE EMETTE TELEFUTURA SRL (Luca 01/09):
+               «nei negozi con due casse dentro lo stesso negozio, se non c'è
+               nient'altro nel carrello e l'unica cosa da scontrinare è la
+               ricarica, allora va su Telefutura SRL». Qui si PREIMPOSTA, non
+               si impone: quello che l'operatore legge è quello che uscirà, e
+               se il caso è diverso può cambiarlo. */
+            const soleRicariche = itemsTutte.length > 0 && itemsTutte.every((i) => i.ricarica === true);
+            const preset = (data?.azienda && list.find((x) => x.code === data.azienda))
+                || (soleRicariche ? list.find((x) => x.code === "T1") : null);
             const def = preset || list.find((x) => x.isDef) || list[0];
             setAziendaSel(def ? def.code : null);
         });

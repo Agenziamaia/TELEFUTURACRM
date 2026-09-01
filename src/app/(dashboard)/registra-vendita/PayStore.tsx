@@ -87,7 +87,12 @@ export const quanteRicariche = (pezzi: PezzoRicarica[]) => (pezzi || []).reduce(
  *  caratteri: il totale e il numero devono starci entrambi, perché è con
  *  quelli che un cliente contesta una ricarica sbagliata. */
 export function descrizioneRicarica(operatore: string, importo: number, numero: string): string {
-    const base = ("RICARICA " + nomeOperatore(operatore) + " " + Math.round(importo * 100) / 100).toUpperCase();
+    /* ⚠️ LA VIRGOLA, non il punto: sullo scontrino di un negozio italiano
+       «12.5» si legge male e sembra un codice. I tagli a listino sono interi,
+       ma l'importo libero degli operatori senza listino no. */
+    const n = Math.round(Number(importo) * 100) / 100;
+    const cifra = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",");
+    const base = ("RICARICA " + nomeOperatore(operatore) + " " + cifra).toUpperCase();
     const coda = " " + numero;
     return (base.slice(0, Math.max(0, 38 - coda.length)).trim() + coda).slice(0, 38);
 }

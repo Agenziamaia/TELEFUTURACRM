@@ -80,6 +80,11 @@ export interface RigaScontrino {
      * carrello è di sola merce o di soli servizi. */
     azienda?: string | null;
     codice?: string | null;
+    /* È una ricarica telefonica? Lo usa SOLO il modale, per preimpostare la
+     * società quando il carrello non contiene altro (Luca 01/09). Il server
+     * non lo legge: lì la ricarica si riconosce dalla voce di catalogo, che è
+     * il dato autoritativo e non si può falsificare dal browser. */
+    ricarica?: boolean;
 }
 
 /** Totale (IVA inclusa) di una lista di righe. */
