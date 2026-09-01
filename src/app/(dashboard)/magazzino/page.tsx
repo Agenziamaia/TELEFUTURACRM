@@ -73,7 +73,13 @@ type Unita = {
 };
 /** Quello che l'anagrafica dice di un codice. `gruppo` e `marca` non sono
  *  decorazione: da lì si ricava l'operatore telefonico. */
-type DatiArticolo = { descrizione: string; prezzo: number | null; costo_ultimo?: number | null; gruppo: string | null; marca: string | null };
+/* IL SOTTOGRUPPO SERVE PER LA CATEGORIA (Luca 01/09: «in giacenze dobbiamo
+   integrare una colonna dedicata alla categoria, quelle che abbiamo creato
+   noi»). Senza, `famigliaDi` non riconosce quasi niente: telefoni, SIM,
+   internet, wearable, tablet e servizi si distinguono TUTTI dal sottogruppo —
+   il gruppo, in quel catalogo, è il listino del fornitore. Leggerlo senza
+   sarebbe stato un magazzino tutto «Altro». */
+type DatiArticolo = { descrizione: string; prezzo: number | null; costo_ultimo?: number | null; gruppo: string | null; sottogruppo: string | null; marca: string | null };
 type Articolo = {
     codice: string; barcode: string | null; descrizione: string;
     gruppo: string | null; sottogruppo: string | null; marca: string | null;
@@ -257,9 +263,9 @@ export default function MagazzinoPage() {
         const anag = new Map<string, DatiArticolo>();
         for (let i = 0; i < codici.length; i += 300) {
             const { data } = await supabase.from("mag_articoli")
-                .select("codice,descrizione,prezzo,costo_ultimo,gruppo,marca").in("codice", codici.slice(i, i + 300));
+                .select("codice,descrizione,prezzo,costo_ultimo,gruppo,sottogruppo,marca").in("codice", codici.slice(i, i + 300));
             (data ?? []).forEach((a: DatiArticolo & { codice: string }) =>
-                anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo, gruppo: a.gruppo, marca: a.marca }));
+                anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo, gruppo: a.gruppo, sottogruppo: a.sottogruppo, marca: a.marca }));
         }
         setAnagrafica(anag);
         setQuantita(righeQ.map(r => ({
@@ -436,6 +442,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        tendina dell'operatore». Chi cerca «cosa ho di WindTre e Fastweb» lo
        chiede una volta, non due. Vuoto = tutti. */
     const [operatori, setOperatori] = useState<string[]>([]);
+    /* LA CATEGORIA (Luca 01/09): una sola alla volta, come in Articoli —
+       premuta isola, ripremuta libera. */
+    const [famiglia, setFamiglia] = useState("");
 
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
        compaiono anche quelli che qui non ci sono ma stanno in un altro
@@ -520,6 +529,8 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         /** quanto vale se lo vendo ai prezzi di listino */ valore: number;
         /** quanto mi è costato */ costo: number;
         operatore: string | null;
+        /** la famiglia, dedotta come in Articoli: una regola sola per tutt'e due */
+        famiglia: string;
         pezzi: { id: string; seriale: string; negozio: string; stato: string; valore: number | null }[];
         /* le quantità, negozio per negozio e società per società: il cestino
            deve poter togliere UNA riga precisa, non un totale */
@@ -558,6 +569,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             chiave: `${codice}|${descrizione}`, codice: codice || "—", descrizione,
             giacenza: 0, inArrivo: 0, altrove: 0, valore: 0, costo: 0,
             operatore: operatoreDi(anagrafica.get(codice), descrizione, codice),
+            /* LA STESSA REGOLA DI ARTICOLI, non una seconda: se qui un display
+               fosse «Accessori» e là «Ricambi», la stessa merce direbbe due
+               cose diverse in due schermate della stessa sezione. */
+            famiglia: famigliaDi({ ...(anagrafica.get(codice) ?? { gruppo: null, sottogruppo: null }), descrizione, codice }),
             pezzi: [], qtaPer: [], altrovePer: {},
         });
 
@@ -683,12 +698,36 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        nessuno lo preme mai. Ma conta con LA STESSA REGOLA che poi filtra la
        tabella, così il numero grande è una promessa verificabile: premi,
        guardi la tabella, e le righe sono quelle. */
+    /* QUANTI CE NE SONO PER CATEGORIA. Si conta DOPO il quadratone acceso e
+       PRIMA della categoria stessa: è la regola dei filtri adattivi che Luca
+       aveva già chiesto il 31/08 («questi filtri devono essere adattivi, non
+       si aggiornano con la quantità aggiornata»). Se contasse dopo se stessa,
+       ogni pastiglia spenta direbbe zero e non si premerebbe mai. */
+    const perCategoria = useMemo(() => {
+        const regola = dataStorica ? (r: Riga) => r.giacenza !== 0 : REGOLA[quadro];
+        const m: Record<string, number> = {};
+        let tutte = 0;
+        for (const r of righeGrezze) {
+            if (!regola(r)) continue;
+            m[r.famiglia] = (m[r.famiglia] || 0) + 1;
+            tutte++;
+        }
+        return { m, tutte };
+    }, [righeGrezze, quadro, dataStorica, REGOLA]);
+
+    /* I RIQUADRI, invece, contano DENTRO la categoria scelta: il numero grande
+       promette «tante righe vedrai premendomi», e con una categoria accesa
+       quelle righe sono meno. */
+    const righeInCategoria = useMemo(
+        () => famiglia ? righeGrezze.filter(r => r.famiglia === famiglia) : righeGrezze,
+        [righeGrezze, famiglia]);
+
     const conteggi = useMemo(() => {
         const ids = Object.keys(REGOLA) as FiltroId[];
         const righeN = {} as Record<FiltroId, number>, pezzi = {} as Record<FiltroId, number>;
         ids.forEach(k => { righeN[k] = 0; pezzi[k] = 0; });
         let val_vendita = 0, val_acquisto = 0;
-        for (const r of righeGrezze) {
+        for (const r of righeInCategoria) {
             for (const k of ids) if (REGOLA[k](r)) { righeN[k]++; pezzi[k] += PEZZI[k](r); }
             /* i due valori sono di quello che sta A SCAFFALE: valorizzare la
                merce in arrivo, che ancora non è nostra, gonfia un numero su
@@ -696,7 +735,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             if (r.giacenza > 0) { val_vendita += r.valore; val_acquisto += r.costo; }
         }
         return { righe: righeN, pezzi, val_vendita, val_acquisto };
-    }, [righeGrezze, REGOLA, PEZZI]);
+    }, [righeInCategoria, REGOLA, PEZZI]);
 
     /* QUANTA MERCE RESTA FUORI DAI DUE VALORI, e si dice invece di tacere
        (regola 7). Oggi: 32 pezzi con seriale non hanno un prezzo di listino e
@@ -704,28 +743,33 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        calcolati su quello che c'è, e chi legge deve saperlo. */
     const { senzaPrezzo, senzaCosto } = useMemo(() => {
         let p = 0, c = 0;
-        for (const r of righeGrezze) {
+        for (const r of righeInCategoria) {
             if (r.giacenza === 0 && r.inArrivo === 0) continue;
             if (!r.valore && r.giacenza > 0) p += r.giacenza;
             if (!r.costo && r.giacenza > 0) c += r.giacenza;
         }
         return { senzaPrezzo: p, senzaCosto: c };
-    }, [righeGrezze]);
+    }, [righeInCategoria]);
 
     const righe = useMemo(() => {
         /* la fotografia a una data passata non conosce «in arrivo» né
            «altrove»: vale la giacenza e basta, come già era. */
         const regola = dataStorica ? (r: Riga) => r.giacenza !== 0 : REGOLA[quadro];
-        const out = righeGrezze.filter(regola);
+        const out = righeInCategoria.filter(regola);
+        /* L'ORDINE DELLE COLONNE, e deve seguirle: la categoria si è infilata
+           al terzo posto e tutto quello che sta dopo è scalato di uno. Una
+           `val` rimasta indietro non dà errore — ordina per la colonna
+           sbagliata, e lo si scopre guardando i numeri. */
         const val = (r: Riga, c: number) => c === 0 ? r.codice : c === 1 ? r.descrizione
-            : c === 2 ? r.giacenza : c === 3 ? r.altrove : c === 4 ? r.inArrivo : r.valore;
+            : c === 2 ? etichettaFamiglia(r.famiglia).nome
+                : c === 3 ? r.giacenza : c === 4 ? r.altrove : c === 5 ? r.inArrivo : r.valore;
         out.sort((a, b) => {
             const va = val(a, sort.col), vb = val(b, sort.col);
             const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
             return sort.desc ? -cmp : cmp;
         });
         return out;
-    }, [righeGrezze, quadro, dataStorica, sort, REGOLA]);
+    }, [righeInCategoria, quadro, dataStorica, sort, REGOLA]);
 
     /* ═══ IL VENDUTO, PEZZO PER PEZZO ═══════════════════════════════════
        Luca 31/08: «nel momento in cui clicco su venduto la giacenza non mi
@@ -812,12 +856,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 dati, "Venduto");
             return;
         }
-        const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
+        const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, etichettaFamiglia(r.famiglia).nome, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
         scaricaXlsx(`giacenze_${dove}_${oggi}.xlsx`,
-            ["Codice", "Descrizione", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
+            ["Codice", "Descrizione", "Categoria", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
     };
 
-    const colonne = ["Codice", "Descrizione", "Giacenza", "Altrove", "In arrivo", "Valore"];
+    const colonne = ["Codice", "Descrizione", "Categoria", "Giacenza", "Altrove", "In arrivo", "Valore"];
     /* Le colonne del VENDUTO: qui una riga è un pezzo, quindi «giacenza» e
        «altrove» non vogliono dire niente e al loro posto ci sono le due cose
        che Luca ha chiesto — quando è uscito e a quanto. */
@@ -905,7 +949,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     const azzeraFiltri = () => {
         setScelti(mieiNegozi.length ? mieiNegozi : []);
         setQuadro("disponibile"); setVista("giacenze");
-        setAzienda(""); setOperatori([]); setCerca(""); setDataStorica("");
+        setAzienda(""); setOperatori([]); setCerca(""); setDataStorica(""); setFamiglia("");
     };
 
     /** «è nel negozio che sto guardando?» — decide il colore della pastiglia
@@ -1044,6 +1088,35 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         I due col filetto e la freccia ↗ non filtrano questa tabella: aprono la loro lista,
                         con le sue colonne e il suo Excel — premili di nuovo per tornare qui.
                         {senzaPrezzo > 0 || senzaCosto > 0 ? ` I due valori escludono ${senzaPrezzo ? `${senzaPrezzo} pezzi senza prezzo di listino` : ""}${senzaPrezzo && senzaCosto ? " e " : ""}${senzaCosto ? `${senzaCosto} senza costo d'acquisto` : ""}.` : ""}
+                    </div>
+                </div>
+                {/* ═══ LE CATEGORIE ═══════════════════════════════════════
+                    Luca 01/09: «dobbiamo inserire anche un campo filtro dove
+                    possono filtrarle per le categorie, magari anche colorate
+                    con delle emoticons in questo modo» — con la fila di
+                    Articoli in fotografia. È la stessa fila, con gli stessi
+                    nomi e le stesse emoji, perché è la stessa `FAMIGLIE`: due
+                    liste diverse nella stessa sezione vorrebbero dire che un
+                    display è «Ricambi» di là e «Accessori» di qua.
+                    I NUMERI SONO ADATTIVI (Luca 31/08): contano dentro il
+                    quadratone acceso e dentro i negozi scelti, ma non dentro
+                    la categoria stessa — se no ogni pastiglia spenta direbbe
+                    zero e nessuno la premerebbe. Le vuote restano a schermo,
+                    smorzate: «Ricambi 0» in un negozio è un'informazione. */}
+                <div className="rvCampo rvCampo-flex mt-3"><span className="rvLab">Categoria</span>
+                    <div className="rvPillRow rvPillRow-fitta">
+                        <button onClick={() => setFamiglia("")}
+                            className={cn("rvPill rvPill-sm", !famiglia && "rvPill-on")}>
+                            Tutte<b className="rvPillN">{perCategoria.tutte.toLocaleString("it-IT")}</b></button>
+                        {[...FAMIGLIE, ALTRO].map(f => {
+                            const n = perCategoria.m[f.id] || 0;
+                            return (
+                                <button key={f.id} onClick={() => setFamiglia(x => x === f.id ? "" : f.id)}
+                                    title={n ? `${n} articoli` : "Qui non ce n'è nessuno, con questi filtri"}
+                                    className={cn("rvPill rvPill-sm", famiglia === f.id && "rvPill-on", !n && famiglia !== f.id && "rvPill-vuota")}>
+                                    {f.icona} {f.nome}<b className="rvPillN">{n.toLocaleString("it-IT")}</b></button>
+                            );
+                        })}
                     </div>
                 </div>
                 {/* I FILTRI FINI */}
@@ -1275,9 +1348,9 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 <table className="rvTab">
                     <thead>
                         <tr>{colonne.map((cta, i) => (
-                            <th key={i} className={cn("rvTab-ord", i >= 2 && "rvTab-c")}
+                            <th key={i} className={cn("rvTab-ord", i >= 3 && "rvTab-c")}
                                 onClick={() => setSort(s => ({ col: i, desc: s.col === i ? !s.desc : false }))}
-                                title={i === 3 ? "Quanti ce ne sono negli ALTRI punti vendita" : undefined}>
+                                title={i === 4 ? "Quanti ce ne sono negli ALTRI punti vendita" : undefined}>
                                 {cta}{sort.col === i ? <i>{sort.desc ? "↓" : "↑"}</i> : null}
                             </th>))}
                         </tr>
@@ -1307,6 +1380,16 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                             {r.descrizione}
                                             {r.operatore && <span className="rvBadge rvBadge-acc ml-2 align-middle">{r.operatore}</span>}
                                         </td>
+                                        {/* LA CATEGORIA SI CLICCA e diventa il filtro: è la
+                                            strada più corta fra «questo cos'è» e «fammi
+                                            vedere tutti quelli come lui». */}
+                                        <td className="rvTab-min">
+                                            <button className={cn("rvCatTag", famiglia === r.famiglia && "rvCatTag-on")}
+                                                title={`Mostra solo ${etichettaFamiglia(r.famiglia).nome}`}
+                                                onClick={(e) => { e.stopPropagation(); setFamiglia(f => f === r.famiglia ? "" : r.famiglia); }}>
+                                                {etichettaFamiglia(r.famiglia).icona} {etichettaFamiglia(r.famiglia).nome}
+                                            </button>
+                                        </td>
                                         <td className={cn("rvTab-n rvGiac", r.giacenza > 0 ? "rvGiac-si" : r.giacenza < 0 ? "rvGiac-ko" : "rvGiac-zero")}>{r.giacenza}</td>
                                         <td className={cn("rvTab-n rvGiac", r.altrove ? "rvGiac-no" : "rvGiac-zero")}>{r.altrove || "—"}</td>
                                         <td className={cn("rvTab-n rvGiac", r.inArrivo ? "rvGiac-arr" : "rvGiac-zero")}>{r.inArrivo || "—"}</td>
@@ -1314,7 +1397,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                     </tr>
                                     {apertaQui && (
                                         <tr className="rvTab-det">
-                                            <td colSpan={6}>
+                                            <td colSpan={colonne.length}>
                                                 {r.pezzi.length > 0 ? (
                                                     <div className="rvDett">
                                                         <div className="rvDettT">I pezzi, uno per uno</div>
@@ -1381,7 +1464,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                 </Fragment>
                             );
                         })}
-                        {!righe.length && <tr><td colSpan={6} className="rvTab-vuoto">
+                        {!righe.length && <tr><td colSpan={colonne.length} className="rvTab-vuoto">
                             Nessun articolo con questi filtri.
                             {quadro !== "altrove" && " Prova il riquadro «🌐 Altrove» per vedere quello che sta in un altro negozio."}
                             {!unita.length && !quantita.length && " Il magazzino parte vuoto: il primo carico si fa da 🚚 Trasferimenti → 📥 Carico merce."}
@@ -3119,7 +3202,10 @@ function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: 
  *  hanno il gruppo del listino, e finirebbero fra gli accessori. */
 const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s: string, d: string, c: string) => boolean }[] = [
     { id: "telefoni", icona: "📱", nome: "Telefoni", dentro: (_g, s) => /smartphone|^telefoni$|mobile phone/.test(s) },
-    { id: "usato", icona: "♻️", nome: "Usato", dentro: (g) => g === "usato" },
+    /* `RITUSATO.xx.yyy` è il codice del RITiro dell'USATO: 3.030 pezzi, di cui
+       3.025 il gestionale li chiama già «usato» e cinque no — nati dall'import
+       dei magazzini, che il gruppo non ce l'ha. Sono la stessa cosa. */
+    { id: "usato", icona: "♻️", nome: "Usato", dentro: (g, _s, _d, c) => g === "usato" || /^ritusato/.test(c) },
     /* I RICAMBI SONO UNA FAMIGLIA A SÉ (Luca 01/09: «fanno parte del mondo
        dell'assistenza tecnica, così come display e tutto il resto»). Nel
        gestionale non esistono come categoria: stanno dentro «Accessori» (391)
@@ -3135,7 +3221,14 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
     {
         id: "ricambi", icona: "🧩", nome: "Ricambi", dentro: (_g, _s, d, c) =>
             /^\s*display|^\s*glue\b|display (iphone|samsung|per|redmi|xiaomi)|nudo batterie/.test(d)
-            || /^batt/.test(c),
+            || /^batt/.test(c)
+            /* `DSP…` È COME IL NEGOZIO SCRIVE «DISPLAY» (misurato 01/09 su
+               tutti e 17.073 gli articoli): 490 codici, e non uno solo che
+               display non sia — `DSP11PRO`, `dspoppoa40`, `DSPREDMI13C`.
+               277 di questi stavano in «Accessori», perché il gestionale li
+               tiene dentro i listini dei fornitori: un display in Accessori
+               non lo trova chi ripara. Sta qui, sopra Accessori, apposta. */
+            || /^dsp/.test(c) || /^dsp[a-z0-9]/.test(d),
     },
     { id: "sim", icona: "📶", nome: "SIM ed eSIM", dentro: (g, s) => /usim/.test(g) || s === "sim" },
     { id: "internet", icona: "🛜", nome: "Internet e router", dentro: (_g, s) => /internet key|internet device|router|hub|offerta casa/.test(s) },
@@ -3157,7 +3250,17 @@ const FAMIGLIE: { id: string; icona: string; nome: string; dentro: (g: string, s
             /^\$/.test(c) || /_generico$/.test(c) || /acconto|caparra|anticipo/.test(d),
     },
     { id: "servizi", icona: "🧾", nome: "Servizi e ricariche", dentro: (g, s) => /^(servizi|ricariche|kpoint)$/.test(g) || /ricariche|carte servizi|^servizi$/.test(s) },
-    { id: "accessori", icona: "🧰", nome: "Accessori", dentro: (g, s) => /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s) },
+    {
+        id: "accessori", icona: "🧰", nome: "Accessori", dentro: (g, s, _d, c) =>
+            /accessori|listino sbs|systemaitalia/.test(g) || /accessori/.test(s)
+            /* `CC…` `CN…` `CP…` SONO COVER E PELLICOLE nel modo in cui le
+               scrive il negozio. Misurato: 1.194 codici, 1.015 dei quali il
+               gestionale già li chiama Accessori — la regola non li sposta, li
+               conferma — e 179 che senza di lei restavano in «Altro». Nessun
+               altro tipo di merce comincia così: zero telefoni, zero SIM,
+               zero servizi. */
+            || /^(cc|cn|cp)[a-z0-9]/.test(c),
+    },
 ];
 const ALTRO = { id: "altro", icona: "📦", nome: "Altro" };
 
@@ -3178,12 +3281,54 @@ function sottoVoceDalNome(a: Articolo, fam: string): string | null {
     return f && !NON_DICONO_COSA_E.has(f) ? f : null;
 }
 
+/** Come si chiama e con che faccia si mostra una famiglia. Sta qui, accanto
+ *  alla lista, perché Giacenze e Articoli devono dire la stessa parola con la
+ *  stessa emoji: due nomi diversi per la stessa merce e nessuno si fida più
+ *  del filtro. È una `function` (non una `const`) apposta — viene chiamata da
+ *  `Giacenze`, che nel file sta prima. */
+function etichettaFamiglia(id: string): { icona: string; nome: string } {
+    return FAMIGLIE.find(f => f.id === id) || ALTRO;
+}
+
+/* QUANDO IL GESTIONALE NON DICE NIENTE, SI LEGGE IL NOME — con la stessa
+   lista che dà le icone alla cassa (`TIPI` in `cassaCatalogo`), non con una
+   seconda inventata qui. Serve agli articoli nati dall'IMPORT dei magazzini:
+   sono arrivati da un Excel di negozio, senza gruppo né sottogruppo, e senza
+   questo ripiego un «Apple iPhone 17 256GB Salvia» finiva in «Altro».
+   I nomi di là sono più fini dei nostri (dodici tipi di accessorio): qui si
+   riportano alle nove famiglie. Quello che non si riconosce resta «Altro»,
+   che è una risposta onesta. */
+const DAL_NOME_A_FAMIGLIA: Record<string, string> = {
+    "Telefoni": "telefoni", "Usato": "usato", "Tablet": "tablet",
+    "Ricambi": "ricambi", "Batterie di ricambio": "ricambi",
+    "SIM": "sim", "eSIM": "sim",
+    "Modem e router": "internet",
+    "Orologi e band": "indossabili",
+    "Assicurazioni": "servizi",
+    // tutto il resto della lista è accessorio: cover, pellicole, cavi,
+    // caricabatterie, auricolari, power bank, supporti, adattatori, speaker,
+    // memorie, gadget, auto
+    "Custodie e cover": "accessori", "Pellicole e vetri": "accessori", "Cavi": "accessori",
+    "Caricabatterie": "accessori", "Auricolari e cuffie": "accessori", "Power bank": "accessori",
+    "Supporti": "accessori", "Adattatori": "accessori", "Speaker": "accessori",
+    "Memorie e USB": "accessori", "Gadget e charm": "accessori", "Auto": "accessori",
+};
+
 function famigliaDi(a: { gruppo: string | null; sottogruppo: string | null; descrizione?: string; codice?: string }): string {
     const g = String(a.gruppo || "").toLowerCase();
     const s = String(a.sottogruppo || "").toLowerCase();
     const d = String(a.descrizione || "").toLowerCase();
     const c = String(a.codice || "").toLowerCase();
-    return (FAMIGLIE.find(f => f.dentro(g, s, d, c)) || ALTRO).id;
+    const f = FAMIGLIE.find(x => x.dentro(g, s, d, c));
+    if (f) return f.id;
+    /* il ripiego vale SOLO dove il gestionale tace del tutto: dove il gruppo
+       c'è ma non l'abbiamo riconosciuto, «Altro» è più onesto di una lettura
+       del nome che potrebbe smentirlo. */
+    if (!g && !s) {
+        const dal = famigliaDalNome(a.descrizione, a.codice);
+        if (dal && DAL_NOME_A_FAMIGLIA[dal]) return DAL_NOME_A_FAMIGLIA[dal];
+    }
+    return ALTRO.id;
 }
 
 /* QUANDO UN ARTICOLO NON È PRONTO PER LA CASSA, e perché. Veniva dalla scheda
