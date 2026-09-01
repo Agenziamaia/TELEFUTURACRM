@@ -5882,7 +5882,19 @@ function CRM() {
       // RV-03: telefono a rate BUSINESS a marginalita' SOLO su WindTre — per gli
       // altri brand niente voce auto. Le voci legacy (senza .catalogo) invariate.
       const skipTnpMarg=it.catalogo?.tipo==="Business"&&brandId!=="windtre";
-      if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true,_tnpDaListino(det));
+      /* VODAFONE A RATE: LA RIGA RESTA, MA FUORI DALLO SCONTRINO (Luca 01/09).
+         L'anticipo lo incassiamo per conto di Vodafone, che fattura lei al
+         cliente: quel telefono sullo scontrino non ci va. Ma il MARGINE sì —
+         è il 4% dello street price, e l'azienda lo guadagna comunque — quindi
+         la voce non si toglie dal carrello: si marca.
+         Senza questa marca, misurato dal revisore: il telefono usciva
+         scontrinato a prezzo pieno, la cassa chiedeva 899 € al cliente, e
+         l'anticipo finiva ANCHE in conto terzi — lo stesso soldo contato due
+         volte. La regola valeva solo per il Business, e a catalogo il Consumer
+         esiste eccome. */
+      const _vfARate=brandId==="vodafone"&&tnp.some(t=>t==="rata");
+      if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))
+        push("Telefono TNP (listino)",true,{..._tnpDaListino(det),...(_vfARate?{fuoriScontrino:true}:{})});
       // BUNDLE VODAFONE (Luca 06/08): l'opzione "Bundle <importo>" e' a tutti
       // gli effetti un prodotto in marginalita' — entra nel CARRELLO come voce
       // auto (non un telefono: resta un bundle) con l'importo esplicito nel
@@ -6485,6 +6497,7 @@ function CRM() {
   // Voci del carrello candidate allo scontrino (prezzate). Reparto/va_in_scontrino
   // li decide il server da marg_items; qui passiamo tutte le righe con prezzo.
   const buildScontrinoItems = (list) => (list || [])
+    .filter((mi) => !_fuoriScontrino(mi))
     .map((mi) => ({
       productId: mi.productId || null,
       /* LA RICARICA SI DESCRIVE DA SÉ (Luca 01/09). Nel carrello la voce si
@@ -6492,9 +6505,15 @@ function CRM() {
          che il server la riconosce anche senza `productId`; sullo scontrino
          invece deve esserci quello che il cliente contesta se sbagliamo:
          quanto e su che numero. */
+      /* IL NOME CHE LEGGE IL CLIENTE. Sulla riga del telefono usciva «Telefono
+         TNP (listino)», che è il nome interno della voce automatica: la
+         descrizione del bene è un elemento obbligatorio del documento
+         commerciale, e quella non descrive niente. Il modello c'è già sulla
+         voce — lo mette `_tnpDaListino` — e con l'IMEI accanto la riga dice
+         esattamente cosa è uscito dal negozio (revisore 01/09). */
       description: mi.paystore
         ? descrizioneRicarica(mi.paystore.operatore, Number(mi.importo || 0), mi.paystore.numero || "")
-        : mi.product,
+        : (mi.model ? `${mi.model}${mi.seriale ? ` · IMEI ${mi.seriale}` : ""}` : mi.product),
       unitPrice: (mi.importo != null ? mi.importo : mi.price),
       qty: mi.qty || 1,
       /* IL REPARTO IVA. Senza, il registratore telematico non sa dove mettere
@@ -6514,6 +6533,9 @@ function CRM() {
       codice: mi.codice ?? null,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
+  /* Le voci che nel carrello ci sono ma sullo scontrino no: oggi solo il
+     telefono a rate Vodafone, che si incassa per conto terzi. */
+  const _fuoriScontrino = (mi) => !!(mi && mi.fuoriScontrino);
   const chiudiScontrino = () => { venditaScritta.current = false; pendingCommit.current = null; setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
   const chiudiVenditaFatta = () => { venditaScritta.current = false; setVenditaFatta(null); fullReset(); submitLock.current = false; setSubmitting(false); };
   // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
@@ -6859,8 +6881,22 @@ function CRM() {
     return out;
   };
 
+  /* DUE SOCIETÀ NELLO STESSO CARRELLO NON SI SCONTRINANO (revisore 01/09).
+     Il blocco stava solo su `addMargItem`, cioè sulle voci aggiunte a mano dal
+     pannello: le voci AUTOMATICHE del flusso brand — «Sim Wind3» con una
+     vendita WindTre, «Sim Fastweb» con una Fastweb — non ci passano mai.
+     A Donna bastava fare le due cose nella stessa vendita: il server produceva
+     DUE scontrini con DUE partite IVA, e con due gruppi ignora le forme di
+     pagamento — stampavano entrambi «CONTANTE» anche col cliente che paga con
+     carta, e il coupon veniva scartato dopo che il cliente aveva già pagato lo
+     scontato. Qui si ferma prima, e si dice cosa fare. */
+  const societaInCarrello = (lista) =>
+    [...new Set((lista || []).map(m => _socDi(m)).filter(Boolean))];
+
   const cosaManca = () => {
     const out = [];
+    { const soc = societaInCarrello(margItems);
+      if (soc.length > 1) out.push({ ico: "⛔", testo: `Nel carrello c'è merce di ${soc.map(_nomeSoc).join(" e ")}: sono due società e servono due scontrini. Togli una delle due e falla in una vendita a parte.`, dove: "carrello" }); }
     // ── il ramo SOLA MARGINALITÀ ha guardie tutte sue (dentro saveMargOnly):
     //    era rimasto fuori, quindi il suo bottone restava verde comunque
     if (margFlow && !brand) {

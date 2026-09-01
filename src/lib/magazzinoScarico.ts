@@ -88,6 +88,22 @@ export function avvisiScarico(e: EsitoScarico | null | undefined): string[] {
 
 /** Toglie dal magazzino i prodotti di una vendita.
  *  Da chiamare DOPO che la vendita è salvata, mai prima. */
+/** I negozi che condividono il magazzino con questo: lui più il gemello. */
+let _nomiNegozi: string[] | null = null;
+async function _sede(negozio: string): Promise<string[]> {
+    if (!_nomiNegozi) {
+        const { data, error } = await supabase.from("stores").select("name");
+        /* NON SO ≠ È SOLO. Se la lettura fallisce non si mette in cache una
+           lista vuota: si risponde col negozio e basta, e la volta dopo si
+           riprova — se no per tutta la sessione il gemello sparisce in
+           silenzio (regola del repo, violata dal primo giro). */
+        if (error || !data) return [negozio];
+        _nomiNegozi = data.map((r: { name: string }) => String(r.name));
+    }
+    const suoi = _nomiNegozi.filter((n) => stessoMagazzino(n, negozio));
+    return suoi.length ? suoi : [negozio];
+}
+
 export async function scaricaVendita(
     righe: RigaDaScaricare[],
     negozio: string,
@@ -121,7 +137,9 @@ export async function scaricaVendita(
            Quando il magazzino di quel negozio verrà caricato, il controllo si
            spegne da sé e lo scarico riprende — senza toccare niente. */
         const { data: haMagazzino, error: erroreSonda } = await supabase.from("mag_disponibilita")
-            .select("codice").eq("negozio", negozio).limit(1);
+            // la sonda guarda la SEDE, come il resto: un'insegna senza righe
+            // ma col gemello pieno non è «un negozio senza magazzino»
+            .select("codice").in("negozio", await _sede(negozio)).limit(1);
         /* NON SO ≠ NON C'È (revisore 29/08): se la sonda FALLISCE non si può
            dichiarare «questo negozio non ha magazzino» — sarebbe saltare lo
            scarico in silenzio proprio quando qualcosa non va. Si prosegue e,
@@ -181,11 +199,8 @@ export async function scaricaVendita(
                Guardando solo il negozio dove si batte, un codice del gemello
                non risultava da nessuna parte e il movimento non veniva
                scritto: vendita fatta, magazzino fermo. */
-            const { data: negs } = await supabase.from("stores").select("name");
-            const nomiSede = (negs || []).map((x: { name: string }) => String(x.name))
-                .filter((n) => stessoMagazzino(n, negozio));
             const { data: prima } = await supabase.from("mag_giacenze")
-                .select("codice,quantita,azienda,negozio").in("negozio", nomiSede.length ? nomiSede : [negozio]).in("codice", codici);
+                .select("codice,quantita,azienda,negozio").in("negozio", await _sede(negozio)).in("codice", codici);
             const chiave = (cod: string, az: string | null | undefined) => cod + "\u0000" + (az || "T1");
             /* quanto ce n'è, sommando le due insegne: sono un magazzino solo */
             const avevo = new Map<string, number>();
@@ -204,14 +219,31 @@ export async function scaricaVendita(
             /* E IN QUALE MAGAZZINO STA: fra le due insegne vince quella che i
                pezzi ce li ha davvero, e a parità quella dove si sta battendo. */
             const doveSta = new Map<string, string>();
+            /* IL PAREGGIO SI DECIDE (revisore 01/09). La versione di prima si
+               riduceva a «vince l'ultima riga con pezzi», e la query non ha un
+               ordinamento: con lo stesso codice in tutte e due le insegne — a
+               Magliana esiste, è CN15, due pezzi a W3 e uno al Multi — lo
+               scarico poteva togliere il pezzo del gemello lasciando a
+               scaffale quelli di qui, e la società del movimento seguiva la
+               stessa casualità.
+               La regola, in ordine: chi ha pezzi vince su chi non ne ha; a
+               parità vince IL NEGOZIO DOVE SI STA BATTENDO — è il posto da cui
+               la merce esce fisicamente. */
+            const meglioDi = (g: { quantita: number; negozio: string }, altro: { quantita: number; negozio: string } | undefined) => {
+                if (!altro) return true;
+                const ha = Number(g.quantita) > 0, haAltro = Number(altro.quantita) > 0;
+                if (ha !== haAltro) return ha;
+                if (g.negozio === negozio) return true;
+                if (altro.negozio === negozio) return false;
+                return Number(g.quantita) > Number(altro.quantita);
+            };
+            const vincente = new Map<string, { quantita: number; negozio: string; azienda: string | null }>();
             (prima || []).forEach((g: { codice: string; quantita: number; azienda: string | null; negozio: string }) => {
-                const ha = Number(g.quantita) > 0;
-                if (g.azienda && (!diChiE.get(g.codice) || ha)) diChiE.set(g.codice, g.azienda);
-                const attuale = doveSta.get(g.codice);
-                if (!attuale || (ha && (attuale !== negozio || Number(g.quantita) > 0))) {
-                    if (!attuale || ha) doveSta.set(g.codice, g.negozio);
-                }
-                if (g.negozio === negozio && ha) doveSta.set(g.codice, negozio);
+                if (meglioDi(g, vincente.get(g.codice))) vincente.set(g.codice, g);
+            });
+            vincente.forEach((g, cod) => {
+                doveSta.set(cod, g.negozio);
+                if (g.azienda) diChiE.set(cod, g.azienda);
             });
 
             /* NIENTE GIACENZE FANTASMA (revisore 29/08). Se di quel codice il

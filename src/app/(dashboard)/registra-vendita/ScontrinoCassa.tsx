@@ -135,6 +135,24 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         .map(t => ({ telefono: t, importo: _n(importi[t.chiave]?.anticipo), forma: importi[t.chiave]?.forma || "" }))
         .filter(r => r.importo > 0), [telefoni, importi]);
 
+    /* ANTICIPO + RESTO = PREZZO DEL TELEFONO. Il prezzo è quello della riga che
+       sta già nel carrello: si riconosce dal modello, che è la parte della
+       descrizione prima dell'IMEI. Se non si trova non si dice niente — meglio
+       tacere che accusare — ma se si trova e i conti non tornano lo si scrive. */
+    const scarti = useMemo(() => {
+        const out: string[] = [];
+        telefoni.forEach(t => {
+            if (!DOMANDE_TELEFONO[t.modo].scontrino) return;
+            const i = importi[t.chiave]; if (!i || i.anticipo.trim() === "" || i.resto.trim() === "") return;
+            const somma = +(_n(i.anticipo) + _n(i.resto)).toFixed(2);
+            const riga = (data?.items || []).find(r => /telefono/i.test(String(r.description || "")) || String(r.description || "").toLowerCase().includes(String(t.descrizione || "").toLowerCase()));
+            const prezzo = riga ? +(Number(riga.unitPrice) * (Number(riga.qty) > 0 ? Number(riga.qty) : 1)).toFixed(2) : null;
+            if (prezzo != null && Math.abs(prezzo - somma) > 0.02)
+                out.push(`${t.descrizione}: anticipo + resto fa ${somma.toFixed(2).replace(".", ",")} €, ma nel carrello il telefono è ${prezzo.toFixed(2).replace(".", ",")} €.`);
+        });
+        return out;
+    }, [telefoni, importi, data]);
+
     /** Nella forma in cui va archiviato: importo, mezzo, e di quale telefono. */
     const contoTerziDaSalvare = useMemo(() => contoTerzi.map(r => ({
         descrizione: r.telefono.descrizione, imei: r.telefono.imei, importo: r.importo, forma: r.forma,
@@ -615,6 +633,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             il CRM sullo scontrino: la parte che non incassiamo esce come <b>non riscossa</b>,
                             così non finisce nei flussi di cassa.
                         </div>
+                        {/* IL CONTROLLO CHE MANCAVA (revisore 01/09): anticipo più
+                            resto devono fare il prezzo del telefono che sta nel
+                            carrello. Se non tornano, uno dei due è stato copiato
+                            male dal PDA — e senza dirlo la cassa chiedeva al
+                            cliente una cifra sbagliata col segno di spunta verde. */}
                         {telefoni.map((t) => {
                             const q = DOMANDE_TELEFONO[t.modo];
                             const i = importi[t.chiave] || { anticipo: "", resto: "", forma: "" };
@@ -704,7 +727,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                Qui invece si chiude come dev'essere: la vendita
                                si registra, l'anticipo resta archiviato con la
                                sua modalità, e nessuno scontrino esce. */
-                            if (!itemsTutte.length) {
+                            /* SOLO SE NESSUN TELEFONO VUOLE LO SCONTRINO
+                               (revisore 01/09). La condizione guardava solo il
+                               carrello vuoto, e prendeva dentro anche i casi
+                               WindTre: una FWA venduta da sola — dove il fisso
+                               non genera nessuna voce automatica — chiudeva la
+                               vendita SENZA scontrino, dicendo pure «incassato
+                               per conto di Vodafone» su una vendita WindTre.
+                               L'apparato usciva dal negozio senza documento. */
+                            if (!itemsTutte.length && telefoni.every(t => !DOMANDE_TELEFONO[t.modo].scontrino)) {
                                 setFase("stampa"); setMsg("Registro la vendita…");
                                 (async () => {
                                     if (onCommit) {
@@ -736,6 +767,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             className="w-full primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
                             Avanti · come si paga
                         </button>
+                        {scarti.length > 0 && (
+                            <div className="rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 text-xs text-amber-200">
+                                {scarti.map((x, i) => <div key={i}>⚠️ {x}</div>)}
+                                <div className="mt-1 text-amber-300/80">Controlla i numeri sul PDA: quello che il cliente paga in cassa dipende da questi.</div>
+                            </div>
+                        )}
                     </div>
                 )}
 

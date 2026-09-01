@@ -151,11 +151,23 @@ export async function POST(req: Request) {
                 .filter((n: string) => stessoMagazzino(n, negozio));
             const { data } = await supabase.from("mag_giacenze")
                 .select("codice,azienda,quantita,negozio").in("negozio", gemelli.length ? gemelli : [negozio]).in("codice", codici);
-            (data || []).forEach((g: { codice: string; azienda: string; quantita: number }) => {
+            /* IL PAREGGIO SI DECIDE, non lo decide l'ordine in cui il database
+               restituisce le righe (revisore 01/09): chi ha pezzi vince su chi
+               non ne ha, e a parità vince il negozio dove si sta battendo. È la
+               stessa regola dello scarico — se le due divergessero, lo
+               scontrino uscirebbe da una società e la merce da un'altra. */
+            const vince: Record<string, { qta: number; negozio: string; azienda: string }> = {};
+            (data || []).forEach((g: { codice: string; azienda: string; quantita: number; negozio: string }) => {
                 if (!g.azienda) return;
-                // fra due società vince quella che i pezzi ce li ha davvero
-                if (!societaDelCodice[g.codice] || Number(g.quantita) > 0) societaDelCodice[g.codice] = g.azienda;
+                const a = vince[g.codice];
+                const ha = Number(g.quantita) > 0, haA = a ? a.qta > 0 : false;
+                const meglio = !a || (ha !== haA ? ha
+                    : g.negozio === negozio ? true
+                        : a.negozio === negozio ? false
+                            : Number(g.quantita) > a.qta);
+                if (meglio) vince[g.codice] = { qta: Number(g.quantita), negozio: g.negozio, azienda: g.azienda };
             });
+            Object.entries(vince).forEach(([cod, v]) => { societaDelCodice[cod] = v.azienda; });
         }
     }
 

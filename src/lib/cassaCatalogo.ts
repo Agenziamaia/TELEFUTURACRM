@@ -248,8 +248,13 @@ export type EsitoGiacenze = {
 let _sedi: string[] | null = null;
 async function negoziDellaSede(negozio: string): Promise<string[]> {
     if (!_sedi) {
-        const { data } = await supabase.from("stores").select("name");
-        _sedi = (data || []).map((r: { name: string }) => String(r.name));
+        const { data, error } = await supabase.from("stores").select("name");
+        /* NON SO ≠ È SOLO (regola del repo). Se la lettura fallisce non si
+           mette in cache una lista vuota: si risponde col negozio e basta, e
+           la volta dopo si riprova. Con la cache avvelenata, la merce del
+           gemello sarebbe sparita per tutta la sessione senza un segnale. */
+        if (error || !data) return [negozio];
+        _sedi = data.map((r: { name: string }) => String(r.name));
     }
     const suoi = _sedi.filter((n) => stessoMagazzino(n, negozio));
     return suoi.length ? suoi : [negozio];
