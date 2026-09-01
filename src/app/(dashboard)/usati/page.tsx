@@ -1266,6 +1266,9 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [societa, setSocieta] = useState<Societa | null>(null);
   const [firmaU, setFirmaU] = useState<FirmaInfo | null>(null);
   const [allegRegistro, setAllegRegistro] = useState<File | null>(null);
+  // i difetti che il venditore dichiara: senza, il contratto gli farebbe
+  // firmare «non presenta difetti» su un telefono che ne ha
+  const [difettiDichiarati, setDifettiDichiarati] = useState("");
   // ── Carica dal telefono via QR (Luca 01/08): STESSO meccanismo di Registra
   // Vendita (qr_uploads + /m/u/<token>) per documento e dichiarazione. Kind
   // "doc": foto O scansione multi-pagina unita in un unico PDF — perfetto per
@@ -1372,27 +1375,58 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
 
   const nomeVenditore = (ana.ragioneSociale || [ana.nome, ana.cognome].filter(Boolean).join(" ")).trim();
   const mancaPerFirma: string[] = [];
-  if (!societa) mancaPerFirma.push("la societa' del negozio (manca su Punti Vendita)");
+  if (!societa) mancaPerFirma.push(`la società del negozio ${negozio || ""} — la assegna l'amministrazione da Amministrazione → Negozi`);
   if (!nomeVenditore) mancaPerFirma.push("il nome del venditore");
   if (!ana.email) mancaPerFirma.push("l'email in anagrafica");
   if (!brand || !model) mancaPerFirma.push("marca e modello");
   if (!imeiValido) mancaPerFirma.push("l'IMEI");
-  if (!prezzoAcquisto) mancaPerFirma.push("il prezzo");
+  if (!(Number(prezzoAcquisto) > 0)) mancaPerFirma.push("il prezzo (non può essere zero)");
+  const business = tipoCliente === "business";
+  const gradoEtichetta = (GRADI_USURA.find(g => g.key === gradoUsura) || { label: gradoUsura }).label;
   const datiContratto: DatiUsato | null = societa ? {
     protocollo: protoUsato, negozio, operatore: venditore,
     societa,
     venditore: {
-      etichetta: nomeVenditore, cf: ana.piva || ana.cf, email: ana.email, cellulare: ana.cellulare,
-      indirizzo: tipoCliente === "business" ? ana.sedeLegale : ana.domicilio,
+      etichetta: nomeVenditore,
+      // l'azienda ha la P.IVA, il privato il codice fiscale: sul contratto
+      // l'etichetta cambia insieme al dato, altrimenti si stampa una partita
+      // IVA sotto la dicitura «C.F.»
+      cf: business ? (ana.piva || ana.cf) : (ana.cf || ana.piva),
+      business, referente: ana.referente,
+      email: ana.email, cellulare: ana.cellulare,
+      indirizzo: business ? ana.sedeLegale : ana.domicilio,
     },
     dispositivo: {
       marca: brand, modello: [model, capacita].filter(Boolean).join(" "), imei,
-      colore, grado: gradoUsura, accessori: "",
+      colore, grado: gradoEtichetta, accessori: "",
+      note: difettiDichiarati,
     },
     prezzo: parseFloat(prezzoAcquisto) || 0,
-    pagamento: metodoPagamento === "bonifico" ? "Bonifico bancario" : metodoPagamento === "contanti" ? "Contanti" : (metodoPagamento || ""),
+    pagamento: metodoPagamento === "bonifico" ? `Bonifico bancario${tipoBonifico === "istantaneo" ? " istantaneo" : ""}` : metodoPagamento === "contanti" ? "Contanti" : metodoPagamento === "buono" ? "Buono d'acquisto" : (metodoPagamento || ""),
     iban: metodoPagamento === "bonifico" ? ibanPag : "",
+    modoPagamento: metodoPagamento === "bonifico" ? "bonifico" : metodoPagamento === "buono" ? "buono" : "contanti",
+    perRicambi: gradoUsura === "ricambi",
   } : null;
+
+  /* ⚠️ LA FIRMA VALE PER I DATI CHE HA FIRMATO (revisore 01/09).
+     Senza questo, l'operatore poteva far firmare un contratto da 200 €, poi
+     tornare indietro, trattare a 150, e salvare: in archivio restava un
+     contratto firmato che diceva 200 con il registro delle firme a
+     certificare la cifra sbagliata. Se cambia una virgola di ciò che sta
+     scritto nel documento, la firma si butta e si rifà. */
+  const improntaContratto = JSON.stringify([nomeVenditore, ana.cf, ana.piva, ana.email,
+    brand, model, capacita, colore, imei, prezzoAcquisto, metodoPagamento, ibanPag,
+    gradoUsura, difettiDichiarati, negozio, tipoCliente]);
+  const improntaFirmata = useRef<string | null>(null);
+  const [firmaDecaduta, setFirmaDecaduta] = useState(false);
+  useEffect(() => {
+    if (!allegDich) { improntaFirmata.current = null; return; }
+    if (improntaFirmata.current === null) { improntaFirmata.current = improntaContratto; return; }
+    if (improntaFirmata.current !== improntaContratto) {
+      improntaFirmata.current = null;
+      setAllegDich(null); setAllegRegistro(null); setFirmaU(null); setFirmaDecaduta(true);
+    }
+  }, [improntaContratto, allegDich]);
 
   const canNext = () => {
     if (step === 1) return !!(venditore && negozio);
@@ -1755,11 +1789,27 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           </div>
         ))}
 
+        <div>
+          <label className={lbl}>Difetti dichiarati dal venditore <span className="normal-case font-normal text-slate-500">(facoltativo, finisce sul contratto)</span></label>
+          <input value={difettiDichiarati} onChange={e => setDifettiDichiarati(e.target.value)}
+            placeholder="es. vetro posteriore crepato, batteria da sostituire"
+            className={inp} />
+          <p className="text-[11px] text-slate-500 mt-1.5">
+            Se non scrivi niente, il contratto gli fa dichiarare che <b>non ci sono difetti</b> oltre a quanto indicato.
+          </p>
+        </div>
+
+        {firmaDecaduta && (
+          <div className="rvSub rvSub-att">
+            ⚠️ Hai cambiato i dati dopo la firma: il contratto firmato non corrisponde più a questo ritiro, va rifatto.
+          </div>
+        )}
+
         {/* la dichiarazione non si carica piu': si genera, si firma e torna qui */}
         <FirmaUsato
           dati={datiContratto} mancano={mancaPerFirma}
           contratto={allegDich} onContratto={setAllegDich} onRegistro={setAllegRegistro}
-          firma={firmaU} onFirma={setFirmaU} onQr={() => openQr("dich")} />
+          firma={firmaU} onFirma={(f) => { setFirmaU(f); if (f) setFirmaDecaduta(false); }} onQr={() => openQr("dich")} />
 
         {isUploading && (
           <div className="text-center py-2">
@@ -1797,7 +1847,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           <div>{step > 1 && <button onClick={() => setStep(step - 1)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 text-slate-400 border border-white/10 text-sm font-semibold hover:bg-white/10 transition-all"><ArrowLeft size={14} /> Indietro</button>}</div>
           <div>{step < 5 ?
             <button onClick={() => canNext() && setStep(step + 1)} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${canNext() ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30" : "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"}`}>Avanti <ArrowRight size={14} /></button> :
-            <button onClick={() => canNext() && handleSubmit()} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${canNext() ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30" : "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"}`}> Registra Usato</button>
+            <button onClick={() => { if (canNext() && !isUploading) handleSubmit(); }} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${canNext() ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30" : "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed"}`}> Registra Usato</button>
           }</div>
         </div>
       </div>

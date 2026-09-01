@@ -24,6 +24,8 @@ export type DatiUsato = {
     societa: { nome: string; piva: string; sede: string };
     venditore: {
         etichetta?: string; cf?: string; natoIl?: string; natoA?: string;
+        /** un'azienda non puo' dichiarare di «non agire nell'esercizio d'impresa» */
+        business?: boolean; referente?: string;
         indirizzo?: string; cap?: string; citta?: string;
         cellulare?: string; email?: string;
         docTipo?: string; docNumero?: string; docRilasciato?: string;
@@ -31,6 +33,12 @@ export type DatiUsato = {
     dispositivo: { marca?: string; modello?: string; imei?: string; colore?: string; accessori?: string; grado?: string; note?: string };
     prezzo: number;
     pagamento?: string; iban?: string;
+    /** come si chiude il pagamento: cambia la frase sotto il prezzo, e un
+     *  contratto che dice «corrisposto» quando il bonifico deve ancora partire
+     *  e' una quietanza per soldi mai usciti */
+    modoPagamento?: "contanti" | "bonifico" | "buono";
+    /** ceduto per ricambi: niente dichiarazione di assenza difetti */
+    perRicambi?: boolean;
     /** i giorni della verifica tecnica e del blocco di rete: stanno qui perché
      *  sono numeri che si contrattano, non costanti di un file di codice */
     giorniVerifica?: number; mesiBloccoRete?: number;
@@ -66,7 +74,14 @@ function inLettere(n: number): string {
 export function euroInLettere(v: number): string {
     const n = Math.round((Number(v) || 0) * 100) / 100;
     const int = Math.floor(n), cent = Math.round((n - int) * 100);
-    return `${inLettere(int)}/${String(cent).padStart(2, "0")}`;
+    /* l'elisione dell'italiano: cento+ottanta fa «centottanta», non
+       «centoottanta»; venti+uno fa «ventuno». Su un contratto la cifra in
+       lettere è la riga che rende difficile alterarlo dopo la firma: se è
+       scritta male, la prima cosa che si contesta è proprio quella. */
+    const eliso = inLettere(int)
+        .replace(/([a-z])[oa](otto|undici|otta|uno)/g, "$1$2")
+        .replace(/tao/g, "to");
+    return `${eliso}/${String(cent).padStart(2, "0")}`;
 }
 
 export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): string {
@@ -98,7 +113,7 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
        border-bottom: 1px solid #111; padding-bottom: .6mm; }
   .testa { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm;
            border-bottom: 2px solid #111; padding-bottom: 2mm; margin-bottom: 2mm; }
-  .proto { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11pt; font-weight: 800; }
+  .proto { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11pt; font-weight: 800; white-space: nowrap; }
   .muto { color: #666; font-size: 7.2pt; line-height: 1.3; }
   .due { display: flex; gap: 5mm; }
   .due > div { flex: 1; min-width: 0; }
@@ -142,13 +157,15 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
     <h2>1 · Il Venditore</h2>
     <div class="g">
       <div style="grid-column:1/-1"><b>Nome</b> ${esc(v.etichetta || "—")}</div>
-      ${dato("C.F.", v.cf)}
-      ${dato("Nato il", v.natoIl)}
+      ${dato(v.business ? "P. IVA" : "C.F.", v.cf)}
+      ${dato(v.business ? "Rappresentante" : "Nato il", v.business ? v.referente : v.natoIl)}
       <div style="grid-column:1/-1"><b>Residenza</b> ${esc([v.indirizzo, v.cap, v.citta].filter(Boolean).join(", ") || "—")}</div>
       <div style="grid-column:1/-1"><b>Telefono</b> ${esc(v.cellulare || "—")} &nbsp;·&nbsp; <b>Email</b> ${esc(v.email || "—")}</div>
-      <div style="grid-column:1/-1"><b>Documento</b> ${esc([v.docTipo, v.docNumero].filter(Boolean).join(" n. ") || "allegato alla pratica")}${v.docRilasciato ? ` · rilasciato da ${esc(v.docRilasciato)}` : ""}</div>
+      <div style="grid-column:1/-1"><b>Documento</b> ${esc([v.docTipo, v.docNumero].filter(Boolean).join(" n. ") || "allegato al ritiro")}${v.docRilasciato ? ` · rilasciato da ${esc(v.docRilasciato)}` : ""}</div>
     </div>
-    <p class="nota">Dichiara di essere <b>maggiorenne</b> e di agire in proprio, non nell'esercizio d'impresa.
+    <p class="nota">${v.business
+        ? `Chi firma dichiara di agire <b>in nome e per conto dell'impresa</b> sopra indicata e di averne i poteri.`
+        : `Dichiara di essere <b>maggiorenne</b> e di agire in proprio, non nell'esercizio d'impresa.`}
     Copia del documento è acquisita e conservata dall'Acquirente, <b>${esc(d.societa.nome)}</b>.</p>
   </div>
   <div>
@@ -169,7 +186,11 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
       <div style="flex:1"><span class="muto">PAGAMENTO</span><br><b>${esc(d.pagamento || "—")}</b>
         ${d.iban ? `<br><span class="muto">IBAN ${esc(d.iban)}</span>` : ""}</div>
     </div>
-    <p class="nota">Corrisposto contestualmente alla consegna a mani, presso il punto vendita. Nessuna spesa accessoria.</p>
+    <p class="nota">${d.modoPagamento === "bonifico"
+        ? `Sarà corrisposto con <b>bonifico</b> sull'IBAN qui sopra, intestato al Venditore. <b>Il presente non vale quietanza</b>: il pagamento si intende eseguito con l'accredito.`
+        : d.modoPagamento === "buono"
+        ? `Corrisposto con <b>buono d'acquisto</b> spendibile presso i punti vendita dell'Acquirente, consegnato contestualmente.`
+        : `Corrisposto <b>per contanti</b> contestualmente alla consegna, presso il punto vendita.`} Nessuna spesa accessoria.</p>
   </div>
 </div>
 
@@ -181,7 +202,9 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
   <li><b>Non è segnalato</b>: l'IMEI non risulta in alcuna lista di apparecchi rubati o smarriti.</li>
   <li><b>È libero da blocchi di attivazione</b> — iCloud, Google, Samsung o altri — che dichiara di aver rimosso prima della consegna e si impegna a rimuovere senza indugio se risultassero attivi.</li>
   <li><b>Non contiene suoi dati personali</b>: ne ha fatto copia e li ha cancellati, ed è consapevole che l'Acquirente procederà comunque alla <b>formattazione immediata</b>, dopo la quale non saranno più recuperabili.</li>
-  <li><b>Non presenta difetti</b> diversi da quelli dichiarati alla sezione 2.</li>
+  <li>${d.perRicambi
+    ? `<b>Il bene è ceduto per ricambi</b>, come non funzionante: il Venditore non ne garantisce il funzionamento e nulla è dovuto per i difetti, restando ferme le dichiarazioni da 1 a 6.`
+    : `<b>Non presenta difetti</b> diversi da quelli dichiarati alla sezione 2.`}</li>
 </ol>
 
 <div class="due tre" style="margin-top:2.4mm">
@@ -219,7 +242,7 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
   </div>
 </div>
 
-<div class="pie">${esc(d.societa.nome)} · ${esc(d.negozio)} · contratto ${esc(d.protocollo)} · generato dal CRM il ${oggiIt()} · documento d'identità del Venditore allegato alla pratica</div>
+<div class="pie">${esc(d.societa.nome)} · ${esc(d.negozio)} · contratto ${esc(d.protocollo)} · generato dal CRM il ${oggiIt()} · documento d'identità del Venditore allegato al ritiro</div>
 </body></html>`;
 }
 

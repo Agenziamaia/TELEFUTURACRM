@@ -1211,8 +1211,16 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
        webhook da configurare, e chi sta al banco vede il verde comparire da
        solo mentre il cliente ha ancora il telefono in mano. */
     useEffect(() => {
-        if (firma.via !== "otp" || firma.otp !== "inviata" || !firma.submissionId) return;
+        if (firma.via !== "otp" || !firma.submissionId) return;
+        if (firma.otp === "fatta" && firma.firmato) return;
+        /* ⚠️ UN GIRO PER VOLTA. Il giro completo scarica due PDF da DocuSeal,
+           li carica nel nostro secchio e spedisce la copia al cliente: può
+           durare più degli otto secondi dell'intervallo, e il secondo giro
+           rifarebbe tutto da capo — compresa la mail al cliente. */
+        let dentro = false;
         const guarda = async () => {
+            if (dentro) return;
+            dentro = true;
             try {
                 const r = await fetch("/api/pratiche/firma", {
                     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
@@ -1226,17 +1234,24 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                    cliente armeggia col telefono — e quella copia vecchia la
                    cancellava, lasciando «firmato» e «manca il documento»
                    insieme (rilievo del revisore, provato). */
-                if (j?.firmato) onCambia((prec) => ({
-                    ...prec, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString(),
-                    firmato: j.archiviato || null, registro: j.registro || null,
-                }));
+                if (j?.firmato) {
+                    onCambia((prec) => ({
+                        ...prec, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString(),
+                        firmato: j.archiviato || null, registro: j.registro || null,
+                    }));
+                    /* se il documento non è ancora nel nostro archivio si continua
+                       a guardare: prima ci si fermava qui, e la riga «sto portando
+                       il documento nel nostro archivio» restava lì per sempre. */
+                    if (j.archiviato && polling.current) { clearInterval(polling.current); polling.current = null; }
+                }
             } catch { /* rete che sbanda: si riprova al giro dopo */ }
+            finally { dentro = false; }
         };
         polling.current = setInterval(guarda, 8000);
         guarda();
         return () => { if (polling.current) clearInterval(polling.current); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [firma.via, firma.otp, firma.submissionId]);
+    }, [firma.via, firma.otp, firma.submissionId, firma.firmato]);
 
     return (
         <div className="space-y-3">

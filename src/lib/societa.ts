@@ -19,16 +19,17 @@ const cache = new Map<string, Societa | null>();
 export async function societaDelNegozio(negozio: string): Promise<Societa | null> {
     const chiave = String(negozio || "").trim();
     if (!chiave) return null;
-    if (cache.has(chiave)) return cache.get(chiave) ?? null;
+    const gia = cache.get(chiave);
+    if (gia) return gia;   // si ricorda solo ciò che ha trovato: un buco si richiede
 
     const { data: st } = await supabase.from("stores").select("azienda").eq("name", chiave).maybeSingle();
     const codice = String((st as { azienda?: string } | null)?.azienda || "").trim();
-    if (!codice) { cache.set(chiave, null); return null; }
+    if (!codice) return null;
 
     const { data: az } = await supabase.from("aziende")
         .select("ragione_sociale,piva,sede,cap,citta,provincia").eq("codice", codice).maybeSingle();
     const a = az as { ragione_sociale?: string; piva?: string; sede?: string; cap?: string; citta?: string; provincia?: string } | null;
-    if (!a || !a.ragione_sociale) { cache.set(chiave, null); return null; }
+    if (!a || !a.ragione_sociale) return null;
 
     const s: Societa = {
         nome: a.ragione_sociale,

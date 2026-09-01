@@ -63,6 +63,9 @@ export const SEZIONE_DI: Record<string, string> = {
     "passwords/pulizia-otp": "/amministrazione",
     // manda al cliente il modulo da firmare: la apre chi apre le pratiche
     "pratiche/firma": "/ordini-clienti",
+    // la stessa rotta firma anche i contratti dell'usato: chi sta in Usati
+    // deve poter firmare senza avere anche Ordini Clienti
+    "usati/firma": "/usati",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".

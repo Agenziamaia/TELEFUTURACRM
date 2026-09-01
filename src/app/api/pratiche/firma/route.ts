@@ -147,12 +147,18 @@ async function posizionaCampi(k: string, tpl: Record<string, unknown>, DOCUSEAL:
             }
         } catch { /* si va di ripiego */ }
 
+        /* ⚠️ il ripiego riempie SOLO i buchi: prima, se pdfjs trovava la prima
+           firma e non la seconda, si buttava via anche quella buona. */
         if (!trovati.FIRMA1 || !trovati.FIRMA2) {
             /* ripiego: il blocco firme sta in fondo, affiancato — sinistra e
                destra, sopra il piè di pagina */
-            trovati.FIRMA1 = { page: ultima, x: 0.06, y: 0.845 };
-            trovati.FIRMA2 = { page: ultima, x: 0.52, y: 0.845 };
-            trovati.DATA = { page: ultima, x: 0.13, y: 0.91 };
+            if (!trovati.FIRMA1) trovati.FIRMA1 = { page: ultima, x: 0.06, y: 0.845 };
+            if (!trovati.FIRMA2) trovati.FIRMA2 = { page: ultima, x: 0.52, y: 0.845 };
+        }
+        if (!trovati.DATA) {
+            /* la data non trovata non deve restare senza posizione: verrebbe
+               raccolta e mai stampata sul documento */
+            trovati.DATA = { page: ultima, x: 0.24, y: 0.81 };
         }
 
         const uuid = doc.uuid;
@@ -192,11 +198,20 @@ async function posizionaCampi(k: string, tpl: Record<string, unknown>, DOCUSEAL:
 }
 
 export async function POST(req: Request) {
-    const g = await accesso(req, "pratiche/firma");
-    if (!g.ok) return g.risposta;
-
     const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; datiUsato?: DatiUsato; tipo?: string; nome?: string; submissionId?: number; canale?: string; protocollo?: string;
     clienteId?: string; email?: string };
+
+    /* ⚠️ IL PERMESSO SEGUE LA SEZIONE DA CUI SI FIRMA.
+       Questa rotta serviva solo gli ordini clienti, e il permesso era
+       incollato a `/ordini-clienti`. Ora firma anche i ritiri dell'usato: un
+       addetto che ha Usati ma non Ordini si sarebbe visto negare la firma di
+       un acquisto, con un messaggio che parla di una sezione che per lui non
+       esiste. Chi controlla lo stato di una richiesta gia' partita puo' avere
+       l'uno o l'altro: la richiesta e' comunque legata alla sua riga. */
+    const dallUsato = body.tipo === "usato" || (body.azione === "stato" && !body.dati);
+    const g = await accesso(req, dallUsato ? "usati/firma" : "pratiche/firma");
+    const g2 = g.ok ? g : await accesso(req, dallUsato ? "pratiche/firma" : "usati/firma");
+    if (!g2.ok) return g.risposta;
     const k = await chiave();
     if (!k) return NextResponse.json({ error: "la chiave DocuSeal non è configurata: si mette da Amministrazione." }, { status: 503 });
     const DOCUSEAL = await casa(k);
@@ -210,6 +225,17 @@ export async function POST(req: Request) {
        mettono nel nostro secchio, accanto al documento d'identità. */
     if (body.azione === "stato") {
         if (!body.submissionId) return NextResponse.json({ error: "manca la richiesta da controllare" }, { status: 400 });
+        /* ⚠️ IL NUMERO DA SOLO NON APRE NIENTE (revisore 01/09).
+           Prima protocollo, email e cliente arrivavano dal browser insieme al
+           numero della richiesta: bastava cambiarli per farsi mandare il PDF
+           firmato di una pratica qualsiasi — anche di un'altra azienda, visto
+           che l'account DocuSeal e' condiviso — all'indirizzo che si voleva.
+           Ora il numero si cerca nel registro, e tutto il resto si legge da
+           li'. Se la richiesta non e' nostra, non esiste. */
+        const { data: reg } = await supabaseAdmin.from("firme_richieste")
+            .select("*").eq("submission_id", body.submissionId).maybeSingle();
+        const rich = reg as { protocollo?: string; email?: string; cliente_id?: string | null; tipo?: string; archiviata_il?: string | null } | null;
+        if (!rich) return NextResponse.json({ error: "questa richiesta di firma non risulta al CRM." }, { status: 404 });
         const r = await fetch(`${DOCUSEAL}/submissions/${body.submissionId}`, { headers: { "X-Auth-Token": k } });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return NextResponse.json({ error: j?.error || `DocuSeal ha risposto ${r.status}` }, { status: 502 });
@@ -221,7 +247,7 @@ export async function POST(req: Request) {
         let archivioErrore: string | null = null;
         let copiaInviata = false;
         if (finito) {
-            const proto = String(body.protocollo || "senza-protocollo").replace(/[^A-Za-z0-9._-]+/g, "_");
+            const proto = String(rich.protocollo || "senza-protocollo").replace(/[^A-Za-z0-9._-]+/g, "_");
             const docUrl = (j?.documents || [])[0]?.url || (submitters[0]?.documents || [])[0]?.url || null;
             const auditUrl = j?.audit_log_url || null;
             const metti = async (buf: Buffer, nome: string) => {
@@ -255,21 +281,21 @@ export async function POST(req: Request) {
                che è l'unica prova di *come* è stata raccolta la firma.
                `contract_id` resta vuoto: ha una chiave esterna su `contracts`,
                e una pratica non è una vendita. */
-            if (body.clienteId) {
+            if (rich.cliente_id && rich.tipo !== "usato") {
                 const righe = [
-                    archiviato && { tipo: "contratti", f: archiviato, nome: `Documento firmato — ${body.protocollo || proto}` },
-                    registro && { tipo: "altro", f: registro, nome: `Registro di firma — ${body.protocollo || proto}` },
+                    archiviato && { tipo: "contratti", f: archiviato, nome: `Documento firmato — ${rich.protocollo || proto}` },
+                    registro && { tipo: "altro", f: registro, nome: `Registro di firma — ${rich.protocollo || proto}` },
                 ].filter(Boolean) as { tipo: string; f: { nome: string; path: string }; nome: string }[];
                 for (const r2 of righe) {
                     try {
                         const url = `/api/file/pratiche-allegati/${r2.f.path}`;
                         const { data: gia } = await supabaseAdmin.from("contract_attachments")
-                            .select("id").eq("client_id", body.clienteId).eq("file_url", url).limit(1);
+                            .select("id").eq("client_id", rich.cliente_id).eq("file_url", url).limit(1);
                         if (gia && gia.length > 0) continue;   // il controllo stato ripassa: non moltiplichiamo le righe
-                        await supabaseAdmin.from("contract_attachments").insert({
-                            client_id: body.clienteId, contract_id: null,
+                        await supabaseAdmin.from("contract_attachments").upsert({
+                            client_id: rich.cliente_id, contract_id: null,
                             file_url: url, file_name: r2.nome, file_type: r2.tipo,
-                        });
+                        }, { onConflict: "client_id,file_url" });
                     } catch { /* l'archivio della pratica ce l'ha comunque */ }
                 }
             }
@@ -280,13 +306,13 @@ export async function POST(req: Request) {
                firmata non gli arrivava da nessuno: col foglio di carta se la
                portava a casa, col digitale restava a mani vuote.
                Gliela mandiamo noi, da amministrazione@, col PDF allegato. */
-            if (pdfFirmato && body.email) {
+            if (pdfFirmato && rich.email && !rich.archiviata_il) {
                 try {
                     const mitt = await mittentePratiche();
                     if (mitt) {
                         await inviaEmail(mitt as never, {
-                            to: String(body.email),
-                            subject: `Telefutura — copia firmata della pratica ${body.protocollo || ""}`.trim(),
+                            to: String(rich.email),
+                            subject: `Telefutura — copia firmata del documento ${rich.protocollo || ""}`.trim(),
                             text: [
                                 "Buongiorno,", "",
                                 "in allegato la copia firmata del documento.",
@@ -309,6 +335,13 @@ export async function POST(req: Request) {
             }
         }
 
+        if (finito) {
+            await supabaseAdmin.from("firme_richieste").update({
+                firmata_il: submitters[0]?.completed_at || new Date().toISOString(),
+                ...(archiviato ? { archiviata_il: new Date().toISOString() } : {}),
+            }).eq("submission_id", body.submissionId);
+        }
+
         return NextResponse.json({
             ok: true, firmato: finito, copiaInviata,
             stato: submitters[0]?.status || "in attesa",
@@ -318,20 +351,31 @@ export async function POST(req: Request) {
     }
 
     /* ── manda la richiesta ──────────────────────────────────────────── */
+    const esc = (x: unknown) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const u = body.tipo === "usato" ? body.datiUsato : null;
+    /* ⚠️ la società di chi compra non è un dettaglio grafico: senza, il
+       contratto non dice CHI ha acquistato. E il prezzo a zero non è un
+       acquisto. Si controlla QUI perché la regola del browser vale solo per
+       chi passa dal browser. */
+    if (u) {
+        if (!u.societa || !u.societa.nome) return NextResponse.json({ error: "manca la società del punto vendita: si assegna da Amministrazione → Negozi." }, { status: 400 });
+        if (!u.protocollo) return NextResponse.json({ error: "manca il numero di protocollo del contratto." }, { status: 400 });
+        if (!(Number(u.prezzo) > 0)) return NextResponse.json({ error: "il prezzo di acquisto non può essere zero." }, { status: 400 });
+    }
+    if (body.dati && !body.dati.protocollo) return NextResponse.json({ error: "manca il numero di protocollo della pratica." }, { status: 400 });
     const d: Doc | null = u ? {
         protocollo: u.protocollo, negozio: u.negozio,
         nomeModello: `Contratto di acquisto usato ${u.protocollo}`,
         html: contrattoUsatoHtml(u, true), ruolo: "Venditore",
         apertura: `per l'acquisto del suo ${[u.dispositivo?.marca, u.dispositivo?.modello].filter(Boolean).join(" ") || "dispositivo"} da parte del punto vendita ${u.negozio} serve la sua firma sul contratto.`,
-        aperturaHtml: `per l'<b>acquisto del suo ${[u.dispositivo?.marca, u.dispositivo?.modello].filter(Boolean).join(" ") || "dispositivo"}</b> da parte del punto vendita <b>${u.negozio}</b> serve la sua firma sul contratto.`,
+        aperturaHtml: `per l'<b>acquisto del suo ${esc([u.dispositivo?.marca, u.dispositivo?.modello].filter(Boolean).join(" ") || "dispositivo")}</b> da parte del punto vendita <b>${esc(u.negozio)}</b> serve la sua firma sul contratto.`,
         cliente: { etichetta: u.venditore?.etichetta || "Venditore", email: u.venditore?.email || "", cellulare: u.venditore?.cellulare || "" },
     } : body.dati ? {
         protocollo: body.dati.protocollo, negozio: body.dati.negozio,
         nomeModello: `Modulo di accettazione ${body.dati.protocollo}`,
         html: moduloHtml(body.dati, true), ruolo: "Cliente",
         apertura: `per completare la pratica ${body.dati.protocollo} aperta oggi presso il punto vendita ${body.dati.negozio} serve la sua firma.`,
-        aperturaHtml: `per completare la pratica <b>${body.dati.protocollo}</b> aperta oggi presso il punto vendita <b>${body.dati.negozio}</b> serve la sua firma.`,
+        aperturaHtml: `per completare la pratica <b>${esc(body.dati.protocollo)}</b> aperta oggi presso il punto vendita <b>${esc(body.dati.negozio)}</b> serve la sua firma.`,
         cliente: { etichetta: body.dati.cliente?.etichetta || "Cliente", email: body.dati.cliente?.email || "", cellulare: body.dati.cliente?.cellulare || "" },
     } : null;
     if (!d) return NextResponse.json({ error: "mancano i dati del documento da firmare" }, { status: 400 });
@@ -418,6 +462,19 @@ export async function POST(req: Request) {
 
     const primo = Array.isArray(j) ? j[0] : (j?.submitters || [])[0];
     const link = primo?.embed_src || null;
+    const idRichiesta = primo?.submission_id || j?.id || null;
+    if (!idRichiesta) {
+        return NextResponse.json({ error: "DocuSeal non ha restituito il numero della richiesta: la firma NON è partita, riprova." }, { status: 502 });
+    }
+    /* La richiesta lascia una traccia PRIMA di dire al browser che è partita:
+       è quella riga che poi autorizza a leggerne lo stato, e che la fa
+       sopravvivere alla finestra chiusa a metà. */
+    await supabaseAdmin.from("firme_richieste").upsert({
+        submission_id: idRichiesta,
+        tipo: u ? "usato" : "pratica",
+        protocollo: d.protocollo, cliente_id: body.clienteId || null,
+        email, negozio: d.negozio, canale, creata_da: g.ok ? g.sess.id : null,
+    }, { onConflict: "submission_id" });
 
     /* ── la mail di invito, con la nostra faccia ─────────────────────── */
     let mailInviata = false;
@@ -431,7 +488,7 @@ export async function POST(req: Request) {
                 try {
                     await inviaEmail(mittente as never, {
                         to: email,
-                        subject: `Telefutura — firma il modulo della pratica ${d.protocollo}`,
+                        subject: u ? `Telefutura — firma il contratto di acquisto ${d.protocollo}` : `Telefutura — firma il modulo della pratica ${d.protocollo}`,
                         text: testoInvito(d, link, email),
                         html: htmlInvito(d, link, email),
                     });
@@ -442,7 +499,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({
         ok: true, canale,
-        submissionId: primo?.submission_id || j?.id || null,
+        submissionId: idRichiesta,
         slug: primo?.slug || null,
         link, email, cellulare: telE164 || null,
         mailInviata, mailErrore,

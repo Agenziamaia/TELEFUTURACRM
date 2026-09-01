@@ -5,6 +5,13 @@
    anche messaggio WhatsApp volendo, direttamente dal numero WhatsApp del
    negozio».
 
+   ⚠️ Una precisazione onesta: il messaggio esce dal numero DESIGNATO per le
+   notifiche nel pannello WhatsApp, non da quello del singolo punto vendita —
+   la scelta del mittente sta lì, non qui. Il testo scritto alla commessa dice
+   quello che succede davvero: promettere «dal numero del tuo negozio» e poi
+   spedire da un altro numero significa che il cliente riceve un link e la
+   richiesta di un codice da un contatto che non riconosce.
+
    Il LINK viaggia su tre strade, il CODICE su due: DocuSeal manda il suo
    codice di verifica solo per email o per SMS — WhatsApp non è un suo canale.
    Quindi con WhatsApp il link arriva in chat dal numero del negozio e il
@@ -24,7 +31,7 @@ export default function CanaleFirma({ canale, onCambia, email, cellulare }: {
     const voci: { k: Canale; t: string; s: string; ok: boolean }[] = [
         { k: "email", t: "📧 Email", s: email || "manca in anagrafica", ok: haMail },
         { k: "sms", t: "💬 SMS", s: haCell ? cellulare : "manca il cellulare", ok: haCell },
-        { k: "whatsapp", t: "🟢 WhatsApp", s: haCell ? "dal numero del negozio" : "manca il cellulare", ok: haCell && haMail },
+        { k: "whatsapp", t: "🟢 WhatsApp", s: haCell ? "dal numero WhatsApp del CRM" : "manca il cellulare", ok: haCell && haMail },
     ];
     return (
         <div>
@@ -41,7 +48,7 @@ export default function CanaleFirma({ canale, onCambia, email, cellulare }: {
             </div>
             {canale === "whatsapp" && (
                 <div className="rvTab-min rvCan-nota">
-                    Il link parte in chat dal numero del negozio; il <b>codice di verifica</b> gli arriva sull&apos;email —
+                    Il link parte in chat dal numero WhatsApp del CRM; il <b>codice di verifica</b> gli arriva sull&apos;email —
                     WhatsApp non è un canale di DocuSeal, e il codice non si può spedire da fuori.
                 </div>
             )}

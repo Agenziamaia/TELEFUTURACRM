@@ -39,12 +39,20 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
     const [manda, setManda] = useState(false);
     const [err, setErr] = useState<string | null>(null);
     const [link, setLink] = useState<string | null>(null);
-    const [attesa, setAttesa] = useState(false);
     const [chiediCarta, setChiediCarta] = useState(false);
     const fileRef = useRef<HTMLInputElement | null>(null);
 
+    const protocollo = dati ? dati.protocollo : "";
+    const emailFirmatario = dati ? String(dati.venditore?.email || "") : "";
     const via = firma?.via ?? null;
     const fatta = !!firma?.firmata_il;
+    /* ⚠️ L'ATTESA VIVE NELLA RICHIESTA, NON NEL COMPONENTE.
+       Questo passo si smonta ogni volta che si torna indietro di uno step:
+       con l'attesa in uno stato locale, al ritorno ricompariva il pulsante
+       «manda la richiesta» su una firma già partita — seconda submission,
+       seconda email, e il link che il cliente aveva già in mano non veniva
+       più controllato da nessuno. */
+    const attesa = !!firma?.submissionId && !fatta;
     const pronto = !!dati && mancano.length === 0;
 
     const mandaFirma = async () => {
@@ -58,8 +66,8 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "invio non riuscito");
             setLink(j.link || null);
+            if (!j.submissionId) throw new Error("DocuSeal non ha restituito il numero della richiesta: riprova, oppure fai firmare su carta.");
             onFirma({ via: "otp", canale, submissionId: j.submissionId, firmata_il: null });
-            setAttesa(true);
             if (j.mailErrore) setErr("La richiesta è pronta, ma l'email non è partita: " + j.mailErrore + ". Usa il link qui sotto.");
             if (j.whatsapp && j.whatsapp.numero) {
                 const w = await fetch("/api/whatsapp/notify", {
@@ -78,7 +86,7 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
        non cambia di una riga. */
     const porta = useCallback(async (path: string, nome: string): Promise<File | null> => {
         try {
-            const res = await fetch(`/api/file/pratiche-allegati/${path}`, { credentials: "include" });
+            const res = await fetch(`/api/file/pratiche-allegati/${path}`);
             if (!res.ok) return null;
             const b = await res.blob();
             return new File([b], nome, { type: "application/pdf" });
@@ -86,34 +94,51 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
     }, []);
 
     useEffect(() => {
-        if (!attesa || !firma?.submissionId || fatta) return;
+        if (!firma?.submissionId || fatta) return;
         let vivo = true;
+        let dentro = false;
         const t = setInterval(async () => {
+            if (dentro) return;
+            dentro = true;
             try {
                 const r = await fetch("/api/pratiche/firma", {
                     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         azione: "stato", submissionId: firma.submissionId,
-                        protocollo: dati ? dati.protocollo : "", email: dati ? (dati.venditore?.email || "") : "",
+                        protocollo, email: emailFirmatario,
                     }),
                 });
                 const j = await r.json();
-                if (!vivo || !j.firmato) return;
-                clearInterval(t); setAttesa(false);
-                const proto = dati ? dati.protocollo : "contratto";
-                if (j.archiviato?.path) {
-                    const f = await porta(j.archiviato.path, `dichiarazione-firmata-${proto}.pdf`);
-                    if (f) onContratto(f);
+                if (!vivo) return;
+                if (j.error) { setErr(j.error); return; }
+                if (!j.firmato) return;
+                /* ⚠️ «FIRMATO» SOLO SE IL DOCUMENTO È IN MANO NOSTRA.
+                   Prima si spegneva il controllo e si scriveva «firmata» anche
+                   quando lo scaricamento falliva in silenzio: l'operatore
+                   vedeva il riquadro verde, il file non c'era, e l'Avanti
+                   restava grigio per sempre senza un motivo scritto da
+                   nessuna parte — con la via cartacea ormai irraggiungibile. */
+                const proto = protocollo || "contratto";
+                if (!j.archiviato?.path) {
+                    setErr("Il cliente ha firmato, ma la copia non è arrivata al CRM"
+                        + (j.archivioErrore ? " (" + j.archivioErrore + ")" : "") + ". Riprovo fra qualche secondo.");
+                    return;
                 }
+                const f = await porta(j.archiviato.path, `dichiarazione-firmata-${proto}.pdf`);
+                if (!f) { setErr("Il cliente ha firmato, ma non riesco a scaricare la copia. Riprovo fra qualche secondo."); return; }
+                clearInterval(t);
+                setErr(null);
+                onContratto(f);
                 if (j.registro?.path) {
-                    const f = await porta(j.registro.path, `registro-firme-${proto}.pdf`);
-                    if (f) onRegistro(f);
+                    const reg = await porta(j.registro.path, `registro-firme-${proto}.pdf`);
+                    if (reg) onRegistro(reg);
                 }
                 onFirma({ via: "otp", canale, submissionId: firma.submissionId, firmata_il: j.completatoIl || new Date().toISOString() });
             } catch { /* si riprova al giro dopo */ }
+            finally { dentro = false; }
         }, 4000);
         return () => { vivo = false; clearInterval(t); };
-    }, [attesa, firma?.submissionId, fatta, dati, canale, onContratto, onRegistro, onFirma, porta]);
+    }, [firma?.submissionId, fatta, protocollo, emailFirmatario, canale, onContratto, onRegistro, onFirma, porta]);
 
     const scegliFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files && e.target.files[0];
@@ -159,7 +184,7 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
             )}
 
             {chiediCarta && <PopupCarta
-                onResta={() => { setChiediCarta(false); if (pronto) onFirma({ via: "otp" }); }}
+                onResta={() => { setChiediCarta(false); if (pronto || firma?.submissionId) onFirma({ ...(firma || {}), via: "otp" }); }}
                 onProsegui={() => { setChiediCarta(false); onFirma({ via: "cartacea" }); }} />}
 
             {/* ── firma digitale ───────────────────────────────────────── */}
@@ -208,7 +233,7 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
             {via === "cartacea" && (
                 <div className="rvBox">
                     <div className="rvBoxT">🖊️ Firma su carta</div>
-                    <button type="button" className="rvFirmaMini rvFirmaMini-su" onClick={() => onFirma({ via: "otp" })}>
+                    <button type="button" className="rvFirmaMini rvFirmaMini-su" onClick={() => onFirma({ ...(firma || {}), via: "otp" })}>
                         ← torna alla firma digitale
                     </button>
                     <p className="rvSotto rvSotto-neg">
