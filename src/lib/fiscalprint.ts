@@ -157,10 +157,32 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | F
     `</printerFiscalReceipt>`;
 }
 
+// ANNULLO / RESO di un documento commerciale già emesso (Epson RT). Verificato
+// 29/08 sul RT di Donna: è SOLO un printRecMessage messageType="4", SENZA
+// begin/endFiscalReceipt (avvolgerlo come uno scontrino normale → PRINTER ERROR).
+// message = "<TIPO> <zRep> <doc> <ddMMyyyy> <matricola>", z e doc a 4 cifre.
+//   TIPO = VOID (annullo) | REFUND (reso).
+// Stampa un SECONDO documento (di annullo/reso) e viene trasmesso ad AE per la
+// rettifica: NON cancella la storia, azzera il corrispettivo del doc riferito.
+export type VoidType = "VOID" | "REFUND";
+export function xmlVoidDoc(
+  o: { zRep: number | string; docNum: number | string; date: string; matricola: string; type?: VoidType },
+  operator = "1",
+): string {
+  const z = String(o.zRep).replace(/\D/g, "").padStart(4, "0");
+  const d = String(o.docNum).replace(/\D/g, "").padStart(4, "0");
+  const gg = String(o.date).replace(/\D/g, ""); // atteso ddMMyyyy (8 cifre)
+  const mat = String(o.matricola).trim();
+  const tipo = o.type === "REFUND" ? "REFUND" : "VOID";
+  const message = `${tipo} ${z} ${d} ${gg} ${mat}`;
+  return `<printerFiscalReceipt><printRecMessage operator="${esc(operator)}" messageType="4" message="${esc(message)}" /></printerFiscalReceipt>`;
+}
+
 /** Costruisce l'XML ePOS per un job in coda, dato il suo kind. */
 export function buildRequestXml(
   kind: string,
-  opts: { lines?: string[]; requestXml?: string; items?: FiscalItem[]; payment?: FiscalPayment | FiscalPayment[]; sconto?: number } = {},
+  opts: { lines?: string[]; requestXml?: string; items?: FiscalItem[]; payment?: FiscalPayment | FiscalPayment[]; sconto?: number;
+          voidRef?: { zRep: number | string; docNum: number | string; date: string; matricola: string; type?: VoidType } } = {},
 ): string | null {
   switch (kind) {
     case "status": return xmlQueryStatus();
@@ -169,6 +191,7 @@ export function buildRequestXml(
     case "non_fiscal": return Array.isArray(opts.lines) ? xmlNonFiscal(opts.lines) : null;
     case "fiscal_receipt": return Array.isArray(opts.items) && opts.items.length ? xmlFiscalReceipt(opts.items, opts.payment || {}, "1", opts.sconto || 0) : null;
     case "z_report": return xmlZReport();
+    case "fiscal_void": return opts.voidRef ? xmlVoidDoc(opts.voidRef) : null;
     case "raw": return typeof opts.requestXml === "string" && opts.requestXml.trim() ? opts.requestXml : null;
     default: return null;
   }
