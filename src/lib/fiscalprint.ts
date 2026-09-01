@@ -137,11 +137,20 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | F
   const total = list.map((p) => {
     // pagamento singolo senza amount → intero totale; altrimenti l'importo esplicito.
     const paid = p.amount != null ? Number(p.amount) : (singolo ? totaleItems : 0);
+    // ⭐ RISCOSSO/ELETTRONICO (01/09): la carta usciva «Non riscosso» perché mancavano
+    // `option="1"` e l'`index` giusto. Copiato dal driver SuiteMobile decompilato
+    // (MiraOposDll FP90X `stampa_riga_pagamenti`): contanti=index"00", assegni="01",
+    // CARTA/elettronico=index"02", il tutto SEMPRE con option="1". Così la carta esce
+    // riscossa (PAGAMENTO ELETTRONICO + importo pagato pieno), come SuiteMobile.
+    // I registratori Custom ignorano option/index (cust-fp legge solo paymentType) → innocuo.
+    const pt = Number(p.paymentType ?? 0);
+    const idx = pt === 2 ? "02" : pt === 1 ? "01" : "00";
     return `<printRecTotal operator="${esc(operator)}"` +
+      ` option="1"` +
       ` description="${esc(p.description || "CONTANTE")}"` +
       ` payment="${money(paid)}"` +
-      ` paymentType="${Number(p.paymentType ?? 0)}"` +
-      ` index="0" justification="2" />`;
+      ` paymentType="${pt}"` +
+      ` index="${idx}" justification="2" />`;
   }).join("");
   // SCONTO COUPON (spec Francesco): abbassa l'IMPONIBILE. Sconto a valore sul
   // subtotale (ripartito sulle aliquote dal RT) → va DOPO le righe e PRIMA del totale.
