@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
-import { RotateCcw, Download, Eye, ArrowLeft, FileBarChart } from "lucide-react";
+import { RotateCcw, Download, Eye, ArrowLeft, FileBarChart, Receipt, AlertTriangle, Loader2, X, Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
@@ -419,7 +419,198 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
     );
 }
 
-//  VistaFatture 
+/* ═══ CHIUSURA CASSA — Report Z fiscale ══════════════════════════════════════
+   Batte la chiusura giornaliera sul registratore telematico del negozio: stampa
+   lo scontrino di chiusura e trasmette i corrispettivi all'Agenzia delle Entrate.
+   Passa per la coda print_jobs (endpoint /api/vendita/chiusura-z), che legge in
+   `pos_rt` i registratori del negozio ed emette un Report Z per ciascuno.
+   ⚠️ AZIONE FISCALE DEFINITIVA: una chiusura al giorno per cassa, non si annulla.
+   Per questo: scelta esplicita del registratore (Luca: i negozi con due casse
+   devono poter scegliere) + spunta di conferma prima di battere. */
+type Registro = { azienda: string; rt_url: string; ragione_sociale: string | null; is_default: boolean };
+const isCustom = (u: string) => !/^https?:\/\//i.test(String(u || ""));
+
+function ModaleChiusuraCassa({ negozio, negozi, onClose }: { negozio: string; negozi: string[]; onClose: () => void }) {
+    const [store, setStore] = useState(negozio);
+    const [registri, setRegistri] = useState<Registro[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [sel, setSel] = useState<string>("__all");   // azienda scelta, o "__all" = tutti
+    const [confermato, setConfermato] = useState(false);
+    const [fase, setFase] = useState<"scelta" | "invio" | "fatto">("scelta");
+    const [err, setErr] = useState<string | null>(null);
+    const [esito, setEsito] = useState<{ azienda: string | null; rt: string; jobId: number }[]>([]);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true); setRegistri([]); setErr(null); setConfermato(false);
+        supabase.from("pos_rt").select("azienda, rt_url, ragione_sociale, is_default").eq("negozio", store)
+            .then(({ data, error }) => {
+                if (!alive) return;
+                if (error) { setErr(error.message); setLoading(false); return; }
+                const rows = (data || []) as Registro[];
+                setRegistri(rows);
+                setSel(rows.length === 1 ? rows[0].azienda : "__all");
+                setLoading(false);
+            });
+        return () => { alive = false; };
+    }, [store]);
+
+    const scelti = sel === "__all" ? registri : registri.filter((r) => r.azienda === sel);
+    const qualcheCustom = scelti.some((r) => isCustom(r.rt_url));
+    /* La chiusura Custom (OPOS) dal CRM è ancora in validazione: una cassa
+       Custom si chiude da SuiteMobile. Se la scelta è SOLO Custom, non si batte
+       da qui (un Report Z non si annulla: non si tira a indovinare). */
+    const soloCustom = scelti.length > 0 && scelti.every((r) => isCustom(r.rt_url));
+
+    const esegui = async () => {
+        setFase("invio"); setErr(null);
+        try {
+            const res = await fetch("/api/vendita/chiusura-z", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ negozio: store, azienda: sel === "__all" ? undefined : sel }),
+            });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) { setErr(j.error || "Chiusura non riuscita"); setFase("scelta"); return; }
+            setEsito(j.chiusure || []);
+            setFase("fatto");
+        } catch (e: any) {
+            setErr(String(e?.message || e)); setFase("scelta");
+        }
+    };
+
+    const labelReg = (r: Registro) => r.ragione_sociale || r.azienda;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+            <div className="w-full max-w-lg rounded-2xl bg-[#12141f] border border-white/10 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                {/* header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-emerald-500/5">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                            <Receipt size={18} className="text-emerald-300" />
+                        </div>
+                        <div>
+                            <h2 className="text-base font-bold text-white leading-tight">Chiusura Cassa</h2>
+                            <p className="text-[11px] text-slate-500">Report Z — chiusura fiscale giornaliera</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"><X size={18} /></button>
+                </div>
+
+                <div className="p-5 space-y-4">
+                    {fase === "fatto" ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2.5 text-emerald-300">
+                                <div className="w-8 h-8 rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center"><Check size={18} /></div>
+                                <span className="font-semibold">Chiusura inviata al registratore</span>
+                            </div>
+                            <div className="rounded-xl bg-black/20 border border-white/5 divide-y divide-white/5">
+                                {esito.map((c) => (
+                                    <div key={c.jobId} className="flex items-center justify-between px-3.5 py-2.5 text-sm">
+                                        <span className="text-slate-200">{c.azienda || "Registratore"}</span>
+                                        <span className="text-[11px] text-slate-500 font-mono">job #{c.jobId}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-xs text-slate-400 leading-relaxed">
+                                Lo scontrino di chiusura viene stampato sul registratore entro pochi secondi.
+                                <b className="text-slate-300"> Ritira la carta</b> e allegala qui sotto come «Chiusura Cassa».
+                            </p>
+                            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 font-semibold hover:bg-emerald-500/30 transition-all">Chiudi</button>
+                        </div>
+                    ) : (
+                        <>
+                            {/* selettore negozio (solo se se ne vede più d'uno) */}
+                            {negozi.length > 1 && (
+                                <div>
+                                    <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Negozio</label>
+                                    <SelectOpzioni value={store} onChange={setStore} opzioni={negozi} placeholder="Scegli il negozio" className="bg-black/30 border-white/10" />
+                                </div>
+                            )}
+
+                            {/* avviso azione definitiva */}
+                            <div className="flex gap-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3.5 py-3">
+                                <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-200/90 leading-relaxed">
+                                    La chiusura è <b>definitiva</b>: stampa il Report Z e trasmette i corrispettivi del giorno all'Agenzia delle Entrate. Si fa <b>una sola volta al giorno</b> per cassa e non si annulla.
+                                </p>
+                            </div>
+
+                            {/* scelta registratore */}
+                            {loading ? (
+                                <div className="py-6 text-center text-slate-500 text-sm flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Carico i registratori…</div>
+                            ) : registri.length === 0 ? (
+                                <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 px-3.5 py-3 text-sm text-rose-300">
+                                    Nessun registratore configurato per <b>{store}</b>. Controlla la mappa casse in Amministrazione.
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">
+                                        {registri.length > 1 ? "Quale cassa vuoi chiudere?" : "Registratore"}
+                                    </label>
+                                    <div className="space-y-1.5">
+                                        {registri.length > 1 && (
+                                            <button onClick={() => { setSel("__all"); setConfermato(false); }}
+                                                className={cn("w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all",
+                                                    sel === "__all" ? "bg-emerald-500/15 border-emerald-500/50 text-white" : "bg-black/20 border-white/10 text-slate-300 hover:border-white/20")}>
+                                                <span className="font-semibold">Tutte le casse ({registri.length})</span>
+                                                {sel === "__all" && <Check size={16} className="text-emerald-300" />}
+                                            </button>
+                                        )}
+                                        {registri.map((r) => (
+                                            <button key={r.azienda} onClick={() => { setSel(r.azienda); setConfermato(false); }}
+                                                className={cn("w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm transition-all",
+                                                    sel === r.azienda ? "bg-emerald-500/15 border-emerald-500/50 text-white" : "bg-black/20 border-white/10 text-slate-300 hover:border-white/20")}>
+                                                <span className="flex items-center gap-2">
+                                                    <span className="font-semibold">{labelReg(r)}</span>
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400 font-mono">{r.azienda}</span>
+                                                    {isCustom(r.rt_url) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">Custom</span>}
+                                                </span>
+                                                {sel === r.azienda && <Check size={16} className="text-emerald-300" />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {soloCustom ? (
+                                        <p className="mt-2 text-[11px] text-indigo-300/90 leading-relaxed">
+                                            Cassa <b>Custom</b> (Vodafone): per ora la chiusura si esegue da <b>SuiteMobile</b>. La chiusura Custom dal CRM è in fase di validazione.
+                                        </p>
+                                    ) : qualcheCustom && (
+                                        <p className="mt-2 text-[11px] text-indigo-300/80 leading-relaxed">
+                                            Include una cassa Custom: quella chiudila da SuiteMobile. Le casse Epson vengono chiuse dal CRM.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            {err && <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 px-3.5 py-2.5 text-sm text-rose-300">{err}</div>}
+
+                            {/* conferma + esegui */}
+                            {registri.length > 0 && (
+                                <>
+                                    <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                                        <input type="checkbox" checked={confermato} onChange={(e) => setConfermato(e.target.checked)}
+                                            className="w-4 h-4 rounded accent-emerald-500" />
+                                        <span className="text-xs text-slate-300">Confermo la chiusura definitiva della giornata</span>
+                                    </label>
+                                    <button onClick={esegui} disabled={!confermato || fase === "invio" || soloCustom}
+                                        className={cn("w-full py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2",
+                                            confermato && fase !== "invio" && !soloCustom ? "bg-emerald-500 text-white hover:bg-emerald-400" : "bg-white/5 text-slate-600 cursor-not-allowed")}>
+                                        {fase === "invio" ? <><Loader2 size={16} className="animate-spin" /> Invio…</>
+                                            : soloCustom ? <><Receipt size={16} /> Chiusura Custom via SuiteMobile</>
+                                                : <><Receipt size={16} /> Esegui Chiusura Cassa</>}
+                                    </button>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+//  VistaFatture
 function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => void; history: Chiusura[]; onToggleEmessa?: (attachmentId: number, emessa: boolean) => void | Promise<void> }) {
     const NEGOZI = useStores();
     const fatture = useMemo(() => buildFatture(history), [history]);
@@ -795,6 +986,7 @@ export default function ChiusuraNegozio() {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [report, setReport] = useState(false);
+    const [chiusuraCassa, setChiusuraCassa] = useState(false);
     /* I NEGOZI FRA CUI SCEGLIERE.
        ⚠️ `useVisibleStores` per chi vede tutto (admin, dev, direttore generale,
        amministrativo senza restrizioni) restituisce `stores: []` — non «tutti».
@@ -854,6 +1046,18 @@ export default function ChiusuraNegozio() {
                         <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">Gestione documentazione chiusura giornaliera</p>
                     </div>
                     <div className="flex items-center gap-2">
+                        {/* CHIUSURA CASSA — Report Z fiscale (Luca 01/09 sera):
+                            «Mettilo qui, in chiusura negozio, chiamalo Chiusura
+                            Cassa. I negozi con due casse fiscali devono poter
+                            scegliere quale.» Batte la chiusura giornaliera sul/i
+                            registratore/i del negozio (coda print_jobs → agente). */}
+                        <button onClick={() => setChiusuraCassa(true)} disabled={!storeReport}
+                            title={storeReport ? `Chiusura Cassa (Report Z) — ${storeReport}` : "Nessun negozio associato al tuo account"}
+                            className={cn("flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl text-sm font-semibold transition-all",
+                                storeReport ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/25"
+                                    : "bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed")}>
+                            <Receipt size={15} /> <span className="hidden sm:inline">Chiusura </span>Cassa
+                        </button>
                         {isAdmin && (
                             <button onClick={() => setOverlay("fatture")}
                                 className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-purple-500/15 text-purple-300 border border-purple-500/30 text-sm font-semibold hover:bg-purple-500/25 transition-all">
@@ -884,6 +1088,11 @@ export default function ChiusuraNegozio() {
                     giorno={new Date().toISOString().slice(0, 10)}
                     onClose={() => setReport(false)} />
             ) : null}
+
+            {chiusuraCassa && (
+                <ModaleChiusuraCassa negozio={storeReport} negozi={negoziReport}
+                    onClose={() => setChiusuraCassa(false)} />
+            )}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
                 {loadError && (

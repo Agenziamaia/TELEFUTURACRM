@@ -50,6 +50,13 @@ export const SEZIONE_DI: Record<string, string> = {
        sé a quale sezione appartiene. */
     "report/giornaliero": "/chiusura",
     "report/invia": "/chiusura",
+    /* La Chiusura Cassa (Report Z) è un pulsante DENTRO la Chiusura Negozio,
+       come il report serale: chi chiude il negozio deve poterla battere senza
+       un permesso di Registra Vendita. ⚠️ Chiave ESPLICITA e non il prefisso
+       «vendita»: se no erediterebbe «/registra-vendita» — che è un'altra
+       sezione, aperta ad altri — e la chiusura fiscale della giornata
+       dipenderebbe da chi può battere scontrini, non da chi chiude il punto. */
+    "vendita/chiusura-z": "/chiusura",
     // eccezioni più precise del primo segmento: queste due servono le
     // schermate di Amministrazione (Reparti, Marginalità, Catalogo), non le
     // sezioni operative da cui prendono il nome

@@ -25,7 +25,7 @@ try {
   [Reflection.Assembly]::LoadFrom($dll) | Out-Null
 } catch { Write-Output "ERR load: $($_.Exception.Message)"; exit 1 }
 $t = [MiraOposDll.FiscalPrinter]
-foreach ($mn in @("comincia_scontrino_fiscale","scrivi_riga_scontrino","stampa_riga_pagamenti","chiudi_scontrino_fiscale","apri_stampante","comincia_scontrino_nonfiscale")) {
+foreach ($mn in @("comincia_scontrino_fiscale","scrivi_riga_scontrino","stampa_riga_pagamenti","chiudi_scontrino_fiscale","apri_stampante","comincia_scontrino_nonfiscale","chiusura_fiscale","chiusura_documento","PrintZReport","dammi_numero_chiusurafp90x")) {
   $found = $false
   $t.GetMethods() | Where-Object { $_.Name -eq $mn } | ForEach-Object {
     $found = $true

@@ -75,6 +75,18 @@ foreach ($m in [regex]::Matches($xml, 'data="([^"]*)"')) {
   $lines += [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)
 }
 
+# CHIUSURA FISCALE (Report Z) su registratore Custom — NON ANCORA ABILITATA.
+# Il CRM puo' accodare <printerFiscalReport><zReport/> anche a un Custom, ma un
+# Report Z e' IRREVERSIBILE (una sola volta al giorno, non si annulla) e la firma
+# del metodo OPOS (chiusura_fiscale) va prima verificata sul registratore reale
+# via cust-diag. Finche' non e' validata NON si tira a indovinare: si torna un
+# errore chiaro e la chiusura Custom si fa da SuiteMobile. Non si apre nemmeno il
+# registratore. (La UI Chiusura Cassa gia' blocca la scelta di sole casse Custom.)
+if (($xml -match '<printerFiscalReport') -or ($xml -match '<zReport')) {
+  Esito $false "Chiusura Custom non ancora abilitata sul CRM: eseguire il Report Z da SuiteMobile" ""
+  exit 1
+}
+
 # Auto-rileva la cartella del driver: se in $Fpnet manca MiraOposDll (es. store
 # ClickOnce come Castani/Acilia, dove i DLL stanno in AppData\Local\Apps\2.0 con un
 # path che CAMBIA a ogni aggiornamento dell'app), cerca la cartella che contiene
