@@ -31,6 +31,7 @@ import { CouponView } from "./_views/coupon";
    quello che vedevano i ragazzi. */
 import { CassaScontriniView } from "./_views/pos";
 import { RepartiIvaView } from "./_views/reparti";
+import { MonitorNegoziView } from "./_views/monitor";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { verificaCoerenzaCFNomeCompleto } from "@/lib/coerenzaCF";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
@@ -227,6 +228,7 @@ const SEZIONI: Sezione[] = [
     { id: "setup", label: "Setup", icon: SlidersHorizontal, desc: "Come lavora il CRM: il catalogo di quello che si vende, gli esiti del call center e del tracking, gli articoli ordinabili e i tipi di evento del calendario." },
     { id: "reparti", label: "Reparti & IVA", icon: Percent, gruppo: "fiscalita", desc: "Mappa reparto → aliquota/natura IVA del registratore telematico — la sorgente unica che decide l'IVA sullo scontrino (letta dal Catalogo)." },
     { id: "cassascontrini", label: "Cassa & Scontrini", icon: Receipt, gruppo: "fiscalita", desc: "Scontrini/fatture emessi, incassi della cassa automatica e chiusure Z di tutti i negozi, con importi e stato + i registratori configurati. Sola lettura." },
+    { id: "monitor", label: "Monitor Negozi", icon: Radar, gruppo: "fiscalita", desc: "Stato in tempo reale dell'agente di stampa/cassa di ogni negozio: verde = ok, giallo = agente non risponde, rosso = agente fermo con una vendita in coda. Si aggiorna da solo." },
     { id: "coupon", label: "Coupon", icon: Ticket, gruppo: "fiscalita", desc: "Coupon sconto emessi dai ritiri usati: emessi, riscattati, scaduti, annullati — con valore e residuo. Sola lettura." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
@@ -234,7 +236,7 @@ const SEZIONI: Sezione[] = [
 // ordine FISSO del mini-hub Costi (Luca 31/07): Negozi → Condivisi → Altri
 const COSTI_IDS = ["negozi", "condivisi", "altri"];
 // ordine FISSO del mini-hub Fiscalità (Luca 24/08)
-const FISC_IDS = ["reparti", "cassascontrini", "coupon"];
+const FISC_IDS = ["reparti", "cassascontrini", "monitor", "coupon"];
 const SETUP_IDS = ["catalogo", "callcenter", "ordinemerce", "calendario", "trackingesiti"];
 
 function AmministrazioneInner() {
@@ -696,6 +698,8 @@ function AmministrazioneInner() {
                                 <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna sezione di Fiscalità abilitata per il tuo ruolo.</div>
                             ) : attiva === "cassascontrini" ? (
                                 <CassaScontriniView />
+                            ) : attiva === "monitor" ? (
+                                <MonitorNegoziView />
                             ) : attiva === "coupon" ? (
                                 <CouponView />
                             ) : (

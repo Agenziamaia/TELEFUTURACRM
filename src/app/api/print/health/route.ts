@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { agentiVisti } from "@/lib/printQueueCache";
+import { richiedeSessione } from "@/lib/sessioneServer";
+
+const RUOLI_OK = ["amministrativo", "direttore_generale", "admin", "dev"];
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,10 +23,19 @@ const CORS = {
 export function OPTIONS() { return new NextResponse(null, { status: 204, headers: CORS }); }
 
 export async function GET(req: Request) {
+  // AUTORIZZAZIONE: o il token (dashboard esterna, cross-origin) o una sessione
+  // admin firmata (monitor dentro il CRM, same-origin col cookie).
   const token = new URL(req.url).searchParams.get("token") || "";
   const expected = process.env.PRINT_AGENT_TOKEN || "";
-  if (!expected) return NextResponse.json({ error: "token non configurato" }, { status: 503, headers: CORS });
-  if (token !== expected) return NextResponse.json({ error: "non autorizzato" }, { status: 401, headers: CORS });
+  let authed = !!expected && token === expected;
+  if (!authed) {
+    const sess = richiedeSessione(req);
+    if (sess) {
+      const { data: u } = await supabase.from("app_users").select("role, active").eq("id", sess.id).maybeSingle();
+      if (u && u.active !== false && RUOLI_OK.includes(String(u.role || ""))) authed = true;
+    }
+  }
+  if (!authed) return NextResponse.json({ error: "non autorizzato" }, { status: 401, headers: CORS });
 
   const now = Date.now();
   // negozi configurati
