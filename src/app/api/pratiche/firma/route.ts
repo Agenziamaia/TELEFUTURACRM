@@ -175,7 +175,7 @@ export async function POST(req: Request) {
     const g = await accesso(req, "pratiche/firma");
     if (!g.ok) return g.risposta;
 
-    const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; nome?: string; submissionId?: number; canale?: string; protocollo?: string };
+    const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; nome?: string; submissionId?: number; canale?: string; protocollo?: string; email?: string };
     const k = await chiave();
     if (!k) return NextResponse.json({ error: "la chiave DocuSeal non è configurata: si mette da Amministrazione." }, { status: 503 });
     const DOCUSEAL = await casa(k);
@@ -198,28 +198,70 @@ export async function POST(req: Request) {
         let archiviato: { nome: string; path: string } | null = null;
         let registro: { nome: string; path: string } | null = null;
         let archivioErrore: string | null = null;
+        let copiaInviata = false;
         if (finito) {
             const proto = String(body.protocollo || "senza-protocollo").replace(/[^A-Za-z0-9._-]+/g, "_");
             const docUrl = (j?.documents || [])[0]?.url || (submitters[0]?.documents || [])[0]?.url || null;
             const auditUrl = j?.audit_log_url || null;
-            const porta = async (url: string, nome: string) => {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error(`scaricamento non riuscito (${res.status})`);
-                const buf = Buffer.from(await res.arrayBuffer());
+            const metti = async (buf: Buffer, nome: string) => {
                 const path = `pratiche/${proto}/${nome}`;
                 const { error } = await supabaseAdmin.storage.from("pratiche-allegati")
                     .upload(path, buf, { contentType: "application/pdf", upsert: true });
                 if (error) throw new Error(error.message);
                 return { nome, path };
             };
+            const porta = async (url: string, nome: string) => {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`scaricamento non riuscito (${res.status})`);
+                return metti(Buffer.from(await res.arrayBuffer()), nome);
+            };
+            let pdfFirmato: Buffer | null = null;
             try {
-                if (docUrl) archiviato = await porta(docUrl, `modulo-firmato-${proto}.pdf`);
+                if (docUrl) {
+                    const res2 = await fetch(docUrl);
+                    if (res2.ok) pdfFirmato = Buffer.from(await res2.arrayBuffer());
+                }
+                if (pdfFirmato) archiviato = await metti(pdfFirmato, `modulo-firmato-${proto}.pdf`);
                 if (auditUrl) registro = await porta(auditUrl, `registro-firme-${proto}.pdf`);
             } catch (e) { archivioErrore = e instanceof Error ? e.message : "archiviazione non riuscita"; }
+
+            /* ⚠️ LA COPIA AL CLIENTE. Con `send_email: false` DocuSeal non manda
+               niente al firmatario — è così che ci siamo tolti il marchio di
+               un'altra azienda dalle mail — ma questo vuol dire che la copia
+               firmata non gli arrivava da nessuno: col foglio di carta se la
+               portava a casa, col digitale restava a mani vuote.
+               Gliela mandiamo noi, da amministrazione@, col PDF allegato. */
+            if (pdfFirmato && body.email) {
+                try {
+                    const mitt = await mittentePratiche();
+                    if (mitt) {
+                        await inviaEmail(mitt as never, {
+                            to: String(body.email),
+                            subject: `Telefutura — copia firmata della pratica ${body.protocollo || ""}`.trim(),
+                            text: [
+                                "Buongiorno,", "",
+                                "in allegato la copia firmata del documento.",
+                                "La conservi: è la sua copia, e serve se un domani ci fosse qualcosa da chiarire.",
+                                "", "Per qualsiasi cosa può rispondere a questa email o passare in negozio.",
+                                "", "Grazie,", "Telefutura",
+                            ].join("\n"),
+                            html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;font-size:15px;line-height:1.6;max-width:560px">
+  <p style="margin:0 0 14px">Buongiorno,</p>
+  <p style="margin:0 0 14px">in allegato la <b>copia firmata</b> del documento.</p>
+  <p style="margin:0 0 14px">La conservi: è la sua copia, e serve se un domani ci fosse qualcosa da chiarire.</p>
+  <p style="margin:0 0 20px;color:#555;font-size:13.5px">Per qualsiasi cosa può rispondere a questa email, oppure passare in negozio.</p>
+  <p style="margin:0;color:#555;font-size:13.5px">Grazie,<br><b style="color:#111">Telefutura</b></p>
+</div>`,
+                            attachments: [{ filename: `documento-firmato-${proto}.pdf`, content: pdfFirmato, contentType: "application/pdf" }],
+                        });
+                        copiaInviata = true;
+                    }
+                } catch { /* la firma è salva: la copia si può rimandare */ }
+            }
         }
 
         return NextResponse.json({
-            ok: true, firmato: finito,
+            ok: true, firmato: finito, copiaInviata,
             stato: submitters[0]?.status || "in attesa",
             completatoIl: submitters[0]?.completed_at || null,
             archiviato, registro, archivioErrore,

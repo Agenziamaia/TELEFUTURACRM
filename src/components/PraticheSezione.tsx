@@ -1203,7 +1203,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
             try {
                 const r = await fetch("/api/pratiche/firma", {
                     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId, protocollo }),
+                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId, protocollo, email: cliente ? cliente.email : "" }),
                 });
                 const j = await r.json();
                 /* ⚠️ AGGIORNAMENTO FUNZIONALE, non `{...firma}`. `firma` qui è
@@ -1262,7 +1262,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                                 <div className="rvTab-min">identità verificata col codice inviato a {cliente ? cliente.email : "—"}</div>
                                 <div className="rvTab-min">
                                     {firma.firmato
-                                        ? "📄 modulo firmato e registro delle firme archiviati sulla pratica"
+                                        ? "📄 modulo firmato e registro delle firme archiviati sulla pratica · copia inviata al cliente"
                                         : "⏳ sto portando il documento firmato nel nostro archivio…"}
                                 </div>
                             </div>
