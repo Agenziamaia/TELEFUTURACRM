@@ -69,7 +69,14 @@ async function recuperaScontrinate(da: string, a: string) {
             const t = new Date(quando).getTime();
             const somma = (gia || [])
                 .filter((r) => Math.abs(new Date(r.creata_il).getTime() - t) < 180000)
-                .filter((r) => (numero ? String(r.numero || "") === numero : (r.negozio === negozio && !r.numero)))
+                /* ⚠️ SENZA NUMERO SI GUARDA TUTTO IL NEGOZIO. Prima, quando
+                   la vendita non portava il numero, si cercavano solo le righe
+                   che a loro volta non ce l'avevano — e la stessa vendita
+                   poteva già essere registrata da una riga CON il numero,
+                   scritta dal flusso normale. Il recupero non la vedeva e ne
+                   creava una seconda, senza taglio: è tornata anche dopo che
+                   l'avevamo cancellata a mano. */
+                .filter((r) => (numero ? String(r.numero || "") === numero : r.negozio === negozio))
                 .reduce((s, r) => s + Number(r.importo || 0), 0);
             return somma >= importo - 0.005;
         };

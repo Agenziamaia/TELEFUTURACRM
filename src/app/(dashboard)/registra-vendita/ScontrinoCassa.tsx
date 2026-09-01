@@ -74,6 +74,10 @@ export interface ScontrinoData {
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
 const POLL_MS = 1500;
 const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
+/* quanto si aspetta la conferma del registratore prima di registrare comunque.
+   Venticinque secondi: la mediana misurata è 8, e oltre questa soglia tenere
+   la cassa ferma col cliente davanti costa più di quanto renda. */
+const ATTESA_STAMPA_MS = 25000;
 
 type Fase = "telefoni" | "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
@@ -597,6 +601,54 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         if (data.sospesoId) {
             try { await fetch("/api/vendita/sospendi", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.sospesoId, stato: "completata" }) }); } catch { /* non bloccare l'esito */ }
         }
+        /* ═══ LO SCONTRINO È DAVVERO USCITO? (Luca 01/09) ═══════════════════
+           «Ci eravamo detti che la vendita doveva essere registrata solo dopo
+           che lo scontrino è confermato… altrimenti rischiamo che registrano
+           le vendite con la stampante fiscale spenta e la vendita si registra
+           comunque.»
+
+           Aveva ragione: `p.ok` è la risposta di chi METTE IN CODA il lavoro,
+           non dell'agente che stampa. Con l'agente spento il lavoro veniva
+           accodato, la risposta era «ok», e la vendita si scriveva lo stesso.
+           Oggi è successo davvero: due ricariche vere con «agente non attivo».
+
+           ⚠️ MA NON SI PUÒ ASPETTARE ALL'INFINITO. Misurato sugli ultimi due
+           giorni: l'agente conferma in 8 secondi (mediana), ma una volta su
+           venti ci mette più di quattro minuti. Tenere la cassa ferma tutto
+           quel tempo, col cliente davanti, sarebbe peggio del male che cura.
+
+           Perciò si distinguono due cose diverse:
+           • il lavoro va in ERRORE → è certo che non ha stampato: ci si ferma
+             e si chiede, perché registrare sarebbe una vendita senza
+             documento;
+           • il tempo scade senza risposta → non si sa: si registra (la
+             vendita non si perde) ma lo si DICE, e la riga resta segnata come
+             scontrino non confermato. */
+        const jobIds: string[] = Array.isArray(p.receipts) ? p.receipts.map((r: { jobId?: string }) => r.jobId).filter(Boolean) : [];
+        let stampaConfermata: boolean | null = null;
+        if (jobIds.length && !p.testMode) {
+            setFase("stampa"); setMsg("Scontrino in stampa — attendo la conferma del registratore…");
+            const inizio = Date.now();
+            for (;;) {
+                const { data: righe } = await supabase.from("print_jobs").select("id, status, result").in("id", jobIds);
+                const stati = (righe || []).map((r) => r.status);
+                if (stati.length === jobIds.length && stati.every((x) => x === "done")) { stampaConfermata = true; break; }
+                const fallito = (righe || []).find((r) => r.status === "error");
+                if (fallito) {
+                    let dett = "";
+                    try { dett = JSON.parse(fallito.result || "{}")?.msg || ""; } catch { dett = String(fallito.result || "").slice(0, 120); }
+                    setCommitFail(true);
+                    setFase("errore");
+                    setMsg("⛔ Il registratore NON ha stampato lo scontrino" + (dett ? ` (${dett})` : "") +
+                        ". La vendita NON è stata registrata: controlla la stampante e riprova. " +
+                        "Se hai già incassato e vuoi registrare comunque, premi «Salva vendita».");
+                    return;
+                }
+                if (Date.now() - inizio > ATTESA_STAMPA_MS) { stampaConfermata = null; break; }
+                await new Promise((r) => setTimeout(r, POLL_MS));
+            }
+        }
+
         // (b) SALVATAGGIO DIFFERITO: ora che lo scontrino è EMESSO, scrivi la vendita a DB.
         // Se fallisce, lo scontrino è comunque uscito → si offre il retry del solo salvataggio.
         if (onCommit) {
@@ -610,7 +662,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             }
         }
         setFase("fatto");
-        setMsg((p.testMode ? "Documento NON fiscale in stampa (prova)" : "Scontrino fiscale in stampa") + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
+        setMsg((p.testMode ? "Documento NON fiscale in stampa (prova)"
+                : stampaConfermata ? "Scontrino fiscale STAMPATO"
+                : "⚠️ Vendita registrata, ma il registratore non ha ancora confermato la stampa: controlla che lo scontrino sia uscito")
+            + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
     };
 
     // (b) Retry del SOLO salvataggio quando lo scontrino è già uscito ma il commit è fallito.
