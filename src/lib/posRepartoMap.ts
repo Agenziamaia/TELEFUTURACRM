@@ -18,10 +18,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // negozio → { reparto_logico_CRM : reparto_fisico_registratore }
+//
+// STESSO LAYOUT SU TUTTI GLI EPSON (confermato da Luca/Rahib 01/09: «sono tutti
+// uguali»). Layout standard SuiteMobile: 1=4%, 2=22%, 3=ART.74(non sogg), 4=esente.
+// Il CRM ha 1=non soggetta e 3=4%: quindi 1 e 3 sono INVERTITI → si scambiano.
+// (Verificato dal config_cassa.ini di Donna; gli altri confermati identici.)
+const SWAP_1_3: Record<number, number> = { 1: 3, 3: 1 };
 const REPARTO_MAP: Record<string, Record<number, number>> = {
-  // DONNA — config verificato 01/09: 1=4%, 2=22%, 3=ART.74(non sogg), 4=ART.10(esente).
-  // Il CRM ha 1=non soggetta e 3=4%: quindi 1 e 3 sono INVERTITI rispetto al registratore.
-  "Donna": { 1: 3, 3: 1 },
+  "Donna": SWAP_1_3,
+  "Magliana Multi": SWAP_1_3,
+  "Magliana W3": SWAP_1_3,
+  "San Paolo": SWAP_1_3,
+  "Collatina Multi": SWAP_1_3,
+  "Garbatella": SWAP_1_3,
 };
 
 /** Traduce il reparto logico del CRM nel reparto fisico del registratore del negozio.
