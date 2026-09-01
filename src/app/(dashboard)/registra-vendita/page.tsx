@@ -43,6 +43,14 @@ import { ContiSospesi, type SospesoRow } from "./ContiSospesi";
 // L'interruttore per negozio si gestisce a DB (niente env sul box).
 const POS_STORES_ENV = (process.env.NEXT_PUBLIC_POS_SCONTRINO_STORES || "").split(",").map((s) => s.trim()).filter(Boolean);
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
+/* SENZA QUESTA RIGA LA PAGINA NON SI APRE (01/09, mattina dell'apertura).
+   `accontoDaIncassare()` viene chiamata in un effetto che parte al montaggio:
+   non importata, il browser dice «accontoDaIncassare is not defined» e va giù
+   tutta Registra Vendita, per chiunque, a ogni caricamento. `scordaAcconto`
+   sarebbe esplosa dopo, al salvataggio della vendita.
+   IL BUILD NON POTEVA VEDERLO: questo file è in `@ts-nocheck` (prima riga),
+   quindi TypeScript non controlla nemmeno che i nomi esistano. */
+import { accontoDaIncassare, scordaAcconto } from "@/lib/accontoInCassa";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { verificaCoerenzaCF } from "@/lib/coerenzaCF";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
