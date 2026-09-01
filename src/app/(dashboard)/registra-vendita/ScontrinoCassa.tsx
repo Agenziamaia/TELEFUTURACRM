@@ -170,20 +170,47 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         && importi[t.chiave] && (importi[t.chiave].anticipo.trim() !== "" || importi[t.chiave].resto.trim() !== "")
     ), [telefoni, importi]);
 
-    /** La riga di carrello che porta questo telefono: prima per codice di
-     *  magazzino (certo), poi per modello dentro la descrizione. Una riga sola
-     *  per telefono: con due telefoni dello stesso modello, il secondo non può
-     *  riprendersi la riga del primo. */
+    /** Le parole di un nome, per confrontarlo con un altro: minuscole, senza
+     *  punteggiatura, e via quelle di una lettera sola che non distinguono
+     *  niente. «TCL K70 5G 4+128GB» → tcl · k70 · 5g · 4 · 128gb */
+    const _parole = (x: string) => new Set(
+        String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(w => w.length > 1));
+
+    /** La riga di carrello che porta questo telefono.
+     *
+     *  IL PRIMO TENTATIVO ERA SBAGLIATO e non agganciava mai (Luca, 01/09
+     *  sera: «continua a non funzionare»). Cercavo il nome del telefono DENTRO
+     *  la descrizione della riga, ma i due nomi vengono da posti diversi e non
+     *  si contengono: il telefono lo nomina il MAGAZZINO — «TCL K70 5G 4+128GB
+     *  Stardust Blue» — e la riga lo nomina il campo «Modello Terminale» della
+     *  pratica — «TCL K70 5G 4+128GB». Il primo è più LUNGO del secondo,
+     *  quindi `riga.includes(telefono)` era falso ogni volta. E il codice di
+     *  magazzino sulla riga è `null` (la voce automatica non ne ha uno),
+     *  quindi non aggiungeva niente.
+     *
+     *  Adesso si contano le PAROLE IN COMUNE, che regge in tutti e due i versi
+     *  e anche quando uno dei due nomi porta il colore e l'altro no. Servono
+     *  almeno due parole condivise: «Sim Wind3» contro un TCL non ne ha
+     *  nessuna, quindi non c'è modo di agganciare la riga sbagliata.
+     *  Una riga sola per telefono: con due telefoni dello stesso modello, il
+     *  secondo non può riprendersi la riga del primo. */
     const _righeCorrette = useMemo<RigaScontrino[]>(() => {
-        const usate = new Set<number>();
         const base = (data?.items || []).map(r => ({ ...r }));
+        const usate = new Set<number>();
         _telefoniConImporti.forEach(t => {
-            const cerca = (f: (r: RigaScontrino, i: number) => boolean) =>
-                base.findIndex((r, i) => !usate.has(i) && f(r, i));
-            let idx = t.codice ? cerca(r => !!r.codice && String(r.codice) === String(t.codice)) : -1;
-            if (idx < 0 && t.descrizione) {
-                const m = String(t.descrizione).toLowerCase();
-                idx = cerca(r => String(r.description || "").toLowerCase().includes(m));
+            let idx = -1;
+            // ① il codice di magazzino, quando c'è da tutte e due le parti
+            if (t.codice) idx = base.findIndex((r, i) => !usate.has(i) && !!r.codice && String(r.codice) === String(t.codice));
+            // ② se no, la riga che condivide più parole col nome del telefono
+            if (idx < 0) {
+                const pt = _parole(t.descrizione);
+                let meglio = 0;
+                base.forEach((r, i) => {
+                    if (usate.has(i)) return;
+                    const pr = _parole(r.description);
+                    let n = 0; pt.forEach(w => { if (pr.has(w)) n++; });
+                    if (n >= 2 && n > meglio) { meglio = n; idx = i; }
+                });
             }
             if (idx < 0) return;   // niente riga da correggere: si lascia com'è
             usate.add(idx);
