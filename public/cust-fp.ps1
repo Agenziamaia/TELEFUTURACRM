@@ -45,6 +45,26 @@ function ToNum([string]$s) {
   return [double]::Parse(($s -replace ',', '.'), [Globalization.CultureInfo]::InvariantCulture)
 }
 
+# COMPATIBILITA' VERSIONI DLL (01/09): le MiraOposDll variano tra registratori. Es.
+# Collatina W3 (v50.1.1.1) ha `comincia_scontrino_fiscale` a 2 arg (non 3) e
+# `stampa_riga_pagamenti` a 3 arg (non 4). Scegliamo l'overload per numero di
+# parametri via reflection (gli errori VERI del metodo non vengono mascherati).
+function ContaArg($fp, [string]$nome) {
+  return @($fp.GetType().GetMethods() | Where-Object { $_.Name -eq $nome } | ForEach-Object { $_.GetParameters().Count })
+}
+function CominciaFiscale($fp) {
+  $c = ContaArg $fp "comincia_scontrino_fiscale"
+  if ($c -contains 3) { $fp.comincia_scontrino_fiscale($false, "", "") }
+  elseif ($c -contains 2) { $fp.comincia_scontrino_fiscale($false, "") }
+  elseif ($c -contains 1) { $fp.comincia_scontrino_fiscale($false) }
+  else { $fp.comincia_scontrino_fiscale() }
+}
+function PagamentoFiscale($fp, [double]$tot, [double]$amt, [string]$tipo) {
+  $c = ContaArg $fp "stampa_riga_pagamenti"
+  if ($c -contains 4) { $fp.stampa_riga_pagamenti($tot, $amt, $tipo, "") }
+  else { $fp.stampa_riga_pagamenti($tot, $amt, $tipo) }
+}
+
 try { $xml = Get-Content -Raw -LiteralPath $XmlFile } catch { Esito $false "xml illeggibile: $($_.Exception.Message)" ""; exit 1 }
 
 # tipo documento dall'ePOS XML
@@ -138,13 +158,13 @@ try {
       $tot = 0.0
       foreach ($it in $items) { $q = $(if ($it.qty -gt 0) { $it.qty } else { 1.0 }); $tot += $it.price * $q }
 
-      $fp.comincia_scontrino_fiscale($false, "", "")
+      CominciaFiscale $fp
       foreach ($it in $items) {
         $q = $(if ($it.qty -gt 0) { $it.qty } else { 1.0 })
         $fp.scrivi_riga_scontrino("", [string]$it.desc, [double]$it.price, [double]$q, [double]$it.dept, "", $false)
       }
       if ($pays.Count -eq 0) {
-        $fp.stampa_riga_pagamenti([double]$tot, [double]$tot, "CONTANTI", "")
+        PagamentoFiscale $fp ([double]$tot) ([double]$tot) "CONTANTI"
       } else {
         foreach ($p in $pays) {
           $tp = switch ([int]$p.ptype) {
@@ -153,7 +173,7 @@ try {
             4       { '$NR$' + $(if ($p.desc) { [string]$p.desc } else { "CREDITO" }) }
             default { if ($p.desc) { [string]$p.desc } else { "CONTANTI" } }
           }
-          $fp.stampa_riga_pagamenti([double]$tot, [double]$p.amount, [string]$tp, "")
+          PagamentoFiscale $fp ([double]$tot) ([double]$p.amount) ([string]$tp)
         }
       }
       $ns = 0; $bc = ""
