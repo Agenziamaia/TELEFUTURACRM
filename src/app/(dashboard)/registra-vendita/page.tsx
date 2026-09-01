@@ -5750,7 +5750,7 @@ function CRM() {
      insieme alle righe della vendita. Se fallisce, la vendita resta valida:
      è un registro, non un prerequisito — ma si urla in console e all'utente,
      perché una ricarica incassata e non registrata nessuno la ritrova. */
-  const registraRicariche=async(items,contractId,azScontrino)=>{
+  const registraRicariche=async(items,idPerVoce,azScontrino)=>{
     /* ⚠️ UNA RIGA PER RICARICA VERA, non per voce di carrello. Quaranta euro
        composti da due tagli da venti sono DUE operazioni che il fornitore
        deve eseguire, e domani saranno due chiamate all'API. Sullo scontrino
@@ -5766,7 +5766,9 @@ function CRM() {
       for(const pz of pezzi){
         for(let k=0;k<(Number(pz.n)||1);k++){
           voci.push({operatore:ps.operatore,operatoreNome:ps.operatoreNome,numero:ps.numero,
-            taglio:pz.etichetta,importo:Number(pz.valore)||0,contractId});
+            taglio:pz.etichetta,importo:Number(pz.valore)||0,
+            // la riga di vendita di QUESTA ricarica, non la prima della vendita
+            contractId:(idPerVoce&&idPerVoce.get&&idPerVoce.get(m))||null});
         }
       }
     }
@@ -7595,9 +7597,18 @@ function CRM() {
         });
       });
 
+      /* ⚠️ OGNI VOCE SI RICORDA LA SUA RIGA. Il registro delle ricariche
+         riceveva `contractRows[0].id` — la PRIMA riga della vendita, che con
+         una SIM in carrello è il CONTRATTO (CTR-), non la riga della
+         ricarica. Il recupero cercava la riga EXT- della ricarica, non la
+         trovava, e ne creava una seconda con l'importo totale: sei doppioni
+         in mezza giornata. */
+      const idPerVoce = new Map();
       margList.forEach(mi => {
+        const idRiga = `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+        if (mi && mi.paystore) idPerVoce.set(mi, idRiga);
         contractRows.push(_margRigaFin({
-          id: `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+          id: idRiga,
           client_id: clientId,
           data: dateStr,
           brand: "Marginalità",
@@ -7777,7 +7788,7 @@ function CRM() {
            contratto — cliente che attiva una SIM e intanto ricarica un altro
            numero. Senza questa riga si registrerebbero solo le vendite di
            sole ricariche, cioè si perderebbero proprio quelle miste. */
-        await registraRicariche(margList, contractRows[0]?.id || null, azScontrino);
+        await registraRicariche(margList, idPerVoce, azScontrino);
         venditaScritta.current = true;   // e l'autosave smette di risuscitarla
         clearDraft("crm_v9");            // adesso sì: la vendita esiste
         return contractRows;
@@ -8012,8 +8023,11 @@ function CRM() {
       // stato risolto sopra: un contatto senza vendita è innocuo. In caso di errore
       // la funzione LANCIA, così chi la chiama sa che il salvataggio non è riuscito.
       const commitFn = async (azScontrino) => {
-      const rows=margItems.map(mi=>_margRigaFin({
-        id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
+      const idPerVoce=new Map();
+      const rows=margItems.map(mi=>{const idRiga=`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
+        if(mi&&mi.paystore)idPerVoce.set(mi,idRiga);
+        return _margRigaFin({
+        id:idRiga,
         client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
         // Segnalazione 52: le vendite a marginalita' sono brand Extra, quindi
         // nascono gia' Attive (non sono pratiche da attivare). Questo percorso di
@@ -8031,7 +8045,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
    stata venduta e non su quale numero. */
 paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero||null,pezzi:mi.paystore.pezzi||null,importo:mi.paystore.importo??null}:null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
         is_demo:false,
-      },mi));
+      },mi);});
       const {error}=await supabase.from("contracts").insert(rows);
       if(error)throw error;
       /* L'ACCONTO TORNA ALLA PRATICA. Finché non si scrive qui, la pratica
@@ -8080,7 +8094,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
       } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
-      await registraRicariche(margItems, rows[0]?.id || null, azScontrino);
+      await registraRicariche(margItems, idPerVoce, azScontrino);
       return rows;
       };
       const _cliLabel=(margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim();

@@ -44,8 +44,31 @@ async function recuperaScontrinate(da: string, a: string) {
         if (!vendite?.length) return;
 
         const ids = vendite.map((v) => v.id);
-        const { data: gia } = await supabase.from("paystore_ricariche").select("contract_id").in("contract_id", ids);
-        const visti = new Set((gia || []).map((r) => r.contract_id));
+        /* ⚠️ NON BASTA IL `contract_id`. Quando la ricarica è venduta insieme
+           a una SIM, la riga del registro nasceva legata all'id del CONTRATTO
+           (CTR-) invece che alla sua riga di vendita (EXT-): il recupero non
+           la riconosceva e ne creava una seconda, con l'importo totale invece
+           dei singoli tagli. Sei doppioni in mezza giornata.
+           Il legame è stato corretto alla fonte, ma qui serve comunque una
+           rete: si guarda anche se per quel NUMERO, in quel momento, il
+           registro ha già righe che coprono l'importo. Una ricarica registrata
+           due volte è peggio di una registrata una volta sola in modo
+           imperfetto — la seconda la si nota, la prima no. */
+        const { data: gia } = await supabase.from("paystore_ricariche")
+            .select("contract_id, numero, importo, creata_il, negozio")
+            .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z").limit(20000);
+        const visti = new Set((gia || []).map((r) => r.contract_id).filter(Boolean));
+        /* quanto risulta già registrato per quel numero (o per quel negozio,
+           se il numero manca) attorno a quel momento: tre minuti bastano —
+           le righe del flusso normale nascono nello stesso secondo */
+        const giaPer = (numero: string, negozio: string | null, quando: string, importo: number) => {
+            const t = new Date(quando).getTime();
+            const somma = (gia || [])
+                .filter((r) => Math.abs(new Date(r.creata_il).getTime() - t) < 180000)
+                .filter((r) => (numero ? String(r.numero || "") === numero : (r.negozio === negozio && !r.numero)))
+                .reduce((s, r) => s + Number(r.importo || 0), 0);
+            return somma >= importo - 0.005;
+        };
 
         const nuove = [];
         for (const v of vendite) {
@@ -69,6 +92,7 @@ async function recuperaScontrinate(da: string, a: string) {
             const dett = (v.dettagli || {}) as { importo?: number; price?: number };
             const importo = Number(dett.importo ?? dett.price ?? d?.importo ?? 0);
             if (!(importo > 0)) continue;
+            if (giaPer(d?.numero || "", v.negozio, v.created_at, importo)) continue;
             nuove.push({
                 creata_il: v.created_at, negozio: v.negozio, venditore: v.venditore,
                 operatore: d?.operatore || senzaNum, operatore_nome: d?.operatoreNome || nomeOperatoreCorto(senzaNum || ""),

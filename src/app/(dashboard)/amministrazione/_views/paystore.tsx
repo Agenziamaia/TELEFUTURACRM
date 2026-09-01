@@ -44,12 +44,25 @@ const oggiISO = () => new Date().toISOString().slice(0, 10);
 const primoDelMese = () => oggiISO().slice(0, 8) + "01";
 const eur = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const eurC = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 2 });
-const TINTE = ["#f8b516", "#818cf8", "#34d399", "#38bdf8", "#f472b6", "#a78bfa", "#fb923c", "#4ade80"];
-/* ⚠️ IL COLORE VIENE DALLA POSIZIONE, non da un'impronta del nome. Con
-   l'hash TIM e Vodafone finivano su due viola quasi uguali — e in un grafico
-   a torta due fette dello stesso colore sono una fetta sola. Per posizione i
-   vicini sono sempre distinti, e il colore di un operatore non cambia mai. */
+/* ⚠️ I COLORI VERI DEI MARCHI, gli stessi del resto del CRM (Luca 01/09:
+   «sistemi i colori dei brand e allineameli»). Vodafone è rosso, WindTre
+   arancione, TIM blu: chi guarda l'elenco riconosce l'operatore dal colore
+   prima di leggere il nome, e lo riconosce perché è lo stesso che vede nel
+   Tracking e in Ricerca Vendite. Prima venivano da una palette generica
+   assegnata per posizione, e Vodafone era viola.
+   Gli operatori che il CRM non vende — quelli che si possono solo ricaricare
+   — non hanno un colore di marchio: prendono una tinta neutra della palette,
+   distinta per posizione. */
+const TINTE = ["#94a3b8", "#818cf8", "#34d399", "#38bdf8", "#f472b6", "#a78bfa", "#fb923c", "#4ade80"];
+const COLORI_PS: Record<string, string> = {
+    tim: "#0050ff", vodafone: "#e60000", windtre: "#f97316", iliad: "#c00028",
+    fastweb: "#eab308", ho: "#9b26b6", very: "#84cc16", kena: "#e4002b",
+    poste: "#ffd400", coopvoce: "#e2001a", lyca: "#f5a300", tiscali: "#00a0dd",
+    digi: "#e30613", optima: "#00a651", spusu: "#e5007d", unomobile: "#0072c6",
+    withu: "#00c389", daily: "#004b93",
+};
 const tintaOp = (op: string) => {
+    if (COLORI_PS[op]) return COLORI_PS[op];
     const i = OPERATORI_PAYSTORE.findIndex((o) => o.id === op);
     return TINTE[(i < 0 ? OPERATORI_PAYSTORE.length : i) % TINTE.length];
 };
@@ -374,8 +387,12 @@ export function PayStoreAdminView() {
                                             <tr key={r.id} className="border-t border-white/5">
                                                 <td className="py-1.5 text-slate-400 whitespace-nowrap">{new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                                                 <td className="text-slate-200 font-semibold">
+                                                    {/* ⚠️ IL NOME LO DECIDE IL CODICE OPERATORE, non quello
+                                                        salvato sulla riga: nel registro convivono «WindTre»
+                                                        scritto dal flusso normale e «WINDTRE» scritto dal
+                                                        recupero, e nell'elenco sembravano due operatori. */}
                                                     <span className="inline-flex items-center gap-1.5">
-                                                        <i className="w-2 h-2 rounded-full" style={{ background: tintaOp(r.operatore) }} />
+                                                        <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: tintaOp(r.operatore) }} />
                                                         {nomeOp(r.operatore)}
                                                     </span>
                                                 </td>
