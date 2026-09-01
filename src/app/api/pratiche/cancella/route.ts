@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAdminOrAbove } from "@/lib/roles";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
@@ -32,7 +33,12 @@ export async function POST(req: Request) {
 
     const { data: me } = await supabaseAdmin.from("app_users").select("role").eq("id", g2.ok ? g2.sess.id : "").maybeSingle();
     const ruolo = String((me as { role?: string } | null)?.role || "");
-    if (!["admin", "dev", "direttore_generale", "amministrativo"].includes(ruolo)) {
+    /* L'AIUTANTE DI CASA, NON UNA LISTA QUI DENTRO. La guardia di sicurezza
+       vieta gli elenchi di ruoli scritti dentro una route, e faceva fallire il
+       build: nessuno poteva più consegnare. `isAdminOrAbove` copre esattamente
+       gli stessi quattro ruoli — amministrativo, direttore generale, admin,
+       dev — quindi chi può cancellare una pratica non cambia di una virgola. */
+    if (!isAdminOrAbove(ruolo)) {
         return NextResponse.json({ error: "solo la direzione può cancellare una pratica." }, { status: 403 });
     }
 
