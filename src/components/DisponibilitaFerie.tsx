@@ -31,6 +31,8 @@ import { cn } from "@/utils";
 
 type Riga = {
     userId: string; nome: string; negozio: string; contratto: string;
+    /** confronto fra due buste consecutive: quanto ha aggiunto il consulente */
+    controllo: { da: string; a: string; saldoPrima: number; saldoDopo: number; goduto: number; maturato: number } | null;
     puntoFermo: { mese: string; giorni: number; fonte: string } | null;
     presiDopo: number;
     residuo: number | null;
@@ -74,27 +76,41 @@ export function DisponibilitaFerie() {
             supabase.from("giorni_festivi").select("giorno"),
         ]);
         const festivi = new Set(((fes.data ?? []) as { giorno: string }[]).map((f) => String(f.giorno).slice(0, 10)));
-        // il punto fermo più recente per persona
-        const fermo = new Map<string, { mese: string; giorni: number; fonte: string }>();
+        /* TUTTE le letture, non solo l'ultima: servono a confrontare due buste
+           consecutive e vedere se il consulente ha scalato bene. */
+        const storico = new Map<string, { mese: string; giorni: number; fonte: string }[]>();
         for (const r of ((res.data ?? []) as { user_id: string; mese: string; giorni: number; fonte: string }[])) {
-            const mese = String(r.mese).slice(0, 10);
-            const cur = fermo.get(r.user_id);
-            if (!cur || mese > cur.mese) fermo.set(r.user_id, { mese, giorni: Number(r.giorni), fonte: r.fonte });
+            const v = storico.get(r.user_id) || [];
+            v.push({ mese: String(r.mese).slice(0, 10), giorni: Number(r.giorni), fonte: r.fonte });
+            storico.set(r.user_id, v);
         }
+        storico.forEach((v) => v.sort((a, b) => b.mese.localeCompare(a.mese)));
+        const fermo = new Map<string, { mese: string; giorni: number; fonte: string }>();
+        storico.forEach((v, id) => { if (v[0]) fermo.set(id, v[0]); });
         const utenti = ((ut.data ?? []) as { id: string; full_name: string; primary_store: string | null; contract_type: string | null; role: string | null }[]);
-        setCallerFuori(utenti.filter((u) => u.role === "caller").length);
+        setCallerFuori(utenti.filter((u) => ["caller", "direttore_cc", "dev", "direttore_generale"].includes(String(u.role || "")) || /amministrator/i.test(String(u.contract_type || ""))).length);
         const perNome = new Map(utenti.map((u) => [String(u.full_name || "").trim().toLowerCase(), u.id]));
         const oggi = new Date();
         const fineOggi = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
 
-        /* ⚠️ I CALLER NON HANNO FERIE (Luca 01/09): «vengono pagati ad ore, e
-           se non lavorano non hanno compenso». Vale anche per quelli con
-           partita IVA — con loro l'accordo dei 18 giorni non c'è. Quindi non
-           entrano proprio in questa lista: tenerli, anche con un numero a
-           zero, vorrebbe dire far credere che un residuo esista.
-           Si escludono per RUOLO, non per contratto: Alex Coviello è back
-           office del call center ma è assunto, e le ferie le ha. */
-    const out: Riga[] = utenti.filter((u) => u.role !== "caller").map((u) => {
+        /* ═══ CHI NON STA IN QUESTA LISTA (Luca 01/09) ═══
+           Le ferie non le maturano tutti, e chi non le matura non deve
+           comparire: un numero accanto al nome, anche zero, fa credere che un
+           residuo esista.
+           • il CALL CENTER — caller e il loro direttore — è pagato a ore:
+             «se non lavorano non hanno compenso», e con la partita IVA
+             l'accordo dei 18 giorni non c'è;
+           • la DIREZIONE GENERALE e chi prende un compenso da amministratore
+             (Marta Perrotta, Franca Arduini): non sono dipendenti, il loro
+             tempo non si conta così;
+           • lo SVILUPPO (Rahib): non è un collaboratore del negozio.
+           Si escludono per RUOLO, non per contratto — Alex Coviello è back
+           office del call center ma è assunto a tempo determinato, e le ferie
+           ce le ha eccome. */
+    const FUORI_RUOLI = ["caller", "direttore_cc", "dev", "direttore_generale"];
+    const fuori = (u: { role: string | null; contract_type: string | null }) =>
+        FUORI_RUOLI.includes(String(u.role || "")) || /amministrator/i.test(String(u.contract_type || ""));
+    const out: Riga[] = utenti.filter((u) => !fuori(u)).map((u) => {
             const pf = fermo.get(u.id) || null;
             /* LE FERIE PRESE DOPO IL PUNTO FERMO. Il cedolino di luglio conta
                fino al 31 luglio, quindi si parte dal primo agosto: i giorni di
@@ -117,8 +133,43 @@ export function DisponibilitaFerie() {
                         .reduce((t, g) => t + g.quota, 0);
                 }
             }
+            /* ═══ IL CONTROLLO SUL CONSULENTE (Luca 01/09) ═══
+               «Quando carichiamo le buste di agosto devi fare un check rispetto
+               a quello che ti risulta oggi, così verifichiamo anche se il
+               consulente del lavoro sta scaricando le ferie in modo giusto».
+               Non si può dire «il saldo è sbagliato»: ogni mese matura un
+               rateo, e quanto matura lo decide il contratto — è proprio il
+               motivo per cui la busta è la fonte. Quello che si può misurare è
+               il MATURATO IMPLICITO: quanto il consulente ha aggiunto, una
+               volta tolte le ferie che noi sappiamo essere state fatte.
+                   maturato = saldo nuovo − saldo vecchio + goduto nel mese
+               Se è negativo, o molto lontano da quello degli altri, lì c'è
+               qualcosa da chiedere. */
+            let controllo: Riga["controllo"] = null;
+            const st = (storico.get(u.id) || []).filter((x) => x.fonte === "busta_paga");
+            if (st.length >= 2) {
+                const nuovo = st[0], vecchio = st[1];
+                const d1 = new Date(vecchio.mese + "T12:00"); d1.setMonth(d1.getMonth() + 1);
+                const daM = `${d1.getFullYear()}-${String(d1.getMonth() + 1).padStart(2, "0")}-01`;
+                const aM = nuovo.mese.slice(0, 8) + String(new Date(Number(nuovo.mese.slice(0, 4)), Number(nuovo.mese.slice(5, 7)), 0).getDate());
+                let goduto = 0;
+                for (const r of ((fer.data ?? []) as Record<string, string>[])) {
+                    if (r.tipo === "corso") continue;
+                    const uid = r.user_id || perNome.get(String(r.employee_name || "").trim().toLowerCase());
+                    if (uid !== u.id) continue;
+                    goduto += giornateAssenza(String(r.date_from).slice(0, 10), String(r.date_to).slice(0, 10), daM, aM, festivi, !!r.half_day)
+                        .reduce((t, g) => t + g.quota, 0);
+                }
+                controllo = {
+                    da: vecchio.mese, a: nuovo.mese,
+                    saldoPrima: vecchio.giorni, saldoDopo: nuovo.giorni,
+                    goduto: Math.round(goduto * 10) / 10,
+                    maturato: Math.round((nuovo.giorni - vecchio.giorni + goduto) * 10) / 10,
+                };
+            }
+
             return {
-                userId: u.id, nome: u.full_name, negozio: u.primary_store || "", contratto: u.contract_type || "",
+                userId: u.id, nome: u.full_name, negozio: u.primary_store || "", contratto: u.contract_type || "", controllo,
                 puntoFermo: pf, presiDopo: arrotondaGiorni(presi),
                 // il residuo NON si arrotonda per eccesso: si mostra a un decimale
                 residuo: pf ? Math.round((pf.giorni - presi) * 10) / 10 : null,
@@ -193,6 +244,20 @@ export function DisponibilitaFerie() {
         }
         setLeggo(false);
     };
+
+    /* le persone con due letture consecutive, e quanto matura di norma il
+       gruppo: la mediana regge meglio della media quando uno solo è sballato */
+    const controllo = useMemo(() => {
+        const righeC = (righe ?? []).filter((r) => r.controllo);
+        const val = righeC.map((r) => r.controllo!.maturato).sort((a, b) => a - b);
+        const mediana = val.length ? (val.length % 2 ? val[(val.length - 1) / 2] : (val[val.length / 2 - 1] + val[val.length / 2]) / 2) : null;
+        righeC.sort((a, b) => {
+            const sa = mediana == null ? 0 : Math.abs(a.controllo!.maturato - mediana);
+            const sb = mediana == null ? 0 : Math.abs(b.controllo!.maturato - mediana);
+            return sb - sa;
+        });
+        return { righe: righeC, mediana };
+    }, [righe]);
 
     const viste = useMemo(() => {
         const s = q.trim().toLowerCase();
@@ -289,10 +354,53 @@ export function DisponibilitaFerie() {
                     )}
                 </div>
             )}
+            {/* ═══ IL CONTROLLO SUL CONSULENTE ═══
+                Compare da solo quando ci sono due buste consecutive lette. Non
+                dice «è sbagliato»: dice quanto ha aggiunto il consulente una
+                volta tolte le ferie che risultano a noi, e mette in cima chi
+                si discosta dagli altri. Il giudizio resta a chi legge. */}
+            {controllo.righe.length > 0 && (
+                <div className="glass-card p-4 space-y-2">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                        <p className="text-[12px] font-black text-white">🔎 Controllo sulle buste paga</p>
+                        <span className="text-[11px] text-slate-500">
+                            da {nomeMese(controllo.righe[0].controllo!.da)} a {nomeMese(controllo.righe[0].controllo!.a)} ·
+                            {" "}{controllo.righe.length} {controllo.righe.length === 1 ? "persona" : "persone"}
+                            {controllo.mediana != null ? ` · di norma matura ${gg(controllo.mediana)} gg al mese` : ""}
+                        </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                        <b className="text-slate-400">Maturato</b> = saldo nuovo − saldo vecchio + ferie fatte nel mese, secondo il CRM.
+                        Non si può dire quanto <i>dovrebbe</i> maturare — lo decide il contratto — ma un maturato negativo,
+                        o molto lontano da quello degli altri, è il segno che qualcosa non torna: o il consulente ha scalato
+                        giorni che non risultano, o a noi manca una richiesta di ferie.
+                    </p>
+                    <div className="max-h-[220px] overflow-y-auto space-y-1">
+                        {controllo.righe.map((r) => {
+                            const c = r.controllo!;
+                            const strano = c.maturato < 0 || (controllo.mediana != null && Math.abs(c.maturato - controllo.mediana) > 1);
+                            return (
+                                <div key={r.userId} className={cn("flex flex-wrap items-baseline gap-2 text-[11.5px] rounded-lg px-2 py-1",
+                                    strano ? "bg-amber-500/10 border border-amber-400/25" : "")}>
+                                    <span className="text-slate-200 font-semibold flex-1 min-w-[150px]">{r.nome}</span>
+                                    <span className="text-slate-500">{gg(c.saldoPrima)} → <b className="text-slate-300">{gg(c.saldoDopo)}</b></span>
+                                    <span className="text-slate-500">ferie nostre <b className="text-slate-300">{gg(c.goduto)}</b></span>
+                                    <span className={cn("font-black", c.maturato < 0 ? "text-rose-300" : strano ? "text-amber-300" : "text-emerald-300")}>
+                                        maturato {gg(c.maturato)}
+                                    </span>
+                                    {strano && <span className="text-amber-300/80">← da chiedere</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {callerFuori > 0 && (
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                    🎧 {callerFuori} caller non sono in elenco: sono pagati a ore, e chi non lavora non matura ferie —
-                    né con l&apos;assunzione né con la partita IVA.
+                    🎧 {callerFuori} persone non sono in elenco: il <b>call center</b> (pagato a ore: chi non lavora non
+                    matura ferie, né da assunto né con la partita IVA), la <b>direzione generale</b> e chi prende un compenso
+                    da amministratore, e lo <b>sviluppo</b>. Alex Coviello resta: è back office, ma è assunto.
                 </p>
             )}
             {senzaDato > 0 && (
