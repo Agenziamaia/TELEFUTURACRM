@@ -189,12 +189,6 @@ export default function PayStore({
                             </div>
                         </div>
                     )}
-                    <div className="rvNota psNotaFisco">
-                        <div className="rvNota-s">
-                            Ricarica telefonica: operazione <b>esente IVA</b> (art. 74 DPR 633/72). Sullo scontrino
-                            esce sul <b>reparto {voce?.reparto ?? 1}</b>, quello «non soggetta».
-                        </div>
-                    </div>
                 </div>
             )}
 

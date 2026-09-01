@@ -2205,8 +2205,6 @@ html.light .rvCoup{box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 16%,tra
 .psPasso{margin-bottom:14px}
 .psPronta{border-color:#f8b516}
 .psAvviso{margin-top:0;margin-bottom:12px;font-size:13px}
-.psNotaFisco{margin-top:12px}
-.psNotaFisco .rvNota-s{margin-bottom:0}
 /* la taratura dei loghi degli operatori: i PNG hanno quantità di vuoto molto
    diverse, e senza correzione la fila sembra sbagliata. Stessa cura che ha
    già la griglia dei marchi. */
