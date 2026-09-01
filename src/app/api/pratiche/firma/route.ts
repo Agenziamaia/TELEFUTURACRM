@@ -249,6 +249,7 @@ export async function POST(req: Request) {
         let copiaInviata = false;
         let dispositivo: string | null = null;
         let daComputer = false;
+        let letturaRegistro: "letto" | "illeggibile" | "assente" = "assente";
         if (finito) {
             const proto = String(rich.protocollo || "senza-protocollo").replace(/[^A-Za-z0-9._-]+/g, "_");
             const docUrl = (j?.documents || [])[0]?.url || (submitters[0]?.documents || [])[0]?.url || null;
@@ -259,11 +260,6 @@ export async function POST(req: Request) {
                     .upload(path, buf, { contentType: "application/pdf", upsert: true });
                 if (error) throw new Error(error.message);
                 return { nome, path };
-            };
-            const porta = async (url: string, nome: string) => {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error(`scaricamento non riuscito (${res.status})`);
-                return metti(Buffer.from(await res.arrayBuffer()), nome);
             };
             let pdfFirmato: Buffer | null = null;
             try {
@@ -284,22 +280,40 @@ export async function POST(req: Request) {
                        banco. */
                     try {
                         const pdfjs = await pdfjsServer();
-                        const d2 = await pdfjs.getDocument({ data: new Uint8Array(bufReg) }).promise;
+                        const d2 = await pdfjs.getDocument({ data: new Uint8Array(bufReg), isEvalSupported: false, useSystemFonts: false }).promise;
                         let testo = "";
-                        for (let pg = 1; pg <= Math.min(d2.numPages, 3); pg++) {
+                        for (let pg = 1; pg <= Math.min(d2.numPages, 12); pg++) {
                             const tc = await (await d2.getPage(pg)).getTextContent();
                             testo += " " + (tc.items as { str?: string }[]).map((it) => it.str || "").join(" ");
                         }
                         const letto = leggiRegistro(testo);
                         const dev = dispositivoDaUA(letto.ua);
-                        if (dev || letto.ip) {
-                            dispositivo = dev ? dev.etichetta : null;
-                            daComputer = dev ? dev.daComputer : false;
+                        if (dev) {
+                            dispositivo = dev.etichetta;
+                            daComputer = dev.daComputer;
+                            letturaRegistro = "letto";
                             await supabaseAdmin.from("firme_richieste")
                                 .update({ dispositivo, indirizzo_ip: letto.ip || null })
                                 .eq("submission_id", body.submissionId);
+                        } else if (letto.ip) {
+                            /* solo l'IP: si salva quello e si lascia stare il
+                               dispositivo — un giro che legge peggio del
+                               precedente non deve CANCELLARE quello buono */
+                            await supabaseAdmin.from("firme_richieste")
+                                .update({ indirizzo_ip: letto.ip }).eq("submission_id", body.submissionId);
                         }
                     } catch { /* il registro è archiviato lo stesso */ }
+                    if (letturaRegistro !== "letto") {
+                        /* ⚠️ SI DICE CHE NON SI È RIUSCITI A LEGGERE.
+                           L'assenza dell'avviso si legge come «tutto a posto»:
+                           per una funzione che serve a scoprire le firme
+                           raccolte al banco, è il difetto peggiore. */
+                        const { data: g2 } = await supabaseAdmin.from("firme_richieste")
+                            .select("dispositivo").eq("submission_id", body.submissionId).maybeSingle();
+                        const gia = (g2 as { dispositivo?: string | null } | null)?.dispositivo || null;
+                        if (gia) { dispositivo = gia; letturaRegistro = "letto"; }
+                        else letturaRegistro = "illeggibile";
+                    }
                 }
             } catch (e) { archivioErrore = e instanceof Error ? e.message : "archiviazione non riuscita"; }
 
@@ -354,7 +368,7 @@ export async function POST(req: Request) {
         }
 
         return NextResponse.json({
-            ok: true, firmato: finito, copiaInviata, dispositivo, daComputer,
+            ok: true, firmato: finito, copiaInviata, dispositivo, daComputer, letturaRegistro,
             stato: submitters[0]?.status || "in attesa",
             completatoIl: submitters[0]?.completed_at || null,
             archiviato, registro, archivioErrore,
@@ -484,7 +498,7 @@ export async function POST(req: Request) {
         submission_id: idRichiesta,
         tipo: u ? "usato" : "pratica",
         protocollo: d.protocollo, cliente_id: body.clienteId || null,
-        email, negozio: d.negozio, canale, creata_da: g.ok ? g.sess.id : null,
+        email, negozio: d.negozio, canale, creata_da: g2.ok ? g2.sess.id : null,
     }, { onConflict: "submission_id" });
 
     /* ── la mail di invito, con la nostra faccia ─────────────────────── */

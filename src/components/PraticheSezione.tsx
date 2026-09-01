@@ -121,19 +121,27 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
         return m;
     }, [pratiche]);
 
-    if (nuova) {
-        return <Wizard sezione={sezione} negozio={negozio} operatore={operatore} negozi={tuttiNegozi}
-            onAnnulla={() => setNuova(false)}
-            onFatto={async (t) => { setNuova(false); await carica(); avvisa(t); }} />;
-    }
+    /* ⚠️ QUESTO EFFETTO STA PRIMA DEI RETURN, e non è pignoleria: messo dopo
+       il `if (nuova)`, il numero di hook cambiava fra un render e l'altro e
+       React buttava giù la schermata («Rendered fewer hooks than expected»)
+       appena si premeva «Nuova richiesta». */
     useEffect(() => {
         if (giaAperta.current || !pratiche || !pratiche.length) return;
         const proto = (parametri.get("p") || "").trim().toUpperCase();
         if (!proto) return;
         const trovata = pratiche.find((p) => (p.protocollo || "").toUpperCase() === proto);
-        if (trovata) { setApri(trovata.id); giaAperta.current = true; }
+        giaAperta.current = true;
+        if (trovata) setApri(trovata.id);
+        // l'elenco è filtrato per negozio: se la pratica è di un altro punto
+        // vendita, il link atterrava qui senza aprire niente e senza dire perché
+        else avvisa(`${proto} non è fra le pratiche che vedi: forse è di un altro punto vendita.`);
     }, [pratiche, parametri]);
 
+    if (nuova) {
+        return <Wizard sezione={sezione} negozio={negozio} operatore={operatore} negozi={tuttiNegozi}
+            onAnnulla={() => setNuova(false)}
+            onFatto={async (t) => { setNuova(false); await carica(); avvisa(t); }} />;
+    }
     const aperta = apri ? (pratiche || []).find((p) => p.id === apri) : null;
     if (aperta) {
         return <Dettaglio pratica={aperta} ruolo={ruolo} eAdmin={eAdmin} operatore={operatore}
@@ -443,6 +451,11 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                    Meglio niente che una pratica a metà — il protocollo bruciato
                    è il prezzo, ed è il meno caro dei due. */
                 if (er) {
+                    try {
+                        await supabase.from("contract_attachments").delete()
+                            .eq("client_id", cliente.id)
+                            .like("file_name", `%${creata.protocollo}`);
+                    } catch { }
                     await supabase.from("pratiche").delete().eq("id", creata.id);
                     creata = null;
                     throw new Error("gli articoli non si sono salvati (" + er.message + "): non è stata creata nessuna pratica, riprova.");
@@ -1565,18 +1578,25 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
         if (conferma.trim().toUpperCase() !== pratica.protocollo.toUpperCase()) { window.alert("Protocollo diverso: non ho cancellato niente."); return; }
         setBusy(true);
         try {
-            const f = (pratica.firma || {}) as Firma;
-            const percorsi = [f.firmato?.path, f.modulo?.path, f.registro?.path, f.identita?.path].filter(Boolean) as string[];
-            if (percorsi.length) {
-                try { await supabase.storage.from("pratiche-allegati").remove(percorsi); } catch { }
-                try {
-                    await supabase.from("contract_attachments").delete()
-                        .in("file_url", percorsi.map((x) => `/api/file/pratiche-allegati/${x}`));
-                } catch { }
+            /* la fa il SERVER: dal browser i depositi sono chiusi, e la
+               rimozione dei file veniva negata in silenzio lasciando in giro
+               documenti d'identità senza più niente a cui appartenere */
+            const chiedi = async (forza: boolean) => {
+                const r = await fetch("/api/pratiche/cancella", {
+                    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: pratica.id, forza }),
+                });
+                return r.json();
+            };
+            let j = await chiedi(false);
+            if (j?.ferma) {
+                const ok = window.confirm(
+                    `Attenzione su ${pratica.protocollo}:\n\n· ${(j.ferma as string[]).join("\n· ")}\n\nVuoi cancellarla lo stesso?`);
+                if (!ok) { setBusy(false); return; }
+                j = await chiedi(true);
             }
-            const { error } = await supabase.from("pratiche").delete().eq("id", pratica.id);
-            if (error) throw new Error(error.message);
-            await onFatto(`🗑️ ${pratica.protocollo} cancellata`);
+            if (j?.error) throw new Error(j.error);
+            await onFatto(`🗑️ ${pratica.protocollo} cancellata${j?.avanzi ? " — " + j.avanzi : ""}`);
             onChiudi();
         } catch (e) {
             window.alert("Non sono riuscito a cancellarla: " + (e instanceof Error ? e.message : "riprova"));
@@ -1682,9 +1702,11 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                         ma bisognava aprire il PDF: qui si legge a colpo d'occhio, e un
                         computer — mentre il link è partito verso un telefono — vuol
                         dire quasi sempre che ha firmato il banco. */}
-                    {pratica.firma?.dispositivo && (
-                        <Voce et="Firmato da" v={`${pratica.firma.daComputer ? "⚠️ " : "📱 "}${pratica.firma.dispositivo}`}
-                            avviso={pratica.firma.daComputer ? "un computer: se il link l'ha aperto il negozio, la firma non è del cliente" : undefined} />
+                    {pratica.firma?.via === "otp" && (
+                        pratica.firma.dispositivo
+                            ? <Voce et="Firmato da" v={`${pratica.firma.daComputer ? "⚠️ " : "📱 "}${pratica.firma.dispositivo}`}
+                                avviso={pratica.firma.daComputer ? "un computer: se il link l'ha aperto il negozio, la firma non è del cliente" : undefined} />
+                            : <Voce et="Firmato da" v="— non rilevato" avviso="il registro delle firme non si è potuto leggere: non vuol dire che sia tutto a posto" />
                     )}
                     <Voce et="Documento d'identità" v={pratica.firma?.identita ? "✅ archiviato" : "⛔ mancante"} />
                     {pratica.firma?.via === "cartacea" && <Voce et="Modulo firmato" v={pratica.firma?.modulo ? "✅ allegato" : "⛔ mancante"} />}

@@ -66,6 +66,8 @@ export const SEZIONE_DI: Record<string, string> = {
     // la stessa rotta firma anche i contratti dell'usato: chi sta in Usati
     // deve poter firmare senza avere anche Ordini Clienti
     "usati/firma": "/usati",
+    // la cancellazione di una pratica: la rotta controlla anche il RUOLO
+    "pratiche/cancella": "/ordini-clienti",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".
