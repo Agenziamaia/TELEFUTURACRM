@@ -131,9 +131,22 @@ export const BUONO_ESCLUSI = "ricariche telefoniche e ogni altra operazione non 
 export const TERMINE_MAX_GG = 30;
 export const GIORNI_RITIRO = 14;
 export const GIORNI_CESSIONE = 90;
-export const TEMPO_MEDIO: Record<string, number> = {
+const TEMPO_BASE: Record<string, number> = {
     ord_accessorio: 3, ord_telefono: 5, riparazione: 3, backup: 2, backup_rotto: 2, ass_tecnico: 1,
 };
+/** Il tempo medio DIPENDE DA DOVE ARRIVA IL PEZZO (Luca 01/09: «se è DA
+ *  ORDINARE non mettere mai meno di 5 giorni»). Promettere tre giorni per una
+ *  cosa che dobbiamo ancora comprare è il modo più rapido di far tornare il
+ *  cliente arrabbiato il quarto. */
+export const MEDIO_SE_DA_ORDINARE = 5;
+export function tempoMedio(tipologia: string, approvvigionamento?: string | null): number {
+    const base = TEMPO_BASE[tipologia] || 3;
+    if (approvvigionamento === "da_ordinare") return Math.max(base, MEDIO_SE_DA_ORDINARE);
+    if (approvvigionamento === "altro_negozio") return Math.max(base, 2);
+    return base;
+}
+/** valore di partenza, senza sapere ancora da dove arriva */
+export const TEMPO_MEDIO = TEMPO_BASE;
 
 /** Giorni lavorativi (lunedì–venerdì) fra due date: è la definizione scritta
  *  nel modulo che il cliente firma, e va usata la stessa dappertutto. */
@@ -160,6 +173,9 @@ export type Firma = {
     identita?: { nome: string; path: string } | null;
     firmata_il?: string | null;
     controllo?: { stato: string } | null;
+    /** la richiesta DocuSeal, quando si firma col codice */
+    submissionId?: number | null;
+    link?: string | null;
 };
 export function firmaCompleta(f: Firma | null | undefined): boolean {
     if (!f || !f.via) return false;

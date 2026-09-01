@@ -61,6 +61,8 @@ export const SEZIONE_DI: Record<string, string> = {
     "assenze/report-mensile": "/amministrazione",
     // apre le caselle dei codici: roba da amministrazione, non da negozio
     "passwords/pulizia-otp": "/amministrazione",
+    // manda al cliente il modulo da firmare: la apre chi apre le pratiche
+    "pratiche/firma": "/ordini-clienti",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".

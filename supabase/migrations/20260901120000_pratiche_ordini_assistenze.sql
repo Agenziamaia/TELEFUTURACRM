@@ -96,3 +96,8 @@ begin
 end $$;
 revoke all on function pratica_protocollo(text) from public, anon;
 grant execute on function pratica_protocollo(text) to authenticated;
+
+-- Quando il pezzo lo ha un altro punto vendita, QUALE (Luca 01/09): senza il
+-- nome, «lo sposta un altro negozio» è una frase che non dice niente a chi
+-- quel pezzo deve andarlo a prendere.
+alter table pratiche add column if not exists attesa_da text;

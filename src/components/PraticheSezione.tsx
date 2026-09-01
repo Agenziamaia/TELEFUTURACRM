@@ -14,11 +14,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Search, Plus, ArrowLeft, ArrowRight, Check, X, Printer, Paperclip, Clock } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { useStores } from "@/lib/org";
 import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
+import { stampaModulo, type DatiModulo } from "@/lib/moduloPratica";
+import { SelectOpzioni } from "@/components/SelectPersona";
+import { brandsDispositivi, modelliDispositivi, BRAND_COMUNI, type CategoriaDispositivo } from "@/lib/dispositivi";
 import {
     TIPOLOGIE, tipologieDi, APPROVVIGIONAMENTO, etichettaApprovv, siFaSubito,
     statiDi, flussoDi, firmaCompleta, eur, giorniLavorativi,
-    TERMINE_MAX_GG, GIORNI_RITIRO, GIORNI_CESSIONE, TEMPO_MEDIO,
+    TERMINE_MAX_GG, GIORNI_RITIRO, GIORNI_CESSIONE, tempoMedio,
     BUONO_MESI, BUONO_ESCLUSI,
     type Sezione, type Firma,
 } from "@/lib/pratiche";
@@ -31,7 +35,7 @@ type Pratica = {
     approvvigionamento: string | null; note_interne: string | null;
     dispositivo: Record<string, string> | null; imei: string | null;
     acconto: Record<string, unknown> | null; firma: Firma | null; buono: Record<string, unknown> | null;
-    tracking: string | null; avviso_pronto_il: string | null;
+    tracking: string | null; avviso_pronto_il: string | null; attesa_da: string | null;
     storia: { at: string; chi: string; txt: string }[];
     created_at: string; updated_at: string;
     righe?: Riga[];
@@ -54,6 +58,7 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
     const [filtro, setFiltro] = useState("");
     const [msg, setMsg] = useState<string | null>(null);
     const STATI = statiDi(sezione);
+    const tuttiNegozi = useStores();
     const eAdmin = ruolo === "admin" || ruolo === "dev" || ruolo === "direttore_generale" || ruolo === "amministrativo";
 
     const avvisa = useCallback((t: string) => { setMsg(t); setTimeout(() => setMsg(null), 4000); }, []);
@@ -96,7 +101,7 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
     }, [pratiche]);
 
     if (nuova) {
-        return <Wizard sezione={sezione} negozio={negozio} operatore={operatore}
+        return <Wizard sezione={sezione} negozio={negozio} operatore={operatore} negozi={tuttiNegozi}
             onAnnulla={() => setNuova(false)}
             onFatto={async (t) => { setNuova(false); await carica(); avvisa(t); }} />;
     }
@@ -107,90 +112,117 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
             onFatto={async (t) => { await carica(); avvisa(t); }} />;
     }
 
-    return (
-        <div className="space-y-4">
-            {msg && <p className="text-[12px] rounded-xl px-3 py-2 border text-emerald-200 bg-emerald-500/10 border-emerald-500/25">{msg}</p>}
+    const tinta = sezione === "ordini" ? "rvT-indaco" : "rvT-ciano";
+    const nMie = (pratiche ?? []).filter((p) => p.stato !== "consegnato" && p.stato !== "consegnata" && p.stato !== "annullato" && p.stato !== "non_riuscita").length;
+    const nTarde = (pratiche ?? []).filter((p) => giorniLavorativi(p.created_at, oggiIso()) > TERMINE_MAX_GG && p.stato !== "consegnato" && p.stato !== "consegnata").length;
+    const nDaOrdinare = (pratiche ?? []).filter((p) => p.approvvigionamento === "da_ordinare" || p.approvvigionamento === "altro_negozio").length;
+    const nDaAvvisare = (pratiche ?? []).filter((p) => (p.stato === "in_negozio" || p.stato === "pronta") && !p.avviso_pronto_il).length;
 
-            <div className="flex flex-wrap items-center gap-2">
-                <div className="relative flex-1 min-w-[220px]">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input value={cerca} onChange={(e) => setCerca(e.target.value)}
-                        placeholder="Protocollo, cliente, IMEI, articolo…"
-                        className="glass-input w-full pl-9 pr-3 py-2 text-sm rounded-xl" />
-                </div>
-                <button onClick={() => setNuova(true)}
-                    className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest flex items-center gap-1.5">
-                    <Plus className="w-4 h-4" /> Nuova {sezione === "ordini" ? "richiesta" : "assistenza"}
-                </button>
+    return (
+        <div className={cn("max-w-[1500px]", tinta)}>
+            {msg && <div className="rvSub mb-3" style={{ borderColor: "rgba(52,211,153,.38)" }}><span className="text-[12.5px] text-emerald-200">{msg}</span></div>}
+
+            {/* I NUMERI CHE FANNO AGIRE, non quelli che riempiono: quante ne
+                hai aperte, quante hanno sforato, quante aspettano un acquisto,
+                a quanti clienti devi dire che è pronto. Premi e filtri. */}
+            <div className="rvRapidoG rvRapidoG-kpi mb-4">
+                {[
+                    { id: "", ico: "📋", et: "Aperte", n: nMie, sotto: `su ${(pratiche ?? []).length} in tutto`, tinta: "" },
+                    { id: "__tarde", ico: "⏱", et: "Fuori tempo", n: nTarde, sotto: `oltre ${TERMINE_MAX_GG} giorni lavorativi`, tinta: "rvT-rosso" },
+                    { id: "__ordinare", ico: "📙", et: "Da comprare", n: nDaOrdinare, sotto: "aspettano l'amministrazione", tinta: "rvT-ambra" },
+                    { id: "__avvisare", ico: "🔔", et: "Da avvisare", n: nDaAvvisare, sotto: "pronte, cliente non avvisato", tinta: "rvT-verde" },
+                ].map((k) => {
+                    const on = filtro === k.id;
+                    return (
+                        <button key={k.et} type="button" onClick={() => setFiltro(on ? "" : k.id)}
+                            className={cn("rvRapido", k.tinta, on && "rvRapido-on", !on && !k.n && "rvRapido-off")}>
+                            <em>{k.n}</em>
+                            <b>{k.ico} {k.et}{on ? " ✓" : ""}</b>
+                            <small>{k.sotto}</small>
+                        </button>
+                    );
+                })}
             </div>
 
-            <div className="flex flex-wrap gap-2">
-                <button onClick={() => setFiltro("")}
-                    className={cn("px-3 py-2 rounded-xl text-[11px] font-bold border",
-                        !filtro ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                    Tutte · {(pratiche ?? []).length}
-                </button>
-                {flussoDi(sezione).concat(sezione === "ordini" ? ["annullato"] : ["non_riuscita"]).map((k) => (
-                    conta[k] ? (
-                        <button key={k} onClick={() => setFiltro(filtro === k ? "" : k)}
-                            className={cn("px-3 py-2 rounded-xl text-[11px] font-bold border",
-                                filtro === k ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                            {STATI[k].icona} {STATI[k].label} · {conta[k]}
-                        </button>
-                    ) : null
-                ))}
+            <div className="rvTesta">
+                <span className="rvCerca" style={{ flex: "1 1 320px" }}>
+                    <Search size={16} />
+                    <input value={cerca} onChange={(e) => setCerca(e.target.value)} className="rvIn"
+                        placeholder="Protocollo, cliente, IMEI, articolo…" />
+                </span>
+                <div className="rvPillRow">
+                    {flussoDi(sezione).concat(sezione === "ordini" ? ["annullato"] : ["non_riuscita"]).map((k) => (
+                        conta[k] ? (
+                            <button key={k} type="button" onClick={() => setFiltro(filtro === k ? "" : k)}
+                                className={cn("rvPill rvPill-sm", filtro === k && "rvPill-on")}>
+                                {STATI[k].icona} {STATI[k].label} <b className="rvBadge rvBadge-mini ml-1">{conta[k]}</b>
+                            </button>
+                        ) : null
+                    ))}
+                    <span className="rvSep" />
+                    <button type="button" onClick={() => setNuova(true)} className="rvPill rvPill-on">
+                        ＋ Nuova {sezione === "ordini" ? "richiesta" : "assistenza"}
+                    </button>
+                </div>
             </div>
 
             {pratiche === null ? (
-                <div className="glass-card p-8 text-center text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carico…</div>
+                <div className="rvCarico"><Loader2 className="w-5 h-5 animate-spin" /> Carico le pratiche…</div>
             ) : viste.length === 0 ? (
-                <div className="glass-card p-8 text-center text-sm text-slate-500">
-                    {(pratiche ?? []).length === 0
-                        ? <>Nessuna pratica ancora. Il tasto <b className="text-slate-300">Nuova</b> qui sopra apre la prima.</>
-                        : "Nessuna pratica con questi filtri."}
-                </div>
+                <div className="rvTabBox"><div className="rvVuoto">
+                    <span style={{ fontSize: 34 }}>{sezione === "ordini" ? "📦" : "🔧"}</span>
+                    <b>{(pratiche ?? []).length === 0 ? "Nessuna pratica, ancora" : "Nessuna pratica con questi filtri"}</b>
+                    <small>{(pratiche ?? []).length === 0 ? "Il tasto «Nuova» qui sopra apre la prima." : "Togli un filtro per vederne di più."}</small>
+                </div></div>
             ) : (
-                <div className="glass-card overflow-hidden">
-                    <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-left border-collapse text-sm">
-                            <thead>
-                                <tr className="text-[10px] uppercase tracking-widest text-slate-500 border-b border-white/10">
-                                    <th className="py-2.5 px-3">Protocollo</th>
-                                    <th className="py-2.5 px-2">Cliente</th>
-                                    <th className="py-2.5 px-2">Tipo</th>
-                                    <th className="py-2.5 px-2">Negozio</th>
-                                    <th className="py-2.5 px-2 text-right">Valore</th>
-                                    <th className="py-2.5 px-2">Stato</th>
-                                    <th className="py-2.5 px-2">Aperta</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {viste.map((p) => {
-                                    const t = TIPOLOGIE[p.tipologia];
-                                    const st = STATI[p.stato] || { label: p.stato, icona: "•", classe: "text-slate-300 bg-white/5 border-white/15", chi: null };
-                                    const gg = giorniLavorativi(p.created_at, oggiIso());
-                                    const tardi = gg > TERMINE_MAX_GG && p.stato !== "consegnato" && p.stato !== "consegnata";
-                                    return (
-                                        <tr key={p.id} onClick={() => setApri(p.id)}
-                                            className="border-t border-white/5 hover:bg-white/[0.03] cursor-pointer">
-                                            <td className="py-2.5 px-3 font-mono text-xs text-slate-200">{p.protocollo}</td>
-                                            <td className="py-2.5 px-2 text-slate-100 font-semibold">{String((p.cliente as { etichetta?: string }).etichetta || "—")}</td>
-                                            <td className="py-2.5 px-2 text-slate-400 text-xs">{t ? t.icona + " " + t.label : p.tipologia}</td>
-                                            <td className="py-2.5 px-2 text-slate-400 text-xs">{p.negozio}</td>
-                                            <td className="py-2.5 px-2 text-right tabular-nums text-slate-200">{eur(p.valore)}</td>
-                                            <td className="py-2.5 px-2">
-                                                <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap", st.classe)}>{st.icona} {st.label}</span>
-                                            </td>
-                                            <td className="py-2.5 px-2 text-xs text-slate-500">
-                                                {dataIt(p.created_at)}
-                                                {tardi && <span className="text-rose-300 ml-1.5" title={`Aperta da ${gg} giorni lavorativi: oltre il termine di ${TERMINE_MAX_GG}`}>· {gg}g</span>}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                <div className="rvTabBox">
+                    <table className="rvTab">
+                        <thead>
+                            <tr>
+                                <th>Protocollo</th>
+                                <th>Cliente</th>
+                                <th>Tipo</th>
+                                <th>Negozio</th>
+                                <th className="rvTab-c">Valore</th>
+                                <th className="rvTab-c">Stato</th>
+                                <th className="rvTab-c">Aperta da</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {viste.map((p) => {
+                                const tp = TIPOLOGIE[p.tipologia];
+                                const stt = STATI[p.stato] || { label: p.stato, icona: "•", classe: "", chi: null };
+                                const gg = giorniLavorativi(p.created_at, oggiIso());
+                                const viva = p.stato !== "consegnato" && p.stato !== "consegnata" && p.stato !== "annullato" && p.stato !== "non_riuscita";
+                                const tardi = viva && gg > TERMINE_MAX_GG;
+                                const quasi = viva && !tardi && gg > TERMINE_MAX_GG - 7;
+                                return (
+                                    <tr key={p.id} onClick={() => setApri(p.id)} className="rvTab-riga rvTab-cl">
+                                        <td className="rvTab-cod">{p.protocollo}</td>
+                                        <td className="rvTab-nome">
+                                            {String((p.cliente as { etichetta?: string }).etichetta || "—")}
+                                            {p.acconto ? <span className="rvBadge rvBadge-ok ml-2 align-middle">acconto</span> : null}
+                                            {p.buono ? <span className="rvBadge rvBadge-acc ml-2 align-middle">buono</span> : null}
+                                        </td>
+                                        <td className="rvTab-min">{tp ? tp.icona + " " + tp.label : p.tipologia}</td>
+                                        <td className="rvTab-min">{p.negozio}</td>
+                                        <td className="rvTab-n">{eur(Number(p.valore))}</td>
+                                        <td className="rvTab-c">
+                                            <span className={cn("rvBadge", p.stato === "annullato" || p.stato === "non_riuscita" ? "rvBadge-ko"
+                                                : p.stato === "consegnato" || p.stato === "consegnata" ? "rvBadge-ok" : "rvBadge-acc")}>
+                                                {stt.icona} {stt.label}
+                                            </span>
+                                        </td>
+                                        <td className="rvTab-c">
+                                            <span className={cn("rvTab-min", tardi && "text-rose-300 font-bold", quasi && "text-amber-300")}>
+                                                {viva ? gg + " gg" : dataIt(p.created_at)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             )}
         </div>
@@ -201,8 +233,8 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
    Cliente → Tipo → Contenuto → Acconto → Firma → In coda.
    Ogni passo si apre solo quando il precedente è a posto, e il motivo è
    sempre scritto: un tasto spento senza spiegazione è un tasto rotto. */
-function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
-    sezione: Sezione; negozio: string; operatore: string;
+function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
+    sezione: Sezione; negozio: string; operatore: string; negozi: string[];
     onAnnulla: () => void; onFatto: (msg: string) => Promise<void>;
 }) {
     const [step, setStep] = useState(0);
@@ -215,8 +247,10 @@ function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
     const [imei, setImei] = useState("");
     const [valore, setValore] = useState("");
     const [approvv, setApprovv] = useState("");
+    const [attesaDa, setAttesaDa] = useState("");
     const [noteInt, setNoteInt] = useState("");
     const [pctAcconto, setPctAcconto] = useState<number | null>(null);
+    const [accLibero, setAccLibero] = useState("");
     const [accForma, setAccForma] = useState("CONTANTI");
     const [accScontrino, setAccScontrino] = useState("");
     const [firma, setFirma] = useState<Firma>({});
@@ -225,27 +259,49 @@ function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
 
     const t = TIPOLOGIE[tipologia];
     const perArticoli = !!t && t.contenuto === "articoli";
+    /* ⚠️ NON SI CHIEDE QUELLO CHE SI SA GIÀ (Luca 01/09: «se seleziono un
+       articolo che non c'è, come fa a dirmi che il pezzo c'è già in
+       magazzino?»). La giacenza del negozio è dentro le righe: se anche una
+       sola non c'è, «il pezzo c'è già» è una risposta falsa e va spenta. */
+    const inCasa = perArticoli && righe.length > 0 && righe.every((r) => r.da_magazzino && (r.giacenza || 0) >= r.qta);
+    const mancanti = perArticoli ? righe.filter((r) => !r.da_magazzino || (r.giacenza || 0) < r.qta) : [];
+    const bloccaDisponibile = perArticoli && righe.length > 0 && !inCasa;
+    const motivoBlocco = mancanti.length === 0 ? "" :
+        mancanti.length === 1
+            ? `«${mancanti[0].descrizione}» non è in magazzino qui: va ordinato.`
+            : `${mancanti.length} articoli non sono in magazzino qui: vanno ordinati.`;
+    /* la risposta giusta si preseleziona da sola, e se cambi il carrello e
+       quella scelta non regge più, si toglie invece di restare lì a mentire */
+    useEffect(() => {
+        if (!perArticoli || righe.length === 0) return;
+        if (inCasa) { setApprovv((v) => (v ? v : "disponibile")); return; }
+        setApprovv((v) => (v === "disponibile" ? "da_ordinare" : v));
+    }, [perArticoli, righe.length, inCasa]);
     const totale = perArticoli ? totaleRighe(righe) : (Number(String(valore).replace(",", ".")) || 0);
-    const accImporto = pctAcconto ? Math.ceil(totale * pctAcconto * 100) / 100 : 0;
+    const accLiberoN = Math.round((Number(String(accLibero).replace(",", ".")) || 0) * 100) / 100;
+    const accImporto = pctAcconto === -1 ? accLiberoN : (pctAcconto ? Math.ceil(totale * pctAcconto * 100) / 100 : 0);
 
     const clienteOk = !!cliente && emailOk(String(cliente.email || ""));
     const serveImei = !!t && t.imei === "apertura";
     const contenutoOk = !t ? false : (perArticoli
         ? righe.length > 0
         : !!(dev.brand.trim() && dev.modello.trim() && totale > 0 && (!serveImei || imei.trim().length >= 6)))
-        && (!t.approvvigionamento || !!approvv)
+        && (!t.approvvigionamento || (!!approvv && (approvv !== "altro_negozio" || !!attesaDa)))
         && (t.noteInterne !== "obbligatorie" || noteInt.trim().length > 0);
-    const accontoOk = pctAcconto === null ? false : (pctAcconto === 0 ? true : accScontrino.trim().length > 0);
+    const accontoOk = pctAcconto === null ? false
+        : pctAcconto === 0 ? true
+            : accImporto > 0 && accImporto <= totale && accScontrino.trim().length > 0;
     const firmaOk = firmaCompleta(firma);
 
     const PASSI = [
-        { t: "Cliente", ok: clienteOk },
-        { t: "Tipo", ok: !!tipologia },
-        { t: sezione === "ordini" ? "Articoli" : "Dispositivo", ok: contenutoOk },
-        { t: "Acconto", ok: accontoOk },
-        { t: "Firma", ok: firmaOk },
-        { t: "Riepilogo", ok: false },
+        { t: "Cliente", ico: cliente ? (cliente.tipo === "business" ? "🏢" : "👤") : "🧑‍💼", ok: clienteOk },
+        { t: "Tipo", ico: t ? t.icona : "🏷️", ok: !!tipologia },
+        { t: sezione === "ordini" ? "Articoli" : "Dispositivo", ico: sezione === "ordini" ? "🛒" : "📱", ok: contenutoOk },
+        { t: "Acconto", ico: "💶", ok: accontoOk },
+        { t: "Firma", ico: "✍️", ok: firmaOk },
+        { t: "Riepilogo", ico: "📋", ok: false },
     ];
+    const railPct = Math.min(100, (PASSI.filter((p) => p.ok).length / (PASSI.length - 1)) * 100);
 
     const salva = async () => {
         if (!cliente || !t) return;
@@ -266,10 +322,11 @@ function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
                 },
                 negozio, operatore, stato: statoIniziale, valore: totale,
                 approvvigionamento: t.approvvigionamento ? approvv : null,
+                attesa_da: approvv === "altro_negozio" ? attesaDa : null,
                 note_interne: noteInt.trim() || null,
                 dispositivo: perArticoli ? null : dev,
                 imei: imei.trim() || null,
-                acconto: accImporto > 0 ? { importo: accImporto, pct: pctAcconto, forma: accForma, scontrino: accScontrino.trim(), incassato_il: oggiIso() } : null,
+                acconto: accImporto > 0 ? { importo: accImporto, pct: pctAcconto === -1 ? null : pctAcconto, forma: accForma, scontrino: accScontrino.trim(), incassato_il: oggiIso() } : null,
                 firma, storia,
             };
             const { data: nuovaP, error } = await supabase.from("pratiche").insert(payload).select("id, protocollo").single();
@@ -289,27 +346,42 @@ function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
     };
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className={cn("max-w-[1500px]", sezione === "ordini" ? "rvT-indaco" : "rvT-ciano")}>
+            <div className="rvTesta">
                 <div>
-                    <h2 className="text-lg font-black text-white">Nuova {sezione === "ordini" ? "richiesta cliente" : "assistenza"}</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">{negozio} · {operatore}</p>
+                    <h1 className="rvTit">{sezione === "ordini" ? "📦" : "🔧"} Nuova {sezione === "ordini" ? "richiesta" : "assistenza"}</h1>
+                    <span className="rvDove">{negozio} · {operatore}</span>
                 </div>
-                <button onClick={onAnnulla} className="px-4 py-2 rounded-xl border border-white/10 text-slate-300 text-xs font-bold uppercase tracking-widest hover:bg-white/5 flex items-center gap-1.5">
-                    <ArrowLeft className="w-4 h-4" /> Torna all&apos;elenco
+                <button onClick={onAnnulla} className="rvPill">
+                    <ArrowLeft className="w-4 h-4 inline mr-1.5 -mt-0.5" /> Torna all&apos;elenco
                 </button>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
-                {PASSI.map((p, i) => (
-                    <button key={p.t} onClick={() => { if (i <= step || PASSI.slice(0, i).every((x) => x.ok)) setStep(i); }}
-                        className={cn("px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors",
-                            i === step ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100"
-                                : p.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                                    : "border-white/10 text-slate-500")}>
-                        {p.ok ? "✓ " : ""}{i + 1}. {p.t}
-                    </button>
-                ))}
+            {/* La barra a nodi di Registra Vendita: stessa classe, stesso
+                comportamento — il filo si riempie, il cerchio si chiude, e
+                sotto c'è scritto a che punto sei invece di doverlo indovinare. */}
+            <div className="rvsteps">
+                <div className="rvsteps-rail"><i style={{ width: railPct + "%" }} /></div>
+                {PASSI.map((p, i) => {
+                    const attivo = step === i;
+                    const fatto = p.ok;
+                    const abil = i === 0 || PASSI.slice(0, i).every((x) => x.ok);
+                    const ring = fatto ? "#22c55e" : "#6d5cff";
+                    const sub = fatto ? "Completo" : attivo ? "Sei qui" : abil ? "Da fare" : "Bloccato";
+                    return (
+                        <button key={p.t} type="button" disabled={!abil}
+                            className={cn("rvnode-step", attivo && "is-active", fatto && "is-done", !abil && "is-locked")}
+                            onClick={() => { if (abil) setStep(i); }}
+                            title={!abil ? "Completa prima i passi precedenti" : attivo ? "Sei qui" : "Vai a " + p.t}>
+                            <span className="rvnode-ring" style={{ background: `conic-gradient(${ring} ${fatto ? 100 : attivo ? 45 : 0}%, var(--rv-track) 0)` }}>
+                                <span className="rvnode"><span style={{ fontSize: 22 }}>{p.ico}</span></span>
+                                {fatto && <span className="rvnode-check">✓</span>}
+                            </span>
+                            <span className="rvnode-lab">{p.t}</span>
+                            <span className="rvnode-sub">{sub}</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {step === 0 && (
@@ -334,15 +406,30 @@ function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
                         ? <PassoArticoli righe={righe} onCambia={setRighe} negozio={negozio} />
                         : <PassoDispositivo dev={dev} onCambia={setDev} imei={imei} onImei={setImei} serveImei={serveImei}
                             valore={valore} onValore={setValore} etichettaValore={t.valoreLabel} nota={t.valoreNota} />}
-                    {t.approvvigionamento && <PassoApprovvigionamento tipologia={tipologia} valore={approvv} onCambia={setApprovv} ruolo="negozio" />}
+                    {t.approvvigionamento && <PassoApprovvigionamento tipologia={tipologia} valore={approvv} onCambia={setApprovv}
+                        ruolo="negozio" bloccaDisponibile={bloccaDisponibile} motivoBlocco={motivoBlocco} inCasa={inCasa}
+                        attesaDa={attesaDa} onAttesaDa={setAttesaDa} negozi={negozi} mioNegozio={negozio} />}
                     <NoteInterneBox tipologia={tipologia} valore={noteInt} onCambia={setNoteInt} />
                 </div>
             )}
 
             {step === 3 && <PassoAcconto totale={totale} pct={pctAcconto} onPct={setPctAcconto}
+                libero={accLibero} onLibero={setAccLibero} importo={accImporto}
                 forma={accForma} onForma={setAccForma} scontrino={accScontrino} onScontrino={setAccScontrino} />}
 
-            {step === 4 && <PassoFirma cliente={cliente} firma={firma} onCambia={setFirma} protocollo="nuova" />}
+            {step === 4 && <PassoFirma cliente={cliente} firma={firma} onCambia={setFirma} protocollo="nuova"
+                modulo={{
+                    protocollo: "(da assegnare)", tipologia, negozio, operatore,
+                    cliente: cliente ? {
+                        etichetta: etichettaCliente(cliente), email: cliente.email || "", cellulare: cliente.cellulare || "",
+                        cf_piva: cliente.cf_piva || "", indirizzo: cliente.indirizzo || "", cap: cliente.cap || "", citta: cliente.citta || "",
+                    } : {},
+                    valore: totale,
+                    acconto: accImporto > 0 ? { importo: accImporto, forma: accForma, scontrino: accScontrino } : null,
+                    righe: perArticoli ? righe.map((r) => ({ descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note })) : [],
+                    dispositivo: perArticoli ? null : dev, imei,
+                    tempoMedio: tempoMedio(tipologia, approvv),
+                }} />}
 
             {step === 5 && (
                 <Riepilogo sezione={sezione} tipologia={tipologia} cliente={cliente} righe={righe} dev={dev} imei={imei}
@@ -350,23 +437,21 @@ function Wizard({ sezione, negozio, operatore, onAnnulla, onFatto }: {
                     approvv={approvv} noteInt={noteInt} firma={firma} negozio={negozio} operatore={operatore} />
             )}
 
-            {errore && <p className="text-[12px] rounded-xl px-3 py-2 border text-rose-200 bg-rose-500/10 border-rose-500/25">⛔ {errore}</p>}
+            {errore && <div className="rvSub" style={{ marginTop: 12, borderColor: "rgba(239,68,68,.40)" }}>
+                <span className="text-[12px] text-rose-200">⛔ {errore}</span>
+            </div>}
 
-            <div className="flex justify-between gap-3 pt-2">
-                <button onClick={() => (step === 0 ? onAnnulla() : setStep(step - 1))}
-                    className="px-5 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold uppercase tracking-widest hover:bg-white/5">
-                    {step === 0 ? "Annulla" : "Indietro"}
+            <div className="rvBarra" style={{ marginTop: 16, justifyContent: "space-between" }}>
+                <button onClick={() => (step === 0 ? onAnnulla() : setStep(step - 1))} className="rvPill">
+                    {step === 0 ? "Annulla" : "← Indietro"}
                 </button>
                 {step < 5 ? (
                     <button onClick={() => setStep(step + 1)} disabled={!PASSI[step].ok}
                         title={!PASSI[step].ok ? "Manca qualcosa in questo passo" : ""}
-                        className="px-7 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2">
-                        Avanti <ArrowRight className="w-4 h-4" />
-                    </button>
+                        className={cn("rvPill", PASSI[step].ok && "rvPill-on")}>Avanti →</button>
                 ) : (
-                    <button onClick={salva} disabled={salvo || !clienteOk || !contenutoOk || !accontoOk || !firmaOk}
-                        className="px-7 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-widest disabled:opacity-40 flex items-center gap-2">
-                        {salvo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <button onClick={salva} disabled={salvo || !clienteOk || !contenutoOk || !accontoOk || !firmaOk} className="rvAzione">
+                        {salvo ? <Loader2 className="w-4 h-4 animate-spin inline mr-1.5 -mt-0.5" /> : null}
                         {sezione === "ordini" ? "Invia all'amministrazione" : "Apri l'assistenza"}
                     </button>
                 )}
@@ -385,7 +470,7 @@ function PassoCliente({ cliente, onScelto, emailNuova, setEmailNuova, onSalvaEma
 }) {
     if (cliente && !emailOk(String(cliente.email || ""))) {
         return (
-            <div className="glass-card p-5 border-amber-400/40 bg-amber-500/[0.07] space-y-3">
+            <div className="rvBox" style={{ borderColor: "rgba(245,158,11,.45)" }}>
                 <div className="flex flex-wrap items-center gap-3">
                     <span className="text-2xl">✉️</span>
                     <div className="flex-1 min-w-[240px]">
@@ -396,13 +481,13 @@ function PassoCliente({ cliente, onScelto, emailNuova, setEmailNuova, onSalvaEma
                             Scrivila una volta sola: la salvo sulla sua anagrafica e non te la richiedo più.
                         </p>
                     </div>
-                    <button onClick={() => onScelto(null)} className="px-3 py-2 rounded-xl border border-white/10 text-slate-300 text-[11px] font-bold hover:bg-white/5">Cambia cliente</button>
+                    <button onClick={() => onScelto(null)} className="rvPill rvPill-sm">Cambia cliente</button>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                     <input value={emailNuova} onChange={(e) => setEmailNuova(e.target.value)} type="email"
-                        placeholder="nome@dominio.it" className="glass-input flex-1 min-w-[240px] px-3 py-2 text-sm rounded-xl" />
+                        placeholder="nome@dominio.it" className="rvIn" style={{ flex: "1 1 240px" }} />
                     <button onClick={onSalvaEmail} disabled={!emailOk(emailNuova) || salvo}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5">
+                        className="rvAzione">
                         {salvo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Salva sull&apos;anagrafica
                     </button>
                 </div>
@@ -412,7 +497,7 @@ function PassoCliente({ cliente, onScelto, emailNuova, setEmailNuova, onSalvaEma
     }
     if (cliente) {
         return (
-            <div className="glass-card p-5 border-emerald-500/30 bg-emerald-500/[0.05]">
+            <div className="rvBox" style={{ borderColor: "rgba(52,211,153,.42)" }}>
                 <div className="flex flex-wrap items-center gap-3">
                     <span className="text-2xl">{cliente.tipo === "business" ? "🏢" : "👤"}</span>
                     <div className="flex-1 min-w-[220px]">
@@ -421,16 +506,16 @@ function PassoCliente({ cliente, onScelto, emailNuova, setEmailNuova, onSalvaEma
                             {[cliente.cf_piva, cliente.cellulare, cliente.email].filter(Boolean).join("  ·  ")}
                         </p>
                     </div>
-                    <button onClick={() => onScelto(null)} className="px-3 py-2 rounded-xl border border-white/10 text-slate-300 text-[11px] font-bold hover:bg-white/5">Cambia</button>
+                    <button onClick={() => onScelto(null)} className="rvPill rvPill-sm">Cambia</button>
                 </div>
             </div>
         );
     }
     return (
-        <div className="glass-card p-5 space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Cerca l&apos;anagrafica</p>
+        <div className="rvBox">
+            <div className="rvBoxT">Cerca l&apos;anagrafica</div>
             <RicercaCliente onScelto={onScelto} className="w-full" />
-            <p className="text-[11px] text-slate-500">
+            <p className="rvTab-min" style={{ marginTop: 8, lineHeight: 1.5 }}>
                 È la stessa anagrafica di Registra Vendita: codice fiscale, cellulare, nome e cognome o ragione sociale.
                 Se il cliente non c&apos;è ancora, si crea da Registra Vendita e si torna qui.
             </p>
@@ -443,30 +528,29 @@ function PassoTipologia({ sezione, tipologia, onCambia }: { sezione: Sezione; ti
     const t = TIPOLOGIE[tipologia];
     return (
         <div className="space-y-4">
-            <div className="glass-card p-5">
-                <p className="text-sm font-black text-white">Che tipo di intervento è?</p>
-                <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">
+            <div className="rvBox">
+                <div className="rvBoxT">Che tipo di intervento è?</div>
+                <p className="rvSotto" style={{ margin: "-6px 0 12px" }}>
                     Da questa scelta dipende tutto il resto: quali campi compaiono, quali sono obbligatori e quando.
                 </p>
-                <div className="flex flex-wrap gap-2.5 mt-4">
+                <div className="rvPillRow" style={{ gap: 10 }}>
                     {tipologieDi(sezione).map((k) => {
                         const x = TIPOLOGIE[k];
                         const on = tipologia === k;
                         return (
-                            <button key={k} onClick={() => onCambia(k)}
-                                className={cn("flex-1 min-w-[240px] text-left p-4 rounded-xl border transition-colors",
-                                    on ? "border-indigo-400/60 bg-indigo-500/15" : "border-white/10 bg-white/[0.03] hover:border-white/25")}>
-                                <p className={cn("text-sm font-black", on ? "text-indigo-200" : "text-white")}>{x.icona} {x.label}</p>
-                                <p className="text-[11px] text-slate-500 mt-1 leading-snug">{x.cosa}</p>
+                            <button key={k} type="button" onClick={() => onCambia(k)}
+                                className={cn("rvScelta", on && "rvScelta-on")} style={{ flex: "1 1 250px", textAlign: "left" }}>
+                                <b>{x.icona} {x.label}</b>
+                                <span className="rvTab-min" style={{ display: "block", marginTop: 4, lineHeight: 1.35 }}>{x.cosa}</span>
                             </button>
                         );
                     })}
                 </div>
             </div>
             {t && (
-                <div className="glass-card overflow-hidden">
-                    <div className="px-4 py-2.5 bg-white/[0.04] border-b border-white/10">
-                        <span className="text-[12px] font-black text-white">{t.icona} {t.label} — come funziona</span>
+                <div className="rvTabBox" style={{ marginTop: 12 }}>
+                    <div style={{ padding: "10px 14px", background: "var(--tf-w30)", borderBottom: "1px solid var(--tf-w60)" }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--tf-f8fafc)" }}>{t.icona} {t.label} — come funziona</span>
                     </div>
                     {[
                         { et: "Valore economico", v: t.valoreLabel, n: t.valoreNota },
@@ -484,10 +568,11 @@ function PassoTipologia({ sezione, tipologia, onCambia }: { sezione: Sezione; ti
                         },
                         { et: "Documento firmato", v: "sempre", n: "col codice o su carta, con il documento d'identità del cliente" },
                     ].map((r, i, arr) => (
-                        <div key={r.et} className={cn("px-4 py-2.5 flex flex-wrap gap-3 items-baseline", i < arr.length - 1 && "border-b border-white/5")}>
-                            <span className="w-[180px] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-500">{r.et}</span>
-                            <span className="text-[12px] font-bold text-white">{r.v}</span>
-                            <span className="flex-1 min-w-[200px] text-[11px] text-slate-500 leading-snug">{r.n}</span>
+                        <div key={r.et} style={{ padding: "9px 14px", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline",
+                            borderBottom: i < arr.length - 1 ? "1px solid var(--tf-w60)" : "none" }}>
+                            <span style={{ width: 180, flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: ".7px", textTransform: "uppercase", color: "var(--tf-8892b0)" }}>{r.et}</span>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--tf-f8fafc)" }}>{r.v}</span>
+                            <span className="rvTab-min" style={{ flex: "1 1 200px", lineHeight: 1.4 }}>{r.n}</span>
                         </div>
                     ))}
                 </div>
@@ -539,15 +624,15 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
 
     return (
         <div className="space-y-4">
-            <div className="glass-card p-5 space-y-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Cerca l&apos;articolo in magazzino</p>
-                <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <div className="rvBox">
+                <div className="rvBoxT">Cerca l&apos;articolo in magazzino</div>
+                <span className="rvCerca">
+                    <Search size={16} />
                     <input value={q} onChange={(e) => setQ(e.target.value)}
                         placeholder="Nome, codice o marca — «cover», «power bank», «AURICOLARI»…"
-                        className="glass-input w-full pl-9 pr-3 py-2.5 text-sm rounded-xl" />
-                    {cerco && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />}
-                </div>
+                        className="rvIn" style={{ paddingLeft: 36 }} />
+                    {cerco && <Loader2 className="w-4 h-4 animate-spin" style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--tf-8892b0)" }} />}
+                </span>
 
                 {hits.length > 0 && (
                     <div className="rounded-xl border border-white/10 overflow-hidden">
@@ -576,7 +661,7 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
 
                 <div className="border-t border-white/10 pt-3">
                     {!aMano ? (
-                        <button onClick={() => setAMano(true)} className="px-3 py-2 rounded-xl border border-white/10 text-slate-300 text-[11px] font-bold hover:bg-white/5">
+                        <button onClick={() => setAMano(true)} className="rvPill">
                             ✍️ Non lo trovo: scrivo io cosa ordinare
                         </button>
                     ) : (
@@ -588,11 +673,11 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
                             <div className="flex flex-wrap gap-2 items-end">
                                 <input value={libero.descrizione} onChange={(e) => setLibero({ ...libero, descrizione: e.target.value })}
                                     placeholder="Cover Spigen Ultra Hybrid per Pixel 9 Pro, nera"
-                                    className="glass-input flex-1 min-w-[240px] px-3 py-2 text-sm rounded-xl" />
+                                    className="rvIn" style={{ flex: "1 1 240px" }} />
                                 <input value={libero.prezzo} onChange={(e) => setLibero({ ...libero, prezzo: e.target.value })}
-                                    inputMode="decimal" placeholder="Prezzo €" className="glass-input w-[110px] px-3 py-2 text-sm rounded-xl" />
+                                    inputMode="decimal" placeholder="Prezzo €" className="rvIn" style={{ width: 112 }} />
                                 <input value={libero.qta} onChange={(e) => setLibero({ ...libero, qta: e.target.value })}
-                                    inputMode="numeric" placeholder="Q.tà" className="glass-input w-[80px] px-3 py-2 text-sm rounded-xl" />
+                                    inputMode="numeric" placeholder="Q.tà" className="rvIn" style={{ width: 82 }} />
                                 <button onClick={() => {
                                     aggiungi({
                                         codice: "", descrizione: libero.descrizione.trim(),
@@ -602,8 +687,8 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
                                     });
                                     setLibero({ descrizione: "", prezzo: "", qta: "1", note: "" }); setAMano(false);
                                 }} disabled={!liberoOk}
-                                    className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs disabled:opacity-40">Aggiungi</button>
-                                <button onClick={() => setAMano(false)} className="px-3 py-2 rounded-xl border border-white/10 text-slate-400 text-[11px] font-bold hover:bg-white/5">Annulla</button>
+                                    className="rvPill rvPill-on">Aggiungi</button>
+                                <button onClick={() => setAMano(false)} className="rvPill rvPill-sm">Annulla</button>
                             </div>
                         </div>
                     )}
@@ -611,10 +696,10 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
             </div>
 
             {righe.length > 0 && (
-                <div className="glass-card overflow-hidden">
-                    <div className="px-4 py-2.5 bg-white/[0.04] border-b border-white/10 flex justify-between items-center">
-                        <span className="text-[12px] font-black text-white">🛒 Articoli ({righe.length})</span>
-                        <span className="text-sm font-black text-violet-300">{eur(totaleRighe(righe))}</span>
+                <div className="rvTabBox">
+                    <div style={{ padding: "10px 14px", background: "var(--tf-w30)", borderBottom: "1px solid var(--tf-w60)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--tf-f8fafc)" }}>🛒 Articoli ({righe.length})</span>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: "var(--rv-acc)" }}>{eur(totaleRighe(righe))}</span>
                     </div>
                     {righe.map((r, i) => (
                         <div key={i} className="px-4 py-2.5 border-b border-white/5 last:border-0 flex flex-wrap gap-2 items-end">
@@ -626,11 +711,11 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
                                 </p>
                             </div>
                             <input value={r.qta} onChange={(e) => cambia(i, { qta: Math.max(1, Number(e.target.value) || 1) })}
-                                inputMode="numeric" className="glass-input w-[70px] px-2 py-1.5 text-xs rounded-lg" />
+                                inputMode="numeric" className="rvIn" style={{ width: 70, padding: "7px 9px", fontSize: 12.5 }} />
                             <input value={r.prezzo} onChange={(e) => cambia(i, { prezzo: Number(String(e.target.value).replace(",", ".")) || 0 })}
-                                inputMode="decimal" className="glass-input w-[100px] px-2 py-1.5 text-xs rounded-lg" />
+                                inputMode="decimal" className="rvIn" style={{ width: 104, padding: "7px 9px", fontSize: 12.5 }} />
                             <input value={r.note} onChange={(e) => cambia(i, { note: e.target.value })}
-                                placeholder="colore, taglia…" className="glass-input flex-1 min-w-[120px] px-2 py-1.5 text-xs rounded-lg" />
+                                placeholder="colore, taglia…" className="rvIn" style={{ flex: "1 1 120px", padding: "7px 9px", fontSize: 12.5 }} />
                             <span className="w-[86px] text-right text-[13px] font-black text-white tabular-nums">{eur(r.prezzo * r.qta)}</span>
                             <button onClick={() => onCambia(righe.filter((_, k) => k !== i))}
                                 className="p-1.5 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10"><X className="w-3.5 h-3.5" /></button>
@@ -642,48 +727,106 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
     );
 }
 
-/* ── ③b DISPOSITIVO ─────────────────────────────────────────────────────── */
+/* ── ③b DISPOSITIVO ─────────────────────────────────────────────────────
+   Marca e modello dalla STESSA anagrafica degli Usati (Luca 01/09: «il menù
+   totale che usiamo anche per gli usati, che ha tutto dentro»): un elenco
+   scritto a mano qui sarebbe la terza lista di telefoni del CRM, e la terza
+   lista è quella che nessuno aggiorna. Si può comunque scrivere un modello che
+   non c'è — la tendina accetta il testo libero. */
+const CATEGORIE_DEV: { k: CategoriaDispositivo; l: string; i: string }[] = [
+    { k: "smartphone", l: "Smartphone", i: "📱" },
+    { k: "tablet", l: "Tablet", i: "📲" },
+    { k: "watch", l: "Smartwatch", i: "⌚" },
+    { k: "computer", l: "Computer", i: "💻" },
+];
+
 function PassoDispositivo({ dev, onCambia, imei, onImei, serveImei, valore, onValore, etichettaValore, nota }: {
     dev: Record<string, string>; onCambia: (d: Record<string, string>) => void;
     imei: string; onImei: (v: string) => void; serveImei: boolean;
     valore: string; onValore: (v: string) => void; etichettaValore: string; nota: string;
 }) {
     const set = (k: string, v: string) => onCambia({ ...dev, [k]: v });
+    const cat = (dev.categoria || "smartphone") as CategoriaDispositivo;
+    const [brands, setBrands] = useState<string[]>([...BRAND_COMUNI]);
+    const [modelli, setModelli] = useState<string[]>([]);
+    useEffect(() => {
+        let vivo = true;
+        brandsDispositivi(cat, [...BRAND_COMUNI]).then((b) => { if (vivo) setBrands(b.length ? b : [...BRAND_COMUNI]); });
+        return () => { vivo = false; };
+    }, [cat]);
+    useEffect(() => {
+        let vivo = true;
+        if (!dev.brand) { setModelli([]); return; }
+        modelliDispositivi(cat, dev.brand, []).then((m) => { if (vivo) setModelli(m); });
+        return () => { vivo = false; };
+    }, [cat, dev.brand]);
     const imeiCorto = serveImei && imei.trim().length < 6;
+
     return (
-        <div className="space-y-4">
-            <div className="glass-card p-5 space-y-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Il dispositivo</p>
-                <div className="flex flex-wrap gap-2">
-                    <input value={dev.brand} onChange={(e) => set("brand", e.target.value)} placeholder="Marca *" className="glass-input flex-1 min-w-[150px] px-3 py-2 text-sm rounded-xl" />
-                    <input value={dev.modello} onChange={(e) => set("modello", e.target.value)} placeholder="Modello *" className="glass-input flex-1 min-w-[180px] px-3 py-2 text-sm rounded-xl" />
-                    <input value={dev.colore} onChange={(e) => set("colore", e.target.value)} placeholder="Colore" className="glass-input w-[130px] px-3 py-2 text-sm rounded-xl" />
+        <div className="space-y-3">
+            <div className="rvBox">
+                <div className="rvBoxT">Il dispositivo</div>
+                <div className="rvPillRow" style={{ marginBottom: 12 }}>
+                    {CATEGORIE_DEV.map((c) => (
+                        <button key={c.k} type="button"
+                            onClick={() => onCambia({ ...dev, categoria: c.k, brand: "", modello: "" })}
+                            className={cn("rvPill rvPill-sm", cat === c.k && "rvPill-on")}>{c.i} {c.l}</button>
+                    ))}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    <input value={imei} onChange={(e) => onImei(e.target.value)} placeholder={serveImei ? "IMEI *" : "IMEI"}
-                        className={cn("glass-input flex-1 min-w-[200px] px-3 py-2 text-sm rounded-xl font-mono", imeiCorto && "border-amber-400/50")} />
-                    <input value={dev.pin} onChange={(e) => set("pin", e.target.value)} placeholder="PIN o sequenza di sblocco" className="glass-input flex-1 min-w-[200px] px-3 py-2 text-sm rounded-xl" />
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ flex: "1 1 200px" }}>
+                        <div className="rvBoxT" style={{ marginBottom: 5 }}>Marca *</div>
+                        <SelectOpzioni value={dev.brand || ""} onChange={(v: string) => onCambia({ ...dev, brand: v, modello: "" })}
+                            opzioni={brands} placeholder="Scrivi o scegli la marca…" className="rvIn" />
+                    </div>
+                    <div style={{ flex: "1 1 240px" }}>
+                        <div className="rvBoxT" style={{ marginBottom: 5 }}>Modello *</div>
+                        <SelectOpzioni value={dev.modello || ""} onChange={(v: string) => set("modello", v)}
+                            opzioni={modelli} placeholder={dev.brand ? "Scrivi o scegli il modello…" : "Prima la marca"} className="rvIn" />
+                    </div>
+                    <div style={{ flex: "0 1 150px" }}>
+                        <div className="rvBoxT" style={{ marginBottom: 5 }}>Colore</div>
+                        <input value={dev.colore || ""} onChange={(e) => set("colore", e.target.value)} className="rvIn" placeholder="nero, blu…" />
+                    </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                    <div style={{ flex: "1 1 220px" }}>
+                        <div className="rvBoxT" style={{ marginBottom: 5 }}>IMEI {serveImei ? "*" : ""}</div>
+                        <input value={imei} onChange={(e) => onImei(e.target.value)}
+                            className={cn("rvIn", imeiCorto && "rvIn-mod")} style={{ fontFamily: "ui-monospace,monospace" }}
+                            placeholder="*#06# sul telefono, o dalla scatola" />
+                    </div>
+                    <div style={{ flex: "1 1 200px" }}>
+                        <div className="rvBoxT" style={{ marginBottom: 5 }}>PIN o sequenza di sblocco</div>
+                        <input value={dev.pin || ""} onChange={(e) => set("pin", e.target.value)} className="rvIn" placeholder="senza, il collaudo non si fa" />
+                    </div>
                 </div>
                 {imeiCorto && (
-                    <p className="text-[12px] text-amber-200 bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2 leading-relaxed">
-                        ⚠️ <b>L&apos;IMEI è obbligatorio.</b> Il dispositivo resta in negozio: senza, non si può dire di quale
-                        apparecchio si parla, e i termini dei {GIORNI_RITIRO} e dei {GIORNI_CESSIONE} giorni non reggono.
-                        Si legge con <b>*#06#</b> o dalla scatola.
-                    </p>
+                    <div className="rvSub" style={{ marginTop: 10, borderColor: "rgba(245,158,11,.38)" }}>
+                        <span className="text-[11.5px] text-amber-200 leading-relaxed">
+                            ⚠️ <b>L&apos;IMEI è obbligatorio.</b> Il dispositivo resta in negozio: senza, non si può dire di quale
+                            apparecchio si parla, e i termini dei {GIORNI_RITIRO} e dei {GIORNI_CESSIONE} giorni non reggono.
+                        </span>
+                    </div>
                 )}
-                <textarea value={dev.condizioni} onChange={(e) => set("condizioni", e.target.value)} rows={2}
-                    placeholder="Condizioni estetiche all'accettazione: graffi, vetro crepato, ammaccature…"
-                    className="glass-input w-full px-3 py-2 text-sm rounded-xl" />
-                <textarea value={dev.difetto} onChange={(e) => set("difetto", e.target.value)} rows={2}
-                    placeholder="Il difetto, come lo racconta il cliente"
-                    className="glass-input w-full px-3 py-2 text-sm rounded-xl" />
+                <div style={{ marginTop: 12 }}>
+                    <div className="rvBoxT" style={{ marginBottom: 5 }}>Condizioni estetiche all&apos;accettazione</div>
+                    <textarea value={dev.condizioni || ""} onChange={(e) => set("condizioni", e.target.value)} rows={2}
+                        className="rvIn" placeholder="graffi, vetro crepato, ammaccature… — è quello che ci difende alla riconsegna" />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                    <div className="rvBoxT" style={{ marginBottom: 5 }}>Il difetto, come lo racconta il cliente</div>
+                    <textarea value={dev.difetto || ""} onChange={(e) => set("difetto", e.target.value)} rows={2}
+                        className="rvIn" placeholder="«è caduto e non si accende più»" />
+                </div>
             </div>
-            <div className="glass-card p-5">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{etichettaValore} *</p>
-                <div className="flex flex-wrap items-end gap-3 mt-2">
+
+            <div className="rvBox">
+                <div className="rvBoxT">{etichettaValore} *</div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <input value={valore} onChange={(e) => onValore(e.target.value)} inputMode="decimal" placeholder="0,00"
-                        className="glass-input w-[160px] px-3 py-2 text-lg font-black rounded-xl" />
-                    <p className="flex-1 min-w-[220px] text-[11px] text-slate-500 leading-snug">{nota}</p>
+                        className="rvIn" style={{ maxWidth: 170, fontSize: 21, fontWeight: 800 }} />
+                    <span className="rvTab-min" style={{ flex: "1 1 220px", lineHeight: 1.45 }}>{nota}</span>
                 </div>
             </div>
         </div>
@@ -694,33 +837,63 @@ function PassoDispositivo({ dev, onCambia, imei, onImei, serveImei, valore, onVa
    «Il pezzo c'è già» sta per primo: è il caso migliore e non fa aspettare
    nessuno. «Ordinato» è spento per il negozio — lo mette l'amministrazione,
    perché è l'unico dei quattro che dice che i soldi sono usciti. */
-function PassoApprovvigionamento({ tipologia, valore, onCambia, ruolo }: {
+function PassoApprovvigionamento({ tipologia, valore, onCambia, ruolo, bloccaDisponibile, motivoBlocco, inCasa, attesaDa, onAttesaDa, negozi, mioNegozio }: {
     tipologia: string; valore: string; onCambia: (v: string) => void; ruolo: string;
+    bloccaDisponibile?: boolean; motivoBlocco?: string; inCasa?: boolean;
+    attesaDa: string; onAttesaDa: (v: string) => void; negozi: string[]; mioNegozio: string;
 }) {
     const t = TIPOLOGIE[tipologia];
     if (!t || !t.approvvigionamento) return null;
     return (
-        <div className={cn("glass-card p-5", !valore && "border-amber-400/40")}>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Da dove arriva *</p>
-            <div className="flex flex-wrap gap-2">
+        <div className="rvBox">
+            <div className="rvBoxT">Da dove arriva *</div>
+            <div className="rvPillRow" style={{ gap: 10 }}>
                 {APPROVVIGIONAMENTO.map((a) => {
                     const on = valore === a.k;
-                    const soloAdmin = a.chi === "admin" && ruolo !== "admin";
+                    /* «Il pezzo c'è già» si spegne da solo quando il magazzino
+                       dice il contrario: chiedere una cosa che sappiamo già è
+                       il modo migliore per farsi rispondere una bugia. */
+                    const spento = (a.chi === "admin" && ruolo !== "admin") || (a.k === "disponibile" && !!bloccaDisponibile);
                     return (
-                        <button key={a.k} disabled={soloAdmin} onClick={() => onCambia(a.k)}
-                            className={cn("flex-1 min-w-[190px] text-left p-3 rounded-xl border transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
-                                on ? "border-indigo-400/60 bg-indigo-500/15" : "border-white/10 bg-white/[0.03] hover:border-white/25")}>
-                            <p className={cn("text-[12.5px] font-bold", on ? "text-indigo-200" : "text-white")}>{a.icona} {a.label}</p>
-                            <p className="text-[10.5px] text-slate-500 mt-1 leading-snug">{a.nota}</p>
+                        <button key={a.k} type="button" disabled={spento} onClick={() => onCambia(a.k)}
+                            title={spento && a.k === "disponibile" ? motivoBlocco : undefined}
+                            className={cn("rvScelta", on && "rvScelta-on")}
+                            style={{ flex: "1 1 200px", textAlign: "left", opacity: spento ? .38 : 1, cursor: spento ? "not-allowed" : "pointer" }}>
+                            <b>{a.icona} {a.label}</b>
+                            <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.35 }}>{a.nota}</span>
                         </button>
                     );
                 })}
             </div>
-            {siFaSubito(valore) && (
-                <p className="text-[11.5px] text-emerald-200 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3 py-2 mt-3 leading-relaxed">
-                    ✅ <b>Non c&apos;è niente da aspettare.</b> Il pezzo è qui: la pratica non passa dall&apos;amministrazione
-                    per l&apos;acquisto e la lavorazione parte subito.
-                </p>
+            {/* QUALE negozio ce l'ha (Luca 01/09). «Lo sposta un altro» non dice
+                niente a chi deve andarlo a prendere: senza il nome, la riga
+                resta ferma finché qualcuno non telefona in giro. */}
+            {valore === "altro_negozio" && (
+                <div style={{ marginTop: 12 }}>
+                    <div className="rvBoxT" style={{ marginBottom: 5 }}>Quale punto vendita ce l&apos;ha? *</div>
+                    <div className="rvPillRow">
+                        {negozi.filter((n) => n !== mioNegozio).map((n) => (
+                            <button key={n} type="button" onClick={() => onAttesaDa(n)}
+                                className={cn("rvPill rvPill-sm", attesaDa === n && "rvPill-on")}>{n}</button>
+                        ))}
+                    </div>
+                    {!attesaDa && <p className="rvTab-min" style={{ marginTop: 7 }}>Scegli il negozio: è quello a cui verrà chiesto il trasferimento.</p>}
+                </div>
+            )}
+            {bloccaDisponibile && (
+                <div className="rvSub" style={{ marginTop: 10, borderColor: "rgba(245,158,11,.38)" }}>
+                    <span className="text-[11.5px] text-amber-200 leading-relaxed">
+                        📙 {motivoBlocco} «Il pezzo c&apos;è già» è spento: il magazzino di questo negozio dice di no.
+                    </span>
+                </div>
+            )}
+            {inCasa && siFaSubito(valore) && (
+                <div className="rvSub" style={{ marginTop: 10, borderColor: "rgba(52,211,153,.38)" }}>
+                    <span className="text-[11.5px] text-emerald-200 leading-relaxed">
+                        ✅ <b>Non c&apos;è niente da aspettare.</b> È tutto in magazzino qui: la pratica non passa
+                        dall&apos;amministrazione per l&apos;acquisto e la lavorazione parte subito.
+                    </span>
+                </div>
             )}
         </div>
     );
@@ -731,16 +904,14 @@ function NoteInterneBox({ tipologia, valore, onCambia }: { tipologia: string; va
     const t = TIPOLOGIE[tipologia];
     const obbl = !!t && t.noteInterne === "obbligatorie";
     return (
-        <div className={cn("glass-card p-5", obbl && !valore.trim() && "border-amber-400/40")}>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
-                Note interne {obbl ? "— obbligatorie *" : ""}
-            </p>
+        <div className="rvBox" style={obbl && !valore.trim() ? { borderColor: "rgba(245,158,11,.45)" } : undefined}>
+            <div className="rvBoxT">Note interne {obbl ? "— obbligatorie *" : ""}</div>
             <textarea value={valore} onChange={(e) => onCambia(e.target.value)} rows={3}
                 placeholder={obbl
                     ? "Che cosa ha chiesto il cliente e che cosa gli hai promesso. Scrivilo come lo diresti a voce."
                     : "Urgenze, accordi presi a voce, cose che l'amministrazione deve sapere…"}
-                className="glass-input w-full px-3 py-2 text-sm rounded-xl" />
-            <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                className="rvIn" />
+            <p className="rvTab-min" style={{ marginTop: 8, lineHeight: 1.5 }}>
                 🔒 Le vedono <b className="text-slate-400">solo il negozio e l&apos;amministrazione</b>: non finiscono nel modulo
                 che firma il cliente né nelle email che gli arrivano.
                 {obbl && <span className="text-amber-300"> Su questa tipologia sono obbligatorie: senza, fra un mese nessuno sa cosa è stato fatto.</span>}
@@ -753,67 +924,86 @@ function NoteInterneBox({ tipologia, valore, onCambia }: { tipologia: string; va
    Qui non si incassa: si decide. L'incasso si fa in cassa come sempre, e qui
    si scrive il numero del documento commerciale — così l'acconto della pratica
    e lo scontrino sono la stessa cosa e non due verità diverse. */
-function PassoAcconto({ totale, pct, onPct, forma, onForma, scontrino, onScontrino }: {
+function PassoAcconto({ totale, pct, onPct, libero, onLibero, importo, forma, onForma, scontrino, onScontrino }: {
     totale: number; pct: number | null; onPct: (v: number | null) => void;
+    libero: string; onLibero: (v: string) => void; importo: number;
     forma: string; onForma: (v: string) => void; scontrino: string; onScontrino: (v: string) => void;
 }) {
-    const SCELTE = [{ p: 0, l: "Nessun acconto", n: "niente cassa adesso: esce il riepilogo e si va avanti" },
-    { p: 0.2, l: "20%", n: "il minimo che possiamo accettare" },
-    { p: 0.5, l: "50%", n: "metà adesso, metà al ritiro" },
-    { p: 1, l: "100%", n: "il cliente paga tutto subito" }];
-    const importo = pct ? Math.ceil(totale * pct * 100) / 100 : 0;
+    const SCELTE = [
+        { p: 0, l: "Nessun acconto", e: "", n: "niente cassa adesso: esce il riepilogo e si va avanti" },
+        { p: 0.2, l: "20%", e: eur(Math.ceil(totale * 0.2 * 100) / 100), n: "il minimo che possiamo accettare" },
+        { p: 0.5, l: "50%", e: eur(Math.ceil(totale * 0.5 * 100) / 100), n: "metà adesso, metà al ritiro" },
+        { p: 1, l: "100%", e: eur(totale), n: "il cliente paga tutto subito" },
+    ];
+    const troppo = pct === -1 && importo > totale;
     return (
-        <div className="space-y-4">
-            <div className="glass-card p-5">
-                <p className="text-sm font-black text-white">💶 Il cliente lascia un acconto?</p>
-                <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">
-                    Valore della pratica <b className="text-white">{eur(totale)}</b>. Se lascia un acconto si incassa in cassa
-                    e da lì esce lo scontrino; se non lo lascia, si stampa il riepilogo e la pratica parte lo stesso.
+        <div className="space-y-3">
+            <div className="rvBox">
+                <div className="rvBoxT">💶 Il cliente lascia un acconto?</div>
+                <p className="rvSotto" style={{ margin: "-6px 0 12px" }}>
+                    Valore della pratica <b style={{ color: "var(--tf-f8fafc)" }}>{eur(totale)}</b>. Se lascia un acconto si incassa
+                    in cassa e da lì esce lo scontrino; se non lo lascia, si stampa il riepilogo e la pratica parte lo stesso.
                 </p>
-                <div className="flex flex-wrap gap-2.5 mt-4">
-                    {SCELTE.map((s) => {
-                        const on = pct === s.p;
-                        return (
-                            <button key={s.l} onClick={() => onPct(s.p)} disabled={totale <= 0 && s.p > 0}
-                                className={cn("flex-1 min-w-[170px] text-left p-4 rounded-xl border transition-colors disabled:opacity-40",
-                                    on ? (s.p === 0 ? "border-emerald-500/50 bg-emerald-500/15" : "border-indigo-400/60 bg-indigo-500/15") : "border-white/10 bg-white/[0.03] hover:border-white/25")}>
-                                <p className={cn("text-base font-black", on ? (s.p === 0 ? "text-emerald-300" : "text-indigo-200") : "text-white")}>{s.l}</p>
-                                {s.p > 0 && <p className="text-sm font-black text-white mt-0.5">{eur(Math.ceil(totale * s.p * 100) / 100)}</p>}
-                                <p className="text-[10.5px] text-slate-500 mt-1 leading-snug">{s.n}</p>
-                            </button>
-                        );
-                    })}
+                <div className="rvPillRow" style={{ gap: 10 }}>
+                    {SCELTE.map((s) => (
+                        <button key={s.l} type="button" onClick={() => onPct(s.p)} disabled={totale <= 0 && s.p > 0}
+                            className={cn("rvScelta", pct === s.p && "rvScelta-on")} style={{ flex: "1 1 150px" }}>
+                            <b>{s.l}</b>
+                            {s.e && <em style={{ fontSize: 17, marginTop: 2, color: "var(--tf-f8fafc)" }}>{s.e}</em>}
+                            <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.3 }}>{s.n}</span>
+                        </button>
+                    ))}
+                    {/* L'IMPORTO SCRITTO A MANO (Luca 01/09). Le percentuali
+                        coprono i casi normali; il cliente che lascia «cinquanta
+                        euro tondi» è il caso vero, e senza questo campo
+                        l'operatore avrebbe scelto la percentuale più vicina
+                        scrivendo un numero falso sulla pratica. */}
+                    <button type="button" onClick={() => onPct(-1)} disabled={totale <= 0}
+                        className={cn("rvScelta", pct === -1 && "rvScelta-on")} style={{ flex: "1 1 170px" }}>
+                        <b>✍️ Altro importo</b>
+                        <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.3 }}>lo dice lui, lo scrivi tu</span>
+                    </button>
                 </div>
+                {pct === -1 && (
+                    <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        <input value={libero} onChange={(e) => onLibero(e.target.value)} inputMode="decimal"
+                            placeholder="0,00" className="rvIn" style={{ maxWidth: 170, fontSize: 20, fontWeight: 800 }} />
+                        <span className="rvTab-min">euro · saldo alla consegna {eur(Math.max(0, Math.round((totale - importo) * 100) / 100))}</span>
+                        {troppo && <span className="rvBadge rvBadge-ko">non può superare {eur(totale)}</span>}
+                    </div>
+                )}
             </div>
 
-            {pct !== null && pct > 0 && (
-                <div className="glass-card p-5 space-y-3">
-                    <p className="text-[12px] text-slate-300 leading-relaxed">
-                        🧾 Incassa <b className="text-white">{eur(importo)}</b> in cassa come sempre, poi scrivi qui il numero
-                        del documento commerciale: così l&apos;acconto della pratica e lo scontrino sono la stessa cosa.
+            {pct !== null && pct !== 0 && (
+                <div className="rvBox">
+                    <div className="rvBoxT">🧾 Il documento commerciale</div>
+                    <p className="rvSotto" style={{ margin: "-6px 0 12px" }}>
+                        Incassa <b style={{ color: "var(--tf-f8fafc)" }}>{eur(importo)}</b> in cassa come sempre, poi scrivi qui il numero
+                        del documento: così l&apos;acconto della pratica e lo scontrino sono la stessa cosa, non due verità diverse.
                         Alla consegna si emette un secondo documento sul <b>solo saldo</b>, che richiama questo.
                     </p>
-                    <div className="flex flex-wrap gap-2 items-end">
-                        <div className="flex gap-1.5">
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        <div className="rvPillRow">
                             {[{ k: "CONTANTI", l: "💶 Contanti" }, { k: "CARTA", l: "💳 Carta / POS" }].map((f) => (
-                                <button key={f.k} onClick={() => onForma(f.k)}
-                                    className={cn("px-3 py-2 rounded-xl text-[12px] font-bold border",
-                                        forma === f.k ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100" : "border-white/10 text-slate-400 hover:border-white/25")}>{f.l}</button>
+                                <button key={f.k} type="button" onClick={() => onForma(f.k)}
+                                    className={cn("rvPill rvPill-sm", forma === f.k && "rvPill-on")}>{f.l}</button>
                             ))}
                         </div>
                         <input value={scontrino} onChange={(e) => onScontrino(e.target.value)}
-                            placeholder="Numero documento commerciale *" className="glass-input flex-1 min-w-[220px] px-3 py-2 text-sm rounded-xl font-mono" />
+                            placeholder="Numero documento commerciale *" className="rvIn" style={{ flex: "1 1 240px", fontFamily: "ui-monospace,monospace" }} />
                     </div>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="rvTab-min" style={{ marginTop: 9 }}>
                         Niente bonifico sugli acconti: l&apos;incasso dev&apos;essere contestuale all&apos;emissione del documento.
                     </p>
                 </div>
             )}
             {pct === 0 && (
-                <p className="text-[12px] text-sky-200 bg-sky-500/10 border border-sky-500/25 rounded-xl px-3 py-2.5 leading-relaxed">
-                    📄 Senza acconto non si emette niente di fiscale: il cliente si porta a casa il riepilogo della pratica,
-                    e paga tutto alla consegna.
-                </p>
+                <div className="rvSub" style={{ borderColor: "rgba(14,165,233,.35)" }}>
+                    <span className="text-[12px] text-sky-200 leading-relaxed">
+                        📄 Senza acconto non si emette niente di fiscale: il cliente si porta a casa il riepilogo della pratica,
+                        e paga tutto alla consegna.
+                    </span>
+                </div>
             )}
         </div>
     );
@@ -826,8 +1016,8 @@ function PassoAcconto({ totale, pct, onPct, forma, onForma, scontrino, onScontri
    come già si fa in Registra Vendita.
    ⚠️ La firma col codice (DocuSeal) arriva subito dopo: oggi si firma su
    carta, che è la strada che funziona anche col telefono del cliente rotto. */
-function PassoFirma({ cliente, firma, onCambia, protocollo }: {
-    cliente: ClienteTrovato | null; firma: Firma; onCambia: (f: Firma) => void; protocollo: string;
+function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
+    cliente: ClienteTrovato | null; firma: Firma; onCambia: (f: Firma) => void; protocollo: string; modulo: DatiModulo;
 }) {
     const [su, setSu] = useState<"modulo" | "identita" | null>(null);
     const fileRef = useRef<HTMLInputElement | null>(null);
@@ -854,33 +1044,131 @@ function PassoFirma({ cliente, firma, onCambia, protocollo }: {
     else if (firma.via === "otp" && firma.otp !== "fatta") manca.push("il cliente deve ancora firmare");
     if (firma.via && !firma.identita) manca.push("il documento d'identità");
 
+    const [manda, setManda] = useState(false);
+    const [errFirma, setErrFirma] = useState<string | null>(null);
+    const polling = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    /* La richiesta parte dal SERVER: la chiave DocuSeal non passa mai dal
+       browser. Il codice arriva sull'email dell'anagrafica — il firmatario è
+       il cliente, non un indirizzo scelto qui. */
+    const mandaOtp = async () => {
+        setManda(true); setErrFirma(null);
+        try {
+            const r = await fetch("/api/pratiche/firma", {
+                method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ azione: "manda", dati: modulo }),
+            });
+            const j = await r.json();
+            if (!r.ok || j.error) throw new Error(j.error || "invio non riuscito");
+            onCambia({ ...firma, via: "otp", otp: "inviata", submissionId: j.submissionId, link: j.link });
+        } catch (e) { setErrFirma(e instanceof Error ? e.message : "invio non riuscito"); }
+        setManda(false);
+    };
+
+    /* Si controlla ogni otto secondi finché il cliente non ha firmato: nessun
+       webhook da configurare, e chi sta al banco vede il verde comparire da
+       solo mentre il cliente ha ancora il telefono in mano. */
+    useEffect(() => {
+        if (firma.via !== "otp" || firma.otp !== "inviata" || !firma.submissionId) return;
+        const guarda = async () => {
+            try {
+                const r = await fetch("/api/pratiche/firma", {
+                    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId }),
+                });
+                const j = await r.json();
+                if (j?.firmato) onCambia({ ...firma, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString() });
+            } catch { /* rete che sbanda: si riprova al giro dopo */ }
+        };
+        polling.current = setInterval(guarda, 8000);
+        guarda();
+        return () => { if (polling.current) clearInterval(polling.current); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [firma.via, firma.otp, firma.submissionId]);
+
     return (
-        <div className="space-y-4">
+        <div className="space-y-3">
             <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={carica} className="hidden" />
 
-            <div className="glass-card p-5">
-                <p className="text-sm font-black text-white">✍️ Come firma il cliente</p>
-                <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">
-                    Senza firma la pratica <b className="text-slate-200">non si salva</b>: non è un passaggio, è un cancello.
+            <div className="rvBox">
+                <div className="rvBoxT">✍️ Come firma il cliente</div>
+                <p className="rvSotto" style={{ margin: "-6px 0 12px" }}>
+                    Senza firma la pratica <b style={{ color: "var(--tf-f8fafc)" }}>non si salva</b>: non è un passaggio, è un cancello.
+                    Le due strade valgono uguale — cambia solo dove firma.
                 </p>
-                <div className="flex flex-wrap gap-2.5 mt-4">
-                    <button onClick={() => onCambia({ ...firma, via: "cartacea" })}
-                        className={cn("flex-1 min-w-[240px] text-left p-4 rounded-xl border transition-colors",
-                            firma.via === "cartacea" ? "border-indigo-400/60 bg-indigo-500/15" : "border-white/10 bg-white/[0.03] hover:border-white/25")}>
-                        <p className={cn("text-sm font-black", firma.via === "cartacea" ? "text-indigo-200" : "text-white")}>🖊️ Firma su carta</p>
-                        <p className="text-[11px] text-slate-500 mt-1 leading-snug">Si stampa il modulo, firma al banco nei due punti, si fotografa. Funziona sempre, anche col telefono rotto.</p>
+                <div className="rvPillRow" style={{ gap: 10 }}>
+                    <button type="button" onClick={() => onCambia({ ...firma, via: "otp" })}
+                        className={cn("rvScelta", firma.via === "otp" && "rvScelta-on")} style={{ flex: "1 1 250px", textAlign: "left" }}>
+                        <b>📲 Firma sul telefono</b>
+                        <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.35 }}>
+                            gli arriva un codice sulla sua email, lo digita e firma. Trenta secondi, resta tutto in digitale.
+                        </span>
                     </button>
-                    <div className="flex-1 min-w-[240px] p-4 rounded-xl border border-white/10 bg-white/[0.02] opacity-60">
-                        <p className="text-sm font-black text-slate-400">📲 Firma sul telefono <span className="text-[10px] font-bold text-amber-300 ml-1">in arrivo</span></p>
-                        <p className="text-[11px] text-slate-600 mt-1 leading-snug">Codice via email e firma dal telefono del cliente. Si accende appena il modello DocuSeal è pronto.</p>
-                    </div>
+                    <button type="button" onClick={() => onCambia({ ...firma, via: "cartacea" })}
+                        className={cn("rvScelta", firma.via === "cartacea" && "rvScelta-on")} style={{ flex: "1 1 250px", textAlign: "left" }}>
+                        <b>🖊️ Firma su carta</b>
+                        <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.35 }}>
+                            si stampa, firma al banco nei due punti, si fotografa. Serve quando il telefono è rotto.
+                        </span>
+                    </button>
                 </div>
             </div>
 
+            {firma.via === "otp" && (
+                <div className="rvBox">
+                    {firma.otp === "fatta" ? (
+                        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 26 }}>✅</span>
+                            <div style={{ flex: "1 1 240px" }}>
+                                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--tf-34d399)" }}>Firmato dal cliente</div>
+                                <div className="rvTab-min">identità verificata col codice inviato a {cliente ? cliente.email : "—"}</div>
+                            </div>
+                        </div>
+                    ) : firma.otp === "inviata" ? (
+                        <div>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--tf-818cf8)" }}>
+                                <Loader2 className="w-4 h-4 animate-spin inline mr-2 -mt-0.5" />
+                                Richiesta inviata a {cliente ? cliente.email : "—"} — aspetto che firmi
+                            </div>
+                            <p className="rvTab-min" style={{ marginTop: 7, lineHeight: 1.5 }}>
+                                Prima gli arriva il <b>codice</b>, poi si apre il documento. Le firme sono due: la seconda è per
+                                le clausole della sezione 7. Questa schermata diventa verde da sola appena ha finito.
+                            </p>
+                            {firma.link && (
+                                <p className="rvTab-min" style={{ marginTop: 7 }}>
+                                    Se preferisce firmare qui al banco sul suo telefono:{" "}
+                                    <a href={firma.link} target="_blank" rel="noreferrer" style={{ color: "var(--tf-818cf8)", fontWeight: 700 }}>apri il documento</a>
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                            <div style={{ flex: "1 1 240px" }}>
+                                <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--tf-f8fafc)" }}>
+                                    Si manda a <b>{cliente ? cliente.email : "—"}</b>
+                                </div>
+                                <p className="rvTab-min" style={{ marginTop: 4, lineHeight: 1.5 }}>
+                                    È l&apos;email della sua anagrafica: il codice arriva lì, e solo dopo averlo digitato può
+                                    leggere e firmare il documento.
+                                </p>
+                            </div>
+                            <button type="button" className="rvAzione" disabled={manda || !cliente || !cliente.email} onClick={mandaOtp}>
+                                {manda ? <Loader2 className="w-4 h-4 animate-spin inline mr-1.5 -mt-0.5" /> : null}
+                                Manda la richiesta di firma
+                            </button>
+                        </div>
+                    )}
+                    {errFirma && <div className="rvSub" style={{ marginTop: 10, borderColor: "rgba(239,68,68,.40)" }}>
+                        <span className="text-[11.5px] text-rose-200">⛔ {errFirma}</span>
+                    </div>}
+                </div>
+            )}
+
             {firma.via === "cartacea" && (
-                <div className="glass-card p-5 space-y-3">
-                    <button onClick={() => window.print()} className="px-4 py-2 rounded-xl border border-white/10 text-slate-200 text-xs font-bold hover:bg-white/5 flex items-center gap-1.5">
-                        <Printer className="w-4 h-4" /> Stampa il modulo
+                <div className="rvBox">
+                    <div className="rvBoxT">🖊️ Firma su carta</div>
+                    <button onClick={() => stampaModulo(modulo)} className="rvPill" style={{ marginBottom: 12 }}>
+                        <Printer className="w-4 h-4 inline mr-1.5 -mt-0.5" /> Stampa il modulo da firmare
                     </button>
                     <AllegatoRiga etichetta="Il modulo firmato" nota="le due firme devono esserci entrambe"
                         file={firma.modulo} caricando={su === "modulo"} onScegli={() => scegli("modulo")} />
@@ -888,10 +1176,11 @@ function PassoFirma({ cliente, firma, onCambia, protocollo }: {
             )}
 
             {firma.via && (
-                <div className="glass-card p-5 space-y-3">
-                    <p className="text-[12px] text-slate-400 leading-relaxed">
-                        🪪 Il <b className="text-slate-200">documento d&apos;identità</b> serve in tutti i casi: lo archiviamo noi
-                        sulla pratica, come già si fa quando si registra una vendita.
+                <div className="rvBox">
+                    <div className="rvBoxT">🪪 Documento d&apos;identità</div>
+                    <p className="rvSotto" style={{ margin: "-6px 0 11px" }}>
+                        Serve <b style={{ color: "var(--tf-f8fafc)" }}>in tutti e due i casi</b>, anche quando firma col codice: lo
+                        archiviamo noi sulla pratica, come già si fa quando si registra una vendita.
                     </p>
                     <AllegatoRiga etichetta="Carta d'identità o patente" nota="fronte e retro, leggibile"
                         file={firma.identita} caricando={su === "identita"} onScegli={() => scegli("identita")} />
@@ -899,16 +1188,17 @@ function PassoFirma({ cliente, firma, onCambia, protocollo }: {
             )}
 
             {!completa && (
-                <p className="text-[12px] text-amber-200 bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2.5">
-                    ⚠️ La pratica non si salva finché manca: <b>{manca.join(", ")}</b>.
-                </p>
+                <div className="rvSub" style={{ borderColor: "rgba(245,158,11,.38)" }}>
+                    <span className="text-[12px] text-amber-200">⚠️ La pratica non si salva finché manca: <b>{manca.join(", ")}</b>.</span>
+                </div>
             )}
             {completa && firma.via === "cartacea" && (
-                <p className="text-[11.5px] text-sky-200 bg-sky-500/10 border border-sky-500/25 rounded-xl px-3 py-2.5 leading-relaxed">
-                    🔎 <b>Controllo del documento: da fare.</b> Per ora lo guarda una persona. Il controllo automatico — che il
-                    modulo sia quello giusto, che le due firme ci siano entrambe e che somiglino a quella del documento — si
-                    aggiunge dopo.
-                </p>
+                <div className="rvSub" style={{ borderColor: "rgba(14,165,233,.35)" }}>
+                    <span className="text-[11.5px] text-sky-200 leading-relaxed">
+                        🔎 <b>Controllo del documento: da fare.</b> Per ora lo guarda una persona. Il controllo automatico — che il
+                        modulo sia quello giusto e che le due firme ci siano entrambe — si aggiunge dopo.
+                    </span>
+                </div>
             )}
         </div>
     );
@@ -918,15 +1208,14 @@ function AllegatoRiga({ etichetta, nota, file, caricando, onScegli }: {
     etichetta: string; nota: string; file?: { nome: string } | null; caricando: boolean; onScegli: () => void;
 }) {
     return (
-        <div className={cn("flex flex-wrap items-center gap-3 px-3.5 py-3 rounded-xl border",
-            file ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-white/10 bg-white/[0.03]")}>
+        <div className="rvSub" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, borderColor: file ? "rgba(52,211,153,.42)" : undefined }}>
             <span className="text-lg">{file ? "✅" : "📎"}</span>
             <div className="flex-1 min-w-[180px]">
                 <p className={cn("text-[13px] font-bold", file ? "text-emerald-300" : "text-white")}>{etichetta}</p>
                 <p className="text-[11px] text-slate-500 truncate">{file ? file.nome : nota}</p>
             </div>
             <button onClick={onScegli} disabled={caricando}
-                className="px-3 py-1.5 rounded-lg border border-white/10 text-slate-300 text-[11px] font-bold hover:bg-white/5 disabled:opacity-40 flex items-center gap-1.5">
+                className="rvPill rvPill-sm">
                 {caricando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
                 {file ? "Sostituisci" : "Carica"}
             </button>
@@ -942,19 +1231,19 @@ function Riepilogo({ sezione, tipologia, cliente, righe, dev, imei, totale, accI
 }) {
     const t = TIPOLOGIE[tipologia];
     const saldo = Math.round((totale - accImporto) * 100) / 100;
-    const medio = TEMPO_MEDIO[tipologia] || 3;
+    const medio = tempoMedio(tipologia, approvv);
     const dato = (et: string, v: string, n?: string, cls?: string) => (
         <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{et}</p>
-            <p className={cn("text-[13.5px] font-bold", cls || "text-white")}>{v}</p>
-            {n && <p className="text-[11px] text-slate-500 mt-0.5">{n}</p>}
+            <p style={{ margin: 0, fontSize: 10, fontWeight: 800, letterSpacing: ".7px", textTransform: "uppercase", color: "var(--tf-8892b0)" }}>{et}</p>
+            <p className={cn("text-[13.5px] font-bold", cls || "text-white")} style={{ margin: "2px 0 0" }}>{v}</p>
+            {n && <p className="rvTab-min" style={{ margin: "2px 0 0" }}>{n}</p>}
         </div>
     );
     return (
-        <div className="glass-card overflow-hidden">
-            <div className="px-5 py-3.5 bg-white/[0.04] border-b border-white/10">
-                <p className="text-sm font-black text-white">📋 Riepilogo della pratica</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Questo è quello che vede l&apos;amministrazione, e quello che il cliente si porta a casa.</p>
+        <div className="rvTabBox">
+            <div style={{ padding: "12px 16px", background: "var(--tf-w30)", borderBottom: "1px solid var(--tf-w60)" }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "var(--tf-f8fafc)" }}>📋 Riepilogo della pratica</p>
+                <p className="rvTab-min" style={{ margin: "3px 0 0" }}>Questo è quello che vede l&apos;amministrazione, e quello che il cliente si porta a casa.</p>
             </div>
             <div className="p-5 grid gap-4 border-b border-white/10" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
                 {dato("Cliente", cliente ? etichettaCliente(cliente) : "—", [cliente?.cellulare, cliente?.email].filter(Boolean).join(" · "))}
@@ -1063,13 +1352,13 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                         {!chiusa && <span className={ggAperta > TERMINE_MAX_GG ? "text-rose-300" : ""}> · {ggAperta} giorni lavorativi</span>}
                     </p>
                 </div>
-                <button onClick={onChiudi} className="px-4 py-2 rounded-xl border border-white/10 text-slate-300 text-xs font-bold uppercase tracking-widest hover:bg-white/5 flex items-center gap-1.5">
-                    <ArrowLeft className="w-4 h-4" /> Elenco
+                <button onClick={onChiudi} className="rvPill">
+                    <ArrowLeft className="w-4 h-4 inline mr-1.5 -mt-0.5" /> Elenco
                 </button>
             </div>
 
             {/* pipeline */}
-            <div className="glass-card p-4 flex flex-wrap gap-1.5">
+            <div className="rvBox" style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
                 {FLUSSO.map((k, i) => {
                     const fatto = idx >= i;
                     const ora = pratica.stato === k;
@@ -1084,7 +1373,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
             </div>
 
             <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))" }}>
-                <div className="glass-card p-5 space-y-2.5">
+                <div className="rvBox">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">La pratica</p>
                     <Voce et={t ? t.valoreLabel : "Valore"} v={eur(Number(pratica.valore))} />
                     <Voce et="Acconto" v={accImporto > 0 ? `${eur(accImporto)} · ${acc.forma || ""} · 🧾 ${acc.scontrino || ""}` : "nessuno"} />
@@ -1096,7 +1385,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                     {pratica.dispositivo?.difetto && <Voce et="Difetto" v={pratica.dispositivo.difetto} />}
                 </div>
 
-                <div className="glass-card p-5 space-y-2.5">
+                <div className="rvBox">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Firma e documenti</p>
                     <Voce et="Firmato" v={pratica.firma?.via === "otp" ? "📲 col codice" : "🖊️ su carta"} />
                     <Voce et="Documento d'identità" v={pratica.firma?.identita ? "✅ archiviato" : "⛔ mancante"} />
@@ -1123,15 +1412,15 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
             </div>
 
             {pratica.note_interne && (
-                <div className="glass-card p-5">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">🔒 Note interne — non le vede il cliente</p>
+                <div className="rvBox">
+                    <p className="rvBoxT">🔒 Note interne — non le vede il cliente</p>
                     <p className="text-[12.5px] text-slate-300 whitespace-pre-wrap leading-relaxed mt-1.5">{pratica.note_interne}</p>
                 </div>
             )}
 
             {(pratica.righe || []).length > 0 && (
-                <div className="glass-card overflow-hidden">
-                    <div className="px-4 py-2.5 bg-white/[0.04] border-b border-white/10 text-[12px] font-black text-white">🛒 Articoli</div>
+                <div className="rvTabBox">
+                    <div style={{ padding: "10px 14px", background: "var(--tf-w30)", borderBottom: "1px solid var(--tf-w60)", fontSize: 12.5, fontWeight: 800, color: "var(--tf-f8fafc)" }}>🛒 Articoli</div>
                     {(pratica.righe || []).map((r, i) => (
                         <div key={i} className="px-4 py-2.5 border-b border-white/5 last:border-0 flex gap-3 items-baseline">
                             <span className="flex-1 text-[13px] text-slate-200">{r.da_magazzino ? "📦" : "✍️"} {r.descrizione}{r.note ? <span className="text-slate-500"> — {r.note}</span> : null}</span>
@@ -1144,7 +1433,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
 
             {/* azioni */}
             {!chiusa && (
-                <div className="glass-card p-5 space-y-3">
+                <div className="rvBox">
                     {serveImeiArrivo && (
                         <div className="rounded-xl border border-amber-400/40 bg-amber-500/[0.07] p-3.5 space-y-2">
                             <p className="text-[12px] text-amber-100 leading-relaxed">
@@ -1153,18 +1442,18 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                                 aggancia a nessun apparecchio. Si legge con <b>*#06#</b> o dalla scatola.
                             </p>
                             <input value={imei} onChange={(e) => setImei(e.target.value)} placeholder="IMEI"
-                                className="glass-input w-full max-w-[280px] px-3 py-2 text-sm rounded-xl font-mono" />
+                                className="rvIn" style={{ maxWidth: 280, fontFamily: "ui-monospace,monospace" }} />
                         </div>
                     )}
                     {prossimo === "spedito" && (
                         <input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Tracking della spedizione (facoltativo)"
-                            className="glass-input w-full max-w-[340px] px-3 py-2 text-sm rounded-xl" />
+                            className="rvIn" style={{ maxWidth: 340 }} />
                     )}
                     <div className="flex flex-wrap gap-2 items-center">
                         {prossimo && mioTurno && (
                             <button onClick={avanza} disabled={busy || (serveImeiArrivo && imei.trim().length < 6)}
                                 title={serveImeiArrivo && imei.trim().length < 6 ? "Serve l'IMEI del telefono arrivato" : ""}
-                                className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest disabled:opacity-40 flex items-center gap-2">
+                                className="rvAzione">
                                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>{STATI[prossimo].icona}</span>}
                                 Porta a «{STATI[prossimo].label}»
                             </button>
@@ -1177,19 +1466,19 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                         )}
                         {(pratica.stato === "in_negozio" || pratica.stato === "pronta") && !pratica.avviso_pronto_il && (
                             <button onClick={avvisaPronto} disabled={busy}
-                                className="px-4 py-2.5 rounded-xl border border-teal-500/40 bg-teal-500/15 text-teal-200 font-bold text-xs uppercase tracking-widest disabled:opacity-40">
+                                className="rvPill rvPill-si">
                                 🔔 Avvisa il cliente che è pronto
                             </button>
                         )}
                         {pratica.sezione === "assistenze" && !chiusa && (
                             <button onClick={() => scrivi({ stato: "non_riuscita" }, "Lavorazione non riuscita", "⛔ Segnata non riuscita")} disabled={busy}
-                                className="px-4 py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-200 font-bold text-xs uppercase tracking-widest disabled:opacity-40">
+                                className="rvPill rvPill-no">
                                 Non riuscita
                             </button>
                         )}
                         {pratica.sezione === "ordini" && eAdmin && (
                             <button onClick={() => { if (window.confirm("Annullo l'ordine " + pratica.protocollo + "?")) scrivi({ stato: "annullato" }, "Ordine annullato", "❌ Annullato"); }} disabled={busy}
-                                className="px-4 py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-200 font-bold text-xs uppercase tracking-widest disabled:opacity-40">
+                                className="rvPill rvPill-no">
                                 Annulla ordine
                             </button>
                         )}
@@ -1200,7 +1489,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
             {/* il buono, quando il lavoro non si conclude */}
             {pratica.stato === "non_riuscita" && (
                 pratica.buono ? (
-                    <div className="glass-card p-5 border-teal-500/40 bg-teal-500/[0.06]">
+                    <div className="rvBox" style={{ borderColor: "rgba(20,184,166,.45)" }}>
                         <p className="text-sm font-black text-teal-300">🎟️ Buono {eur(Number((pratica.buono as { importo?: number }).importo) || 0)} — {String((pratica.buono as { codice?: string }).codice)}</p>
                         <p className="text-[11.5px] text-slate-400 mt-1">
                             emesso il {dataIt(String((pratica.buono as { emesso_il?: string }).emesso_il))} · scade il {dataIt(String((pratica.buono as { scade_il?: string }).scade_il))}
@@ -1210,7 +1499,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                         </p>
                     </div>
                 ) : accImporto > 0 ? (
-                    <div className="glass-card p-5 border-amber-400/40 bg-amber-500/[0.07] space-y-3">
+                    <div className="rvBox" style={{ borderColor: "rgba(245,158,11,.45)" }}>
                         <p className="text-sm font-black text-amber-200">Il lavoro non si è concluso: l&apos;acconto di {eur(accImporto)} non resta a noi</p>
                         <p className="text-[12px] text-slate-400 leading-relaxed">
                             Il cliente non salda e il tentativo non si paga. Lo scontrino sull&apos;acconto però è già stato emesso:
@@ -1218,17 +1507,17 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                             in una o più volte — escluse {BUONO_ESCLUSI}. È la clausola 7.6 del modulo che il cliente ha firmato.
                         </p>
                         <button onClick={emettiBuono} disabled={busy}
-                            className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest disabled:opacity-40">
+                            className="rvAzione">
                             🎟️ Emetti il buono da {eur(accImporto)}
                         </button>
                     </div>
                 ) : (
-                    <p className="text-[12px] text-slate-400 glass-card p-4">Non c&apos;era acconto: non c&apos;è niente da restituire e nessun buono da emettere.</p>
+                    <p className="rvSub text-[12px] text-slate-400">Non c&apos;era acconto: non c&apos;è niente da restituire e nessun buono da emettere.</p>
                 )
             )}
 
-            <div className="glass-card p-5">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Storia</p>
+            <div className="rvBox">
+                <div className="rvBoxT">Storia</div>
                 <div className="space-y-1.5">
                     {(pratica.storia || []).slice().reverse().map((r, i) => (
                         <div key={i} className="flex flex-wrap gap-2 items-baseline text-[11.5px]">
