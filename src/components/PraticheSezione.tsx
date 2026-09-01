@@ -18,6 +18,8 @@ import { useStores } from "@/lib/org";
 import { useRouter } from "next/navigation";
 import { mandaInCassa } from "@/lib/accontoInCassa";
 import { stessoMagazzino } from "@/lib/negoziNomi";
+import PopupCarta from "@/components/PopupCarta";
+import CanaleFirma, { type Canale } from "@/components/CanaleFirma";
 import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
 import { stampaModulo, type DatiModulo } from "@/lib/moduloPratica";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -1148,6 +1150,8 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
     protocollo: string; modulo: DatiModulo;
 }) {
     const [su, setSu] = useState<"modulo" | "identita" | null>(null);
+    const [chiediCarta, setChiediCarta] = useState(false);
+    const [canale, setCanale] = useState<Canale>("email");
     const fileRef = useRef<HTMLInputElement | null>(null);
     const [quale, setQuale] = useState<"modulo" | "identita">("modulo");
 
@@ -1184,12 +1188,21 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
         try {
             const r = await fetch("/api/pratiche/firma", {
                 method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ azione: "manda", dati: modulo }),
+                body: JSON.stringify({ azione: "manda", dati: modulo, canale }),
             });
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "invio non riuscito");
-            onCambia({ ...firma, via: "otp", otp: "inviata", submissionId: j.submissionId, link: j.link });
+            onCambia({ ...firma, via: "otp", otp: "inviata", submissionId: j.submissionId, link: j.link, canale });
             if (j.mailErrore) setErrFirma("La richiesta è stata creata, ma l'email non è partita: " + j.mailErrore + ". Usa il link qui sotto, oppure mandagliela su WhatsApp.");
+            /* il messaggio WhatsApp lo manda il BROWSER: così esce dal numero del
+               negozio e resta nello storico delle chat come ogni altro messaggio. */
+            if (j.whatsapp && j.whatsapp.numero) {
+                const w = await fetch("/api/whatsapp/notify", {
+                    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ number: j.whatsapp.numero, text: j.whatsapp.testo }),
+                }).then((x) => x.json()).catch(() => ({ error: "rete" }));
+                if (w?.error) setErrFirma("La richiesta è pronta, ma il messaggio WhatsApp non è partito (" + w.error + "): usa il link qui sotto.");
+            }
         } catch (e) { setErrFirma(e instanceof Error ? e.message : "invio non riuscito"); }
         setManda(false);
     };
@@ -1203,7 +1216,8 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
             try {
                 const r = await fetch("/api/pratiche/firma", {
                     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId, protocollo, email: cliente ? cliente.email : "" }),
+                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId, protocollo,
+                        email: cliente ? cliente.email : "", clienteId: cliente ? cliente.id : "" }),
                 });
                 const j = await r.json();
                 /* ⚠️ AGGIORNAMENTO FUNZIONALE, non `{...firma}`. `firma` qui è
@@ -1230,27 +1244,32 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
 
             <div className="rvBox">
                 <div className="rvBoxT">✍️ Come firma il cliente</div>
-                <p className="rvSotto" style={{ margin: "-6px 0 12px" }}>
-                    Senza firma la pratica <b style={{ color: "var(--tf-f8fafc)" }}>non si salva</b>: non è un passaggio, è un cancello.
-                    Le due strade valgono uguale — cambia solo dove firma.
+                <p className="rvSotto rvSotto-neg">
+                    Senza firma la pratica <b className="rvSotto-f">non si salva</b>: non è un passaggio, è un cancello.
                 </p>
-                <div className="rvPillRow" style={{ gap: 10 }}>
-                    <button type="button" onClick={() => onCambia({ ...firma, via: "otp" })}
-                        className={cn("rvScelta", firma.via === "otp" && "rvScelta-on")} style={{ flex: "1 1 250px", textAlign: "left" }}>
-                        <b>📲 Firma sul telefono</b>
-                        <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.35 }}>
-                            gli arriva un codice sulla sua email, lo digita e firma. Trenta secondi, resta tutto in digitale.
+                <button type="button" onClick={() => onCambia({ ...firma, via: "otp" })}
+                    className={cn("rvFirmaG", firma.via === "otp" && "rvFirmaG-on")}>
+                    <span className="rvFirmaG-ic" aria-hidden>📲</span>
+                    <span>
+                        <span className="rvFirmaG-t">Firma digitale</span>
+                        <span className="rvFirmaG-s">
+                            Gli arriva un link e un codice di verifica: apre, legge, firma con il dito. Trenta secondi,
+                            e il documento è già archiviato nella sua scheda.
                         </span>
+                        <span className="rvFirmaG-chip">⚡ 30 secondi</span>
+                        <span className="rvFirmaG-chip">🔒 con prova di identità</span>
+                        <span className="rvFirmaG-chip">📁 archiviata da sola</span>
+                    </span>
+                </button>
+                {firma.via !== "cartacea" && (
+                    <button type="button" className="rvFirmaMini" onClick={() => setChiediCarta(true)}>
+                        oppure firma cartacea
                     </button>
-                    <button type="button" onClick={() => onCambia({ ...firma, via: "cartacea" })}
-                        className={cn("rvScelta", firma.via === "cartacea" && "rvScelta-on")} style={{ flex: "1 1 250px", textAlign: "left" }}>
-                        <b>🖊️ Firma su carta</b>
-                        <span className="rvTab-min" style={{ display: "block", marginTop: 3, lineHeight: 1.35 }}>
-                            si stampa, firma al banco nei due punti, si fotografa. Serve quando il telefono è rotto.
-                        </span>
-                    </button>
-                </div>
+                )}
             </div>
+            {chiediCarta && <PopupCarta
+                onResta={() => { setChiediCarta(false); onCambia({ ...firma, via: "otp" }); }}
+                onProsegui={() => { setChiediCarta(false); onCambia({ ...firma, via: "cartacea" }); }} />}
 
             {firma.via === "otp" && (
                 <div className="rvBox">
@@ -1295,7 +1314,9 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                                     leggere e firmare il documento.
                                 </p>
                             </div>
-                            <button type="button" className="rvAzione" disabled={manda || !cliente || !cliente.email} onClick={mandaOtp}>
+                            <CanaleFirma canale={canale} onCambia={setCanale}
+                                email={cliente ? String(cliente.email || "") : ""} cellulare={cliente ? String(cliente.cellulare || "") : ""} />
+                            <button type="button" className="rvAzione rvAzione-su" disabled={manda || !cliente || !cliente.email} onClick={mandaOtp}>
                                 {manda ? <Loader2 className="w-4 h-4 animate-spin inline mr-1.5 -mt-0.5" /> : null}
                                 Manda la richiesta di firma
                             </button>
@@ -1310,6 +1331,9 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
             {firma.via === "cartacea" && (
                 <div className="rvBox">
                     <div className="rvBoxT">🖊️ Firma su carta</div>
+                    <button type="button" className="rvFirmaMini rvFirmaMini-su" onClick={() => onCambia({ ...firma, via: "otp" })}>
+                        ← torna alla firma digitale
+                    </button>
                     <button onClick={() => stampaModulo(modulo)} className="rvPill" style={{ marginBottom: 12 }}>
                         <Printer className="w-4 h-4 inline mr-1.5 -mt-0.5" /> Stampa il modulo da firmare
                     </button>

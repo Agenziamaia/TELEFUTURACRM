@@ -2,6 +2,9 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
+import FirmaUsato, { type FirmaInfo } from "@/components/FirmaUsato";
+import { type DatiUsato } from "@/lib/moduloUsato";
+import { societaDelNegozio, type Societa } from "@/lib/societa";
 import QRCode from "qrcode";
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
@@ -91,6 +94,7 @@ interface Device {
   grado_usura: string;
   allegato_documento: string | null;
   allegato_dichiarazione: string | null;
+  firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null } | null;
   // mig. 113: cliente da cui e' stato acquistato + venditore che ha registrato
   client_id: string | null;
   venditore: string;
@@ -264,6 +268,7 @@ type UsatiRow = {
   grado_usura: string;
   allegato_documento: string | null;
   allegato_dichiarazione: string | null;
+  firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null } | null;
   client_id?: string | null;
   venditore?: string | null;
   sold_price?: number | null;
@@ -308,6 +313,7 @@ function rowToDevice(r: UsatiRow): Device {
     acquisto_per_ricambi: !!r.acquisto_per_ricambi,
     allegato_documento: r.allegato_documento ?? null,
     allegato_dichiarazione: r.allegato_dichiarazione ?? null,
+    firma: (r.firma ?? null) as { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null } | null,
     client_id: r.client_id ?? null,
     venditore: r.venditore || "",
     sold_price: Number(r.sold_price) || 0,
@@ -346,6 +352,7 @@ function deviceToRow(d: Device): Record<string, unknown> {
     acquisto_per_ricambi: d.acquisto_per_ricambi ?? false,
     allegato_documento: d.allegato_documento,
     allegato_dichiarazione: d.allegato_dichiarazione,
+    firma: d.firma ?? null,
     sold_price: d.sold_price || null,
   };
 }
@@ -1084,7 +1091,10 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { label: "Documento Identità", path: dev.allegato_documento, icon: <FileText size={16} /> },
-                  { label: "Dichiarazione Vendita", path: dev.allegato_dichiarazione, icon: <FileText size={16} /> }
+                  { label: "Dichiarazione Vendita", path: dev.allegato_dichiarazione, icon: <FileText size={16} /> },
+                  // il registro esiste solo con la firma digitale: sui ritiri
+                  // firmati su carta il riquadro non deve nemmeno comparire
+                  ...(dev.firma?.registro ? [{ label: "Registro di Firma", path: dev.firma.registro as string | null, icon: <FileText size={16} /> }] : [])
                 ].map((doc, idx) => (
                   <div key={idx} className="flex flex-col p-3 rounded-xl bg-white/[0.02] border border-white/5 group hover:bg-white/[0.04] transition-all">
                     <div className="flex items-center gap-2 mb-2">
@@ -1241,6 +1251,21 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const swiftOk = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(swiftPag);
   const [allegDoc, setAllegDoc] = useState<File | null>(null);
   const [allegDich, setAllegDich] = useState<File | null>(null);
+  // ── LA DICHIARAZIONE LA GENERA IL CRM (Luca 01/09) ────────────────────
+  // Prima usciva dal vecchio gestionale e si caricava a mano. Ora nasce qui
+  // coi dati del ritiro, si firma in digitale col codice (o su carta, se il
+  // telefono e' rotto) e torna dentro `allegDich`: da li in giu' non cambia
+  // niente. Il protocollo si conia UNA VOLTA all'apertura della finestra —
+  // se cambiasse a ogni battuta, il contratto mandato a firmare e quello
+  // salvato porterebbero due numeri diversi.
+  const [protoUsato] = useState(() => {
+    const d = new Date();
+    const gg = String(d.getDate()).padStart(2, "0") + String(d.getMonth() + 1).padStart(2, "0");
+    return `USA-${gg}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  });
+  const [societa, setSocieta] = useState<Societa | null>(null);
+  const [firmaU, setFirmaU] = useState<FirmaInfo | null>(null);
+  const [allegRegistro, setAllegRegistro] = useState<File | null>(null);
   // ── Carica dal telefono via QR (Luca 01/08): STESSO meccanismo di Registra
   // Vendita (qr_uploads + /m/u/<token>) per documento e dichiarazione. Kind
   // "doc": foto O scansione multi-pagina unita in un unico PDF — perfetto per
@@ -1335,6 +1360,40 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
     });
   };
 
+  // la societa' che compra dipende dal NEGOZIO: T1 e T2 hanno partite IVA
+  // diverse, e un contratto intestato alla societa' sbagliata e' il contratto
+  // di un'altra azienda
+  useEffect(() => {
+    let vivo = true;
+    if (!negozio) { setSocieta(null); return; }
+    societaDelNegozio(negozio).then((x) => { if (vivo) setSocieta(x); });
+    return () => { vivo = false; };
+  }, [negozio]);
+
+  const nomeVenditore = (ana.ragioneSociale || [ana.nome, ana.cognome].filter(Boolean).join(" ")).trim();
+  const mancaPerFirma: string[] = [];
+  if (!societa) mancaPerFirma.push("la societa' del negozio (manca su Punti Vendita)");
+  if (!nomeVenditore) mancaPerFirma.push("il nome del venditore");
+  if (!ana.email) mancaPerFirma.push("l'email in anagrafica");
+  if (!brand || !model) mancaPerFirma.push("marca e modello");
+  if (!imeiValido) mancaPerFirma.push("l'IMEI");
+  if (!prezzoAcquisto) mancaPerFirma.push("il prezzo");
+  const datiContratto: DatiUsato | null = societa ? {
+    protocollo: protoUsato, negozio, operatore: venditore,
+    societa,
+    venditore: {
+      etichetta: nomeVenditore, cf: ana.piva || ana.cf, email: ana.email, cellulare: ana.cellulare,
+      indirizzo: tipoCliente === "business" ? ana.sedeLegale : ana.domicilio,
+    },
+    dispositivo: {
+      marca: brand, modello: [model, capacita].filter(Boolean).join(" "), imei,
+      colore, grado: gradoUsura, accessori: "",
+    },
+    prezzo: parseFloat(prezzoAcquisto) || 0,
+    pagamento: metodoPagamento === "bonifico" ? "Bonifico bancario" : metodoPagamento === "contanti" ? "Contanti" : (metodoPagamento || ""),
+    iban: metodoPagamento === "bonifico" ? ibanPag : "",
+  } : null;
+
   const canNext = () => {
     if (step === 1) return !!(venditore && negozio);
     // Bug indirizzo (Luca 04/08): domicilio/sede legale facoltativi, ma se
@@ -1374,8 +1433,14 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       let docPath = null;
       let dichPath = null;
 
+      let regPath = null;
+
       if (allegDoc) docPath = await uploadFile(allegDoc, "documenti");
       if (allegDich) dichPath = await uploadFile(allegDich, "dichiarazioni");
+      // il REGISTRO DELLE FIRME (chi, quando, da quale indirizzo, con quale
+      // codice) c'e' solo con la firma digitale, ed e' la parte che rende il
+      // PDF una prova invece che un'immagine: si archivia accanto al contratto
+      if (allegRegistro) regPath = await uploadFile(allegRegistro, "dichiarazioni");
 
       onSave({
         venditore, negozio, provenienzaSubito, tipoCliente, anagrafica: ana, clientId: selClientId,
@@ -1387,7 +1452,9 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         ibanEstero: metodoPagamento === "bonifico" ? ibanEstero : false,
         swift: metodoPagamento === "bonifico" && ibanEstero ? swiftPag : null,
         allegato_documento: docPath,
-        allegato_dichiarazione: dichPath
+        allegato_dichiarazione: dichPath,
+        allegato_registro: regPath,
+        firma: firmaU ? { ...firmaU, registro: regPath } : null,
       });
       onClose();
     } catch (err) {
@@ -1646,7 +1713,6 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         </div>, document.body)}
         {[
           { key: "doc", label: "Documento di Identità *", val: allegDoc, set: setAllegDoc },
-          { key: "dich", label: "Dichiarazione di Vendita (firmata) *", val: allegDich, set: setAllegDich }
         ].map(f => (
           <div key={f.key}>
             <div className="flex items-center justify-between mb-1">
@@ -1688,6 +1754,13 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             </div>
           </div>
         ))}
+
+        {/* la dichiarazione non si carica piu': si genera, si firma e torna qui */}
+        <FirmaUsato
+          dati={datiContratto} mancano={mancaPerFirma}
+          contratto={allegDich} onContratto={setAllegDich} onRegistro={setAllegRegistro}
+          firma={firmaU} onFirma={setFirmaU} onQr={() => openQr("dich")} />
+
         {isUploading && (
           <div className="text-center py-2">
             <div className="text-xs text-purple-400 animate-pulse font-bold">Caricamento in corso...</div>
@@ -2168,6 +2241,8 @@ function GestioneUsatiInner() {
     imei: string; prezzoAcquisto: number; gradoUsura: string; perRicambi?: boolean; extraMargine?: { importo: number; venditore: string };
     metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; tipoBonifico?: "ordinario" | "istantaneo" | null; ibanEstero?: boolean; swift?: string | null; provenienzaSubito?: boolean;
     allegato_documento?: string | null; allegato_dichiarazione?: string | null;
+    allegato_registro?: string | null;
+    firma?: { via: string; canale?: string; submissionId?: number | null; firmata_il?: string | null; registro?: string | null } | null;
   }) => {
     const modelName = [data.brand, data.model].filter(Boolean).join(" ") || "Modello non specificato";
     const now = new Date();
@@ -2243,6 +2318,7 @@ function GestioneUsatiInner() {
       acquisto_per_ricambi: !!data.perRicambi,
       allegato_documento: data.allegato_documento || null,
       allegato_dichiarazione: data.allegato_dichiarazione || null,
+      firma: data.firma || null,
     };
     let { data: inserted, error: e } = await supabase.from("usati").insert(insertRow).select().single();
     if (e && /column/i.test(e.message)) {
@@ -2280,6 +2356,9 @@ function GestioneUsatiInner() {
         const righeDoc: { contract_id: null; client_id: string; file_url: string; file_name: string; file_type: string }[] = [];
         if (data.allegato_documento) righeDoc.push({ contract_id: null, client_id: clientId, file_url: pub(data.allegato_documento), file_name: `Documento identità — ritiro ${modelName}`, file_type: "documento" });
         if (data.allegato_dichiarazione) righeDoc.push({ contract_id: null, client_id: clientId, file_url: pub(data.allegato_dichiarazione), file_name: `Dichiarazione di vendita — ${modelName}`, file_type: "dichiarazione_usato" });
+        // il registro delle firme vale quanto il contratto: senza, il PDF firmato
+        // è solo un'immagine — con, porta data, ora e verifica dell'identità
+        if (data.allegato_registro) righeDoc.push({ contract_id: null, client_id: clientId, file_url: pub(data.allegato_registro), file_name: `Registro di firma — ${modelName}`, file_type: "altro" });
         if (righeDoc.length) await supabase.from("contract_attachments").insert(righeDoc);
       } catch { /* best-effort */ }
     }

@@ -91,6 +91,7 @@ export function moduloHtml(d: DatiModulo, perFirmaDigitale = false): string {
   .clausole { border: 1.5px solid #111; border-radius: 2mm; padding: 3mm 4mm; margin-top: 3mm; }
   .clausole p { margin: 0 0 2.2mm; font-size: 9.4pt; }
   .riga-firma { border-bottom: 1px solid #111; height: 16mm; margin-top: 3mm; }
+  .datariga { margin-top: 4mm; font-size: 9pt; color: #444; }
   .riga-mini { display: inline-block; border-bottom: 1px solid #111; width: 34mm; }
   .firme { display: flex; gap: 8mm; margin-top: 4mm; page-break-inside: avoid; }
   .firme > div { flex: 1; }
@@ -204,12 +205,12 @@ trattenuto come corrispettivo ma si trasforma in un buono acquisto, secondo la c
   convertibile in denaro, è nominativo e ha validità di <b>${BUONO_MESI} mesi</b> dall'emissione.</p>
 </div>
 
+<div class="datariga">Luogo e data: <b>${esc(d.negozio)}</b>, ${dataFirma}</div>
 <div class="firme">
   <div>
     <div class="muto"><b>Prima firma — accettazione della pratica</b></div>
     <div class="nota">Il cliente dichiara di aver letto e accettato tutto quanto precede.</div>
     ${firma("Firma del Cliente", "@@FIRMA1@@")}
-    <div class="nota">Data: ${dataFirma}</div>
   </div>
   <div>
     <div class="muto"><b>Seconda firma — clausole della sezione 7</b></div>

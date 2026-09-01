@@ -44,6 +44,10 @@ const REGOLE: Record<string, "sessione" | "casella" | "numero"> = {
     chiusura: "sessione",
     "chat-attachments": "sessione",
     usati_attachments: "sessione",
+    // i documenti firmati di ordini e assistenze: dalla scheda del cliente si
+    // aprono da qui, e senza questa riga il custode rispondeva «deposito
+    // sconosciuto» a ogni contratto firmato
+    "pratiche-allegati": "sessione",
     documentation: "sessione",
     "user-attachments": "sessione",
     "store-attachments": "sessione",

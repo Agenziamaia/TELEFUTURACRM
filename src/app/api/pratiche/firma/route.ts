@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { accesso } from "@/lib/permessiServer";
 import { moduloHtml, type DatiModulo } from "@/lib/moduloPratica";
+import { contrattoUsatoHtml, type DatiUsato } from "@/lib/moduloUsato";
 import { inviaEmail } from "@/lib/email";
 import { pdfjsServer, paginePdf } from "@/lib/pdfServer";
 
@@ -68,10 +69,19 @@ async function mittentePratiche() {
     return ((data ?? [])[0] as Record<string, unknown> | undefined) || null;
 }
 
-function testoInvito(d: DatiModulo, link: string, email: string): string {
+/* il documento da far firmare, qualunque sia: la pratica di un ordine, la
+   scheda di un'assistenza o il contratto con cui compriamo un usato. Il giro
+   con DocuSeal è lo stesso — e quel giro è costato troppo per riscriverlo. */
+type Doc = {
+    protocollo: string; negozio: string; nomeModello: string; html: string; ruolo: string;
+    apertura: string; aperturaHtml: string;
+    cliente: { etichetta: string; email: string; cellulare: string };
+};
+
+function testoInvito(d: Doc, link: string, email: string): string {
     return [
         `Buongiorno,`, ``,
-        `per completare la pratica ${d.protocollo} aperta oggi presso il punto vendita ${d.negozio} serve la sua firma.`,
+        d.apertura,
         ``,
         `Firma qui: ${link}`,
         ``,
@@ -83,15 +93,14 @@ function testoInvito(d: DatiModulo, link: string, email: string): string {
     ].join("\n");
 }
 
-function htmlInvito(d: DatiModulo, link: string, email: string): string {
+function htmlInvito(d: Doc, link: string, email: string): string {
     const e = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     return `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;font-size:15px;line-height:1.6;max-width:560px">
   <p style="margin:0 0 14px">Buongiorno,</p>
-  <p style="margin:0 0 14px">per completare la pratica <b>${e(d.protocollo)}</b> aperta oggi presso il punto vendita
-    <b>${e(d.negozio)}</b> serve la sua firma.</p>
+  <p style="margin:0 0 14px">${d.aperturaHtml}</p>
   <p style="margin:0 0 22px"><a href="${e(link)}"
      style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:10px">
-     Firma il modulo</a></p>
+     Firma il documento</a></p>
   <p style="margin:0 0 14px">Aprendo il link riceverà un <b>codice di verifica</b> all'indirizzo ${e(email)}:
     lo digiti e potrà leggere e firmare il documento.</p>
   <p style="margin:0 0 14px">Le firme richieste sono <b>due</b>: la seconda riguarda le clausole della sezione 7,
@@ -141,24 +150,35 @@ async function posizionaCampi(k: string, tpl: Record<string, unknown>, DOCUSEAL:
         if (!trovati.FIRMA1 || !trovati.FIRMA2) {
             /* ripiego: il blocco firme sta in fondo, affiancato — sinistra e
                destra, sopra il piè di pagina */
-            trovati.FIRMA1 = { page: ultima, x: 0.09, y: 0.86 };
-            trovati.FIRMA2 = { page: ultima, x: 0.55, y: 0.86 };
+            trovati.FIRMA1 = { page: ultima, x: 0.06, y: 0.845 };
+            trovati.FIRMA2 = { page: ultima, x: 0.52, y: 0.845 };
             trovati.DATA = { page: ultima, x: 0.13, y: 0.91 };
         }
 
         const uuid = doc.uuid;
-        const area = (t: { page: number; x: number; y: number }, w: number, h: number) => ([{
+        /* ⚠️ DOVE VA IL RIQUADRO RISPETTO AL MARCATORE.
+           Misurato sul PDF che genera DocuSeal, non dedotto: il marcatore
+           della firma è scritto in cima al riquadro alto 15-16 mm che ha la
+           riga sul fondo, quindi la firma va MESSA SOTTO il marcatore e
+           arriva a posarsi sulla riga (≈ 13 mm più giù = 0.043 di pagina).
+           Il marcatore della data invece è la data stessa, che sta GIÀ sulla
+           sua riga: lì il riquadro va sopra.
+           Prima si alzava tutto di un'altezza intera, e la firma usciva
+           dodici millimetri sopra la riga, addosso al testo delle clausole. */
+        const area = (t: { page: number; x: number; y: number }, w: number, h: number, verso: "sotto" | "sopra") => ([{
             page: t.page, attachment_uuid: uuid,
             x: Math.max(0, Math.min(0.95, t.x)),
-            // il marcatore sta sulla riga della firma: il riquadro va SOPRA
-            y: Math.max(0, Math.min(0.95, t.y - h)),
+            y: Math.max(0, Math.min(0.95, verso === "sotto" ? t.y : t.y - h)),
             w, h,
         }]);
         const conAree = campi.map((c) => {
             const nome = String(c.name || "");
-            if (/^Firma del Cliente$/i.test(nome)) return { ...c, areas: area(trovati.FIRMA1, 0.34, 0.075) };
-            if (/^Seconda/i.test(nome)) return { ...c, areas: area(trovati.FIRMA2, 0.34, 0.075) };
-            if (/^Data/i.test(nome) && trovati.DATA) return { ...c, areas: area(trovati.DATA, 0.16, 0.022) };
+            /* «Firma del Cliente» sulla pratica, «Firma del Venditore» sul contratto
+               dell'usato: si guarda il prefisso, non il nome intero — un campo che
+               non trova la sua posizione è una firma raccolta e mai stampata. */
+            if (/^Firma del /i.test(nome)) return { ...c, areas: area(trovati.FIRMA1, 0.34, 0.043, "sotto") };
+            if (/^Seconda/i.test(nome)) return { ...c, areas: area(trovati.FIRMA2, 0.34, 0.043, "sotto") };
+            if (/^Data/i.test(nome) && trovati.DATA) return { ...c, areas: area(trovati.DATA, 0.16, 0.022, "sopra") };
             return c;
         });
 
@@ -175,7 +195,8 @@ export async function POST(req: Request) {
     const g = await accesso(req, "pratiche/firma");
     if (!g.ok) return g.risposta;
 
-    const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; nome?: string; submissionId?: number; canale?: string; protocollo?: string; email?: string };
+    const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; datiUsato?: DatiUsato; tipo?: string; nome?: string; submissionId?: number; canale?: string; protocollo?: string;
+    clienteId?: string; email?: string };
     const k = await chiave();
     if (!k) return NextResponse.json({ error: "la chiave DocuSeal non è configurata: si mette da Amministrazione." }, { status: 503 });
     const DOCUSEAL = await casa(k);
@@ -225,6 +246,34 @@ export async function POST(req: Request) {
                 if (auditUrl) registro = await porta(auditUrl, `registro-firme-${proto}.pdf`);
             } catch (e) { archivioErrore = e instanceof Error ? e.message : "archiviazione non riuscita"; }
 
+            /* ⚠️ E ANCHE NELL'ANAGRAFICA DEL CLIENTE. Archiviare sulla pratica
+               non basta: la pratica prima o poi si chiude e nessuno la riapre,
+               mentre la scheda del cliente è il posto dove uno va a cercare
+               «che cosa ha firmato costui». Ci finiscono tutti gli altri
+               documenti (documento d'identità, contratti, dichiarazioni usato),
+               e ci deve finire anche questo, col suo registro di firma —
+               che è l'unica prova di *come* è stata raccolta la firma.
+               `contract_id` resta vuoto: ha una chiave esterna su `contracts`,
+               e una pratica non è una vendita. */
+            if (body.clienteId) {
+                const righe = [
+                    archiviato && { tipo: "contratti", f: archiviato, nome: `Documento firmato — ${body.protocollo || proto}` },
+                    registro && { tipo: "altro", f: registro, nome: `Registro di firma — ${body.protocollo || proto}` },
+                ].filter(Boolean) as { tipo: string; f: { nome: string; path: string }; nome: string }[];
+                for (const r2 of righe) {
+                    try {
+                        const url = `/api/file/pratiche-allegati/${r2.f.path}`;
+                        const { data: gia } = await supabaseAdmin.from("contract_attachments")
+                            .select("id").eq("client_id", body.clienteId).eq("file_url", url).limit(1);
+                        if (gia && gia.length > 0) continue;   // il controllo stato ripassa: non moltiplichiamo le righe
+                        await supabaseAdmin.from("contract_attachments").insert({
+                            client_id: body.clienteId, contract_id: null,
+                            file_url: url, file_name: r2.nome, file_type: r2.tipo,
+                        });
+                    } catch { /* l'archivio della pratica ce l'ha comunque */ }
+                }
+            }
+
             /* ⚠️ LA COPIA AL CLIENTE. Con `send_email: false` DocuSeal non manda
                niente al firmatario — è così che ci siamo tolti il marchio di
                un'altra azienda dalle mail — ma questo vuol dire che la copia
@@ -269,8 +318,23 @@ export async function POST(req: Request) {
     }
 
     /* ── manda la richiesta ──────────────────────────────────────────── */
-    const d = body.dati;
-    if (!d) return NextResponse.json({ error: "mancano i dati della pratica" }, { status: 400 });
+    const u = body.tipo === "usato" ? body.datiUsato : null;
+    const d: Doc | null = u ? {
+        protocollo: u.protocollo, negozio: u.negozio,
+        nomeModello: `Contratto di acquisto usato ${u.protocollo}`,
+        html: contrattoUsatoHtml(u, true), ruolo: "Venditore",
+        apertura: `per l'acquisto del suo ${[u.dispositivo?.marca, u.dispositivo?.modello].filter(Boolean).join(" ") || "dispositivo"} da parte del punto vendita ${u.negozio} serve la sua firma sul contratto.`,
+        aperturaHtml: `per l'<b>acquisto del suo ${[u.dispositivo?.marca, u.dispositivo?.modello].filter(Boolean).join(" ") || "dispositivo"}</b> da parte del punto vendita <b>${u.negozio}</b> serve la sua firma sul contratto.`,
+        cliente: { etichetta: u.venditore?.etichetta || "Venditore", email: u.venditore?.email || "", cellulare: u.venditore?.cellulare || "" },
+    } : body.dati ? {
+        protocollo: body.dati.protocollo, negozio: body.dati.negozio,
+        nomeModello: `Modulo di accettazione ${body.dati.protocollo}`,
+        html: moduloHtml(body.dati, true), ruolo: "Cliente",
+        apertura: `per completare la pratica ${body.dati.protocollo} aperta oggi presso il punto vendita ${body.dati.negozio} serve la sua firma.`,
+        aperturaHtml: `per completare la pratica <b>${body.dati.protocollo}</b> aperta oggi presso il punto vendita <b>${body.dati.negozio}</b> serve la sua firma.`,
+        cliente: { etichetta: body.dati.cliente?.etichetta || "Cliente", email: body.dati.cliente?.email || "", cellulare: body.dati.cliente?.cellulare || "" },
+    } : null;
+    if (!d) return NextResponse.json({ error: "mancano i dati del documento da firmare" }, { status: 400 });
     const email = String(d.cliente?.email || "").trim();
     if (!/^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$/.test(email)) {
         return NextResponse.json({ error: "il cliente non ha un'email valida in anagrafica: il codice non avrebbe dove arrivare." }, { status: 400 });
@@ -307,8 +371,8 @@ export async function POST(req: Request) {
         method: "POST",
         headers: { "X-Auth-Token": k, "Content-Type": "application/json" },
         body: JSON.stringify({
-            name: `Modulo di accettazione ${d.protocollo}`,
-            documents: [{ name: `modulo-${d.protocollo}`, html: moduloHtml(d, true), size: "A4" }],
+            name: d.nomeModello,
+            documents: [{ name: `documento-${d.protocollo}`, html: d.html, size: "A4" }],
         }),
     });
     const tj = await tpl.json().catch(() => ({}));
@@ -325,7 +389,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
             template_id: tj.id,
             submitters: [{
-                role: "Cliente",
+                role: d.ruolo,
                 name: String(d.cliente?.etichetta || "Cliente"),
                 email,
                 ...(telE164 ? { phone: telE164 } : {}),
@@ -387,7 +451,7 @@ export async function POST(req: Request) {
            finisce nello storico delle chat come ogni altro messaggio */
         whatsapp: canale === "whatsapp" ? {
             numero: cell,
-            testo: `Buongiorno, sono ${d.negozio} di Telefutura.\n\nPer completare la pratica ${d.protocollo} serve la sua firma:\n${link || ""}\n\nAprendo il link riceverà un codice di verifica sulla sua email (${email}): lo digiti e potrà leggere e firmare. Le firme sono DUE — la seconda riguarda le clausole della sezione 7.\n\nGrazie!`,
+            testo: `Buongiorno, sono ${d.negozio} di Telefutura.\n\n${d.apertura.charAt(0).toUpperCase() + d.apertura.slice(1)}\n${link || ""}\n\nAprendo il link riceverà un codice di verifica sulla sua email (${email}): lo digiti e potrà leggere e firmare. Le firme sono DUE — la seconda riguarda le clausole della sezione 7.\n\nGrazie!`,
         } : null,
     });
 }

@@ -173,6 +173,8 @@ export type Firma = {
     identita?: { nome: string; path: string } | null;
     firmata_il?: string | null;
     controllo?: { stato: string } | null;
+    /** dove è stata mandata la richiesta: email, SMS o WhatsApp del negozio */
+    canale?: "email" | "sms" | "whatsapp";
     /** la richiesta DocuSeal, quando si firma col codice */
     submissionId?: number | null;
     link?: string | null;
