@@ -454,7 +454,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* LA FAMIGLIA DI UN CODICE, in un posto solo: serve alle giacenze, al
        venduto e ai trasferimenti, e devono dire tutt'e tre la stessa cosa. */
     const famDi = useCallback((codice: string, descrizione: string) =>
-        famigliaDi({ ...(anagrafica.get(codice) ?? { gruppo: null, sottogruppo: null }), descrizione, codice }),
+        /* COMANDA L'ANAGRAFICA, non la descrizione della riga. Le due oggi
+           coincidono su tutte e 893 le righe con seriale, ma un carico che
+           scrivesse un nome diverso farebbe comparire lo STESSO codice in due
+           categorie nella stessa tabella. La descrizione del pezzo resta il
+           ripiego per i codici che in anagrafica non ci sono. */
+        famigliaDi({ gruppo: null, sottogruppo: null, descrizione, ...(anagrafica.get(codice) ?? {}), codice }),
         [anagrafica]);
 
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
