@@ -72,7 +72,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -159,6 +159,12 @@ export function PayStoreAdminView() {
         .filter((r) => !origine || String(r.con_attivazione) === origine);
     const oggiS = oggiISO();
     const daGuardareDavvero = d.daGuardare.filter((r) => r.stato === "fallita" || r.creata_il.slice(0, 10) < oggiS);
+    /* ⚠️ DUE COSE CHE VANNO VISTE SUBITO, e non c'entrano con lo stato della
+       ricarica: lo scontrino che non è uscito (il cliente ha pagato e non ha
+       il documento) e la riga finita su un reparto che non è l'1 (una
+       ricarica assoggettata a IVA per sbaglio). */
+    const senzaScontrino = d.ultime.filter((r) => r.scontrino_emesso === false);
+    const repartoStorto = d.ultime.filter((r) => r.reparto_usato != null && r.reparto_usato !== 1);
     /* le ricariche per ora della giornata, dalla prima all'ultima: si usa
        quando i giorni con vendite sono uno o due */
     const giorniPieni = d.perGiorno.filter((g) => g.quante > 0).length;
@@ -340,6 +346,42 @@ export function PayStoreAdminView() {
                     è partito (fallita) e quello che è rimasto indietro — una da
                     fare di ieri vuol dire che il credito non è mai stato
                     caricato. */}
+                {(senzaScontrino.length > 0 || repartoStorto.length > 0) && (
+                    <div className="relative mt-4 rounded-2xl border border-rose-500/50 bg-rose-500/[0.12] p-3">
+                        {senzaScontrino.length > 0 && (
+                            <div className="mb-2">
+                                <div className="flex items-center gap-2 text-rose-200 font-bold text-sm mb-1">
+                                    <AlertTriangle className="w-4 h-4" />
+                                    {senzaScontrino.length === 1 ? "Una ricarica senza scontrino" : `${senzaScontrino.length} ricariche senza scontrino`}
+                                    <span className="font-normal text-rose-200/70 text-[11px]">— il registratore non ha stampato: il cliente ha pagato e non ha il documento</span>
+                                </div>
+                                {senzaScontrino.slice(0, 6).map((r) => (
+                                    <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
+                                        <span className="text-slate-200 font-semibold">{nomeOp(r.operatore)} {eurC(r.importo)}</span>
+                                        <span className="font-mono text-slate-400">{r.numero || "—"}</span>
+                                        <span className="text-slate-500">{r.negozio} · {new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {repartoStorto.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-2 text-amber-200 font-bold text-sm mb-1">
+                                    🧾 {repartoStorto.length === 1 ? "Una ricarica" : `${repartoStorto.length} ricariche`} con il reparto IVA sbagliato
+                                    <span className="font-normal text-amber-200/70 text-[11px]">— sono uscite assoggettate a IVA invece che «non soggetta» (reparto 1)</span>
+                                </div>
+                                {repartoStorto.slice(0, 8).map((r) => (
+                                    <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
+                                        <span className="text-slate-200 font-semibold">{nomeOp(r.operatore)} {eurC(r.importo)}</span>
+                                        <span className="font-mono text-slate-400">{r.numero || "—"}</span>
+                                        <span className="text-slate-500">{r.negozio} · {new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                        <span className="text-amber-300 font-bold">reparto {r.reparto_usato}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
                 {daGuardareDavvero.length > 0 && (
                     <div className="relative mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3">
                         <div className="flex items-center gap-2 text-rose-200 font-bold text-sm mb-2">
@@ -557,15 +599,18 @@ export function PayStoreAdminView() {
                                                     {r.con_attivazione && <span className="psConSim" title="ricarica della SIM appena venduta: il numero è quello dell'attivazione">📶</span>}
                                                 </td>
                                                 <td className="font-mono text-slate-300">
-                                                    {/* ⚠️ IL NUMERO SI PUÒ SCRIVERE QUI. Una ricarica venduta
-                                                        prima che la vendita si portasse dentro il numero — o
-                                                        dal listino invece che dal pannello — non ce l'ha: senza,
-                                                        nessuno la può eseguire, e il cliente ha già pagato. */}
+                                                    {/* ⚠️ IL NUMERO SI PRENDE DALLO SCONTRINO, non si chiede a
+                                                        chi guarda: è stampato nella descrizione della riga. Il
+                                                        campo a mano resta per i casi in cui lo scontrino non
+                                                        c'è — ma è l'eccezione, non la regola. */}
                                                     {r.numero ? r.numero : <NumeroMancante r={r} onCambiato={() => void carica()} />}
                                                 </td>
                                                 <td className="text-right font-bold text-white tabular-nums">{eurC(r.importo)}</td>
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
-                                                <td className="text-slate-400">{r.venditore || "—"}</td>
+                                                <td className="text-slate-400">
+                                                    {r.venditore || "—"}
+                                                    {r.scontrino_emesso === false && <span className="psNoScontrino" title="il registratore non ha stampato lo scontrino">🧾✕</span>}
+                                                </td>
                                                 <td className="text-slate-400">{SOCIETA[r.azienda || ""] || "—"}</td>
                                                 <td>
                                                     {/* ⚠️ LO STATO SI CAMBIA DA QUI. Finché le ricariche si

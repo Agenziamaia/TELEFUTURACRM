@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto } from "@/lib/paystore";
+import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto, NOMI_OPERATORE } from "@/lib/paystore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,8 @@ type Riga = {
     azienda: string | null;
     /* nata con una SIM o venduta da sola */
     con_attivazione: boolean | null;
+    /* lo scontrino è uscito davvero? e con quale reparto? */
+    scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null;
 };
 
 const giorno = (iso: string) => iso.slice(0, 10);
@@ -110,69 +112,107 @@ async function recuperaScontrinate(da: string, a: string) {
     }
 }
 
-/* ═══ LA SOCIETÀ, DALLO SCONTRINO CHE È USCITO ═════════════════════════════
-   Luca 01/09: «come fa su alcune ricariche a non uscire la società? Se è
-   uscito uno scontrino dovremmo saperlo».
+/* ═══ QUELLO CHE SI SA DALLO SCONTRINO ══════════════════════════════════════
+   Luca 01/09: «non capisco perché ci sono ancora dei numeri dove c'è scritto
+   metti il numero. Ma che numero metto? Manca il numero, come faccio a
+   scriverlo? Devi riprenderlo tutto dallo scontrino chiaramente. C'è anche da
+   capire se poi effettivamente quei soldi sono stati incassati.»
 
-   Ha ragione. La società veniva scritta solo quando il modale la mandava —
-   cioè quando il carrello era di soli servizi — e restava vuota su tutte le
-   vendite miste, che sono la maggioranza. Ma il dato esiste: ogni scontrino
-   fiscale messo in coda porta `meta.azienda`, perché è quella che decide da
-   quale registratore esce la carta.
+   Il lavoro di stampa contiene tutto quello che serve, e nessuno lo stava
+   leggendo:
+   • il NUMERO — è dentro la descrizione della riga, perché è quello che il
+     cliente legge sullo scontrino: «RICARICA VODAFONE 23 3445676400»;
+   • la SOCIETÀ che ha emesso (`meta.azienda`);
+   • se lo scontrino è USCITO DAVVERO (`status`): il CRM registra la vendita,
+     ma a stampare è il registratore, e a volte non ci riesce — agente spento,
+     stampante muta. Oggi è successo su tre ricariche vere;
+   • il REPARTO con cui la riga è uscita, che deve essere 1: se è un altro,
+     quella ricarica è stata assoggettata a IVA per sbaglio.
 
-   Qui si va a prenderlo: stesso negozio, lo scontrino più vicino nel tempo.
-
-   ⚠️ SE NON È CERTO, NON SI SCRIVE. Quando nella finestra ci sono due
-   scontrini di società DIVERSE non si indovina: la colonna resta vuota. Una
-   società sbagliata su un dato fiscale è peggio di una società mancante,
-   perché quella mancante si vede. */
-async function completaSocieta(da: string, a: string) {
+   ⚠️ Chiedere all'amministrazione di scrivere a mano un numero che nessuno
+   conosce non è un campo da compilare: è un vicolo cieco. Il campo resta per
+   i casi che qui non si risolvono, ma prima si guarda dove il dato c'è. */
+async function completaDalloScontrino(da: string, a: string) {
     try {
-        const { data: senza } = await supabase.from("paystore_ricariche")
-            .select("id, negozio, creata_il")
-            .is("azienda", null)
+        const { data: righe } = await supabase.from("paystore_ricariche")
+            .select("id, negozio, creata_il, importo, numero, azienda, scontrino_emesso")
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
             .limit(5000);
-        if (!senza?.length) return;
+        const daFare = (righe || []).filter((r) => !r.numero || !r.azienda || r.scontrino_emesso === null);
+        if (!daFare.length) return;
 
         const { data: job } = await supabase.from("print_jobs")
-            .select("negozio, created_at, meta")
+            .select("negozio, created_at, meta, status, request_xml")
             .eq("kind", "fiscal_receipt")
-            /* la finestra è più larga del periodo: una ricarica delle 00:05
-               può appartenere a uno scontrino del giorno prima */
             .gte("created_at", new Date(new Date(da + "T00:00:00Z").getTime() - 3600000).toISOString())
             .lte("created_at", new Date(new Date(a + "T23:59:59Z").getTime() + 3600000).toISOString())
             .limit(20000);
         if (!job?.length) return;
 
-        const perNegozio: Record<string, { t: number; az: string }[]> = {};
+        /* ogni riga di ricarica stampata, con il suo scontrino: importo e
+           numero vengono dalla descrizione, che è quella che il cliente legge */
+        type RigaStampata = { negozio: string; t: number; importo: number; numero: string; reparto: number; emesso: boolean; azienda: string | null; errore: string | null };
+        const stampate: RigaStampata[] = [];
+        const scontriniPerNegozio: Record<string, { t: number; emesso: boolean; azienda: string | null }[]> = {};
         for (const j of job) {
-            const az = (j.meta as { azienda?: string } | null)?.azienda;
-            if (!az || !j.negozio) continue;
-            (perNegozio[j.negozio] ||= []).push({ t: new Date(j.created_at).getTime(), az });
+            const az = (j.meta as { azienda?: string } | null)?.azienda || null;
+            const t = new Date(j.created_at).getTime();
+            const emesso = j.status === "done";
+            const neg = String(j.negozio || "");
+            (scontriniPerNegozio[neg] ||= []).push({ t, emesso, azienda: az });
+            const xml = String(j.request_xml || "");
+            /* la descrizione può essere «RICARICA <NOME> <imp> <num>» oppure,
+               quando il nome era troppo lungo per i 38 caratteri, senza la
+               parola RICARICA davanti */
+            for (const m of xml.matchAll(/description="([^"]*?)"[^>]*?unitPrice="([\d.]+)"[^>]*?department="(\d+)"/g)) {
+                const desc = m[1];
+                const num = desc.match(/\b(\d{7,11})\s*$/)?.[1];
+                if (!num) continue;
+                if (!/ricarica/i.test(desc) && !NOMI_OPERATORE.some(([n]) => desc.toUpperCase().startsWith(n))) continue;
+                stampate.push({ negozio: neg, t, importo: Number(m[2]), numero: num, reparto: Number(m[3]), emesso, azienda: az, errore: emesso ? null : String(j.status) });
+            }
         }
 
-        const daScrivere: { id: string; azienda: string }[] = [];
-        for (const r of senza) {
-            const lista = perNegozio[String(r.negozio || "")] || [];
+        const aggiornamenti: { id: string; patch: Record<string, unknown> }[] = [];
+        for (const r of daFare) {
             const t = new Date(r.creata_il).getTime();
-            /* lo scontrino esce POCO PRIMA della registrazione (la vendita si
-               scrive a scontrino emesso): si guarda indietro di tre minuti e
-               avanti di uno, per i casi in cui l'ordine si inverte di poco */
-            const vicini = lista.filter((x) => x.t <= t + 60000 && x.t >= t - 180000);
-            if (!vicini.length) continue;
-            const societa = [...new Set(vicini.map((x) => x.az))];
-            if (societa.length !== 1) continue;          // due società: non si indovina
-            daScrivere.push({ id: r.id, azienda: societa[0] });
+            const vicino = (x: { t: number }) => x.t <= t + 60000 && x.t >= t - 300000;
+            const patch: Record<string, unknown> = {};
+
+            /* 1. IL NUMERO E IL REPARTO: dalla riga stampata dello stesso
+                  negozio, con lo stesso importo, nell'intorno */
+            if (!r.numero) {
+                const cand = stampate.filter((x) => x.negozio === r.negozio && vicino(x) && Math.abs(x.importo - Number(r.importo)) < 0.005);
+                const numeri = [...new Set(cand.map((x) => x.numero))];
+                if (numeri.length === 1) {                       // uno solo: è quello
+                    patch.numero = numeri[0];
+                    patch.reparto_usato = cand[0].reparto;
+                }
+            } else {
+                const suo = stampate.find((x) => x.negozio === r.negozio && vicino(x) && x.numero === r.numero);
+                if (suo) patch.reparto_usato = suo.reparto;
+            }
+
+            /* 2. LO SCONTRINO È USCITO? e con quale società. Se nella finestra
+                  c'è un solo scontrino la risposta è certa; se ce ne sono due
+                  con esiti o società diversi non si indovina. */
+            const sc = (scontriniPerNegozio[String(r.negozio || "")] || []).filter(vicino);
+            if (sc.length) {
+                const esiti = [...new Set(sc.map((x) => x.emesso))];
+                if (esiti.length === 1 && r.scontrino_emesso === null) {
+                    patch.scontrino_emesso = esiti[0];
+                    if (!esiti[0]) patch.scontrino_errore = "il registratore non ha stampato";
+                }
+                const soc = [...new Set(sc.map((x) => x.azienda).filter(Boolean))];
+                if (!r.azienda && soc.length === 1) patch.azienda = soc[0];
+            }
+            if (Object.keys(patch).length) aggiornamenti.push({ id: r.id, patch });
         }
-        /* un aggiornamento per società, non uno per riga: sono due query
-           invece di trecento */
-        for (const az of [...new Set(daScrivere.map((x) => x.azienda))]) {
-            const ids = daScrivere.filter((x) => x.azienda === az).map((x) => x.id);
-            if (ids.length) await supabase.from("paystore_ricariche").update({ azienda: az }).in("id", ids);
-        }
+
+        for (const u of aggiornamenti) await supabase.from("paystore_ricariche").update(u.patch).eq("id", u.id);
     } catch (e) {
-        console.error("[paystore] società non completata:", String((e as Error)?.message || e));
+        // è un aiuto, non un prerequisito: la schermata deve aprirsi comunque
+        console.error("[paystore] lettura dallo scontrino non riuscita:", String((e as Error)?.message || e));
     }
 }
 
@@ -208,9 +248,9 @@ export async function GET(request: Request) {
        che non ha la sua riga, e gliela si dà. Costa una query e toglie di
        mezzo per sempre la domanda «perché manca?». */
     await recuperaScontrinate(da, a);
-    await completaSocieta(da, a);
+    await completaDalloScontrino(da, a);
 
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione";
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")

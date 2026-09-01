@@ -2380,3 +2380,6 @@ html.light .rvPill-ko{color:#b91c1c;border-color:rgba(185,28,28,.35);background:
 /* la firma raccolta al banco: si vede, e ciò che si vede si corregge */
 .rvFirmaBanco{color:#fbbf24 !important;font-weight:700}
 html.light .rvFirmaBanco{color:#9a5b00 !important}
+/* la ricarica il cui scontrino non è uscito: il cliente ha pagato e non ha
+   il documento — si vede nella riga, non solo nel riquadro in cima */
+.psNoScontrino{margin-left:7px;font-size:10px;color:#fda4af}

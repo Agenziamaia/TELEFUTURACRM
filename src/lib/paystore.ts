@@ -202,7 +202,7 @@ export const nuovaChiaveIdempotenza = () => randomUUID();
 
 /** Gli operatori come li scrive `descrizioneRicarica`, dal più lungo al più
  *  corto: «TIM» è dentro «OPTIMA», e cercare prima il corto sbaglierebbe. */
-const NOMI_OPERATORE: [string, string][] = [
+export const NOMI_OPERATORE: [string, string][] = [
     ["FASTWEB MOBILE", "fastweb"], ["TISCALI MOBILE", "tiscali"], ["OPTIMA MOBILE", "optima"],
     ["WITHU MOBILE", "withu"], ["DAILY TELECOM", "daily"], ["KENA MOBILE", "kena"],
     ["VERY MOBILE", "very"], ["HO. MOBILE", "ho"], ["POSTEMOBILE", "poste"],
