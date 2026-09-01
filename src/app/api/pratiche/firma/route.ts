@@ -35,13 +35,20 @@ async function chiave(): Promise<string | null> {
     return k.trim() || null;
 }
 
-/* La casella da cui esce: quella del NEGOZIO che apre la pratica, se ce l'ha —
-   il cliente risponde a chi ha davanti. Altrimenti l'amministrazione. */
-async function mittentePratiche(negozio: string) {
-    const { data } = await supabaseAdmin.from("email_accounts").select("*").eq("status", "attiva");
-    const tutte = (data ?? []) as { email_address?: string; negozio?: string | null }[];
-    const delNegozio = tutte.find((a) => String(a.negozio || "").trim().toLowerCase() === String(negozio || "").trim().toLowerCase());
-    return delNegozio || tutte.find((a) => String(a.email_address || "").startsWith("amministrazione@")) || tutte[0] || null;
+/* ⚠️ DA AMMINISTRAZIONE, SEMPRE (Luca 01/09: «tutte queste email devono
+   arrivare da parte di amministrazione, che è la mail ufficiale per le
+   comunicazioni»).
+   Prima cercavo la casella del negozio che apre la pratica. Due errori in uno:
+   la regola era un'altra, e il codice sbagliava pure — con il negozio vuoto
+   («» per un utente di direzione) il confronto pescava la prima casella senza
+   negozio, e al cliente è arrivata una richiesta di firma dalla posta
+   personale di un collega.
+   Adesso c'è un mittente solo, e se non c'è NON si manda: meglio dirlo che
+   spedire un contratto dall'indirizzo sbagliato. */
+async function mittentePratiche() {
+    const { data } = await supabaseAdmin.from("email_accounts")
+        .select("*").eq("status", "attiva").ilike("email_address", "amministrazione@%").limit(1);
+    return ((data ?? [])[0] as Record<string, unknown> | undefined) || null;
 }
 
 function testoInvito(d: DatiModulo, link: string, email: string): string {
@@ -54,7 +61,7 @@ function testoInvito(d: DatiModulo, link: string, email: string): string {
         `Aprendo il link riceverà un codice di verifica all'indirizzo ${email}: lo digiti e potrà leggere e firmare il documento.`,
         `Le firme richieste sono DUE: la seconda riguarda le clausole della sezione 7, che la legge vuole approvate a parte.`,
         ``,
-        `Se qualcosa non torna, risponda pure a questa email: legge il punto vendita.`,
+        `Se qualcosa non torna, risponda pure a questa email, oppure passi in negozio.`,
         ``, `Grazie,`, `Telefutura — ${d.negozio}`,
     ].join("\n");
 }
@@ -72,7 +79,7 @@ function htmlInvito(d: DatiModulo, link: string, email: string): string {
     lo digiti e potrà leggere e firmare il documento.</p>
   <p style="margin:0 0 14px">Le firme richieste sono <b>due</b>: la seconda riguarda le clausole della sezione 7,
     che la legge vuole approvate a parte.</p>
-  <p style="margin:0 0 20px;color:#555;font-size:13.5px">Se qualcosa non torna, risponda pure a questa email: legge il punto vendita.</p>
+  <p style="margin:0 0 20px;color:#555;font-size:13.5px">Se qualcosa non torna, risponda pure a questa email, oppure passi in negozio.</p>
   <p style="margin:0;color:#555;font-size:13.5px">Grazie,<br><b style="color:#111">Telefutura</b> — ${e(d.negozio)}</p>
 </div>`;
 }
@@ -293,8 +300,8 @@ export async function POST(req: Request) {
     if (canale === "email") {
         if (!link) mailErrore = "DocuSeal non ha restituito il link da mandare";
         else {
-            const mittente = await mittentePratiche(d.negozio);
-            if (!mittente) mailErrore = "nessuna casella email collegata al CRM: il link non è stato spedito";
+            const mittente = await mittentePratiche();
+            if (!mittente) mailErrore = "la casella amministrazione@ non è collegata al CRM: il link non è stato spedito. Le richieste di firma escono solo da lì.";
             else {
                 try {
                     await inviaEmail(mittente as never, {
