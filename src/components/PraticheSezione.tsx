@@ -1203,7 +1203,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
             try {
                 const r = await fetch("/api/pratiche/firma", {
                     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId }),
+                    body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId, protocollo }),
                 });
                 const j = await r.json();
                 /* ⚠️ AGGIORNAMENTO FUNZIONALE, non `{...firma}`. `firma` qui è
@@ -1212,7 +1212,10 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                    cliente armeggia col telefono — e quella copia vecchia la
                    cancellava, lasciando «firmato» e «manca il documento»
                    insieme (rilievo del revisore, provato). */
-                if (j?.firmato) onCambia((prec) => ({ ...prec, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString() }));
+                if (j?.firmato) onCambia((prec) => ({
+                    ...prec, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString(),
+                    firmato: j.archiviato || null, registro: j.registro || null,
+                }));
             } catch { /* rete che sbanda: si riprova al giro dopo */ }
         };
         polling.current = setInterval(guarda, 8000);
@@ -1257,6 +1260,11 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                             <div style={{ flex: "1 1 240px" }}>
                                 <div style={{ fontSize: 14, fontWeight: 800, color: "var(--tf-34d399)" }}>Firmato dal cliente</div>
                                 <div className="rvTab-min">identità verificata col codice inviato a {cliente ? cliente.email : "—"}</div>
+                                <div className="rvTab-min">
+                                    {firma.firmato
+                                        ? "📄 modulo firmato e registro delle firme archiviati sulla pratica"
+                                        : "⏳ sto portando il documento firmato nel nostro archivio…"}
+                                </div>
                             </div>
                         </div>
                     ) : firma.otp === "inviata" ? (
@@ -1442,6 +1450,14 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
     const ggAperta = giorniLavorativi(pratica.created_at, oggiIso());
     const ggAvviso = pratica.avviso_pronto_il ? giorniLavorativi(pratica.avviso_pronto_il, oggiIso()) : null;
 
+    /* il secchio è privato: si apre con un indirizzo firmato che vale un'ora,
+       non con un link pubblico — questi sono documenti d'identità */
+    const apriAllegato = async (path: string) => {
+        const { data, error } = await supabase.storage.from("pratiche-allegati").createSignedUrl(path, 3600);
+        if (error || !data?.signedUrl) { window.alert("Non riesco ad aprire il documento: " + (error?.message || "riprova")); return; }
+        window.open(data.signedUrl, "_blank", "noopener");
+    };
+
     const scrivi = async (patch: Record<string, unknown>, testo: string, msg: string) => {
         setBusy(true);
         const storia = (pratica.storia || []).concat([{ at: oggiIso(), chi: operatore, txt: testo }]);
@@ -1531,6 +1547,22 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                     <Voce et="Firmato" v={pratica.firma?.via === "otp" ? "📲 col codice" : "🖊️ su carta"} />
                     <Voce et="Documento d'identità" v={pratica.firma?.identita ? "✅ archiviato" : "⛔ mancante"} />
                     {pratica.firma?.via === "cartacea" && <Voce et="Modulo firmato" v={pratica.firma?.modulo ? "✅ allegato" : "⛔ mancante"} />}
+                    {/* I DOCUMENTI SI APRONO. Un archivio che non si può aprire
+                        è un archivio che nessuno controlla: il giorno della
+                        contestazione serve il foglio, non la casella spuntata. */}
+                    <div className="rvPillRow">
+                        {([
+                            ["Modulo firmato", pratica.firma?.firmato?.path || pratica.firma?.modulo?.path],
+                            ["Registro delle firme", pratica.firma?.registro?.path],
+                            ["Documento d'identità", pratica.firma?.identita?.path],
+                        ] as [string, string | undefined][]).map(([et, path]) => (
+                            path ? (
+                                <button key={et} type="button" className="rvPill rvPill-sm" onClick={() => apriAllegato(path)}>
+                                    📄 {et}
+                                </button>
+                            ) : null
+                        ))}
+                    </div>
                     {pratica.avviso_pronto_il ? (
                         <>
                             <Voce et="Avviso di pronta consegna" v={dataOraIt(pratica.avviso_pronto_il)} />

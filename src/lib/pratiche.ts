@@ -176,6 +176,9 @@ export type Firma = {
     /** la richiesta DocuSeal, quando si firma col codice */
     submissionId?: number | null;
     link?: string | null;
+    /** il PDF firmato e il registro delle firme, portati nel nostro secchio */
+    firmato?: { nome: string; path: string } | null;
+    registro?: { nome: string; path: string } | null;
 };
 export function firmaCompleta(f: Firma | null | undefined): boolean {
     if (!f || !f.via) return false;

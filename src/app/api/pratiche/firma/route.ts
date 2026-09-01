@@ -80,23 +80,52 @@ export async function POST(req: Request) {
     const g = await accesso(req, "pratiche/firma");
     if (!g.ok) return g.risposta;
 
-    const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; nome?: string; submissionId?: number; canale?: string };
+    const body = await req.json().catch(() => ({})) as { azione?: string; dati?: DatiModulo; nome?: string; submissionId?: number; canale?: string; protocollo?: string };
     const k = await chiave();
     if (!k) return NextResponse.json({ error: "la chiave DocuSeal non è configurata: si mette da Amministrazione." }, { status: 503 });
 
-    /* ── com'è andata ────────────────────────────────────────────────── */
+    /* ── com'è andata, e SI PORTA A CASA IL DOCUMENTO ─────────────────
+       Il PDF firmato e il registro delle firme vivevano solo da DocuSeal:
+       il giorno che l'abbonamento scade, o che si cambia fornitore, il
+       documento che regge l'acconto trattenuto e i novanta giorni non è più
+       nostro. Appena la firma è completa si scaricano tutti e due e si
+       mettono nel nostro secchio, accanto al documento d'identità. */
     if (body.azione === "stato") {
         if (!body.submissionId) return NextResponse.json({ error: "manca la richiesta da controllare" }, { status: 400 });
         const r = await fetch(`${DOCUSEAL}/submissions/${body.submissionId}`, { headers: { "X-Auth-Token": k } });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return NextResponse.json({ error: j?.error || `DocuSeal ha risposto ${r.status}` }, { status: 502 });
-        const submitters = (j?.submitters || []) as { status?: string; completed_at?: string }[];
+        const submitters = (j?.submitters || []) as { status?: string; completed_at?: string; documents?: { url?: string; name?: string }[] }[];
         const finito = submitters.length > 0 && submitters.every((s) => s.status === "completed");
+
+        let archiviato: { nome: string; path: string } | null = null;
+        let registro: { nome: string; path: string } | null = null;
+        let archivioErrore: string | null = null;
+        if (finito) {
+            const proto = String(body.protocollo || "senza-protocollo").replace(/[^A-Za-z0-9._-]+/g, "_");
+            const docUrl = (j?.documents || [])[0]?.url || (submitters[0]?.documents || [])[0]?.url || null;
+            const auditUrl = j?.audit_log_url || null;
+            const porta = async (url: string, nome: string) => {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`scaricamento non riuscito (${res.status})`);
+                const buf = Buffer.from(await res.arrayBuffer());
+                const path = `pratiche/${proto}/${nome}`;
+                const { error } = await supabaseAdmin.storage.from("pratiche-allegati")
+                    .upload(path, buf, { contentType: "application/pdf", upsert: true });
+                if (error) throw new Error(error.message);
+                return { nome, path };
+            };
+            try {
+                if (docUrl) archiviato = await porta(docUrl, `modulo-firmato-${proto}.pdf`);
+                if (auditUrl) registro = await porta(auditUrl, `registro-firme-${proto}.pdf`);
+            } catch (e) { archivioErrore = e instanceof Error ? e.message : "archiviazione non riuscita"; }
+        }
+
         return NextResponse.json({
             ok: true, firmato: finito,
             stato: submitters[0]?.status || "in attesa",
             completatoIl: submitters[0]?.completed_at || null,
-            documenti: (j?.documents || []).map((d: { url?: string; name?: string }) => ({ url: d.url, nome: d.name })),
+            archiviato, registro, archivioErrore,
         });
     }
 
