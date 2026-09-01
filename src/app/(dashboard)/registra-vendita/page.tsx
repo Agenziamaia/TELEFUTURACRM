@@ -7027,6 +7027,34 @@ function CRM() {
     return out;
   };
 
+  /* ═══ L'IMEI SI VEDE NEL CARRELLO ═══════════════════════════════════════
+     Luca 01/09: «tutte le volte che dentro Registra Vendita c'è un prodotto
+     che ha un IMEI devi riportarlo, magari su due righe».
+     Le sorgenti sono TRE e nessuna riga del carrello le teneva insieme:
+       · `seriale` — il pezzo sparato dal magazzino;
+       · `imei`    — l'usato, dal pannello di marginalità (può essere più
+                     d'uno: lì è una stringa separata da virgole);
+       · i CAMPI DEL CONTRATTO — il telefono a rate o finanziato, dove l'IMEI
+         sta nella pratica e sulla riga non compare affatto. È il caso della
+         voce automatica «Telefono TNP (listino)», cioè proprio quella che
+         Luca aveva davanti quando l'ha chiesto.
+     Per l'ultimo caso si riusa `telefoniDaScontrinare()`, che quei campi li
+     legge già per lo scontrino: una lettura sola, e il carrello dice la
+     stessa cosa che uscirà stampata. Si chiama solo per le righe che un
+     IMEI proprio non ce l'hanno, così non si scandiscono le pratiche per
+     ogni riga del carrello. */
+  const _imeiDellaRiga = (it) => {
+    const suRiga = String(it?.imei || it?.seriale || "").trim();
+    if (suRiga) return suRiga;
+    const modello = String(it?.model || "").trim().toUpperCase();
+    if (!modello) return "";
+    try {
+      const t = telefoniDaScontrinare().find(x => x.imei && String(x.descrizione || "").trim().toUpperCase() === modello);
+      return t ? t.imei : "";
+    } catch { return ""; }
+  };
+
+
   /* IL PREZZO CHE VA IN MAGAZZINO È QUELLO DEL CARRELLO (revisore 31/08).
      Qui si passava `pezzo.prezzo`, cioè `mag_unita.valore`: il valore con cui
      il pezzo è ENTRATO. Ma quello che il cliente paga è la cifra che sta nel
@@ -8398,6 +8426,12 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                 <span style={{fontSize:11,color:"var(--tf-6f42c1)",marginLeft:8}}>x{item.qty||1}</span>
                 {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
                 {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"var(--tf-17a2b8)",marginLeft:8}}>listino € {Number(item.importo||0).toFixed(2)}{(item.totalMargin!=null||item.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → margine € {Number(item.totalMargin??item.margin).toFixed(2)}</span>:null}</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
+                {/* L'IMEI SULLA SUA RIGA (Luca 01/09). Sta sotto e non in coda
+                    al nome perché un IMEI è quindici cifre: in fondo a una riga
+                    già piena di modello, quantità, marchio e prezzo non lo
+                    leggerebbe nessuno. Se il pezzo ne ha più d'uno arrivano
+                    separati da virgola e si vedono tutti. */}
+                {(()=>{const _im=_imeiDellaRiga(item);return _im?<div className="rvImeiRiga">IMEI {_im}</div>:null;})()}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 {/* prezzo bloccato dall'articolo: si vede, non si tocca */}
