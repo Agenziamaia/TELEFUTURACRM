@@ -50,7 +50,15 @@ async function recuperaScontrinate(da: string, a: string) {
         const nuove = [];
         for (const v of vendite) {
             if (visti.has(v.id)) continue;
-            const d = leggiRicaricaDaProdotto(v.prodotto);
+            /* ⚠️ PRIMA I DATI SCRITTI, POI QUELLI LETTI. Dal 01/09 la vendita
+               si porta dentro operatore e numero (`dettagli.paystore`): è un
+               dato, non una deduzione. La lettura della descrizione resta per
+               le righe di prima e per le ricariche sciolte, dove il numero sta
+               nel nome del prodotto. */
+            const dettP = ((v.dettagli || {}) as { paystore?: { operatore?: string; numero?: string; importo?: number } }).paystore;
+            const d = dettP?.operatore
+                ? { operatore: dettP.operatore, operatoreNome: nomeOperatoreCorto(dettP.operatore), numero: String(dettP.numero || ""), importo: Number(dettP.importo || 0) }
+                : leggiRicaricaDaProdotto(v.prodotto);
             /* ⚠️ ANCHE QUELLE SENZA NUMERO. «Ricarica Vodafone» venduta dal
                listino invece che dal pannello è una ricarica pagata di cui
                nessuno sa il numero: nasconderla non la fa sparire, la lascia

@@ -7608,7 +7608,11 @@ function CRM() {
           /* cosa serviva al magazzino: senza questi, se lo scarico fallisce
              non si può più ricostruire cosa andava tolto (revisore 29/08) */
           dettagli: { codice: mi.codice ?? null, costo: mi.costo ?? null, natura: mi.natura ?? null, scaricaMagazzino: mi.scaricaMagazzino ?? null, reparto: mi.reparto ?? null, barcode: mi.barcode ?? null,
-            product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null },
+            product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null,
+            /* i dati della ricarica anche qui: è l'altro ramo che scrive una
+               vendita, e una ricarica associata a una SIM passa proprio da
+               questo. Senza, di lei resterebbe solo «Ricarica Vodafone». */
+            paystore: mi.paystore ? { operatore: mi.paystore.operatore, numero: mi.paystore.numero || null, pezzi: mi.paystore.pezzi || null, importo: mi.paystore.importo ?? null } : null },
           is_demo: false
         }, mi));
       });
@@ -8008,7 +8012,13 @@ function CRM() {
         // MOD-44c: lo skip dei dati cliente resta TRACCIATO sulla vendita
         dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null,/* cosa serviva al magazzino: senza questi, se lo scarico fallisce non
    si può più ricostruire cosa andava tolto (revisore 29/08) */
-codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazzino:mi.scaricaMagazzino??null,reparto:mi.reparto??null,barcode:mi.barcode??null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
+codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazzino:mi.scaricaMagazzino??null,reparto:mi.reparto??null,barcode:mi.barcode??null,/* ⚠️ I DATI DELLA RICARICA STANNO QUI, nella stessa scrittura della
+   vendita. Il registro PayStore è una scrittura in più e può fallire — è
+   successo il primo giorno — ma se il numero e l'operatore sono nel
+   contratto, la riga si può sempre ricostruire. Senza, di una ricarica
+   associata alla SIM resterebbe solo «Ricarica Vodafone»: si saprebbe che è
+   stata venduta e non su quale numero. */
+paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero||null,pezzi:mi.paystore.pezzi||null,importo:mi.paystore.importo??null}:null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
         is_demo:false,
       },mi));
       const {error}=await supabase.from("contracts").insert(rows);
