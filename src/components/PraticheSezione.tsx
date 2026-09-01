@@ -266,6 +266,21 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
     const [pctAcconto, setPctAcconto] = useState<number | null>(null);
     const [accLibero, setAccLibero] = useState("");
     const [firma, setFirma] = useState<Firma>({});
+    /* ⚠️ IL PROTOCOLLO SI PRENDE PRIMA DELLA FIRMA. Nasceva al salvataggio, e
+       così il foglio firmato al banco e l'oggetto della mail dicevano
+       «(da assegnare)»: fra la carta e il database non restava nessun aggancio.
+       Si prende entrando nel passo Firma, una volta sola, e da lì in poi è
+       quello — sulla stampa, nella busta di DocuSeal e nel database. */
+    const [protocollo, setProtocollo] = useState("");
+    const protoPreso = useRef(false);
+    useEffect(() => {
+        if (step !== 4 || protoPreso.current) return;
+        protoPreso.current = true;
+        supabase.rpc("pratica_protocollo", { sez: sezione }).then(({ data, error }) => {
+            if (error || !data) { protoPreso.current = false; return; }
+            setProtocollo(String(data));
+        });
+    }, [step, sezione]);
     const [salvo, setSalvo] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
     const router = useRouter();
@@ -347,14 +362,18 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
         setSalvo(true); setErrore(null);
         let creata: { id: string; protocollo: string } | null = null;
         try {
-            const { data: proto, error: ep } = await supabase.rpc("pratica_protocollo", { sez: sezione });
-            if (ep) throw new Error(ep.message);
+            let proto = protocollo;
+            if (!proto) {
+                const { data, error: ep } = await supabase.rpc("pratica_protocollo", { sez: sezione });
+                if (ep) throw new Error(ep.message);
+                proto = String(data);
+            }
             const statoIniziale = sezione === "ordini" ? "inviato" : "aperta";
             const storia = [{ at: oggiIso(), chi: operatore, txt: sezione === "ordini" ? "Richiesta inviata all'amministrazione" : "Assistenza aperta al banco" }];
             if (accImporto > 0) storia.push({ at: oggiIso(), chi: operatore, txt: `Acconto di ${eur(accImporto)} da incassare in Registra Vendita` });
             storia.push({ at: oggiIso(), chi: operatore, txt: `Modulo firmato ${firma.via === "otp" ? "col codice" : "su carta"}, documento d'identità archiviato` });
             const payload = {
-                protocollo: String(proto), sezione, tipologia,
+                protocollo: proto, sezione, tipologia,
                 client_id: cliente.id,
                 cliente: {
                     etichetta: etichettaCliente(cliente), email: cliente.email, cellulare: cliente.cellulare,
@@ -490,9 +509,9 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                     </span>
                 </div>
             )}
-            {step === 4 && <PassoFirma cliente={cliente} firma={firma} onCambia={(f) => { setFirmaScaduta(false); setFirma(f); }} protocollo="nuova"
+            {step === 4 && <PassoFirma cliente={cliente} firma={firma} onCambia={(f) => { setFirmaScaduta(false); setFirma(f); }} protocollo={protocollo || "nuova"}
                 modulo={{
-                    protocollo: "(da assegnare)", tipologia, negozio, operatore,
+                    protocollo: protocollo || "(in assegnazione)", tipologia, negozio, operatore,
                     cliente: cliente ? {
                         etichetta: etichettaCliente(cliente), email: cliente.email || "", cellulare: cliente.cellulare || "",
                         cf_piva: cliente.cf_piva || "", indirizzo: cliente.indirizzo || "", cap: cliente.cap || "", citta: cliente.citta || "",
@@ -505,7 +524,7 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                 }} />}
 
             {step === 5 && (
-                <Riepilogo sezione={sezione} tipologia={tipologia} cliente={cliente} righe={righe} dev={dev} imei={imei}
+                <Riepilogo protocollo={protocollo} sezione={sezione} tipologia={tipologia} cliente={cliente} righe={righe} dev={dev} imei={imei}
                     totale={totale} accImporto={accImporto} voceAcconto={voceAcconto}
                     approvv={approvv} noteInt={noteInt} firma={firma} negozio={negozio} operatore={operatore} />
             )}
@@ -1157,6 +1176,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "invio non riuscito");
             onCambia({ ...firma, via: "otp", otp: "inviata", submissionId: j.submissionId, link: j.link });
+            if (j.mailErrore) setErrFirma("La richiesta è stata creata, ma l'email non è partita: " + j.mailErrore + ". Usa il link qui sotto, oppure mandagliela su WhatsApp.");
         } catch (e) { setErrFirma(e instanceof Error ? e.message : "invio non riuscito"); }
         setManda(false);
     };
@@ -1326,8 +1346,8 @@ function AllegatoRiga({ etichetta, nota, file, caricando, onScegli }: {
 }
 
 /* ── ⑥ RIEPILOGO ────────────────────────────────────────────────────────── */
-function Riepilogo({ sezione, tipologia, cliente, righe, dev, imei, totale, accImporto, voceAcconto, approvv, noteInt, firma, negozio, operatore }: {
-    sezione: Sezione; tipologia: string; cliente: ClienteTrovato | null; righe: Riga[];
+function Riepilogo({ protocollo, sezione, tipologia, cliente, righe, dev, imei, totale, accImporto, voceAcconto, approvv, noteInt, firma, negozio, operatore }: {
+    protocollo: string; sezione: Sezione; tipologia: string; cliente: ClienteTrovato | null; righe: Riga[];
     dev: Record<string, string>; imei: string; totale: number; accImporto: number; voceAcconto: string;
     approvv: string; noteInt: string; firma: Firma; negozio: string; operatore: string;
 }) {
@@ -1348,6 +1368,7 @@ function Riepilogo({ sezione, tipologia, cliente, righe, dev, imei, totale, accI
                 <p className="rvTab-min" style={{ margin: "3px 0 0" }}>Questo è quello che vede l&apos;amministrazione, e quello che il cliente si porta a casa.</p>
             </div>
             <div className="p-5 grid gap-4 border-b border-white/10" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
+                {dato("Protocollo", protocollo || "—", "è il numero che sta sul modulo firmato")}
                 {dato("Cliente", cliente ? etichettaCliente(cliente) : "—", [cliente?.cellulare, cliente?.email].filter(Boolean).join(" · "))}
                 {dato("Punto vendita", negozio, operatore)}
                 {dato("Tipo di intervento", t ? t.icona + " " + t.label : "—", t && t.approvvigionamento ? etichettaApprovv(approvv) : undefined)}
