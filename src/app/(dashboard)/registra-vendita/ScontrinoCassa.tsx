@@ -163,7 +163,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     /* LE RIGHE CHE MANCANO. Solo per i telefoni che nel carrello una riga non
        ce l'hanno — oggi il solo apparato FWA: per tutti gli altri la riga c'è
        già e aggiungerne una seconda vorrebbe dire scontrinare due volte. */
-    const righeOrfane = useMemo<RigaScontrino[]>(() => telefoni
+    const righeOrfane = useMemo<RigaScontrino[]>(() => (data?.sospesoId ? [] : telefoni)
+        /* SU UN CONTO RIPRESO NON SI RICOSTRUISCE NIENTE: le righe salvate
+           comprendono già quella dell'apparato, e rifarla vorrebbe dire
+           scontrinarlo due volte (revisore 01/09). */
         .filter(t => t.creaRiga && DOMANDE_TELEFONO[t.modo].scontrino)
         .map(t => ({
             description: `${t.descrizione}${t.imei ? ` · IMEI ${t.imei}` : ""}`,
@@ -401,7 +404,14 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         } catch (e: any) {
             return { ok: false, error: String(e?.message || e) };
         }
-    }, [data, aziendaSel]);
+    /* `itemsTutte` VA NELLE DIPENDENZE (revisore 01/09, difetto mio di
+       stanotte). Da quando le righe comprendono anche quella dell'apparato
+       FWA — che nasce dagli importi scritti nel modale — questa funzione
+       teneva la fotografia del PRIMO render, quando gli importi erano ancora
+       vuoti: il totale e la verifica usavano il valore vivo, la stampa quello
+       vecchio. Lo scontrino usciva senza l'apparato, o non usciva affatto
+       perché le righe erano zero. */
+    }, [data, aziendaSel, itemsTutte, soloServizi]);
 
     /* LA SCHEDA CHE SI CHIUDE: con una vendita non ancora scritta, chiudere la
        finestra la faceva sparire. Questo hook DEVE stare PRIMA del "return null"

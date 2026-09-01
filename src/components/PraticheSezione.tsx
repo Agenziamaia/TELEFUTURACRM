@@ -736,6 +736,13 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
         return () => { if (timer.current) clearTimeout(timer.current); };
     }, [q, negozio]);
 
+    /* IL PREZZO SI SCRIVE, NON SI CONVERTE A OGNI TASTO (revisore 01/09).
+       Il campo mostrava il NUMERO e convertiva a ogni battuta: digitando
+       «12,50», appena si arriva alla virgola `Number("12.")` fa 12, la virgola
+       sparisce dal campo, e il «5» che segue costruisce 125. Un ordine da
+       12,50 € diventava da 125,00 €, sull'acconto e sul modulo che il cliente
+       firma. Qui il testo resta com'è scritto finché non si esce dal campo. */
+    const [prezzoTxt, setPrezzoTxt] = useState<Record<number, string>>({});
     const aggiungi = (r: Riga) => { onCambia(righe.concat([r])); setQ(""); setHits([]); };
     const cambia = (i: number, patch: Partial<Riga>) => { const c = righe.slice(); c[i] = { ...c[i], ...patch }; onCambia(c); };
     const liberoOk = libero.descrizione.trim().length > 1 && Number(String(libero.prezzo).replace(",", ".")) > 0;
@@ -835,7 +842,13 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
                             </div>
                             <input value={r.qta} onChange={(e) => cambia(i, { qta: Math.max(1, Number(e.target.value) || 1) })}
                                 inputMode="numeric" className="rvIn" style={{ width: 70, padding: "7px 9px", fontSize: 12.5 }} />
-                            <input value={r.prezzo} onChange={(e) => cambia(i, { prezzo: Number(String(e.target.value).replace(",", ".")) || 0 })}
+                            <input value={prezzoTxt[i] ?? String(r.prezzo ?? "")}
+                                onChange={(e) => {
+                                    const t = e.target.value;
+                                    setPrezzoTxt((p) => ({ ...p, [i]: t }));
+                                    cambia(i, { prezzo: Number(t.replace(",", ".")) || 0 });
+                                }}
+                                onBlur={() => setPrezzoTxt((p) => { const n = { ...p }; delete n[i]; return n; })}
                                 inputMode="decimal" className="rvIn" style={{ width: 104, padding: "7px 9px", fontSize: 12.5 }} />
                             <input value={r.note} onChange={(e) => cambia(i, { note: e.target.value })}
                                 placeholder="colore, taglia…" className="rvIn" style={{ flex: "1 1 120px", padding: "7px 9px", fontSize: 12.5 }} />
