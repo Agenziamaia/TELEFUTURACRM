@@ -462,6 +462,34 @@ function Documenti() {
     const [fatta, setFatta] = useState("");
     const [fallita, setFallita] = useState("");
 
+    /* ── RIFAI IL DOCUMENTO (Luca 01/09 sera) ────────────────────────────────
+       «In Documenti, quando c'è scritto NON USCITO in rosso, un tasto per rifare
+       lo scontrino se non è uscito.» Rimette in coda la STESSA richiesta verso lo
+       STESSO registratore (nuovo job; l'originale in errore resta come storico).
+       ⚠️ Doppia stampa: su «esito ignoto» / «rimasto aperto» la carta può essere
+       uscita lo stesso → si CONFERMA guardando prima lo scontrino / la cassa. */
+    const [rifacendo, setRifacendo] = useState<Doc | null>(null);
+    const [rifaLoad, setRifaLoad] = useState(false);
+    const [rifaOk, setRifaOk] = useState("");
+    const [rifaKo, setRifaKo] = useState("");
+
+    const rifaiDocumento = async (d: Doc) => {
+        if (rifaLoad) return;
+        setRifaLoad(true); setRifaOk(""); setRifaKo("");
+        try {
+            const res = await fetch("/api/vendita/ristampa", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId: d.id }),
+            });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) { setRifaKo(j.error || "non sono riuscito a rimetterlo in coda"); return; }
+            setRifaOk("Rimesso in coda: la cassa lo ritira e lo stampa fra pochi secondi. Chiudi SuiteMobile se è un registratore Custom.");
+            carica();
+        } catch (e) {
+            setRifaKo("Errore di rete: " + ((e as Error)?.message || "riprova"));
+        } finally { setRifaLoad(false); }
+    };
+
     const inviaRichiesta = async () => {
         if (!chiedendo || inviando) return;
         setInviando(true); setFatta(""); setFallita("");
@@ -513,6 +541,38 @@ function Documenti() {
                         <div className="rvNota-t">Questo documento è «{es.et}»</div>
                         <div className="rvNota-s">{es.spiega}</div>
                         {d.result && <div className="rvTab-min">La cassa ha risposto: {d.result.slice(0, 300)}</div>}
+                        {/* RIFAI IL DOCUMENTO (Luca 01/09): il tasto sta QUI, dentro
+                            l'avviso rosso «non uscito», dove lo si legge. Solo sui
+                            documenti in errore; con conferma perché un fiscale non si
+                            batte per sbaglio, e con l'avviso doppia-stampa dove serve. */}
+                        {d.stato === "error" && (
+                            rifacendo?.id === d.id ? (
+                                <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                                    {es.et !== "non uscito" && (
+                                        <div className="rvNota-t">
+                                            ⚠️ Attenzione: la carta potrebbe essere <b>già uscita</b>.
+                                            {es.et === "rimasto aperto"
+                                                ? " Chiudi o annulla il documento DALLA CASSA, poi rifallo — se no lo batti due volte."
+                                                : " Guarda lo scontrino PRIMA di rifarlo — se no lo batti due volte."}
+                                        </div>
+                                    )}
+                                    <div className="rvPillRow mt-1">
+                                        <button onClick={() => rifaiDocumento(d)} disabled={rifaLoad} className="rvPill rvPill-on">
+                                            {rifaLoad ? "rimetto in coda…" : "✅ Sì, rifai lo scontrino"}
+                                        </button>
+                                        <button onClick={() => { setRifacendo(null); setRifaOk(""); setRifaKo(""); }} className="rvPill rvPill-sm">Annulla</button>
+                                    </div>
+                                    {rifaOk && <div className="rvNota rvNota-info mt-2"><div className="rvNota-t">✓ Rimesso in coda</div><div className="rvNota-s">{rifaOk}</div></div>}
+                                    {rifaKo && <div className="rvNota rvNota-ko mt-2"><div className="rvNota-t">Non rifatto</div><div className="rvNota-s">{rifaKo}</div></div>}
+                                </div>
+                            ) : (
+                                <div className="rvPillRow mt-2">
+                                    <button onClick={(e) => { e.stopPropagation(); setRifacendo(d); setRifaOk(""); setRifaKo(""); }} className="rvPill rvPill-sm">
+                                        🖨️ Rifai il documento
+                                    </button>
+                                </div>
+                            )
+                        )}
                     </div>
                 )}
                 <div className="rvDettT">
