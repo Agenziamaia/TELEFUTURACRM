@@ -474,8 +474,17 @@ const TIPI: [RegExp, string, string][] = [
        inizio riga resta: «display 6.5"» dentro la scheda di un telefono non
        deve farlo diventare un ricambio. E `glue` non prende le «Glue Case». */
     [/^\s*display|^\s*glue\b(?!\s*case)/i, "🧩", "Ricambi"],
-    [/tablet|ipad/i, "🧱", "Tablet"],
-    [/watch|orolog|band\b|smartband/i, "⌚", "Orologi e band"],
+    /* IL CONFINE DI PAROLA, di nuovo (revisore 01/09). `ipad` senza confine
+       prendeva «PENIPAD» — un pennino — e «tablet» da solo non prendeva i
+       «GALAXY TAB A9», che nel catalogo si scrivono «TAB» e basta: 27 tablet
+       veri stavano fra i Telefoni perché nel nome c'era «galaxy» o «alcatel».
+       Misurato sui 17.073 articoli: 37 tablet ritrovati, 8 persi e sono tutti
+       display o cover PER iPad, che le regole del codice classificano meglio. */
+    [/tablet|\bipad|\btab\s*[a-z]?\s*\d/i, "🧱", "Tablet"],
+    /* `watch` senza confine prendeva «case-i-WATCH», che è una custodia. Con
+       il confine si perderebbero però «applewatchultra2» e simili, scritti
+       tutti attaccati: per questo `apple\s*watch` sta lì accanto. */
+    [/\bwatch|apple\s*watch|smart\s*watch|orolog|band\b|smartband/i, "⌚", "Orologi e band"],
     [/e-?sim|esim/i, "📲", "eSIM"],
     [/\bsim\b|usim|iccid/i, "📶", "SIM"],
     /* L'USATO PRIMA DEI TELEFONI (confronto sui 17.061 articoli): 703 telefoni
@@ -493,7 +502,9 @@ const TIPI: [RegExp, string, string][] = [
        telefono — chi vende accessori scrive sempre cos'è (cover, cavo,
        pellicola) e quelle regole hanno già parlato molto più in alto. */
     [/smartphone|telefon|phone|iphone|galaxy|redmi|xiaomi|motorola|\bzte\b|nubia|\boppo\b|honor|realme|nokia|alcatel|huawei|pixel/i, "📱", "Telefoni"],
-    [/support|holder|stand|treppied/i, "📎", "Supporti"],
+    /* `stand` senza confine prende «STANDard»: una PlayStation 5 da 700 €
+       finiva fra i supporti. */
+    [/support|holder|\bstand\b|treppied/i, "📎", "Supporti"],
     [/charm|bijoux|portachiav|keyring/i, "✨", "Gadget e charm"],
     [/car\b|auto|ventol|parabrezza/i, "🚗", "Auto"],
     [/kasko|assicuraz|garanzi/i, "🧾", "Assicurazioni"],

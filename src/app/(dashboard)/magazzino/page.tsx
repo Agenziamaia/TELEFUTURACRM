@@ -265,7 +265,13 @@ export default function MagazzinoPage() {
             const { data } = await supabase.from("mag_articoli")
                 .select("codice,descrizione,prezzo,costo_ultimo,gruppo,sottogruppo,marca").in("codice", codici.slice(i, i + 300));
             (data ?? []).forEach((a: DatiArticolo & { codice: string }) =>
-                anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo, gruppo: a.gruppo, sottogruppo: a.sottogruppo, marca: a.marca }));
+                /* IL COSTO VA MESSO DENTRO, se no il riquadro «Valore a costo» conta
+                   solo i pezzi con seriale: la select lo chiedeva, la mappa lo
+                   buttava via, e `costo_ultimo` riletto dopo era sempre
+                   `undefined`. TypeScript non protestava perché nel tipo il
+                   campo è opzionale. Misurato: 106.622 € che non comparivano —
+                   300.525 mostrati contro 407.147 veri. */
+                anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo, costo_ultimo: a.costo_ultimo, gruppo: a.gruppo, sottogruppo: a.sottogruppo, marca: a.marca }));
         }
         setAnagrafica(anag);
         setQuantita(righeQ.map(r => ({
@@ -445,6 +451,11 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* LA CATEGORIA (Luca 01/09): una sola alla volta, come in Articoli —
        premuta isola, ripremuta libera. */
     const [famiglia, setFamiglia] = useState("");
+    /* LA FAMIGLIA DI UN CODICE, in un posto solo: serve alle giacenze, al
+       venduto e ai trasferimenti, e devono dire tutt'e tre la stessa cosa. */
+    const famDi = useCallback((codice: string, descrizione: string) =>
+        famigliaDi({ ...(anagrafica.get(codice) ?? { gruppo: null, sottogruppo: null }), descrizione, codice }),
+        [anagrafica]);
 
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
        compaiono anche quelli che qui non ci sono ma stanno in un altro
@@ -572,7 +583,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
             /* LA STESSA REGOLA DI ARTICOLI, non una seconda: se qui un display
                fosse «Accessori» e là «Ricambi», la stessa merce direbbe due
                cose diverse in due schermate della stessa sezione. */
-            famiglia: famigliaDi({ ...(anagrafica.get(codice) ?? { gruppo: null, sottogruppo: null }), descrizione, codice }),
+            famiglia: famDi(codice, descrizione),
             pezzi: [], qtaPer: [], altrovePer: {},
         });
 
@@ -681,7 +692,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
            Con la fotografia a una data passata gli stati non si applicano — i
            pulsanti sono spenti — quindi vale la giacenza e basta. */
         return out;
-    }, [unita, quantita, anagrafica, scelti, azienda, operatori, cerca, dataStorica, nelloScopo]);
+    }, [unita, quantita, anagrafica, famDi, scelti, azienda, operatori, cerca, dataStorica, nelloScopo]);
 
     /* I QUADRATONI CONTANO PRIMA DEL PROPRIO FILTRO (è la regola di Gestione
        Usati, dove `kpiData` applica tutto tranne gli stati): se contassero
@@ -698,22 +709,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        nessuno lo preme mai. Ma conta con LA STESSA REGOLA che poi filtra la
        tabella, così il numero grande è una promessa verificabile: premi,
        guardi la tabella, e le righe sono quelle. */
-    /* QUANTI CE NE SONO PER CATEGORIA. Si conta DOPO il quadratone acceso e
-       PRIMA della categoria stessa: è la regola dei filtri adattivi che Luca
-       aveva già chiesto il 31/08 («questi filtri devono essere adattivi, non
-       si aggiornano con la quantità aggiornata»). Se contasse dopo se stessa,
-       ogni pastiglia spenta direbbe zero e non si premerebbe mai. */
-    const perCategoria = useMemo(() => {
-        const regola = dataStorica ? (r: Riga) => r.giacenza !== 0 : REGOLA[quadro];
-        const m: Record<string, number> = {};
-        let tutte = 0;
-        for (const r of righeGrezze) {
-            if (!regola(r)) continue;
-            m[r.famiglia] = (m[r.famiglia] || 0) + 1;
-            tutte++;
-        }
-        return { m, tutte };
-    }, [righeGrezze, quadro, dataStorica, REGOLA]);
 
     /* I RIQUADRI, invece, contano DENTRO la categoria scelta: il numero grande
        promette «tante righe vedrai premendomi», e con una categoria accesa
@@ -856,6 +851,21 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 dati, "Venduto");
             return;
         }
+        /* CON I TRASFERIMENTI A SCHERMO L'EXCEL DEVE ESSERE QUELLO (revisore
+           01/09, regola 7). Prima cadeva nel ramo delle giacenze: uno guardava
+           la merce in viaggio, premeva Excel e si ritrovava un file di
+           magazzino che con quella domanda non c'entrava niente. */
+        if (vistaTrasf) {
+            const dati: CellaXlsx[][] = (inViaggioInCategoria ?? []).map(r => [
+                r.numero || "—", r.da_negozio, r.a_negozio, (r.creato_il || "").slice(0, 10),
+                r.codice || "—", r.descrizione || "—",
+                etichettaFamiglia(famDi(r.codice || "", r.descrizione || "")).nome,
+                r.seriale || "", r.seriale ? 1 : (r.quantita ?? 1)]);
+            scaricaXlsx(`merce_in_viaggio_${dove}_${oggi}.xlsx`,
+                ["Documento", "Da", "A", "Emesso il", "Codice", "Descrizione", "Categoria", "Seriale", "Qtà"],
+                dati, "In viaggio");
+            return;
+        }
         const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, etichettaFamiglia(r.famiglia).nome, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
         scaricaXlsx(`giacenze_${dove}_${oggi}.xlsx`,
             ["Codice", "Descrizione", "Categoria", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
@@ -866,19 +876,27 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        «altrove» non vogliono dire niente e al loro posto ci sono le due cose
        che Luca ha chiesto — quando è uscito e a quanto. */
     const COL_VENDUTO = ["IMEI / seriale", "Descrizione", "Negozio", "Venduto il", "Venduto da", "A listino", "Venduto a"];
+
+    /* IL FILTRO VALE ANCHE QUI (revisione 01/09). La fila delle categorie sta
+       sopra la tabella in tutt'e tre le viste: se filtrasse solo le giacenze,
+       nel Venduto e nei Trasferimenti sarebbe una fila di pulsanti che si
+       accendono e non fanno niente — un comando che mente (regola 7). */
+    const vendutiInCategoria = useMemo(
+        () => famiglia ? venduti.filter(v => famDi(v.codice, v.descrizione) === famiglia) : venduti,
+        [venduti, famiglia, famDi]);
     const vendutiOrdinati = useMemo(() => {
         const val = (r: PezzoVenduto, c: number): string | number =>
             c === 0 ? r.seriale : c === 1 ? r.descrizione : c === 2 ? r.negozio
                 : c === 3 ? (r.venduto_il || "") : c === 4 ? (r.venduto_da || "")
                     : c === 5 ? (r.costo ?? -1) : (r.prezzo ?? -1);
-        const out = [...venduti];
+        const out = [...vendutiInCategoria];
         out.sort((a, b) => {
             const va = val(a, sort.col), vb = val(b, sort.col);
             const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
             return sort.desc ? -cmp : cmp;
         });
         return out;
-    }, [venduti, sort]);
+    }, [vendutiInCategoria, sort]);
     /* LA MERCE USCITA DA QUI E NON ANCORA ARRIVATA. «In arrivo» racconta già
        i pezzi che vengono VERSO di noi (su un pezzo in viaggio il negozio è la
        destinazione); questa è l'altra faccia, che nessuna schermata mostrava:
@@ -916,6 +934,35 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         })();
         return () => { vivo = false; };
     }, [scelti]);
+
+    const inViaggioInCategoria = useMemo(
+        () => !inViaggio ? inViaggio
+            : famiglia ? inViaggio.filter(r => famDi(r.codice || "", r.descrizione || "") === famiglia) : inViaggio,
+        [inViaggio, famiglia, famDi]);
+
+    /* QUANTI CE NE SONO PER CATEGORIA. Si conta DOPO il quadratone acceso e
+       PRIMA della categoria stessa: è la regola dei filtri adattivi che Luca
+       aveva già chiesto il 31/08 («questi filtri devono essere adattivi, non
+       si aggiornano con la quantità aggiornata»). Se contasse dopo se stessa,
+       ogni pastiglia spenta direbbe zero e non si premerebbe mai. */
+    const perCategoria = useMemo(() => {
+        const m: Record<string, number> = {};
+        const metti = (f: string) => { m[f] = (m[f] || 0) + 1; };
+        /* OGNI VISTA CONTA LA PROPRIA MERCE: col Venduto a schermo, «Telefoni
+           132» dev'essere il numero di telefoni VENDUTI, non di quelli a
+           scaffale — se no il numero grande e la tabella sotto raccontano due
+           giornate diverse. */
+        if (vistaVenduto) { venduti.forEach(v => metti(famDi(v.codice, v.descrizione))); return { m, tutte: venduti.length }; }
+        if (vistaTrasf) { (inViaggio ?? []).forEach(r => metti(famDi(r.codice || "", r.descrizione || ""))); return { m, tutte: (inViaggio ?? []).length }; }
+        const regola = dataStorica ? (r: Riga) => r.giacenza !== 0 : REGOLA[quadro];
+        let tutte = 0;
+        for (const r of righeGrezze) {
+            if (!regola(r)) continue;
+            metti(r.famiglia);
+            tutte++;
+        }
+        return { m, tutte };
+    }, [righeGrezze, quadro, dataStorica, REGOLA, vistaVenduto, vistaTrasf, venduti, inViaggio, famDi]);
 
     /* PREMERE UN QUADRATONE. Stessa logica di Gestione Usati: i riquadri di
        stato si sommano in OR, e l'ultimo acceso non si spegne — una tabella
@@ -1057,14 +1104,14 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             const on = quadroAcceso(q.id);
                             const euro = false;
                             // il numero grande: quante righe vedrai premendo
-                            const n = q.id === "trasferiti" ? (inViaggio?.length ?? 0)
+                            const n = q.id === "trasferiti" ? (inViaggioInCategoria?.length ?? 0)
                                 : q.id === "venduto" ? venduti.length
                                     : euro ? (q.id === "val_vendita" ? conteggi.val_vendita : conteggi.val_acquisto)
                                         : conteggi.righe[q.id as FiltroId];
                             const testo = euro ? eurTondo(n) : n.toLocaleString("it-IT");
                             // la riga piccola: sempre «unità · secondo numero»
                             const sotto = euro ? `su ${conteggi.righe.disponibile.toLocaleString("it-IT")} articoli`
-                                : q.id === "trasferiti" ? `${q.unita} · ${new Set((inViaggio ?? []).map(r => r.id)).size} documenti`
+                                : q.id === "trasferiti" ? `${q.unita} · ${new Set((inViaggioInCategoria ?? []).map(r => r.id)).size} documenti`
                                     : q.id === "venduto" ? `${q.unita} · nel periodo scelto`
                                         : q.id === "sotto_zero" ? `${q.unita} · ${conteggi.pezzi.sotto_zero.toLocaleString("it-IT")} mancanti`
                                             : `${q.unita} · ${conteggi.pezzi[q.id as FiltroId].toLocaleString("it-IT")} pezzi`;
@@ -1182,7 +1229,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
                         ↺ Reset
                     </button>
-                    <button onClick={esporta} disabled={vistaVenduto ? !venduti.length : !righe.length} className="rvAzione rvAzione-sm">
+                    <button onClick={esporta} disabled={vistaVenduto ? !venduti.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
                         <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                     </button>
                 </div>
@@ -1274,13 +1321,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             <tr><th>Documento</th><th>Da → A</th><th>Emesso</th><th>Pezzo</th><th className="rvTab-c">Qtà</th></tr>
                         </thead>
                         <tbody>
-                            {inViaggio === null && <tr><td colSpan={5} className="rvTab-vuoto">Carico…</td></tr>}
-                            {inViaggio?.length === 0 && (
+                            {inViaggioInCategoria === null && <tr><td colSpan={5} className="rvTab-vuoto">Carico…</td></tr>}
+                            {inViaggioInCategoria?.length === 0 && (
                                 <tr><td colSpan={5} className="rvTab-vuoto">
                                     Niente in viaggio: tutto quello che è partito è già stato accettato.
                                 </td></tr>
                             )}
-                            {(inViaggio ?? []).map((r, i) => (
+                            {(inViaggioInCategoria ?? []).map((r, i) => (
                                 <tr key={`${r.id}-${r.seriale || r.codice || i}`} className="rvTab-riga">
                                     <td className="rvTab-cod">{r.numero || "—"}</td>
                                     <td className="rvTab-nome">{r.da_negozio} → {r.a_negozio}</td>
@@ -1385,7 +1432,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                             vedere tutti quelli come lui». */}
                                         <td className="rvTab-min">
                                             <button className={cn("rvCatTag", famiglia === r.famiglia && "rvCatTag-on")}
-                                                title={`Mostra solo ${etichettaFamiglia(r.famiglia).nome}`}
+                                                title={famiglia === r.famiglia ? "Togli il filtro" : `Mostra solo ${etichettaFamiglia(r.famiglia).nome}`}
                                                 onClick={(e) => { e.stopPropagation(); setFamiglia(f => f === r.famiglia ? "" : r.famiglia); }}>
                                                 {etichettaFamiglia(r.famiglia).icona} {etichettaFamiglia(r.famiglia).nome}
                                             </button>
