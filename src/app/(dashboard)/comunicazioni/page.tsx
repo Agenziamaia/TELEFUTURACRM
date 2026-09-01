@@ -102,6 +102,27 @@ function ComunicazioniInner() {
     // proprie comunicazioni, chi le ha create (es. lo store manager).
     const isAdminRicevute = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
 
+    /* ═══ IL REGISTRO: CHI HA FATTO COSA ══════════════════════════════════
+       Luca 01/09: «metti in piedi anche un sistema dove possiamo controllare
+       chi fa cosa anche su comunicazioni». Nasce da tre comunicazioni sparite
+       fra ieri sera e stamattina senza che si potesse dire chi le avesse
+       tolte, né cosa ci fosse scritto dentro.
+       Il registro tiene TITOLO E TESTO dentro di sé, non un rimando: di una
+       comunicazione cancellata deve restare abbastanza per riscriverla. */
+    type RigaRegistro = {
+        id: number; comunicazione_id: number | null; azione: string; chi_nome: string | null;
+        quando: string; titolo: string | null; kind: string | null; autore_nome: string | null;
+        destinatari: number | null; letture: number | null; contenuto: string | null; motivo: string | null;
+    };
+    const [registro, setRegistro] = useState<RigaRegistro[] | null>(null);
+    const [registroAperto, setRegistroAperto] = useState(false);
+    const [testoAperto, setTestoAperto] = useState<number | null>(null);
+    const caricaRegistro = async () => {
+        const { data } = await supabase.from("comunicazioni_log")
+            .select("*").order("quando", { ascending: false }).limit(200);
+        setRegistro((data ?? []) as RigaRegistro[]);
+    };
+
     const [list, setList] = useState<Comunicazione[]>([]);
     const [ricevute, setRicevute] = useState<Ricevuta[]>([]);       // tutte (per i contatori)
     const [mieRicevute, setMieRicevute] = useState<Map<number, Ricevuta>>(new Map());
@@ -386,17 +407,44 @@ function ComunicazioniInner() {
         });
     }, [visibili, filtroDa, filtroA, filtroNegozio, filtroPersona, filtroBrand, filtroRuolo, utentiAttivi]);
 
-    // ELIMINAZIONE (Luca 31/07): l'autore o l'amministrazione fanno pulizia —
-    // via anche le ricevute collegate
+    /* ═══ CHI PUÒ TOGLIERE UNA COMUNICAZIONE ══════════════════════════════
+       Luca 01/09, dopo che tre comunicazioni sono sparite fra ieri sera e
+       stamattina: «lascia questi permessi solo all'admin; per quanto riguarda
+       gli altri, ognuno deve potersi cancellare le sue SOLO ENTRO 10 MINUTI
+       dalla comunicazione; l'admin può cancellarle tutte in qualsiasi
+       momento — io non ho cancellato un cazzo, quindi qualcuno ha cliccato
+       sul pulsante sbagliato».
+       Prima il cestino stava su OGNI comunicazione per quattro ruoli
+       (amministrativo, admin, dev, direttore generale) più l'autore: un clic
+       e spariva per tutti, con le sue ricevute di lettura.
+       QUESTO CONTROLLO È SOLO LA FACCIA: quella vera sta nel server, che
+       rilegge ruolo e orario dal database. Qui si nasconde un pulsante che
+       non deve tentare; là si impedisce di premerlo comunque. */
+    const MINUTI_RIPENSAMENTO = 10;
+    const minutiDa = (c: Comunicazione) => {
+        const t = new Date((c as { created_at?: string }).created_at || 0).getTime();
+        return t ? (Date.now() - t) / 60000 : Infinity;
+    };
+    const puoEliminare = (c: Comunicazione) =>
+        role === "admin" || (c.created_by === user?.id && minutiDa(c) <= MINUTI_RIPENSAMENTO);
+
+    // ELIMINAZIONE: passa dal server, che controlla ruolo e finestra dei 10
+    // minuti e SCRIVE NEL REGISTRO chi ha tolto cosa — con dentro titolo e
+    // testo, così una comunicazione sparita si può almeno ricostruire.
     const eliminaComunicazione = async (com: Comunicazione) => {
-        if (!window.confirm(`Eliminare la comunicazione "${com.title}"?\nSparisce per tutti, insieme alle sue ricevute.`)) return;
-        // prima le ricevute (nessuna FK a DB): se il delete fallisce ci si
-        // ferma, altrimenti resterebbero righe orfane senza comunicazione
-        const { error: eRic } = await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", com.id);
-        if (eRic) { alert("Eliminazione non riuscita (ricevute): " + eRic.message); return; }
-        const { error } = await supabase.from("comunicazioni").delete().eq("id", com.id);
-        if (error) { alert("Eliminazione non riuscita: " + error.message); return; }
-        fetchAll();
+        if (!window.confirm(`Eliminare la comunicazione "${com.title}"?\nSparisce per tutti, insieme alle sue ricevute.\n\nResterà scritto nel registro che sei stato tu.`)) return;
+        try {
+            const r = await fetch("/api/comunicazioni/elimina", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: com.id }),
+            });
+            const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string; avviso?: string }));
+            if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
+            if (j.avviso) alert(j.avviso);
+            fetchAll();
+        } catch (e) {
+            alert("Eliminazione non riuscita: " + ((e as Error)?.message || "errore"));
+        }
     };
 
     const [salvando, setSalvando] = useState(false);
@@ -641,6 +689,19 @@ function ComunicazioniInner() {
                     <p className="text-slate-400">Avvisi e aggiornamenti importanti dal back office</p>
                 </div>
                 <div className="flex items-center gap-2.5">
+                    {/* IL REGISTRO sta accanto alle comunicazioni, non in un
+                        pannello amministrativo lontano: si guarda nel momento
+                        in cui ci si accorge che manca qualcosa. */}
+                    {isAdminRicevute && (
+                        <button
+                            type="button"
+                            onClick={() => { const n = !registroAperto; setRegistroAperto(n); if (n && registro === null) caricaRegistro(); }}
+                            title="Chi ha creato, modificato o tolto una comunicazione"
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-500/40 bg-slate-500/10 hover:bg-slate-500/20 text-slate-200 text-sm font-bold transition-colors"
+                        >
+                            🧾 Registro
+                        </button>
+                    )}
                     {/* CALDERONE in bella vista (segnalazione Luca 10/08: "non vedo
                         il pannello" — stava solo dentro il form col tipo Sprint) */}
                     {canCreate && (
@@ -681,6 +742,63 @@ function ComunicazioniInner() {
                     </button>
                 </div>
             </div>
+
+            {/* ═══ IL REGISTRO ═══════════════════════════════════════════════
+                Una riga per ogni cosa successa a una comunicazione: creata,
+                modificata, tolta — con chi, quando, e quante persone
+                l'avevano già letta nel momento in cui è sparita. Il testo si
+                apre cliccando: di una comunicazione cancellata deve restare
+                abbastanza per riscriverla. */}
+            {registroAperto && (
+                <div className="mb-6 glass-card p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <div className="text-white font-bold text-sm">🧾 Registro delle comunicazioni</div>
+                            <div className="text-slate-400 text-xs mt-0.5">chi ha creato, modificato o tolto — le ultime 200</div>
+                        </div>
+                        <button onClick={caricaRegistro} className="text-xs font-semibold text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-500/40 hover:bg-slate-500/10">↻ aggiorna</button>
+                    </div>
+                    {registro === null ? <div className="text-slate-400 text-sm py-4 text-center">Carico…</div>
+                        : registro.length === 0 ? <div className="text-slate-400 text-sm py-4 text-center">Ancora niente. Da adesso ogni movimento resta scritto qui.</div>
+                        : (
+                        <div className="space-y-1.5">
+                            {registro.map((r) => (
+                                <div key={r.id} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                                        <span className={cn("px-2 py-0.5 rounded-md font-bold",
+                                            r.azione === "eliminata" ? "bg-rose-500/15 text-rose-300"
+                                                : r.azione === "creata" ? "bg-emerald-500/15 text-emerald-300"
+                                                    : "bg-amber-500/15 text-amber-300")}>
+                                            {r.azione}
+                                        </span>
+                                        <span className="text-white font-semibold">{r.titolo || "(senza titolo)"}</span>
+                                        <span className="text-slate-400">
+                                            da <b className="text-slate-200">{r.chi_nome || "ignoto"}</b>
+                                            {" · "}{new Date(r.quando).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                        {r.autore_nome && r.autore_nome !== r.chi_nome && (
+                                            <span className="text-slate-500">scritta da {r.autore_nome}</span>
+                                        )}
+                                        {r.azione === "eliminata" && r.letture != null && r.letture > 0 && (
+                                            <span className="text-rose-300/80">{r.letture} l&apos;avevano già letta</span>
+                                        )}
+                                        {r.motivo && <span className="text-slate-500 italic">{r.motivo}</span>}
+                                        {r.contenuto && (
+                                            <button onClick={() => setTestoAperto(testoAperto === r.id ? null : r.id)}
+                                                className="ml-auto text-slate-400 hover:text-white font-semibold">
+                                                {testoAperto === r.id ? "nascondi il testo" : "vedi il testo"}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {testoAperto === r.id && r.contenuto && (
+                                        <div className="mt-2 p-2.5 rounded-md bg-black/25 text-slate-300 text-xs whitespace-pre-wrap">{r.contenuto}</div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {error && (
                 <div className="mb-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
@@ -815,7 +933,7 @@ function ComunicazioniInner() {
                                             <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
                                         </span>
                                     )}
-                                    {(isAdminRicevute || mia) && (
+                                    {puoEliminare(com) && (
                                         <button onClick={() => eliminaComunicazione(com)} title="Elimina comunicazione (per tutti)"
                                             className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                                             <Trash2 className="w-4 h-4" />

@@ -1557,8 +1557,23 @@ export default function Calendario() {
             if (invitoId) {
                 const { data: ric } = await supabase.from("comunicazioni_ricevute").select("user_id, letto_il").eq("comunicazione_id", invitoId);
                 avvisati = ((ric ?? []) as { user_id: string; letto_il: string | null }[]).filter((r) => r.letto_il).map((r) => r.user_id);
-                await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", invitoId);
-                await supabase.from("comunicazioni").delete().eq("id", invitoId);
+                /* DAL SERVER, come ogni cancellazione di una comunicazione
+                   (01/09): dal browser il diritto di cancellare è stato tolto,
+                   perché tre comunicazioni sono sparite senza che si sapesse
+                   chi. L'API lascia passare l'annullamento di una riunione a
+                   chi può annullarla, e scrive nel registro che è stata tolta
+                   perché la riunione non c'è più — non «cancellata e basta». */
+                const rEl = await fetch("/api/comunicazioni/elimina", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: invitoId, motivo: `riunione annullata: ${m.title} del ${m.date}` }),
+                });
+                const jEl = await rEl.json().catch(() => ({} as { ok?: boolean; error?: string }));
+                if (!rEl.ok || !jEl.ok) {
+                    /* SI FERMA, non si prosegue in silenzio: se l'invito resta
+                       e la riunione sparisce, la gente si presenta lo stesso. */
+                    alert("Non sono riuscito a togliere l'invito: " + (jEl.error || "riprova") + "\n\nLa riunione NON è stata annullata.");
+                    return;
+                }
             }
             // 2. avviso in BACHECA solo a chi l'aveva vista
             if (avvisati.length) {
