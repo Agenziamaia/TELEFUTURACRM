@@ -20,6 +20,8 @@
 // si scarta, altrimenti un giorno ci si ritrova cinque ore contate come cinque
 // giorni.
 
+import { pdfjsServer } from "@/lib/pdfServer";
+
 export type SaldoBusta = { giorni: number | null; riga: string | null; motivo?: string; contesto?: string[] };
 
 /* Quando non si trova il saldo, serve VEDERE com'è fatto il cedolino: si
@@ -124,7 +126,7 @@ export function saldoFerieDaTesto(testo: string): SaldoBusta {
  *  come frammenti sparsi e senza questo «FERIE» e «4,33333» finirebbero
  *  separati. */
 export async function testoPdf(dati: Uint8Array): Promise<string> {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdfjs = await pdfjsServer();
     const doc = await pdfjs.getDocument({ data: dati, isEvalSupported: false, useSystemFonts: false }).promise;
     const fuori: string[] = [];
     for (let p = 1; p <= doc.numPages; p++) {

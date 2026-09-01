@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { accesso } from "@/lib/permessiServer";
 import { moduloHtml, type DatiModulo } from "@/lib/moduloPratica";
 import { inviaEmail } from "@/lib/email";
+import { pdfjsServer, paginePdf } from "@/lib/pdfServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,21 +89,38 @@ async function posizionaCampi(k: string, tpl: Record<string, unknown>): Promise<
 
         const res = await fetch(doc.url);
         if (!res.ok) return { errore: `PDF non scaricabile (${res.status})` };
-        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(await res.arrayBuffer()), isEvalSupported: false, useSystemFonts: false }).promise;
+        const byte = Buffer.from(await res.arrayBuffer());
 
+        /* I MARCATORI, se pdfjs parte. Se non parte — succede: dentro il
+           pacchetto di produzione il suo worker può non esserci — non si
+           rinuncia alla firma: si contano le pagine leggendo i byte e si
+           mettono i campi dove il modulo li disegna sempre, cioè in fondo
+           all'ultima pagina. Meno preciso, ma la firma finisce sul foglio. */
         const trovati: Record<string, { page: number; x: number; y: number }> = {};
-        for (let p = 1; p <= pdf.numPages; p++) {
-            const pagina = await pdf.getPage(p);
-            const vp = pagina.getViewport({ scale: 1 });
-            const cont = await pagina.getTextContent();
-            for (const it of cont.items as { str: string; transform: number[] }[]) {
-                const m = String(it.str || "").match(/@@(FIRMA1|FIRMA2|DATA)@@/);
-                if (!m || trovati[m[1]]) continue;
-                trovati[m[1]] = { page: p - 1, x: it.transform[4] / vp.width, y: 1 - it.transform[5] / vp.height };
+        let ultima = Math.max(0, paginePdf(byte) - 1);
+        try {
+            const pdfjs = await pdfjsServer();
+            const pdf = await pdfjs.getDocument({ data: new Uint8Array(byte), isEvalSupported: false, useSystemFonts: false }).promise;
+            ultima = Math.max(0, pdf.numPages - 1);
+            for (let p = 1; p <= pdf.numPages; p++) {
+                const pagina = await pdf.getPage(p);
+                const vp = pagina.getViewport({ scale: 1 });
+                const cont = await pagina.getTextContent();
+                for (const it of cont.items as { str: string; transform: number[] }[]) {
+                    const m = String(it.str || "").match(/@@(FIRMA1|FIRMA2|DATA)@@/);
+                    if (!m || trovati[m[1]]) continue;
+                    trovati[m[1]] = { page: p - 1, x: it.transform[4] / vp.width, y: 1 - it.transform[5] / vp.height };
+                }
             }
+        } catch { /* si va di ripiego */ }
+
+        if (!trovati.FIRMA1 || !trovati.FIRMA2) {
+            /* ripiego: il blocco firme sta in fondo, affiancato — sinistra e
+               destra, sopra il piè di pagina */
+            trovati.FIRMA1 = { page: ultima, x: 0.09, y: 0.86 };
+            trovati.FIRMA2 = { page: ultima, x: 0.55, y: 0.86 };
+            trovati.DATA = { page: ultima, x: 0.13, y: 0.91 };
         }
-        if (!trovati.FIRMA1 || !trovati.FIRMA2) return { errore: "non ho trovato i marcatori delle firme nel PDF" };
 
         const uuid = doc.uuid;
         const area = (t: { page: number; x: number; y: number }, w: number, h: number) => ([{
