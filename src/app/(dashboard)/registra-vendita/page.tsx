@@ -1523,6 +1523,35 @@ const _compBrand = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, ""
 const _brandListino = (b) => _compBrand(b);
 // RV-03: il telefono a rate BUSINESS ha marginalita' solo su WindTre — per
 // Vodafone business street price visibile ma margine nascosto (come Fastweb).
+/* ═══ QUANTO CI GUADAGNA L'AZIENDA SU UN TELEFONO ═══════════════════════════
+   Luca 01/09: «un conto è lo scontrino, un conto è quello che guadagna
+   l'azienda». Sullo scontrino esce quello che il cliente paga; il profitto
+   invece è una percentuale dello STREET PRICE del telefono — ed è il motivo
+   per cui i listini sono stati caricati in Documentazione.
+
+   LE REGOLE, parole sue:
+     · WindTre  → 5%
+     · Vodafone → 4%, MA fuori tutta la serie S di Samsung, i Fold, i Flip e
+                  tutto Apple: lì il margine è zero
+     · Fastweb  → zero (e Vodafone business, regola di prima)
+
+   PERCHÉ NON RISCRIVO IL LISTINO: le percentuali dentro `listini_terminali`
+   arrivano dai file caricati, e oggi non tornano — su Vodafone TUTTE le 105
+   righe stanno al 4%, comprese le 34 che vanno escluse; su WindTre 506 righe
+   stanno al 4% invece del 5%. Correggere 640 righe di dati alle cinque del
+   mattino è il modo migliore per sbagliarne una: la regola sta qui, applicata
+   al volo, e il listino resta la fonte di quello che dice.
+   Le righe WindTre che il listino porta SOPRA il 5% (6, 10, 15, 20%) si
+   tengono: sono poche e sono chiaramente volute, e schiacciarle a 5 vorrebbe
+   dire cancellare una promozione. */
+const _FUORI_MARGINE_VF = /iphone|ipad|apple|airpods|watch|galaxy\s*s\d|galaxy\s*z|fold|flip/i;
+const _pctMargine = (brandComp, modello, pctListino) => {
+  const pl = Number(pctListino ?? 0);
+  if (brandComp === "WINDTRE") return Math.max(pl, 5);
+  if (brandComp === "VODAFONE") return _FUORI_MARGINE_VF.test(String(modello || "")) ? 0 : Math.max(pl, 4);
+  return pl;
+};
+
 const _senzaMargine = () => _compBrand(_brandVendita) === "FASTWEB" || (_compBrand(_brandVendita) === "VODAFONE" && String(_tipoVendita || "").toLowerCase() === "business");
 const cercaListino = async (term) => {
   const tutti = await caricaListini();
@@ -5769,7 +5798,7 @@ function CRM() {
       if(cand.length&&prezzi.length===1){
         const r=cand[0];
         const pz=Number(r.prezzo||0);
-        const pct=_senzaMargine()||margini.length>1?0:Number(r.margine_pct??4);
+        const pct=_senzaMargine()||margini.length>1?0:_pctMargine(_compBrand(_brandVendita),mod,r.margine_pct);
         const mg=pz*pct/100;
         return {model:mod,price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false,fontePrezzo:"listino"};
       }
