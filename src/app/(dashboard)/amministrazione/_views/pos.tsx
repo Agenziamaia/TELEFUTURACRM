@@ -38,6 +38,44 @@ export function CassaScontriniView() {
     const [errore, setErrore] = useState("");
     const [fNeg, setFNeg] = useState("");
     const [fKind, setFKind] = useState("");
+    /* ═══ L'INTERRUTTORE FISCALE (Luca 01/09) ═══════════════════════════════
+       «Come facciamo ad abilitarli fiscalmente?» Fin qui `test_mode` si
+       cambiava solo a mano sul database: tutti e quindici i negozi stampano
+       un DOCUMENTO NON FISCALE (PROVA) e il registratore non viene coinvolto.
+       Da qui si accende, un negozio alla volta — perché così si accende: uno,
+       si guarda che gli scontrini escano, e poi gli altri. */
+    const [modal, setModal] = useState<{
+        puoi: boolean;
+        senzaReparto: string[]; articoliSenzaReparto: number;
+        negozi: { negozio: string; fiscale: boolean; haStampato: boolean; registratori: { azienda: string; rt_url: string }[] }[];
+    } | null>(null);
+    const [cambio, setCambio] = useState<{ negozio: string; fiscale: boolean } | null>(null);
+    const [salvo, setSalvo] = useState("");
+
+    const caricaModalita = async () => {
+        try {
+            const r = await fetch("/api/vendita/modalita-fiscale");
+            const j = await r.json().catch(() => ({}));
+            if (j?.ok) setModal(j);
+        } catch { /* il pannello resta senza: non è il cuore della pagina */ }
+    };
+    useEffect(() => { caricaModalita(); }, []);
+
+    const applicaModalita = async () => {
+        if (!cambio) return;
+        setSalvo(cambio.negozio);
+        try {
+            const r = await fetch("/api/vendita/modalita-fiscale", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(cambio),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j.ok) throw new Error(j.error || "non riuscito");
+            setCambio(null);
+            await caricaModalita();
+        } catch (e: any) { setErrore(String(e?.message || e)); }
+        finally { setSalvo(""); }
+    };
 
     const load = async () => {
         setLoading(true); setErrore("");
@@ -83,6 +121,75 @@ export function CassaScontriniView() {
                 </div>
                 <button onClick={load} className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10">↻ Aggiorna</button>
             </div>
+
+            {/* ═══ MODALITÀ FISCALE ═══════════════════════════════════════════
+                Un interruttore per negozio. Non è un'impostazione: è il momento
+                in cui un punto vendita comincia a emettere documenti commerciali
+                veri, che si annullano solo con una procedura fiscale. Per questo
+                si preme uno alla volta e con una conferma che dice cosa cambia. */}
+            {modal?.puoi && (
+                <div className="glass-panel rounded-2xl p-4">
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1">🧾 Modalità fiscale</div>
+                    <p className="text-[12px] text-slate-500 leading-relaxed mb-3">
+                        In <b className="text-slate-400">prova</b> il CRM stampa un promemoria non fiscale e il registratore telematico non viene coinvolto.
+                        In <b className="text-emerald-300">fiscale</b> esce il documento commerciale vero.
+                        Si accende un negozio alla volta: il primo giorno se ne accende uno, si guarda che gli scontrini escano, e poi gli altri.
+                    </p>
+
+                    {(modal.senzaReparto.length > 0 || modal.articoliSenzaReparto > 0) && (
+                        <div className="rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 mb-3 text-xs text-amber-200">
+                            <b>Da sistemare prima di accendere.</b> In prova il reparto IVA non viene controllato; in fiscale una riga senza reparto
+                            fa <b>rifiutare l&apos;intera vendita</b>, col cliente davanti.
+                            {modal.senzaReparto.length > 0 && <div className="mt-1">Voci di catalogo senza reparto: {modal.senzaReparto.join(", ")}</div>}
+                            {modal.articoliSenzaReparto > 0 && <div className="mt-1">Articoli di magazzino senza reparto: <b>{modal.articoliSenzaReparto}</b> — li trovi in Magazzino → Articoli → «Da sistemare».</div>}
+                        </div>
+                    )}
+
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {modal.negozi.map((n) => (
+                            <div key={n.negozio} className={"rounded-xl border px-3 py-2.5 flex items-center justify-between gap-2 "
+                                + (n.fiscale ? "bg-emerald-500/10 border-emerald-400/40" : "bg-white/[0.03] border-white/10")}>
+                                <div className="min-w-0">
+                                    <div className="text-sm font-semibold text-white truncate">{n.negozio}</div>
+                                    <div className="text-[11px] text-slate-400">
+                                        {n.fiscale ? "documenti fiscali" : "documenti di prova"}
+                                        {" · "}
+                                        {n.registratori.length ? `${n.registratori.length} registrator${n.registratori.length === 1 ? "e" : "i"}` : <span className="text-rose-300">nessun registratore</span>}
+                                        {!n.haStampato && <span className="text-amber-300"> · non stampa da 24h</span>}
+                                    </div>
+                                </div>
+                                <button onClick={() => setCambio({ negozio: n.negozio, fiscale: !n.fiscale })}
+                                    disabled={salvo === n.negozio || (!n.fiscale && !n.registratori.length)}
+                                    className={"shrink-0 px-3 py-2 rounded-lg text-xs font-bold border disabled:opacity-40 "
+                                        + (n.fiscale ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                                            : "bg-emerald-500/20 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/30")}>
+                                    {salvo === n.negozio ? "…" : n.fiscale ? "Rimetti in prova" : "Accendi il fiscale"}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {cambio && (
+                        <div className="mt-3 rounded-xl bg-black/30 border border-white/15 p-3">
+                            <div className="text-sm font-semibold text-white mb-1">
+                                {cambio.fiscale ? `Accendere la cassa fiscale a ${cambio.negozio}?` : `Rimettere ${cambio.negozio} in prova?`}
+                            </div>
+                            <div className="text-xs text-slate-400 mb-3">
+                                {cambio.fiscale
+                                    ? <>Da adesso ogni vendita di quel negozio emette un <b className="text-emerald-300">documento commerciale vero</b>, che si annulla solo con una procedura fiscale. Il registratore deve essere acceso e collegato.</>
+                                    : <>Da adesso quel negozio torna a stampare promemoria <b>non fiscali</b>. Gli incassi continuano a essere registrati nel CRM, ma il cliente non riceve un documento valido.</>}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setCambio(null)} className="px-3 py-2 rounded-lg text-xs font-semibold bg-white/5 border border-white/10 text-slate-300">Annulla</button>
+                                <button onClick={applicaModalita} disabled={!!salvo}
+                                    className="px-3 py-2 rounded-lg text-xs font-bold bg-emerald-500/25 border border-emerald-400/50 text-emerald-100 disabled:opacity-40">
+                                    {salvo ? "…" : cambio.fiscale ? "Sì, accendi" : "Sì, rimetti in prova"}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Stat label="Incassato oggi (cassa)" val={eur(stats.incassatoOggi)} cls="text-emerald-300" />
