@@ -1194,7 +1194,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             className={cn("rvPill", !famiglia && "rvPill-on")}>
                             Tutte <b className="rvPillN">{perCategoria.tutte.toLocaleString("it-IT")}</b></button>
                         {[...FAMIGLIE, ALTRO].map(f => {
-                            if (!categorieVive.has(f.id)) return null;   // in magazzino non c'è proprio
+                            /* LA CATEGORIA SCELTA RESTA SEMPRE A SCHERMO, anche se
+                               con questi filtri non ha più niente dentro: se
+                               sparisse, il filtro resterebbe acceso su una
+                               tabella vuota e la sua pastiglia — l'unico modo di
+                               spegnerlo — non ci sarebbe più. */
+                            if (!categorieVive.has(f.id) && famiglia !== f.id) return null;   // in magazzino non c'è proprio
                             const n = perCategoria.m[f.id] || 0;
                             return (
                                 <button key={f.id} onClick={() => setFamiglia(x => x === f.id ? "" : f.id)}
