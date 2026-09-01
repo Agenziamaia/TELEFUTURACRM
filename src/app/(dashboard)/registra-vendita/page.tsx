@@ -5767,6 +5767,10 @@ function CRM() {
         for(let k=0;k<(Number(pz.n)||1);k++){
           voci.push({operatore:ps.operatore,operatoreNome:ps.operatoreNome,numero:ps.numero,
             taglio:pz.etichetta,importo:Number(pz.valore)||0,
+            /* nata insieme a una SIM o venduta da sola: sono due cose diverse
+               e vanno lette diverse — la prima, se non parte, lascia il cliente
+               con una SIM senza credito */
+            conAttivazione:!!ps.daSim,
             // la riga di vendita di QUESTA ricarica, non la prima della vendita
             contractId:(idPerVoce&&idPerVoce.get&&idPerVoce.get(m))||null});
         }

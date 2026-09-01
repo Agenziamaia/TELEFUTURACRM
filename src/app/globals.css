@@ -2371,3 +2371,5 @@ html.light .rvSotto-f{color:#1e2952}
 .rvSub-ok{margin-top:12px;border-color:rgba(52,211,153,.42)}
 .rvFattaRiga{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .rvFattaIc{font-size:26px}
+/* il segno della ricarica nata da un'attivazione: piccolo, accanto al taglio */
+.psConSim{margin-left:7px;font-size:10px;opacity:.75}

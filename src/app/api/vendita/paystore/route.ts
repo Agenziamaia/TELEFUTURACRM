@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 
 type Voce = {
     operatore?: string; operatoreNome?: string; numero?: string;
-    taglio?: string; importo?: number; contractId?: string | null;
+    taglio?: string; importo?: number; contractId?: string | null; conAttivazione?: boolean;
 };
 
 /* Ogni ricarica nasce DA FARE: scontrinata e incassata, credito non ancora
@@ -95,6 +95,7 @@ export async function POST(request: Request) {
             importo,
             stato: STATO_INIZIALE,
             contract_id: v.contractId || null,
+            con_attivazione: v.conAttivazione ?? null,
             azienda,
         });
     }

@@ -23,6 +23,8 @@ type Riga = {
     /* con quale partita IVA è stata fatturata. Vuota quando il carrello era
        misto: lì la società la decide la merce, e la sa solo lo scontrino. */
     azienda: string | null;
+    /* nata con una SIM o venduta da sola */
+    con_attivazione: boolean | null;
 };
 
 const giorno = (iso: string) => iso.slice(0, 10);
@@ -108,6 +110,72 @@ async function recuperaScontrinate(da: string, a: string) {
     }
 }
 
+/* ═══ LA SOCIETÀ, DALLO SCONTRINO CHE È USCITO ═════════════════════════════
+   Luca 01/09: «come fa su alcune ricariche a non uscire la società? Se è
+   uscito uno scontrino dovremmo saperlo».
+
+   Ha ragione. La società veniva scritta solo quando il modale la mandava —
+   cioè quando il carrello era di soli servizi — e restava vuota su tutte le
+   vendite miste, che sono la maggioranza. Ma il dato esiste: ogni scontrino
+   fiscale messo in coda porta `meta.azienda`, perché è quella che decide da
+   quale registratore esce la carta.
+
+   Qui si va a prenderlo: stesso negozio, lo scontrino più vicino nel tempo.
+
+   ⚠️ SE NON È CERTO, NON SI SCRIVE. Quando nella finestra ci sono due
+   scontrini di società DIVERSE non si indovina: la colonna resta vuota. Una
+   società sbagliata su un dato fiscale è peggio di una società mancante,
+   perché quella mancante si vede. */
+async function completaSocieta(da: string, a: string) {
+    try {
+        const { data: senza } = await supabase.from("paystore_ricariche")
+            .select("id, negozio, creata_il")
+            .is("azienda", null)
+            .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
+            .limit(5000);
+        if (!senza?.length) return;
+
+        const { data: job } = await supabase.from("print_jobs")
+            .select("negozio, created_at, meta")
+            .eq("kind", "fiscal_receipt")
+            /* la finestra è più larga del periodo: una ricarica delle 00:05
+               può appartenere a uno scontrino del giorno prima */
+            .gte("created_at", new Date(new Date(da + "T00:00:00Z").getTime() - 3600000).toISOString())
+            .lte("created_at", new Date(new Date(a + "T23:59:59Z").getTime() + 3600000).toISOString())
+            .limit(20000);
+        if (!job?.length) return;
+
+        const perNegozio: Record<string, { t: number; az: string }[]> = {};
+        for (const j of job) {
+            const az = (j.meta as { azienda?: string } | null)?.azienda;
+            if (!az || !j.negozio) continue;
+            (perNegozio[j.negozio] ||= []).push({ t: new Date(j.created_at).getTime(), az });
+        }
+
+        const daScrivere: { id: string; azienda: string }[] = [];
+        for (const r of senza) {
+            const lista = perNegozio[String(r.negozio || "")] || [];
+            const t = new Date(r.creata_il).getTime();
+            /* lo scontrino esce POCO PRIMA della registrazione (la vendita si
+               scrive a scontrino emesso): si guarda indietro di tre minuti e
+               avanti di uno, per i casi in cui l'ordine si inverte di poco */
+            const vicini = lista.filter((x) => x.t <= t + 60000 && x.t >= t - 180000);
+            if (!vicini.length) continue;
+            const societa = [...new Set(vicini.map((x) => x.az))];
+            if (societa.length !== 1) continue;          // due società: non si indovina
+            daScrivere.push({ id: r.id, azienda: societa[0] });
+        }
+        /* un aggiornamento per società, non uno per riga: sono due query
+           invece di trecento */
+        for (const az of [...new Set(daScrivere.map((x) => x.azienda))]) {
+            const ids = daScrivere.filter((x) => x.azienda === az).map((x) => x.id);
+            if (ids.length) await supabase.from("paystore_ricariche").update({ azienda: az }).in("id", ids);
+        }
+    } catch (e) {
+        console.error("[paystore] società non completata:", String((e as Error)?.message || e));
+    }
+}
+
 export async function GET(request: Request) {
     const g = await accesso(request, "paystore");
     if (!g.ok) return g.risposta;
@@ -140,8 +208,9 @@ export async function GET(request: Request) {
        che non ha la sua riga, e gliela si dà. Costa una query e toglie di
        mezzo per sempre la domanda «perché manca?». */
     await recuperaScontrinate(da, a);
+    await completaSocieta(da, a);
 
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il";
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
@@ -190,6 +259,12 @@ export async function GET(request: Request) {
         daGuardare: R.filter((r) => r.stato === "da_fare" || r.stato === "fallita"),
         perStato: [...new Set(R.map((r) => r.stato))].map((s) => ({ stato: s, quante: R.filter((r) => r.stato === s).length })),
         perGiorno, perOperatore, perNegozio,
+        /* quante nascono da un'attivazione e quante si vendono da sole: dice
+           se le ricariche sono un servizio a sé o la coda di una vendita */
+        perOrigine: [true, false].map((v) => {
+            const d = R.filter((r) => r.con_attivazione === v);
+            return { conAttivazione: v, quante: d.length, euro: somma(d) };
+        }).filter((x) => x.quante > 0),
         ultime: R.slice(0, 200),
         negozi: [...new Set((righe || []).map((r) => r.negozio).filter(Boolean))],
         operatori: [...new Set((righe || []).map((r) => r.operatore))],

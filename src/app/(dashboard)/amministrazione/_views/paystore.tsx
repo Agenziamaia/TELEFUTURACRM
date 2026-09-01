@@ -72,7 +72,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -85,6 +85,7 @@ type Dati = {
     ultime: Riga[];
     negozi: string[]; operatori: string[];
     tagli: Taglio[];
+    perOrigine: { conAttivazione: boolean; quante: number; euro: number }[];
 };
 
 /* i codici delle due società, scritti come li conosce chi legge */
@@ -115,6 +116,8 @@ export function PayStoreAdminView() {
        quelli veri — un filtro «solo le da fare» non deve far sembrare che si
        sia incassato meno. Filtra l'ELENCO, che è dove si lavora. */
     const [stato, setStato] = useState("");
+    // "true" = solo quelle nate con un'attivazione, "false" = solo le sciolte
+    const [origine, setOrigine] = useState("");
     const [giornoAperto, setGiornoAperto] = useState<string | null>(null);
     const [vista, setVista] = useState<"registro" | "tagli">("registro");
     /* cosa comanda il pannello di destra: il giorno per giorno, oppure il
@@ -151,7 +154,9 @@ export function PayStoreAdminView() {
        applica il server, perché devono cambiare anche i totali e i grafici;
        lo stato no — «solo le da fare» non deve far sembrare che si sia
        incassato meno di quanto si è incassato. */
-    const righe = stato ? d.ultime.filter((r) => r.stato === stato) : d.ultime;
+    const righe = d.ultime
+        .filter((r) => !stato || r.stato === stato)
+        .filter((r) => !origine || String(r.con_attivazione) === origine);
     const oggiS = oggiISO();
     const daGuardareDavvero = d.daGuardare.filter((r) => r.stato === "fallita" || r.creata_il.slice(0, 10) < oggiS);
     /* le ricariche per ora della giornata, dalla prima all'ultima: si usa
@@ -309,8 +314,19 @@ export function PayStoreAdminView() {
                                 </button>
                             );
                         })}
-                        {(negozio || operatore || stato) && (
-                            <button onClick={() => { setNegozio(""); setOperatore(""); setStato(""); }} className="rvPill rvPill-sm psPillVia">
+                        {/* ⚠️ DUE COSE DIVERSE (Luca 01/09). La ricarica che segue
+                            una SIM appena venduta ha il numero dell'attivazione, ed
+                            è il completamento di quella vendita: se non parte, il
+                            cliente esce con una SIM senza credito. Quella «sciolta»
+                            è un servizio a sé, a chi entra solo per quello. */}
+                        {(d.perOrigine || []).map((o) => (
+                            <button key={String(o.conAttivazione)} onClick={() => setOrigine(origine === String(o.conAttivazione) ? "" : String(o.conAttivazione))}
+                                className={cn("rvPill rvPill-sm", origine === String(o.conAttivazione) && "rvPill-on")}>
+                                {o.conAttivazione ? "📶 con attivazione" : "🧾 sciolte"}<span className="psPillN">{o.quante}</span>
+                            </button>
+                        ))}
+                        {(negozio || operatore || stato || origine) && (
+                            <button onClick={() => { setNegozio(""); setOperatore(""); setStato(""); setOrigine(""); }} className="rvPill rvPill-sm psPillVia">
                                 ✕ togli i filtri
                             </button>
                         )}
@@ -536,7 +552,10 @@ export function PayStoreAdminView() {
                                                         recupero, e nell'elenco sembravano due operatori. */}
                                                     <MarchioRiga op={r.operatore} />
                                                 </td>
-                                                <td className="text-slate-500">{r.taglio || "—"}</td>
+                                                <td className="text-slate-500">
+                                                    {r.taglio || "—"}
+                                                    {r.con_attivazione && <span className="psConSim" title="ricarica della SIM appena venduta: il numero è quello dell'attivazione">📶</span>}
+                                                </td>
                                                 <td className="font-mono text-slate-300">
                                                     {/* ⚠️ IL NUMERO SI PUÒ SCRIVERE QUI. Una ricarica venduta
                                                         prima che la vendita si portasse dentro il numero — o
