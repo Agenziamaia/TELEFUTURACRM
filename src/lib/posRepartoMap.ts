@@ -23,14 +23,29 @@
 // uguali»). Layout standard SuiteMobile: 1=4%, 2=22%, 3=ART.74(non sogg), 4=esente.
 // Il CRM ha 1=non soggetta e 3=4%: quindi 1 e 3 sono INVERTITI → si scambiano.
 // (Verificato dal config_cassa.ini di Donna; gli altri confermati identici.)
+// Layout confermato IDENTICO su un Epson (Donna) e un Custom (Castani, 01/09:
+// config `1,4 · 2,22 · 3,ART.74 · 4,ART.10`, scontrino fiscale reale a 22% ok) →
+// vale per ENTRAMBE le famiglie di registratori. Luca conferma che sono tutti
+// uguali, quindi lo swap 1<->3 si applica a tutti i negozi con registratore.
 const SWAP_1_3: Record<number, number> = { 1: 3, 3: 1 };
 const REPARTO_MAP: Record<string, Record<number, number>> = {
+  // Epson
   "Donna": SWAP_1_3,
   "Magliana Multi": SWAP_1_3,
   "Magliana W3": SWAP_1_3,
   "San Paolo": SWAP_1_3,
   "Collatina Multi": SWAP_1_3,
   "Garbatella": SWAP_1_3,
+  // Custom / Vodafone (layout confermato su Castani; stesso standard SuiteMobile)
+  "Castani": SWAP_1_3,
+  "Acilia VS": SWAP_1_3,
+  "Acilia Multi": SWAP_1_3,
+  "Promontori": SWAP_1_3,
+  "Merulana": SWAP_1_3,
+  "Baleniere": SWAP_1_3,
+  "Collatina W3": SWAP_1_3,
+  "Libia": SWAP_1_3,
+  "Mazzini": SWAP_1_3,
 };
 
 /** Traduce il reparto logico del CRM nel reparto fisico del registratore del negozio.
