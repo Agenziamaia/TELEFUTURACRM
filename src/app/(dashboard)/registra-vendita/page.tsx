@@ -6086,10 +6086,29 @@ function CRM() {
      ScontrinoCassa (onCommit) a scontrino riuscito. Premendo X / chiudendo
      senza emettere, non viene scritto NIENTE. */
   const pendingCommit = useRef<null | (() => Promise<any>)>(null);
-  const runPendingCommit = async () => {
+  /* QUELLO CHE SI INCASSA MA NON SI SCONTRINA (Luca 01/09). Vodafone a rate:
+     l'anticipo lo prendiamo noi ma la fattura al cliente la manda Vodafone,
+     quindi sullo scontrino non ci va. Restano però soldi entrati davvero: si
+     archiviano con l'importo E il mezzo, perché servono a due partite —
+     il flusso di cassa nostro, e il conto con Vodafone, che deve rimborsare
+     la differenza fra quanto abbiamo pagato il telefono e questo anticipo. */
+  const runPendingCommit = async (extra) => {
     const fn = pendingCommit.current;
     if (!fn) return { ok: true as const };
-    try { const r = await fn(); pendingCommit.current = null; return { ok: true as const, rows: r }; }
+    try {
+      const r = await fn();
+      pendingCommit.current = null;
+      const ct = extra?.contoTerzi || [];
+      if (ct.length && Array.isArray(r) && r[0]?.id) {
+        /* si aggancia alla vendita appena scritta: senza un posto dove
+           stare, un incasso senza documento è un soldo che sparisce */
+        const { error } = await supabase.from("contracts")
+          .update({ dettagli: { ...(r[0].dettagli || {}), conto_terzi: ct } })
+          .eq("id", r[0].id);
+        if (error) console.error("conto terzi non archiviato:", error.message);
+      }
+      return { ok: true as const, rows: r };
+    }
     catch (e: any) { return { ok: false as const, error: String(e?.message || e) }; }
   };
   // POS: dati per il modale Incasso & Scontrino (si apre a vendita registrata).
@@ -6512,18 +6531,106 @@ function CRM() {
      «Vai al carrello →» e poi salva — il telefono non veniva scaricato e il
      controllo non girava proprio. È lo schema che `podPdrMap` usa da sempre
      due funzioni più su: si scorrono i gruppi del carrello E quello aperto. */
+  /* UNA SOLA SCANSIONE PER TUTTI (revisore 01/09). Questa funzione serve allo
+     SCARICO di magazzino e girava ancora per conto suo, guardando solo la
+     categoria «Telefono a Rate»: l'apparato FWA sarebbe stato scontrinato e
+     mai scaricato — venduto due volte, la seconda a un cliente che non lo
+     trova. Adesso legge la stessa lista che decide lo scontrino, così le due
+     cose non possono più raccontare storie diverse. */
   const perOgniTelefonoARate = (cb) => {
-    const scan = (sl) => cats.forEach(g => (sl?.[g.id] || []).forEach(row => {
+    telefoniDaScontrinare().forEach(t => { if (t.imei) cb(t.imei); });
+  };
+
+  /* ═══ OGNI TELEFONO DELLA VENDITA, E COME VA SCONTRINATO ═════════════════
+     Luca 01/09, schema completo. Un telefono non si scontrina sempre allo
+     stesso modo: cambia CHI incassa il resto, e in due casi lo scontrino non
+     esce proprio.
+
+     LA REGOLA FISCALE DI FONDO, verificata prima di scrivere una riga: il
+     REPARTO decide l'ALIQUOTA, non come paga il cliente. Un telefono è al 22%
+     — reparto 2 — che sia contante, rateizzato o finanziato: l'IVA è dovuta
+     alla cessione, e il fatto che il cliente paghi una finanziaria non la
+     cambia. La differenza fra «incassato» e «non incassato» viaggia nella
+     FORMA DI PAGAMENTO, che nel protocollo del registratore è proprio un tipo
+     a sé (`paymentType 4`), già configurato in `pos.ts` come NON_RISCOSSO e
+     FINANZIAMENTO. Creare reparti nuovi avrebbe spezzato in due i totali del
+     corrispettivo giornaliero e obbligato a riprogrammare quindici
+     registratori: per niente.
+
+     I SEI CASI:
+       W3  Finanziato / Finanziato CB → scontrino, resto in FINANZIAMENTO
+       W3  Tel. Rate  / Tel. Rate CB  → scontrino, resto in NON RISCOSSO
+       W3  FWA, solo «Super Internet Casa Indoor 5G» e «… Conv»
+                                      → scontrino, il resto lo sceglie l'utente
+       VF  Finanziato / Finanziato CB → scontrino, resto in FINANZIAMENTO
+       VF  Tel. Rate  / Tel. Rate CB  → NESSUNO scontrino: incasso conto terzi,
+                                        la fattura al cliente la manda Vodafone
+       telefono venduto come prodotto → scontrino normale, tutto incassato
+     ═══════════════════════════════════════════════════════════════════════ */
+  /** Le due sole offerte FWA che comprendono un apparato da scontrinare. */
+  const FWA_CON_APPARATO = ["Super Internet Casa Indoor 5G", "Super Internet Casa Indoor 5G Conv"];
+
+  const telefoniDaScontrinare = () => {
+    const out = [];
+    const visti = new Set();
+    let dove = 0;   // quale gruppo di righe si sta guardando: serve alla chiave
+    const scan = (sl) => cats.forEach(g => (sl?.[g.id] || []).forEach((row, ri) => {
       if (!row) return;
       g.subs.forEach(sub => {
         const d = row[sub.id];
-        if (!(d && d.active) || sub.catCategoria !== "Telefono a Rate") return;
-        const imei = String((d.fields || {})["IMEI"] || "").replace(/\D/g, "");
-        if (imei) cb(imei);
+        if (!(d && d.active)) return;
+        const brand = String(sub.catBrand || "");
+        const cat = String(sub.catCategoria || "");
+        const prod = String(sub.catProdotto || "");
+        /* L'OFFERTA STA NEI CAMPI (revisore 01/09). Leggerla da `d.catalogo`
+           dava sempre stringa vuota — `catalogo` è una proprietà delle voci di
+           CARRELLO, non delle righe compilate — e il caso FWA non è mai
+           scattato: un apparato sarebbe uscito dal negozio senza scontrino. */
+        const off = String((d.fields || {})["Offerta"] || "");
+        let modo = null;
+        if (cat === "Telefono a Rate") {
+          const finanziato = /finanziat/i.test(prod);
+          /* NIENTE RAMO «TUTTI GLI ALTRI» (revisore 01/09). Era un catch-all
+             silenzioso: qualunque brand aggiunto domani sotto «Telefono a
+             Rate» avrebbe preso in automatico il trattamento WindTre —
+             compreso uno che invece non deve emettere scontrino, come
+             Vodafone. Fastweb ha davvero un «Finanziato» a catalogo e si
+             comporta come WindTre, ma lo si dice; un brand non previsto
+             resta fuori e si vede, invece di essere trattato a caso. */
+          if (brand === "vodafone") modo = finanziato ? "vf_finanziato" : "vf_rate";
+          else if (brand === "windtre" || brand === "fastweb") modo = finanziato ? "w3_finanziato" : "w3_rate";
+        } else if (brand === "windtre" && cat === "Fisso" && /fwa/i.test(prod) && FWA_CON_APPARATO.includes(off)) {
+          modo = "w3_fwa";
+        }
+        if (!modo) return;
+        const f = d.fields || {};
+        const imei = String(f["IMEI"] || "").replace(/\D/g, "");
+        /* SENZA IMEI NON SI SALTA LA RIGA. Un telefono finanziato senza IMEI
+           è un dato mancante, non un telefono che non c'è: la chiave qui
+           serve solo a non chiedere due volte lo stesso importo, e il
+           controllo su «l'IMEI manca» sta dove stanno gli altri. */
+        // senza IMEI la chiave è il posto in cui sta la riga: stabile, e non
+        // cambia a ogni giro come faceva `out.length`
+        const chiave = imei || `${dove}|${g.id}|${sub.id}|${ri}`;
+        if (visti.has(chiave)) return;
+        visti.add(chiave);
+        const pezzo = imei && magVendita?.perImei ? magVendita.perImei.get(imei) : null;
+        out.push({
+          chiave, imei, modo, brand, categoria: cat, prodotto: prod, offerta: off,
+          /* LA DESCRIZIONE DEL BENE è un elemento obbligatorio del documento
+             commerciale, e i campi che leggevo prima non esistevano: quello
+             vero si chiama «Modello Terminale» (regola del catalogo per
+             Telefono a Rate). Senza, nei negozi dove il magazzino non è
+             vincolante — cioè quasi tutti — sullo scontrino sarebbe uscito
+             «Tel. Rate» al posto del modello. */
+          descrizione: pezzo?.nome || String(f["Modello Terminale"] || f["Modello"] || prod).trim() || prod,
+          codice: pezzo?.codice || null,
+        });
       });
     }));
-    cart.forEach(g => { if (g.sv) scan(g.sv.sales); });
-    scan(sales);
+    cart.forEach((g, i) => { if (g.sv) { dove = i + 1; scan(g.sv.sales); } });
+    dove = 0; scan(sales);
+    return out;
   };
 
   /* IL PREZZO CHE VA IN MAGAZZINO È QUELLO DEL CARRELLO (revisore 31/08).
@@ -7154,7 +7261,11 @@ function CRM() {
       // Il blocco resta attivo fino al reset: altrimenti il carrello e' ancora
       // pieno e un altro clic risalverebbe tutto.
       const _scRows = buildScontrinoItems(margList);
-      if (_scRows.length && posScontrinoAbilitato(selNeg)) {
+      /* I TELEFONI A RATE E FINANZIATI: la loro riga sullo scontrino non
+         esiste ancora, perché dipende da anticipo e finanziato — che il
+         modale chiede prima di far scegliere come si paga. */
+      const _telefoni = telefoniDaScontrinare();
+      if ((_scRows.length || _telefoni.length) && posScontrinoAbilitato(selNeg)) {
         /* DIFFERITO: la vendita si scrive quando lo scontrino è uscito. E niente
            «✅ Salvato!» qui: non è ancora vero, e dirlo sarebbe la cosa peggiore
            — l'operatore leggerebbe che è fatta mentre non è successo niente. */
@@ -7167,7 +7278,7 @@ function CRM() {
         /* IL NUMERO DELLA VENDITA VIAGGIA COL MODALE (Luca 31/08): la task
            del bonifico deve riportare l'amministrazione ALLO SCONTRINO che è
            stato fatto, non alla lista di tutte le vendite. */
-        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true });
+        setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true, telefoni: _telefoni });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
         /* NIENTE SCONTRINO: ma il venditore deve sapere PERCHÉ (Luca 31/08:
@@ -7421,7 +7532,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         /* `daRegistrare` ANCHE QUI (revisore 31/08): il differimento è nato in
            questo flusso, ma l'avviso di chiusura era finito solo sull'altro.
            Accessori e telefoni in contanti passano di qui tutto il giorno. */
-        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true });
+        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true, telefoni: telefoniDaScontrinare() });
       } else {
         // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
         // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).

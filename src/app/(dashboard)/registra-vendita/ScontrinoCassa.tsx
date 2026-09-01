@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { arrotonda5, totaleRighe, FORME_PAGAMENTO, FORME_A_MANO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
@@ -17,6 +17,37 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
    parte); Finanziamento/Non Riscosso = a credito, nessun incasso fisico.
    Il reset della vendita avviene alla chiusura (onDone). */
 
+/* ═══ UN TELEFONO A RATE O FINANZIATO ══════════════════════════════════════
+   Luca 01/09. Un telefono non si scontrina sempre allo stesso modo: cambia
+   chi incassa il resto, e in un caso lo scontrino non esce proprio.
+   Il REPARTO resta sempre il 2 (IVA 22%): l'imposta è dovuta alla cessione, e
+   come paga il cliente non la cambia. La differenza sta nella FORMA DI
+   PAGAMENTO, che nel registratore è un tipo a sé (non riscosso). */
+export type ModoTelefono = "w3_finanziato" | "w3_rate" | "w3_fwa" | "vf_finanziato" | "vf_rate";
+export interface TelefonoScontrino {
+    chiave: string;
+    imei: string;
+    modo: ModoTelefono;
+    brand: string;
+    categoria: string;
+    prodotto: string;
+    offerta: string;
+    descrizione: string;
+    codice: string | null;
+}
+
+/** Cosa chiedere, caso per caso. La nota dice all'operatore DOVE prendere il
+ *  numero: senza, ognuno lo cerca dove capita e i conti non tornano. */
+export const DOMANDE_TELEFONO: Record<ModoTelefono, {
+    titolo: string; resto: string; nota: string; forma: string | null; scontrino: boolean;
+}> = {
+    w3_finanziato: { titolo: "WindTre · Finanziato", resto: "Importo finanziato", nota: "recuperalo dal PDA WindTre", forma: "FINANZIAMENTO", scontrino: true },
+    w3_rate: { titolo: "WindTre · Telefono a rate", resto: "Importo rateizzato (VAR)", nota: "recuperalo dal PDA WindTre", forma: "NON_RISCOSSO", scontrino: true },
+    w3_fwa: { titolo: "WindTre · FWA con apparato", resto: "Importo", nota: "recuperalo dal PDA WindTre, e scegli come lo paga il cliente", forma: null, scontrino: true },
+    vf_finanziato: { titolo: "Vodafone · Finanziato", resto: "Importo finanziato", nota: "recuperalo dal PDA Compass, o dal listino Vodafone", forma: "FINANZIAMENTO", scontrino: true },
+    vf_rate: { titolo: "Vodafone · Telefono a rate", resto: "", nota: "l'anticipo si recupera dal DDI o dal contratto Vodafone", forma: null, scontrino: false },
+};
+
 export interface ScontrinoData {
     items: RigaScontrino[];
     negozio: string | null;
@@ -32,16 +63,19 @@ export interface ScontrinoData {
     coupon?: { code: string; valore: number; sconto: number } | null;
     /** la vendita NON è ancora scritta: si registra a scontrino emesso */
     daRegistrare?: boolean;
+    /** i telefoni a rate o finanziati di questa vendita: prima di incassare si
+     *  chiedono anticipo e resto, perché da lì dipendono la riga dello
+     *  scontrino e la forma di pagamento */
+    telefoni?: TelefonoScontrino[];
 }
 
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
 const POLL_MS = 1500;
 const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
 
-type Fase = "scelta" | "incasso" | "stampa" | "fatto" | "errore";
+type Fase = "telefoni" | "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
-export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: () => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
-    const totale = data ? totaleRighe(data.items) : 0;
+export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: (extra?: { contoTerzi?: { descrizione: string; imei: string; importo: number; forma: string }[] }) => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
 
     // Pagamento come lista di forme (max 3). Default: tutto in contanti.
     /* NESSUNA FORMA PRESELEZIONATA (Luca 31/08). Era «Contanti» di partenza:
@@ -55,6 +89,62 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        «Incassa ed emetti» resta spento finché non lo si fa. */
     const [righe, setRighe] = useState<RigaPagamento[]>([{ forma: "", importo: 0 }]);
     const [fase, setFase] = useState<Fase>("scelta");
+    /* GLI IMPORTI DEI TELEFONI, chiesti prima di incassare. Testo e non
+       numero: un campo che si azzera da solo mentre lo scrivi è il modo più
+       veloce per far sbagliare una cifra a chi ha un cliente davanti. */
+    const [importi, setImporti] = useState<Record<string, { anticipo: string; resto: string; forma: string }>>({});
+
+    /** Un importo scritto a mano: la virgola è quella che si usa alla cassa. */
+    const _n = (t: string) => { const v = Number(String(t ?? "").replace(",", ".").trim()); return isFinite(v) ? v : 0; };
+
+    /* ═══ COSA PRODUCONO I TELEFONI ═════════════════════════════════════════
+       · una RIGA sullo scontrino, al reparto 2 (IVA 22%), per l'importo pieno
+         — anticipo più finanziato: l'imposta è dovuta su tutto il prezzo, non
+         solo su quello che il cliente lascia in cassa oggi;
+       · una FORMA DI PAGAMENTO non riscossa per la parte che non incassiamo;
+       · e nel caso Vodafone a rate, NIENTE scontrino: quell'anticipo lo
+         incassiamo per conto di Vodafone, che fattura lei al cliente. */
+    const telefoni = useMemo<TelefonoScontrino[]>(() => data?.telefoni || [], [data]);
+    const righeTelefoni = useMemo<RigaScontrino[]>(() => telefoni
+        .filter(t => DOMANDE_TELEFONO[t.modo].scontrino)
+        .map(t => {
+            const i = importi[t.chiave] || { anticipo: "", resto: "", forma: "" };
+            return {
+                description: `${t.descrizione}${t.imei ? ` · IMEI ${t.imei}` : ""}`,
+                unitPrice: +(_n(i.anticipo) + _n(i.resto)).toFixed(2),
+                qty: 1,
+                /* IL REPARTO È SEMPRE IL 2. Non è una semplificazione: il
+                   reparto porta l'ALIQUOTA, e un telefono è al 22% comunque lo
+                   paghi. Chi paga il resto lo dice la forma di pagamento. */
+                reparto: 2,
+                codice: t.codice,
+            };
+        })
+        .filter(r => r.unitPrice > 0), [telefoni, importi]);
+
+    /** Le forme non riscosse, già decise dal tipo di vendita: non si scelgono. */
+    const pagamentiNonRiscossi = useMemo(() => telefoni
+        .filter(t => DOMANDE_TELEFONO[t.modo].scontrino)
+        .map(t => ({ forma: (importi[t.chiave]?.forma || DOMANDE_TELEFONO[t.modo].forma || ""), importo: _n(importi[t.chiave]?.resto) }))
+        .filter(r => r.forma && r.importo > 0), [telefoni, importi]);
+
+    /* L'INCASSO PER CONTO DI VODAFONE: soldi che entrano davvero in cassa ma
+       che sullo scontrino non ci vanno, perché la fattura al cliente la manda
+       Vodafone. Restano tracciati — importo e modalità — perché servono al
+       flusso di cassa e al conto con Vodafone, che deve rimborsare la
+       differenza fra quanto abbiamo pagato il telefono e questo anticipo. */
+    const contoTerzi = useMemo(() => telefoni
+        .filter(t => !DOMANDE_TELEFONO[t.modo].scontrino)
+        .map(t => ({ telefono: t, importo: _n(importi[t.chiave]?.anticipo), forma: importi[t.chiave]?.forma || "" }))
+        .filter(r => r.importo > 0), [telefoni, importi]);
+
+    /** Nella forma in cui va archiviato: importo, mezzo, e di quale telefono. */
+    const contoTerziDaSalvare = useMemo(() => contoTerzi.map(r => ({
+        descrizione: r.telefono.descrizione, imei: r.telefono.imei, importo: r.importo, forma: r.forma,
+    })), [contoTerzi]);
+
+    const itemsTutte = useMemo<RigaScontrino[]>(() => [...(data?.items || []), ...righeTelefoni], [data, righeTelefoni]);
+    const totale = totaleRighe(itemsTutte);
     const [incassato, setIncassato] = useState(0);
     const [resto, setResto] = useState(0);
     const [msg, setMsg] = useState("");
@@ -82,7 +172,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        vendita: è l'unico caso in cui la domanda ha senso, e infatti negli altri
        la risposta la dà la merce. Se nel locale c'è una sola società non si
        chiede niente: non ci sarebbe niente da scegliere. */
-    const soloServizi = !!data && !data.items.some((i) => i.azienda || i.codice);
+    const soloServizi = !!data && !itemsTutte.some((i) => i.azienda || i.codice);
     const [insegne, setInsegne] = useState<string[]>([]);
     const [cassaSel, setCassaSel] = useState<string | null>(null);
     // Coupon sconto (spec Francesco): abbassa l'imponibile. Il residuo rigenera un nuovo coupon.
@@ -105,6 +195,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const saleSig = JSON.stringify(data);
     // reset all'apertura di una NUOVA vendita (o alla chiusura del modale)
     useEffect(() => {
+        /* al reset i telefoni non hanno ancora importi, quindi il totale è
+           quello del carrello: si aggiorna da solo appena l'operatore scrive */
         const t = data ? totaleRighe(data.items) : 0;
         /* IL COUPON ARRIVA GIÀ APPLICATO DAL CARRELLO (Luca 31/08). Il totale
            da mettere in contanti è quindi quello SCONTATO: partire dal pieno
@@ -114,7 +206,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         const cIn = data?.coupon || null;
         const sc = cIn ? Math.min(Number(cIn.sconto) || 0, t) : 0;
         setRighe([{ forma: "", importo: +(t - sc).toFixed(2) }]);
-        setFase("scelta"); setIncassato(0); setResto(0);
+        /* SE CI SONO TELEFONI, PRIMA GLI IMPORTI. Il totale dello scontrino
+           non si conosce ancora: dipende da quanto è stato finanziato. */
+        const tel = data?.telefoni || [];
+        setImporti(Object.fromEntries(tel.map(t => [t.chiave, { anticipo: "", resto: "", forma: DOMANDE_TELEFONO[t.modo].forma || "" }])));
+        setFase(tel.length ? "telefoni" : "scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
         setCouponInput("");
@@ -221,7 +317,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 body: JSON.stringify({
                     negozio: data?.negozio ?? null,
                     deviceUrl: data?.deviceUrl,
-                    items: data?.items ?? [],
+                    items: itemsTutte,
                     /* la società la decide la MERCE, riga per riga — tranne
                        quando merce non ce n'è: lì l'ha scelta l'operatore */
                     azienda: soloServizi ? aziendaSel : null,
@@ -269,7 +365,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         try {
             const res = await fetch("/api/vendita/scontrino", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ negozio: data.negozio, items: data.items, azienda: soloServizi ? aziendaSel : null, dryRun: true }),
+                body: JSON.stringify({ negozio: data.negozio, items: itemsTutte, azienda: soloServizi ? aziendaSel : null, dryRun: true }),
             });
             chk = await res.json().catch(() => ({}));
             if (!res.ok) chk.ok = false;
@@ -319,7 +415,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         // Se fallisce, lo scontrino è comunque uscito → si offre il retry del solo salvataggio.
         if (onCommit) {
             setFase("stampa"); setMsg("Scontrino emesso — registro la vendita…");
-            const c = await onCommit();
+            const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
             if (!c || !c.ok) {
                 setCommitFail(true);
                 setFase("errore");
@@ -335,7 +431,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const retrySalvataggio = async () => {
         if (!onCommit) { setCommitFail(false); setFase("fatto"); return; }
         setFase("stampa"); setMsg("Registro la vendita…");
-        const c = await onCommit();
+        const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
         if (!c || !c.ok) {
             setCommitFail(true); setFase("errore");
             setMsg("⚠️ Salvataggio ancora non riuscito (" + (c?.error || "errore") + "). Riprova o annota la vendita a mano. Lo scontrino è già stato emesso.");
@@ -391,7 +487,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const tieniInSospeso = async () => {
         if (onCommit) {
             setFase("stampa"); setMsg("Registro la vendita…");
-            const c = await onCommit();
+            const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
             if (!c || !c.ok) {
                 setCommitFail(true); setFase("errore");
                 setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore") + "). Il conto NON è stato messo in sospeso: riprova, o annota la vendita a mano.");
@@ -402,7 +498,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         try {
             const res = await fetch("/api/vendita/sospendi", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ negozio: data.negozio, cliente: data.cliente ?? null, items: data.items, totale, azienda: aziendaSel }),
+                body: JSON.stringify({ negozio: data.negozio, cliente: data.cliente ?? null, items: itemsTutte, totale, azienda: aziendaSel }),
             });
             const j = await res.json().catch(() => ({}));
             if (!res.ok || !j.ok) throw new Error(j.error || "salvataggio non riuscito");
@@ -466,7 +562,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 </div>
 
                 <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-40 overflow-y-auto">
-                    {data.items.map((r, i) => (
+                    {itemsTutte.map((r, i) => (
                         <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
                             <span className="text-slate-200 truncate mr-2">{r.description}{(r.qty ?? 1) > 1 ? ` ×${r.qty}` : ""}</span>
                             <span className="text-slate-100 tabular-nums whitespace-nowrap">{eur((Number(r.unitPrice) || 0) * (Number(r.qty) > 0 ? Number(r.qty) : 1))}</span>
@@ -482,6 +578,118 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     <div className="flex items-center justify-between text-sm -mt-2">
                         <span className="text-emerald-300">🎟️ Sconto coupon {eur(-scontoCoupon)} · da pagare</span>
                         <span className="text-white font-bold text-xl tabular-nums">{eur(totaleDaPagare)}</span>
+                    </div>
+                )}
+
+                {/* ═══ PRIMA GLI IMPORTI DEL TELEFONO ══════════════════════
+                    Luca 01/09: «lo step finale dello scontrino deve chiedere
+                    anticipo e importo finanziato». Viene prima del pagamento
+                    perché finché non si sanno quei due numeri il totale dello
+                    scontrino non esiste: la riga del telefono vale
+                    anticipo + finanziato, e l'IVA è dovuta su tutto. */}
+                {fase === "telefoni" && (
+                    <div className="space-y-3">
+                        <div className="text-sm text-slate-300">
+                            Prima di incassare servono gli importi del telefono. Il resto lo scriverà
+                            il CRM sullo scontrino: la parte che non incassiamo esce come <b>non riscossa</b>,
+                            così non finisce nei flussi di cassa.
+                        </div>
+                        {telefoni.map((t) => {
+                            const q = DOMANDE_TELEFONO[t.modo];
+                            const i = importi[t.chiave] || { anticipo: "", resto: "", forma: "" };
+                            const set = (k: "anticipo" | "resto" | "forma", v: string) =>
+                                setImporti((p) => ({ ...p, [t.chiave]: { ...i, [k]: v } }));
+                            return (
+                                <div key={t.chiave} className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-2">
+                                    <div className="flex items-baseline justify-between gap-2">
+                                        <span className="text-sm font-semibold text-white truncate">{t.descrizione}</span>
+                                        <span className="text-[11px] text-slate-400 whitespace-nowrap">{q.titolo}</span>
+                                    </div>
+                                    {t.imei
+                                        ? <div className="text-[11px] text-slate-400 tabular-nums">IMEI {t.imei}</div>
+                                        : <div className="text-[11px] text-amber-300">Manca l&apos;IMEI: lo scontrino uscirà senza.</div>}
+                                    <div className="flex gap-2 flex-wrap">
+                                        <label className="flex-1 min-w-[130px]">
+                                            <span className="block text-[11px] text-slate-400 mb-1">Anticipo incassato €</span>
+                                            <input value={i.anticipo} onChange={(e) => set("anticipo", e.target.value)}
+                                                inputMode="decimal" placeholder="0,00"
+                                                className="w-full rounded-lg bg-black/30 border border-white/10 px-2.5 py-2 text-sm text-white tabular-nums" />
+                                        </label>
+                                        {q.scontrino && (
+                                            <label className="flex-1 min-w-[130px]">
+                                                <span className="block text-[11px] text-slate-400 mb-1">{q.resto} €</span>
+                                                <input value={i.resto} onChange={(e) => set("resto", e.target.value)}
+                                                    inputMode="decimal" placeholder="0,00"
+                                                    className="w-full rounded-lg bg-black/30 border border-white/10 px-2.5 py-2 text-sm text-white tabular-nums" />
+                                            </label>
+                                        )}
+                                    </div>
+                                    {/* CONTO TERZI: l'anticipo lo incassiamo NOI ma la fattura
+                                        la manda Vodafone. Non finisce sullo scontrino, però
+                                        la modalità va chiesta lo stesso: serve al flusso di
+                                        cassa e al conto con Vodafone, che deve rimborsare la
+                                        differenza fra quanto abbiamo pagato il telefono e
+                                        questo anticipo. Senza, sono soldi che entrano e non
+                                        si sa da dove. */}
+                                    {!q.scontrino && (
+                                        <div className="flex gap-2">
+                                            {FORME_A_MANO.map((f) => (
+                                                <button key={f.code} type="button" onClick={() => set("forma", f.code)}
+                                                    className={"flex-1 rounded-lg border px-2 py-2 text-xs font-semibold " +
+                                                        (i.forma === f.code ? "bg-violet-500/25 border-violet-400/70 text-white"
+                                                            : "bg-white/5 border-white/10 text-slate-300")}>
+                                                    {f.icona} {f.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* FWA: la forma la sceglie l'utente, perché il cliente può
+                                        averlo finanziato o preso in VAR e il CRM non lo sa */}
+                                    {t.modo === "w3_fwa" && (
+                                        <div className="flex gap-2">
+                                            {["FINANZIAMENTO", "NON_RISCOSSO"].map((f) => (
+                                                <button key={f} type="button" onClick={() => set("forma", f)}
+                                                    className={"flex-1 rounded-lg border px-2 py-2 text-xs font-semibold " +
+                                                        (i.forma === f ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-100"
+                                                            : "bg-white/5 border-white/10 text-slate-300")}>
+                                                    {f === "FINANZIAMENTO" ? "🏛️ Finanziamento" : "📄 VAR / Non riscosso"}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="text-[11px] text-slate-400">
+                                        {q.nota}
+                                        {!q.scontrino && <> — <b className="text-amber-300">per questo importo NON esce lo scontrino</b>: lo incassi per conto di Vodafone, che fattura lei al cliente.</>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <button type="button" onClick={() => {
+                            /* PASSANDO AL PAGAMENTO le righe non riscosse sono
+                               GIÀ decise: il finanziato e il rateizzato non si
+                               scelgono, li ha decisi il tipo di vendita. Restano
+                               a schermo come riquadro fisso — il modale le
+                               riconosce e non offre i pulsanti — e all'operatore
+                               resta da dire solo come incassa il resto. */
+                            const fisse = pagamentiNonRiscossi;
+                            const gia = fisse.reduce((a, r) => a + r.importo, 0);
+                            const daIncassare = +(totale - scontoCoupon - gia).toFixed(2);
+                            setRighe([...fisse, ...(daIncassare > 0.004 ? [{ forma: "", importo: daIncassare }] : [])]);
+                            setFase("scelta");
+                        }}
+                            disabled={telefoni.some((t) => {
+                                const i = importi[t.chiave] || { anticipo: "", resto: "", forma: "" };
+                                const q = DOMANDE_TELEFONO[t.modo];
+                                if (i.anticipo.trim() === "") return true;                       // anche zero va scritto
+                                if (q.scontrino && i.resto.trim() === "") return true;
+                                if (t.modo === "w3_fwa" && !i.forma) return true;
+                                // conto terzi: l'anticipo si incassa, quindi si dice come
+                                if (!q.scontrino && _n(i.anticipo) > 0 && !i.forma) return true;
+                                return false;
+                            })}
+                            className="w-full primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
+                            Avanti · come si paga
+                        </button>
                     </div>
                 )}
 
