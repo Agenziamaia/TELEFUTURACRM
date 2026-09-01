@@ -39,6 +39,7 @@ const SENZA_SESSIONE = {
     "print/done": "agente di stampa, protetto dal suo token",
     "print/ack": "agente di stampa, protetto dal suo token",
     "print/result": "agente di stampa, protetto dal suo token",
+    "print/health": "monitor dei negozi: la interroga una dashboard fuori dal CRM, protetta dallo stesso PRINT_AGENT_TOKEN (verificato: senza token risponde 401)",
     "supabase-verify": "diagnostica senza dati",
 };
 

@@ -380,7 +380,13 @@ export function PayStoreAdminView() {
                                                     </span>
                                                 </td>
                                                 <td className="text-slate-500">{r.taglio || "—"}</td>
-                                                <td className="font-mono text-slate-300">{r.numero}</td>
+                                                <td className="font-mono text-slate-300">
+                                                    {/* ⚠️ IL NUMERO SI PUÒ SCRIVERE QUI. Una ricarica venduta
+                                                        prima che la vendita si portasse dentro il numero — o
+                                                        dal listino invece che dal pannello — non ce l'ha: senza,
+                                                        nessuno la può eseguire, e il cliente ha già pagato. */}
+                                                    {r.numero ? r.numero : <NumeroMancante r={r} onCambiato={() => void carica()} />}
+                                                </td>
                                                 <td className="text-right font-bold text-white tabular-nums">{eurC(r.importo)}</td>
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
                                                 <td className="text-slate-400">{r.venditore || "—"}</td>
@@ -404,6 +410,35 @@ export function PayStoreAdminView() {
                 <ListinoTagli tagli={d.tagli} onCambiato={() => void carica()} />
             )}
         </div>
+    );
+}
+
+/* ── IL NUMERO CHE MANCA ────────────────────────────────────────────────── */
+function NumeroMancante({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
+    const [apre, setApre] = useState(false);
+    const [val, setVal] = useState("");
+    const [lavoro, setLavoro] = useState(false);
+    const ok = val.replace(/\D/g, "").length >= 7 && val.replace(/\D/g, "").length <= 11;
+    if (!apre) return (
+        <button onClick={() => setApre(true)} className="text-[11px] font-bold text-rose-300 border border-rose-400/40 bg-rose-500/10 rounded-lg px-2 py-0.5 hover:bg-rose-500/20">
+            manca — scrivilo
+        </button>
+    );
+    return (
+        <span className="inline-flex items-center gap-1">
+            <input autoFocus value={val} inputMode="numeric" placeholder="3XXXXXXXXX"
+                onChange={(e) => setVal(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                className="glass-input rounded-lg px-2 py-0.5 text-[12px] w-[130px] font-mono" />
+            <button disabled={!ok || lavoro} onClick={async () => {
+                setLavoro(true);
+                try {
+                    const x = await fetch("/api/paystore/registro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "numero", id: r.id, numero: val }) });
+                    if (x.ok) { onCambiato(); setApre(false); }
+                } finally { setLavoro(false); }
+            }} className="p-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 disabled:opacity-30">
+                <Check className="w-3 h-3" />
+            </button>
+        </span>
     );
 }
 
