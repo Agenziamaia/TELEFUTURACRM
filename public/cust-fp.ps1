@@ -71,7 +71,7 @@ function PagamentoFiscale($fp, [double]$tot, [double]$amt, [string]$tipo) {
 function ChiusuraFiscale($fp) {
   $c = ContaArg $fp "chiusura_fiscale"
   if ($c -contains 0) { [void]$fp.chiusura_fiscale() }
-  else { throw "chiusura_fiscale: firma non gestita (arg: $($c -join ',')) — eseguire da SuiteMobile" }
+  else { throw ("chiusura_fiscale: firma non gestita (arg: " + ($c -join ',') + ") - eseguire da SuiteMobile") }
 }
 
 try { $xml = Get-Content -Raw -LiteralPath $XmlFile } catch { Esito $false "xml illeggibile: $($_.Exception.Message)" ""; exit 1 }
