@@ -125,11 +125,16 @@ const CATEGORIE_DOC = [
     { id: "dichiarazione_usato", label: "Dichiarazioni usato", color: "var(--tf-34d399)", match: (t: string | null) => (t || "").toLowerCase() === "dichiarazione_usato" },
     // Documenti della Chiusura Linea (26/08, caso Melis: cadevano in «Altro»)
     { id: "disdetta", label: "Disdette", color: "var(--tf-f43f5e)", match: (t: string | null) => (t || "").toLowerCase() === "disdetta" },
+    // Ordini cliente e assistenze (Luca 01/09): finivano in «Altro», che è il
+    // cassetto dove si perdono le cose. Un fascicolo per sezione, come per i
+    // ritiri usato: modulo firmato e registro delle firme stanno insieme.
+    { id: "ordine", label: "Ordini cliente", color: "var(--tf-818cf8)", match: (t: string | null) => (t || "").toLowerCase() === "ordine" },
+    { id: "assistenza", label: "Assistenze", color: "var(--tf-f59e0b)", match: (t: string | null) => (t || "").toLowerCase() === "assistenza" },
     // MOD-14 (Luca 08/08): documenti smarriti e archiviati/scaduti — fuori dai
     // validi, visibili SOLO all'amministrazione (adminOnly) con etichetta chiara.
     { id: "smarrito", label: "🔴 Smarriti", color: "var(--tf-f87171)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_smarrito" },
     { id: "archiviato", label: "🗄️ Archiviati/scaduti", color: "var(--tf-94a3b8)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_archiviato" },
-    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "dichiarazione_usato", "disdetta", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
+    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "dichiarazione_usato", "disdetta", "ordine", "assistenza", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
@@ -180,7 +185,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const [openCat, setOpenCat] = useState<Record<string, boolean>>({});
     const [openBrand, setOpenBrand] = useState<Record<string, boolean>>({});
     const [meseSel, setMeseSel] = useState<Record<string, string>>({});
-    type DocFile = { key: string; nome: string; url: string; tipo: string | null; pratiche: string[] };
+    type DocFile = { key: string; nome: string; url: string; tipo: string | null; pratiche: string[]; maiContratto?: boolean };
     const alberoDocs = useMemo(() => {
         const infoCtr = new Map<string, { brand: string; data: string | null }>();
         contratti.forEach((c) => infoCtr.set(c.id, { brand: c.brand || "—", data: c.data || null }));
@@ -219,6 +224,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 }
                 const file: DocFile = {
                     key: cat + "|" + url, nome: righe[0].file_name || "documento", url, tipo: righe[0].file_type,
+                    // un contract_id mai avuto non è un contratto eliminato
+                    maiContratto: !righe.some((r) => !!r.contract_id),
                     // solo pratiche ESISTENTI: gli id di contratti eliminati non si mostrano
                     pratiche: [...new Set(righe.map((r) => r.contract_id).filter((id) => id && infoCtr.has(id)))] as string[],
                 };
@@ -398,7 +405,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
     // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
     // sullo storico chiamate della scheda).
-    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; docsLabel?: string; appuntamenti?: ApptTml[]; transizioni?: { quando?: string; testo?: string }[] };
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; docsLabel?: string; appuntamenti?: ApptTml[]; transizioni?: { quando?: string; testo?: string }[]; vai?: string; vaiEtichetta?: string };
     const isMarg = (b?: string | null) => /marginal|extra/i.test(b || "");
 
     // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
@@ -416,6 +423,11 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // I documenti del RITIRO usato (Francesco/Luca 12/08) vivono invece
     // dentro la voce «Ritirato usato»: fuori sia dalle visite sia dalle voci sciolte.
     const docDiRitiro = (d: DocRiga) => (d.file_type || "").toLowerCase() === "dichiarazione_usato" || (d.file_name || "").startsWith("Documento identità — ritiro");
+    /* i documenti di un ordine o di un'assistenza appartengono al loro evento:
+       sciolti in cronologia facevano tre righe «Documento caricato» che
+       spingevano giù la cosa vera, cioè l'assistenza (Luca 01/09) */
+    const docDiPratica = (d: DocRiga) => ["ordine", "assistenza"].includes((d.file_type || "").toLowerCase())
+        || /^Documento identità — (Assistenza|Ordine) /.test(d.file_name || "");
     // i documenti della CHIUSURA LINEA sono marcati (file_type='disdetta',
     // scoperto col collaudo Melis 26/08): appartengono al ticket, mai alle
     // visite né alle voci sciolte — si contano sulla disdetta più vicina.
@@ -426,7 +438,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // disdetta comparivano come 5 voci sciolte)
     const docsPerGiorno = new Map<string, number>();
     docs.forEach((d) => {
-        if (docDiRitiro(d) || docDiDisdetta(d)) return;
+        if (docDiRitiro(d) || docDiDisdetta(d) || docDiPratica(d)) return;
         const g = String(d.created_at || "").slice(0, 10);
         if (g) docsPerGiorno.set(g, (docsPerGiorno.get(g) || 0) + 1);
     });
@@ -541,7 +553,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         // registro, identità) stanno DENTRO la voce, come per i ritiri
         ...praticheCliente.filter((pr) => pr.created_at).map((pr) => {
             const ass = pr.sezione === "assistenze";
-            const docsPr = docs.filter((d) => (d.file_name || "").includes(pr.protocollo)).length;
+            const docsPr = docs.filter((d) => docDiPratica(d) && (d.file_name || "").includes(pr.protocollo)).length;
             const cosa = pr.dispositivo && (pr.dispositivo.marca || pr.dispositivo.modello)
                 ? [pr.dispositivo.marca, pr.dispositivo.modello].filter(Boolean).join(" ")
                 : String(pr.tipologia || "").replace(/_/g, " ");
@@ -554,6 +566,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     pr.negozio].filter(Boolean).join(" · ") + (docsPr ? ` · 📎 ${docsPr}` : ""),
                 stato: pr.stato ? String(pr.stato).replace(/_/g, " ") : null,
                 docsN: docsPr || undefined, docsLabel: ass ? "dell'assistenza" : "dell'ordine",
+                vai: `${ass ? "/assistenze" : "/ordini-clienti"}?p=${encodeURIComponent(pr.protocollo)}`,
+                vaiEtichetta: ass ? "apri l'assistenza" : "apri l'ordine",
             };
         }),
         // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
@@ -562,7 +576,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10))
             // i giorni consumati da una disdetta non fanno più voci sciolte (26/08)
             && !giorniDocAssegnati.has(String(d.created_at).slice(0, 10))
-            && !docDiRitiro(d)
+            && !docDiRitiro(d) && !docDiPratica(d)
             // i docs 'disdetta' vivono nella voce del ticket (se ne esiste uno)
             && (disdetteRaw.length === 0 || !docDiDisdetta(d))
             // smarriti/archiviati fuori dalla timeline per i non-admin (MOD-14)
@@ -580,7 +594,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const iniziali = (nomeCompleto || "?").split(/\s+/).map((w) => w.charAt(0)).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
     const pratAttive = contratti.filter((c) => c.stato === "Attivato").length;
     const nFileVisibili = new Set(docs.filter((d) => isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly).map((d) => d.file_url)).size;
-    const EMOJI_CAT: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾", dichiarazione_usato: "♻️", disdetta: "✂️", smarrito: "⚠️", archiviato: "🗄️", altro: "📁" };
+    const EMOJI_CAT: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾", dichiarazione_usato: "♻️", disdetta: "✂️", ordine: "📦", assistenza: "🛠️", smarrito: "⚠️", archiviato: "🗄️", altro: "📁" };
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 lg:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
             {/* com-scura: la console resta un MONDO SCURO anche in tema chiaro
@@ -761,7 +775,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     // MOD-21: espandibile anche la CHIAMATA con appuntamento dentro
                                     // e il RITIRO USATO coi suoi documenti (12/08)
                                     const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length) || (ev.docsN || 0) > 0 || !!(ev.transizioni && ev.transizioni.length);
-                                    const cliccabile = espandibile || !!ev.apreStorico;
+                                    const cliccabile = espandibile || !!ev.apreStorico || !!ev.vai;
                                     const aperta = espandibile && !!gruppiAperti[ev.key];
                                     return (
                                         <div key={ev.key} className="relative pl-8 group/tml">
@@ -770,11 +784,14 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 style={{ background: `color-mix(in srgb, ${ev.color} 12%, #0c0d14)`, border: `1px solid color-mix(in srgb, ${ev.color} 50%, transparent)`, boxShadow: `0 0 15px color-mix(in srgb, ${ev.color} 30%, transparent)` }}>{ev.icon}</div>
                                             <div role={cliccabile ? "button" : undefined} tabIndex={cliccabile ? 0 : undefined}
                                                 onClick={() => {
+                                                    /* la pratica porta ALLA pratica: è la cosa che si vuole
+                                                       vedere, aperta o già consegnata che sia */
+                                                    if (ev.vai) { router.push(ev.vai); return; }
                                                     if (espandibile) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
                                                     else if (ev.apreStorico) setShowStorico(true);
                                                 }}
                                                 onKeyDown={(e) => { if (cliccabile && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
-                                                title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : (ev.appuntamenti && ev.appuntamenti.length) ? (aperta ? "Chiudi il dettaglio" : "Mostra l'appuntamento fissato") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
+                                                title={ev.vai ? ev.vaiEtichetta : ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : (ev.appuntamenti && ev.appuntamenti.length) ? (aperta ? "Chiudi il dettaglio" : "Mostra l'appuntamento fissato") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
                                                 className={`bg-[#161722] border border-[#262836] p-3.5 rounded-2xl transition-colors ${cliccabile ? "cursor-pointer" : ""}`}
                                                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = `color-mix(in srgb, ${ev.color} 50%, transparent)`; }}
                                                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = ""; }}>
@@ -782,7 +799,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 <div className="flex items-center justify-between gap-2">
                                                     <h4 className="text-sm font-bold text-white flex items-center gap-1.5 min-w-0">
                                                         <span className="truncate">{ev.title}</span>
-                                                        {espandibile && <span className="text-gray-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                        {espandibile && !ev.vai && <span className="text-gray-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                        {ev.vai && <span className="text-[11px] font-bold shrink-0 opacity-0 group-hover/tml:opacity-100 transition-opacity" style={{ color: ev.color }}>→ {ev.vaiEtichetta}</span>}
                                                         {ev.apreStorico && !(ev.appuntamenti && ev.appuntamenti.length) && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
                                                     </h4>
                                                 </div>
@@ -1010,7 +1028,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     // «disdetta» piatta come i documenti d'identità: i file dei
                                     // ticket hanno contract_id NULL by design e nel ramo brand
                                     // finivano sotto «Contratti eliminati» — falso (revisore 26/08)
-                                    const catPiatta = cat.id === "documento" || cat.id === "disdetta" || cat.id === "dichiarazione_usato";
+                                    const catPiatta = cat.id === "documento" || cat.id === "disdetta" || cat.id === "dichiarazione_usato"
+                                        || cat.id === "ordine" || cat.id === "assistenza";
                                     const filePiatti = catPiatta
                                         ? [...new Map([...perBrand.values()].flatMap((pm) => [...pm.values()].flat()).map((f) => [f.key, f])).values()]
                                         : [];
@@ -1073,7 +1092,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                                         <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                                                                             {(perMese.get(meseAttivo) || []).map((f) => {
                                                                                 const sub = (f.pratiche.length === 0
-                                                                                    ? "contratto eliminato — documento conservato"
+                                                                                    ? (f.maiContratto ? "documento del cliente" : "contratto eliminato — documento conservato")
                                                                                     : f.pratiche.length === 1 ? f.pratiche[0] : `su ${f.pratiche.length} pratiche della vendita`);
                                                                                 return cardFile(f, `${labelMeseDoc(meseAttivo)} · ${sub}`);
                                                                             })}

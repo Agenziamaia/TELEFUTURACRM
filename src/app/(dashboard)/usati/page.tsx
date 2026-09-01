@@ -94,7 +94,7 @@ interface Device {
   grado_usura: string;
   allegato_documento: string | null;
   allegato_dichiarazione: string | null;
-  firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null } | null;
+  firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null; dispositivo?: string | null; daComputer?: boolean } | null;
   // mig. 113: cliente da cui e' stato acquistato + venditore che ha registrato
   client_id: string | null;
   venditore: string;
@@ -268,7 +268,7 @@ type UsatiRow = {
   grado_usura: string;
   allegato_documento: string | null;
   allegato_dichiarazione: string | null;
-  firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null } | null;
+  firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null; dispositivo?: string | null; daComputer?: boolean } | null;
   client_id?: string | null;
   venditore?: string | null;
   sold_price?: number | null;
@@ -313,7 +313,7 @@ function rowToDevice(r: UsatiRow): Device {
     acquisto_per_ricambi: !!r.acquisto_per_ricambi,
     allegato_documento: r.allegato_documento ?? null,
     allegato_dichiarazione: r.allegato_dichiarazione ?? null,
-    firma: (r.firma ?? null) as { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null } | null,
+    firma: (r.firma ?? null) as { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null; dispositivo?: string | null; daComputer?: boolean } | null,
     client_id: r.client_id ?? null,
     venditore: r.venditore || "",
     sold_price: Number(r.sold_price) || 0,
@@ -1087,7 +1087,17 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
               </div>
             ) : (
             <div>
-              <div className="text-sm font-bold text-white mb-3"> Documenti Allegati</div>
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <div className="text-sm font-bold text-white"> Documenti Allegati</div>
+                {/* da dove è stata firmata la dichiarazione: un computer, mentre il
+                    link parte verso il telefono del venditore, vuol dire che l'ha
+                    aperto il banco — e allora quella firma non è la sua */}
+                {dev.firma?.dispositivo && (
+                  <div className={`text-[11px] font-bold ${dev.firma.daComputer ? "text-amber-400" : "text-slate-400"}`}>
+                    {dev.firma.daComputer ? "⚠️ firmata da un computer" : "📱 firmata da"} {dev.firma.dispositivo}
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { label: "Documento Identità", path: dev.allegato_documento, icon: <FileText size={16} /> },

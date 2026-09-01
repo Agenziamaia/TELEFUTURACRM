@@ -15,7 +15,7 @@ import { Loader2, Search, Plus, ArrowLeft, ArrowRight, Check, X, Printer, Paperc
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { mandaInCassa } from "@/lib/accontoInCassa";
 import { stessoMagazzino } from "@/lib/negoziNomi";
 import PopupCarta from "@/components/PopupCarta";
@@ -59,6 +59,12 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
     const [pratiche, setPratiche] = useState<Pratica[] | null>(null);
     const [nuova, setNuova] = useState(false);
     const [apri, setApri] = useState<string | null>(null);
+    /* ⚠️ SI ARRIVA QUI DA FUORI. La timeline del cliente porta alla pratica
+       con ?p=<protocollo>: senza questo, il link atterrava sull'elenco e
+       toccava ricercarla a mano. Una volta sola, altrimenti riaprirebbe la
+       scheda ogni volta che si torna all'elenco. */
+    const parametri = useSearchParams();
+    const giaAperta = useRef(false);
     const [cerca, setCerca] = useState("");
     /* DUE FILTRI DIVERSI, non uno solo. `filtro` è uno STATO della pratica;
        `vista` è un taglio trasversale — «fuori tempo», «da comprare», «da
@@ -120,6 +126,14 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
             onAnnulla={() => setNuova(false)}
             onFatto={async (t) => { setNuova(false); await carica(); avvisa(t); }} />;
     }
+    useEffect(() => {
+        if (giaAperta.current || !pratiche || !pratiche.length) return;
+        const proto = (parametri.get("p") || "").trim().toUpperCase();
+        if (!proto) return;
+        const trovata = pratiche.find((p) => (p.protocollo || "").toUpperCase() === proto);
+        if (trovata) { setApri(trovata.id); giaAperta.current = true; }
+    }, [pratiche, parametri]);
+
     const aperta = apri ? (pratiche || []).find((p) => p.id === apri) : null;
     if (aperta) {
         return <Dettaglio pratica={aperta} ruolo={ruolo} eAdmin={eAdmin} operatore={operatore}
@@ -402,10 +416,14 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                niente e sparerebbe righe anche per i giri abbandonati. */
             try {
                 const eti = sezione === "assistenze" ? "Assistenza" : "Ordine";
+                /* una categoria sua, non il cassetto «Altro»: chi apre il
+                   fascicolo di un cliente deve trovare «Assistenze» e «Ordini
+                   cliente» accanto a «Dichiarazioni usato», non un mucchio */
+                const cat = sezione === "assistenze" ? "assistenza" : "ordine";
                 const righeDoc = [
-                    firma.firmato && { p: firma.firmato.path, n: `Modulo firmato — ${eti} ${creata.protocollo}`, t: "contratti" },
-                    firma.modulo && { p: firma.modulo.path, n: `Modulo firmato — ${eti} ${creata.protocollo}`, t: "contratti" },
-                    firma.registro && { p: firma.registro.path, n: `Registro di firma — ${eti} ${creata.protocollo}`, t: "altro" },
+                    firma.firmato && { p: firma.firmato.path, n: `Modulo firmato — ${eti} ${creata.protocollo}`, t: cat },
+                    firma.modulo && { p: firma.modulo.path, n: `Modulo firmato — ${eti} ${creata.protocollo}`, t: cat },
+                    firma.registro && { p: firma.registro.path, n: `Registro di firma — ${eti} ${creata.protocollo}`, t: cat },
                     firma.identita && { p: firma.identita.path, n: `Documento identità — ${eti} ${creata.protocollo}`, t: "documento" },
                 ].filter(Boolean) as { p: string; n: string; t: string }[];
                 if (righeDoc.length) await supabase.from("contract_attachments").upsert(righeDoc.map((r) => ({
@@ -1660,6 +1678,14 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                 <div className="rvBox">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Firma e documenti</p>
                     <Voce et="Firmato" v={pratica.firma?.via === "otp" ? "📲 col codice" : "🖊️ su carta"} />
+                    {/* DA DOVE (Luca 01/09). Il registro DocuSeal dice il dispositivo,
+                        ma bisognava aprire il PDF: qui si legge a colpo d'occhio, e un
+                        computer — mentre il link è partito verso un telefono — vuol
+                        dire quasi sempre che ha firmato il banco. */}
+                    {pratica.firma?.dispositivo && (
+                        <Voce et="Firmato da" v={`${pratica.firma.daComputer ? "⚠️ " : "📱 "}${pratica.firma.dispositivo}`}
+                            avviso={pratica.firma.daComputer ? "un computer: se il link l'ha aperto il negozio, la firma non è del cliente" : undefined} />
+                    )}
                     <Voce et="Documento d'identità" v={pratica.firma?.identita ? "✅ archiviato" : "⛔ mancante"} />
                     {pratica.firma?.via === "cartacea" && <Voce et="Modulo firmato" v={pratica.firma?.modulo ? "✅ allegato" : "⛔ mancante"} />}
                     {/* I DOCUMENTI SI APRONO. Un archivio che non si può aprire
@@ -1849,11 +1875,14 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
     );
 }
 
-function Voce({ et, v, forte }: { et: string; v: string; forte?: boolean }) {
+function Voce({ et, v, forte, avviso }: { et: string; v: string; forte?: boolean; avviso?: string }) {
     return (
         <div className="flex flex-wrap gap-2 items-baseline">
             <span className="w-[160px] shrink-0 text-[10px] font-bold uppercase tracking-widest text-slate-500">{et}</span>
-            <span className={cn("text-[13px] flex-1 min-w-[120px]", forte ? "font-black text-white" : "text-slate-200")}>{v}</span>
+            <span className={cn("text-[13px] flex-1 min-w-[120px]", forte ? "font-black text-white" : "text-slate-200")}>
+                {v}
+                {avviso && <span className="rvFirmaBanco block text-[11px] mt-0.5">{avviso}</span>}
+            </span>
         </div>
     );
 }
