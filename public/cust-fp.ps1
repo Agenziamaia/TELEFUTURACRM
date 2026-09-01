@@ -64,6 +64,15 @@ function PagamentoFiscale($fp, [double]$tot, [double]$amt, [string]$tipo) {
   if ($c -contains 4) { $fp.stampa_riga_pagamenti($tot, $amt, $tipo, "") }
   else { $fp.stampa_riga_pagamenti($tot, $amt, $tipo) }
 }
+# CHIUSURA FISCALE giornaliera (Report Z) — metodo OPOS `chiusura_fiscale`.
+# Firme viste: v68.1.1.1 (Acilia VS) = 0 arg. Scegliamo per arieta' via reflection.
+# ⚠️ Un'arieta' NON prevista NON si tira a indovinare (un Report Z e' irreversibile):
+# si lancia un errore chiaro e la chiusura resta a SuiteMobile.
+function ChiusuraFiscale($fp) {
+  $c = ContaArg $fp "chiusura_fiscale"
+  if ($c -contains 0) { [void]$fp.chiusura_fiscale() }
+  else { throw "chiusura_fiscale: firma non gestita (arg: $($c -join ',')) — eseguire da SuiteMobile" }
+}
 
 try { $xml = Get-Content -Raw -LiteralPath $XmlFile } catch { Esito $false "xml illeggibile: $($_.Exception.Message)" ""; exit 1 }
 
@@ -75,17 +84,11 @@ foreach ($m in [regex]::Matches($xml, 'data="([^"]*)"')) {
   $lines += [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)
 }
 
-# CHIUSURA FISCALE (Report Z) su registratore Custom — NON ANCORA ABILITATA.
-# Il CRM puo' accodare <printerFiscalReport><zReport/> anche a un Custom, ma un
-# Report Z e' IRREVERSIBILE (una sola volta al giorno, non si annulla) e la firma
-# del metodo OPOS (chiusura_fiscale) va prima verificata sul registratore reale
-# via cust-diag. Finche' non e' validata NON si tira a indovinare: si torna un
-# errore chiaro e la chiusura Custom si fa da SuiteMobile. Non si apre nemmeno il
-# registratore. (La UI Chiusura Cassa gia' blocca la scelta di sole casse Custom.)
-if (($xml -match '<printerFiscalReport') -or ($xml -match '<zReport')) {
-  Esito $false "Chiusura Custom non ancora abilitata sul CRM: eseguire il Report Z da SuiteMobile" ""
-  exit 1
-}
+# CHIUSURA FISCALE (Report Z) su registratore Custom — il CRM accoda
+# <printerFiscalReport><zReport/>. Sul Custom la chiusura giornaliera e' il metodo
+# OPOS chiusura_fiscale() (vedi ChiusuraFiscale). ⚠️ IRREVERSIBILE: una volta al
+# giorno per cassa. Richiede SuiteMobile CHIUSA (una sola connessione al registratore).
+$isZ = ($xml -match '<printerFiscalReport') -or ($xml -match '<zReport')
 
 # Auto-rileva la cartella del driver: se in $Fpnet manca MiraOposDll (es. store
 # ClickOnce come Castani/Acilia, dove i DLL stanno in AppData\Local\Apps\2.0 con un
@@ -132,7 +135,16 @@ $mat = ""
 try { $mat = [string]$fp.matricola_fiscale } catch { }
 
 try {
-  if ($isFiscal) {
+  if ($isZ) {
+    # ── CHIUSURA FISCALE / REPORT Z CUSTOM ──────────────────────────────────
+    # Chiusura giornaliera: stampa il Report Z e trasmette i corrispettivi ad AE.
+    # E' l'equivalente Custom di <printerFiscalReport><zReport/> dell'Epson.
+    $fp.is_rt = $true
+    ChiusuraFiscale $fp
+    $num = ""
+    try { $num = [string]$fp.dammi_numero_chiusurafp90x() } catch { }
+    Esito $true ("chiusura Z eseguita" + $(if ($num) { " (n. $num)" } else { "" })) $mat
+  } elseif ($isFiscal) {
     # ── PERCORSO FISCALE CUSTOM (bozza 01/09 — DA VALIDARE sul registratore reale) ──
     # Il CRM invia ePOS Epson (printerFiscalReceipt). Qui lo traduciamo nelle chiamate
     # OPOS Custom ESATTAMENTE come fa SuiteMobile (decompilato MiraOposDll):

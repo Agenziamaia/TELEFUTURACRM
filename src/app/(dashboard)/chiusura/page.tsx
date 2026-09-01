@@ -456,11 +456,10 @@ function ModaleChiusuraCassa({ negozio, negozi, onClose }: { negozio: string; ne
     }, [store]);
 
     const scelti = sel === "__all" ? registri : registri.filter((r) => r.azienda === sel);
+    /* Una cassa Custom (OPOS) stampa solo se SuiteMobile è chiusa (una connessione
+       sola al registratore): lo ricordiamo nel modale. La chiusura vale da qui O
+       da SuiteMobile, non tutte e due (il Report Z è uno al giorno). */
     const qualcheCustom = scelti.some((r) => isCustom(r.rt_url));
-    /* La chiusura Custom (OPOS) dal CRM è ancora in validazione: una cassa
-       Custom si chiude da SuiteMobile. Se la scelta è SOLO Custom, non si batte
-       da qui (un Report Z non si annulla: non si tira a indovinare). */
-    const soloCustom = scelti.length > 0 && scelti.every((r) => isCustom(r.rt_url));
 
     const esegui = async () => {
         setFase("invio"); setErr(null);
@@ -571,13 +570,9 @@ function ModaleChiusuraCassa({ negozio, negozi, onClose }: { negozio: string; ne
                                             </button>
                                         ))}
                                     </div>
-                                    {soloCustom ? (
+                                    {qualcheCustom && (
                                         <p className="mt-2 text-[11px] text-indigo-300/90 leading-relaxed">
-                                            Cassa <b>Custom</b> (Vodafone): per ora la chiusura si esegue da <b>SuiteMobile</b>. La chiusura Custom dal CRM è in fase di validazione.
-                                        </p>
-                                    ) : qualcheCustom && (
-                                        <p className="mt-2 text-[11px] text-indigo-300/80 leading-relaxed">
-                                            Include una cassa Custom: quella chiudila da SuiteMobile. Le casse Epson vengono chiuse dal CRM.
+                                            Cassa <b>Custom</b> (Vodafone): <b>chiudi prima SuiteMobile</b>, così il CRM può parlare col registratore. Fai la chiusura da qui <b>oppure</b> da SuiteMobile — <b>una sola</b>, non tutte e due.
                                         </p>
                                     )}
                                 </div>
@@ -593,12 +588,11 @@ function ModaleChiusuraCassa({ negozio, negozi, onClose }: { negozio: string; ne
                                             className="w-4 h-4 rounded accent-emerald-500" />
                                         <span className="text-xs text-slate-300">Confermo la chiusura definitiva della giornata</span>
                                     </label>
-                                    <button onClick={esegui} disabled={!confermato || fase === "invio" || soloCustom}
+                                    <button onClick={esegui} disabled={!confermato || fase === "invio"}
                                         className={cn("w-full py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2",
-                                            confermato && fase !== "invio" && !soloCustom ? "bg-emerald-500 text-white hover:bg-emerald-400" : "bg-white/5 text-slate-600 cursor-not-allowed")}>
+                                            confermato && fase !== "invio" ? "bg-emerald-500 text-white hover:bg-emerald-400" : "bg-white/5 text-slate-600 cursor-not-allowed")}>
                                         {fase === "invio" ? <><Loader2 size={16} className="animate-spin" /> Invio…</>
-                                            : soloCustom ? <><Receipt size={16} /> Chiusura Custom via SuiteMobile</>
-                                                : <><Receipt size={16} /> Esegui Chiusura Cassa</>}
+                                            : <><Receipt size={16} /> Esegui Chiusura Cassa</>}
                                     </button>
                                 </>
                             )}
