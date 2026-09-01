@@ -140,8 +140,17 @@ export async function POST(req: Request) {
     if (negozio) {
         const codici = [...new Set(righe.map((r) => String(r.codice || "")).filter(Boolean))];
         if (codici.length) {
+            /* ANCHE NEL GEMELLO (revisore 01/09). Guardando solo il negozio
+               corrente, un codice che sta sullo scaffale dell'altra insegna —
+               stessa stanza, società diversa — non risultava di nessuno, e si
+               ripiegava sulla società del negozio dove si batte: lo scontrino
+               sarebbe uscito con la partita IVA sbagliata. È lo stesso
+               allargamento già fatto qui sopra per i registratori. */
+            const { data: negs } = await supabase.from("stores").select("name");
+            const gemelli = (negs || []).map((x: { name: string }) => x.name)
+                .filter((n: string) => stessoMagazzino(n, negozio));
             const { data } = await supabase.from("mag_giacenze")
-                .select("codice,azienda,quantita").eq("negozio", negozio).in("codice", codici);
+                .select("codice,azienda,quantita,negozio").in("negozio", gemelli.length ? gemelli : [negozio]).in("codice", codici);
             (data || []).forEach((g: { codice: string; azienda: string; quantita: number }) => {
                 if (!g.azienda) return;
                 // fra due società vince quella che i pezzi ce li ha davvero

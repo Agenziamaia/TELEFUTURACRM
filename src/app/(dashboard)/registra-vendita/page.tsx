@@ -5615,10 +5615,14 @@ function CRM() {
       setAvvisiMag(p=>[...(p||[]),"⚠️ Le ricariche PayStore non sono state registrate: "+(e?.message||"errore")]);
     }
   };
+  /** Di che società è questa voce: quella dichiarata, o quella di chi il pezzo
+   *  ce l'ha in magazzino. La seconda è l'unica che c'è per gli articoli a
+   *  quantità — SIM, accessori, kasko — cioè per i pulsanti più premuti. */
+  const _socDi=(item)=>item?.azienda||magVendita?.perCodice?.get(String(item?.codiceMagazzino||item?.codice||""))||null;
   const addMargItem=(item)=>{
-    const az=item?.azienda||null;
+    const az=_socDi(item);
     if(az){
-      const gia=[...new Set(margItems.map(m=>m?.azienda).filter(Boolean))].filter(a=>a!==az);
+      const gia=[...new Set(margItems.map(m=>_socDi(m)).filter(Boolean))].filter(a=>a!==az);
       if(gia.length){
         sT(`⛔ «${item.product||"Questo prodotto"}» è di ${_nomeSoc(az)}, ma nel carrello c'è già merce di ${_nomeSoc(gia[0])}. Sono due società diverse: servono due scontrini. Chiudi questa vendita e falla a parte.`);
         return;
@@ -6153,7 +6157,27 @@ function CRM() {
       const { data: st, error: errSt } = await supabase.from("stores").select("magazzino_vincolante").eq("name", selNeg).maybeSingle();
       if (errSt) return;
       const vincola = st?.magazzino_vincolante === true;
-      if (!vincola) { if (vivo) setMagVendita({ vincola: false, negozio: selNeg, pezzi: [], perImei: new Map() }); return; }
+
+      /* DI CHI È UN ARTICOLO A QUANTITÀ (revisore 01/09). Il carrello misto
+         non si bloccava quasi mai, e il motivo era che il client non lo sapeva:
+         la società sta sulla GIACENZA — è di chi il pezzo ce l'ha — e nessuno
+         la leggeva. Tutte e 65 le voci di catalogo hanno società vuota.
+         Effetto misurato a Donna: premi «Sim Wind3» (Telefutura 1) e poi «Sim
+         Fastweb» (Telefutura 2), passano tutt'e due, e il server fa DUE
+         scontrini con DUE partite IVA su due registratori — e siccome i gruppi
+         sono due, la forma di pagamento viene ignorata e stampano entrambi
+         «CONTANTE» anche se il cliente ha pagato con carta.
+         Si legge sempre, anche dove il magazzino non è vincolante: qui non
+         serve a bloccare una vendita per mancanza di pezzi, serve a sapere di
+         chi è la merce. */
+      const nomiSede = negozi.filter(n => stessoMagazzino(n, selNeg));
+      const { data: gia } = await supabase.from("mag_giacenze")
+        .select("codice,azienda")
+        .in("negozio", nomiSede.length ? nomiSede : [selNeg]).limit(5000);
+      const perCodice = new Map();
+      (gia || []).forEach(r => { if (r.codice && r.azienda && !perCodice.has(r.codice)) perCodice.set(String(r.codice), String(r.azienda)); });
+
+      if (!vincola) { if (vivo) setMagVendita({ vincola: false, negozio: selNeg, pezzi: [], perImei: new Map(), perCodice }); return; }
       // i gemelli condividono il locale e il magazzino: un pezzo di Magliana
       // Multi è a due passi da chi vende a Magliana W3
       const nomi = negozi.filter(n => stessoMagazzino(n, selNeg));
@@ -6183,7 +6207,7 @@ function CRM() {
       const mie = new Set((rt || []).map(r => r.azienda));
       const pezzi = (data || [])
         .map(x => ({ ...x, seriale: String(x.seriale || ""), altraSocieta: !!x.azienda && mie.size > 0 && !mie.has(x.azienda) }));
-      setMagVendita({ vincola: true, negozio: selNeg, pezzi, perImei: new Map(pezzi.map(x => [x.seriale, x])) });
+      setMagVendita({ vincola: true, negozio: selNeg, pezzi, perImei: new Map(pezzi.map(x => [x.seriale, x])), perCodice });
     })();
     return () => { vivo = false; };
     // `negozi` è un array riempito IN PLACE: la sua identità non cambia mai,

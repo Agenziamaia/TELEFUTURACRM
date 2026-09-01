@@ -98,35 +98,32 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const _n = (t: string) => { const v = Number(String(t ?? "").replace(",", ".").trim()); return isFinite(v) ? v : 0; };
 
     /* ═══ COSA PRODUCONO I TELEFONI ═════════════════════════════════════════
-       · una RIGA sullo scontrino, al reparto 2 (IVA 22%), per l'importo pieno
-         — anticipo più finanziato: l'imposta è dovuta su tutto il prezzo, non
-         solo su quello che il cliente lascia in cassa oggi;
-       · una FORMA DI PAGAMENTO non riscossa per la parte che non incassiamo;
-       · e nel caso Vodafone a rate, NIENTE scontrino: quell'anticipo lo
-         incassiamo per conto di Vodafone, che fattura lei al cliente. */
+       NON una riga nuova. La riga del telefono nel carrello C'È GIÀ — la
+       mette `computeAutoMarg` come «Telefono TNP (listino)», al prezzo pieno —
+       e aggiungerne una seconda voleva dire scontrinare il telefono DUE VOLTE:
+       totale doppio, e la cassa automatica che chiede al cliente il doppio di
+       quello che deve (misurato dal revisore: 1.798 € invece di 899, contanti
+       999 invece di 100).
+       Quello che i telefoni producono è la DIVISIONE DEL PAGAMENTO: la parte
+       finanziata o rateizzata viene ritagliata dal totale ed esce come non
+       riscossa, il resto si incassa. L'anticipo serve a controllare che i due
+       numeri tornino col prezzo di listino: se non tornano lo si dice, perché
+       vuol dire che uno dei due è stato copiato male dal PDA. */
     const telefoni = useMemo<TelefonoScontrino[]>(() => data?.telefoni || [], [data]);
-    const righeTelefoni = useMemo<RigaScontrino[]>(() => telefoni
-        .filter(t => DOMANDE_TELEFONO[t.modo].scontrino)
-        .map(t => {
-            const i = importi[t.chiave] || { anticipo: "", resto: "", forma: "" };
-            return {
-                description: `${t.descrizione}${t.imei ? ` · IMEI ${t.imei}` : ""}`,
-                unitPrice: +(_n(i.anticipo) + _n(i.resto)).toFixed(2),
-                qty: 1,
-                /* IL REPARTO È SEMPRE IL 2. Non è una semplificazione: il
-                   reparto porta l'ALIQUOTA, e un telefono è al 22% comunque lo
-                   paghi. Chi paga il resto lo dice la forma di pagamento. */
-                reparto: 2,
-                codice: t.codice,
-            };
-        })
-        .filter(r => r.unitPrice > 0), [telefoni, importi]);
 
     /** Le forme non riscosse, già decise dal tipo di vendita: non si scelgono. */
     const pagamentiNonRiscossi = useMemo(() => telefoni
         .filter(t => DOMANDE_TELEFONO[t.modo].scontrino)
         .map(t => ({ forma: (importi[t.chiave]?.forma || DOMANDE_TELEFONO[t.modo].forma || ""), importo: _n(importi[t.chiave]?.resto) }))
-        .filter(r => r.forma && r.importo > 0), [telefoni, importi]);
+        .filter(r => r.forma && r.importo > 0)
+        /* UNA RIGA PER FORMA, non una per telefono: il registratore ne accetta
+           tre in tutto, e con tre telefoni finanziati il residuo in contanti
+           sarebbe stato tagliato via — incassato davvero e non scritto. */
+        .reduce((acc: { forma: string; importo: number }[], r) => {
+            const g = acc.find(x => x.forma === r.forma);
+            if (g) g.importo = +(g.importo + r.importo).toFixed(2); else acc.push({ ...r });
+            return acc;
+        }, []), [telefoni, importi]);
 
     /* L'INCASSO PER CONTO DI VODAFONE: soldi che entrano davvero in cassa ma
        che sullo scontrino non ci vanno, perché la fattura al cliente la manda
@@ -143,7 +140,26 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         descrizione: r.telefono.descrizione, imei: r.telefono.imei, importo: r.importo, forma: r.forma,
     })), [contoTerzi]);
 
-    const itemsTutte = useMemo<RigaScontrino[]>(() => [...(data?.items || []), ...righeTelefoni], [data, righeTelefoni]);
+    const itemsTutte = useMemo<RigaScontrino[]>(() => data?.items || [], [data]);
+
+    /* LE RIGHE DI PAGAMENTO SI RICOSTRUISCONO SEMPRE COSÌ (revisore 01/09):
+       prima le forme già decise — finanziato, rateizzato: quelle non le
+       sceglie l'operatore — poi quello che resta da incassare.
+       Prima il coupon le azzerava: applicandolo o togliendolo, la riga
+       «Finanziamento 799 €» spariva e restava tutto da assegnare a mano fra
+       contanti, carta e bonifico. Cioè il finanziato veniva certificato come
+       INCASSATO. E permuta più telefono finanziato è la combinazione più
+       comune che c'è, non un caso di scuola. */
+    const rifaiRighe = (netto: number): RigaPagamento[] => {
+        const fisse = pagamentiNonRiscossi;
+        const gia = fisse.reduce((a, r) => a + r.importo, 0);
+        const resta = +(netto - gia).toFixed(2);
+        /* IL RESIDUO STA PRIMO quando le forme fisse sono tante: il
+           registratore ne accetta tre, e il server taglia le ultime — con tre
+           telefoni finanziati sarebbero caduti proprio i contanti, incassati
+           davvero e non scritti sullo scontrino. */
+        return resta > 0.004 ? [{ forma: "", importo: resta }, ...fisse] : [...fisse];
+    };
     const totale = totaleRighe(itemsTutte);
     const [incassato, setIncassato] = useState(0);
     const [resto, setResto] = useState(0);
@@ -172,7 +188,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        vendita: è l'unico caso in cui la domanda ha senso, e infatti negli altri
        la risposta la dà la merce. Se nel locale c'è una sola società non si
        chiede niente: non ci sarebbe niente da scegliere. */
-    const soloServizi = !!data && !itemsTutte.some((i) => i.azienda || i.codice);
+    /* «SOLI SERVIZI» vuol dire che non c'è merce: un telefono È merce, anche
+       quando non è agganciato al magazzino e quindi non porta né società né
+       codice (revisore 01/09). Senza questa aggiunta il modale chiedeva «chi
+       emette lo scontrino?» per una vendita di merce, e la ragione sociale
+       finiva scelta a mano invece che seguire il prodotto. */
+    const soloServizi = !!data && !telefoni.length && !itemsTutte.some((i) => i.azienda || i.codice);
     const [insegne, setInsegne] = useState<string[]>([]);
     const [cassaSel, setCassaSel] = useState<string | null>(null);
     // Coupon sconto (spec Francesco): abbassa l'imponibile. Il residuo rigenera un nuovo coupon.
@@ -205,7 +226,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
            questo momento. */
         const cIn = data?.coupon || null;
         const sc = cIn ? Math.min(Number(cIn.sconto) || 0, t) : 0;
-        setRighe([{ forma: "", importo: +(t - sc).toFixed(2) }]);
+        setRighe([{ forma: "", importo: +(t - sc).toFixed(2) }]);   // al reset non ci sono ancora forme decise
         /* SE CI SONO TELEFONI, PRIMA GLI IMPORTI. Il totale dello scontrino
            non si conosce ancora: dipende da quanto è stato finanziato. */
         const tel = data?.telefoni || [];
@@ -521,11 +542,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             const valore = Number(j.valore_residuo) || 0;
             const sconto = +Math.min(valore, totale).toFixed(2);
             setCoupon({ code: j.code || code, valore, sconto });
-            setRighe([{ forma: "", importo: +(totale - sconto).toFixed(2) }]);
+            setRighe(rifaiRighe(+(totale - sconto).toFixed(2)));
             setCouponInput("");
         } catch { setCouponMsg("Errore nella verifica del coupon."); }
     };
-    const removeCoupon = () => { setCoupon(null); setCouponMsg(""); setRighe([{ forma: "", importo: totale }]); };
+    const removeCoupon = () => { setCoupon(null); setCouponMsg(""); setRighe(rifaiRighe(totale)); };
 
     // ── gestione righe pagamento ──────────────────────────────────────────────
     const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, forma } : r)));
@@ -671,10 +692,35 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                a schermo come riquadro fisso — il modale le
                                riconosce e non offre i pulsanti — e all'operatore
                                resta da dire solo come incassa il resto. */
-                            const fisse = pagamentiNonRiscossi;
-                            const gia = fisse.reduce((a, r) => a + r.importo, 0);
-                            const daIncassare = +(totale - scontoCoupon - gia).toFixed(2);
-                            setRighe([...fisse, ...(daIncassare > 0.004 ? [{ forma: "", importo: daIncassare }] : [])]);
+                            /* NIENTE DA SCONTRINARE, MA QUALCOSA DA INCASSARE
+                               (revisore 01/09). Vodafone Business a rate: la
+                               riga automatica del telefono non c'è e lo
+                               scontrino non è dovuto — quindi il carrello
+                               resta vuoto. Prima si finiva nella schermata di
+                               pagamento con «non c'è niente da incassare», si
+                               premeva Emetti, il server rispondeva «carrello
+                               vuoto» e da lì non si usciva più: né avanti né
+                               indietro, e la vendita si buttava.
+                               Qui invece si chiude come dev'essere: la vendita
+                               si registra, l'anticipo resta archiviato con la
+                               sua modalità, e nessuno scontrino esce. */
+                            if (!itemsTutte.length) {
+                                setFase("stampa"); setMsg("Registro la vendita…");
+                                (async () => {
+                                    if (onCommit) {
+                                        const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
+                                        if (!c || !c.ok) {
+                                            setCommitFail(true); setFase("errore");
+                                            setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore") + "). Riprova.");
+                                            return;
+                                        }
+                                    }
+                                    setFase("fatto");
+                                    setMsg("Vendita registrata. Nessuno scontrino: l'anticipo è incassato per conto di Vodafone, che fattura lei al cliente.");
+                                })();
+                                return;
+                            }
+                            setRighe(rifaiRighe(+(totale - scontoCoupon).toFixed(2)));
                             setFase("scelta");
                         }}
                             disabled={telefoni.some((t) => {
@@ -799,6 +845,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                             <span className="text-[10px] text-slate-500 ml-1.5">deciso dal carrello</span>
                                         </span>
                                     )}
+                                    {/* UNA RIGA DECISA DAL CARRELLO NON SI TOCCA (revisore
+                                        01/09). Il commento sopra diceva «non si cambia a
+                                        mano», ma il campo dell'importo e la × stavano fuori
+                                        dal ramo: si cancellava la riga «Finanziamento» e si
+                                        rimetteva tutto su Contanti, col segno di spunta
+                                        verde. Cioè si certificava come incassato un importo
+                                        che la finanziaria pagherà settimane dopo. */}
+                                    {(!r.forma || FORME_A_MANO.some((f) => f.code === r.forma)) ? (
+                                    <>
                                     <div className="relative w-32 shrink-0">
                                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-base">€</span>
                                         <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
@@ -806,6 +861,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                     </div>
                                     <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
                                         className="shrink-0 w-9 h-11 rounded-xl border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
+                                    </>
+                                    ) : (
+                                        /* decisa dal carrello: si legge, non si tocca */
+                                        <span className="w-32 shrink-0 text-right text-lg font-bold tabular-nums text-slate-300 py-3">{eur(r.importo)}</span>
+                                    )}
                                 </div>
                             ))}
                             <div className="flex items-center justify-between">
