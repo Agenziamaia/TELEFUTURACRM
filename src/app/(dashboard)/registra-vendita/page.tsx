@@ -5030,9 +5030,14 @@ function CRM() {
      La chiave è l'`autoKey` (nome#occorrenza), la stessa con cui il ricalcolo
      riconosce le voci fra loro. Si azzera col carrello. */
   const psTolte=useRef(new Set());
-  const _chiaveRicarica=(ps)=>String(ps?.operatore||"")+":"+String(ps?.numero||"").replace(/\D/g,"");
-  // la società con cui è appena uscito lo scontrino (la sceglie il modale)
-  const psAziendaScontrino=useRef(null);
+  /* ⚠️ LA CHIAVE È LA VENDITA CHE HA GENERATO LA RICARICA, non l'operatore né
+     il numero. Col numero, due SIM Vodafone BUSINESS avevano la stessa chiave
+     — lì il catalogo spegne i campi del numero, quindi sono entrambe vuote —
+     e togliere la ricarica di una zittiva anche l'altra, senza un avviso. E
+     scrivendo il numero a mano la chiave cambiava, così la ricarica esclusa
+     con la carta di credito rinasceva a ogni ricalcolo. L'identità della
+     vendita (gruppo/riga/prodotto) non cambia mai sotto i piedi. */
+  const _chiaveRicarica=(ps)=>String(ps?.chiave||(String(ps?.operatore||"")+":?"));
   /* Compone l'importo di una ricarica del carrello. Tocca TRE cose insieme —
      i pezzi, il totale e il margine — e devono restare d'accordo: un importo
      senza i pezzi non si può eseguire, i pezzi senza l'importo non si possono
@@ -5631,14 +5636,12 @@ function CRM() {
     setMargItems(p=>computeAutoMarg(p,cg.brandId,cg.brandLabel,itemsNuovi));
     sT("🗑 "+it.sub+" tolto da "+cg.brandLabel);
   };
-  const editCG=idx=>{const g=cart[idx];if(!g)return;psTolte.current.clear();setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
-  /* togliendo o riaprendo il gruppo brand, le lapidi di quelle ricariche
-     non hanno più senso: se la vendita si rifà, la ricarica deve rinascere */
-  const rmCG=idx=>{psTolte.current.clear();setCart(p=>p.filter((_,i)=>i!==idx))};
+  const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
+  const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
   // SCELTA/CAMBIO BRAND (estratta per il pannello "cambia brand", revamp 03/08):
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
-  const _pickBrand=(b)=>{if(!b.ready)return;setPsFlow(false);psTolte.current.clear();if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
+  const _pickBrand=(b)=>{if(!b.ready)return;setPsFlow(false);if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
   const fullReset=()=>{psTolte.current.clear();setPsAperta(null);setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
@@ -5710,7 +5713,7 @@ function CRM() {
      insieme alle righe della vendita. Se fallisce, la vendita resta valida:
      è un registro, non un prerequisito — ma si urla in console e all'utente,
      perché una ricarica incassata e non registrata nessuno la ritrova. */
-  const registraRicariche=async(items,contractId)=>{
+  const registraRicariche=async(items,contractId,azScontrino)=>{
     /* ⚠️ UNA RIGA PER RICARICA VERA, non per voce di carrello. Quaranta euro
        composti da due tagli da venti sono DUE operazioni che il fornitore
        deve eseguire, e domani saranno due chiamate all'API. Sullo scontrino
@@ -5734,7 +5737,13 @@ function CRM() {
     try{
       const r=await fetch("/api/vendita/paystore",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({negozio:selNeg,venditore:selVend,
-          azienda:psAziendaScontrino.current||items.find(m=>m&&m.paystore)?.azienda||null,
+          /* la società con cui lo scontrino è appena uscito, passata dal
+             modale fin qui. ⚠️ Era un `useRef`, e non veniva azzerato mai: nei
+             negozi senza cassa fiscale — dove il modale non si apre e la
+             vendita si scrive dritta — il registro ereditava la società
+             dell'ULTIMA vendita passata dal modale, anche di un altro negozio.
+             Un parametro non si sporca. */
+          azienda:azScontrino||items.find(m=>m&&m.paystore)?.azienda||null,
           // se non c'era altro da scontrinare, il server sa che a Donna la
           // ricarica va su Telefutura SRL: gli serve saperlo per scriverlo
           soleRicariche:(items||[]).length>0&&(items||[]).every(m=>m&&m.paystore),
@@ -5948,6 +5957,9 @@ function CRM() {
               importo:null,priceRequired:true,
               paystore:{operatore:_op,operatoreNome:nomeOperatore(_op),numero:_num,pezzi:[],importo:0,
                 daSim:true,catSim:_cat,
+                // l'identità della vendita: è la chiave con cui l'operatore
+                // può escludere QUESTA ricarica e nessun'altra
+                chiave:_op+":"+it.gId+"/"+it.saleIdx+"/"+it.subId,
                 /* solo su Vodafone si può dire «l'ha pagata con la carta»:
                    sugli altri brand la ricarica o serve o non c'è proprio */
                 puoCartaCredito:brandId==="vodafone"},
@@ -6051,8 +6063,15 @@ function CRM() {
         /* il numero SCRITTO A MANO resta; quello che arriva dalla vendita
            torna a vincere solo se non è stato toccato (così correggere il
            numero provvisorio nella scheda continua a funzionare) */
-        const num=old.paystore.aMano?old.paystore.numero:(a.paystore.numero||old.paystore.numero||"");
-        const conNum=(v)=>({...v,paystore:{...v.paystore,numero:num,aMano:!!old.paystore.aMano},
+        /* ⚠️ NIENTE RIPIEGO SUL VECCHIO NUMERO quando quello nuovo è vuoto:
+           se l'operatore CANCELLA il numero nella scheda — perché si era
+           sbagliato e aspetta il dato giusto — la ricarica deve tornare senza
+           numero e bloccare il salvataggio, non tenersi quello sbagliato di
+           prima e farlo partire in silenzio. Il numero vecchio sopravvive solo
+           se era stato scritto a mano, che è una scelta esplicita. */
+        const num=old.paystore.aMano?old.paystore.numero:(a.paystore.numero||"");
+        const conNum=(v)=>({...v,paystore:{...v.paystore,numero:num,aMano:!!old.paystore.aMano,
+          chiave:v.paystore.chiave||old.paystore.chiave},
           model:num||"⚠ numero mancante"});
         if(!pz.length)return conNum(a);
         const pct=Number(psVoci[a.paystore.operatore]?.margin_percent||0);
@@ -6358,14 +6377,11 @@ function CRM() {
     const fn = pendingCommit.current;
     if (!fn) return { ok: true as const };
     try {
-      /* ⚠️ LA SOCIETÀ CHE HA EMESSO LO SCONTRINO, presa dal modale e non
-         indovinata di nuovo. Il registro delle ricariche deve dire con quale
-         partita IVA è stata fatturata: ricalcolarla qui vorrebbe dire avere
-         due regole per lo stesso fatto, e appena l'operatore corregge la
-         società nel modale le due divergono — il documento direbbe una cosa e
-         il registro un'altra. */
-      psAziendaScontrino.current = extra?.azienda || null;
-      const r = await fn();
+      /* ⚠️ LA SOCIETÀ CHE HA EMESSO LO SCONTRINO viaggia come PARAMETRO fino
+         al registro delle ricariche, non in un riferimento condiviso: il
+         registro deve dire con quale partita IVA è stata fatturata, e
+         ricalcolarla laggiù vorrebbe dire due regole per lo stesso fatto. */
+      const r = await fn(extra?.azienda || null);
       pendingCommit.current = null;
       const ct = extra?.contoTerzi || [];
       if (ct.length && Array.isArray(r) && r[0]?.id) {
@@ -7514,7 +7530,7 @@ function CRM() {
          prima dell'insert — quindi il modale se li porta dietro anche se la
          scrittura non è ancora avvenuta: è per questo che la task del bonifico
          continua a puntare alla vendita giusta. */
-      const commitFn = async () => {
+      const commitFn = async (azScontrino) => {
         // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
         if (notaOn && promData) {
           await supabase.from("calendar_tasks").insert({
@@ -7643,7 +7659,7 @@ function CRM() {
            contratto — cliente che attiva una SIM e intanto ricarica un altro
            numero. Senza questa riga si registrerebbero solo le vendite di
            sole ricariche, cioè si perderebbero proprio quelle miste. */
-        await registraRicariche(margList, contractRows[0]?.id || null);
+        await registraRicariche(margList, contractRows[0]?.id || null, azScontrino);
         venditaScritta.current = true;   // e l'autosave smette di risuscitarla
         clearDraft("crm_v9");            // adesso sì: la vendita esiste
         return contractRows;
@@ -7685,7 +7701,8 @@ function CRM() {
              · questo negozio la cassa non ce l'ha accesa.
            Dirlo costa una riga e toglie una diagnosi sbagliata. */
         const _perche = _percheNienteScontrino(selNeg);
-        await commitFn();
+        // senza modale non c'è una società scelta: la decide il registro
+        await commitFn(null);
         setUploading(false);
         sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
         // niente più reset a orologeria: la conferma resta finché non la
@@ -7876,7 +7893,7 @@ function CRM() {
       // Premendo X sullo scontrino NON si salva niente. Il cliente/anagrafica è già
       // stato risolto sopra: un contatto senza vendita è innocuo. In caso di errore
       // la funzione LANCIA, così chi la chiama sa che il salvataggio non è riuscito.
-      const commitFn = async () => {
+      const commitFn = async (azScontrino) => {
       const rows=margItems.map(mi=>_margRigaFin({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
         client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
@@ -7939,7 +7956,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
       } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
-      await registraRicariche(margItems, rows[0]?.id || null);
+      await registraRicariche(margItems, rows[0]?.id || null, azScontrino);
       return rows;
       };
       const _cliLabel=(margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim();
@@ -7958,7 +7975,8 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
         // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
         // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).
         const _perche = _percheNienteScontrino(selNeg);
-        const rows = await commitFn();
+        // senza modale non c'è una società scelta: la decide il registro
+        const rows = await commitFn(null);
         _resetForm(); clearDraft("crm_v9");
         setVenditaFatta({ brands: ["Marginalità"], prodotti: rows.length, cliente: _cliLabel, negozio: selNeg, venditore: selVend, perche: _perche });
       }

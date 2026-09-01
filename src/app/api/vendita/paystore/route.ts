@@ -51,11 +51,16 @@ export async function POST(request: Request) {
        registratori PROPRI (uno solo ce l'ha: Donna) → Telefutura SRL;
        altrimenti la società del negozio. */
     let azienda: string | null = body.azienda || null;
-    if (!azienda && body.negozio) {
+    /* ⚠️ SOLO SE IL CARRELLO ERA DI SOLE RICARICHE. Con un carrello misto la
+       società la decide la MERCE, e quella la sa solo lo scontrino: scrivere
+       qui il default del negozio darebbe un registro che dice T2 mentre il
+       documento dice T1. Meglio lasciare vuoto: «non lo so» è un dato onesto,
+       una società sbagliata no. */
+    if (!azienda && body.negozio && body.soleRicariche) {
         const { data: rt } = await supabase.from("pos_rt").select("azienda, is_default").eq("negozio", body.negozio);
         const proprie = [...new Set((rt || []).map((r: { azienda: string }) => r.azienda))];
         const def = (rt || []).find((r: { is_default: boolean }) => r.is_default)?.azienda || proprie[0] || null;
-        azienda = body.soleRicariche && proprie.length > 1 && proprie.includes("T1") ? "T1" : def;
+        azienda = proprie.length > 1 && proprie.includes("T1") ? "T1" : def;
     }
 
     const righe = [];
