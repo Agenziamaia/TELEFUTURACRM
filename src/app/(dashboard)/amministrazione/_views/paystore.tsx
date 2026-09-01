@@ -66,6 +66,8 @@ const tintaOp = (op: string) => {
     const i = OPERATORI_PAYSTORE.findIndex((o) => o.id === op);
     return TINTE[(i < 0 ? OPERATORI_PAYSTORE.length : i) % TINTE.length];
 };
+/* i negozi non hanno un colore di marchio: una scala che li distingue e basta */
+const TINTE_NEG = ["#f8b516", "#818cf8", "#34d399", "#38bdf8", "#f472b6", "#a78bfa", "#fb923c", "#4ade80", "#facc15", "#22d3ee"];
 const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
@@ -108,8 +110,17 @@ export function PayStoreAdminView() {
     const [range, setRange] = useState({ da: primoDelMese(), a: oggiISO() });
     const [negozio, setNegozio] = useState("");
     const [operatore, setOperatore] = useState("");
+    /* ⚠️ LO STATO SI FILTRA QUI, non nella rotta: il server manda comunque
+       tutto il periodo perché i totali e il giorno-per-giorno devono restare
+       quelli veri — un filtro «solo le da fare» non deve far sembrare che si
+       sia incassato meno. Filtra l'ELENCO, che è dove si lavora. */
+    const [stato, setStato] = useState("");
     const [giornoAperto, setGiornoAperto] = useState<string | null>(null);
     const [vista, setVista] = useState<"registro" | "tagli">("registro");
+    /* cosa comanda il pannello di destra: il giorno per giorno, oppure il
+       dettaglio dei punti vendita quando si clicca la torta (Luca 01/09) */
+    const [destra, setDestra] = useState<"giorni" | "negozi">("giorni");
+    const [torta, setTorta] = useState<"operatori" | "negozi">("negozi");
     const [d, setD] = useState<Dati | null>(null);
     const [err, setErr] = useState<string | null>(null);
     const [caricando, setCaricando] = useState(true);
@@ -136,6 +147,43 @@ export function PayStoreAdminView() {
     if (err) return <div className="m-4 text-sm text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-xl px-4 py-3">⚠️ {err}</div>;
     if (!d) return <div className="p-10 text-center text-sm text-slate-500">Conto le ricariche…</div>;
 
+    /* ⚠️ IL FILTRO DELLO STATO VALE SOLO SULL'ELENCO. Negozio e operatore li
+       applica il server, perché devono cambiare anche i totali e i grafici;
+       lo stato no — «solo le da fare» non deve far sembrare che si sia
+       incassato meno di quanto si è incassato. */
+    const righe = stato ? d.ultime.filter((r) => r.stato === stato) : d.ultime;
+    const oggiS = oggiISO();
+    const daGuardareDavvero = d.daGuardare.filter((r) => r.stato === "fallita" || r.creata_il.slice(0, 10) < oggiS);
+    /* le ricariche per ora della giornata, dalla prima all'ultima: si usa
+       quando i giorni con vendite sono uno o due */
+    const giorniPieni = d.perGiorno.filter((g) => g.quante > 0).length;
+    const aOre = giorniPieni > 0 && giorniPieni <= 2;
+    /* ⚠️ NIENTE `useMemo` QUI: siamo dopo i `return` anticipati (errore, dati
+       non ancora arrivati), e un hook dopo un ritorno condizionale cambia
+       l'ordine degli hook fra un render e l'altro — React se ne accorge e la
+       pagina non si apre più. Il calcolo è su duecento righe: costa niente. */
+    const perOra = (() => {
+        if (!aOre) return [];
+        const m = new Map<number, { euro: number; ops: Map<string, { euro: number; quante: number }> }>();
+        for (const r of d.ultime) {
+            const h = new Date(r.creata_il).getHours();
+            const c = m.get(h) || { euro: 0, ops: new Map() };
+            c.euro += Number(r.importo || 0);
+            const o = c.ops.get(r.operatore) || { euro: 0, quante: 0 };
+            o.euro += Number(r.importo || 0); o.quante += 1;
+            c.ops.set(r.operatore, o); m.set(h, c);
+        }
+        if (!m.size) return [];
+        const ore = [...m.keys()];
+        const da = Math.min(...ore), a2 = Math.max(...ore);
+        return Array.from({ length: a2 - da + 1 }, (_, i) => {
+            const h = da + i, c = m.get(h);
+            return {
+                ora: h, euro: c?.euro || 0,
+                parti: [...(c?.ops || new Map()).entries()].map(([operatore, v]) => ({ operatore, euro: v.euro, quante: v.quante })).sort((x, y) => y.euro - x.euro),
+            };
+        });
+    })();
     const media = d.perGiorno.length ? d.totale.euro / d.perGiorno.length : 0;
     const dettaglio = giornoAperto ? d.perGiorno.find((g) => g.giorno === giornoAperto) : null;
 
@@ -191,6 +239,12 @@ export function PayStoreAdminView() {
                                     className="an-data glass-input px-2 py-1.5 rounded-lg text-xs" />
                             </div>
                         )}
+                        <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
+                            {[{ id: "registro", label: "Registro" }, { id: "tagli", label: "Listino tagli" }].map((v) => (
+                                <button key={v.id} onClick={() => setVista(v.id as "registro" | "tagli")}
+                                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", vista === v.id ? "bg-white/15 text-white" : "text-slate-400 hover:text-white")}>{v.label}</button>
+                            ))}
+                        </div>
                         <button onClick={() => void carica()} disabled={caricando}
                             className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10">
                             <RefreshCw className={cn("w-4 h-4", caricando && "animate-spin")} />
@@ -198,42 +252,86 @@ export function PayStoreAdminView() {
                     </div>
                 </div>
 
-                {/* i filtri: valgono su TUTTA la schermata, non su un riquadro solo */}
-                <div className="relative mt-4 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] text-slate-500">Filtra:</span>
-                    {/* ⚠️ `className` SOSTITUISCE lo stile del campo, non lo aggiunge:
-                        passando solo la larghezza il campo resta senza sfondo né
-                        bordo — «si vede poco» (Luca 31/08). Si usa `rvIn`, la
-                        stessa classe dei campi di Registra Vendita.
-                        E `SelectOpzioni` lavora con STRINGHE: si mostrano i nomi e
-                        si risale all'id. */}
-                    <SelectOpzioni className="rvIn !w-auto min-w-[180px] !py-1.5 !text-[13px]" placeholder="tutti…"
-                        value={negozio || TUTTI_N} opzioni={[TUTTI_N, ...d.negozi]}
-                        onChange={(v) => setNegozio(v === TUTTI_N || !v ? "" : v)} />
-                    <SelectOpzioni className="rvIn !w-auto min-w-[190px] !py-1.5 !text-[13px]" placeholder="tutti…"
-                        value={operatore ? nomeOp(operatore) : TUTTI_O} opzioni={[TUTTI_O, ...d.operatori.map(nomeOp)]}
-                        onChange={(v) => setOperatore(v === TUTTI_O || !v ? "" : (d.operatori.find((o) => nomeOp(o) === v) || ""))} />
-                    {(negozio || operatore) && (
-                        <button onClick={() => { setNegozio(""); setOperatore(""); }}
-                            className="text-[11px] text-slate-400 hover:text-white underline underline-offset-2">togli i filtri</button>
-                    )}
-                    <div className="ml-auto flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
-                        {[{ id: "registro", label: "Registro" }, { id: "tagli", label: "Listino tagli" }].map((v) => (
-                            <button key={v.id} onClick={() => setVista(v.id as "registro" | "tagli")}
-                                className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", vista === v.id ? "bg-white/15 text-white" : "text-slate-400 hover:text-white")}>{v.label}</button>
+                {/* ══ I FILTRI ═══════════════════════════════════════════════
+                    Luca 01/09: «dammi la possibilità di filtrare per brand,
+                    punto vendita, range di periodo, stato. Con dei bei bottoni
+                    come abbiamo fatto in tracking pda per i brand e in
+                    magazzino per gli altri pulsanti di filtro.»
+                    Le tessere dei marchi sono quelle del Tracking — logo,
+                    colore del brand, conteggio in alto — e le pastiglie sono
+                    quelle del Magazzino. Chi conosce quelle due schermate qui
+                    non deve imparare niente. */}
+                <div className="relative mt-4">
+                    <div className="psFiltroGriglia">
+                        {d.operatori.map((o) => {
+                            const q = d.perOperatore.find((x) => x.operatore === o);
+                            const solo = operatore === o;
+                            const spento = !!operatore && !solo;
+                            const logo = OPERATORI_PAYSTORE.find((x) => x.id === o)?.logo;
+                            const col = tintaOp(o);
+                            return (
+                                <button key={o} type="button" title={solo ? `${nomeOp(o)} — filtro attivo, clicca per togliere` : `Mostra solo ${nomeOp(o)}`}
+                                    onClick={() => setOperatore(solo ? "" : o)}
+                                    className="psMarchio"
+                                    style={{
+                                        borderColor: solo ? col + "99" : "var(--tf-w60)",
+                                        background: solo ? col + "18" : "var(--tf-w20)",
+                                        opacity: spento ? .35 : 1,
+                                        filter: spento ? "grayscale(1)" : "none",
+                                    }}>
+                                    {logo
+                                        ? <Image src={logo} alt={nomeOp(o)} width={140} height={44} className={OPERATORI_PAYSTORE.find((x) => x.id === o)?.zoom ? "psZoom" + String(OPERATORI_PAYSTORE.find((x) => x.id === o)?.zoom).replace(".", "") : ""} />
+                                        : <span className="text-[11px] font-bold" style={{ color: col }}>{nomeOp(o)}</span>}
+                                    <span className="psMarchioN" style={{ color: col, borderColor: col + "66" }}>{q?.quante ?? 0}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="rvPillRow mt-3" style={{ "--rv-acc": "#f8b516" } as React.CSSProperties}>
+                        <button onClick={() => setNegozio("")} className={cn("rvPill rvPill-sm", !negozio && "rvPill-on")}>Tutti i negozi</button>
+                        {d.negozi.map((n) => (
+                            <button key={n} onClick={() => setNegozio(negozio === n ? "" : n)} className={cn("rvPill rvPill-sm", negozio === n && "rvPill-on")}>
+                                {n}<span className="psPillN">{d.perNegozio.find((x) => x.negozio === n)?.quante ?? 0}</span>
+                            </button>
                         ))}
+                    </div>
+
+                    <div className="rvPillRow mt-2" style={{ "--rv-acc": "#818cf8" } as React.CSSProperties}>
+                        <button onClick={() => setStato("")} className={cn("rvPill rvPill-sm", !stato && "rvPill-on")}>Tutti gli stati</button>
+                        {ORDINE_STATI.map((x) => {
+                            const n = d.ultime.filter((r) => r.stato === x).length;
+                            if (!n && x !== "da_fare") return null;
+                            return (
+                                <button key={x} onClick={() => setStato(stato === x ? "" : x)}
+                                    className={cn("rvPill rvPill-sm", stato === x && "rvPill-on")}>
+                                    {STATI[x].testo}<span className="psPillN">{n}</span>
+                                </button>
+                            );
+                        })}
+                        {(negozio || operatore || stato) && (
+                            <button onClick={() => { setNegozio(""); setOperatore(""); setStato(""); }} className="rvPill rvPill-sm psPillVia">
+                                ✕ togli i filtri
+                            </button>
+                        )}
                     </div>
                 </div>
 
                 {/* ── LE COSE DA GUARDARE, in cima ─────────────────────────── */}
-                {d.daGuardare.length > 0 && (
+                {/* ⚠️ «DA FARE» OGGI NON È UN ALLARME: è lo stato normale di ogni
+                    ricarica finché l'API non è collegata, e un riquadro rosso su
+                    tutte insegna solo a non guardarlo. Allarme è quello che NON
+                    è partito (fallita) e quello che è rimasto indietro — una da
+                    fare di ieri vuol dire che il credito non è mai stato
+                    caricato. */}
+                {daGuardareDavvero.length > 0 && (
                     <div className="relative mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3">
                         <div className="flex items-center gap-2 text-rose-200 font-bold text-sm mb-2">
-                            <AlertTriangle className="w-4 h-4" /> {d.daGuardare.length === 1 ? "Una ricarica ancora da fare" : `${d.daGuardare.length} ricariche ancora da fare`}
-                            <span className="font-normal text-rose-200/70 text-[11px]">— scontrinate e incassate: il credito risulta non ancora caricato</span>
+                            <AlertTriangle className="w-4 h-4" /> {daGuardareDavvero.length === 1 ? "Una ricarica rimasta indietro" : `${daGuardareDavvero.length} ricariche rimaste indietro`}
+                            <span className="font-normal text-rose-200/70 text-[11px]">— incassate in un giorno già chiuso, o non partite: il credito non risulta caricato</span>
                         </div>
                         <div className="space-y-1">
-                            {d.daGuardare.slice(0, 8).map((r) => (
+                            {daGuardareDavvero.slice(0, 8).map((r) => (
                                 <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
                                     <span className="text-slate-200 font-semibold">{nomeOp(r.operatore)} {eurC(r.importo)}</span>
                                     <span className="font-mono text-slate-400">{r.numero}</span>
@@ -249,15 +347,33 @@ export function PayStoreAdminView() {
                 {vista === "registro" && (
                     <div className="relative mt-5 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5">
                         {/* la composizione: chi si ricarica di più */}
+                        {/* ⚠️ LA TORTA COMANDA IL PANNELLO DI DESTRA (Luca 01/09):
+                            «un semplice grafico a torta di peso, dove se ci clicco
+                            lo spazio di destra si dedica al dettaglio dei punti
+                            vendita». Due modi — chi ricarica di più e dove si
+                            ricarica di più — e in entrambi il clic porta il
+                            dettaglio a fianco, dove c'è lo spazio per leggerlo. */}
                         <div className="flex flex-col gap-3">
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Per operatore</p>
-                                {d.perOperatore.length ? (
-                                    <Donut size={190} unit="€" centro={eur(d.totale.euro)}
-                                        slices={d.perOperatore.map((o) => ({
-                                            label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore),
-                                            sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}`,
-                                        }))} />
+                            <div className={cn("rounded-2xl border bg-black/20 p-3 cursor-pointer transition",
+                                destra === "negozi" ? "border-amber-400/40" : "border-white/10 hover:border-white/25")}
+                                onClick={() => setDestra(destra === "negozi" ? "giorni" : "negozi")}
+                                title="Clicca per vedere il dettaglio qui a fianco">
+                                <div className="flex items-center justify-between mb-2 gap-2">
+                                    <div className="flex gap-0.5 p-0.5 rounded-lg bg-white/5 border border-white/10">
+                                        {[{ id: "negozi", l: "Negozi" }, { id: "operatori", l: "Operatori" }].map((v) => (
+                                            <button key={v.id} onClick={(e) => { e.stopPropagation(); setTorta(v.id as "negozi" | "operatori"); }}
+                                                className={cn("px-2 py-1 rounded-md text-[10px] font-bold transition", torta === v.id ? "bg-white/15 text-white" : "text-slate-400 hover:text-white")}>
+                                                {v.l}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <span className="text-[10px] text-slate-500">{destra === "negozi" ? "aperto ▸" : "clicca"}</span>
+                                </div>
+                                {(torta === "negozi" ? d.perNegozio.length : d.perOperatore.length) ? (
+                                    <Donut size={186} unit="€" centro={eur(d.totale.euro)}
+                                        slices={torta === "negozi"
+                                            ? d.perNegozio.map((n, i) => ({ label: n.negozio, val: n.euro, colore: TINTE_NEG[i % TINTE_NEG.length], sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}` }))
+                                            : d.perOperatore.map((o) => ({ label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore), sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}` }))} />
                                 ) : <p className="text-xs text-slate-500 py-6 text-center">Nessuna ricarica nel periodo.</p>}
                             </div>
                         </div>
@@ -283,14 +399,43 @@ export function PayStoreAdminView() {
                                 ))}
                             </div>
 
-                            {/* il giorno per giorno, cliccabile */}
+                            {/* il pannello che la torta comanda */}
+                            {destra === "negozi" ? (
+                                <div className="rounded-2xl border border-amber-400/25 bg-amber-500/[0.05] p-3.5">
+                                    <div className="flex items-baseline justify-between mb-2">
+                                        <h3 className="text-sm font-bold text-white">
+                                            {torta === "negozi" ? "Quanto ricarica ogni negozio" : "Quanto pesa ogni operatore"}
+                                        </h3>
+                                        <button onClick={() => setDestra("giorni")} className="text-[11px] text-slate-400 hover:text-white">← torna al giorno per giorno</button>
+                                    </div>
+                                    <RaceBars unit="€" righe={(torta === "negozi"
+                                        ? d.perNegozio.map((n, i) => ({ label: n.negozio, val: n.euro, colore: TINTE_NEG[i % TINTE_NEG.length], sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}` }))
+                                        : d.perOperatore.map((o) => ({ label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore), sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}` })))} />
+                                    <p className="text-[11px] text-slate-500 mt-2">
+                                        Le ricariche non hanno margine di listino: PayStore le addebita al valore pieno
+                                        {" "}(verificato sui 108 tagli del loro catalogo).
+                                    </p>
+                                </div>
+                            ) : (
                             <div className="rounded-2xl border border-white/10 bg-black/20 p-3.5">
                                 <div className="flex items-baseline justify-between mb-1">
-                                    <h3 className="text-sm font-bold text-white">Giorno per giorno</h3>
-                                    <span className="text-[11px] text-slate-500">clicca una barra per vedere quel giorno</span>
+                                    <h3 className="text-sm font-bold text-white">{aOre ? "Ora per ora" : "Giorno per giorno"}</h3>
+                                    <span className="text-[11px] text-slate-500">{aOre ? "quando si ricarica, nella giornata" : "clicca una barra per vedere quel giorno"}</span>
                                 </div>
                                 <div className="min-h-[190px]">
-                                    {d.perGiorno.some((g) => g.euro > 0) ? (
+                                    {/* ⚠️ UN GIORNO SOLO NON FA UNA SERIE. Con un giorno il
+                                        grafico diventa un rettangolo di colore alto duecento
+                                        pixel, che non somiglia più a un grafico. Nei primi
+                                        giorni — e ogni volta che si guarda «Oggi» — la
+                                        domanda utile è un'altra: a che ora si ricarica. */}
+                                    {aOre ? (
+                                        <BarStack h={200} unit="€" oggi={-1} media={null}
+                                            giorni={perOra.map((h) => ({
+                                                n: h.ora, label: String(h.ora).padStart(2, "0"),
+                                                tot: h.euro,
+                                                parti: h.parti.map((x) => ({ label: nomeOp(x.operatore), val: x.euro, colore: tintaOp(x.operatore), sub: `${x.quante} ricarich${x.quante === 1 ? "a" : "e"}` })),
+                                            }))} />
+                                    ) : d.perGiorno.some((g) => g.euro > 0) ? (
                                         /* ⚠️ `BarStack` non conosce il clic: si intercetta la
                                            posizione orizzontale e si risale al giorno. Meno
                                            elegante di una prop, ma non tocca un componente che
@@ -301,7 +446,8 @@ export function PayStoreAdminView() {
                                             const i = Math.floor(((e.clientX - box.left) / box.width) * d.perGiorno.length);
                                             const g = d.perGiorno[Math.max(0, Math.min(d.perGiorno.length - 1, i))];
                                             if (g) setGiornoAperto(giornoAperto === g.giorno ? null : g.giorno);
-                                        }} className="cursor-pointer">
+                                        }} className="cursor-pointer"
+>
                                         <BarStack h={200} unit="€"
                                             giorni={d.perGiorno.map((g) => ({
                                                 n: Number(g.giorno.slice(8, 10)),
@@ -316,6 +462,7 @@ export function PayStoreAdminView() {
                                     )}
                                 </div>
                             </div>
+                            )}
 
                             {/* il giorno aperto */}
                             {dettaglio && (
@@ -347,23 +494,19 @@ export function PayStoreAdminView() {
 
             {vista === "registro" ? (
                 <>
-                    {/* ── I NEGOZI ─────────────────────────────────────────── */}
-                    {d.perNegozio.length > 0 && (
-                        <div className="glass-card an-card rounded-2xl p-4">
-                            <h3 className="text-sm font-bold text-white mb-1">Quanto ricarica ogni negozio</h3>
-                            <p className="text-[11px] text-slate-500 mb-3">Nel periodo scelto. Le ricariche non hanno margine di listino: l&apos;aggio si imposta per operatore in Catalogo → Marginalità → Ricariche.</p>
-                            <RaceBars righe={d.perNegozio.map((n, i) => ({
-                                label: n.negozio, val: n.euro, colore: TINTE[i % TINTE.length],
-                                sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}`,
-                            }))} unit="€" />
-                        </div>
-                    )}
-
                     {/* ── LE ULTIME ────────────────────────────────────────── */}
                     <div className="glass-card an-card rounded-2xl p-4">
-                        <h3 className="text-sm font-bold text-white mb-3">Le ultime {Math.min(d.ultime.length, 200)}</h3>
-                        {d.ultime.length === 0 ? (
-                            <p className="text-xs text-slate-500 py-6 text-center">Ancora nessuna ricarica registrata in questo periodo.</p>
+                        <div className="flex items-baseline justify-between mb-3">
+                            <h3 className="text-sm font-bold text-white">
+                                {stato ? `Le ${STATI[stato].testo}` : "Le ultime"} {righe.length}
+                                {righe.length !== d.ultime.length && <span className="text-slate-500 font-normal"> di {d.ultime.length}</span>}
+                            </h3>
+                            <span className="text-[11px] text-slate-500 tabular-nums">{eurC(righe.reduce((t, r) => t + Number(r.importo || 0), 0))}</span>
+                        </div>
+                        {righe.length === 0 ? (
+                            <p className="text-xs text-slate-500 py-6 text-center">
+                                {d.ultime.length ? "Nessuna ricarica con questi filtri." : "Ancora nessuna ricarica registrata in questo periodo."}
+                            </p>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-[12px]">
@@ -383,7 +526,7 @@ export function PayStoreAdminView() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {d.ultime.map((r) => (
+                                        {righe.map((r) => (
                                             <tr key={r.id} className="border-t border-white/5">
                                                 <td className="py-1.5 text-slate-400 whitespace-nowrap">{new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                                                 <td className="text-slate-200 font-semibold">
@@ -391,10 +534,7 @@ export function PayStoreAdminView() {
                                                         salvato sulla riga: nel registro convivono «WindTre»
                                                         scritto dal flusso normale e «WINDTRE» scritto dal
                                                         recupero, e nell'elenco sembravano due operatori. */}
-                                                    <span className="inline-flex items-center gap-1.5">
-                                                        <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: tintaOp(r.operatore) }} />
-                                                        {nomeOp(r.operatore)}
-                                                    </span>
+                                                    <MarchioRiga op={r.operatore} />
                                                 </td>
                                                 <td className="text-slate-500">{r.taglio || "—"}</td>
                                                 <td className="font-mono text-slate-300">
@@ -427,6 +567,29 @@ export function PayStoreAdminView() {
                 <ListinoTagli tagli={d.tagli} onCambiato={() => void carica()} />
             )}
         </div>
+    );
+}
+
+/* ── IL MARCHIO NELLA RIGA ──────────────────────────────────────────────────
+   Luca 01/09: «rendila anche un po' più carina con i brand al posto dei nomi».
+   Dove il logo c'è si vede il logo — si riconosce prima di leggere; dove non
+   c'è (cinque operatori su diciotto non hanno un file) resta il nome con il
+   pallino del suo colore, che è meglio di un buco. */
+function MarchioRiga({ op }: { op: string }) {
+    const o = OPERATORI_PAYSTORE.find((x) => x.id === op);
+    /* ⚠️ NIENTE ZOOM QUI. Le scale della griglia servono a pareggiare i loghi
+       dentro una tessera di 58 pixel; su una riga alta 22 lo stesso 2,4 di
+       WindTre lo fa sbordare sopra e sotto. Qui basta il tetto d'altezza. */
+    if (o?.logo) return (
+        <span className="psLogoRiga" title={o.label}>
+            <Image src={o.logo} alt={o.label} width={110} height={26} />
+        </span>
+    );
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: tintaOp(op) }} />
+            {nomeOp(op)}
+        </span>
     );
 }
 
