@@ -474,6 +474,16 @@ const TIPI: [RegExp, string, string][] = [
        inizio riga resta: «display 6.5"» dentro la scheda di un telefono non
        deve farlo diventare un ricambio. E `glue` non prende le «Glue Case». */
     [/^\s*display|^\s*glue\b(?!\s*case)/i, "🧩", "Ricambi"],
+    /* L'USATO PRIMA DEI TELEFONI (confronto sui 17.061 articoli): 703 telefoni
+       usati perdevano il simbolo del riciclo e diventavano telefoni normali.
+       Al banco quel simbolo dice una cosa che serve sapere prima del modello.
+       Sta comunque dopo le custodie: una cover per un usato è una cover.
+       ED È SALITO ANCORA, sopra Tablet e Orologi (revisione finale 01/09):
+       da quando «TAB A9» si riconosce, 62 tablet e 22 orologi USATI — tutti
+       codici `RITUSATO` — prendevano il simbolo del modello invece di quello
+       del riciclo. La regola c'era già scritta qui sopra; era l'ordine che
+       non la rispettava più. */
+    [/usato|ricondizion/i, "♻️", "Usato"],
     /* IL CONFINE DI PAROLA, di nuovo (revisore 01/09). `ipad` senza confine
        prendeva «PENIPAD» — un pennino — e «tablet» da solo non prendeva i
        «GALAXY TAB A9», che nel catalogo si scrivono «TAB» e basta: 27 tablet
@@ -487,11 +497,6 @@ const TIPI: [RegExp, string, string][] = [
     [/\bwatch|apple\s*watch|smart\s*watch|orolog|band\b|smartband/i, "⌚", "Orologi e band"],
     [/e-?sim|esim/i, "📲", "eSIM"],
     [/\bsim\b|usim|iccid/i, "📶", "SIM"],
-    /* L'USATO PRIMA DEI TELEFONI (confronto sui 17.061 articoli): 703 telefoni
-       usati perdevano il simbolo del riciclo e diventavano telefoni normali.
-       Al banco quel simbolo dice una cosa che serve sapere prima del modello.
-       Sta comunque dopo le custodie: una cover per un usato è una cover. */
-    [/usato|ricondizion/i, "♻️", "Usato"],
     /* UN «CASE» CHE NON HA INCONTRATO NESSUNA REGOLA PRIMA è una custodia —
        «Glue Case for iPhone XR». Sta qui, non in fondo: sotto ai Telefoni
        perderebbe contro «iphone», e sopra agli auricolari ruberebbe i TWS col

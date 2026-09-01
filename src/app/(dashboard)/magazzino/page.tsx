@@ -459,7 +459,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
            scrivesse un nome diverso farebbe comparire lo STESSO codice in due
            categorie nella stessa tabella. La descrizione del pezzo resta il
            ripiego per i codici che in anagrafica non ci sono. */
-        famigliaDi({ gruppo: null, sottogruppo: null, descrizione, ...(anagrafica.get(codice) ?? {}), codice }),
+        famigliaDi({
+            gruppo: null, sottogruppo: null, ...(anagrafica.get(codice) ?? {}), codice,
+            /* la descrizione dell'anagrafica vince, ma solo se c'è davvero: una
+               riga con descrizione vuota sovrascriverebbe quella buona della
+               giacenza e manderebbe l'articolo in «Altro». */
+            descrizione: anagrafica.get(codice)?.descrizione || descrizione,
+        }),
         [anagrafica]);
 
     /* SOLO QUELLO CHE C'È, di partenza (Luca 31/08). Con «tutti gli articoli»
@@ -718,17 +724,6 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* I RIQUADRI, invece, contano DENTRO la categoria scelta: il numero grande
        promette «tante righe vedrai premendomi», e con una categoria accesa
        quelle righe sono meno. */
-    /* QUALI CATEGORIE ESISTONO QUI. Come `famiglieVive` in Articoli: una
-       pastiglia per una famiglia che in questo magazzino non c'è proprio è
-       solo una riga in più da leggere — e le pastiglie erano dodici, che a
-       schermo stretto diventavano tre righe e mangiavano 152px. Si guarda
-       `righeGrezze` INTERO, non il quadratone acceso, così la fila non balla
-       mentre si clicca. */
-    const categorieVive = useMemo(() => {
-        const m = new Set<string>();
-        righeGrezze.forEach(r => m.add(r.famiglia));
-        return m;
-    }, [righeGrezze]);
 
     const righeInCategoria = useMemo(
         () => famiglia ? righeGrezze.filter(r => r.famiglia === famiglia) : righeGrezze,
@@ -859,12 +854,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         const dove = scelti.length ? scelti.join("+").replace(/\s+/g, "") : "tutti";
         const oggi = new Date().toISOString().slice(0, 10);
         if (vistaVenduto) {
-            const dati: CellaXlsx[][] = vendutiOrdinati.map(v => [v.seriale, v.codice, v.descrizione, v.operatore || "—",
+            const dati: CellaXlsx[][] = vendutiOrdinati.map(v => [v.seriale, v.codice, v.descrizione,
+                etichettaFamiglia(famDi(v.codice, v.descrizione)).nome, v.operatore || "—",
                 v.negozio, v.venduto_il ? v.venduto_il.slice(0, 10) : "—", v.venduto_da || "—",
                 v.costo == null ? "" : Math.round(v.costo * 100) / 100,
                 v.prezzo == null ? "" : Math.round(v.prezzo * 100) / 100]);
             scaricaXlsx(`venduto_${dove}_${dal || "inizio"}_${al || oggi}.xlsx`,
-                ["IMEI / seriale", "Codice", "Descrizione", "Operatore", "Negozio", "Venduto il", "Venduto da", "A listino €", "Venduto a €"],
+                ["IMEI / seriale", "Codice", "Descrizione", "Categoria", "Operatore", "Negozio", "Venduto il", "Venduto da", "A listino €", "Venduto a €"],
                 dati, "Venduto");
             return;
         }
@@ -962,6 +958,28 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        aveva già chiesto il 31/08 («questi filtri devono essere adattivi, non
        si aggiornano con la quantità aggiornata»). Se contasse dopo se stessa,
        ogni pastiglia spenta direbbe zero e non si premerebbe mai. */
+    /* QUALI CATEGORIE ESISTONO QUI. Come `famiglieVive` in Articoli: una
+       pastiglia per una famiglia che in questo magazzino non c'è proprio è
+       solo una riga in più da leggere — e le pastiglie erano dodici, che a
+       schermo stretto diventavano tre righe e mangiavano 152px. Si guarda
+       `righeGrezze` INTERO, non il quadratone acceso, così la fila non balla
+       mentre si clicca. */
+    const categorieVive = useMemo(() => {
+        const m = new Set<string>();
+        /* OGNI VISTA HA LE SUE CATEGORIE (revisione finale 01/09). Prima le
+           decideva sempre il magazzino, che i pezzi VENDUTI non li contiene:
+           una categoria presente solo fra i venduti non aveva la pastiglia —
+           non si poteva filtrare, e la somma delle pastiglie non faceva
+           «Tutte». Oggi non si vede perché di venduto non c'è ancora niente,
+           ma da stamattina i negozi cominciano a scrivere. Il caso stretto:
+           «Wearable» sta in piedi con tre sole righe di magazzino — venduta
+           quella merce, la vendita restava in tabella e la sua pastiglia no. */
+        if (vistaVenduto) venduti.forEach(v => m.add(famDi(v.codice, v.descrizione)));
+        else if (vistaTrasf) (inViaggio ?? []).forEach(r => m.add(famDi(r.codice || "", r.descrizione || "")));
+        else righeGrezze.forEach(r => m.add(r.famiglia));
+        return m;
+    }, [righeGrezze, vistaVenduto, vistaTrasf, venduti, inViaggio, famDi]);
+
     const perCategoria = useMemo(() => {
         const m: Record<string, number> = {};
         const metti = (f: string) => { m[f] = (m[f] || 0) + 1; };
