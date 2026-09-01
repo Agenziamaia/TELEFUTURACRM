@@ -144,7 +144,23 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | F
     // riscossa (PAGAMENTO ELETTRONICO + importo pagato pieno), come SuiteMobile.
     // I registratori Custom ignorano option/index (cust-fp legge solo paymentType) → innocuo.
     const pt = Number(p.paymentType ?? 0);
-    const idx = pt === 2 ? "02" : pt === 1 ? "01" : "00";
+    /* ⭐ IL «NON RISCOSSO» VUOLE IL SUO INDICE (01/09 sera). Sul paymentType 4
+       l'`index` non è un dettaglio: dice CHE COSA non è stato riscosso —
+       0 = servizi, 1 = BENI, 2 = fattura, 3 = SSN. Mandavamo 0 (servizi) per un
+       TELEFONO, che è un bene: il registratore rifiuta, perché il non riscosso
+       sui servizi non può superare il totale delle righe di servizio, e lì di
+       servizi non ce n'era nemmeno uno.
+       Il documento restava APERTO a metà: i ragazzi lo forzavano e uscivano
+       gli scontrini strappati che Luca ha fotografato.
+       LA PROVA sta nei dati di oggi, e separa le due famiglie di registratore:
+       lo stesso identico documento è RIUSCITO 2 volte su 2 sui Custom (Libia,
+       Merulana), che l'`index` lo ignorano, ed è FALLITO 3 volte su 3 sugli
+       Epson di rete (Donna) con PRINTER ERROR.
+       Il non riscosso qui nasce sempre da un telefono — rateizzato, finanziato
+       o VAR — quindi è sempre un BENE. Il giorno che servisse anche per un
+       servizio non ancora incassato, questa riga va decisa guardando le voci
+       del carrello, non fissata. */
+    const idx = pt === 2 ? "02" : pt === 4 ? "01" : pt === 1 ? "01" : "00";
     return `<printRecTotal operator="${esc(operator)}"` +
       ` option="1"` +
       ` description="${esc(p.description || "CONTANTE")}"` +
