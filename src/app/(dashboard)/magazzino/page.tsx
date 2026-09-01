@@ -182,9 +182,25 @@ export default function MagazzinoPage() {
        partenza è dall'amministrativo in su. */
     const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const vedeValori = !!user && capAllowed(user.role, CAP_MAGAZZINO.section, CAP_MAGAZZINO_VALORI, perms);
-    // consultazione per tutti; trasferimenti per chi gestisce; il CARICO
-    // merce solo amministrazione in su (segnalazione Francesco 12/08)
-    const gestisce = ["admin", "dev", "direttore_generale", "store_manager"].includes(user?.role || "");
+    /* CHI PUÒ ACCETTARE LA MERCE IN ARRIVO (Luca 01/09 sera): «abilita tutti
+       gli utenti dallo store specialist in poi, così nei negozi possono
+       accettarsi gli ordini anche se non c'è lo Store Manager».
+       Prima era solo store_manager e direzione, e la revisione ha misurato il
+       danno: TRE trasferimenti su quattro non li poteva accettare nessuno —
+       a Merulana (100 SIM), Acilia Multi (14 pezzi) e Acilia VS (6 SIM) non
+       c'era un solo utente col permesso, e ad Acilia VS lo store manager è
+       pure disattivato. La merce restava in viaggio per sempre.
+       «Store Specialist» è un GRADO del ruolo Consulente, non un ruolo: sopra
+       c'è il Senior, sotto l'Apprendista — che resta fuori, perché accettare
+       merce è prendersi in carico un documento.
+       L'AMMINISTRAZIONE ci sta dentro per forza: Claudia e Sandra stanno
+       materialmente facendo il magazzino e non potevano né accettare né
+       annullare niente. */
+    const _GRADI_CHE_ACCETTANO = ["store_specialist", "store_specialist_senior"];
+    const _RUOLI_CHE_ACCETTANO = ["admin", "dev", "direttore_generale", "direttore_commerciale",
+        "direttore_ob", "direttore_cc", "amministrativo", "store_manager"];
+    const gestisce = _RUOLI_CHE_ACCETTANO.includes(user?.role || "")
+        || (user?.role === "venditore" && _GRADI_CHE_ACCETTANO.includes(user?.grade || ""));
     const puoCaricare = isAdminOrAbove(user?.role);
     const [tab, setTab] = useState<"giacenze" | "trasferimenti" | "articoli">("giacenze");
     /* LA SEZIONE ARRIVA DALL'INDIRIZZO (Luca 01/09): il magazzino è diventato
