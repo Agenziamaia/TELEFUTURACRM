@@ -17,6 +17,7 @@
  * SOLO se approvate a parte. Per questo il documento ha due firme.
  */
 import { eur } from "@/lib/pratiche";
+import { LOGO_TELEFUTURA } from "@/lib/logoTelefutura";
 
 export type DatiUsato = {
     protocollo: string;
@@ -105,56 +106,83 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
     return `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
 <title>Contratto di acquisto usato ${esc(d.protocollo)}</title>
 <style>
-  @page { size: A4; margin: 9mm 10mm; }
+  /* ═══ STILE CRM SU CARTA ══════════════════════════════════════════════
+     Non è il CRM fotografato: quello è scuro, e su un foglio bianco il
+     fondo scuro è illeggibile e mangia un cartuccia. È la sua GRAMMATICA —
+     il blu del marchio come unico accento, i riquadri con l'angolo
+     arrotondato, le testate in maiuscoletto spaziato, i dati in griglia —
+     portata su bianco. E deve restare leggibile anche stampata in
+     bianco e nero, perché in negozio succede. */
+  @page { size: A4; margin: 8mm 9mm; }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #111; font-size: 8.7pt; line-height: 1.36; margin: 0; }
-  h1 { font-size: 13pt; margin: 0; letter-spacing: -.3px; }
-  h2 { font-size: 8pt; margin: 2.6mm 0 1mm; text-transform: uppercase; letter-spacing: .7px; color: #000;
-       border-bottom: 1px solid #111; padding-bottom: .6mm; }
-  .testa { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm;
-           border-bottom: 2px solid #111; padding-bottom: 2mm; margin-bottom: 2mm; }
-  .proto { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11pt; font-weight: 800; white-space: nowrap; }
-  .muto { color: #666; font-size: 7.2pt; line-height: 1.3; }
-  .due { display: flex; gap: 5mm; }
+  :root { --blu: #0000e6; --inchiostro: #111827; --tenue: #6b7280; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #111827; font-size: 8.6pt; line-height: 1.36; margin: 0; }
+  h1 { font-size: 14pt; margin: 0; letter-spacing: -.4px; color: #0b1020; }
+  h2 { font-size: 7.6pt; margin: 2.4mm 0 1.2mm; text-transform: uppercase; letter-spacing: 1px; color: #0000e6;
+       display: flex; align-items: center; gap: 2mm; }
+  h2::after { content: ""; flex: 1; height: 1px; background: rgba(0,0,230,.22); }
+  h2 .n { display: inline-flex; align-items: center; justify-content: center; width: 4.6mm; height: 4.6mm;
+          border-radius: 1.2mm; background: #0000e6; color: #fff; font-size: 7pt; font-weight: 800; letter-spacing: 0; }
+
+  .testa { display: flex; align-items: center; gap: 4mm; padding-bottom: 2.4mm; margin-bottom: 2.4mm;
+           border-bottom: 2px solid #0000e6; }
+  .marchio { width: 15mm; height: 15mm; flex: none; object-fit: contain; }
+  .testa .mid { flex: 1; min-width: 0; }
+  .proto { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10pt; font-weight: 800; color: #fff;
+           background: #0000e6; padding: 1.4mm 2.6mm; border-radius: 1.6mm; white-space: nowrap; letter-spacing: .3px; }
+  .muto { color: #6b7280; font-size: 7.2pt; line-height: 1.32; }
+
+  .due { display: flex; gap: 4.5mm; }
   .due > div { flex: 1; min-width: 0; }
   .tre { gap: 4mm; }
-  .g { display: grid; grid-template-columns: 1fr 1fr; gap: .5mm 4mm; }
+  .g { display: grid; grid-template-columns: 1fr 1fr; gap: .6mm 4mm; }
   .g > div { min-width: 0; word-break: break-word; }
-  .g b, .riga b { color: #444; font-weight: 700; }
-  .box { border: 1.2px solid #111; border-radius: 1.5mm; padding: 1.8mm 2.4mm; }
-  .imei { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10pt; font-weight: 800; letter-spacing: .4px; }
-  .prezzo { display: flex; gap: 4mm; align-items: baseline; border: 1.2px solid #111; border-radius: 1.5mm; padding: 1.8mm 2.4mm; margin-top: 1.2mm; }
-  .prezzo strong { font-size: 12.5pt; }
-  ol { margin: .8mm 0 0; padding-left: 4.2mm; }
-  ol li { margin-bottom: .7mm; }
-  .cl { border: 1.2px solid #111; border-radius: 1.5mm; padding: 1.8mm 2.4mm; margin-top: 1.6mm; font-size: 7.9pt; }
+  .g b, .riga b { color: #374151; font-weight: 700; }
+
+  .box { border: 1px solid rgba(0,0,230,.28); border-radius: 2mm; padding: 2mm 2.6mm; background: #fafaff; }
+  .imei { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10pt; font-weight: 800; letter-spacing: .5px; color: #0b1020; }
+  .prezzo { display: flex; gap: 4mm; align-items: stretch; border: 1px solid rgba(0,0,230,.28); border-left: 2.4mm solid #0000e6;
+            border-radius: 2mm; padding: 2mm 2.6mm; margin-top: 1.4mm; background: #fafaff; }
+  .prezzo strong { font-size: 13pt; color: #0000e6; letter-spacing: -.4px; }
+  .et { font-size: 6.4pt; letter-spacing: .8px; text-transform: uppercase; color: #6b7280; }
+
+  ol { margin: .8mm 0 0; padding-left: 4.4mm; }
+  ol li { margin-bottom: .75mm; }
+  ol li::marker { color: #0000e6; font-weight: 800; }
+
+  .cl { border: 1px solid rgba(0,0,230,.32); border-radius: 2mm; padding: 2mm 2.6mm; margin-top: 1.8mm; font-size: 7.8pt; background: #fafaff; }
+  .cl-t { font-size: 7.4pt; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: #0000e6; margin-bottom: 1.2mm; }
   .cl p { margin: 0 0 1mm; }
   .cl p:last-child { margin-bottom: 0; }
-  .rf { border-bottom: 1px solid #111; height: 15mm; margin-top: 1.5mm; }
-  .rm { display: inline-block; border-bottom: 1px solid #111; width: 26mm; }
-  .firme { display: flex; gap: 6mm; margin-top: 2.5mm; page-break-inside: avoid; }
+
+  .datariga { margin-top: 2.4mm; font-size: 8pt; color: #374151; }
+  .rf { border-bottom: 1px solid #111827; height: 15mm; margin-top: 1.6mm; }
+  .rm { display: inline-block; border-bottom: 1px solid #111827; width: 26mm; }
+  .firme { display: flex; gap: 5mm; margin-top: 2.2mm; page-break-inside: avoid; }
   .firme > div { flex: 1; }
-  .datariga { margin-top: 2.6mm; font-size: 8pt; color: #444; }
-  .nota { font-size: 7.2pt; color: #555; margin: .8mm 0 0; }
-  .pie { margin-top: 2.5mm; font-size: 6.8pt; color: #777; border-top: 1px solid #ddd; padding-top: 1.2mm; }
+  .fe { font-size: 7.4pt; font-weight: 700; color: #0b1020; }
+  .nota { font-size: 7.2pt; color: #6b7280; margin: .8mm 0 0; }
+  .pie { margin-top: 2.4mm; font-size: 6.6pt; color: #9ca3af; border-top: 1px solid rgba(0,0,230,.2); padding-top: 1.2mm;
+         display: flex; justify-content: space-between; gap: 4mm; }
   .segno { color: #fff; font-size: 5pt; }
 </style></head><body>
 
 <div class="testa">
-  <div>
+  <img class="marchio" src="${LOGO_TELEFUTURA}" alt="">
+  <div class="mid">
     <h1>Contratto di acquisto di bene usato</h1>
-    <div class="muto"><b>${esc(d.societa.nome)}</b> · P. IVA ${esc(d.societa.piva)} · ${esc(d.societa.sede)}
-      &nbsp;—&nbsp; punto vendita ${esc(d.negozio)} · ${esc(d.operatore)}</div>
+    <div class="muto"><b>${esc(d.societa.nome)}</b> · P. IVA ${esc(d.societa.piva)} · ${esc(d.societa.sede)}<br>
+      punto vendita <b>${esc(d.negozio)}</b> · operatore ${esc(d.operatore)}</div>
   </div>
   <div style="text-align:right">
     <div class="proto">${esc(d.protocollo)}</div>
-    <div class="muto">${oggiIt()}</div>
+    <div class="muto" style="margin-top:1.2mm">${oggiIt()}</div>
   </div>
 </div>
 
 <div class="due">
   <div>
-    <h2>1 · Il Venditore</h2>
+    <h2><span class="n">1</span> Il Venditore</h2>
     <div class="g">
       <div style="grid-column:1/-1"><b>Nome</b> ${esc(v.etichetta || "—")}</div>
       ${dato(v.business ? "P. IVA" : "C.F.", v.cf)}
@@ -169,7 +197,7 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
     Copia del documento è acquisita e conservata dall'Acquirente, <b>${esc(d.societa.nome)}</b>.</p>
   </div>
   <div>
-    <h2>2 · Il bene</h2>
+    <h2><span class="n">2</span> Il bene</h2>
     <div class="box">
       <div class="g">
         <div style="grid-column:1/-1"><b>Modello</b> ${esc(`${dev.marca || ""} ${dev.modello || ""}`.trim() || "—")}</div>
@@ -181,9 +209,9 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
       ${dev.note ? `<div style="margin-top:1mm"><b>Difetti dichiarati:</b> ${esc(dev.note)}</div>` : ""}
     </div>
     <div class="prezzo">
-      <div style="flex:1"><span class="muto">PREZZO PATTUITO</span><br><strong>${esc(eur(d.prezzo))}</strong>
+      <div style="flex:1"><span class="et">Prezzo pattuito</span><br><strong>${esc(eur(d.prezzo))}</strong>
         <br><span class="muto">${esc(euroInLettere(d.prezzo))} euro</span></div>
-      <div style="flex:1"><span class="muto">PAGAMENTO</span><br><b>${esc(d.pagamento || "—")}</b>
+      <div style="flex:1"><span class="et">Pagamento</span><br><b>${esc(d.pagamento || "—")}</b>
         ${d.iban ? `<br><span class="muto">IBAN ${esc(d.iban)}</span>` : ""}</div>
     </div>
     <p class="nota">${d.modoPagamento === "bonifico"
@@ -194,7 +222,7 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
   </div>
 </div>
 
-<h2>3 · Che cosa dichiara il Venditore</h2>
+<h2><span class="n">3</span> Che cosa dichiara il Venditore</h2>
 <ol>
   <li><b>È di sua esclusiva proprietà</b> e nella sua piena disponibilità: nessun terzo può vantarvi diritti.</li>
   <li><b>Ha provenienza lecita</b>: non proviene da furto, rapina, appropriazione indebita, smarrimento o ricettazione, e non è oggetto di denuncia.</li>
@@ -209,22 +237,22 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
 
 <div class="due tre" style="margin-top:2.4mm">
   <div>
-    <h2 style="margin-top:0">4 · La verifica tecnica</h2>
+    <h2 style="margin-top:0"><span class="n">4</span> La verifica tecnica</h2>
     <p style="margin:0">L'Acquirente può sottoporre il bene a verifica <b>entro ${gg} giorni</b>, prima della rivendita. Se emergono malfunzionamenti non dichiarati, blocchi non rimossi, o una dichiarazione della sezione 3 risulta non veritiera, può a sua scelta — dandone avviso ai recapiti della sezione 1 — proporre una <b>riduzione del prezzo</b> proporzionata, oppure <b>risolvere il contratto</b> restituendo il bene e riavendo quanto pagato. Il Venditore risponde entro cinque giorni.</p>
   </div>
   <div>
-    <h2 style="margin-top:0">5 · Il blocco di rete</h2>
+    <h2 style="margin-top:0"><span class="n">5</span> Il blocco di rete</h2>
     <p style="margin:0">Il Venditore risponde del <b>blocco disposto dall'operatore telefonico</b> quando dipenda da un contratto da lui sottoscritto e non onorato. L'impegno vale <b>${mesi} mesi</b> da oggi e comporta, a scelta dell'Acquirente, la restituzione del prezzo o il rimborso del danno.</p>
   </div>
   <div>
-    <h2 style="margin-top:0">6 · Dati personali</h2>
+    <h2 style="margin-top:0"><span class="n">6</span> Dati personali</h2>
     <p style="margin:0" class="muto">Trattati ai sensi del Reg. UE 2016/679 e del D.lgs. 101/2018 per la gestione del contratto (art. 6 lett. b) e per gli obblighi fiscali, contabili e di pubblica sicurezza. Conservati per il tempo previsto dalla legge. Diritti artt. 15-22 presso il Titolare: <b>${esc(d.societa.nome)}</b>, P. IVA ${esc(d.societa.piva)}.</p>
   </div>
 </div>
 
 <div class="cl">
-  <b style="font-size:8pt;letter-spacing:.5px">7 · CLAUSOLE DA APPROVARE SPECIFICAMENTE (ARTT. 1341 E 1342 C.C.)</b>
-  <p style="margin-top:1mm"><b>7.1 Manleva.</b> Il Venditore tiene indenne l'Acquirente da ogni pretesa di terzi sulla proprietà o provenienza del bene e da ogni conseguenza della non veridicità delle dichiarazioni della sezione 3, spese di difesa comprese.</p>
+  <div class="cl-t"><span class="n" style="display:inline-flex;align-items:center;justify-content:center;width:4.6mm;height:4.6mm;border-radius:1.2mm;background:#0000e6;color:#fff;font-size:7pt;font-weight:800;vertical-align:middle">7</span>&nbsp; Clausole da approvare specificamente — artt. 1341 e 1342 c.c.</div>
+  <p><b>7.1 Manleva.</b> Il Venditore tiene indenne l'Acquirente da ogni pretesa di terzi sulla proprietà o provenienza del bene e da ogni conseguenza della non veridicità delle dichiarazioni della sezione 3, spese di difesa comprese.</p>
   <p><b>7.2 Verifica e rimedi.</b> Accetta la verifica della sezione 4 e i rimedi ivi previsti — riduzione del prezzo o risoluzione con restituzione — entro ${gg} giorni.</p>
   <p><b>7.3 Blocco di rete.</b> Accetta la responsabilità della sezione 5 per ${mesi} mesi.</p>
   <p><b>7.4 Bene non ritirato.</b> In caso di risoluzione, se non ritira il bene entro <b>trenta giorni</b> dall'avviso, il bene si intende acquisito dall'Acquirente a compensazione delle spese, e nulla è più dovuto ad alcun titolo.</p>
@@ -233,16 +261,16 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
 <div class="datariga">Luogo e data: <b>${esc(d.negozio)}</b>, ${dataFirma}</div>
 <div class="firme">
   <div>
-    <div class="muto"><b>Firma del Venditore — accettazione</b> · quanto precede corrisponde al vero</div>
+    <div class="fe">Firma del Venditore — accettazione</div><div class="muto">quanto precede corrisponde al vero</div>
     ${firma("Firma del Venditore", "@@FIRMA1@@")}
   </div>
   <div>
-    <div class="muto"><b>Firma del Venditore — clausole 7.1 · 7.2 · 7.3 · 7.4</b> · artt. 1341 e 1342 c.c.</div>
+    <div class="fe">Firma del Venditore — clausole 7.1 · 7.2 · 7.3 · 7.4</div><div class="muto">artt. 1341 e 1342 c.c.</div>
     ${firma("Seconda sottoscrizione", "@@FIRMA2@@")}
   </div>
 </div>
 
-<div class="pie">${esc(d.societa.nome)} · ${esc(d.negozio)} · contratto ${esc(d.protocollo)} · generato dal CRM il ${oggiIt()} · documento d'identità del Venditore allegato al ritiro</div>
+<div class="pie"><span>${esc(d.societa.nome)} · ${esc(d.negozio)} · documento d'identità del Venditore allegato al ritiro</span><span>${esc(d.protocollo)} · generato dal CRM il ${oggiIt()}</span></div>
 </body></html>`;
 }
 
