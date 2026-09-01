@@ -6688,6 +6688,28 @@ function CRM() {
   };
   // Voci del carrello candidate allo scontrino (prezzate). Reparto/va_in_scontrino
   // li decide il server da marg_items; qui passiamo tutte le righe con prezzo.
+/* ═══ L'IMEI SULLA RIGA, INTERO O NIENTE ══════════════════════════════════
+   La riga del registratore è tagliata a 38 caratteri dal server, e il taglio
+   cade in fondo: cioè proprio sull'IMEI. Misurato sugli scontrini fiscali veri
+   di oggi, 3 su 4 avevano l'IMEI mutilato — «Apple iPhone 14 Pro Max 128GB ·
+   IMEI 3» su un telefono da 650 €. Peggio: i due ZTE Blade A36 venduti oggi in
+   due negozi diversi stampavano la STESSA identica riga, perché i loro IMEI
+   condividono le prime nove cifre. Un IMEI tagliato non identifica niente e
+   non serve a nessuno: è rumore su un documento fiscale.
+   Quindi: o ci sta intero, o non ci va. Il modello resta sempre per esteso,
+   perché la descrizione del bene è l'elemento obbligatorio; l'IMEI è
+   un'aggiunta utile, e un'aggiunta che non ci sta si toglie.
+   L'IMEI resta comunque sulla vendita, nel carrello e nella pratica. */
+const MAX_RIGA_SCONTRINO = 38;
+const _descrizioneConImei = (modello, seriale, fallback) => {
+  const m = String(modello || "").trim();
+  if (!m) return fallback;
+  const im = String(seriale || "").trim();
+  if (!im) return m;
+  const intera = `${m} · IMEI ${im}`;
+  return intera.length <= MAX_RIGA_SCONTRINO ? intera : m;
+};
+
   const buildScontrinoItems = (list) => (list || [])
     .filter((mi) => !_fuoriScontrino(mi))
     .map((mi) => ({
@@ -6710,7 +6732,7 @@ function CRM() {
          esattamente cosa è uscito dal negozio (revisore 01/09). */
       description: mi.paystore
         ? descrizioneRicarica(mi.paystore.operatore, Number(mi.importo || 0), mi.paystore.numero || "")
-        : (mi.model ? `${mi.model}${mi.seriale ? ` · IMEI ${mi.seriale}` : ""}` : mi.product),
+        : _descrizioneConImei(mi.model, mi.seriale, mi.product),
       unitPrice: (mi.importo != null ? mi.importo : mi.price),
       qty: mi.qty || 1,
       /* IL REPARTO IVA. Senza, il registratore telematico non sa dove mettere

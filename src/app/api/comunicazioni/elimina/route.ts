@@ -64,16 +64,34 @@ export async function POST(req: Request) {
     const inTempo = eta <= MINUTI_DI_RIPENSAMENTO;
     const invito = com.meeting_id != null;
 
-    /* LE TRE PORTE, in ordine di larghezza. */
+    /* CHI HA INDETTO LA RIUNIONE PUÒ ANNULLARLA, e non entro dieci minuti
+       (regressione trovata dalla revisione, 01/09 sera). Il Calendario mostra
+       «Annulla riunione» a chi l'ha creata: con la sola finestra dei dieci
+       minuti, uno store manager che indice una riunione lunedì e la annulla
+       martedì prendeva 403 — e da quel momento la riunione NON veniva più
+       cancellata affatto, perché la pagina si ferma se l'invito non si toglie.
+       Prima funzionava solo perché chiunque poteva cancellare dal browser: la
+       porta l'ho chiusa io, e questa è la chiave che serviva restasse. */
+    let creatoreRiunione = false;
+    if (invito) {
+        const { data: m } = await supabase.from("calendar_meetings")
+            .select("created_by").eq("id", com.meeting_id).maybeSingle();
+        const chi = String((m as { created_by?: string } | null)?.created_by || "");
+        creatoreRiunione = !!chi && (chi === io_.id || chi === (io_.full_name || ""));
+    }
+
+    /* LE PORTE, in ordine di larghezza. */
     const puoi = PUO_TUTTO.includes(ruolo)
         || (mia && inTempo)
-        || (invito && PUO_ANNULLARE_RIUNIONI.includes(ruolo));
+        || (invito && (creatoreRiunione || PUO_ANNULLARE_RIUNIONI.includes(ruolo)));
 
     if (!puoi) {
         /* IL MESSAGGIO DICE PERCHÉ, e non «non autorizzato»: la differenza fra
            «non è tua» e «sono passati venti minuti» è tutta la differenza fra
            capire e riprovare a caso. */
-        const perche = !mia
+        const perche = invito
+            ? "questo è l'invito di una riunione che non hai indetto tu: la può annullare chi l'ha indetta, o l'amministrazione"
+            : !mia
             ? "questa comunicazione non l'hai scritta tu: solo l'amministratore può togliere quelle degli altri"
             : `sono passati ${Math.round(eta)} minuti dall'invio, e le proprie si possono togliere solo entro ${MINUTI_DI_RIPENSAMENTO}. Chiedi all'amministratore.`;
         return NextResponse.json({ error: perche }, { status: 403 });

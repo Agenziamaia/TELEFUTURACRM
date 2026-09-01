@@ -197,27 +197,60 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const _righeCorrette = useMemo<RigaScontrino[]>(() => {
         const base = (data?.items || []).map(r => ({ ...r }));
         const usate = new Set<number>();
+        const _giaSuRiga: Record<number, number> = {};    // quanto si è già messo su ogni riga
+        const _quantiSuRiga: Record<number, number> = {}; // e per quanti telefoni
         _telefoniConImporti.forEach(t => {
             let idx = -1;
-            // ① il codice di magazzino, quando c'è da tutte e due le parti
-            if (t.codice) idx = base.findIndex((r, i) => !usate.has(i) && !!r.codice && String(r.codice) === String(t.codice));
-            // ② se no, la riga che condivide più parole col nome del telefono
+            /* ① L'IMEI: l'unica chiave davvero certa, e da oggi le righe se lo
+               portano dietro. Due telefoni dello stesso modello, o due pezzi
+               dello stesso articolo, si distinguono solo così. */
+            if (t.imei) idx = base.findIndex((r, i) => !usate.has(i) && String(r.description || "").includes(String(t.imei)));
+            /* ② IL CODICE DI MAGAZZINO NON BASTA DA SOLO: è il codice
+               ARTICOLO, non del pezzo — «0TTCK75GOU7005» sono trenta TCL K70.
+               Con due pezzi dello stesso articolo, uno a rate e uno in
+               contanti, prendeva la riga del contanti e i due prezzi si
+               scambiavano. Vale solo se una riga sola lo porta. */
+            if (idx < 0 && t.codice) {
+                const cand = base.map((r, i) => ({ r, i })).filter(({ r, i }) => !usate.has(i) && !!r.codice && String(r.codice) === String(t.codice));
+                if (cand.length === 1) idx = cand[0].i;
+            }
+            /* ③ Le parole in comune, ma solo fra le righe che possono essere
+               un telefono: reparto 2 e un prezzo che copre quello che il
+               cliente paga. Senza questi due paletti, «Cover TCL K70» rubava
+               la riga al «TCL K70», e lo scontrino usciva col prezzo del
+               telefono sulla cover. A parità di parole vince la riga più cara:
+               fra una cover e un telefono, il telefono. */
             if (idx < 0) {
                 const pt = _parole(t.descrizione);
-                let meglio = 0;
+                const i2 = importi[t.chiave];
+                const paga2 = +(_n(i2.anticipo) + _n(i2.resto)).toFixed(2);
+                let meglio = 0, prezzoMeglio = -1;
                 base.forEach((r, i) => {
                     if (usate.has(i)) return;
+                    if (Number(r.reparto) !== 2) return;
+                    const prezzoRiga = Number(r.unitPrice) * (Number(r.qty) > 0 ? Number(r.qty) : 1);
+                    if (!(prezzoRiga + 0.02 >= paga2)) return;   // un telefono non costa meno di quanto il cliente ci paga
                     const pr = _parole(r.description);
                     let n = 0; pt.forEach(w => { if (pr.has(w)) n++; });
-                    if (n >= 2 && n > meglio) { meglio = n; idx = i; }
+                    if (n >= 2 && (n > meglio || (n === meglio && prezzoRiga > prezzoMeglio))) { meglio = n; prezzoMeglio = prezzoRiga; idx = i; }
                 });
             }
             if (idx < 0) return;   // niente riga da correggere: si lascia com'è
-            usate.add(idx);
             const i = importi[t.chiave];
             const paga = +(_n(i.anticipo) + _n(i.resto)).toFixed(2);
             const qta = Number(base[idx].qty) > 0 ? Number(base[idx].qty) : 1;
-            base[idx] = { ...base[idx], unitPrice: +(paga / qta).toFixed(2) };
+            /* UNA RIGA DA DUE PEZZI NON SI CHIUDE DOPO IL PRIMO TELEFONO: se
+               due telefoni stanno sulla stessa riga (`qty 2`), il secondo non
+               troverebbe più niente e il suo non riscosso resterebbe scoperto
+               — misurato: «Pagamento eccedente» e vendita bloccata. Si tiene
+               aperta finché ci sono pezzi da coprire, e ogni telefono aggiunge
+               la sua parte. */
+            const gia = Number(_giaSuRiga[idx] || 0);
+            const quanti = Number(_quantiSuRiga[idx] || 0);
+            _giaSuRiga[idx] = gia + paga;
+            _quantiSuRiga[idx] = quanti + 1;
+            if (_quantiSuRiga[idx] >= qta) usate.add(idx);
+            base[idx] = { ...base[idx], unitPrice: +((gia + paga) / qta).toFixed(2) };
         });
         return base;
     }, [data, _telefoniConImporti, importi]);
@@ -236,7 +269,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
            scontrinarlo due volte (revisore 01/09). */
         .filter(t => t.creaRiga && DOMANDE_TELEFONO[t.modo].scontrino)
         .map(t => ({
-            description: `${t.descrizione}${t.imei ? ` · IMEI ${t.imei}` : ""}`,
+            /* INTERO O NIENTE, come per le altre righe: il registratore taglia
+               a 38 caratteri e taglierebbe proprio l'IMEI. */
+            description: (() => { const d = `${t.descrizione} · IMEI ${t.imei}`; return t.imei && d.length <= 38 ? d : String(t.descrizione || ""); })(),
             unitPrice: +(_n(importi[t.chiave]?.anticipo) + _n(importi[t.chiave]?.resto)).toFixed(2),
             qty: 1, reparto: 2, codice: t.codice,
         }))
