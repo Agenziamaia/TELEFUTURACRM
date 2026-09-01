@@ -5086,6 +5086,29 @@ function CRM() {
   const margCliLabel=(c)=>c.ragione_sociale||`${c.nome||""} ${c.cognome||""}`.trim()||c.cf_piva||c.id;
   const chiudiMargSave=()=>{setShowMargSave(false);setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);};
   const [margItems,setMargItems]=useState([]);
+  /* ═══ L'ACCONTO DI UNA PRATICA ═══
+     Le sezioni Ordini Cliente e Assistenze non incassano: scelgono quanto e
+     passano la mano qui (Luca 01/09: «dopo la firma il processo mi porta in
+     Registra Vendita… mettiamo tutto dentro Registra Vendita, nel carrello»).
+     Così c'è UN posto solo dove si fanno gli scontrini e si decidono i
+     pagamenti, e l'acconto è una riga come le altre: il cliente può comprare
+     anche altro e paga una volta sola. */
+  const [praticaAcconto,setPraticaAcconto]=useState(null);
+  const accontoCaricato=useRef(false);
+  useEffect(()=>{
+    if(accontoCaricato.current)return;
+    const a=accontoDaIncassare();
+    if(!a)return;
+    accontoCaricato.current=true;
+    setPraticaAcconto(a);
+    setMargFlow(true);setPsFlow(false);setBrand(null);
+    setMargItems(p=>p.some(m=>m.praticaId===a.praticaId)?p:[...p,{
+      product:a.voce,price:a.importo,qty:1,importo:a.importo,margin:0,totalMargin:0,
+      venditore:a.operatore,negozio:a.negozio,date:new Date().toISOString().split("T")[0],
+      praticaId:a.praticaId,praticaProtocollo:a.protocollo,
+    }]);
+    setVistaStep("cliente");setStepVisti(pv=>({...pv,prodotti:true}));
+  },[]);
   const [expR,setExpR]=useState({}); // riepilogo destro: gruppi esplosi/chiusi
   const [cambioBrand,setCambioBrand]=useState(false); // (legacy, non piu' in UI)
   // UNO STEP ALLA VOLTA (Luca 03/08 sera): la pagina mostra SOLO lo step
@@ -7836,6 +7859,24 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       },mi));
       const {error}=await supabase.from("contracts").insert(rows);
       if(error)throw error;
+      /* L'ACCONTO TORNA ALLA PRATICA. Finché non si scrive qui, la pratica
+         dice «da incassare» e lo scontrino esiste: due verità diverse. */
+      try{
+        const _acc=margItems.find(m=>m&&m.praticaId);
+        if(_acc){
+          const _rif=rows[0]?.id||null;
+          const {data:_pr}=await supabase.from("pratiche").select("acconto,storia").eq("id",_acc.praticaId).maybeSingle();
+          if(_pr){
+            const _st=Array.isArray(_pr.storia)?_pr.storia:[];
+            await supabase.from("pratiche").update({
+              acconto:{...(_pr.acconto||{}),importo:Number(_acc.importo)||0,stato:"incassato",incassato_il:new Date().toISOString(),vendita:_rif},
+              storia:[..._st,{at:new Date().toISOString(),chi:selVend||"cassa",txt:`Acconto ${(Number(_acc.importo)||0).toFixed(2)} € incassato in Registra Vendita — vendita ${_rif||""}`}],
+              updated_at:new Date().toISOString(),
+            }).eq("id",_acc.praticaId);
+          }
+          scordaAcconto();
+        }
+      }catch{/* la vendita è salva: l'acconto si riallinea a mano se serve */}
       // MOD-44: allegati della vendita marginalità — con FINANZIAMENTO sono
       // gia' stati verificati obbligatori; si caricano e si agganciano alla
       // pratica di finanziamento (o alla prima riga)
@@ -8700,6 +8741,22 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
       })()}
 
 
+
+      {praticaAcconto&&<div className="rvBox rvT-indaco mb-3">
+        <div className="rvBanda">
+          <div>
+            <div className="rvNome">💶 Stai incassando l&apos;acconto della pratica {praticaAcconto.protocollo}</div>
+            <div className="rvTab-min">
+              {praticaAcconto.clienteEtichetta} · {praticaAcconto.voce} · <b>{(Number(praticaAcconto.importo)||0).toFixed(2)} €</b> — è già nel carrello.
+              Puoi aggiungere quello che il cliente compra oggi: si fa un pagamento solo, e un documento commerciale solo.
+            </div>
+          </div>
+          <button type="button" className="rvPill rvPill-sm" onClick={()=>{
+            if(!window.confirm("Tolgo l'acconto dal carrello?\n\nLa pratica resterà con l'acconto DA INCASSARE, e lo si potrà fare più avanti."))return;
+            setMargItems(p=>p.filter(m=>!m.praticaId));scordaAcconto();setPraticaAcconto(null);
+          }}>Non incassarlo adesso</button>
+        </div>
+      </div>}
 
       {vistaStep==="brand"&&<div className="rvCard" style={{padding:20}}>
         {/* Conti in sospeso anche al PRIMO step (spec Francesco): il pulsante è un

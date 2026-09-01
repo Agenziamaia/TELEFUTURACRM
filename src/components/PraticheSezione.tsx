@@ -15,6 +15,9 @@ import { Loader2, Search, Plus, ArrowLeft, ArrowRight, Check, X, Printer, Paperc
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
+import { useRouter } from "next/navigation";
+import { mandaInCassa } from "@/lib/accontoInCassa";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
 import { stampaModulo, type DatiModulo } from "@/lib/moduloPratica";
 import { SelectOpzioni } from "@/components/SelectPersona";
@@ -55,7 +58,13 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
     const [nuova, setNuova] = useState(false);
     const [apri, setApri] = useState<string | null>(null);
     const [cerca, setCerca] = useState("");
+    /* DUE FILTRI DIVERSI, non uno solo. `filtro` è uno STATO della pratica;
+       `vista` è un taglio trasversale — «fuori tempo», «da comprare», «da
+       avvisare» non sono stati, e infilarli nella stessa variabile faceva
+       confrontare «__tarde» con `p.stato`: la tabella si svuotava e sembrava
+       che non ci fosse niente (rilievo del revisore, provato). */
     const [filtro, setFiltro] = useState("");
+    const [vista, setVista] = useState<"" | "tarde" | "ordinare" | "avvisare">("");
     const [msg, setMsg] = useState<string | null>(null);
     const STATI = statiDi(sezione);
     const tuttiNegozi = useStores();
@@ -86,13 +95,17 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
 
     const viste = useMemo(() => {
         const q = cerca.trim().toLowerCase();
+        const viva = (p: Pratica) => p.stato !== "consegnato" && p.stato !== "consegnata" && p.stato !== "annullato" && p.stato !== "non_riuscita";
         return (pratiche ?? []).filter((p) => {
             if (filtro && p.stato !== filtro) return false;
+            if (vista === "tarde" && !(viva(p) && giorniLavorativi(p.created_at, oggiIso()) > TERMINE_MAX_GG)) return false;
+            if (vista === "ordinare" && !(p.approvvigionamento === "da_ordinare" || p.approvvigionamento === "altro_negozio")) return false;
+            if (vista === "avvisare" && !((p.stato === "in_negozio" || p.stato === "pronta") && !p.avviso_pronto_il)) return false;
             if (!q) return true;
             const blob = [p.protocollo, p.negozio, p.imei, JSON.stringify(p.cliente), (p.righe || []).map((r) => r.descrizione).join(" ")].join(" ").toLowerCase();
             return blob.indexOf(q) >= 0;
         });
-    }, [pratiche, cerca, filtro]);
+    }, [pratiche, cerca, filtro, vista]);
 
     const conta = useMemo(() => {
         const m: Record<string, number> = {};
@@ -126,17 +139,18 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
                 hai aperte, quante hanno sforato, quante aspettano un acquisto,
                 a quanti clienti devi dire che è pronto. Premi e filtri. */}
             <div className="rvRapidoG rvRapidoG-kpi mb-4">
-                {[
-                    { id: "", ico: "📋", et: "Aperte", n: nMie, sotto: `su ${(pratiche ?? []).length} in tutto`, tinta: "" },
-                    { id: "__tarde", ico: "⏱", et: "Fuori tempo", n: nTarde, sotto: `oltre ${TERMINE_MAX_GG} giorni lavorativi`, tinta: "rvT-rosso" },
-                    { id: "__ordinare", ico: "📙", et: "Da comprare", n: nDaOrdinare, sotto: "aspettano l'amministrazione", tinta: "rvT-ambra" },
-                    { id: "__avvisare", ico: "🔔", et: "Da avvisare", n: nDaAvvisare, sotto: "pronte, cliente non avvisato", tinta: "rvT-verde" },
-                ].map((k) => {
-                    const on = filtro === k.id;
+                {([
+                    { id: "" as const, ico: "📋", et: "Tutte", n: (pratiche ?? []).length, sotto: `${nMie} ancora aperte`, tinta: "" },
+                    { id: "tarde" as const, ico: "⏱", et: "Fuori tempo", n: nTarde, sotto: `oltre ${TERMINE_MAX_GG} gg lavorativi`, tinta: "rvT-rosso" },
+                    { id: "ordinare" as const, ico: "📙", et: "Da comprare", n: nDaOrdinare, sotto: "aspettano l'acquisto", tinta: "rvT-ambra" },
+                    { id: "avvisare" as const, ico: "🔔", et: "Da avvisare", n: nDaAvvisare, sotto: "pronte, non avvisate", tinta: "rvT-verde" },
+                ]).map((k) => {
+                    const on = vista === k.id;
                     return (
-                        <button key={k.et} type="button" onClick={() => setFiltro(on ? "" : k.id)}
+                        <button key={k.et} type="button" onClick={() => { setVista(on ? "" : k.id); setFiltro(""); }}
+                            title={k.id === "" ? "Tutte le pratiche" : `Vedi solo: ${k.et.toLowerCase()}`}
                             className={cn("rvRapido", k.tinta, on && "rvRapido-on", !on && !k.n && "rvRapido-off")}>
-                            <em>{k.n}</em>
+                            <em className={String(k.n).length > 3 ? "rvNum-m" : undefined}>{k.n}</em>
                             <b>{k.ico} {k.et}{on ? " ✓" : ""}</b>
                             <small>{k.sotto}</small>
                         </button>
@@ -145,24 +159,24 @@ export function PraticheSezione({ sezione, negozio, negoziVisibili, operatore, r
             </div>
 
             <div className="rvTesta">
+                <button type="button" onClick={() => setNuova(true)} className="rvAzione" style={{ order: 2 }}>
+                    ＋ Nuova {sezione === "ordini" ? "richiesta" : "assistenza"}
+                </button>
                 <span className="rvCerca" style={{ flex: "1 1 320px" }}>
                     <Search size={16} />
                     <input value={cerca} onChange={(e) => setCerca(e.target.value)} className="rvIn"
                         placeholder="Protocollo, cliente, IMEI, articolo…" />
                 </span>
                 <div className="rvPillRow">
+                    {/* le pastiglie a ZERO restano a schermo, spente: zero è
+                        un'informazione, e una fila che cambia forma ogni giorno
+                        costringe a rileggerla ogni volta (regola del Magazzino) */}
                     {flussoDi(sezione).concat(sezione === "ordini" ? ["annullato"] : ["non_riuscita"]).map((k) => (
-                        conta[k] ? (
-                            <button key={k} type="button" onClick={() => setFiltro(filtro === k ? "" : k)}
-                                className={cn("rvPill rvPill-sm", filtro === k && "rvPill-on")}>
-                                {STATI[k].icona} {STATI[k].label} <b className="rvBadge rvBadge-mini ml-1">{conta[k]}</b>
-                            </button>
-                        ) : null
+                        <button key={k} type="button" disabled={!conta[k]} onClick={() => { setFiltro(filtro === k ? "" : k); setVista(""); }}
+                            className={cn("rvPill rvPill-sm", filtro === k && "rvPill-on")}>
+                            {STATI[k].icona} {STATI[k].label} <b className="rvPillN">{conta[k] || 0}</b>
+                        </button>
                     ))}
-                    <span className="rvSep" />
-                    <button type="button" onClick={() => setNuova(true)} className="rvPill rvPill-on">
-                        ＋ Nuova {sezione === "ordini" ? "richiesta" : "assistenza"}
-                    </button>
                 </div>
             </div>
 
@@ -251,11 +265,10 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
     const [noteInt, setNoteInt] = useState("");
     const [pctAcconto, setPctAcconto] = useState<number | null>(null);
     const [accLibero, setAccLibero] = useState("");
-    const [accForma, setAccForma] = useState("CONTANTI");
-    const [accScontrino, setAccScontrino] = useState("");
     const [firma, setFirma] = useState<Firma>({});
     const [salvo, setSalvo] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
+    const router = useRouter();
 
     const t = TIPOLOGIE[tipologia];
     const perArticoli = !!t && t.contenuto === "articoli";
@@ -278,6 +291,10 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
         setApprovv((v) => (v === "disponibile" ? "da_ordinare" : v));
     }, [perArticoli, righe.length, inCasa]);
     const totale = perArticoli ? totaleRighe(righe) : (Number(String(valore).replace(",", ".")) || 0);
+    /* la voce che finirà sullo scontrino: la sceglie il contenuto della
+       pratica, non l'operatore */
+    const voceAcconto = sezione === "assistenze" ? "Acconto-Assistenza"
+        : tipologia === "ord_telefono" ? "Acconto-Cliente" : "Acconto-Accessorio";
     const accLiberoN = Math.round((Number(String(accLibero).replace(",", ".")) || 0) * 100) / 100;
     const accImporto = pctAcconto === -1 ? accLiberoN : (pctAcconto ? Math.ceil(totale * pctAcconto * 100) / 100 : 0);
 
@@ -290,7 +307,29 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
         && (t.noteInterne !== "obbligatorie" || noteInt.trim().length > 0);
     const accontoOk = pctAcconto === null ? false
         : pctAcconto === 0 ? true
-            : accImporto > 0 && accImporto <= totale && accScontrino.trim().length > 0;
+            : accImporto > 0 && accImporto <= totale;
+    /* ⚠️ UNA FIRMA VALE PER QUELLO CHE È STATO FIRMATO. Si poteva firmare, poi
+       tornare indietro, cambiare tipologia, carrello, importo o perfino
+       cliente, e salvare: il modulo diceva «Riparazione» e il database
+       «Backup». Adesso la firma si annulla quando cambia una cosa che sta
+       scritta nel modulo — e lo si dice, invece di farlo di nascosto. */
+    const [firmaScaduta, setFirmaScaduta] = useState(false);
+    const impronta = JSON.stringify([
+        cliente ? cliente.id : "", tipologia, totale,
+        perArticoli ? righe.map((r) => [r.descrizione, r.qta, r.prezzo]) : [dev.brand, dev.modello, imei],
+        accImporto,
+    ]);
+    const improntaFirmata = useRef<string | null>(null);
+    useEffect(() => {
+        if (!firmaCompleta(firma)) return;
+        if (improntaFirmata.current === null) { improntaFirmata.current = impronta; return; }
+        if (improntaFirmata.current !== impronta) {
+            setFirma({});
+            improntaFirmata.current = null;
+            setFirmaScaduta(true);
+        }
+    }, [impronta, firma]);
+
     const firmaOk = firmaCompleta(firma);
 
     const PASSI = [
@@ -306,13 +345,14 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
     const salva = async () => {
         if (!cliente || !t) return;
         setSalvo(true); setErrore(null);
+        let creata: { id: string; protocollo: string } | null = null;
         try {
             const { data: proto, error: ep } = await supabase.rpc("pratica_protocollo", { sez: sezione });
             if (ep) throw new Error(ep.message);
             const statoIniziale = sezione === "ordini" ? "inviato" : "aperta";
             const storia = [{ at: oggiIso(), chi: operatore, txt: sezione === "ordini" ? "Richiesta inviata all'amministrazione" : "Assistenza aperta al banco" }];
-            if (accImporto > 0) storia.push({ at: oggiIso(), chi: operatore, txt: `Acconto ${eur(accImporto)} incassato (${accForma}) — scontrino ${accScontrino}` });
-            storia.push({ at: oggiIso(), chi: operatore, txt: `Modulo firmato ${firma.via === "otp" ? "col codice via email" : "su carta"}, documento d'identità archiviato` });
+            if (accImporto > 0) storia.push({ at: oggiIso(), chi: operatore, txt: `Acconto di ${eur(accImporto)} da incassare in Registra Vendita` });
+            storia.push({ at: oggiIso(), chi: operatore, txt: `Modulo firmato ${firma.via === "otp" ? "col codice" : "su carta"}, documento d'identità archiviato` });
             const payload = {
                 protocollo: String(proto), sezione, tipologia,
                 client_id: cliente.id,
@@ -326,19 +366,44 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                 note_interne: noteInt.trim() || null,
                 dispositivo: perArticoli ? null : dev,
                 imei: imei.trim() || null,
-                acconto: accImporto > 0 ? { importo: accImporto, pct: pctAcconto === -1 ? null : pctAcconto, forma: accForma, scontrino: accScontrino.trim(), incassato_il: oggiIso() } : null,
+                acconto: accImporto > 0 ? { importo: accImporto, pct: pctAcconto === -1 ? null : pctAcconto, voce: voceAcconto, stato: "da_incassare" } : null,
                 firma, storia,
             };
             const { data: nuovaP, error } = await supabase.from("pratiche").insert(payload).select("id, protocollo").single();
             if (error) throw new Error(error.message);
+            creata = nuovaP as { id: string; protocollo: string };
+
             if (perArticoli && righe.length) {
                 const { error: er } = await supabase.from("pratiche_righe").insert(righe.map((r) => ({
-                    pratica_id: nuovaP.id, tipo: "articolo", codice: r.codice || null,
+                    pratica_id: creata!.id, tipo: "articolo", codice: r.codice || null,
                     descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note || null, da_magazzino: r.da_magazzino,
                 })));
-                if (er) throw new Error(er.message);
+                /* ⚠️ ROLLBACK. Senza, restava in tabella una pratica col valore
+                   pieno e zero righe: l'operatore vedeva un errore, ripremeva
+                   «Invia» e nasceva un doppione con un secondo protocollo.
+                   Meglio niente che una pratica a metà — il protocollo bruciato
+                   è il prezzo, ed è il meno caro dei due. */
+                if (er) {
+                    await supabase.from("pratiche").delete().eq("id", creata.id);
+                    creata = null;
+                    throw new Error("gli articoli non si sono salvati (" + er.message + "): non è stata creata nessuna pratica, riprova.");
+                }
             }
-            await onFatto(`✅ ${nuovaP.protocollo} aperta`);
+
+            /* L'ACCONTO SI INCASSA IN REGISTRA VENDITA, non qui: la pratica
+               passa la mano col suo importo già pronto per il carrello. */
+            if (accImporto > 0) {
+                mandaInCassa({
+                    praticaId: creata.id, protocollo: creata.protocollo, sezione,
+                    voce: voceAcconto, importo: accImporto,
+                    clienteId: cliente.id, clienteEtichetta: etichettaCliente(cliente),
+                    negozio, operatore,
+                });
+                await onFatto(`✅ ${creata.protocollo} aperta — vai in cassa a incassare ${eur(accImporto)}`);
+                router.push("/registra-vendita");
+                return;
+            }
+            await onFatto(`✅ ${creata.protocollo} aperta`);
         } catch (e) {
             setErrore(e instanceof Error ? e.message : "salvataggio non riuscito");
             setSalvo(false);
@@ -414,10 +479,18 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
             )}
 
             {step === 3 && <PassoAcconto totale={totale} pct={pctAcconto} onPct={setPctAcconto}
-                libero={accLibero} onLibero={setAccLibero} importo={accImporto}
-                forma={accForma} onForma={setAccForma} scontrino={accScontrino} onScontrino={setAccScontrino} />}
+                libero={accLibero} onLibero={setAccLibero} importo={accImporto} />}
 
-            {step === 4 && <PassoFirma cliente={cliente} firma={firma} onCambia={setFirma} protocollo="nuova"
+            {step === 4 && firmaScaduta && (
+                <div className="rvSub" style={{ marginBottom: 12, borderColor: "rgba(245,158,11,.45)" }}>
+                    <span className="text-[12px] text-amber-200 leading-relaxed">
+                        ⚠️ <b>Hai cambiato qualcosa dopo la firma.</b> Il modulo che il cliente aveva firmato non dice più
+                        quello che dice la pratica adesso, quindi la firma è stata annullata: va rifatta. È la ragione per cui
+                        il modulo esiste — deve corrispondere.
+                    </span>
+                </div>
+            )}
+            {step === 4 && <PassoFirma cliente={cliente} firma={firma} onCambia={(f) => { setFirmaScaduta(false); setFirma(f); }} protocollo="nuova"
                 modulo={{
                     protocollo: "(da assegnare)", tipologia, negozio, operatore,
                     cliente: cliente ? {
@@ -425,7 +498,7 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                         cf_piva: cliente.cf_piva || "", indirizzo: cliente.indirizzo || "", cap: cliente.cap || "", citta: cliente.citta || "",
                     } : {},
                     valore: totale,
-                    acconto: accImporto > 0 ? { importo: accImporto, forma: accForma, scontrino: accScontrino } : null,
+                    acconto: accImporto > 0 ? { importo: accImporto } : null,
                     righe: perArticoli ? righe.map((r) => ({ descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note })) : [],
                     dispositivo: perArticoli ? null : dev, imei,
                     tempoMedio: tempoMedio(tipologia, approvv),
@@ -433,7 +506,7 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
 
             {step === 5 && (
                 <Riepilogo sezione={sezione} tipologia={tipologia} cliente={cliente} righe={righe} dev={dev} imei={imei}
-                    totale={totale} accImporto={accImporto} accForma={accForma} accScontrino={accScontrino}
+                    totale={totale} accImporto={accImporto} voceAcconto={voceAcconto}
                     approvv={approvv} noteInt={noteInt} firma={firma} negozio={negozio} operatore={operatore} />
             )}
 
@@ -452,7 +525,9 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                 ) : (
                     <button onClick={salva} disabled={salvo || !clienteOk || !contenutoOk || !accontoOk || !firmaOk} className="rvAzione">
                         {salvo ? <Loader2 className="w-4 h-4 animate-spin inline mr-1.5 -mt-0.5" /> : null}
-                        {sezione === "ordini" ? "Invia all'amministrazione" : "Apri l'assistenza"}
+                        {accImporto > 0
+                            ? `Salva e vai in cassa — ${eur(accImporto)}`
+                            : sezione === "ordini" ? "Invia all'amministrazione" : "Apri l'assistenza"}
                     </button>
                 )}
             </div>
@@ -590,6 +665,7 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
     const [q, setQ] = useState("");
     const [hits, setHits] = useState<{ codice: string; descrizione: string; prezzo: number; marca: string | null; giacenza: number }[]>([]);
     const [cerco, setCerco] = useState(false);
+    const [errCerca, setErrCerca] = useState<string | null>(null);
     const [aMano, setAMano] = useState(false);
     const [libero, setLibero] = useState({ descrizione: "", prezzo: "", qta: "1", note: "" });
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -600,17 +676,40 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
         if (v.length < 2) { setHits([]); return; }
         timer.current = setTimeout(async () => {
             setCerco(true);
-            const { data } = await supabase.from("mag_articoli")
+            /* ⚠️ LA VIRGOLA SPACCAVA LA RICERCA. Il filtro `.or()` di PostgREST
+               separa le condizioni con la virgola: cercando «cover, nera» il
+               server rispondeva 400, l'errore veniva buttato via e a schermo
+               compariva «in magazzino non c'è» — così si ordinava una cosa che
+               stava a scaffale. Le virgole e le parentesi si tolgono dalla
+               chiave, e l'errore adesso si vede. */
+            const chiave = v.replace(/[(),*]/g, " ").replace(/\s+/g, " ").trim();
+            if (!chiave) { setHits([]); setCerco(false); return; }
+            const { data, error } = await supabase.from("mag_articoli")
                 .select("codice, descrizione, prezzo, marca")
                 .eq("attivo", true)
-                .or(`descrizione.ilike.%${v}%,codice.ilike.%${v}%,marca.ilike.%${v}%`)
+                .or(`descrizione.ilike.%${chiave}%,codice.ilike.%${chiave}%,marca.ilike.%${chiave}%`)
+                .order("descrizione")
                 .limit(8);
+            if (error) { setErrCerca(error.message); setHits([]); setCerco(false); return; }
+            setErrCerca(null);
             const arts = (data ?? []) as { codice: string; descrizione: string; prezzo: number; marca: string | null }[];
-            let gia: Record<string, number> = {};
+            /* ⚠️ LA GIACENZA VA SOMMATA, E IL GEMELLO CONTA.
+               Due difetti che si sommavano: la chiave di `mag_giacenze` è
+               (codice, negozio, AZIENDA), quindi lo stesso articolo nello
+               stesso negozio può avere due righe (T1 e T2) e assegnare invece
+               di sommare ne perdeva una; e sei negozi su sedici — Acilia,
+               Collatina, Magliana — condividono un magazzino solo, quindi il
+               pezzo dell'altra insegna, a tre metri, risultava «da ordinare».
+               Il resto del CRM lo sa già: `stessoMagazzino` è la stessa regola
+               usata dallo scarico. */
+            const gia: Record<string, number> = {};
             if (arts.length) {
-                const { data: g } = await supabase.from("mag_giacenze").select("codice, quantita")
-                    .eq("negozio", negozio).in("codice", arts.map((a) => a.codice));
-                ((g ?? []) as { codice: string; quantita: number }[]).forEach((x) => { gia[x.codice] = Number(x.quantita) || 0; });
+                const { data: g } = await supabase.from("mag_giacenze").select("codice, quantita, negozio")
+                    .in("codice", arts.map((a) => a.codice));
+                ((g ?? []) as { codice: string; quantita: number; negozio: string }[]).forEach((x) => {
+                    if (!stessoMagazzino(x.negozio, negozio)) return;
+                    gia[x.codice] = (gia[x.codice] || 0) + (Number(x.quantita) || 0);
+                });
             }
             setHits(arts.map((a) => ({ ...a, giacenza: gia[a.codice] || 0 })));
             setCerco(false);
@@ -655,7 +754,12 @@ function PassoArticoli({ righe, onCambia, negozio }: { righe: Riga[]; onCambia: 
                         ))}
                     </div>
                 )}
-                {q.trim().length >= 2 && !cerco && hits.length === 0 && (
+                {errCerca && (
+                    <div className="rvSub" style={{ marginTop: 10, borderColor: "rgba(239,68,68,.40)" }}>
+                        <span className="text-[11.5px] text-rose-200">⛔ La ricerca non ha funzionato: {errCerca}. Riprova, o scrivi l&apos;articolo a mano qui sotto.</span>
+                    </div>
+                )}
+                {!errCerca && q.trim().length >= 2 && !cerco && hits.length === 0 && (
                     <p className="text-[12px] text-amber-300">In magazzino non c&apos;è: scrivilo a mano qui sotto, com&apos;è che lo chiede il cliente.</p>
                 )}
 
@@ -848,12 +952,16 @@ function PassoApprovvigionamento({ tipologia, valore, onCambia, ruolo, bloccaDis
         <div className="rvBox">
             <div className="rvBoxT">Da dove arriva *</div>
             <div className="rvPillRow" style={{ gap: 10 }}>
-                {APPROVVIGIONAMENTO.map((a) => {
+                {/* ⚠️ «ORDINATO» NON SI SCEGLIE QUI (Luca 01/09): non è una
+                    risposta alla domanda «da dove arriva», è quello che diventa
+                    «da ordinare» quando l'amministrazione compra davvero il
+                    pezzo. Si mette dal dettaglio della pratica, da chi ordina. */}
+                {APPROVVIGIONAMENTO.filter((a) => a.chi !== "admin").map((a) => {
                     const on = valore === a.k;
                     /* «Il pezzo c'è già» si spegne da solo quando il magazzino
                        dice il contrario: chiedere una cosa che sappiamo già è
                        il modo migliore per farsi rispondere una bugia. */
-                    const spento = (a.chi === "admin" && ruolo !== "admin") || (a.k === "disponibile" && !!bloccaDisponibile);
+                    const spento = a.k === "disponibile" && !!bloccaDisponibile;
                     return (
                         <button key={a.k} type="button" disabled={spento} onClick={() => onCambia(a.k)}
                             title={spento && a.k === "disponibile" ? motivoBlocco : undefined}
@@ -924,10 +1032,9 @@ function NoteInterneBox({ tipologia, valore, onCambia }: { tipologia: string; va
    Qui non si incassa: si decide. L'incasso si fa in cassa come sempre, e qui
    si scrive il numero del documento commerciale — così l'acconto della pratica
    e lo scontrino sono la stessa cosa e non due verità diverse. */
-function PassoAcconto({ totale, pct, onPct, libero, onLibero, importo, forma, onForma, scontrino, onScontrino }: {
+function PassoAcconto({ totale, pct, onPct, libero, onLibero, importo }: {
     totale: number; pct: number | null; onPct: (v: number | null) => void;
     libero: string; onLibero: (v: string) => void; importo: number;
-    forma: string; onForma: (v: string) => void; scontrino: string; onScontrino: (v: string) => void;
 }) {
     const SCELTE = [
         { p: 0, l: "Nessun acconto", e: "", n: "niente cassa adesso: esce il riepilogo e si va avanti" },
@@ -975,26 +1082,13 @@ function PassoAcconto({ totale, pct, onPct, libero, onLibero, importo, forma, on
             </div>
 
             {pct !== null && pct !== 0 && (
-                <div className="rvBox">
-                    <div className="rvBoxT">🧾 Il documento commerciale</div>
-                    <p className="rvSotto" style={{ margin: "-6px 0 12px" }}>
-                        Incassa <b style={{ color: "var(--tf-f8fafc)" }}>{eur(importo)}</b> in cassa come sempre, poi scrivi qui il numero
-                        del documento: così l&apos;acconto della pratica e lo scontrino sono la stessa cosa, non due verità diverse.
-                        Alla consegna si emette un secondo documento sul <b>solo saldo</b>, che richiama questo.
-                    </p>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                        <div className="rvPillRow">
-                            {[{ k: "CONTANTI", l: "💶 Contanti" }, { k: "CARTA", l: "💳 Carta / POS" }].map((f) => (
-                                <button key={f.k} type="button" onClick={() => onForma(f.k)}
-                                    className={cn("rvPill rvPill-sm", forma === f.k && "rvPill-on")}>{f.l}</button>
-                            ))}
-                        </div>
-                        <input value={scontrino} onChange={(e) => onScontrino(e.target.value)}
-                            placeholder="Numero documento commerciale *" className="rvIn" style={{ flex: "1 1 240px", fontFamily: "ui-monospace,monospace" }} />
-                    </div>
-                    <p className="rvTab-min" style={{ marginTop: 9 }}>
-                        Niente bonifico sugli acconti: l&apos;incasso dev&apos;essere contestuale all&apos;emissione del documento.
-                    </p>
+                <div className="rvSub" style={{ borderColor: "rgba(129,140,248,.42)" }}>
+                    <span className="text-[12px] text-indigo-200 leading-relaxed">
+                        🛒 <b>L&apos;acconto si incassa in Registra Vendita.</b> Appena il cliente ha firmato, la pratica si
+                        salva e ti porta in cassa con <b>{eur(importo)}</b> già nel carrello: lì puoi aggiungere quello che
+                        compra oggi — una SIM, una ricarica, un&apos;assicurazione — e si fa <b>un pagamento solo</b>, con un
+                        documento commerciale solo. Alla consegna se ne emette un secondo sul solo saldo, che richiama questo.
+                    </span>
                 </div>
             )}
             {pct === 0 && (
@@ -1017,7 +1111,9 @@ function PassoAcconto({ totale, pct, onPct, libero, onLibero, importo, forma, on
    ⚠️ La firma col codice (DocuSeal) arriva subito dopo: oggi si firma su
    carta, che è la strada che funziona anche col telefono del cliente rotto. */
 function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
-    cliente: ClienteTrovato | null; firma: Firma; onCambia: (f: Firma) => void; protocollo: string; modulo: DatiModulo;
+    cliente: ClienteTrovato | null; firma: Firma;
+    onCambia: (f: Firma | ((prec: Firma) => Firma)) => void;
+    protocollo: string; modulo: DatiModulo;
 }) {
     const [su, setSu] = useState<"modulo" | "identita" | null>(null);
     const fileRef = useRef<HTMLInputElement | null>(null);
@@ -1077,7 +1173,13 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                     body: JSON.stringify({ azione: "stato", submissionId: firma.submissionId }),
                 });
                 const j = await r.json();
-                if (j?.firmato) onCambia({ ...firma, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString() });
+                /* ⚠️ AGGIORNAMENTO FUNZIONALE, non `{...firma}`. `firma` qui è
+                   la copia catturata quando l'effetto è nato: al banco si manda
+                   la richiesta, POI si scansiona la carta d'identità mentre il
+                   cliente armeggia col telefono — e quella copia vecchia la
+                   cancellava, lasciando «firmato» e «manca il documento»
+                   insieme (rilievo del revisore, provato). */
+                if (j?.firmato) onCambia((prec) => ({ ...prec, otp: "fatta", firmata_il: j.completatoIl || new Date().toISOString() }));
             } catch { /* rete che sbanda: si riprova al giro dopo */ }
         };
         polling.current = setInterval(guarda, 8000);
@@ -1224,9 +1326,9 @@ function AllegatoRiga({ etichetta, nota, file, caricando, onScegli }: {
 }
 
 /* ── ⑥ RIEPILOGO ────────────────────────────────────────────────────────── */
-function Riepilogo({ sezione, tipologia, cliente, righe, dev, imei, totale, accImporto, accForma, accScontrino, approvv, noteInt, firma, negozio, operatore }: {
+function Riepilogo({ sezione, tipologia, cliente, righe, dev, imei, totale, accImporto, voceAcconto, approvv, noteInt, firma, negozio, operatore }: {
     sezione: Sezione; tipologia: string; cliente: ClienteTrovato | null; righe: Riga[];
-    dev: Record<string, string>; imei: string; totale: number; accImporto: number; accForma: string; accScontrino: string;
+    dev: Record<string, string>; imei: string; totale: number; accImporto: number; voceAcconto: string;
     approvv: string; noteInt: string; firma: Firma; negozio: string; operatore: string;
 }) {
     const t = TIPOLOGIE[tipologia];
@@ -1250,7 +1352,9 @@ function Riepilogo({ sezione, tipologia, cliente, righe, dev, imei, totale, accI
                 {dato("Punto vendita", negozio, operatore)}
                 {dato("Tipo di intervento", t ? t.icona + " " + t.label : "—", t && t.approvvigionamento ? etichettaApprovv(approvv) : undefined)}
                 {dato(t ? t.valoreLabel : "Valore", eur(totale), sezione === "ordini" ? righe.length + (righe.length === 1 ? " riga" : " righe") : `${dev.brand} ${dev.modello}`.trim())}
-                {dato("Acconto", accImporto > 0 ? eur(accImporto) : "nessuno", accImporto > 0 ? `${accForma} · 🧾 ${accScontrino}` : "riepilogo, niente di fiscale", accImporto > 0 ? "text-emerald-300" : "text-slate-400")}
+                {dato("Acconto", accImporto > 0 ? eur(accImporto) : "nessuno",
+                    accImporto > 0 ? `${voceAcconto} · da incassare in cassa` : "riepilogo, niente di fiscale",
+                    accImporto > 0 ? "text-emerald-300" : "text-slate-400")}
                 {dato("Saldo alla consegna", eur(saldo), accImporto > 0 ? "secondo documento, richiama il primo" : "tutto alla consegna")}
                 {imei ? dato("IMEI", imei) : null}
                 {dato("Firma", firma.via === "otp" ? "📲 col codice" : "🖊️ su carta", "documento d'identità archiviato", "text-emerald-300")}
@@ -1378,7 +1482,10 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                     <Voce et={t ? t.valoreLabel : "Valore"} v={eur(Number(pratica.valore))} />
                     <Voce et="Acconto" v={accImporto > 0 ? `${eur(accImporto)} · ${acc.forma || ""} · 🧾 ${acc.scontrino || ""}` : "nessuno"} />
                     <Voce et="Saldo alla consegna" v={eur(saldo)} forte />
-                    {t && t.approvvigionamento && <Voce et="Da dove arriva" v={etichettaApprovv(pratica.approvvigionamento)} />}
+                    {t && t.approvvigionamento && (
+                        <Voce et="Da dove arriva" v={etichettaApprovv(pratica.approvvigionamento)
+                            + (pratica.attesa_da ? " — da " + pratica.attesa_da : "")} />
+                    )}
                     {pratica.imei && <Voce et="IMEI" v={pratica.imei} />}
                     {pratica.dispositivo && <Voce et="Dispositivo" v={`${pratica.dispositivo.brand || ""} ${pratica.dispositivo.modello || ""}`.trim()} />}
                     {pratica.dispositivo?.condizioni && <Voce et="Condizioni" v={pratica.dispositivo.condizioni} />}
@@ -1449,6 +1556,25 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                         <input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Tracking della spedizione (facoltativo)"
                             className="rvIn" style={{ maxWidth: 340 }} />
                     )}
+                    {/* CAMBIARE «DA DOVE ARRIVA» dal dettaglio: prima si poteva
+                        scrivere solo all'apertura, quindi «Ordinato» — l'unica
+                        voce che dice che i soldi sono usciti — era
+                        irraggiungibile, e il riquadro «Da comprare» poteva solo
+                        crescere. */}
+                    {t && t.approvvigionamento && (
+                        <div className="rvPillRow" style={{ marginBottom: 10 }}>
+                            <span className="rvTab-min" style={{ alignSelf: "center", marginRight: 4 }}>Da dove arriva:</span>
+                            {APPROVVIGIONAMENTO.map((a) => {
+                                const on = pratica.approvvigionamento === a.k;
+                                const spento = a.chi === "admin" && !eAdmin;
+                                return (
+                                    <button key={a.k} type="button" disabled={busy || spento || on}
+                                        onClick={() => scrivi({ approvvigionamento: a.k }, "Approvvigionamento: " + a.label, a.icona + " " + a.label)}
+                                        className={cn("rvPill rvPill-sm", on && "rvPill-on")}>{a.icona} {a.label}</button>
+                                );
+                            })}
+                        </div>
+                    )}
                     <div className="flex flex-wrap gap-2 items-center">
                         {prossimo && mioTurno && (
                             <button onClick={avanza} disabled={busy || (serveImeiArrivo && imei.trim().length < 6)}
@@ -1464,6 +1590,16 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                                 Tocca {chiMuove === "admin" ? "all'amministrazione" : chiMuove === "tecnico" ? "al laboratorio" : "al negozio"}: «{STATI[prossimo].label}».
                             </p>
                         )}
+                        <button type="button" className="rvPill rvPill-sm" onClick={() => stampaModulo({
+                            protocollo: pratica.protocollo, tipologia: pratica.tipologia, negozio: pratica.negozio, operatore: pratica.operatore,
+                            cliente: pratica.cliente as DatiModulo["cliente"], valore: Number(pratica.valore),
+                            acconto: pratica.acconto as DatiModulo["acconto"],
+                            righe: (pratica.righe || []).map((r) => ({ descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note })),
+                            dispositivo: pratica.dispositivo, imei: pratica.imei,
+                            tempoMedio: tempoMedio(pratica.tipologia, pratica.approvvigionamento),
+                        })}>
+                            <Printer className="w-3.5 h-3.5 inline mr-1 -mt-0.5" /> Ristampa il modulo
+                        </button>
                         {(pratica.stato === "in_negozio" || pratica.stato === "pronta") && !pratica.avviso_pronto_il && (
                             <button onClick={avvisaPronto} disabled={busy}
                                 className="rvPill rvPill-si">
@@ -1471,7 +1607,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                             </button>
                         )}
                         {pratica.sezione === "assistenze" && !chiusa && (
-                            <button onClick={() => scrivi({ stato: "non_riuscita" }, "Lavorazione non riuscita", "⛔ Segnata non riuscita")} disabled={busy}
+                            <button onClick={() => { if (window.confirm(`Segno «${pratica.protocollo}» come NON RIUSCITA?\n\nLa pratica si chiude e nel CRM non si riapre. Se c'è un acconto, si emette il buono al cliente.`)) scrivi({ stato: "non_riuscita" }, "Lavorazione non riuscita", "⛔ Segnata non riuscita"); }} disabled={busy}
                                 className="rvPill rvPill-no">
                                 Non riuscita
                             </button>
