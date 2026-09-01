@@ -100,8 +100,14 @@ function Invoke-CustomOpos {
   $oposName = "CUSTOM"
   if ($DeviceUrl -match '^custom://(.+)$') { $oposName = $Matches[1] }
 
-  if (-not (Test-Path $custFp)) {
-    try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 30 } catch { }
+  # SCARICA SEMPRE l'ultima cust-fp PRIMA di ogni stampa (non solo se manca): cosi'
+  # un fix del driver deployato (es. il percorso FISCALE Custom) arriva all'agente
+  # gia' in esecuzione SENZA reinstallarlo/riavviarlo. Se il download fallisce si
+  # tiene la copia locale. Bug 01/09: agenti avviati prima del deploy fiscale
+  # avevano lo stub vecchio -> "fiscal Custom non ancora abilitato" con soldi
+  # incassati e nessuno scontrino.
+  try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 15 } catch {
+    if (-not (Test-Path $custFp)) { try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile $custFp -TimeoutSec 30 } catch { } }
   }
   # Passa l'ePOS XML GREZZO al driver: tutta la logica (non_fiscal/fiscal) vive in
   # cust-fp.ps1, cosi' i futuri aggiornamenti NON richiedono di ritoccare l'agente.
