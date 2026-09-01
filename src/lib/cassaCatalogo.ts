@@ -18,6 +18,7 @@
 // trova nel carrello. È il motivo per cui la cassa può restare a due schede.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { stessoMagazzino } from "@/lib/negoziNomi";
 import { supabase } from "@/lib/supabaseClient";
 
 export type NaturaCassa = "prodotto" | "servizio";
@@ -161,11 +162,13 @@ async function _leggiBase(negozio: string): Promise<VoceCassa[]> {
     // gli articoli dei pulsanti rapidi, sennò i gruppi si aprono vuoti
     const { data: voci } = await supabase.from("cassa_gruppo_voci").select("codice").eq("attivo", true);
     (voci || []).forEach((v: { codice: string | null }) => { if (v.codice) codici.add(v.codice); });
-    // e la merce che in questo negozio c'è davvero
+    // e la merce che in questa SEDE c'è davvero — le due insegne dello stesso
+    // locale sono un magazzino solo, e il catalogo deve conoscerle entrambe
     if (negozio) {
+        const nomiSede = await negoziDellaSede(negozio);
         for (let da = 0; ; da += PAGINA) {
             const { data, error } = await supabase.from("mag_disponibilita")
-                .select("codice").eq("negozio", negozio).range(da, da + PAGINA - 1);
+                .select("codice").in("negozio", nomiSede).range(da, da + PAGINA - 1);
             if (error || !data?.length) break;
             (data as { codice: string }[]).forEach((g) => codici.add(g.codice));
             if (data.length < PAGINA) break;
@@ -231,12 +234,34 @@ export type EsitoGiacenze = {
     errore?: string;
 };
 
+/* I GEMELLI SONO UN MAGAZZINO SOLO — ANCHE PER GLI ARTICOLI A QUANTITÀ
+   (Luca 31/08, e revisore 01/09 che ha misurato quanto costava non averlo).
+   «Dobbiamo dare la possibilità ai negozi doppi di attingere a entrambi i
+   magazzini»: per i pezzi con IMEI era già così, per la merce a quantità no —
+   e la merce a quantità è la maggioranza. A Magliana W3 una SIM Fastweb non
+   si poteva vendere perché quel codice sta sullo scaffale di Magliana Multi,
+   a tre metri: 367 pezzi invisibili, e il cliente che se ne va. Stessa cosa
+   per Sim Vodafone, Sost Fastweb, eSIM Fastweb, PLX, PLKasko — e nell'altro
+   verso per Sim Wind3 e Sost Wind3.
+   La società NON si perde: la porta la riga della giacenza, e il server la
+   rilegge dal magazzino — anche del gemello — quando emette lo scontrino. */
+let _sedi: string[] | null = null;
+async function negoziDellaSede(negozio: string): Promise<string[]> {
+    if (!_sedi) {
+        const { data } = await supabase.from("stores").select("name");
+        _sedi = (data || []).map((r: { name: string }) => String(r.name));
+    }
+    const suoi = _sedi.filter((n) => stessoMagazzino(n, negozio));
+    return suoi.length ? suoi : [negozio];
+}
+
 export async function caricaGiacenze(negozio: string, azienda?: string | null): Promise<EsitoGiacenze> {
     const m = new Map<string, Giacenza>();
     if (!negozio) return { mappa: m };
+    const nomi = await negoziDellaSede(negozio);
     for (let da = 0; ; da += PAGINA) {
         let q = supabase.from("mag_disponibilita")
-            .select("codice,quantita,azienda,pezzi_con_seriale,pezzi_a_quantita").eq("negozio", negozio);
+            .select("codice,quantita,azienda,pezzi_con_seriale,pezzi_a_quantita").in("negozio", nomi);
         if (azienda) q = q.eq("azienda", azienda);
         const { data, error } = await q.range(da, da + PAGINA - 1);
         if (error) return { mappa: m, errore: error.message };

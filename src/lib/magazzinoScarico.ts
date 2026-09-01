@@ -34,6 +34,7 @@
 //     persa no.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { stessoMagazzino } from "@/lib/negoziNomi";
 import { supabase } from "@/lib/supabaseClient";
 
 export type RigaDaScaricare = {
@@ -173,11 +174,25 @@ export async function scaricaVendita(
             // trigger somma da sé, ma il conto di «quanto restava» va fatto qui.
             // Si legge PER SOCIETÀ: la giacenza di T1 non copre una vendita di T2.
             const codici = [...new Set(aQuantita.map((r) => String(r.codice)))];
+            /* SI GUARDA ANCHE IL GEMELLO (Luca 31/08, misurato dal revisore
+               01/09). Da oggi la cassa lascia vendere la merce dell'altra
+               insegna dello stesso locale — è un magazzino solo, a tre metri —
+               e allora anche lo scarico deve togliere DA DOVE LA MERCE STA.
+               Guardando solo il negozio dove si batte, un codice del gemello
+               non risultava da nessuna parte e il movimento non veniva
+               scritto: vendita fatta, magazzino fermo. */
+            const { data: negs } = await supabase.from("stores").select("name");
+            const nomiSede = (negs || []).map((x: { name: string }) => String(x.name))
+                .filter((n) => stessoMagazzino(n, negozio));
             const { data: prima } = await supabase.from("mag_giacenze")
-                .select("codice,quantita,azienda").eq("negozio", negozio).in("codice", codici);
+                .select("codice,quantita,azienda,negozio").in("negozio", nomiSede.length ? nomiSede : [negozio]).in("codice", codici);
             const chiave = (cod: string, az: string | null | undefined) => cod + "\u0000" + (az || "T1");
-            const avevo = new Map<string, number>((prima || [])
-                .map((g: { codice: string; quantita: number; azienda: string | null }) => [chiave(g.codice, g.azienda), Number(g.quantita) || 0]));
+            /* quanto ce n'è, sommando le due insegne: sono un magazzino solo */
+            const avevo = new Map<string, number>();
+            (prima || []).forEach((g: { codice: string; quantita: number; azienda: string | null }) => {
+                const k = chiave(g.codice, g.azienda);
+                avevo.set(k, (avevo.get(k) || 0) + (Number(g.quantita) || 0));
+            });
 
             /* CHI CE L'HA, CE L'HA. Se la riga non porta la società — è il
                caso delle scorciatoie, che sono un listino di margine e di
@@ -186,10 +201,17 @@ export async function scaricaVendita(
                e scaricarla a Telefutura 1 è esattamente il difetto che
                stiamo chiudendo. Si guarda chi i pezzi ce li ha davvero. */
             const diChiE = new Map<string, string>();
-            (prima || []).forEach((g: { codice: string; quantita: number; azienda: string | null }) => {
-                if (!g.azienda) return;
-                const meglio = diChiE.get(g.codice);
-                if (!meglio || Number(g.quantita) > 0) diChiE.set(g.codice, g.azienda);
+            /* E IN QUALE MAGAZZINO STA: fra le due insegne vince quella che i
+               pezzi ce li ha davvero, e a parità quella dove si sta battendo. */
+            const doveSta = new Map<string, string>();
+            (prima || []).forEach((g: { codice: string; quantita: number; azienda: string | null; negozio: string }) => {
+                const ha = Number(g.quantita) > 0;
+                if (g.azienda && (!diChiE.get(g.codice) || ha)) diChiE.set(g.codice, g.azienda);
+                const attuale = doveSta.get(g.codice);
+                if (!attuale || (ha && (attuale !== negozio || Number(g.quantita) > 0))) {
+                    if (!attuale || ha) doveSta.set(g.codice, g.negozio);
+                }
+                if (g.negozio === negozio && ha) doveSta.set(g.codice, negozio);
             });
 
             /* NIENTE GIACENZE FANTASMA (revisore 29/08). Se di quel codice il
@@ -209,7 +231,8 @@ export async function scaricaVendita(
                 if (resta < 0) esito.sottoZero.push({ prodotto: String(r.product || cod), codice: cod, restano: resta });
                 avevo.set(k, resta);
                 return {
-                    codice: cod, negozio, tipo: "scarico", quantita: n,
+                    // il movimento va sul magazzino che la merce ce l'ha
+                    codice: cod, negozio: doveSta.get(cod) || negozio, tipo: "scarico", quantita: n,
                     // il costo di OGGI: il listino cambia, il margine di questa
                     // vendita va calcolato col costo che aveva quando è uscita
                     costo_unitario: r.costo ?? null,
