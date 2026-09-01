@@ -17,6 +17,7 @@ export function MonitorNegoziView() {
   const [stores, setStores] = useState<Store[] | null>(null);
   const [err, setErr] = useState("");
   const [ts, setTs] = useState<number>(0);
+  const [busy, setBusy] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -26,6 +27,25 @@ export function MonitorNegoziView() {
       setStores(j.stores); setTs(j.ts || Date.now()); setErr("");
     } catch (e: any) { setErr(String(e?.message || e)); }
   }, []);
+
+  // Interruttore demo/fiscale direttamente dalla card (stesso endpoint del pannello
+  // Cassa & Scontrini). Fiscale = documenti commerciali VERI → si conferma prima.
+  const cambiaModalita = useCallback(async (negozio: string, fiscale: boolean) => {
+    const msg = fiscale
+      ? `Accendere il FISCALE su «${negozio}»?\n\nDa questo momento emette documenti commerciali VERI (non più prova).`
+      : `Rimettere «${negozio}» in PROVA (demo, non fiscale)?`;
+    if (!window.confirm(msg)) return;
+    setBusy(negozio);
+    try {
+      const r = await fetch("/api/vendita/modalita-fiscale", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ negozio, fiscale }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || "non riuscito");
+      await load();
+    } catch (e: any) { setErr(String(e?.message || e)); }
+    finally { setBusy(""); }
+  }, [load]);
 
   useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
 
@@ -85,6 +105,16 @@ export function MonitorNegoziView() {
                   <span className={"text-[10px] font-mono px-1.5 py-0.5 rounded border " + (s.abilitato ? (s.fiscale ? "bg-emerald-500/10 border-emerald-400/20 text-emerald-300" : "bg-white/5 border-white/10 text-slate-400") : "bg-white/5 border-white/10 text-slate-500")}>
                     {s.abilitato ? (s.fiscale ? "FISCALE" : "demo") : "off"}</span>
                 </div>
+                {s.abilitato && (
+                  <button onClick={() => cambiaModalita(s.negozio, !s.fiscale)} disabled={busy === s.negozio}
+                    title={s.fiscale ? "Rimetti in prova (demo)" : "Accendi il fiscale (documenti veri)"}
+                    className={"mt-2 w-full text-[11px] font-bold py-1.5 rounded border transition-colors disabled:opacity-40 "
+                      + (s.fiscale
+                        ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                        : "bg-emerald-500/15 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/25")}>
+                    {busy === s.negozio ? "…" : s.fiscale ? "↩ Rimetti in prova" : "▶ Accendi il fiscale"}
+                  </button>
+                )}
               </div>
             );
           })}
