@@ -6955,23 +6955,35 @@ function CRM() {
   /** Le due sole offerte FWA che comprendono un apparato da scontrinare. */
   const FWA_CON_APPARATO = ["Super Internet Casa Indoor 5G", "Super Internet Casa Indoor 5G Conv"];
 
+  /* ═══ DA DOVE SI LEGGONO I TELEFONI ════════════════════════════════════
+     Luca 01/09, dopo una prova in negozio: «dove mi chiede l'importo
+     dell'anticipo e l'importo finanziato?».
+     Non lo chiedeva perché questa funzione non trovava più il telefono.
+     Guardava i MODULI GREZZI (`g.sv.sales`) e li interpretava con `cats`,
+     che è l'albero del marchio SELEZIONATO IN QUEL MOMENTO. Finché si resta
+     su WindTre funziona; ma appena la pratica va in carrello e si passa a
+     Marginalità per aggiungere il telefono, l'accessorio, la pellicola — cioè
+     quello che si fa in ogni vendita vera — `cats` non descrive più WindTre e
+     le chiavi non combaciano con nulla: zero telefoni trovati, nessuna
+     domanda, e il resto incassato tutto.
+     Misurato su una vendita vera (Mazzini, 10:34): pratica WindTre
+     «Finanziato», iPhone 17 Pro da 1.359,90 € — uscito sullo scontrino a
+     prezzo pieno, pagato tutto con la carta, senza un centesimo di «non
+     riscosso». Nei miei collaudi di notte il marchio restava selezionato, e
+     il difetto non si vedeva.
+     ADESSO: per le pratiche già in carrello si leggono gli OGGETTI GIÀ
+     INTERPRETATI (`g.items`), che portano con sé marchio, categoria, prodotto
+     e campi — indipendenti da quale marchio è selezionato adesso. Per la
+     pratica ancora aperta si continua a leggere i moduli, dove `cats` è
+     davvero il suo albero. */
   const telefoniDaScontrinare = () => {
     const out = [];
     const visti = new Set();
     let dove = 0;   // quale gruppo di righe si sta guardando: serve alla chiave
-    const scan = (sl) => cats.forEach(g => (sl?.[g.id] || []).forEach((row, ri) => {
-      if (!row) return;
-      g.subs.forEach(sub => {
-        const d = row[sub.id];
-        if (!(d && d.active)) return;
-        const brand = String(sub.catBrand || "");
-        const cat = String(sub.catCategoria || "");
-        const prod = String(sub.catProdotto || "");
-        /* L'OFFERTA STA NEI CAMPI (revisore 01/09). Leggerla da `d.catalogo`
-           dava sempre stringa vuota — `catalogo` è una proprietà delle voci di
-           CARRELLO, non delle righe compilate — e il caso FWA non è mai
-           scattato: un apparato sarebbe uscito dal negozio senza scontrino. */
-        const off = String((d.fields || {})["Offerta"] || "");
+
+    /* LA REGOLA, IN UN POSTO SOLO. La chiamano tutt'e due le strade — il
+       carrello e la pratica aperta — così non possono divergere. */
+    const valuta = ({ brand, cat, prod, off, f, posto }) => {
         let modo = null;
         if (cat === "Telefono a Rate") {
           const finanziato = /finanziat/i.test(prod);
@@ -6988,15 +7000,14 @@ function CRM() {
           modo = "w3_fwa";
         }
         if (!modo) return;
-        const f = d.fields || {};
-        const imei = String(f["IMEI"] || "").replace(/\D/g, "");
+        const imei = String((f || {})["IMEI"] || "").replace(/\D/g, "");
         /* SENZA IMEI NON SI SALTA LA RIGA. Un telefono finanziato senza IMEI
            è un dato mancante, non un telefono che non c'è: la chiave qui
            serve solo a non chiedere due volte lo stesso importo, e il
            controllo su «l'IMEI manca» sta dove stanno gli altri. */
-        // senza IMEI la chiave è il posto in cui sta la riga: stabile, e non
+        // senza IMEI la chiave è il POSTO in cui sta la riga: stabile, e non
         // cambia a ogni giro come faceva `out.length`
-        const chiave = imei || `${dove}|${g.id}|${sub.id}|${ri}`;
+        const chiave = imei || posto;
         if (visti.has(chiave)) return;
         visti.add(chiave);
         const pezzo = imei && magVendita?.perImei ? magVendita.perImei.get(imei) : null;
@@ -7020,9 +7031,47 @@ function CRM() {
              raddoppiare non c'è. */
           creaRiga: modo === "w3_fwa",
         });
+    };
+
+    // la pratica ANCORA APERTA: qui `cats` è davvero il suo albero
+    const scan = (sl) => cats.forEach(g => (sl?.[g.id] || []).forEach((row, ri) => {
+      if (!row) return;
+      g.subs.forEach(sub => {
+        const d = row[sub.id];
+        if (!(d && d.active)) return;
+        valuta({
+          brand: String(sub.catBrand || ""),
+          cat: String(sub.catCategoria || ""),
+          prod: String(sub.catProdotto || ""),
+          /* L'OFFERTA STA NEI CAMPI (revisore 01/09). Leggerla da `d.catalogo`
+             dava sempre stringa vuota — `catalogo` è una proprietà delle voci
+             di CARRELLO, non delle righe compilate — e il caso FWA non è mai
+             scattato: un apparato sarebbe uscito dal negozio senza scontrino. */
+          off: String((d.fields || {})["Offerta"] || ""),
+          f: d.fields || {},
+          posto: `${dove}|${g.id}|${sub.id}|${ri}`,
+        });
       });
     }));
-    cart.forEach((g, i) => { if (g.sv) { dove = i + 1; scan(g.sv.sales); } });
+    /* LE PRATICHE GIÀ IN CARRELLO: dagli oggetti interpretati, non dai
+       moduli. `it.catalogo` porta categoria, prodotto e offerta come erano
+       quando la pratica è stata messa nel carrello; `g.brandId` porta il
+       marchio suo, non quello selezionato adesso. */
+    cart.forEach((g, i) => {
+      const brand = SLUG_CATALOGO[g.brandId] || String(g.brandId || "").toLowerCase();
+      (g.items || []).forEach((it, ii) => {
+        const c = it?.catalogo || {};
+        valuta({
+          brand,
+          cat: String(c.categoria || ""),
+          prod: String(c.prodotto || ""),
+          off: String(c.offerta || (it.details || {})["Offerta"] || ""),
+          f: it.details || {},
+          posto: `c${i}|${ii}`,
+        });
+      });
+    });
+    // e la pratica ancora aperta, dove `cats` è davvero il suo albero
     dove = 0; scan(sales);
     return out;
   };
