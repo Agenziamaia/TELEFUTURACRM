@@ -207,8 +207,13 @@ export default function FirmaUsato({ dati, mancano, contratto, onContratto, onRe
                                 Il venditore ha ricevuto il link. Appena firma, la copia arriva qui da sola — resta pure
                                 su questa schermata.
                             </p>
+                            <div className="rvSub rvSub-att">
+                                ⚠️ Il link deve aprirlo <b>il cliente, sul suo telefono</b>. Se lo apri tu al banco e ti fai
+                                dettare il codice, la firma che resta sul contratto è la tua: il registro annota il
+                                dispositivo, e in una contestazione è la prima cosa che si guarda.
+                            </div>
                             {link && (
-                                <a href={link} target="_blank" rel="noreferrer" className="rvPill">🔗 apri il link di firma</a>
+                                <a href={link} target="_blank" rel="noreferrer" className="rvPill">🔗 apri il link di firma <span className="rvTab-min">(solo se serve rimandarlo)</span></a>
                             )}
                         </>
                     ) : (

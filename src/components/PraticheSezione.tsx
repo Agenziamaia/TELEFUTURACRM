@@ -1311,6 +1311,11 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
                                 Prima gli arriva il <b>codice</b>, poi si apre il documento. Le firme sono due: la seconda è per
                                 le clausole della sezione 7. Questa schermata diventa verde da sola appena ha finito.
                             </p>
+                            <div className="rvSub rvSub-att">
+                                ⚠️ Il link deve aprirlo <b>il cliente, sul suo telefono</b>. Se lo apri tu al banco e ti fai
+                                dettare il codice, la firma che resta sul documento è la tua: il registro annota il
+                                dispositivo, e in una contestazione è la prima cosa che si guarda.
+                            </div>
                             {firma.link && (
                                 <p className="rvTab-min" style={{ marginTop: 7 }}>
                                     Se preferisce firmare qui al banco sul suo telefono:{" "}
