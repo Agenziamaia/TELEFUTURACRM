@@ -30,7 +30,7 @@ const gg = (n: number) => (Math.round(n * 10) / 10).toFixed(1).replace(".", ",")
 import { cn } from "@/utils";
 
 type Riga = {
-    userId: string; nome: string; negozio: string;
+    userId: string; nome: string; negozio: string; contratto: string;
     puntoFermo: { mese: string; giorni: number; fonte: string } | null;
     presiDopo: number;
     residuo: number | null;
@@ -39,6 +39,7 @@ type Riga = {
 export function DisponibilitaFerie() {
     const { user } = useAuth();
     const [righe, setRighe] = useState<Riga[] | null>(null);
+    const [callerFuori, setCallerFuori] = useState(0);
     const [q, setQ] = useState("");
     const [ordine, setOrdine] = useState<"residuo-giu" | "residuo-su" | "nome">("residuo-giu");
     const [bozze, setBozze] = useState<Record<string, string>>({});
@@ -67,7 +68,7 @@ export function DisponibilitaFerie() {
 
     const carica = useCallback(async () => {
         const [ut, res, fer, fes] = await Promise.all([
-            supabase.from("app_users").select("id, full_name, primary_store, role").eq("active", true).order("full_name"),
+            supabase.from("app_users").select("id, full_name, primary_store, role, contract_type").eq("active", true).order("full_name"),
             supabase.from("ferie_residue").select("user_id, mese, giorni, fonte").order("mese", { ascending: false }),
             supabase.from("vacation_requests").select("user_id, employee_name, date_from, date_to, half_day, tipo, status").eq("status", "approved"),
             supabase.from("giorni_festivi").select("giorno"),
@@ -80,20 +81,34 @@ export function DisponibilitaFerie() {
             const cur = fermo.get(r.user_id);
             if (!cur || mese > cur.mese) fermo.set(r.user_id, { mese, giorni: Number(r.giorni), fonte: r.fonte });
         }
-        const utenti = ((ut.data ?? []) as { id: string; full_name: string; primary_store: string | null }[]);
+        const utenti = ((ut.data ?? []) as { id: string; full_name: string; primary_store: string | null; contract_type: string | null; role: string | null }[]);
+        setCallerFuori(utenti.filter((u) => u.role === "caller").length);
         const perNome = new Map(utenti.map((u) => [String(u.full_name || "").trim().toLowerCase(), u.id]));
         const oggi = new Date();
         const fineOggi = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
 
-        const out: Riga[] = utenti.map((u) => {
+        /* ⚠️ I CALLER NON HANNO FERIE (Luca 01/09): «vengono pagati ad ore, e
+           se non lavorano non hanno compenso». Vale anche per quelli con
+           partita IVA — con loro l'accordo dei 18 giorni non c'è. Quindi non
+           entrano proprio in questa lista: tenerli, anche con un numero a
+           zero, vorrebbe dire far credere che un residuo esista.
+           Si escludono per RUOLO, non per contratto: Alex Coviello è back
+           office del call center ma è assunto, e le ferie le ha. */
+    const out: Riga[] = utenti.filter((u) => u.role !== "caller").map((u) => {
             const pf = fermo.get(u.id) || null;
             /* LE FERIE PRESE DOPO IL PUNTO FERMO. Il cedolino di luglio conta
                fino al 31 luglio, quindi si parte dal primo agosto: i giorni di
                luglio sono già dentro il suo numero. */
             let presi = 0;
             if (pf) {
-                const dopo = new Date(pf.mese + "T12:00"); dopo.setMonth(dopo.getMonth() + 1);
-                const da = `${dopo.getFullYear()}-${String(dopo.getMonth() + 1).padStart(2, "0")}-01`;
+                /* DA QUANDO SI CONTA. Un cedolino di luglio conta fino al 31
+                   luglio: si parte dal primo agosto. L'accordo dei partita IVA
+                   invece vale per l'ANNO, quindi si conta dal primo gennaio
+                   compreso — partire da febbraio regalerebbe le ferie di
+                   gennaio. */
+                const d0 = new Date(pf.mese + "T12:00");
+                if (pf.fonte !== "accordo") d0.setMonth(d0.getMonth() + 1);
+                const da = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}-01`;
                 for (const r of ((fer.data ?? []) as Record<string, string>[])) {
                     if (r.tipo === "corso") continue;   // un corso non è ferie
                     const uid = r.user_id || perNome.get(String(r.employee_name || "").trim().toLowerCase());
@@ -103,7 +118,7 @@ export function DisponibilitaFerie() {
                 }
             }
             return {
-                userId: u.id, nome: u.full_name, negozio: u.primary_store || "",
+                userId: u.id, nome: u.full_name, negozio: u.primary_store || "", contratto: u.contract_type || "",
                 puntoFermo: pf, presiDopo: arrotondaGiorni(presi),
                 // il residuo NON si arrotonda per eccesso: si mostra a un decimale
                 residuo: pf ? Math.round((pf.giorni - presi) * 10) / 10 : null,
@@ -124,6 +139,29 @@ export function DisponibilitaFerie() {
         setBozze((p) => ({ ...p, [userId]: "" }));
         setSalvo(null);
         carica();
+    };
+
+    /* ═══ I PARTITA IVA (Luca 01/09) ═══
+       «Hanno 18 giorni all'anno in accordo con noi»: non hanno busta paga,
+       quindi il loro punto fermo non si legge da nessuna parte — si scrive.
+       Vale per l'anno solare: 18 giorni al primo gennaio, meno quelli fatti.
+       Se domani l'accordo cambia, si cambia il numero e si ricarica. */
+    const GIORNI_PIVA = 18;
+    const annoIso = `${new Date().getFullYear()}-01-01`;
+    const [caricoPiva, setCaricoPiva] = useState(false);
+    const pivaSenza = useMemo(() => (righe ?? []).filter((r) =>
+        /partita\s*iva/i.test(r.contratto) && (!r.puntoFermo || r.puntoFermo.mese.slice(0, 4) !== annoIso.slice(0, 4))), [righe, annoIso]);
+    const caricaPiva = async () => {
+        if (!pivaSenza.length) return;
+        setCaricoPiva(true); setEsitoLettura(null);
+        const { error } = await supabase.from("ferie_residue").upsert(pivaSenza.map((r) => ({
+            user_id: r.userId, mese: annoIso, giorni: GIORNI_PIVA, fonte: "accordo",
+            note: `${GIORNI_PIVA} giorni all'anno per accordo (partita IVA) — ${annoIso.slice(0, 4)}`,
+        })), { onConflict: "user_id,mese" });
+        setCaricoPiva(false);
+        setEsitoLettura(error ? `⛔ ${error.message}`
+            : `✅ Caricati ${GIORNI_PIVA} giorni a ${pivaSenza.length} ${pivaSenza.length === 1 ? "collaboratore" : "collaboratori"} con partita IVA. Le ferie già fatte quest'anno sono scalate.`);
+        if (!error) await carica();
     };
 
     const [leggo, setLeggo] = useState(false);
@@ -192,6 +230,13 @@ export function DisponibilitaFerie() {
                     className="px-3 py-2 rounded-xl text-[11px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 hover:bg-sky-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
                     {leggo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "👁"} Leggi in prova
                 </button>
+                {pivaSenza.length > 0 && (
+                    <button onClick={caricaPiva} disabled={caricoPiva}
+                        title={`Scrive ${GIORNI_PIVA} giorni al ${annoIso.slice(0, 4)} a chi ha partita IVA: ` + pivaSenza.map((r) => r.nome).join(", ")}
+                        className="px-3 py-2 rounded-xl text-[11px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-200 hover:bg-violet-500/25 disabled:opacity-40 whitespace-nowrap flex items-center gap-1.5">
+                        {caricoPiva ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "🧾"} {GIORNI_PIVA} giorni ai partita IVA ({pivaSenza.length})
+                    </button>
+                )}
                 {esiti && esiti.some((e) => e.giorni != null) && (
                     <button onClick={() => leggiBuste(true)} disabled={leggo}
                         title="Scrive i numeri che hai appena visto nella tabella dei residui"
@@ -244,9 +289,15 @@ export function DisponibilitaFerie() {
                     )}
                 </div>
             )}
+            {callerFuori > 0 && (
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                    🎧 {callerFuori} caller non sono in elenco: sono pagati a ore, e chi non lavora non matura ferie —
+                    né con l&apos;assunzione né con la partita IVA.
+                </p>
+            )}
             {senzaDato > 0 && (
                 <p className="text-[11px] text-amber-100 bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2">
-                    ⚠️ Per {senzaDato} {senzaDato === 1 ? "collaboratore manca" : "collaboratori manca"} il residuo di partenza. Premi <b>«Leggi in prova»</b>: il saldo sta nel riquadro RATEI del cedolino di <b>{nomeMese(meseNuovo)}</b>. Chi non ha la busta archiviata si scrive a mano qui a fianco.
+                    ⚠️ Per {senzaDato} {senzaDato === 1 ? "collaboratore manca" : "collaboratori manca"} il residuo di partenza. Chi ha la <b>partita IVA</b> non ha busta paga: per loro c&apos;è il tasto dei {GIORNI_PIVA} giorni. Per gli altri premi <b>«Leggi in prova»</b>: il saldo sta nel riquadro RATEI del cedolino di <b>{nomeMese(meseNuovo)}</b>. Chi non ha la busta archiviata si scrive a mano qui a fianco.
                 </p>
             )}
 
@@ -272,9 +323,13 @@ export function DisponibilitaFerie() {
                                     <td className="py-2 px-2 text-slate-400 text-xs">{r.negozio || "—"}</td>
                                     <td className="py-2 px-2 text-right text-slate-300 tabular-nums">
                                         {r.puntoFermo ? (
-                                            <span title={`Residuo dichiarato dalla busta paga di ${nomeMese(r.puntoFermo.mese)}${r.puntoFermo.fonte === "manuale" ? " (scritto a mano)" : ""}`}>
+                                            <span title={r.puntoFermo.fonte === "accordo"
+                                                ? `${GIORNI_PIVA} giorni all'anno per accordo (partita IVA), dal ${nomeMese(r.puntoFermo.mese)}`
+                                                : `Residuo dichiarato dalla busta paga di ${nomeMese(r.puntoFermo.mese)}${r.puntoFermo.fonte === "manuale" ? " (scritto a mano)" : ""}`}>
                                                 {gg(r.puntoFermo.giorni)}
-                                                <span className="text-[10px] text-slate-600 ml-1">{nomeMese(r.puntoFermo.mese).slice(0, 3)}</span>
+                                                <span className="text-[10px] text-slate-600 ml-1">
+                                                    {r.puntoFermo.fonte === "accordo" ? "accordo" : nomeMese(r.puntoFermo.mese).slice(0, 3)}
+                                                </span>
                                             </span>
                                         ) : <span className="text-amber-300/80 text-xs">manca</span>}
                                     </td>
