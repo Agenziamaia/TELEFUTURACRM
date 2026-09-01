@@ -6011,7 +6011,18 @@ function CRM() {
          esiste eccome. */
       const _vfARate=brandId==="vodafone"&&tnp.some(t=>t==="rata");
       if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))
-        push("Telefono TNP (listino)",true,{..._tnpDaListino(det),...(_vfARate?{fuoriScontrino:true}:{})});
+        /* L'IMEI VIAGGIA CON LA VOCE (revisione 01/09). Nello schema di Luca
+           l'IMEI è un campo obbligatorio del documento, ma la voce automatica
+           nasceva col solo modello: sullo scontrino di Mazzini si leggeva
+           «Apple iPhone 17 Pro 256GB» e basta, mentre l'apparato FWA — che la
+           riga se la costruisce da sé — l'IMEI lo stampava. Due comportamenti
+           diversi per lo stesso bene.
+           `seriale` è il nome che la riga di scontrino si aspetta; `imei` lo
+           legge la colonna del carrello. */
+        push("Telefono TNP (listino)",true,{..._tnpDaListino(det),
+          seriale:String(det["IMEI"]||"").replace(/\D/g,"")||null,
+          imei:String(det["IMEI"]||"").replace(/\D/g,"")||null,
+          ...(_vfARate?{fuoriScontrino:true}:{})});
       // BUNDLE VODAFONE (Luca 06/08): l'opzione "Bundle <importo>" e' a tutti
       // gli effetti un prodotto in marginalita' — entra nel CARRELLO come voce
       // auto (non un telefono: resta un bundle) con l'importo esplicito nel
@@ -8076,14 +8087,23 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
       const _resetForm=()=>{ setMargSaveForm({...MARG_FORM_VUOTO}); setMargCliCerca("");setMargCliHits([]);setMargCliSel(null); setMargSkipCli(false); setShowMargSave(false); };
       // POS: apri Incasso & Scontrino sulle voci prezzate (solo negozi abilitati); fullReset alla chiusura.
       const _scRows = buildScontrinoItems(margItems);
-      if (_scRows.length && posScontrinoAbilitato(selNeg)) {
+      /* LE DUE PORTE DEVONO AVERE LA STESSA SERRATURA (revisione 01/09).
+         L'altro ramo apre la cassa se ci sono righe **o telefoni**; questo
+         guardava solo le righe. Con un Vodafone a rate — la cui unica riga è
+         marcata «fuori scontrino» — `_scRows` è vuoto, il modale non si apriva,
+         l'anticipo non veniva chiesto e il conto terzi non veniva scritto.
+         È esattamente il guasto di Donna delle 11:20, rientrato dall'altra
+         porta. Che i telefoni potessero passare di qui lo diceva già la riga
+         qui sotto, che glieli passa. */
+      const _telMarg = telefoniDaScontrinare();
+      if ((_scRows.length || _telMarg.length) && posScontrinoAbilitato(selNeg)) {
         // DIFFERITO: apri lo scontrino; la vendita si scrive SOLO a scontrino emesso.
         pendingCommit.current = commitFn;
         _resetForm(); clearDraft("crm_v9");
         /* `daRegistrare` ANCHE QUI (revisore 31/08): il differimento è nato in
            questo flusso, ma l'avviso di chiusura era finito solo sull'altro.
            Accessori e telefoni in contanti passano di qui tutto il giorno. */
-        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true, telefoni: telefoniDaScontrinare() });
+        setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true, telefoni: _telMarg });
       } else {
         // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
         // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).
