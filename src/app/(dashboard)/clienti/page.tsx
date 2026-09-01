@@ -206,7 +206,17 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 const dest = new Map<string, string>();   // brand → mese
                 if (ctrRighe.length) ctrRighe.forEach((r) => { const i = infoCtr.get(r.contract_id as string)!; if (!dest.has(i.brand)) dest.set(i.brand, meseDi(r.created_at, i.data)); });
                 else if (extRighe.length) { const i = infoCtr.get(extRighe[0].contract_id as string)!; dest.set("Marginalità", meseDi(extRighe[0].created_at, i.data)); }
-                else dest.set("Conservati", meseDi(righe[0].created_at, null));
+                else {
+                    /* ⚠️ ORFANO ≠ SENZA CONTRATTO (Luca 01/09: «perché risultano
+                       come eliminati-conservati?»). Se una riga PORTAVA un
+                       contract_id e quel contratto non c'è più, il contratto è
+                       stato eliminato davvero. Se invece il contract_id non c'è
+                       mai stato — dichiarazioni di vendita, registri di firma,
+                       documenti di ordini e assistenze — non c'è nessun
+                       contratto eliminato: quel file nasce da un'altra strada. */
+                    const orfano = righe.some((r) => !!r.contract_id);
+                    dest.set(orfano ? "Conservati" : "SenzaContratto", meseDi(righe[0].created_at, null));
+                }
                 const file: DocFile = {
                     key: cat + "|" + url, nome: righe[0].file_name || "documento", url, tipo: righe[0].file_type,
                     // solo pratiche ESISTENTI: gli id di contratti eliminati non si mostrano
@@ -965,7 +975,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     // «disdetta» piatta come i documenti d'identità: i file dei
                                     // ticket hanno contract_id NULL by design e nel ramo brand
                                     // finivano sotto «Contratti eliminati» — falso (revisore 26/08)
-                                    const catPiatta = cat.id === "documento" || cat.id === "disdetta";
+                                    const catPiatta = cat.id === "documento" || cat.id === "disdetta" || cat.id === "dichiarazione_usato";
                                     const filePiatti = catPiatta
                                         ? [...new Map([...perBrand.values()].flatMap((pm) => [...pm.values()].flat()).map((f) => [f.key, f])).values()]
                                         : [];
@@ -1007,7 +1017,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                                     {bAperta ? <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-500 shrink-0" />}
                                                                     {logo ? <img src={logo} alt={brand} className="w-5 h-5 object-contain shrink-0" /> : null}
                                                                     <span className="text-xs font-bold text-slate-200">
-                                                                        {brand === "Conservati" ? "Contratti eliminati — documenti conservati" : brand}
+                                                                        {brand === "Conservati" ? "Contratti eliminati — documenti conservati"
+                                                                            : brand === "SenzaContratto" ? "Documenti del cliente"
+                                                                                : brand}
                                                                     </span>
                                                                     <span className="text-[10px] text-gray-600">{nBrand} file</span>
                                                                 </button>
