@@ -9,13 +9,20 @@ export const dynamic = "force-dynamic";
    Una riga per ricarica venduta, scritta quando la vendita si scrive davvero
    (a scontrino emesso, non al clic).
 
-   ⚠️ PERCHÉ ESISTE GIÀ OGGI, che l'API del fornitore non c'è ancora. Oggi il
+   ⚠️ PERCHÉ ESISTE GIÀ OGGI, che l'API del fornitore non c'è ancora. Il
    credito lo carica una persona sul terminale PayStore, e senza questa riga
    una ricarica incassata e non erogata sarebbe invisibile: il cliente ha
-   pagato, la cassa ha battuto, e da nessuna parte risulta che il credito
-   doveva partire. Da domani, con l'API, questa stessa riga nasce
-   `da_inviare` e il lavoro automatico la porta a `inviata` o `fallita` —
-   nessuno deve rifare il giro.
+   pagato, la cassa ha battuto, e da nessuna parte risulterebbe che il credito
+   deve ancora partire. Ogni ricarica nasce «DA FARE» e ci resta finché
+   qualcuno non dice il contrario — a mano oggi, dal motore quando l'API sarà
+   collegata.
+
+   ⚠️ E QUESTA SCRITTURA PUÒ FALLIRE. È successo il primo giorno: la colonna
+   `contract_id` era dichiarata `uuid` mentre gli id dei contratti sono testo,
+   quindi ogni inserimento moriva e il registro restava vuoto mentre i negozi
+   vendevano. Da allora il registro si ripara da solo leggendo le vendite
+   scontrinate (`recuperaScontrinate` in /api/paystore/registro): questa
+   rotta è la strada normale, non l'unica.
 
    ⚠️ NON PASSA DAL BROWSER. `paystore_ricariche` è revocata ad anon e
    authenticated: qui dentro ci sono i numeri di cellulare dei clienti, e il
@@ -26,10 +33,10 @@ type Voce = {
     taglio?: string; importo?: number; contractId?: string | null;
 };
 
-/* Lo stato con cui nasce una ricarica. Oggi 'manuale': la si esegue a mano.
-   Quando l'API sarà collegata, questa costante diventa 'da_inviare' e il
-   resto del flusso è già al suo posto. */
-const STATO_INIZIALE = "manuale";
+/* Ogni ricarica nasce DA FARE: scontrinata e incassata, credito non ancora
+   caricato. Lo diventa «fatta» quando qualcuno lo dice — oggi una persona dal
+   pannello, domani il motore che chiama l'API. */
+const STATO_INIZIALE = "da_fare";
 
 export async function POST(request: Request) {
     const g = await accesso(request, "vendita/paystore");

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
+import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto } from "@/lib/paystore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,48 @@ function giorniFra(da: string, a: string): string[] {
     return out.slice(-186);
 }
 
+async function recuperaScontrinate(da: string, a: string) {
+    try {
+        const { data: vendite } = await supabase.from("contracts")
+            .select("id, prodotto, negozio, venditore, created_at, dettagli")
+            .ilike("prodotto", "Ricarica%")
+            .gte("created_at", da + "T00:00:00Z").lte("created_at", a + "T23:59:59Z")
+            .limit(5000);
+        if (!vendite?.length) return;
+
+        const ids = vendite.map((v) => v.id);
+        const { data: gia } = await supabase.from("paystore_ricariche").select("contract_id").in("contract_id", ids);
+        const visti = new Set((gia || []).map((r) => r.contract_id));
+
+        const nuove = [];
+        for (const v of vendite) {
+            if (visti.has(v.id)) continue;
+            const d = leggiRicaricaDaProdotto(v.prodotto);
+            /* ⚠️ ANCHE QUELLE SENZA NUMERO. «Ricarica Vodafone» venduta dal
+               listino invece che dal pannello è una ricarica pagata di cui
+               nessuno sa il numero: nasconderla non la fa sparire, la lascia
+               solo senza nessuno che se ne occupi. Entra con il numero vuoto,
+               e nella schermata si vede che è da completare. */
+            const senzaNum = d ? null : eRicaricaSenzaNumero(v.prodotto);
+            if (!d && !senzaNum) continue;                 // un caricatore da muro non è una ricarica
+            const dett = (v.dettagli || {}) as { importo?: number; price?: number };
+            const importo = Number(dett.importo ?? dett.price ?? d?.importo ?? 0);
+            if (!(importo > 0)) continue;
+            nuove.push({
+                creata_il: v.created_at, negozio: v.negozio, venditore: v.venditore,
+                operatore: d?.operatore || senzaNum, operatore_nome: d?.operatoreNome || nomeOperatoreCorto(senzaNum || ""),
+                numero: d?.numero || "", importo, stato: "da_fare", contract_id: v.id,
+                nota: d ? "ripresa dalla vendita scontrinata" : "venduta senza numero: da completare a mano",
+            });
+        }
+        if (nuove.length) await supabase.from("paystore_ricariche").insert(nuove);
+    } catch (e) {
+        // il recupero è un aiuto, non un prerequisito: se non riesce, la
+        // schermata mostra quello che c'è invece di non aprirsi
+        console.error("[paystore] recupero delle scontrinate non riuscito:", String((e as Error)?.message || e));
+    }
+}
+
 export async function GET(request: Request) {
     const g = await accesso(request, "paystore");
     if (!g.ok) return g.risposta;
@@ -50,7 +93,23 @@ export async function GET(request: Request) {
     const primaFine = new Date(new Date(da + "T00:00:00Z").getTime() - 86400000).toISOString().slice(0, 10);
     const primaInizio = new Date(new Date(primaFine + "T00:00:00Z").getTime() - (nGiorni - 1) * 86400000).toISOString().slice(0, 10);
 
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda";
+    /* ═══ IL REGISTRO SI RIPARA DA SOLO ═════════════════════════════════
+       Luca, primo giorno di vendite: «devo vedere TUTTE le ricariche che
+       vengono scontrinate. E invece non ce le ho.»
+
+       La fonte certa di cosa è stato scontrinato è `contracts`: quella riga
+       si scrive nella stessa operazione della vendita. Il registro è una
+       scrittura IN PIÙ, fatta da una seconda chiamata — e una seconda
+       chiamata può fallire: il primo giorno è successo davvero, per una
+       colonna dichiarata `uuid` quando gli id dei contratti sono testo, e il
+       registro è rimasto vuoto mentre i negozi vendevano.
+
+       Perciò qui, prima di leggere, si guarda se c'è qualcosa di scontrinato
+       che non ha la sua riga, e gliela si dà. Costa una query e toglie di
+       mezzo per sempre la domanda «perché manca?». */
+    await recuperaScontrinate(da, a);
+
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
@@ -96,7 +155,7 @@ export async function GET(request: Request) {
         /* ⚠️ QUELLE DA GUARDARE, in cima e contate a parte: una ricarica
            incassata e non erogata è l'unica ragione per cui uno apre questa
            schermata di fretta. */
-        daGuardare: R.filter((r) => r.stato === "da_inviare" || r.stato === "fallita"),
+        daGuardare: R.filter((r) => r.stato === "da_fare" || r.stato === "fallita"),
         perStato: [...new Set(R.map((r) => r.stato))].map((s) => ({ stato: s, quante: R.filter((r) => r.stato === s).length })),
         perGiorno, perOperatore, perNegozio,
         ultime: R.slice(0, 200),
@@ -114,7 +173,7 @@ export async function POST(request: Request) {
     const g = await accesso(request, "paystore");
     if (!g.ok) return g.risposta;
 
-    let b: { azione?: string; id?: string; operatore?: string; etichetta?: string; valore?: number; ordine?: number; attivo?: boolean };
+    let b: { azione?: string; id?: string; operatore?: string; etichetta?: string; valore?: number; ordine?: number; attivo?: boolean; stato?: string; nota?: string; numero?: string };
     try { b = await request.json(); } catch { return NextResponse.json({ error: "corpo non valido" }, { status: 400 }); }
 
     if (b.azione === "spegni" || b.azione === "accendi") {
@@ -137,6 +196,33 @@ export async function POST(request: Request) {
         const { error } = b.id
             ? await supabase.from("paystore_tagli").update(riga).eq("id", b.id)
             : await supabase.from("paystore_tagli").upsert(riga, { onConflict: "operatore,etichetta" });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ ok: true });
+    }
+
+    /* ⚠️ LO STATO SI CAMBIA A MANO, e finché le ricariche si fanno sul
+       terminale del fornitore è l'unico modo che c'è: «fatta» è la parola di
+       una persona, quindi resta scritto chi l'ha detta e quando. Con l'API
+       collegata lo scriverà il motore, e questi pulsanti resteranno per i
+       casi che l'API non copre. */
+    if (b.azione === "stato") {
+        if (!b.id || !["da_fare", "fatta", "fallita", "annullata"].includes(String(b.stato)))
+            return NextResponse.json({ error: "stato non valido" }, { status: 400 });
+        const { data: chi } = await supabase.from("app_users").select("full_name").eq("id", g.sess.id).maybeSingle();
+        const { error } = await supabase.from("paystore_ricariche").update({
+            stato: b.stato, stato_da: chi?.full_name || g.sess.id, stato_il: new Date().toISOString(),
+            ...(b.nota !== undefined ? { nota: b.nota || null } : {}),
+        }).eq("id", b.id);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ ok: true });
+    }
+
+    /* il numero mancante si può scrivere qui: una ricarica venduta dal
+       listino non ce l'ha, e senza numero nessuno la può eseguire */
+    if (b.azione === "numero") {
+        const num = String(b.numero || "").replace(/\D/g, "");
+        if (!b.id || num.length < 7 || num.length > 11) return NextResponse.json({ error: "numero non valido" }, { status: 400 });
+        const { error } = await supabase.from("paystore_ricariche").update({ numero: num }).eq("id", b.id);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         return NextResponse.json({ ok: true });
     }

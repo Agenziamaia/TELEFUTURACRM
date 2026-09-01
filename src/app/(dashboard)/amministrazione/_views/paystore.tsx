@@ -57,7 +57,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -75,13 +75,19 @@ type Dati = {
 /* i codici delle due società, scritti come li conosce chi legge */
 const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
 
-const STATI: Record<string, { testo: string; colore: string }> = {
-    manuale: { testo: "fatta a mano", colore: "text-slate-300" },
-    da_inviare: { testo: "da eseguire", colore: "text-amber-300" },
-    inviata: { testo: "partita", colore: "text-emerald-300" },
-    fallita: { testo: "NON partita", colore: "text-rose-300" },
-    annullata: { testo: "annullata", colore: "text-slate-500" },
+/* Gli stati come li ha detti Luca: «da fare sarà lo stato di tutte le
+   ricariche che scontrineremo fino a quando non colleghiamo le API; poi
+   aggiungiamo la possibilità di definire lo stato come effettuata e andata a
+   buon fine, piuttosto che fallita, piuttosto che da fare».
+   Non descrivono COME è stata fatta, ma se il credito è partito — che è la
+   sola domanda che conta quando il cliente ha già pagato. */
+const STATI: Record<string, { testo: string; colore: string; sfondo: string }> = {
+    da_fare: { testo: "da fare", colore: "text-amber-300", sfondo: "bg-amber-500/15 border-amber-400/40" },
+    fatta: { testo: "fatta", colore: "text-emerald-300", sfondo: "bg-emerald-500/15 border-emerald-400/40" },
+    fallita: { testo: "NON partita", colore: "text-rose-300", sfondo: "bg-rose-500/15 border-rose-400/40" },
+    annullata: { testo: "annullata", colore: "text-slate-500", sfondo: "bg-white/5 border-white/15" },
 };
+const ORDINE_STATI = ["da_fare", "fatta", "fallita", "annullata"];
 
 export function PayStoreAdminView() {
     const [tipoP, setTipoP] = useState<"mese" | "range">("mese");
@@ -210,7 +216,8 @@ export function PayStoreAdminView() {
                 {d.daGuardare.length > 0 && (
                     <div className="relative mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3">
                         <div className="flex items-center gap-2 text-rose-200 font-bold text-sm mb-2">
-                            <AlertTriangle className="w-4 h-4" /> {d.daGuardare.length === 1 ? "Una ricarica incassata e non erogata" : `${d.daGuardare.length} ricariche incassate e non erogate`}
+                            <AlertTriangle className="w-4 h-4" /> {d.daGuardare.length === 1 ? "Una ricarica ancora da fare" : `${d.daGuardare.length} ricariche ancora da fare`}
+                            <span className="font-normal text-rose-200/70 text-[11px]">— scontrinate e incassate: il credito risulta non ancora caricato</span>
                         </div>
                         <div className="space-y-1">
                             {d.daGuardare.slice(0, 8).map((r) => (
@@ -378,7 +385,13 @@ export function PayStoreAdminView() {
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
                                                 <td className="text-slate-400">{r.venditore || "—"}</td>
                                                 <td className="text-slate-400">{SOCIETA[r.azienda || ""] || "—"}</td>
-                                                <td className={cn("font-semibold", STATI[r.stato]?.colore)}>{STATI[r.stato]?.testo || r.stato}</td>
+                                                <td>
+                                                    {/* ⚠️ LO STATO SI CAMBIA DA QUI. Finché le ricariche si
+                                                        fanno sul terminale del fornitore, l'unico modo che il
+                                                        CRM ha di sapere se il credito è partito è che glielo
+                                                        dica chi l'ha caricato — e resta scritto chi è stato. */}
+                                                    <StatoRicarica r={r} onCambiato={() => void carica()} />
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -389,6 +402,47 @@ export function PayStoreAdminView() {
                 </>
             ) : (
                 <ListinoTagli tagli={d.tagli} onCambiato={() => void carica()} />
+            )}
+        </div>
+    );
+}
+
+/* ── LO STATO DI UNA RICARICA ───────────────────────────────────────────────
+   Tre parole e due clic: «da fare» finché il credito non è partito, «fatta»
+   quando qualcuno l'ha caricato, «NON partita» quando è andata storta — e
+   quella è la riga che conta, perché il cliente ha già pagato. */
+function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
+    const [apre, setApre] = useState(false);
+    const [lavoro, setLavoro] = useState(false);
+    const st = STATI[r.stato] || { testo: r.stato, colore: "text-slate-400", sfondo: "bg-white/5 border-white/15" };
+
+    const cambia = async (stato: string) => {
+        setLavoro(true);
+        try {
+            const x = await fetch("/api/paystore/registro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "stato", id: r.id, stato }) });
+            if (x.ok) onCambiato();
+        } finally { setLavoro(false); setApre(false); }
+    };
+
+    return (
+        <div className="relative">
+            <button onClick={() => setApre(!apre)} disabled={lavoro}
+                title={r.stato_da ? `${STATI[r.stato]?.testo} — ${r.stato_da}, ${r.stato_il ? new Date(r.stato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}` : "clicca per cambiare"}
+                className={cn("px-2 py-0.5 rounded-lg border text-[11px] font-bold whitespace-nowrap", st.sfondo, st.colore)}>
+                {st.testo} ▾
+            </button>
+            {apre && (
+                <>
+                    <div className="fixed inset-0 z-20" onClick={() => setApre(false)} />
+                    <div className="absolute right-0 z-30 mt-1 rounded-xl border border-white/15 bg-[#0d1022] shadow-xl p-1 min-w-[150px]">
+                        {ORDINE_STATI.filter((x) => x !== r.stato).map((x) => (
+                            <button key={x} onClick={() => void cambia(x)}
+                                className={cn("block w-full text-left px-3 py-1.5 rounded-lg text-[12px] font-semibold hover:bg-white/10", STATI[x].colore)}>
+                                {STATI[x].testo}
+                            </button>
+                        ))}
+                    </div>
+                </>
             )}
         </div>
     );
