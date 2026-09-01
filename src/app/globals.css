@@ -2232,7 +2232,7 @@ html.light .rvCoup{box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 16%,tra
 .psPiu:disabled{opacity:.35;cursor:not-allowed}
 /* il compositore dentro il carrello: si apre sotto la riga della ricarica */
 .psInCarrello{--rv-acc:#f8b516;border:1px solid rgba(248,181,22,.28);background:rgba(248,181,22,.06);border-radius:12px;padding:11px 13px;margin:0 0 9px}
-.psInCarrelloT{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px;margin-bottom:9px}
+.psInCarrelloT{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:9px}
 .psInCarrelloT b{font-size:13px;font-weight:800;color:#f8b516}
 .psInCarrelloT span{font-size:12px;font-family:ui-monospace,monospace;color:var(--tf-e2e8f0)}
 .psInCarrelloT i{font-size:10.5px;font-style:normal;color:var(--tf-8892b0)}

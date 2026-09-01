@@ -77,7 +77,7 @@ const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
 
 type Fase = "telefoni" | "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
-export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: (extra?: { contoTerzi?: { descrizione: string; imei: string; importo: number; forma: string }[] }) => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
+export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: (extra?: { contoTerzi?: { descrizione: string; imei: string; importo: number; forma: string }[]; azienda?: string | null }) => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
 
     // Pagamento come lista di forme (max 3). Default: tutto in contanti.
     /* NESSUNA FORMA PRESELEZIONATA (Luca 31/08). Era «Contanti» di partenza:
@@ -286,6 +286,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 code: r.azienda,
                 label: (r.ragione_sociale || r.azienda) + (r.negozio !== neg ? ` · ${r.negozio}` : ""),
                 isDef: !!r.is_default && r.negozio === neg,
+                // ha un registratore SUO qui, o è quello del negozio accanto?
+                propria: r.negozio === neg,
             }));
             setAziende(list.map((x) => ({ code: x.code, label: x.label })));
             // se si RIPRENDE un sospeso con azienda già scelta, rispettala; altrimenti default.
@@ -295,9 +297,16 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                ricarica, allora va su Telefutura SRL». Qui si PREIMPOSTA, non
                si impone: quello che l'operatore legge è quello che uscirà, e
                se il caso è diverso può cambiarlo. */
+            /* ⚠️ E SOLO FRA I REGISTRATORI PROPRI. `list` comprende i
+               gemelli di locale, e a Magliana Multi — che di società ne ha UNA,
+               Telefutura 2 — ci sarebbe finito il T1 di Magliana W3: la
+               ricarica sarebbe uscita a nome della società sbagliata, dalla
+               cassa dell'insegna accanto. La regola di Luca parla dei negozi
+               con DUE casse dentro, e quello è solo Donna. */
             const soleRicariche = itemsTutte.length > 0 && itemsTutte.every((i) => i.ricarica === true);
+            const proprie = list.filter((x) => x.propria);
             const preset = (data?.azienda && list.find((x) => x.code === data.azienda))
-                || (soleRicariche ? list.find((x) => x.code === "T1") : null);
+                || (soleRicariche && proprie.length > 1 ? proprie.find((x) => x.code === "T1") : null);
             const def = preset || list.find((x) => x.isDef) || list[0];
             setAziendaSel(def ? def.code : null);
         });
@@ -476,7 +485,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         // Se fallisce, lo scontrino è comunque uscito → si offre il retry del solo salvataggio.
         if (onCommit) {
             setFase("stampa"); setMsg("Scontrino emesso — registro la vendita…");
-            const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
+            const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null });
             if (!c || !c.ok) {
                 setCommitFail(true);
                 setFase("errore");
@@ -492,7 +501,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const retrySalvataggio = async () => {
         if (!onCommit) { setCommitFail(false); setFase("fatto"); return; }
         setFase("stampa"); setMsg("Registro la vendita…");
-        const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
+        const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null });
         if (!c || !c.ok) {
             setCommitFail(true); setFase("errore");
             setMsg("⚠️ Salvataggio ancora non riuscito (" + (c?.error || "errore") + "). Riprova o annota la vendita a mano. Lo scontrino è già stato emesso.");
@@ -548,7 +557,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const tieniInSospeso = async () => {
         if (onCommit) {
             setFase("stampa"); setMsg("Registro la vendita…");
-            const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
+            const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null });
             if (!c || !c.ok) {
                 setCommitFail(true); setFase("errore");
                 setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore") + "). Il conto NON è stato messo in sospeso: riprova, o annota la vendita a mano.");
@@ -761,7 +770,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                 setFase("stampa"); setMsg("Registro la vendita…");
                                 (async () => {
                                     if (onCommit) {
-                                        const c = await onCommit({ contoTerzi: contoTerziDaSalvare });
+                                        const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null });
                                         if (!c || !c.ok) {
                                             setCommitFail(true); setFase("errore");
                                             setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore") + "). Riprova.");

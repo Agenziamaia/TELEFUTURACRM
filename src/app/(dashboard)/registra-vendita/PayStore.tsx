@@ -84,17 +84,30 @@ export const totaleComposto = (pezzi: PezzoRicarica[]) => (pezzi || []).reduce((
 export const quanteRicariche = (pezzi: PezzoRicarica[]) => (pezzi || []).reduce((s, p) => s + p.n, 0);
 
 /** La descrizione che finisce sullo scontrino. Il registratore taglia a 38
- *  caratteri: il totale e il numero devono starci entrambi, perché è con
- *  quelli che un cliente contesta una ricarica sbagliata. */
+ *  caratteri, e dentro devono starci tre cose: che è una ricarica, di quanto,
+ *  e su che numero — è con quelle che un cliente contesta.
+ *
+ *  ⚠️ QUANDO NON CI STANNO, SI ACCORCIA IL NOME. Tagliando dalla fine si
+ *  mangiava l'IMPORTO: «RICARICA FASTWEB MOBILE 10 12345678901» per una
+ *  ricarica da 100 € — il totale del documento giusto e la riga che dice
+ *  un'altra cifra. Il nome dell'operatore invece si può accorciare senza
+ *  perdere niente: «FASTWEB MOB.» resta riconoscibile.
+ *
+ *  ⚠️ LA VIRGOLA, non il punto: su uno scontrino italiano «12.5» sembra un
+ *  codice. I tagli a listino sono interi, l'importo libero no. */
 export function descrizioneRicarica(operatore: string, importo: number, numero: string): string {
-    /* ⚠️ LA VIRGOLA, non il punto: sullo scontrino di un negozio italiano
-       «12.5» si legge male e sembra un codice. I tagli a listino sono interi,
-       ma l'importo libero degli operatori senza listino no. */
     const n = Math.round(Number(importo) * 100) / 100;
     const cifra = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",");
-    const base = ("RICARICA " + nomeOperatore(operatore) + " " + cifra).toUpperCase();
-    const coda = " " + numero;
-    return (base.slice(0, Math.max(0, 38 - coda.length)).trim() + coda).slice(0, 38);
+    const coda = (cifra + " " + numero).toUpperCase();
+    const nome = ("RICARICA " + nomeOperatore(operatore)).toUpperCase();
+    const spazio = 38 - coda.length - 1;          // -1 per lo spazio prima della coda
+    if (spazio >= nome.length) return (nome + " " + coda).slice(0, 38);
+    /* non ci sta: si accorcia il nome, prima togliendo la parola «RICARICA»
+       (che sullo scontrino di un negozio di telefonia si capisce lo stesso),
+       poi tagliando l'operatore */
+    const corto = nomeOperatore(operatore).toUpperCase();
+    if (spazio >= corto.length) return (corto + " " + coda).slice(0, 38);
+    return (corto.slice(0, Math.max(1, spazio)).trim() + " " + coda).slice(0, 38);
 }
 
 /** Legge una volta il listino e le voci di catalogo. Lo usano il pannello e
