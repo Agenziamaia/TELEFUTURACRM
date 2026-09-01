@@ -23,29 +23,34 @@
 // uguali»). Layout standard SuiteMobile: 1=4%, 2=22%, 3=ART.74(non sogg), 4=esente.
 // Il CRM ha 1=non soggetta e 3=4%: quindi 1 e 3 sono INVERTITI → si scambiano.
 // (Verificato dal config_cassa.ini di Donna; gli altri confermati identici.)
-// Layout confermato IDENTICO su un Epson (Donna) e un Custom (Castani, 01/09:
-// config `1,4 · 2,22 · 3,ART.74 · 4,ART.10`, scontrino fiscale reale a 22% ok) →
-// vale per ENTRAMBE le famiglie di registratori. Luca conferma che sono tutti
-// uguali, quindi lo swap 1<->3 si applica a tutti i negozi con registratore.
+// ⚠️ EPSON e CUSTOM mappano il reparto in modo DIVERSO — verificato 01/09 con uno
+// scontrino diagnostico (1 riga per reparto):
+//
+// • EPSON RT (ePOS): il `department` = reparto del RT, come da config_cassa.ini
+//   (`1,4 · 2,22 · 3,ART.74 · 4,esente`). Quindi «non soggetta» = reparto 3 →
+//   le voci non-soggetta (reparto CRM 1) vanno mandate come dept 3: SWAP 1<->3.
+//
+// • CUSTOM (OPOS MiraOposDll): il `department` va all'OPOS come vatInfo, e la
+//   tabella IVA OPOS NON è ordinata come il config. Diagnostica Baleniere (01/09):
+//   dept 1 → **H = NON SOGGETTA**, dept 2/3/4 → A = 22%. Quindi «non soggetta» =
+//   dept 1: la numerazione del CRM è GIÀ giusta → NESSUNO swap (identità).
+//   (Lo swap 1<->3 mandava le SIM/ricariche a dept 3 = 22% → IVA SBAGLIATA.)
+//
+// ⚠️ EPSON ancora DA VERIFICARE con la stessa diagnostica su una riga non-soggetta
+// (i test finora usavano solo 22% e 4%). Alta fiducia (ePOS = reparto diretto) ma
+// da confermare prima di fidarsi al 100%.
 const SWAP_1_3: Record<number, number> = { 1: 3, 3: 1 };
 const REPARTO_MAP: Record<string, Record<number, number>> = {
-  // Epson
+  // EPSON RT → swap 1<->3 (non soggetta = reparto 3 del RT)
   "Donna": SWAP_1_3,
   "Magliana Multi": SWAP_1_3,
   "Magliana W3": SWAP_1_3,
   "San Paolo": SWAP_1_3,
   "Collatina Multi": SWAP_1_3,
   "Garbatella": SWAP_1_3,
-  // Custom / Vodafone (layout confermato su Castani; stesso standard SuiteMobile)
-  "Castani": SWAP_1_3,
-  "Acilia VS": SWAP_1_3,
-  "Acilia Multi": SWAP_1_3,
-  "Promontori": SWAP_1_3,
-  "Merulana": SWAP_1_3,
-  "Baleniere": SWAP_1_3,
-  "Collatina W3": SWAP_1_3,
-  "Libia": SWAP_1_3,
-  "Mazzini": SWAP_1_3,
+  // CUSTOM / Vodafone → IDENTITÀ (non elencati): dept 1 = non soggetta sull'OPOS,
+  // la numerazione CRM è già corretta. Baleniere/Castani/Promontori/Acilia*/
+  // Merulana/Collatina W3/Libia/Mazzini: nessuno swap.
 };
 
 /** Traduce il reparto logico del CRM nel reparto fisico del registratore del negozio.
