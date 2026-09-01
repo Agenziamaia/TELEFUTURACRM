@@ -19,6 +19,9 @@ type Riga = {
     id: string; creata_il: string; negozio: string | null; venditore: string | null;
     operatore: string; operatore_nome: string | null; numero: string;
     taglio: string | null; importo: number; stato: string; errore: string | null;
+    /* con quale partita IVA è stata fatturata. Vuota quando il carrello era
+       misto: lì la società la decide la merce, e la sa solo lo scontrino. */
+    azienda: string | null;
 };
 
 const giorno = (iso: string) => iso.slice(0, 10);
@@ -47,7 +50,7 @@ export async function GET(request: Request) {
     const primaFine = new Date(new Date(da + "T00:00:00Z").getTime() - 86400000).toISOString().slice(0, 10);
     const primaInizio = new Date(new Date(primaFine + "T00:00:00Z").getTime() - (nGiorni - 1) * 86400000).toISOString().slice(0, 10);
 
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore";
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")

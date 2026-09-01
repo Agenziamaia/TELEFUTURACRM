@@ -2250,3 +2250,9 @@ html.light .rvCoup{box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 16%,tra
 .psNumCart>span{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--tf-8892b0)}
 .psNumCart .rvIn{width:150px;padding:5px 9px;font-size:13px;font-family:ui-monospace,monospace;letter-spacing:1px}
 .psNumCart-manca{border-color:rgba(239,68,68,.7)!important;background:rgba(239,68,68,.09)!important}
+/* la ricarica esclusa perché pagata con carta di credito: si vede che manca
+   di proposito, e si rimette */
+.psEsclusa{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:7px 11px;margin:6px 0;border-radius:10px;border:1px dashed rgba(148,163,184,.4);background:var(--tf-w20);font-size:12px;color:var(--tf-8892b0)}
+.psEsclusa b{color:var(--tf-e2e8f0)}
+.psEsclusa button{padding:3px 11px;border-radius:8px;border:1px solid rgba(248,181,22,.5);background:rgba(248,181,22,.12);color:#f8b516;font-size:11px;font-weight:800;cursor:pointer}
+.psEsclusa button:hover{background:rgba(248,181,22,.22)}

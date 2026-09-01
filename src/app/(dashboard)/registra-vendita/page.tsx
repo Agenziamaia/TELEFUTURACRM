@@ -5029,15 +5029,19 @@ function CRM() {
      l'operatore aveva già cancellato, e ricancellarla non serviva a niente.
      La chiave è l'`autoKey` (nome#occorrenza), la stessa con cui il ricalcolo
      riconosce le voci fra loro. Si azzera col carrello. */
-  const psTolte=useRef(new Set());
-  /* ⚠️ LA CHIAVE È LA VENDITA CHE HA GENERATO LA RICARICA, non l'operatore né
-     il numero. Col numero, due SIM Vodafone BUSINESS avevano la stessa chiave
-     — lì il catalogo spegne i campi del numero, quindi sono entrambe vuote —
-     e togliere la ricarica di una zittiva anche l'altra, senza un avviso. E
-     scrivendo il numero a mano la chiave cambiava, così la ricarica esclusa
-     con la carta di credito rinasceva a ogni ricalcolo. L'identità della
-     vendita (gruppo/riga/prodotto) non cambia mai sotto i piedi. */
-  const _chiaveRicarica=(ps)=>String(ps?.chiave||(String(ps?.operatore||"")+":?"));
+  /* ESCLUDERE UNA RICARICA vuol dire scriverlo SULLA VENDITA che l'ha
+     generata, non tenerne una lista a parte. Una lista a parte ha bisogno di
+     una chiave, e ogni chiave che ho provato si è rotta: per posizione
+     scivolava sulla vendita accanto, per numero due SIM Business (dove il
+     catalogo spegne i campi del numero) finivano nella stessa. Qui non c'è
+     chiave: il segno sta nell'oggetto della vendita, muore con lei — reset,
+     eliminazione, cambio prodotto — e si toglie com'è stato messo. */
+  const _escludiRicarica=(ps,escludi)=>{
+    const v=ps&&ps.vend; if(!v)return;
+    setSales(p=>{const arr=[...(p[v.gId]||[])];const sale=arr[v.saleIdx];if(!sale||!sale[v.subId])return p;
+      arr[v.saleIdx]={...sale,[v.subId]:{...sale[v.subId],psNoRicarica:!!escludi}};
+      return {...p,[v.gId]:arr};});
+  };
   /* Compone l'importo di una ricarica del carrello. Tocca TRE cose insieme —
      i pezzi, il totale e il margine — e devono restare d'accordo: un importo
      senza i pezzi non si può eseguire, i pezzi senza l'importo non si possono
@@ -5531,6 +5535,11 @@ function CRM() {
         // coordinate dell'articolo nella selezione (Luca 11/08): servono al 🗑
         // del carrello per togliere ESATTAMENTE questa voce da sales/sv
         gId:g.id,saleIdx:si,subId:sub.id,
+        /* «questa SIM è pagata con carta di credito, niente ricarica»: sta
+           SULLA VENDITA, non in una lista a parte. Così muore quando muore la
+           vendita — con il ↺, con la ✕, cambiando prodotto — e non può finire
+           addosso a una vendita diversa che ne riprende il posto. */
+        psNoRicarica:!!d.psNoRicarica,
         catalogo:{tipo:sub.catTipo,categoria:sub.catCategoria,prodotto:sub.catProdotto,offerta:f["Offerta"]||null,
           opzioni:attive.map(k=>({nome:k,quantita:opz[k]===true?null:opz[k]})),macro:g.catMacro}});
     });});});
@@ -5642,7 +5651,7 @@ function CRM() {
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
   const _pickBrand=(b)=>{if(!b.ready)return;setPsFlow(false);if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{psTolte.current.clear();setPsAperta(null);setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const fullReset=()=>{setPsAperta(null);setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
@@ -5838,17 +5847,6 @@ function CRM() {
     // niente doppioni con le voci MANUALI: ogni voce uguale aggiunta A MANO dal
     // pannello copre UNA occorrenza auto (prima ne copriva tutte: stesso collasso)
     const push=(name,locked,extra)=>{const n=(_occ[name]=(_occ[name]||0)+1);if(n<=prev.filter(m=>!m.auto&&m.product===name).length)return;
-      /* la ricarica che l'operatore ha tolto non torna (vedi psTolte).
-         ⚠️ SOLO le ricariche: le altre voci automatiche — la SIM, il telefono
-         a rate — si sono sempre ricreate al ricalcolo, e cambiare quel
-         comportamento qui vorrebbe dire toccare vendite che con PayStore non
-         c'entrano niente.
-         ⚠️ E LA CHIAVE È LA RICARICA, non la posizione. Con «nome#occorrenza»
-         bastava togliere la prima di due SIM perché la seconda scivolasse al
-         posto #1 e finisse zittita dalla lapide della prima: la SIM superstite
-         usciva senza ricarica, in silenzio. Qui la chiave è l'operatore più il
-         numero da ricaricare, che è la ricarica stessa. */
-      if(extra&&extra.paystore&&psTolte.current.has(_chiaveRicarica(extra.paystore)))return;
       adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,autoKey:name+"#"+n,priceLocked:!!locked,priceRequired:!locked,
       /* IL REPARTO DELLE VOCI AUTO (revisore 29/08). «Telefono TNP
          (listino)», «Bundle N €», «Kipoint …» non esistono in marg_items:
@@ -5940,7 +5938,7 @@ function CRM() {
            sarebbe una riga incassata che nessuno può eseguire — e allora la
            si dice, invece di far finta di niente. */
         const _cat=String(it.catalogo?.categoria||"");
-        const _serve=RICARICA_CON_SIM[brandId]?.[_cat];
+        const _serve=RICARICA_CON_SIM[brandId]?.[_cat]&&!it.psNoRicarica;
         if(_serve){
           const _op=OPERATORE_DEL_BRAND[brandId];
           const _voce=psVoci[_op];
@@ -5957,9 +5955,9 @@ function CRM() {
               importo:null,priceRequired:true,
               paystore:{operatore:_op,operatoreNome:nomeOperatore(_op),numero:_num,pezzi:[],importo:0,
                 daSim:true,catSim:_cat,
-                // l'identità della vendita: è la chiave con cui l'operatore
-                // può escludere QUESTA ricarica e nessun'altra
-                chiave:_op+":"+it.gId+"/"+it.saleIdx+"/"+it.subId,
+                // le coordinate della vendita che l'ha generata: servono a
+                // escluderla e a rimetterla, sull'oggetto giusto
+                vend:{gId:it.gId,saleIdx:it.saleIdx,subId:it.subId},
                 /* solo su Vodafone si può dire «l'ha pagata con la carta»:
                    sugli altri brand la ricarica o serve o non c'è proprio */
                 puoCartaCredito:brandId==="vodafone"},
@@ -6071,7 +6069,7 @@ function CRM() {
            se era stato scritto a mano, che è una scelta esplicita. */
         const num=old.paystore.aMano?old.paystore.numero:(a.paystore.numero||"");
         const conNum=(v)=>({...v,paystore:{...v.paystore,numero:num,aMano:!!old.paystore.aMano,
-          chiave:v.paystore.chiave||old.paystore.chiave},
+          vend:v.paystore.vend||old.paystore.vend},
           model:num||"⚠ numero mancante"});
         if(!pz.length)return conNum(a);
         const pct=Number(psVoci[a.paystore.operatore]?.margin_percent||0);
@@ -6366,7 +6364,7 @@ function CRM() {
      emesso: qui si parcheggia la funzione di salvataggio, la esegue
      ScontrinoCassa (onCommit) a scontrino riuscito. Premendo X / chiudendo
      senza emettere, non viene scritto NIENTE. */
-  const pendingCommit = useRef<null | (() => Promise<any>)>(null);
+  const pendingCommit = useRef<null | ((az: string | null) => Promise<any>)>(null);
   /* QUELLO CHE SI INCASSA MA NON SI SCONTRINA (Luca 01/09). Vodafone a rate:
      l'anticipo lo prendiamo noi ma la fattura al cliente la manda Vodafone,
      quindi sullo scontrino non ci va. Restano però soldi entrati davvero: si
@@ -8347,6 +8345,19 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
             <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>📦</span><span style={{color:"#fff",fontWeight:700,fontSize:14}}>Prodotti & Marginalità</span><span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{margItems.length}</span>{(()=>{const ph=margItems.filter(i=>i.countsPhone).reduce((s,i)=>s+(i.qty||1),0);return ph>0?<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:700}}>📱 {ph} telefon{ph===1?"o":"i"} vendut{ph===1?"o":"i"}</span>:null;})()}</div>
             <button onClick={()=>{setMargEditItem(null);setShowMargPOS(true)}} className="rvPillLuce">+ Aggiungi</button>
           </div>
+          {/* ⚠️ LE RICARICHE ESCLUSE SI VEDONO, e si rimettono. Un'esclusione
+              invisibile è indistinguibile da una dimenticanza: chi preme «carta
+              di credito» per abitudine — è dietro una conferma, e le conferme si
+              danno in automatico — non avrebbe più nessun modo di accorgersene
+              né di tornare indietro, se non buttando via la vendita. */}
+          {colItems().filter(it=>it.psNoRicarica&&RICARICA_CON_SIM[brand]?.[String(it.catalogo?.categoria||"")]).map((it,k)=>(
+            <div key={"esc"+k} className="psEsclusa">
+              <span>💳 <b>{it.sub}</b> — ricarica esclusa: pagata con carta di credito</span>
+              <button onClick={()=>_escludiRicarica({vend:{gId:it.gId,saleIdx:it.saleIdx,subId:it.subId}},false)}>
+                rimettila
+              </button>
+            </div>
+          ))}
           {margItems.map((item,idx)=>(
             <div key={idx}>
             <div className={cn("psRigaCart",item.paystore&&psAperta===(item.autoKey||("riga#"+idx))&&"psRigaCart-aperta")}>
@@ -8368,7 +8379,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     e la ricarica non partirebbe. */}
                 {item.paystore&&<span style={{display:"flex",alignItems:"center",gap:6}}>
                   {item.paystore.puoCartaCredito&&<button onClick={()=>{if(window.confirm("La SIM è stata attivata con carta di credito?\n\nTolgo la ricarica dal carrello."))
-                    {if(item.paystore)psTolte.current.add(_chiaveRicarica(item.paystore));setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx));}}}
+                    {_escludiRicarica(item.paystore,true);setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx));}}}
                     title="Attivata con carta di credito: la ricarica non serve" className="psCarta">💳 carta di credito</button>}
                   <button onClick={()=>{const k=item.autoKey||("riga#"+idx);setPsAperta(psAperta===k?null:k)}}
                     className={cn("psImporto",Number(item.importo||0)>0&&"psImporto-ok")}>
@@ -8391,7 +8402,7 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     che nel listino di marginalità non esiste: non si
                     ripristinava nulla e la voce era persa. Su queste righe il
                     prezzo si corregge in riga, e per toglierle c'è il cestino. */}
-                {item.auto||item.natura?<button onClick={()=>{if(item.paystore)psTolte.current.add(_chiaveRicarica(item.paystore));setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx))}} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                {item.auto||item.natura?<button onClick={()=>{_escludiRicarica(item.paystore,true);setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx))}} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 :<span style={{display:"inline-flex",gap:6}}><button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button><button onClick={()=>{const it=margItems[idx];if(window.confirm("Eliminare \""+(it?.product||"voce")+"\" dal carrello?"))setMargItems(p=>p.filter((_,i)=>i!==idx));}} title="Elimina la voce" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.10)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑️</button></span>}
               </div>
             </div>
@@ -9277,9 +9288,9 @@ codice:mi.codice??null,costo:mi.costo??null,natura:mi.natura??null,scaricaMagazz
                     {item.model&&<div style={{fontSize:11,color:"var(--tf-64748b)"}}>{item.model}</div>}
                     <div style={{fontSize:12,color:"var(--tf-8892b0)",marginTop:2}}>x{item.qty||1}{item.importo!=null&&<span style={{color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>}</div>
                   </div>
-                  {/* anche da qui la ricarica tolta resta tolta: senza la
-                      lapide tornava al primo ricalcolo (vedi psTolte) */}
-                  <button onClick={()=>{if(item.paystore)psTolte.current.add(_chiaveRicarica(item.paystore));setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx))}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                  {/* anche da qui la ricarica tolta resta tolta: il segno va
+                      sulla vendita, altrimenti tornava al primo ricalcolo */}
+                  <button onClick={()=>{_escludiRicarica(item.paystore,true);setPsAperta(null);setMargItems(p=>p.filter((_,i)=>i!==idx))}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 </div>
               ))
             }

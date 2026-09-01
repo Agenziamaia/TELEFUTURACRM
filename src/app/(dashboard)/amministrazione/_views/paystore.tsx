@@ -57,7 +57,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -71,6 +71,9 @@ type Dati = {
     negozi: string[]; operatori: string[];
     tagli: Taglio[];
 };
+
+/* i codici delle due società, scritti come li conosce chi legge */
+const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
 
 const STATI: Record<string, { testo: string; colore: string }> = {
     manuale: { testo: "fatta a mano", colore: "text-slate-300" },
@@ -353,6 +356,9 @@ export function PayStoreAdminView() {
                                             <th className="text-right font-bold">Importo</th>
                                             <th className="text-left font-bold pl-3">Negozio</th>
                                             <th className="text-left font-bold">Chi</th>
+                                            {/* con quale partita IVA è uscita: è il dato per cui
+                                                esiste la regola delle due società di Donna */}
+                                            <th className="text-left font-bold">Società</th>
                                             <th className="text-left font-bold">Stato</th>
                                         </tr>
                                     </thead>
@@ -371,6 +377,7 @@ export function PayStoreAdminView() {
                                                 <td className="text-right font-bold text-white tabular-nums">{eurC(r.importo)}</td>
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
                                                 <td className="text-slate-400">{r.venditore || "—"}</td>
+                                                <td className="text-slate-400">{SOCIETA[r.azienda || ""] || "—"}</td>
                                                 <td className={cn("font-semibold", STATI[r.stato]?.colore)}>{STATI[r.stato]?.testo || r.stato}</td>
                                             </tr>
                                         ))}
