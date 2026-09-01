@@ -33,7 +33,9 @@ import { repartoFisico } from "@/lib/posRepartoMap";
 const RIGA_SCONTRINO = 38;
 const MODELLO_MINIMO = 12;
 
-export function descrizioneScontrino(d: unknown): string {
+/* NON esportata: da un file di rotta Next accetta solo i suoi handler, e un
+   export in piu' e' una mina che scoppia al primo aggiornamento. */
+function descrizioneScontrino(d: unknown): string {
     const t = String(d || "ARTICOLO").trim();
     if (t.length <= RIGA_SCONTRINO) return t;
     const m = t.match(/^(.*?)\s*[·|-]\s*IMEI\s*([0-9]{8,})$/i);
