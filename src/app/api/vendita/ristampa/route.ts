@@ -38,6 +38,24 @@ export async function POST(req: Request) {
         }, { status: 400 });
     }
 
+    /* ⛔ UNA SOLA RISTAMPA PER DOCUMENTO (Luca 01/09 notte — INCIDENTE: gli
+       scontrini «rimasti aperti» si stavano TRIPLICANDO perché il tasto si poteva
+       premere all'infinito, e ogni pressione è un tentativo di documento fiscale →
+       rischio di tasse doppie/triple). La difesa VERA sta qui sul server, non nella
+       UI (un reload azzererebbe lo stato del browser): se di questo documento esiste
+       già una ristampa, si RIFIUTA. Chi deve rifarlo ancora guarda prima l'esito
+       della ristampa già fatta (e se la cassa è «rimasta aperta», la chiude DALLA
+       CASSA — un secondo invio non la chiude). */
+    const { data: giaRifatto } = await supabase.from("print_jobs")
+        .select("id, status").eq("meta->>ristampaDi", b.jobId).limit(1);
+    if (giaRifatto && giaRifatto.length) {
+        return NextResponse.json({
+            error: "Questo documento è già stato rimesso in coda una volta. Guarda in elenco com'è andata la ristampa prima di rifarlo. "
+                + "Se la cassa è «rimasta aperta», chiudi o annulla il documento DALLA CASSA: un nuovo invio non la chiude.",
+            jobId: giaRifatto[0].id,
+        }, { status: 409 });
+    }
+
     // nuovo job = copia della stessa richiesta verso lo stesso registratore,
     // con il riferimento all'originale nel meta (tracciabilità della ristampa).
     const meta = { ...(orig.meta && typeof orig.meta === "object" ? orig.meta : {}), ristampaDi: b.jobId };

@@ -204,6 +204,7 @@ type Doc = {
     operatore: string | null;
     contrattoId: string | null;
     azienda: string | null;
+    ristampaDi: string | null;   // se questo doc È una ristampa: id dell'originale
     righe: RigaDoc[];
     pagamenti: PagDoc[];
 };
@@ -332,6 +333,7 @@ function Documenti() {
                     operatore: (m.operatore as string) || null,
                     contrattoId: (m.contrattoId as string) || null,
                     azienda: (m.azienda as string) || null,
+                    ristampaDi: (m.ristampaDi as string) || null,
                     righe, pagamenti,
                 };
             }));
@@ -394,6 +396,15 @@ function Documenti() {
        riquadro spento deve dire quanti ce ne sarebbero, se no non lo preme
        nessuno. */
     const base = useMemo(() => (docs || []).filter(passa), [docs, passa]);
+    /* GLI ORIGINALI GIÀ RIMESSI IN CODA UNA VOLTA (Luca 01/09 notte): l'insieme
+       degli id-documento che compaiono come `ristampaDi` di qualche altro job. Su
+       questi il tasto «Rifai» non si ripropone — una ristampa sola per documento,
+       la stessa regola blindata sul server (evita le tasse triplicate). */
+    const giaRifatti = useMemo(() => {
+        const s = new Set<string>();
+        (docs || []).forEach(d => { if (d.ristampaDi) s.add(d.ristampaDi); });
+        return s;
+    }, [docs]);
     const conta = useMemo(() => {
         const s = base.filter(d => d.tipo === "scontrino");
         const f = base.filter(d => d.tipo === "fattura");
@@ -472,6 +483,9 @@ function Documenti() {
     const [rifaLoad, setRifaLoad] = useState(false);
     const [rifaOk, setRifaOk] = useState("");
     const [rifaKo, setRifaKo] = useState("");
+    /* i documenti già rimessi in coda IN QUESTA SESSIONE: il tasto si spegne
+       subito, senza aspettare il ricarico (e comunque il server rifiuta il bis). */
+    const [rifatti, setRifatti] = useState<Set<string>>(new Set());
 
     const rifaiDocumento = async (d: Doc) => {
         if (rifaLoad) return;
@@ -483,7 +497,9 @@ function Documenti() {
             });
             const j = await res.json().catch(() => ({}));
             if (!res.ok || !j.ok) { setRifaKo(j.error || "non sono riuscito a rimetterlo in coda"); return; }
-            setRifaOk("Rimesso in coda: la cassa lo ritira e lo stampa fra pochi secondi. Chiudi SuiteMobile se è un registratore Custom.");
+            // segna subito come rifatto: niente secondo invio dallo stesso browser
+            setRifatti(prev => new Set(prev).add(d.id));
+            setRifaOk("Rimesso in coda UNA volta: la cassa lo ritira e lo stampa fra pochi secondi. Chiudi SuiteMobile se è un registratore Custom. NON premere altro: controlla che esca la carta.");
             carica();
         } catch (e) {
             setRifaKo("Errore di rete: " + ((e as Error)?.message || "riprova"));
@@ -545,8 +561,17 @@ function Documenti() {
                             l'avviso rosso «non uscito», dove lo si legge. Solo sui
                             documenti in errore; con conferma perché un fiscale non si
                             batte per sbaglio, e con l'avviso doppia-stampa dove serve. */}
-                        {d.stato === "error" && (
-                            rifacendo?.id === d.id ? (
+                        {d.stato === "error" && (() => {
+                            /* UNA SOLA VOLTA (Luca 01/09 notte): se questo documento è
+                               già stato rimesso in coda, il tasto NON si ripropone. */
+                            if (giaRifatti.has(d.id) || rifatti.has(d.id)) {
+                                return (
+                                    <div className="rvNota-s mt-2">
+                                        ↻ <b>Già rimesso in coda una volta.</b> Guarda in elenco com'è andata la ristampa prima di rifarlo — se la cassa è «rimasta aperta», va chiusa o annullata DALLA CASSA (un altro invio non la chiude).
+                                    </div>
+                                );
+                            }
+                            return rifacendo?.id === d.id ? (
                                 <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                                     {es.et !== "non uscito" && (
                                         <div className="rvNota-t">
@@ -558,7 +583,7 @@ function Documenti() {
                                     )}
                                     <div className="rvPillRow mt-1">
                                         <button onClick={() => rifaiDocumento(d)} disabled={rifaLoad} className="rvPill rvPill-on">
-                                            {rifaLoad ? "rimetto in coda…" : "✅ Sì, rifai lo scontrino"}
+                                            {rifaLoad ? "rimetto in coda…" : "✅ Sì, rifai (una volta sola)"}
                                         </button>
                                         <button onClick={() => { setRifacendo(null); setRifaOk(""); setRifaKo(""); }} className="rvPill rvPill-sm">Annulla</button>
                                     </div>
@@ -571,8 +596,8 @@ function Documenti() {
                                         🖨️ Rifai il documento
                                     </button>
                                 </div>
-                            )
-                        )}
+                            );
+                        })()}
                     </div>
                 )}
                 <div className="rvDettT">
