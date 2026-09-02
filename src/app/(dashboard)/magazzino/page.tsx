@@ -44,6 +44,7 @@ import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
+import { useVisibleStores } from "@/lib/visibleStores";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_MAGAZZINO, CAP_MAGAZZINO_VALORI } from "@/lib/capabilities";
 import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
@@ -175,6 +176,14 @@ const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleStri
 
 export default function MagazzinoPage() {
     const { user } = useAuth();
+    /* ⚠️ IL PERIMETRO SONO I NEGOZI IN VISIBILITÀ, non il solo negozio del
+       login (Luca 02/09). Prima questa pagina si costruiva l'ambito a mano da
+       `user.negozio`: chi aveva Donna Olimpia e Promontori nei permessi ne
+       vedeva uno solo, e chi non aveva nessun negozio in scheda vedeva TUTTO.
+       `useVisibleStores` è la fonte unica del CRM: unione di negozio del
+       login, negozi assegnati e negozi in visibilità, con `seesAll` per
+       direzione e amministrazione. */
+    const { stores: negoziVisibili, seesAll, loaded: visibiliPronti } = useVisibleStores();
     /* CHI VEDE QUANTO VALE IL MAGAZZINO (Luca 01/09). I due riquadri in cima
        alle Giacenze, affiancati, dicono il margine dell'intero magazzino: non
        è un dato da bancone. Il diritto si decide dalla rotellina in
@@ -350,6 +359,7 @@ export default function MagazzinoPage() {
             ) : (
                 <Trasferimenti unita={unita} quantita={quantita} negozi={negozi} aziende={aziende}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={user?.negozio || ""}
+                    negoziVisibili={negoziVisibili} seesAll={seesAll} visibiliPronti={visibiliPronti}
                     gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica}
                     cercaIniziale={ddtCercato} />
             )}
@@ -2023,10 +2033,11 @@ async function chiudiDifferenza(
     return avvisi;
 }
 
-function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
+function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, negoziVisibili, seesAll, visibiliPronti, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
-    mioNegozio: string; gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
+    mioNegozio: string; negoziVisibili: string[]; seesAll: boolean; visibiliPronti: boolean;
+    gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
     /** il documento su cui atterrare, quando ci si arriva dalla storia di un pezzo */
     cercaIniziale?: string;
 }) {
@@ -2079,7 +2090,12 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
 
     /* I MIEI NEGOZI. I gemelli contano come uno: chi sta a Magliana W3 riceve
        anche quello che arriva al Multi — è lo stesso bancone. */
-    const miei = useMemo(() => splitNegozi(mioNegozio).filter(Boolean), [mioNegozio]);
+    const miei = useMemo(() => {
+        const set = new Set<string>();
+        splitNegozi(mioNegozio).filter(Boolean).forEach(n => set.add(n));
+        negoziVisibili.forEach(n => { if (n) set.add(n); });
+        return [...set];
+    }, [mioNegozio, negoziVisibili]);
     const mio = useCallback((n: string) => miei.some(m => stessoMagazzino(n, m)), [miei]);
 
     /* UNA MAPPA, non un filtro per documento. `conteggi` chiama `righeDi` sette
@@ -2175,10 +2191,26 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        Chi non ha un negozio in scheda — direzione commerciale, chi gira — non
        viene ristretto: bloccarlo sul nulla sarebbe peggio del problema che
        stiamo risolvendo. Chi vede tutti i negozi per ruolo continua a vederli. */
+    /* ⚠️ SOLO MITTENTE E DESTINATARIO (Luca 02/09: «un trasferimento fra San
+       Paolo e Acilia, per chi sta a Donna Olimpia, non deve nemmeno essere
+       visibile»). Sparisce anche la scappatoia di prima — chi non aveva un
+       negozio in scheda vedeva tutto: adesso l'ambito è quello dei permessi,
+       e chi non ne ha non vede documenti di nessuno. Finché la lista dei
+       negozi visibili non è arrivata NON si filtra: filtrare su una lista
+       vuota vorrebbe dire mostrare una schermata deserta a chi ha diritto di
+       vedere, e farlo tornare indietro pensando che non ci sia niente. */
     const nelMioRaggio = useCallback((d: Ddt) =>
-        puoCaricare || !miei.length || mio(d.da_negozio) || mio(d.a_negozio),
-        [puoCaricare, miei.length, mio]);
+        seesAll || !visibiliPronti || mio(d.da_negozio) || mio(d.a_negozio),
+        [seesAll, visibiliPronti, mio]);
     const filtrati = useMemo(() => ddt.filter(d => nelMioRaggio(d) && passaFiltri(d)), [ddt, passaFiltri, nelMioRaggio]);
+    /* ⚠️ DA DOVE SI PUÒ SPEDIRE (Luca 02/09). La tendina «Parte da» offriva
+       TUTTI i negozi: da Donna Olimpia si poteva svuotare il magazzino di
+       San Paolo, e nessuno se ne sarebbe accorto se non guardando le
+       giacenze. Adesso si parte solo da un magazzino che si ha in
+       visibilità — la direzione e l'amministrazione da tutti, come prima. */
+    const negoziPartenza = useMemo(() =>
+        seesAll || !visibiliPronti ? negozi : negozi.filter(n => mio(n)),
+        [seesAll, visibiliPronti, negozi, mio]);
     const conteggi = useMemo(() => {
         const ora = Date.now();
         const out = {} as Record<Situazione, number>;
@@ -2518,7 +2550,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
 
             {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}
             {apriNuovo && (
-                <NuovoTrasferimento unita={unita} quantita={quantita} negozi={negozi} negDati={negDati} casse={casse}
+                <NuovoTrasferimento unita={unita} quantita={quantita} negozi={negozi} negoziPartenza={negoziPartenza} negDati={negDati} casse={casse}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={mioNegozio} utente={utente}
                     righeVive={righeVive !== false}
                     dopo={() => { setApriNuovo(false); caricaTutto(); ricarica(); }} />
@@ -2853,15 +2885,25 @@ function AccettaModale({ d, righe, quante, setQuante, motivo, setMotivo, nomiAzi
      Tenerla «in transito» vorrebbe dire rendere invendibile per giorni un
      telefono che sta a quaranta centimetri: il documento si emette e si
      chiude nello stesso atto. */
-function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzienda, anagrafica, mioNegozio, utente, righeVive, dopo }: {
+function NuovoTrasferimento({ unita, quantita, negozi, negoziPartenza, negDati, casse, nomiAzienda, anagrafica, mioNegozio, utente, righeVive, dopo }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[];
+    /** da dove si può far partire la merce: i negozi in visibilità, tutti per
+     *  la direzione. Non si spedisce da un magazzino che non è tuo. */
+    negoziPartenza: string[];
     negDati: Record<string, NegozioDdt & { azienda?: string | null }>;
     casse: { negozio: string; azienda: string; is_default: boolean | null }[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
     mioNegozio: string; utente: string; righeVive: boolean; dopo: () => void;
 }) {
     const [fuori, setFuori] = useState(false);
-    const [da, setDa] = useState(splitNegozi(mioNegozio)[0] || "");
+    /* preselezionato il proprio, ma solo se è fra quelli da cui si può
+       partire: altrimenti resterebbe scritto un negozio che la tendina non
+       offre più, e l'invio fallirebbe senza spiegare perché */
+    const [da, setDa] = useState(() => {
+        const mio = splitNegozi(mioNegozio)[0] || "";
+        if (mio && negoziPartenza.includes(mio)) return mio;
+        return negoziPartenza.length === 1 ? negoziPartenza[0] : "";
+    });
     const [a, setA] = useState("");
     /* IL DESTINATARIO ESTERNO, campo per campo. Su un DDT il destinatario è un
        soggetto fiscale: ragione sociale, partita IVA e luogo di consegna. In
@@ -3169,7 +3211,8 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
             </div>
             <div className="rvBarra mt-3">
                 <div className="rvCampo rvCampo-md"><span className="rvLab">Parte da</span>
-                    <SelectOpzioni className="rvIn" value={da} onChange={setDa} opzioni={negozi} placeholder="scegli il negozio…" /></div>
+                    <SelectOpzioni className="rvIn" value={da} onChange={setDa} opzioni={negoziPartenza}
+                        placeholder={negoziPartenza.length ? "scegli il negozio…" : "nessun magazzino in visibilità"} /></div>
                 {fuori ? (
                     <>
                         <label className="rvCampo rvCampo-md"><span className="rvLab">A chi</span>
