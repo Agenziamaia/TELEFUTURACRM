@@ -105,7 +105,7 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
 
     const menuBody = pos ? (
         <div ref={menu}
-            className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-hidden"
+            className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-y-auto"
             style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH }}>
             <button type="button"
                 onMouseDown={(e) => { e.preventDefault(); onChange(tutte ? [] : null); }}

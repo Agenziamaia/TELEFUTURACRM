@@ -98,6 +98,10 @@ interface Device {
   firma?: { via?: string; canale?: string; firmata_il?: string | null; registro?: string | null; dispositivo?: string | null; daComputer?: boolean } | null;
   // mig. 113: cliente da cui e' stato acquistato + venditore che ha registrato
   client_id: string | null;
+  uscita_forzata?: boolean;
+  uscita_motivo?: string | null;
+  uscita_da?: string | null;
+  consegnato_a?: string | null;
   venditore: string;
   // mig. 117: prezzo EFFETTIVO di vendita (chiesto all'esito Venduto) —
   // sale_price resta il prezzo di listino in vetrina
@@ -319,6 +323,14 @@ function rowToDevice(r: UsatiRow): Device {
     venditore: r.venditore || "",
     sold_price: Number(r.sold_price) || 0,
     store_acquisto: ((r as { store_acquisto?: string | null }).store_acquisto) ?? null,
+    /* ⚠️ USCITO SENZA VENDITA: sta in COLONNE, non dentro `status_history` —
+       quel JSON la pagina lo riscrive tenendo solo `{date, operatore}`, e un
+       marchio messo lì spariva al primo salvataggio. `deviceToRow` non elenca
+       queste colonne, quindi non le tocca mai. */
+    uscita_forzata: !!(r as { uscita_forzata?: boolean }).uscita_forzata,
+    uscita_motivo: ((r as { uscita_motivo?: string | null }).uscita_motivo) ?? null,
+    uscita_da: ((r as { uscita_da?: string | null }).uscita_da) ?? null,
+    consegnato_a: ((r as { consegnato_a?: string | null }).consegnato_a) ?? null,
   };
 }
 
@@ -809,8 +821,13 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
         non genera una vendita registrata, quindi niente commissioning». Chi
         non passa dal primo riquadro non arriva al secondo. */}
     {consegna !== "no" && createPortal(
+      /* ⚠️ IL CLIC FUORI NON CHIUDE MENTRE SI STA SCRIVENDO IL CLIENTE. Con
+         la chiusura libera, premendo «Crea e usa» e cliccando fuori mentre il
+         salvataggio girava, il riquadro spariva e la consegna andava avanti
+         lo stesso: il telefono usciva a schermata chiusa. Dal secondo passo
+         si esce solo dai pulsanti. */
       <div className="fixed inset-0 z-[3300] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
-        onClick={() => !consegnaBusy && setConsegna("no")}>
+        onClick={() => { if (!consegnaBusy && consegna === "avviso") setConsegna("no"); }}>
         <div className="rvCarta rvCarta-ko max-w-lg w-full" onClick={(e) => e.stopPropagation()}
           style={{ maxHeight: "90vh", overflowY: "auto" }}>
           {consegna === "avviso" ? (
@@ -980,13 +997,23 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
                   className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                   ↩ Torna indietro
                 </button>
-                {dev.status !== "venduto" && (
-                  <button onClick={() => { setConsegnaKo(""); setConsegna("avviso"); }}
-                    title="Il telefono esce dal magazzino e resta scritto a chi è andato, ma NON è una vendita: niente scontrino, niente contratto"
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/30 text-xs font-semibold hover:bg-rose-500/20 transition-all">
-                    📦 Consegna senza vendita (venduto)
-                  </button>
-                )}
+              </div>
+            )}
+            {/* ═══ CONSEGNA SENZA VENDITA ═══════════════════════════════
+                ⚠️ STA FUORI DA «CORREZIONE STATO», e non per ordine: quel
+                blocco non si disegna sui telefoni appena acquistati (sono
+                l'indice 0 del ciclo di vita, non hanno un passo indietro), e
+                il caso più naturale — il telefono appena ritirato che si
+                regala — sarebbe stato l'unico precluso. E non è una
+                correzione: è una porta che fa uscire un telefono dal
+                magazzino. */}
+            {isAmministrazione && !["venduto", "smontato", "ko"].includes(dev.status) && (
+              <div className="mt-4 border-t border-dashed border-rose-500/20 pt-4">
+                <button onClick={() => { setConsegnaKo(""); setConsegna("avviso"); }}
+                  title="Il telefono esce dal magazzino e resta scritto a chi è andato, ma NON è una vendita: niente scontrino, niente contratto"
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/30 text-xs font-semibold hover:bg-rose-500/20 transition-all">
+                  📦 Consegna senza vendita
+                </button>
               </div>
             )}
             {/* eliminazione TOTALE — solo admin, in fondo, ben staccata */}
@@ -1004,6 +1031,15 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
           <div className="space-y-5">
             {/* Badges */}
             <div className="flex flex-wrap gap-2">
+              {/* ⚠️ SI VEDE APRENDO IL TELEFONO, non solo scavando nella
+                  cronologia: è la differenza fra una vendita e un telefono
+                  regalato, e non deve dipendere da chi va a cercarla. */}
+              {dev.uscita_forzata && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/15 text-rose-300 border border-rose-500/40"
+                  title={`${dev.uscita_motivo || ""}${dev.uscita_da ? ` — ${dev.uscita_da}` : ""}`}>
+                  📦 Uscito SENZA vendita registrata
+                </span>
+              )}
               {dev.provenienza_subito && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/30"> Provenienza Subito.it</span>}
               {(dev.acquisto_per_ricambi || dev.grado_usura === "ricambi") && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/30">🧩 Comprato per ricambi</span>}
               <span className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border",
@@ -1013,6 +1049,16 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
             </div>
             {/* Details grid */}
             <div>
+              {dev.uscita_forzata && (
+                <div className="rvNota rvNota-ko mb-3">
+                  <div className="rvNota-t">📦 Questo telefono è uscito senza vendita registrata</div>
+                  <div className="rvNota-s">
+                    Niente scontrino, niente contratto, niente commissioning: non conta come vendita.
+                    {dev.uscita_motivo ? <> Motivo: <b>{dev.uscita_motivo}</b>.</> : null}
+                    {dev.uscita_da ? <> Deciso da {dev.uscita_da}.</> : null}
+                  </div>
+                </div>
+              )}
               <div className="text-sm font-bold text-white mb-3"> Dettagli</div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                 {/* il prezzo di ACQUISTO lo vede solo chi ha la capacita' costi
@@ -2313,7 +2359,14 @@ function GestioneUsatiInner() {
   const kpiData = useMemo(() => {
     const c: Record<string, number> = {};
     STATUS_KEYS.forEach(k => c[k] = 0);
-    kpiBase.forEach(d => { c[d.status] = (c[d.status] || 0) + 1; });
+    /* ⚠️ I TELEFONI USCITI SENZA VENDITA NON SONO VENDITE. Stanno fuori dal
+       magazzino, quindi non tornano nel «disponibili», ma contarli fra i
+       venduti vorrebbe dire leggere come incasso un telefono regalato. Hanno
+       la loro tessera. */
+    kpiBase.forEach(d => {
+      const k = d.status === "venduto" && d.uscita_forzata ? "_senzaVendita" : d.status;
+      c[k] = (c[k] || 0) + 1;
+    });
     c._all = kpiBase.filter(d => !["venduto", "ko", "smontato", "muletto"].includes(d.status)).length;
     return c;
   }, [kpiBase]);

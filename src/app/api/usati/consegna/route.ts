@@ -68,34 +68,44 @@ export async function POST(req: Request) {
     const nomeCli = c.tipo === "business" ? (c.ragione_sociale || "—") : `${c.nome || ""} ${c.cognome || ""}`.trim();
 
     const ora = new Date().toISOString();
-    /* ⚠️ `status_history` È UN OGGETTO PER STATO, non una lista: tutte e 281 le
-       righe in archivio hanno la forma `{ venduto: { date, operatore }, … }`,
-       e la pagina la scrive così. Trattandola come una lista si sarebbe
-       cancellata la cronologia di tutti gli stati precedenti — con la solita
-       differenza fra immaginare la forma di un dato e andarla a guardare. */
+    /* ⚠️ `status_history` È UN OGGETTO PER STATO, non una lista: tutte le righe
+       in archivio hanno la forma `{ venduto: { date, operatore }, … }`, e la
+       pagina la scrive così. Trattandola come una lista si sarebbe cancellata
+       la cronologia di tutti gli stati precedenti. */
     const storia = (u.status_history && typeof u.status_history === "object" && !Array.isArray(u.status_history)
         ? u.status_history : {}) as Record<string, unknown>;
-    const { error } = await supabaseAdmin.from("usati").update({
+    /* ⚠️ IL MARCHIO STA IN COLONNE VERE, non dentro `status_history`. La pagina
+       degli Usati rilegge e riscrive quel JSON tenendo solo `{date, operatore}`
+       (`parseHistory` / `deviceToRow`): un marchio scritto lì spariva al primo
+       salvataggio del pannello — bastava scrivere una nota sul telefono. Le
+       colonne invece `deviceToRow` non le elenca, quindi non le tocca.
+       ⚠️ E IL DESTINATARIO NON VA IN `client_id`: quello è il cliente DA CUI
+       il telefono è stato comprato, e la sua Timeline lo rende come «♻️
+       Ritirato usato». Scrivendoci il destinatario, chi riceve il telefono se
+       lo ritroverebbe in scheda come se ce l'avesse venduto, e il venditore
+       vero sparirebbe. */
+    const { data: toccate, error } = await supabaseAdmin.from("usati").update({
         status: "venduto",
         sold_date: ora,
-        client_id: b.clientId,
         sold_price: Number(b.prezzo) > 0 ? Number(b.prezzo) : 0,
+        consegnato_a: b.clientId,
+        uscita_forzata: true,
+        uscita_motivo: motivo,
+        uscita_da: chi?.full_name || "amministrazione",
+        uscita_il: ora,
         status_history: {
             ...storia,
-            venduto: {
-                date: ora,
-                operatore: `${chi?.full_name || "amministrazione"} — uscita SENZA vendita registrata`,
-                /* ⚠️ IL MARCHIO. Senza questo, fra un anno questa riga è
-                   indistinguibile da una vendita vera: stesso stato, stessa
-                   data, stesso cliente. Ma questa non ha scontrino né
-                   contratto, e chi conta i venduti deve poterla togliere. */
-                forzato: true,
-                consegnato_a: nomeCli,
-                motivo,
-            },
+            venduto: { date: ora, operatore: `${chi?.full_name || "amministrazione"} — uscita SENZA vendita registrata` },
         },
-    }).eq("id", b.id);
+    /* ⚠️ E LO STATO SI RILEGGE NELLA CONDIZIONE. Fra la lettura di prima e
+       questa scrittura ci può stare un'altra scheda aperta: senza questo, la
+       seconda consegna sovrascriveva data, motivo e destinatario della prima
+       senza che nessuno se ne accorgesse. */
+    }).eq("id", b.id).neq("status", "venduto").select("id");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!toccate || !toccate.length) {
+        return NextResponse.json({ error: "qualcuno l'ha appena portato in venduto: ricarica la pagina e guarda com'è andata." }, { status: 409 });
+    }
 
     return NextResponse.json({ ok: true, cliente: nomeCli });
 }

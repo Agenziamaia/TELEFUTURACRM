@@ -25,6 +25,12 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { numeroNazionale } from "@/lib/telefono";
+/* ⚠️ LA DATA DI NASCITA DAL CF È QUELLA DI CASA. Ne avevo scritta una copia
+   qui: su 4.701 codici fiscali veri si arrendeva su 15 (le omocodie) dove
+   quella ufficiale la ricava, e su un cliente NUOVO avrebbe salvato una data
+   di nascita vuota dove Registra Vendita la riempie. Una seconda verità che
+   diverge dalla prima è peggio di nessuna verità. */
+import { dataNascitaDaCF } from "@/lib/dataNascita";
 
 export type Anagrafica = {
     nome: string; cognome: string; cellulare: string; email: string;
@@ -41,20 +47,6 @@ export const ANAGRAFICA_VUOTA: Anagrafica = {
 
 type Riga = Record<string, unknown>;
 
-/** La data di nascita dalle cifre del codice fiscale, come in Registra Vendita. */
-function dataNascitaDaCF(cf: string): string | null {
-    const c = (cf || "").toUpperCase().trim();
-    if (!/^[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]$/.test(c)) return null;
-    const MESI = "ABCDEHLMPRST";
-    const anno = Number(c.slice(6, 8));
-    const mese = MESI.indexOf(c[8]) + 1;
-    let giorno = Number(c.slice(9, 11));
-    if (giorno > 40) giorno -= 40;                  // le donne hanno +40
-    if (!mese || giorno < 1 || giorno > 31) return null;
-    const ora = new Date().getFullYear() % 100;
-    const secolo = anno <= ora ? 2000 : 1900;
-    return `${secolo + anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`;
-}
 
 export function CercaOCreaCliente({ negozio, onCliente, onAnnulla }: {
     negozio?: string | null;
@@ -80,9 +72,16 @@ export function CercaOCreaCliente({ negozio, onCliente, onAnnulla }: {
         if (v.length < 3) { setSugg([]); return; }
         tempo.current = setTimeout(async () => {
             const compat = v.replace(/\s+/g, "");
+            /* ⚠️ IL TESTO SI VIRGOLETTA. `.or()` è una grammatica: la virgola
+               separa le condizioni, e cercando «Rossi, Mario» PostgREST
+               rispondeva 400 — nessun suggerimento, e chi cercava concludeva
+               che il cliente non c'era e ne creava un doppione. Fra virgolette
+               la virgola torna un carattere come gli altri; le virgolette
+               dentro il testo si raddoppiano. */
+            const q = (x: string) => `"${x.replace(/"/g, '""')}"`;
             const { data } = await supabase.from("clients")
                 .select("id, tipo, nome, cognome, ragione_sociale, cf_piva, cellulare")
-                .or(`cf_piva.ilike.%${compat}%,nome.ilike.%${v}%,cognome.ilike.%${v}%,ragione_sociale.ilike.%${v}%`)
+                .or(`cf_piva.ilike.${q("%" + compat + "%")},nome.ilike.${q("%" + v + "%")},cognome.ilike.${q("%" + v + "%")},ragione_sociale.ilike.${q("%" + v + "%")}`)
                 .limit(8);
             setSugg((data || []) as Riga[]);
         }, 320);
@@ -162,7 +161,24 @@ export function CercaOCreaCliente({ negozio, onCliente, onAnnulla }: {
                 is_demo: false,
             };
             const { error } = await supabase.from("clients").upsert(riga, { onConflict: "id" });
-            if (error) throw error;
+            /* ⚠️ IL CODICE FISCALE È UNICO A DATABASE (`uq_clients_cf_piva`).
+               Senza questo, chi provava a creare un cliente già a sistema si
+               prendeva in faccia il testo di Postgres — «duplicate key value
+               violates unique constraint» — invece della cosa che gli serve:
+               chi è quel cliente, così lo sceglie invece di reinventarlo. */
+            if (error) {
+                if (/duplicate key|uq_clients_cf_piva/i.test(error.message)) {
+                    const { data: gia } = await supabase.from("clients")
+                        .select("id, tipo, nome, cognome, ragione_sociale, cf_piva, cellulare")
+                        .ilike("cf_piva", cf).limit(1);
+                    const c0 = (gia || [])[0] as Riga | undefined;
+                    if (c0) {
+                        setKo(`Questo codice è già di «${etichettaDi(c0)}». Cercalo qui sopra e scegli quello, invece di crearne un altro.`);
+                        setCerca(cf); setBusy(false); return;
+                    }
+                }
+                throw error;
+            }
             onCliente(id, nome);
         } catch (e) { setKo((e as Error)?.message || "non sono riuscito a salvare il cliente"); }
         finally { setBusy(false); }
