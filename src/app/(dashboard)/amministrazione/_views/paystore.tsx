@@ -256,12 +256,20 @@ export function PayStoreAdminView() {
        l'amministrazione le deve trovare.
        Si nasconde solo quello che non chiede più niente a nessuno: credito
        partito, documento uscito, reparto giusto, numero scritto. */
+    /* ⚠️ OGGI SI VEDE TUTTO, LO STORICO NO (Luca 02/09): «nel momento in cui
+       vado ad aprire la sezione di oggi deve darmele tutte; se però vado sullo
+       storico, la prima volta deve darmi solamente quelle che hanno avuto un
+       problema e che di fatto non sono andate in ok».
+       Sulla giornata in corso serve vedere cosa esce dal banco, chiuse
+       comprese. Su un periodo più lungo la domanda è un'altra — cosa è rimasto
+       da sistemare — e le chiuse sono solo rumore fra cui cercare. */
+    const soloOggi = periodo.da === oggiS && periodo.a === oggiS;
     const chiusaVecchia = (r: Riga) =>
-        (r.stato === "ok_automatico" || r.stato === "ok_manuale")
+        !soloOggi
+        && (r.stato === "ok_automatico" || r.stato === "ok_manuale")
         && r.scontrino_stato === "emesso"
         && (r.reparto_usato == null || r.reparto_usato === 1)
-        && !!String(r.numero || "").trim()
-        && giornoRoma(r.creata_il) < oggiS;
+        && !!String(r.numero || "").trim();
     /* ⚠️ TRE MODI DI RIVEDERLE, e sono tutti espliciti: l'interruttore, il
        filtro sullo stato «ok» (chiederle è già chiedere di vederle), e il
        periodo che non arriva a oggi — cioè quando si torna indietro a
@@ -274,7 +282,7 @@ export function PayStoreAdminView() {
        Ora è il gruppo «Quando» ad accendere l'interruttore: toccare il periodo
        fra i filtri VUOL DIRE «fammi vedere tutto», ed è quello che Luca ha
        chiesto. Resta un interruttore visibile, che si può rispegnere. */
-    const mostraTutte = mostraChiuse || periodo.a < oggiS || stato === "ok_automatico" || stato === "ok_manuale";
+    const mostraTutte = mostraChiuse || stato === "ok_automatico" || stato === "ok_manuale";
     const F = {
         chiuse: (r: Riga) => mostraTutte || !chiusaVecchia(r),
         negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
@@ -661,18 +669,18 @@ export function PayStoreAdminView() {
                                         return (
                                             <button key={v.id} aria-pressed={on}
                                                 onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); setMostraChiuse(true); }}
-                                                className={cn("rvPill rvPill-sm rvPill-tinta rvT-ambra", on && "rvPill-on")}>
+                                                className={cn("rvPill rvPill-tinta rvT-ambra", on && "rvPill-on")}>
                                                 {v.et}{on ? " ✓" : ""}
                                             </button>
                                         );
                                     })}
                                     <input type="date" value={periodo.da} max={oggiISO()} title="dal"
                                         onChange={(e) => { setTipoP("range"); setMostraChiuse(true); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
-                                        className="an-data glass-input px-2 py-1 rounded-lg text-xs" />
+                                        className="an-data glass-input px-3 py-2 rounded-lg text-[13px]" />
                                     <span className="text-[11px] text-slate-500">→</span>
                                     <input type="date" value={periodo.a} min={periodo.da} max={oggiISO()} title="al"
                                         onChange={(e) => { setTipoP("range"); setMostraChiuse(true); setRange({ da: periodo.da, a: e.target.value }); }}
-                                        className="an-data glass-input px-2 py-1 rounded-lg text-xs" />
+                                        className="an-data glass-input px-3 py-2 rounded-lg text-[13px]" />
                                 </div>
                             </div>
                             <div className="rvCampo">
@@ -683,7 +691,7 @@ export function PayStoreAdminView() {
                                     la casella restava nuda, senza cornice e con il testo
                                     più grande di tutta la fascia. */}
                                 <FiltroMulti values={negoziSel} onChange={setNegoziSel} opzioni={d.negozi}
-                                    etichettaTutti="Tutti i negozi" className="min-w-[200px] max-w-[240px]"
+                                    etichettaTutti="Tutti i negozi" className="min-w-[210px] max-w-[250px] !py-2.5"
                                     etichette={Object.fromEntries(d.negozi.map((n) => [n, `${n} · ${quanteCon(["negozio"], (r) => String(r.negozio || "") === n)}`]))} />
                             </div>
 
@@ -697,27 +705,28 @@ export function PayStoreAdminView() {
                                         return (
                                             <button key={x} onClick={() => setStato(on ? "" : x)} aria-pressed={on}
                                                 title={`${n} ricarich${n === 1 ? "a" : "e"} in questo stato`}
-                                                className={cn("rvPill rvPill-sm rvPill-tinta", TINTA_STATO[x], on && "rvPill-on")}>
+                                                className={cn("rvPill rvPill-tinta", TINTA_STATO[x], on && "rvPill-on")}>
                                                 {STATI[x].testo}{on ? " ✓" : ""}<span className="rvPillN">{n}</span>
                                             </button>
                                         );
                                     })}
-                                    {/* ⚠️ QUANTE NE STA TENENDO DA PARTE. Nascondere in silenzio
-                                        è come non averle mai registrate: il numero c'è, e si
-                                        riaprono con un clic. */}
-                                    {nascoste > 0 && (
-                                        <button onClick={() => setMostraChiuse(true)}
-                                            title="le ricariche già fatte nei giorni scorsi: chiuse e passate, non chiedono più niente"
-                                            className="rvPill rvPill-sm rvPill-tinta rvT-grigio">
-                                            👁 mostra le già fatte<span className="rvPillN">{nascoste}</span>
-                                        </button>
-                                    )}
-                                    {mostraChiuse && (
-                                        <button onClick={() => setMostraChiuse(false)} aria-pressed
-                                            className="rvPill rvPill-sm rvPill-tinta rvT-grigio rvPill-on">
-                                            👁 già fatte in elenco ✓
-                                        </button>
-                                    )}
+                                    {/* ⚠️ QUESTO PULSANTE NON SPARISCE MAI (Luca 02/09): «deve
+                                        rimanere sempre lì, così posso filtrare in qualsiasi momento
+                                        decidendo se mostrare o nascondere quelle completate».
+                                        Prima compariva solo quando c'era qualcosa da riaprire, e
+                                        sulla giornata di oggi — dove non si nasconde niente —
+                                        spariva: chi voleva togliere le chiuse non aveva il comando.
+                                        Nascondere in silenzio, poi, è come non averle mai
+                                        registrate: il numero di quelle tenute da parte è scritto
+                                        sopra. */}
+                                    <button onClick={() => setMostraChiuse(!mostraChiuse)} aria-pressed={mostraChiuse}
+                                        title={mostraChiuse
+                                            ? "le ricariche già fatte sono in elenco: premi per toglierle"
+                                            : "le ricariche già fatte — credito partito, scontrino uscito, niente da sistemare — sono fuori dall'elenco: premi per rivederle"}
+                                        className={cn("rvPill rvPill-tinta rvT-grigio", mostraChiuse && "rvPill-on")}>
+                                        {mostraChiuse ? "👁 completate in elenco ✓" : "👁 mostra le completate"}
+                                        {!mostraChiuse && nascoste > 0 && <span className="rvPillN">{nascoste}</span>}
+                                    </button>
                                 </div>
                             </div>
 
@@ -728,7 +737,7 @@ export function PayStoreAdminView() {
                                         const on = origine === String(o.conAttivazione);
                                         return (
                                             <button key={String(o.conAttivazione)} onClick={() => setOrigine(on ? "" : String(o.conAttivazione))}
-                                                aria-pressed={on} className={cn("rvPill rvPill-sm rvPill-tinta rvT-indaco", on && "rvPill-on")}
+                                                aria-pressed={on} className={cn("rvPill rvPill-tinta rvT-indaco", on && "rvPill-on")}
                                                 title={o.conAttivazione ? "vendute insieme a un'attivazione" : "ricariche vendute da sole"}>
                                                 {o.conAttivazione ? "con attivazione" : "sciolte"}{on ? " ✓" : ""}
                                                 <span className="rvPillN">{quanteCon(["origine"], (r) => (r.con_attivazione === true) === o.conAttivazione)}</span>
@@ -740,7 +749,7 @@ export function PayStoreAdminView() {
                                                 di togliere filtri e fa vedere MENO righe di prima è la cosa
                                                 più confusa che possa fare. Quello è un filtro che allarga. */
                                             onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
-                                            className="rvPill rvPill-sm rvPill-via">✕ togli i filtri</button>
+                                            className="rvPill rvPill-via">✕ togli i filtri</button>
                                     )}
                                 </div>
                             </div>
