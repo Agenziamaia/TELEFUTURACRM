@@ -1299,7 +1299,32 @@ function ListinoTagli({ tagli, onCambiato }: { tagli: Taglio[]; onCambiato: () =
     };
 
     const delOp = tagli.filter((t) => t.operatore === op).sort((a, b) => a.ordine - b.ordine || a.valore - b.valore);
-    const conListino = new Set(tagli.map((t) => t.operatore));
+    const conListino = new Set(tagli.filter((t) => t.attivo).map((t) => t.operatore));
+
+    /* ═══ IL LISTINO VERO LO SA PAYSTORE ═══════════════════════════════════
+       Luca 02/09: «dall'API riesci a prenderti tutti i tagli VERI e verificare
+       che Registra Vendita li stia riportando correttamente?»
+       Questa tabella è nostra, scritta a mano, e se non combacia col catalogo
+       del fornitore succedono due cose che non si vedono subito: un taglio che
+       loro hanno e noi no non si può vendere; uno che noi mostriamo e loro non
+       hanno si vende e poi non parte, col cliente che ha già pagato.
+       ⚠️ SI GUARDA PRIMA, SI SCRIVE DOPO: il confronto non tocca niente. */
+    const [confronto, setConfronto] = useState<{ daAggiungere: { operatore: string; valore: number }[]; daSpegnere: { operatore: string; valore: number }[]; catalogo: number } | null>(null);
+    const [sync, setSync] = useState(false);
+    const chiediCatalogo = async (applica: boolean) => {
+        setSync(true); setErrore(null);
+        try {
+            const r = await fetch("/api/paystore/tagli/sync", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ applica }),
+            });
+            const j = await r.json();
+            if (!r.ok || !j.ok) throw new Error(j.error || "non riuscito");
+            if (applica) { setConfronto(null); onCambiato(); } else setConfronto(j);
+        } catch (e) { setErrore(String((e as Error)?.message || e)); }
+        finally { setSync(false); }
+    };
+    const senzaListino = OPERATORI_PAYSTORE.filter((o) => !conListino.has(o.id));
 
     return (
         <div className="glass-card an-card rounded-2xl p-4 space-y-4">
@@ -1308,8 +1333,43 @@ function ListinoTagli({ tagli, onCambiato }: { tagli: Taglio[]; onCambiato: () =
                 <p className="text-[11px] text-slate-500 mt-0.5">
                     Quello che il negozio vede quando sceglie l&apos;operatore. Gli operatori senza listino restano a
                     <b className="text-slate-300"> importo libero</b>: meglio un campo aperto che tagli inventati, perché un
-                    taglio che il fornitore non ha è una ricarica che non parte. Con l&apos;API questo elenco si riempirà da solo.
+                    taglio che il fornitore non ha è una ricarica che non parte.
                 </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2.5">
+                <div className="rvLab">Il listino contro il catalogo vero</div>
+                <div className="rvPillRow items-center">
+                    <button onClick={() => void chiediCatalogo(false)} disabled={sync}
+                        className="rvPill rvPill-tinta rvT-indaco">{sync ? "chiedo a PayStore…" : "👁 Confronta col catalogo"}</button>
+                    {confronto && !!(confronto.daAggiungere.length || confronto.daSpegnere.length) && (
+                        <button onClick={() => void chiediCatalogo(true)} disabled={sync}
+                            className="rvPill rvPill-on rvT-verde">✓ Allinea il listino</button>
+                    )}
+                </div>
+                {confronto && (
+                    <div className="rvNota rvNota-info">
+                        <div className="rvNota-t">
+                            {confronto.daAggiungere.length || confronto.daSpegnere.length
+                                ? `${confronto.daAggiungere.length} da aggiungere · ${confronto.daSpegnere.length} da spegnere`
+                                : "✓ Il listino combacia col catalogo"}
+                        </div>
+                        <div className="rvNota-s">
+                            PayStore ha {confronto.catalogo} tagli in tutto.
+                            {!!confronto.daAggiungere.length && <> Mancano da noi: {confronto.daAggiungere.map((x) => `${nomeOp(x.operatore)} ${x.valore}€`).join(", ")}.</>}
+                            {!!confronto.daSpegnere.length && <> Ci sono da noi e non da loro: {confronto.daSpegnere.map((x) => `${nomeOp(x.operatore)} ${x.valore}€`).join(", ")} — si spengono, non si cancellano, se no le ricariche già vendute che li citano diventano inspiegabili.</>}
+                        </div>
+                    </div>
+                )}
+                {!!senzaListino.length && (
+                    <div className="rvNota rvNota-att">
+                        <div className="rvNota-t">⚠️ {senzaListino.length} operator{senzaListino.length === 1 ? "e" : "i"} senza listino</div>
+                        <div className="rvNota-s">
+                            {senzaListino.map((o) => o.label).join(", ")}: al banco l&apos;importo si scrive a mano, e un
+                            importo che PayStore non ha è una ricarica che non parte.
+                        </div>
+                    </div>
+                )}
             </div>
 
             {errore && <div className="text-xs text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-lg px-3 py-2">⚠️ {errore}</div>}
@@ -1398,6 +1458,22 @@ function CredenzialiPayStore() {
     const [ko, setKo] = useState("");
     type Firma = { negozio: string; azienda: string | null; ricariche: number; ok: boolean; firmerebbe: string | null; perche: string | null };
     const [verifica, setVerifica] = useState<Firma[]>([]);
+    /* ⚠️ IL PLAFOND È DENARO CARICATO IN ANTICIPO, uno per punto vendita.
+       Quando finisce, le ricariche di quel negozio smettono di partire — e
+       senza questa riga la prima cosa che qualcuno nota è un cliente al banco
+       che non riceve il credito. */
+    type Saldo = { negozio: string; azienda: string; identificativo: string | null; saldo: number | null; errore: string | null };
+    const [saldi, setSaldi] = useState<{ saldi: Saldo[]; totale: number; muti: number } | null>(null);
+    const [chiedoSaldi, setChiedoSaldi] = useState(false);
+    const guardaSaldi = async () => {
+        setChiedoSaldi(true); setKo("");
+        try {
+            const r = await fetch("/api/paystore/saldo").then((x) => x.json());
+            if (!r?.ok) throw new Error(r?.error || "non riesco a leggere il plafond");
+            setSaldi(r);
+        } catch (e) { setKo((e as Error).message); }
+        finally { setChiedoSaldi(false); }
+    };
 
     const carica = useCallback(async () => {
         const r = await fetch("/api/paystore/credenziali").then((x) => x.json()).catch(() => null);
@@ -1453,6 +1529,10 @@ function CredenzialiPayStore() {
             </div>
 
             <div className="rvPillRow items-center">
+                <button onClick={() => void guardaSaldi()} disabled={chiedoSaldi}
+                    className="rvPill rvPill-tinta rvT-verde">
+                    {chiedoSaldi ? "leggo…" : "💰 Quanto credito c'è"}
+                </button>
                 <label className="rvPill rvPill-tinta rvT-indaco" style={{ cursor: "pointer" }}>
                     👁 Guarda cosa farebbe
                     <input type="file" accept=".xlsx,.xls" hidden disabled={busy}
@@ -1465,6 +1545,36 @@ function CredenzialiPayStore() {
                 </label>
             </div>
             {ko && <div className="rvNota rvNota-ko"><div className="rvNota-s">{ko}</div></div>}
+
+            {saldi && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="rvLab">
+                        Plafond · {eurC(saldi.totale)} in tutto
+                        {!!saldi.muti && <span className="text-rose-300"> · {saldi.muti} non {saldi.muti === 1 ? "ha" : "hanno"} risposto</span>}
+                    </div>
+                    <div className="rvNota-s mt-1 mb-2">
+                        È il credito già caricato su PayStore, uno per punto vendita. Quando finisce, le ricariche di
+                        quel negozio non partono più.
+                    </div>
+                    <table className="psTab text-[12px]">
+                        <tbody>
+                            {saldi.saldi.map((s, i) => (
+                                <tr key={i}>
+                                    <td className="text-white font-semibold">{s.negozio}</td>
+                                    <td><span className="rvBadge rvBadge-acc">{SOCIETA[s.azienda] || s.azienda}</span></td>
+                                    <td className={cn("text-right font-bold",
+                                        s.saldo == null ? "text-rose-300"
+                                            : s.saldo < 50 ? "text-rose-300"
+                                                : s.saldo < 150 ? "text-amber-300" : "text-emerald-300")}>
+                                        {s.saldo == null ? "—" : eurC(s.saldo)}
+                                    </td>
+                                    <td className="text-[11px] text-slate-500">{s.errore || (s.saldo != null && s.saldo < 50 ? "sta finendo" : "")}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {esiti.length > 0 && (
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">
