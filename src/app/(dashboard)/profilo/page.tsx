@@ -107,14 +107,27 @@ export default function ProfiloPage() {
         setAvatarBusy(true);
         try {
             const blob = await ridimensionaImmagine(file, 512);
-            const path = `${user.id}.jpg`;
-            const up = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" });
+            /* ⚠️ IL PERCORSO CAMBIA A OGNI FOTO, e `upsert` non si usa più.
+               Qui il percorso era fisso (`<id>.jpg`) e la sostituzione la
+               faceva `upsert: true` — che però diventa «inserisci, e se c'è già
+               aggiorna», e per sapere se c'è già deve LEGGERE la riga del
+               deposito. Da quando i depositi sono chiusi al pubblico (31/08) la
+               lettura diretta non c'è più, e la foto profilo non si poteva più
+               cambiare: stesso identico difetto degli allegati WhatsApp.
+               Con l'istante nel nome, ogni foto è un file nuovo — e la
+               precedente si cancella dopo, quando la nuova è al sicuro. */
+            const vecchia = String(avatarUrl || "").split("/avatars/")[1]?.split("?")[0] || null;
+            const path = `${user.id}-${Date.now()}.jpg`;
+            const up = await supabase.storage.from("avatars").upload(path, blob, { contentType: "image/jpeg" });
             if (up.error) {
                 setMsg(/bucket/i.test(up.error.message)
                     ? "⚠ Manca la migrazione foto profilo (bucket \"avatars\"): chiedi all'amministrazione."
                     : "⚠ Caricamento non riuscito: " + up.error.message);
                 return;
             }
+            /* la vecchia si toglie solo ora: se si cancellasse prima e il
+               caricamento fallisse, l'utente resterebbe senza foto */
+            if (vecchia && vecchia !== path) await supabase.storage.from("avatars").remove([vecchia]).catch(() => {});
             const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
             // ?v=timestamp: il path e' sempre lo stesso, cosi' la cache del browser non mostra la foto vecchia
             const nuovaUrl = `${pub.publicUrl}?v=${Date.now()}`;

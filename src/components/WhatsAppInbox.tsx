@@ -576,7 +576,18 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         try {
             const safe = f.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
             const path = `out/${selConv.id}/${Date.now()}-${safe}`;
-            const { error } = await supabase.storage.from("whatsapp-media").upload(path, f, { contentType: f.type || "application/octet-stream", upsert: true });
+            /* ⚠️ NIENTE `upsert` (Luca 02/09, segnalato da Veronica: «Allegato
+               non inviato: new row violates row-level security policy»).
+               `upsert: true` non è «scrivi il file»: diventa «inserisci, e se
+               c'è già aggiorna», e per sapere se c'è già deve LEGGERE la riga
+               del deposito. Da quando i depositi sono stati chiusi al pubblico
+               (31/08) la lettura diretta non c'è più — passa dal custode — e la
+               scrittura veniva rifiutata in blocco. Riprodotto sul database:
+               l'inserimento semplice passa, quello con «on conflict» no, con
+               esattamente quel messaggio.
+               Qui non serviva: il percorso porta già l'istante dentro
+               (`Date.now()`), quindi due allegati non possono chiamarsi uguale. */
+            const { error } = await supabase.storage.from("whatsapp-media").upload(path, f, { contentType: f.type || "application/octet-stream" });
             if (error) throw error;
             const { data: pub } = supabase.storage.from("whatsapp-media").getPublicUrl(path);
             const res = await fetch("/api/whatsapp/send", {

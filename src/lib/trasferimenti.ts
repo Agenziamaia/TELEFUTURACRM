@@ -132,6 +132,14 @@ export const STATI_DDT: Record<string, { et: string; ico: string; tono: string }
     rifiutato: { et: "Respinto", ico: "↩️", tono: "rvBadge-ko" },
     annullato: { et: "Annullato", ico: "🚫", tono: "rvBadge-empty" },
     uscito: { et: "Uscito dal gruppo", ico: "📤", tono: "rvBadge-empty" },
+    /* ⚠️ IL DOCUMENTO DI UN TELEFONO USATO NASCE CHIUSO (Luca 02/09): «è un
+       documento che muore, non deve essere accettato — il negozio prende in
+       carico il telefono dentro la gestione usati, seguendo la sua timeline».
+       Non è `in_transito`, se no finirebbe fra quelli «da accettare» e dopo
+       tre giorni risulterebbe in ritardo per una consegna che nessuno deve
+       confermare. E non è `accettato`, che sarebbe una bugia: nessuno l'ha
+       accettato. */
+    usato: { et: "Usato — si accetta in Gestione Usati", ico: "📱", tono: "rvBadge-acc" },
 };
 
 export const STATI_RIGA: Record<string, { et: string; ico: string; tono: string }> = {
@@ -222,7 +230,13 @@ export function tipoDi(
  *  qualcuno non dice il contrario. */
 export function daFatturare(d: Ddt): boolean {
     if (!eCessione(d)) return false;
-    if (!["accettato", "parziale"].includes(d.stato)) return false;
+    /* ⚠️ ANCHE I DOCUMENTI DEGLI USATI. Un telefono che va da un negozio di
+       Telefutura a uno di Telefutura 2 è una cessione fra due soggetti
+       giuridici come qualunque altra merce: la fattura serve lo stesso, e il
+       fatto che il telefono si accetti in un'altra schermata non c'entra
+       niente col fisco. Lasciandolo fuori, quelle cessioni non sarebbero
+       comparse in nessun elenco. */
+    if (!["accettato", "parziale", "usato"].includes(d.stato)) return false;
     return d.fattura_stato !== "emessa" && d.fattura_stato !== "non_dovuta";
 }
 
