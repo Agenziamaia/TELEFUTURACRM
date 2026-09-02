@@ -19,6 +19,7 @@ import { WhatsAppAdminView } from "./_views/whatsapp_admin";
 import { EmailAdminView } from "./_views/email_admin";
 import { AiAdminView } from "./_views/ai_admin";
 import { AutomatismiView } from "./_views/automatismi";
+import { ContabilitaView } from "./_views/contabilita";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -210,6 +211,11 @@ const SEZIONI: Sezione[] = [
     // utilizzando, di quanto stiamo spendendo diviso per categorie, e posso
     // filtrare per utenza». Il tetto è 30 € al mese.
     { id: "paystore", label: "PayStore", icon: Smartphone, desc: "Le ricariche telefoniche vendute dai negozi — quante, per quanto, dove, e quali non sono partite — più il listino dei tagli per operatore." },
+    /* CONTABILITÀ (Luca 02/09): «creiamo la sezione contabilità, rendiamolo un
+       hub, e dentro mettiamoci la sezione Usati — così dopo andremo a creare
+       sicuramente altre sezioni dedicate». Qui nasce quello che va al
+       commercialista: numeri che diventano fatture, non riepiloghi da leggere. */
+    { id: "contabilita", label: "Contabilità", icon: Receipt, desc: "Quello che va al commercialista. Oggi: i telefoni usati comprati da una società e venduti dall'altra, con il file delle fatture da fare fra Telefutura e Telefutura 2 — e il resoconto che parte da solo il 3 del mese." },
     { id: "ai", label: "AI", icon: Sparkles, desc: "Quanto costa l'intelligenza artificiale e chi la usa: spesa del mese contro il tetto, divisa fra quello che chiede una persona e quello che gira da solo, per utenza e per sezione." },
     /* HUB AUTOMATISMI (Luca 31/08): «nel futuro ne costruiremo tanti, quindi
        crealo già come Hub». Un lavoro che gira di notte non si lamenta: se
@@ -671,6 +677,8 @@ function AmministrazioneInner() {
                 })()
             ) : sez === "whatsapp" ? (
                 <WhatsAppAdminView />
+            ) : sez === "contabilita" ? (
+                <ContabilitaView />
             ) : sez === "paystore" ? (
                 <PayStoreAdminView />
             ) : sez === "ai" ? (

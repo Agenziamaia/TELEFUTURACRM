@@ -66,6 +66,30 @@ export type Automatismo = {
 
 export const AUTOMATISMI: Automatismo[] = [
     {
+        id: "contabilita-usati-mensile",
+        area: "amministrazione",
+        nome: "Telefoni usati al commercialista",
+        emoji: "📱",
+        cosaFa: "Il 3 di ogni mese manda al commercialista il resoconto dei telefoni usati comprati e venduti nel mese chiuso, con la società che ha comprato e quella che ha venduto: dove le due non coincidono ci va una fattura fra Telefutura e Telefutura 2.",
+        perche: "«Al commercialista, i primi di ogni mese, dobbiamo inviare il resoconto dei telefoni usati venduti e comprati nel mese precedente» — Luca, 02/09. E poi: «spostiamo l'automazione al 3, e dal 1° dai visibilità alla preview».",
+        lavori: [{ nome: "contabilita-usati-mensile", ruolo: "la corsa del 3 del mese" }],
+        rotta: "/api/contabilita/usati/mensile",
+        registro: { tabella: "contabilita_usati_inviati", quando: "inviato_il", esito: "esito", etichetta: "mese" },
+        parametri: [
+            {
+                chiave: "destinatari", tipo: "email", nome: "Destinatari",
+                spiega: "A chi arriva il resoconto. Uno per riga.",
+                predefinito: ["studioandreavincioni@gmail.com"],
+            },
+        ],
+        prova: {
+            etichetta: "Cosa manderebbe",
+            corpo: { prova: true },
+            sicura: true,
+            spiega: "Dice quante righe partirebbero e a chi, senza mandare niente. Il file vero si scarica da Amministrazione → Contabilità.",
+        },
+    },
+    {
         id: "paystore-motore",
         area: "vendite",
         nome: "Ricariche telefoniche PayStore",

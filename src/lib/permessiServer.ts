@@ -37,6 +37,10 @@ export const SEZIONE_DI: Record<string, string> = {
        `vendita/paystore`); vedere TUTTE quelle di tutti i negozi, con i
        numeri dei clienti, è un'altra cosa e sta sotto il pannello. */
     "paystore": "/amministrazione?sez=paystore",
+    /* CONTABILITÀ (Luca 02/09): l'hub dei file che vanno al commercialista.
+       ⚠️ La sola sezione non basta: le rotte ricontrollano che chi chiama sia
+       amministrazione o sopra — qui dentro ci sono costi d'acquisto e margini. */
+    "contabilita": "/amministrazione?sez=contabilita",
     "pos": "/registra-vendita",
     "aircall": "/chiamate",
     "usati": "/usati",

@@ -257,7 +257,13 @@ const lookupUsato=(imei)=>{const d=String(imei||"").replace(/\D/g,"");return d.l
 // porta un telefono a "venduto" su Gestione Usati (il passaggio manuale in quella
 // pagina non esiste piu'). Si scaricano solo i dispositivi IN VENDITA — un telefono
 // in altra fase va prima portato in vetrina dalla pagina usati.
-async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
+/* ⚠️ LA SOCIETÀ CHE VENDE SI SCRIVE QUI, ADESSO. Un usato non ha magazzino,
+   quindi non ha una società automatica: quella che vende è la società della
+   CASSA su cui è uscito lo scontrino, e la si sa solo in questo momento.
+   Serve al file per il commercialista: quando la società che ha comprato il
+   telefono è diversa da quella che l'ha venduto, fra le due ci va una fattura,
+   e senza questo dato la disparità non è nemmeno visibile. */
+async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback,aziendaVendita){
   for(const mi of (items||[])){
     if(mi.productId!=="vendita_usato")continue;
     for(const u of (Array.isArray(mi.units)?mi.units:[])){
@@ -271,11 +277,12 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
         const prezzo=parseFloat(String(u.prezzo??"").replace(",","."))||Number(row.sale_price)||null;
         const soldIso=dateStr?new Date(dateStr+"T12:00:00").toISOString():new Date().toISOString();
         const upd={status:"venduto",sold_date:soldIso,sold_price:prezzo,client_id:clientId||null,
+          ...(aziendaVendita?{azienda_vendita:aziendaVendita}:{}),
           status_history:{...hist,venduto:{date:new Date().toISOString(),operatore:`${mi.vendor||mi.venditore||vendFallback||"—"} — scarico da Registra Vendita`}}};
         let {error}=await supabase.from("usati").update(upd).eq("id",row.id);
         if(error&&/column/i.test(error.message||"")){
           // fallback difensivo se client_id/sold_price non esistessero ancora
-          const{client_id:_c,sold_price:_s,...rest}=upd;
+          const{client_id:_c,sold_price:_s,azienda_vendita:_av,...rest}=upd;
           ({error}=await supabase.from("usati").update(rest).eq("id",row.id));
         }
         if(error)console.error("Scarico usato fallito:",error.message);
@@ -7949,7 +7956,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
 
         // scarico magazzino usati: i telefoni scelti dal magazzino passano a
         // "venduto" su Gestione Usati, con prezzo effettivo e cliente collegato
-        await scaricaUsatiVenduti(margList, clientId, dateStr, selVend);
+        await scaricaUsatiVenduti(margList, clientId, dateStr, selVend, azScontrino || null);
         /* SCARICO DEL MAGAZZINO (Luca 29/08). Va DOPO: la vendita è già scritta
            e lo scontrino può essere già stampato — se il movimento non parte si
            annota e si prosegue. Un magazzino disallineato si sistema, una
@@ -8289,7 +8296,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
           if(attRows.length)await supabase.from("contract_attachments").insert(attRows);
         }
       }catch{/* allegati best-effort: la vendita e' gia' salva */}
-      await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
+      await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend, azScontrino || null);
       try {
         const _sc = await scaricaVendita(margItems, selNeg, rows[0]?.id || null, selVend);
         const _av = avvisiScarico(_sc);
