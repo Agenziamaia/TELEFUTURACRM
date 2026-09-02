@@ -50,6 +50,17 @@ export async function chat(opts: {
   // "json_object" forza la risposta a JSON puro (il prompt DEVE citare la
   // parola JSON, requisito dell'API) — usato dal triage WhatsApp
   responseFormat?: "json_object";
+  /** Spegne il ragionamento del modello.
+   *
+   *  ⚠️ SERVE PIÙ DI QUANTO SEMBRI. `deepseek-v4-flash` pensa prima di
+   *  rispondere, e il pensiero consuma il tetto della risposta — MISURATO sulla
+   *  STESSA chat: 1.997 token di ragionamento a un tentativo e 5.414 a un
+   *  altro. Con un tetto fisso è una scommessa: quando il pensiero se lo mangia
+   *  tutto, `content` torna VUOTO e la chat resta non classificata.
+   *  Su un compito di classificazione — quattro etichette — il ragionamento è
+   *  un lusso: qui si può spegnere, e la risposta arriva in una trentina di
+   *  token invece che in cinquemila. */
+  senzaRagionamento?: boolean;
 }): Promise<ChatResult> {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY non configurata");
@@ -67,6 +78,7 @@ export async function chat(opts: {
         ...(opts.responseFormat ? { response_format: { type: opts.responseFormat } } : {}),
         max_tokens: opts.maxTokens ?? 1500,
         temperature: opts.temperature ?? 0.2,
+        ...(opts.senzaRagionamento ? { reasoning_effort: "none" } : {}),
       }),
       signal: ctrl.signal,
     });

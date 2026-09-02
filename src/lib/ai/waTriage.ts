@@ -27,6 +27,16 @@ import { registraConsumo } from "@/lib/ai/consumi";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
 import { tettoPer } from "./modelli";
 
+/* ⚠️ IL TETTO DEL TRIAGE, E PERCHÉ È COSÌ ALTO. `deepseek-v4-flash` ragiona
+   prima di rispondere e il ragionamento consuma il tetto: misurato sulla stessa
+   chat, 1.997 token in un tentativo e 5.414 in un altro. Con 1.600 — il numero
+   che c'era — le chat lunghe uscivano VUOTE, contate come «risposta non JSON»:
+   sono gli errori che l'hub segnava come guasto.
+   Ottomila coprono il caso peggiore misurato con margine. E quando non bastano
+   c'è la seconda mano qui sotto, che è quella che garantisce una risposta
+   SEMPRE. */
+const TETTO_TRIAGE = Math.max(8000, tettoPer(MODEL_FAST));
+
 export const TRIAGE_VERSIONE = 1;          // alzarla = riclassificare tutto
 const FINESTRA_GG = 35;                    // il widget guarda 30 giorni: margine
 const MAX_PER_CORSA = 60;                  // tetto chat per giro (il chiamante può abbassarlo)
@@ -179,14 +189,31 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
            Qui c'era 1600: sulle chat corte bastava, sulle lunghe il pensiero se
            lo mangiava tutto e usciva una risposta VUOTA, contata come «risposta
            non JSON». Sono i 4 errori per corsa che si vedevano nell'hub. */
-        model: MODEL_FAST, maxTokens: tettoPer(MODEL_FAST), temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
+        model: MODEL_FAST, maxTokens: TETTO_TRIAGE, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
     });
-    const out = estraiJson(res.message.content || "");
+    /* ⚠️ LA SECONDA MANO, SENZA RAGIONAMENTO. Il tetto alto copre il caso
+       peggiore misurato, ma il ragionamento è variabile e un giorno ne chiederà
+       di più: quando il modello finisce il budget pensando, `content` torna
+       vuoto e la chat resta indietro per sempre — al giro dopo rifarebbe lo
+       stesso identico ragionamento e si fermerebbe allo stesso punto.
+       Qui si richiede la stessa cosa col pensiero spento: costa una trentina di
+       token invece di cinquemila, e una risposta arriva. Meglio una
+       classificazione senza ragionamento che nessuna classificazione. */
+    let risposta = res;
+    if (!String(res.message.content || "").trim()) {
+        risposta = await chat({
+            messages: [{ role: "system", content: PROMPT_TRIAGE }, { role: "user", content: user }],
+            model: MODEL_FAST, maxTokens: 1000, temperature: 0.1, timeoutMs: 25000,
+            responseFormat: "json_object", senzaRagionamento: true,
+        });
+    }
+    const res2 = risposta;
+    const out = estraiJson(res2.message.content || "");
     // risposta rotta o stato sconosciuto → NIENTE upsert: la chat resta alle
     // euristiche e si ritenta al giro dopo. Il vecchio fallback «rispondere»
     // con fingerprint fresco piantava un rosso cieco che nessuno riprendeva
     // più in mano (rilievo E1)
-    if (!out || !STATI.includes(out.stato)) return { riga: null, usage: res.usage };
+    if (!out || !STATI.includes(out.stato)) return { riga: null, usage: res2.usage };
     let stato: StatoTriage = out.stato;
     let azione = String(out.azione || "");
     /* SE L'ULTIMA PAROLA È NOSTRA, NON TOCCA A NOI (Luca 28/08: «Francesco

@@ -27,6 +27,16 @@ import { registraConsumo } from "@/lib/ai/consumi";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
 import { tettoPer } from "./modelli";
 
+/* ⚠️ IL TETTO DEL TRIAGE, E PERCHÉ È COSÌ ALTO. `deepseek-v4-flash` ragiona
+   prima di rispondere e il ragionamento consuma il tetto: misurato sulla stessa
+   chat, 1.997 token in un tentativo e 5.414 in un altro. Con 1.600 — il numero
+   che c'era — le chat lunghe uscivano VUOTE, contate come «risposta non JSON»:
+   sono gli errori che l'hub segnava come guasto.
+   Ottomila coprono il caso peggiore misurato con margine. E quando non bastano
+   c'è la seconda mano qui sotto, che è quella che garantisce una risposta
+   SEMPRE. */
+const TETTO_TRIAGE = Math.max(8000, tettoPer(MODEL_FAST));
+
 export const EMAIL_TRIAGE_VERSIONE = 1;    // alzarla = riclassificare tutto
 const FINESTRA_GG = 35;
 const MAX_PER_CORSA = 60;
@@ -153,9 +163,26 @@ async function classificaUna(conv: Conv, casellaNome: string, regolaTitolare?: s
            Qui c'era 1600: sulle chat corte bastava, sulle lunghe il pensiero se
            lo mangiava tutto e usciva una risposta VUOTA, contata come «risposta
            non JSON». Sono i 4 errori per corsa che si vedevano nell'hub. */
-        model: MODEL_FAST, maxTokens: tettoPer(MODEL_FAST), temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
+        model: MODEL_FAST, maxTokens: TETTO_TRIAGE, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
     });
-    const out = estraiJson(res.message.content || "");
+    /* ⚠️ LA SECONDA MANO, SENZA RAGIONAMENTO. Il tetto alto copre il caso
+       peggiore misurato, ma il ragionamento è variabile e un giorno ne chiederà
+       di più: quando il modello finisce il budget pensando, `content` torna
+       vuoto e la email resta indietro per sempre — al giro dopo rifarebbe lo
+       stesso identico ragionamento e si fermerebbe allo stesso punto.
+       Qui si richiede la stessa cosa col pensiero spento: costa una trentina di
+       token invece di cinquemila, e una risposta arriva. Meglio una
+       classificazione senza ragionamento che nessuna classificazione. */
+    let risposta = res;
+    if (!String(res.message.content || "").trim()) {
+        risposta = await chat({
+            messages: [{ role: "system", content: PROMPT_EMAIL }, { role: "user", content: user }],
+            model: MODEL_FAST, maxTokens: 1000, temperature: 0.1, timeoutMs: 25000,
+            responseFormat: "json_object", senzaRagionamento: true,
+        });
+    }
+    const res2 = risposta;
+    const out = estraiJson(res2.message.content || "");
     if (!out || !STATI.includes(out.stato)) return { riga: null, usage: res.usage, abbiamoRisposto };
     return {
         riga: { ...base, stato: out.stato as StatoEmail, azione: String(out.azione || "").slice(0, 140) || null },
