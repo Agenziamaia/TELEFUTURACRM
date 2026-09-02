@@ -1068,41 +1068,101 @@ function MarchioRiga({ op }: { op: string }) {
    davvero. Un pulsante che eroga denaro non si preme per sbaglio. */
 function RifaiRicarica({ r, onFatto }: { r: Riga; onFatto: () => void }) {
     const [lavoro, setLavoro] = useState(false);
+    /* ⚠️ LA CONFERMA STA DENTRO IL CRM, NON NEL BROWSER (Luca 02/09: «questo
+       form dobbiamo integrarlo nel CRM, non esterno su web»).
+       Un `window.confirm` scrive «crm.telefuturasrl.com says» in cima e mette
+       due bottoni di sistema: davanti a un gesto che EROGA DENARO VERO,
+       quell'aspetto da avviso del browser è il primo motivo per cliccare OK
+       senza leggere. Qui si legge cosa parte, su quale numero e con quale
+       plafond — e l'esito si vede nello stesso posto, invece che in un secondo
+       avviso che si chiude e sparisce. */
+    const [chiedo, setChiedo] = useState(false);
+    const [esito, setEsito] = useState<{ ok: boolean; titolo: string; testo: string; righe?: [string, string][] } | null>(null);
     // su una già fatta non c'è niente da rifare
     if (r.stato === "ok_automatico" || r.stato === "ok_manuale") return null;
 
     const esegui = async () => {
-        if (!r.numero) { alert("Manca il numero da ricaricare: scrivilo prima di eseguire."); return; }
-        const conferma = `Faccio partire questa ricarica adesso?\n\n` +
-            `${nomeOp(r.operatore)} · ${eurC(r.importo)}\nsul numero ${r.numero}\n\n` +
-            `Verrà chiamata l'API di PayStore.`;
-        if (!window.confirm(conferma)) return;
         setLavoro(true);
         try {
             const x = await fetch("/api/paystore/esegui", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id }) });
             const j = await x.json().catch(() => ({}));
             if (x.ok && j?.ok) {
-                alert(j.collaudo
-                    ? `Ambiente di COLLAUDO: la chiamata è andata a buon fine (operazione ${j.operationId}) ma NESSUN credito è stato erogato. Lo stato resta invariato.`
-                    : j.gia
-                        ? `Risultava già eseguita da PayStore (operazione ${j.operationId}): l'ho segnata come fatta.`
-                        : `Ricarica eseguita. Operazione ${j.operationId}, ricevuta ${j.receiptId}.`);
+                setEsito(j.collaudo ? {
+                    ok: false, titolo: "Era una prova",
+                    testo: "La chiamata è andata a buon fine, ma siamo in COLLAUDO: nessun credito è stato erogato davvero e lo stato della ricarica resta com'era.",
+                    righe: [["Operazione", String(j.operationId ?? "—")]],
+                } : j.gia ? {
+                    ok: true, titolo: "Risultava già fatta",
+                    testo: "PayStore l'aveva già eseguita: non ne è partita una seconda, e qui l'ho segnata come fatta.",
+                    righe: [["Operazione", String(j.operationId ?? "—")]],
+                } : {
+                    ok: true, titolo: "Ricarica eseguita",
+                    testo: `${eurC(r.importo)} di credito ${nomeOp(r.operatore)} sono partiti sul numero ${r.numero}.`,
+                    righe: [["Operazione", String(j.operationId ?? "—")], ["Ricevuta", String(j.receiptId ?? "—")],
+                    ...(j.saldo != null ? [["Plafond rimasto", eurC(j.saldo)] as [string, string]] : [])],
+                });
             } else {
-                alert((j?.definitivo === false
-                    ? "⚠️ " : "⛔ ") + (j?.error || `errore ${x.status}`));
+                setEsito({
+                    ok: false,
+                    titolo: j?.definitivo === false ? "Non so com'è andata" : "Non è partita",
+                    testo: j?.error || `errore ${x.status}`,
+                    righe: j?.correlationId ? [["Riferimento PayStore", String(j.correlationId)]] : undefined,
+                });
             }
             onFatto();
         } catch (e) {
-            alert("⛔ " + String((e as Error)?.message || e));
-        } finally { setLavoro(false); }
+            setEsito({ ok: false, titolo: "Non è partita", testo: String((e as Error)?.message || e) });
+        } finally { setLavoro(false); setChiedo(false); }
     };
 
     return (
-        <button onClick={() => void esegui()} disabled={lavoro || !r.numero}
-            title={r.numero ? "Fai partire questa ricarica adesso, tramite l'API di PayStore" : "manca il numero da ricaricare"}
-            className="psRifai" aria-label="rifai la ricarica">
-            {lavoro ? "…" : "↻"}
-        </button>
+        <>
+            <button onClick={() => setChiedo(true)} disabled={lavoro || !r.numero}
+                title={r.numero ? "Fai partire questa ricarica adesso, tramite l'API di PayStore" : "manca il numero da ricaricare"}
+                className="psRifai" aria-label="rifai la ricarica">
+                {lavoro ? "…" : "↻"}
+            </button>
+
+            {chiedo && createPortal(
+                <div className="rvFattaSfondo" onClick={() => !lavoro && setChiedo(false)}>
+                    <div className="rvFatta rvFatta-att" onClick={(e) => e.stopPropagation()}>
+                        <div className="rvFatta-o rvFatta-att-o">⚡</div>
+                        <h3>Faccio partire questa ricarica?</h3>
+                        <p>
+                            Il credito parte davvero, sul plafond del punto vendita, e <b>non si annulla</b>.
+                        </p>
+                        <div className="rvFatta-d">
+                            <div><span>Operatore</span><span>{nomeOp(r.operatore)}</span></div>
+                            <div><span>Importo</span><span>{eurC(r.importo)}</span></div>
+                            <div><span>Numero</span><span style={{ fontFamily: "monospace" }}>{r.numero}</span></div>
+                            <div><span>Plafond di</span><span>{r.negozio || "—"}{r.azienda ? ` · ${SOCIETA[r.azienda] || r.azienda}` : ""}</span></div>
+                        </div>
+                        <div className="rvBarra rvBarra-c justify-center">
+                            <button onClick={() => setChiedo(false)} disabled={lavoro} className="rvPill">Lascia stare</button>
+                            <button onClick={() => void esegui()} disabled={lavoro} className="rvAzione rvAzione-att">
+                                {lavoro ? "⏳ sto chiamando PayStore…" : "⚡ Fai partire"}
+                            </button>
+                        </div>
+                    </div>
+                </div>, document.body)}
+
+            {esito && createPortal(
+                <div className="rvFattaSfondo" onClick={() => setEsito(null)}>
+                    <div className={cn("rvFatta", !esito.ok && "rvFatta-att")} onClick={(e) => e.stopPropagation()}>
+                        <div className={cn("rvFatta-o", !esito.ok && "rvFatta-att-o")}>{esito.ok ? "✓" : "⚠️"}</div>
+                        <h3>{esito.titolo}</h3>
+                        <p>{esito.testo}</p>
+                        {!!esito.righe?.length && (
+                            <div className="rvFatta-d">
+                                {esito.righe.map(([k, v]) => <div key={k}><span>{k}</span><span>{v}</span></div>)}
+                            </div>
+                        )}
+                        <div className="rvBarra rvBarra-c justify-center">
+                            <button onClick={() => setEsito(null)} className="rvAzione">Ho capito</button>
+                        </div>
+                    </div>
+                </div>, document.body)}
+        </>
     );
 }
 
