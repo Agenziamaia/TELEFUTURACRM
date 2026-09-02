@@ -358,6 +358,8 @@ type Doc = {
     id: string;
     quando: string;
     negozio: string;
+    /** il computer che l'ha stampato: distingue i due banchi di un locale */
+    agente: string;
     tipo: "scontrino" | "fattura";
     fiscale: boolean;
     storno: boolean;
@@ -429,6 +431,12 @@ function Documenti() {
     const [scelti, setScelti] = useState<string[]>([]);
     const [cerca, setCerca] = useState("");
     const [utenti, setUtenti] = useState<string[]>([]);
+    /* ⭐ I DUE PUNTI VENDITA DI UN LOCALE SI DISTINGUONO PER SOCIETÀ (Luca):
+       «se devo fare una ricerca degli scontrini devo poter filtrare un punto
+       vendita e poter filtrare l'altro». Da quando il negozio è uno solo, il
+       nome non basta più: quello che separa i due banchi sono le due partite
+       IVA, ed è già scritto su ogni documento. */
+    const [societa, setSocieta] = useState<string[]>([]);
     const oggi = new Date().toLocaleDateString("sv-SE");
     const [dal, setDal] = useState(oggi);
     const [al, setAl] = useState(oggi);
@@ -453,6 +461,35 @@ function Documenti() {
 
     /* TUTTI I NOMI DEI NEGOZI, che servono per trovare i gemelli di sede
        fisica: «Collatina W3» e «Collatina Multi» sono lo stesso bancone. */
+    /* ⚠️ SUL DOCUMENTO C'È IL NOME DEL COMPUTER, NON DEL NEGOZIO (02/09).
+       Da quando i punti vendita doppi sono un negozio solo, `print_jobs.negozio`
+       porta il nome con cui si presenta l'agente di stampa — «Magliana W3»,
+       «Magliana Multi» — perché è l'unico modo di mandare lo scontrino alla
+       stampante giusta dove le casse sono collegate col cavo.
+       L'elenco qui mescolava i due mondi: i negozi dall'anagrafica («Magliana»)
+       PIÙ quelli trovati sui documenti («Magliana Multi»), e a schermo
+       comparivano due voci incoerenti — come se un banco fosse stato
+       rinominato e l'altro no.
+       Adesso il documento si riconduce al suo NEGOZIO, e i due punti vendita
+       si distinguono per SOCIETÀ: che è quello che li separa davvero, visto
+       che sono due partite IVA. */
+    const [perAgente, setPerAgente] = useState<Record<string, { negozio: string; azienda: string }>>({});
+    const [nomiSoc, setNomiSoc] = useState<Record<string, string>>({});
+    useEffect(() => {
+        supabase.from("pos_rt").select("negozio, azienda, agente, ragione_sociale").then(({ data }) => {
+            const m: Record<string, { negozio: string; azienda: string }> = {};
+            const nomi: Record<string, string> = {};
+            ((data ?? []) as { negozio: string; azienda: string; agente: string | null; ragione_sociale: string | null }[])
+                .forEach(r => {
+                    if (r.agente) m[r.agente] = { negozio: r.negozio, azienda: r.azienda };
+                    /* «T1» e «T2» sono codici nostri: a schermo va il nome che il
+                       cliente legge sullo scontrino. */
+                    if (r.azienda && r.ragione_sociale) nomi[r.azienda] = r.ragione_sociale;
+                });
+            setPerAgente(m); setNomiSoc(nomi);
+        });
+    }, []);
+
     useEffect(() => {
         supabase.from("stores").select("name, is_ufficio").order("name").then(({ data }) => {
             const righe = (data ?? []) as { name: string; is_ufficio?: boolean }[];
@@ -504,7 +541,9 @@ function Documenti() {
                 return {
                     id: r.id,
                     quando: r.created_at,
-                    negozio: r.negozio,
+                    /* il negozio VERO: il documento porta il nome del computer */
+                    negozio: perAgente[r.negozio]?.negozio || r.negozio,
+                    agente: r.negozio,
                     tipo: "scontrino" as const,
                     fiscale: r.kind !== "non_fiscal",
                     storno: r.kind === "fiscal_void",
@@ -533,7 +572,7 @@ function Documenti() {
         } catch (e) {
             setErrore((e as Error)?.message || "non sono riuscito a leggere i documenti");
         } finally { setCaricando(false); }
-    }, [dal, al, ambito, visibilitaPronta]);
+    }, [dal, al, ambito, visibilitaPronta, perAgente]);
 
     useEffect(() => { carica(); }, [carica]);
 
@@ -541,7 +580,8 @@ function Documenti() {
        compresi: chi ne ha tre ne sceglie fra tre, l'amministrazione fra tutti. */
     const negozi = useMemo(() => {
         const s = new Set<string>(seesAll ? tuttiNegozi : (ambito || []));
-        (docs || []).forEach(d => s.add(d.negozio));
+        /* NON si aggiungono più i negozi trovati sui documenti: quelli sono nomi
+           di computer, e finivano nella tendina accanto a quelli veri. */
         return Array.from(s).filter(Boolean).sort();
     }, [seesAll, tuttiNegozi, ambito, docs]);
 
@@ -566,12 +606,18 @@ function Documenti() {
         primaVolta.current = false; setScelti(miei);
     }, [miei]);
 
+    /** «Telefutura 2 S.R.L.», non «T2». */
+    const nomeSoc = useCallback((c: string | null) => (c ? (nomiSoc[c] || c) : ""), [nomiSoc]);
+    const societaInElenco = useMemo(
+        () => Array.from(new Set((docs || []).map(d => nomeSoc(d.azienda)).filter(Boolean))).sort(), [docs, nomeSoc]);
+
     const operatori = useMemo(() => Array.from(new Set((docs || []).map(d => d.operatore).filter(Boolean) as string[])).sort(), [docs]);
 
     /* ── CHI PASSA I FILTRI ───────────────────────────────────────────────── */
     const passa = useCallback((d: Doc) => {
         if (scelti.length && !scelti.some(n => stessoMagazzino(n, d.negozio))) return false;
         if (utenti.length && !utenti.includes(d.operatore || "")) return false;
+        if (societa.length && !societa.includes(nomeSoc(d.azienda))) return false;
         const q = cerca.trim().toLowerCase();
         if (q) {
             const qs = q.replace(/[\s./-]/g, "");
@@ -586,7 +632,7 @@ function Documenti() {
             if (!dentro) return false;
         }
         return true;
-    }, [scelti, utenti, cerca]);
+    }, [scelti, utenti, cerca, societa, nomeSoc]);
 
     /* I RIQUADRI CONTANO PRIMA DEL PROPRIO FILTRO — la regola di Magazzino: un
        riquadro spento deve dire quanti ce ne sarebbero, se no non lo preme
@@ -1001,6 +1047,13 @@ function Documenti() {
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Punto vendita</span>
                         <SelectMulti className="rvIn" values={scelti} onChange={setScelti} opzioni={negozi}
                             maxVoci={30} tuttiLabel="🌐 Tutti i miei negozi" placeholder="tutti quelli che vedo" /></div>
+                    {/* SI VEDE SOLO DOVE SERVE: nei negozi con una società sola
+                        sarebbe una domanda senza risposte. */}
+                    {societaInElenco.length > 1 && (
+                        <div className="rvCampo rvCampo-md"><span className="rvLab">Punto vendita (società)</span>
+                            <SelectMulti className="rvIn" values={societa} onChange={setSocieta} opzioni={societaInElenco}
+                                maxVoci={10} tuttiLabel="Tutte e due" placeholder="tutte" /></div>
+                    )}
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
                         <SelectMulti className="rvIn" values={utenti} onChange={setUtenti} opzioni={operatori}
                             maxVoci={30} tuttiLabel="Tutti" placeholder="chiunque" /></div>
@@ -1008,7 +1061,7 @@ function Documenti() {
                         <input type="date" value={dal} max={al} onChange={e => setDal(e.target.value)} className="rvIn" /></label>
                     <label className="rvCampo"><span className="rvLab">Al</span>
                         <input type="date" value={al} min={dal} onChange={e => setAl(e.target.value)} className="rvIn" /></label>
-                    <button onClick={() => { setTipo(""); setCerca(""); setUtenti([]); setScelti(miei); setDal(oggi); setAl(oggi); }}
+                    <button onClick={() => { setTipo(""); setCerca(""); setUtenti([]); setSocieta([]); setScelti(miei); setDal(oggi); setAl(oggi); }}
                         className="rvPill rvPill-sm" title="Rimette tutto com'è entrando: i miei negozi, oggi">↺ Reset</button>
                 </div>
                 <div className="rvHint">L&apos;IMEI puoi spararlo col lettore dentro «Cerca»: lo trova dentro le voci dello scontrino.</div>
@@ -1091,7 +1144,7 @@ function Documenti() {
                                                     <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>
                                                     {gg(d.quando)} <b>{ora(d.quando)}</b>
                                                 </td>
-                                                <td className="rvTab-min">{d.negozio}{d.azienda ? <><br /><span className="rvBadge rvBadge-acc">{d.azienda}</span></> : null}</td>
+                                                <td className="rvTab-min">{d.negozio}{d.azienda ? <><br /><span className="rvBadge rvBadge-acc">{nomeSoc(d.azienda)}</span></> : null}</td>
                                                 <td className="rvTab-min">
                                                     {/* ⚠️ SE SONO USCITI IN DUE, SI VEDONO IN DUE. Mostrare solo
                                                         l'ultimo faceva sparire dall'elenco — e dalla ricerca — il
