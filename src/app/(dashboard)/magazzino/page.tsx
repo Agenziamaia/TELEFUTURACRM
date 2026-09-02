@@ -45,6 +45,7 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
 import { useVisibleStores } from "@/lib/visibleStores";
+import { presenzaOggi } from "@/lib/doveLavoro";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_MAGAZZINO, CAP_MAGAZZINO_VALORI } from "@/lib/capabilities";
 import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
@@ -184,6 +185,30 @@ export default function MagazzinoPage() {
        login, negozi assegnati e negozi in visibilità, con `seesAll` per
        direzione e amministrazione. */
     const { stores: negoziVisibili, seesAll, loaded: visibiliPronti } = useVisibleStores();
+    /* ⚠️ VEDERE NON È SPEDIRE (revisore 02/09). `user_store_visibility` vuol
+       dire «vede i dati senza esservi assegnato»: a un direttore commerciale
+       si danno tutti e quindici i negozi per far girare i report, e con la
+       sola visibilità avrebbe potuto svuotare San Paolo da casa. Da un
+       magazzino si spedisce se ci si LAVORA: negozio del login, negozi
+       assegnati, e la sede DICHIARATA oggi — che è il modo in cui il CRM sa
+       dove uno sta davvero lavorando. */
+    const [negoziDoveLavoro, setNegoziDoveLavoro] = useState<string[]>([]);
+    useEffect(() => {
+        if (!user?.id) { setNegoziDoveLavoro([]); return; }
+        let vivo = true;
+        (async () => {
+            const set = new Set<string>();
+            if (user.negozio) set.add(user.negozio);
+            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
+            (data ?? []).forEach((r: { store_name?: string | null }) => { if (r.store_name) set.add(String(r.store_name)); });
+            /* la sede dichiarata oggi vale SOLO se approvata: una richiesta in
+               attesa non apre ancora nessun magazzino */
+            const { attiva } = await presenzaOggi(user.id);
+            if (attiva?.sede) set.add(attiva.sede);
+            if (vivo) setNegoziDoveLavoro([...set]);
+        })();
+        return () => { vivo = false; };
+    }, [user?.id, user?.negozio]);
     /* CHI VEDE QUANTO VALE IL MAGAZZINO (Luca 01/09). I due riquadri in cima
        alle Giacenze, affiancati, dicono il margine dell'intero magazzino: non
        è un dato da bancone. Il diritto si decide dalla rotellina in
@@ -360,6 +385,7 @@ export default function MagazzinoPage() {
                 <Trasferimenti unita={unita} quantita={quantita} negozi={negozi} aziende={aziende}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={user?.negozio || ""}
                     negoziVisibili={negoziVisibili} seesAll={seesAll} visibiliPronti={visibiliPronti}
+                    negoziDoveLavoro={negoziDoveLavoro}
                     gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica}
                     cercaIniziale={ddtCercato} />
             )}
@@ -2033,10 +2059,12 @@ async function chiudiDifferenza(
     return avvisi;
 }
 
-function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, negoziVisibili, seesAll, visibiliPronti, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
+function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, negoziVisibili, negoziDoveLavoro, seesAll, visibiliPronti, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
-    mioNegozio: string; negoziVisibili: string[]; seesAll: boolean; visibiliPronti: boolean;
+    mioNegozio: string; negoziVisibili: string[];
+    /** i magazzini da cui questa persona può far USCIRE merce */
+    negoziDoveLavoro: string[]; seesAll: boolean; visibiliPronti: boolean;
     gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
     /** il documento su cui atterrare, quando ci si arriva dalla storia di un pezzo */
     cercaIniziale?: string;
@@ -2208,9 +2236,11 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        San Paolo, e nessuno se ne sarebbe accorto se non guardando le
        giacenze. Adesso si parte solo da un magazzino che si ha in
        visibilità — la direzione e l'amministrazione da tutti, come prima. */
-    const negoziPartenza = useMemo(() =>
-        seesAll || !visibiliPronti ? negozi : negozi.filter(n => mio(n)),
-        [seesAll, visibiliPronti, negozi, mio]);
+    const negoziPartenza = useMemo(() => {
+        if (seesAll) return negozi;
+        if (!negoziDoveLavoro.length) return [];
+        return negozi.filter(n => negoziDoveLavoro.some(m => stessoMagazzino(n, m)));
+    }, [seesAll, negozi, negoziDoveLavoro]);
     const conteggi = useMemo(() => {
         const ora = Date.now();
         const out = {} as Record<Situazione, number>;
@@ -2530,10 +2560,18 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                         📦 Merce mossa<b className="rvPillN">{merce.length}</b></button>
                 </div>
                 <span className="rvSpazio" />
-                {gestisce && (
+                {/* niente bottone se non c'è nessun magazzino da cui far partire
+                    la merce: aprirlo per trovarci dentro «nessun magazzino in
+                    visibilità» è peggio che non averlo (revisore 02/09) */}
+                {gestisce && negoziPartenza.length > 0 && (
                     <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }}
                         className={cn("rvPill", apriNuovo && "rvPill-on")}>
                         <Truck size={15} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento</button>
+                )}
+                {gestisce && negoziPartenza.length === 0 && visibiliPronti && (
+                    <span className="rvTab-min">
+                        Per spedire serve un magazzino tuo: dichiara dove stai lavorando oggi, o chiedi all&apos;amministrazione.
+                    </span>
                 )}
                 {puoCaricare && (
                     <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }}
@@ -2683,9 +2721,15 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                 );
                             })}
                             {!visibili.length && <tr><td colSpan={4} className="rvTab-vuoto">
-                                {ddt.length
+                                {/* tre casi diversi, tre frasi diverse: prima chi non
+                                    aveva documenti NEL SUO PERIMETRO leggeva «nessun
+                                    documento con questi filtri» a filtri spenti, e
+                                    andava a caccia di un filtro che non c'era */}
+                                {filtriAccesi
                                     ? "Nessun documento con questi filtri."
-                                    : "Non è ancora partito nessun trasferimento. Il primo si fa da 🚚 Nuovo trasferimento."}
+                                    : ddt.length
+                                        ? "Nessun trasferimento riguarda i tuoi negozi: un documento lo vedono solo chi lo manda e chi lo riceve."
+                                        : "Non è ancora partito nessun trasferimento. Il primo si fa da 🚚 Nuovo trasferimento."}
                             </td></tr>}
                         </tbody>
                     </table>
