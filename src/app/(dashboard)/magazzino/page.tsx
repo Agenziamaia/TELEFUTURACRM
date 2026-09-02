@@ -2902,12 +2902,19 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                 accettare con differenze passava col campo vuoto e il
                                 documento si scriveva da solo «arrivato con differenze»,
                                 che sembrava una motivazione data dall'operatore. */}
-                            <button onClick={conferma} disabled={inCorso || (azione.modo === "fattura" ? false : azione.modo === "accetta" ? (differenzeInCorso && !motivo.trim()) : !motivo.trim())}
+                            <button onClick={conferma} disabled={inCorso || (azione.modo === "fattura" ? false
+                                : azione.modo === "accetta" ? (differenzeInCorso && !motivo.trim())
+                                    /* ⚠️ l'annullamento di un usato lo rifiuta il server sotto i
+                                       cinque caratteri: abilitare a uno solo faceva scrivere «ok»
+                                       e prendere un errore invece di una spiegazione */
+                                    : azione.modo === "annullaUsato" ? motivo.trim().length < 5
+                                        : !motivo.trim())}
                                 className={cn("rvAzione", azione.modo === "accetta" ? (differenzeInCorso ? "rvAzione-att" : undefined) : azione.modo === "fattura" ? "rvAzione-att" : "rvAzione-no")}>
                                 {inCorso && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}
                                 {azione.modo === "accetta" ? (differenzeInCorso ? "Prendo in carico con differenze" : "Prendo in carico")
                                     : azione.modo === "fattura" ? (rifRiga.trim() ? "Segna fatturata" : "Segna non dovuta")
-                                        : azione.modo === "annulla" ? "Sì, annulla" : azione.modo === "differenza" ? "Chiudi la riga" : "Sì, respingi"}
+                                        : azione.modo === "annulla" || azione.modo === "annullaUsato" ? "Sì, annulla"
+                                            : azione.modo === "differenza" ? "Chiudi la riga" : "Sì, respingi"}
                             </button>
                         </div>
                     </div>

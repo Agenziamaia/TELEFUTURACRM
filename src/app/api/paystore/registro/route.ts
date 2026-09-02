@@ -326,7 +326,12 @@ export async function GET(request: Request) {
     await recuperaScontrinate(da, a);
     await completaDalloScontrino(da, a);
 
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato, scontrino_stato";
+    /* ⚠️ ANCHE LE COLONNE DEL MOTORE. Senza, una ricarica che l'API ha GIÀ
+       tentato e di cui non si conosce l'esito era indistinguibile a occhio da
+       una mai toccata: il ragazzo al terminale la vedeva «da fare», la caricava
+       a mano, e il cliente riceveva il credito due volte. È la strada più
+       probabile verso il doppio credito, e non aveva nessun argine. */
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato, scontrino_stato, tentativi, tentata_il, rif_fornitore, ambiente";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")

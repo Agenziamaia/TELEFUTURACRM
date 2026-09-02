@@ -3,6 +3,7 @@ import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { eseguiRicarica } from "@/lib/paystoreEsegui";
 import type { RigaRicarica } from "@/lib/paystoreEsegui";
+import { COLONNE_ESEGUI } from "@/lib/paystoreEsegui";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     if (!b.id) return NextResponse.json({ error: "id mancante" }, { status: 400 });
 
     const { data: r } = await supabase.from("paystore_ricariche")
-        .select("id, operatore, numero, importo, stato, idempotency_key, tentativi, rif_fornitore, negozio, azienda")
+        .select(COLONNE_ESEGUI)
         .eq("id", b.id).maybeSingle();
     if (!r) return NextResponse.json({ error: "ricarica non trovata" }, { status: 404 });
 

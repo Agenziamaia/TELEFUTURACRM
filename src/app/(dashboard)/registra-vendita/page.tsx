@@ -8806,8 +8806,41 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
           comeUtente={viewAsUser?.id || null} />
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
-            <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
-            <div style={{fontSize:12,color:"var(--tf-64748b)",marginBottom:16}}>Riepilogo: {margItems.length} prodott{margItems.length===1?"o":"i"} registrat{margItems.length===1?"o":"i"}</div>
+            {/* ⚠️ IL TITOLO DICEVA UNA COSA CHE NON SUCCEDE. Emanuele, store
+                manager di Magliana, ha segnalato che «dà la possibilità di
+                salvare la vendita prima di aver fatto il pagamento». La vendita
+                in realtà NON si salva qui — con la cassa accesa questo pulsante
+                apre lo scontrino, e la vendita si scrive solo quando lo
+                scontrino esce — ma scritto così sembrava il contrario, e su una
+                ricarica «sembrare» basta a far credere che il credito parta
+                senza aver incassato.
+                Regola di Luca, 02/09: «il carrello, se non viene pagato — in
+                contanti con l'apertura del cassetto, o con carta sul carrello —
+                solo in quel momento è possibile registrare la vendita; e se c'è
+                una ricarica dentro, solo in quel momento parte il collegamento
+                con l'API di PayStore». */}
+            {(() => {
+              const _allaCassa = posScontrinoAbilitato(selNeg);
+              const _conRicarica = margItems.some(m => m && m.paystore);
+              return (<>
+                <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>
+                  {_allaCassa ? "🧾 Vai all'incasso" : "💾 Salva Vendita Prodotti"}
+                </div>
+                <div style={{fontSize:12,color:"var(--tf-64748b)",marginBottom:_allaCassa?10:16}}>
+                  {margItems.length} prodott{margItems.length===1?"o":"i"} nel carrello
+                </div>
+                {_allaCassa && (
+                  <div className="rvNota rvNota-att">
+                    <div className="rvNota-s">
+                    La vendita <b>non è ancora registrata</b>: si apre la cassa, si incassa
+                    {" "}(contanti col cassetto, oppure carta) e la vendita si scrive
+                    {" "}<b>solo quando lo scontrino è uscito</b>.
+                    {_conRicarica && <> E il credito della ricarica parte <b>solo</b> a quel punto: prima non esce niente.</>}
+                    </div>
+                  </div>
+                )}
+              </>);
+            })()}
             <div style={{background:"rgba(111,66,193,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
               {margItems.map((item,idx)=>(
                 <div key={idx} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(111,66,193,0.12)"}}>
@@ -8859,7 +8892,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
             })()))}
             <div style={{display:"flex",gap:10,marginTop:4}}>
               <button onClick={chiudiMargSave} className="rvPill" style={{flex:1,padding:"11px 0"}}>← Annulla</button>
-              <button onClick={saveMargOnly} disabled={margSaving} className="rvAzione" style={{flex:1,padding:"11px 0"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
+              <button onClick={saveMargOnly} disabled={margSaving} className="rvAzione" style={{flex:1,padding:"11px 0"}}>{margSaving?"Salvataggio...":(posScontrinoAbilitato(selNeg)?"🧾 Apri la cassa e incassa":"✅ Salva vendita")}</button>
             </div>
           </div>
         </div>}

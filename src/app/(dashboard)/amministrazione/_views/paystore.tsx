@@ -93,7 +93,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null; tentativi?: number | null; tentata_il?: string | null; rif_fornitore?: string | null; ambiente?: string | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;

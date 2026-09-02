@@ -72,7 +72,10 @@ export async function POST(req: Request) {
     if (!g.ok) return g.risposta;
 
     const b = await req.json().catch(() => ({})) as
-        { usatoId?: number; da?: string; a?: string; causale?: string };
+        /* `proprietarioDa`: il negozio di cui è la MERCE quando parte da un
+           luogo che non è un negozio. Il laboratorio è un posto, non una
+           società: il telefono che ci passa resta di chi era. */
+        { usatoId?: number; da?: string; a?: string; causale?: string; proprietarioDa?: string };
     if (!b.usatoId || !b.da || !b.a) {
         return NextResponse.json({ error: "manca il telefono, la partenza o l'arrivo" }, { status: 400 });
     }
@@ -140,14 +143,23 @@ export async function POST(req: Request) {
        La regola è quella del pannello: la direzione e chi lavora l'usato
        possono sempre; agli altri serve che il telefono sia dei loro negozi. */
     const { data: chi } = await supabaseAdmin.from("app_users")
-        .select("role").eq("id", g.sess.id).maybeSingle();
-    const ruolo = String((chi as { role?: string } | null)?.role || "");
-    if (!isAdminOrAbove(ruolo) && ruolo !== "tecnico") {
+        .select("role, full_name").eq("id", g.sess.id).maybeSingle();
+    const persona = chi as { role?: string; full_name?: string } | null;
+    const ruolo = String(persona?.role || "");
+    if (!isAdminOrAbove(ruolo) && !ruolo.startsWith("tecnico")) {
         const { tutti, negozi } = await negoziVisibiliDi(g.sess.id);
-        const suo = (n: string | null) => !!n && (tutti || negozi.some((m) => stessoMagazzino(n, m)));
-        if (!suo(u.store) && !suo(u.target_store)) {
+        const suo = (n: string | null | undefined) => !!n && (tutti || negozi.some((m) => stessoMagazzino(n!, m)));
+        /* ⚠️ ANCHE LA PARTENZA, NON SOLO DOVE STA IL TELEFONO. Guardando solo
+           `store`/`target_store` questo controllo aveva ROTTO il trasferimento
+           fra due punti vendita — la tratta più lunga e l'unica dove nascono
+           davvero le cessioni fra società. Chi spedisce salva prima la
+           destinazione dentro `store`, quindi al server il telefono risulta già
+           dell'altro negozio: 27 account su 29 vedono un negozio solo, e per
+           tutti loro il documento veniva rifiutato mentre il telefono partiva.
+           Chi spedisce è la PARTENZA: è quella che deve essere sua. */
+        if (!suo(u.store) && !suo(u.target_store) && !suo(b.da)) {
             return NextResponse.json({
-                error: "questo telefono non è di un tuo punto vendita: il documento di trasporto lo emette chi lo sta spostando.",
+                error: "questo telefono non parte da un tuo punto vendita: il documento lo emette chi lo sta spostando.",
             }, { status: 403 });
         }
     }
@@ -186,10 +198,21 @@ export async function POST(req: Request) {
        telefoni a un clic da lì.
        Il telefono che passa dal laboratorio resta di chi era: sulle tratte che
        lo toccano, la società è quella del negozio vero. */
+    /* ⚠️ IL LUOGO DA CUI PARTE E LA SOCIETÀ DI CHI SPEDISCE SONO DUE COSE
+       DIVERSE, e confonderle è l'errore che ha fatto sparire delle cessioni.
+       Il laboratorio è un posto fisico senza società: se il telefono che ci sta
+       è di un negozio T1 e va a un negozio T2, quella È una cessione — ma
+       leggendo la società «del laboratorio» (nulla) si ereditava quella
+       dell'arrivo e usciva un innocuo T2→T2.
+       Chi chiama può dire di chi è la merce; se non lo dice, e il luogo non ha
+       società, la si eredita come prima — ma allora è INCERTA, e si scrive. */
     const infoDa = await aziendaDelNegozio(b.da);
     const infoA = await aziendaDelNegozio(b.a);
-    let azDa = infoDa.azienda, azA = infoA.azienda;
-    if (!azDa && azA) azDa = azA;
+    const infoProp = b.proprietarioDa && b.proprietarioDa !== b.da
+        ? await aziendaDelNegozio(b.proprietarioDa) : null;
+    let azDa = infoProp?.azienda || infoDa.azienda, azA = infoA.azienda;
+    let ereditata = false;
+    if (!azDa && azA) { azDa = azA; ereditata = true; }
     if (!azA && azDa) azA = azDa;
     const cessione = !!azDa && !!azA && azDa !== azA;
 
@@ -199,9 +222,17 @@ export async function POST(req: Request) {
        che afferma «T1 → T1» quando la partenza era T2 ne nasconde una vera. Il
        CRM non ha il dato per scegliere, quindi non sceglie in silenzio: la
        nota lo scrive, e l'amministrazione decide prima di fatturare. */
-    const incerta = infoDa.incerta || infoA.incerta;
+    /* ⚠️ EREDITATA = INCERTA. Quando la società di partenza non si sa e si
+       prende quella dell'arrivo, il documento dice «trasferimento interno» su
+       un viaggio che potrebbe essere una cessione: è il caso dei telefoni fermi
+       in laboratorio, che hanno perso il negozio d'origine. Prima usciva pulito
+       e sbagliato; adesso almeno lo dichiara. */
+    const incerta = infoDa.incerta || infoA.incerta || (infoProp?.incerta ?? false) || ereditata;
+    const perche = ereditata
+        ? `la partenza (${b.da}) non ha una società propria e il telefono non porta con sé il negozio da cui è arrivato`
+        : `${[infoDa.incerta ? b.da : null, infoA.incerta ? b.a : null, infoProp?.incerta ? b.proprietarioDa : null].filter(Boolean).join(" e ")} ospita due società alla cassa, e il telefono usato non ha una società propria registrata`;
     const avvisoSocieta = incerta
-        ? `\n⚠️ SOCIETÀ DA CONFERMARE: ${[infoDa.incerta ? b.da : null, infoA.incerta ? b.a : null].filter(Boolean).join(" e ")} ${infoDa.incerta && infoA.incerta ? "ospitano" : "ospita"} due società alla cassa, e il telefono usato non ha una società propria registrata. Qui è scritta quella dell'anagrafica: verificarla prima di ${cessione ? "emettere la fattura" : "considerarlo un trasferimento interno"}.`
+        ? `\n⚠️ SOCIETÀ DA CONFERMARE: ${perche}. Qui è scritta «${azDa} → ${azA}»: verificarla prima di ${cessione ? "emettere la fattura" : "considerarlo un trasferimento interno"}.`
         : "";
 
     /* ⚠️ TESTATA E RIGA IN UNA TRANSAZIONE SOLA. Erano due chiamate separate:
@@ -219,7 +250,10 @@ export async function POST(req: Request) {
         p_seriale: u.imei,
         p_valore: Number(u.sale_price) > 0 ? Number(u.sale_price) : (Number(u.purchase_price) || null),
         p_giorno: giorno,
-        p_creato_da: g.sess.id,
+        /* ⚠️ IL NOME, NON L'UUID. Tutti gli altri documenti portano il nome di
+           chi li ha fatti: un identificativo tecnico finisce nel filtro
+           «Persone» e stampato sul PDF. */
+        p_creato_da: persona?.full_name || g.sess.id,
         p_note: "Documento emesso in automatico da Gestione Usati. Non si accetta qui: il telefono si prende in carico nella sua scheda, seguendo la timeline dell'usato." + avvisoSocieta,
     });
     const d = ((creato || []) as { id: string; numero: number; anno: number; azienda_da: string | null; azienda_a: string | null; gia: boolean }[])[0];

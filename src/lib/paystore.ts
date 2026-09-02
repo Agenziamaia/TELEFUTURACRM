@@ -152,7 +152,15 @@ async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unkno
 
     let tk: string;
     try { tk = await accessToken(c); }
-    catch (e) { return { ok: false, stato: 401, errore: "token", descrizione: String((e as Error).message), definitivo: false }; }
+    catch (e) {
+        /* ⚠️ SE IL TOKEN NON ARRIVA, LA RICARICA NON È PARTITA. Era classificato
+           «esito ignoto», cioè «potrebbe essere partita»: ma a /recharges/phone
+           non ci si è nemmeno arrivati. Risultato: sulla riga finiva un avviso
+           allarmante e falso, e nel motore la corsa si fermava — un banale
+           segreto sbagliato bloccava tutta la coda facendo credere a chissà
+           quali ricariche in volo. */
+        return { ok: false, stato: 401, errore: "token", descrizione: String((e as Error).message) + " — la ricarica NON è partita", definitivo: true };
+    }
 
     const headers: Record<string, string> = {
         Authorization: "Bearer " + tk,

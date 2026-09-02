@@ -38,7 +38,19 @@ export type RigaRicarica = {
     id: string; operatore: string; numero: string; importo: number;
     stato: string; idempotency_key: string | null; tentativi: number;
     rif_fornitore: string | null; negozio: string | null; azienda: string | null;
+    /* ⚠️ SERVONO A DECIDERE SE SI PUÒ PARTIRE, e mancavano. Le regole di
+       ammissibilità vivevano solo nella presa in SQL: dal pulsante «rifai» si
+       poteva quindi erogare credito su una ricarica il cui scontrino non è mai
+       uscito (l'incasso non è provato) o su un conto tenuto in sospeso, cioè
+       merce non pagata. «Le regole in un posto solo» valeva per l'idempotenza,
+       non per chi ha diritto di partire. */
+    scontrino_stato?: string | null; nota?: string | null; ambiente?: string | null;
 };
+
+/** Le colonne che servono a eseguire: una sola lista, così il pulsante e il
+ *  motore non possono leggerne due diverse. */
+export const COLONNE_ESEGUI =
+    "id, operatore, numero, importo, stato, idempotency_key, tentativi, rif_fornitore, negozio, azienda, scontrino_stato, nota, ambiente";
 
 export type EsitoEsecuzione =
     | { ok: true; gia?: true; collaudo: boolean; replay: boolean; operationId?: number; receiptId?: string | null; saldo?: number }
@@ -76,13 +88,33 @@ async function trovaListino(operatore: string, importo: number, cred: Credenzial
     return { id: t.priceListId };
 }
 
-export async function eseguiRicarica(riga: RigaRicarica): Promise<EsitoEsecuzione> {
+export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number }): Promise<EsitoEsecuzione> {
     if (riga.stato === "ok_automatico" || riga.stato === "ok_manuale") {
         return { ok: false, errore: "questa ricarica risulta già fatta: se serve rifarla, rimettila prima in sospeso", definitivo: true, stato: 400 };
     }
     const numero = String(riga.numero || "").replace(/\D/g, "");
     if (numero.length < 7 || numero.length > 11) {
         return { ok: false, errore: "manca il numero da ricaricare: scrivilo prima di eseguire", definitivo: true, stato: 400 };
+    }
+    /* ── SI PUÒ PARTIRE? Le stesse regole della presa automatica, qui, così
+       valgono anche per il pulsante. Erano solo in SQL. ─────────────────── */
+    if (riga.scontrino_stato !== undefined && riga.scontrino_stato !== "emesso") {
+        return {
+            ok: false, definitivo: true, stato: 409,
+            errore: `lo scontrino di questa ricarica non è stato emesso (${riga.scontrino_stato || "nessuno"}): l'incasso non è provato. Sistema prima lo scontrino.`,
+        };
+    }
+    if (String(riga.nota || "").toUpperCase().includes("SOSPESO")) {
+        return {
+            ok: false, definitivo: true, stato: 409,
+            errore: "questa ricarica è su un CONTO IN SOSPESO: il cliente non ha ancora pagato. Non si carica il credito finché la vendita non è chiusa.",
+        };
+    }
+    if (!(Number(riga.importo) > 0)) {
+        return { ok: false, definitivo: true, stato: 400, errore: "l'importo della ricarica non è valido" };
+    }
+    if (opz?.tetto != null && Number(riga.importo) > opz.tetto) {
+        return { ok: false, definitivo: true, stato: 409, errore: `${riga.importo} € supera il tetto di ${opz.tetto} € per ricarica.` };
     }
 
     /* ⚠️ LA CREDENZIALE PRIMA DI TOCCARE LA RIGA. Si sceglie sul negozio che ha
@@ -97,7 +129,15 @@ export async function eseguiRicarica(riga: RigaRicarica): Promise<EsitoEsecuzion
     /* ⚠️ SE C'È GIÀ UN'OPERAZIONE, PRIMA SI GUARDA COM'È ANDATA. Un tentativo
        precedente può essere partito senza che la risposta ci sia arrivata:
        rilanciarlo alla cieca è il modo di erogare due crediti. */
-    if (riga.rif_fornitore) {
+    /* ⚠️ E SOLO DENTRO LO STESSO AMBIENTE. In collaudo si scrive comunque il
+       `rif_fornitore`, che è un numero dello spazio di prova. Riletto in
+       produzione, dove gli id sono progressivi, poteva combaciare con
+       un'operazione VERA di qualcun altro: la riga sarebbe stata marcata «già
+       eseguita» e il credito non sarebbe partito mai. Il cliente ha pagato e
+       non ha niente — l'errore peggiore dei due. */
+    const ambienteOra = inCollaudo(cred);
+    const stessoAmbiente = !riga.ambiente || riga.ambiente === (ambienteOra ? "collaudo" : "produzione");
+    if (riga.rif_fornitore && stessoAmbiente) {
         const op = await operazione(Number(riga.rif_fornitore), cred);
         if (op.ok && String(op.dati?.status || "").toLowerCase() === "success") {
             await supabase.from("paystore_ricariche").update({
@@ -110,13 +150,25 @@ export async function eseguiRicarica(riga: RigaRicarica): Promise<EsitoEsecuzion
 
     // la chiave si scrive PRIMA di partire, e non cambia più
     const chiave = riga.idempotency_key || nuovaChiaveIdempotenza();
-    const collaudo = inCollaudo(cred);
-    await supabase.from("paystore_ricariche").update({
+    const collaudo = ambienteOra;
+    const { error: eChiave } = await supabase.from("paystore_ricariche").update({
         idempotency_key: chiave,
         tentata_il: new Date().toISOString(),
         tentativi: (riga.tentativi || 0) + 1,
         ambiente: collaudo ? "collaudo" : "produzione",
     }).eq("id", riga.id);
+    /* ⚠️ SE LA CHIAVE NON SI È SCRITTA, NON SI PARTE. Su questa unica scrittura
+       poggia tutta la difesa contro il doppio credito: se resta solo in memoria
+       e il server muore fra la chiamata e la risposta, il tentativo successivo
+       ne genera una nuova e PayStore eroga una seconda volta. E il client di
+       Supabase non solleva eccezioni: un errore di rete torna dentro `error`,
+       che qui veniva buttato via. */
+    if (eChiave) {
+        return {
+            ok: false, definitivo: true, stato: 500,
+            errore: `non riesco a salvare la chiave di sicurezza della ricarica (${eChiave.message}): non parto, se no rischio di erogarla due volte.`,
+        };
+    }
 
     const listino = await trovaListino(riga.operatore, Number(riga.importo), cred);
     if ("errore" in listino) {
