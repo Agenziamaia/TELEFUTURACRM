@@ -46,7 +46,7 @@ async function recuperaScontrinate(da: string, a: string) {
             .select("id, prodotto, negozio, venditore, created_at, dettagli")
             .ilike("prodotto", "Ricarica%")
             .gte("created_at", da + "T00:00:00Z").lte("created_at", a + "T23:59:59Z")
-            .limit(5000);
+            .order("creata_il", { ascending: false }).limit(5000);
         if (!vendite?.length) return;
 
         const ids = vendite.map((v) => v.id);
@@ -62,7 +62,8 @@ async function recuperaScontrinate(da: string, a: string) {
            imperfetto — la seconda la si nota, la prima no. */
         const { data: gia } = await supabase.from("paystore_ricariche")
             .select("contract_id, numero, importo, creata_il, negozio")
-            .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z").limit(20000);
+            .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
+            .order("creata_il", { ascending: false }).limit(20000);
         const visti = new Set((gia || []).map((r) => r.contract_id).filter(Boolean));
         /* quanto risulta già registrato per quel numero (o per quel negozio,
            se il numero manca) attorno a quel momento: tre minuti bastano —
@@ -91,7 +92,7 @@ async function recuperaScontrinate(da: string, a: string) {
                dato, non una deduzione. La lettura della descrizione resta per
                le righe di prima e per le ricariche sciolte, dove il numero sta
                nel nome del prodotto. */
-            const dettP = ((v.dettagli || {}) as { paystore?: { operatore?: string; numero?: string; importo?: number } }).paystore;
+            const dettP = ((v.dettagli || {}) as { paystore?: { operatore?: string; numero?: string; importo?: number; pezzi?: { n: number; valore: number; etichetta: string }[] } }).paystore;
             const d = dettP?.operatore
                 ? { operatore: dettP.operatore, operatoreNome: nomeOperatoreCorto(dettP.operatore), numero: String(dettP.numero || ""), importo: Number(dettP.importo || 0) }
                 : leggiRicaricaDaProdotto(v.prodotto);
@@ -106,12 +107,38 @@ async function recuperaScontrinate(da: string, a: string) {
             const importo = Number(dett.importo ?? dett.price ?? d?.importo ?? 0);
             if (!(importo > 0)) continue;
             if (giaPer(d?.numero || "", v.negozio, v.created_at, importo)) continue;
-            nuove.push({
+            const base = {
                 creata_il: v.created_at, negozio: v.negozio, venditore: v.venditore,
                 operatore: d?.operatore || senzaNum, operatore_nome: d?.operatoreNome || nomeOperatoreCorto(senzaNum || ""),
-                numero: d?.numero || "", importo, stato: "sospeso", contract_id: v.id,
-                nota: d ? "ripresa dalla vendita scontrinata" : "venduta senza numero: da completare a mano",
-            });
+                numero: d?.numero || "", stato: "sospeso", contract_id: v.id,
+            };
+            /* ⚠️ UNA RIGA PER PEZZO, come fa la vendita. Quaranta euro composti
+               da due tagli da venti sono DUE ricariche che il fornitore deve
+               eseguire, non una da quaranta: è la regola scritta in
+               `registraRicariche`, e il recupero non la seguiva — sommava tutto
+               in una riga sola col totale.
+               Il dato per farlo bene è già sul contratto (`dettagli.paystore.pezzi`,
+               con l'etichetta esatta di ogni taglio): bastava leggerlo.
+               Effetto collaterale che il recupero produceva: una riga da 10 €
+               ricostruita da due da 5 prendeva l'etichetta «10 euro» dal listino
+               e diventava indistinguibile da una vera — cioè una ricarica da
+               fare in meno, senza che si vedesse. */
+            const pezzi = (dettP?.pezzi || []).filter((x) => Number(x.valore) > 0 && Number(x.n) > 0);
+            const quadra = pezzi.length > 0
+                && Math.abs(pezzi.reduce((t, x) => t + Number(x.valore) * Number(x.n), 0) - importo) < 0.005;
+            if (quadra) {
+                for (const pz of pezzi) {
+                    for (let k = 0; k < Number(pz.n); k++) {
+                        nuove.push({ ...base, importo: Number(pz.valore), taglio: pz.etichetta || null,
+                            nota: pezzi.length > 1 || Number(pz.n) > 1
+                                ? "ripresa dalla vendita scontrinata (una riga per taglio)"
+                                : "ripresa dalla vendita scontrinata" });
+                    }
+                }
+            } else {
+                nuove.push({ ...base, importo,
+                    nota: d ? "ripresa dalla vendita scontrinata" : "venduta senza numero: da completare a mano" });
+            }
         }
         /* ⚠️ IL TAGLIO SI RITROVA DAL LISTINO. Una riga ricostruita conosce
            l'importo ma non il tasto che il negozio ha premuto: se in listino
@@ -161,7 +188,7 @@ async function completaDalloScontrino(da: string, a: string) {
         const { data: righe } = await supabase.from("paystore_ricariche")
             .select("id, negozio, creata_il, importo, numero, azienda, scontrino_stato")
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
-            .limit(5000);
+            .order("creata_il", { ascending: false }).limit(5000);
         const daFare = (righe || []).filter((r) => !r.numero || !r.azienda || !r.scontrino_stato);
         if (!daFare.length) return;
 
@@ -182,7 +209,7 @@ async function completaDalloScontrino(da: string, a: string) {
             .select("negozio, created_at, stato")
             .gte("created_at", new Date(new Date(da + "T00:00:00Z").getTime() - 3600000).toISOString())
             .lte("created_at", new Date(new Date(a + "T23:59:59Z").getTime() + 3600000).toISOString())
-            .limit(5000);
+            .order("creata_il", { ascending: false }).limit(5000);
         const sospesiPerNegozio: Record<string, { t: number }[]> = {};
         for (const x of sosp || []) (sospesiPerNegozio[String(x.negozio || "")] ||= []).push({ t: new Date(x.created_at).getTime() });
 
@@ -266,6 +293,7 @@ export async function GET(request: Request) {
 
     const q = new URL(request.url).searchParams;
     const oggi = new Date().toISOString().slice(0, 10);
+    const oggiRoma = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
     const da = (q.get("da") || oggi.slice(0, 8) + "01").slice(0, 10);
     const a = (q.get("a") || oggi).slice(0, 10);
     /* ⚠️ IL NEGOZIO NON ARRIVA PIÙ DA QUI. Da quando la tendina è a
@@ -308,6 +336,10 @@ export async function GET(request: Request) {
         supabase.from("paystore_tagli").select("id, operatore, etichetta, valore, ordine, attivo, origine").order("operatore").order("ordine"),
     ]);
 
+    /* ⚠️ SE IL TETTO SI TOCCA, LA PAGINA LO DEVE DIRE. Ventimila righe sono
+       nove mesi al ritmo di oggi, ma un «Periodo» su un anno intero le supera —
+       e un elenco che si taglia in silenzio è peggio di un elenco lungo. */
+    const troncato = (righe || []).length >= 20000;
     let R = (righe || []) as Riga[];
     if (negozio) R = R.filter((r) => r.negozio === negozio);
     if (operatore) R = R.filter((r) => r.operatore === operatore);
@@ -339,12 +371,23 @@ export async function GET(request: Request) {
     }).sort((x, y) => y.euro - x.euro);
 
     return NextResponse.json({
-        ok: true, da, a, negozio, operatore,
+        ok: true, da, a, negozio, operatore, troncato,
         totale: { quante: R.length, euro: somma(R), euroPrima: somma((prima || []) as { importo: number }[]) },
         /* ⚠️ QUELLE DA GUARDARE, in cima e contate a parte: una ricarica
            incassata e non erogata è l'unica ragione per cui uno apre questa
            schermata di fretta. */
-        daGuardare: R.filter((r) => r.stato === "sospeso" || r.stato === "fallita"),
+        /* ⚠️ UN NUMERO, NON UN ELENCO. Di questo il pannello usava solo la
+           lunghezza, e intanto la risposta portava una seconda copia integrale
+           delle righe — numeri di cellulare dei clienti compresi — per il 43%
+           del peso totale. A trenta giorni erano 1,7 MB a ogni apertura, e
+           `carica()` riparte a ogni cambio di stato di una riga. */
+        daGuardare: R.filter((r) => r.stato === "sospeso" || r.stato === "fallita").length,
+        /* «rimaste indietro» = non partite, o incassate in un giorno GIÀ CHIUSO.
+           ⚠️ Il giorno è quello di Roma: `toISOString()` è UTC, e fra mezzanotte
+           e le due il giorno appena chiuso non risulterebbe ancora chiuso —
+           proprio nelle ore in cui uno va a guardare cosa è rimasto indietro. */
+        rimasteIndietro: R.filter((r) => r.stato === "fallita"
+            || (r.stato === "sospeso" && giorno(r.creata_il) < oggiRoma)).length,
         perStato: [...new Set(R.map((r) => r.stato))].map((s) => ({ stato: s, quante: R.filter((r) => r.stato === s).length })),
         perGiorno, perOperatore, perNegozio,
         /* quante nascono da un'attivazione e quante si vendono da sole: dice

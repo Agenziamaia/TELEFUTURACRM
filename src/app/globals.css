@@ -571,6 +571,46 @@ html.light [class*="text-gray-300"], html.light [class*="text-gray-400"] { color
 :root{--tf-003d7a:#003d7a;--tf-003da5:#003da5;--tf-004691:#004691;--tf-0050ff:#0050ff;--tf-0068b7:#0068b7;--tf-0072c6:#0072c6;--tf-0072c9:#0072c9;--tf-0072ce:#0072ce;--tf-00a651:#00a651;--tf-020617:#020617;--tf-052e16:#052e16;--tf-0a0a0f:#0a0a0f;--tf-0ab4e6:#0ab4e6;--tf-0b0d14:#0b0d14;--tf-0b1220:#0b1220;--tf-0c1a0c:#0c1a0c;--tf-0c2a3f:#0c2a3f;--tf-0d1117:#0d1117;--tf-0d1424:#0d1424;--tf-0e1526:#0e1526;--tf-0ea5e9:#0ea5e9;--tf-0f111a:#0f111a;--tf-0f1426:#0f1426;--tf-0f172a:#0f172a;--tf-10b981:#10b981;--tf-11141d:#11141d;--tf-111827:#111827;--tf-12141f:#12141f;--tf-141a33:#141a33;--tf-1428a0:#1428a0;--tf-14532d:#14532d;--tf-14b8a6:#14b8a6;--tf-161b22:#161b22;--tf-16a34a:#16a34a;--tf-172033:#172033;--tf-172554:#172554;--tf-17a2b8:#17a2b8;--tf-17a589:#17a589;--tf-1a1d29:#1a1d29;--tf-1a1f2e:#1a1f2e;--tf-1a6e37:#1a6e37;--tf-1e1b4b:#1e1b4b;--tf-1e293b:#1e293b;--tf-1e3a8a:#1e3a8a;--tf-1f2937:#1f2937;--tf-1fa300:#1fa300;--tf-22c55e:#22c55e;--tf-22d3ee:#22d3ee;--tf-25d366:#25d366;--tf-28a745:#28a745;--tf-2d0a0a:#2d0a0a;--tf-2e1065:#2e1065;--tf-2e75b6:#2e75b6;--tf-334155:#334155;--tf-34d399:#34d399;--tf-38bdf8:#38bdf8;--tf-3b0764:#3b0764;--tf-3b82f6:#3b82f6;--tf-3f0a0a:#3f0a0a;--tf-4285f4:#4285f4;--tf-431407:#431407;--tf-450a0a:#450a0a;--tf-451a03:#451a03;--tf-475569:#475569;--tf-4a044e:#4a044e;--tf-4ade80:#4ade80;--tf-4c0519:#4c0519;--tf-555555:#555555;--tf-586174:#586174;--tf-5b9bd5:#5b9bd5;--tf-5c2d91:#5c2d91;--tf-5fd3e6:#5fd3e6;--tf-60a5fa:#60a5fa;--tf-6366f1:#6366f1;--tf-64748b:#64748b;--tf-66b5ff:#66b5ff;--tf-67e8f9:#67e8f9;--tf-6ee7b7:#6ee7b7;--tf-6f42c1:#6f42c1;--tf-6fa8ff:#6fa8ff;--tf-701a75:#701a75;--tf-7c3aed:#7c3aed;--tf-7dd3fc:#7dd3fc;--tf-7f1d1d:#7f1d1d;--tf-818cf8:#818cf8;--tf-84cc16:#84cc16;--tf-854d0e:#854d0e;--tf-8892b0:#8892b0;--tf-8b5cf6:#8b5cf6;--tf-8e24aa:#8e24aa;--tf-8fb4dd:#8fb4dd;--tf-94a3b8:#94a3b8;--tf-9aa0a6:#9aa0a6;--tf-9b26b6:#9b26b6;--tf-a5b4fc:#a5b4fc;--tf-a78bfa:#a78bfa;--tf-a855f7:#a855f7;--tf-c00028:#c00028;--tf-c084fc:#c084fc;--tf-c4b5fd:#c4b5fd;--tf-c7d2fe:#c7d2fe;--tf-cbd5e1:#cbd5e1;--tf-cc9900:#cc9900;--tf-cfcfcf:#cfcfcf;--tf-d31118:#d31118;--tf-dc2626:#dc2626;--tf-dc3545:#dc3545;--tf-e2001a:#e2001a;--tf-e2e8f0:#e2e8f0;--tf-e4002b:#e4002b;--tf-e60000:#e60000;--tf-e6007e:#e6007e;--tf-e6f2fb:#e6f2fb;--tf-e6f7ee:#e6f7ee;--tf-e83e8c:#e83e8c;--tf-e8590c:#e8590c;--tf-e879f9:#e879f9;--tf-e9ecef:#e9ecef;--tf-eab308:#eab308;--tf-ebf3fb:#ebf3fb;--tf-ec4899:#ec4899;--tf-ef4444:#ef4444;--tf-f3eefb:#f3eefb;--tf-f43f5e:#f43f5e;--tf-f472b6:#f472b6;--tf-f59e0b:#f59e0b;--tf-f5a623:#f5a623;--tf-f5c518:#f5c518;--tf-f87171:#f87171;--tf-f97316:#f97316;--tf-facc15:#facc15;--tf-fb7185:#fb7185;--tf-fb923c:#fb923c;--tf-fbbf24:#fbbf24;--tf-fca5a5:#fca5a5;--tf-fd7e14:#fd7e14;--tf-ff0032:#ff0032;--tf-ff6600:#ff6600;--tf-ff6666:#ff6666;--tf-ff667f:#ff667f;--tf-ff6900:#ff6900;--tf-ff6b00:#ff6b00;--tf-ffa366:#ffa366;--tf-ffd400:#ffd400;--tf-ffd800:#ffd800;--tf-ffe066:#ffe066;--tf-fff3e6:#fff3e6;}
 html.light{--tf-003d7a:#e4edf6;--tf-003da5:#003da5;--tf-004691:#e4edf6;--tf-0050ff:#0050ff;--tf-0068b7:#0068b7;--tf-0072c6:#0072c6;--tf-0072c9:#0072c9;--tf-0072ce:#0072ce;--tf-00a651:#00a651;--tf-020617:#e9ebf7;--tf-052e16:#e9f7ef;--tf-0a0a0f:#ffffff;--tf-0ab4e6:#0ab4e6;--tf-0b0d14:#ffffff;--tf-0b1220:#ffffff;--tf-0c1a0c:#ffffff;--tf-0c2a3f:#e9f1f7;--tf-0d1117:#ffffff;--tf-0d1424:#ffffff;--tf-0e1526:#ffffff;--tf-0ea5e9:#0ea5e9;--tf-0f111a:#ffffff;--tf-0f1426:#ffffff;--tf-0f172a:#ffffff;--tf-10b981:#10b981;--tf-11141d:#ffffff;--tf-111827:#ffffff;--tf-12141f:#ffffff;--tf-141a33:#ffffff;--tf-1428a0:#1428a0;--tf-14532d:#e5f5eb;--tf-14b8a6:#14b8a6;--tf-161b22:#ffffff;--tf-16a34a:#16a34a;--tf-172033:#ffffff;--tf-172554:#e6e9f5;--tf-17a2b8:#17a2b8;--tf-17a589:#17a589;--tf-1a1d29:#ffffff;--tf-1a1f2e:#ffffff;--tf-1a6e37:#e5f5eb;--tf-1e1b4b:#ffffff;--tf-1e293b:#ffffff;--tf-1e3a8a:#1e3a8a;--tf-1f2937:#ffffff;--tf-1fa300:#1fa300;--tf-22c55e:#22c55e;--tf-22d3ee:#22d3ee;--tf-25d366:#25d366;--tf-28a745:#28a745;--tf-2d0a0a:#f7e9e9;--tf-2e1065:#ebe4f6;--tf-2e75b6:#2e75b6;--tf-334155:#ffffff;--tf-34d399:#34d399;--tf-38bdf8:#38bdf8;--tf-3b0764:#eee4f6;--tf-3b82f6:#3b82f6;--tf-3f0a0a:#f7e9e9;--tf-4285f4:#125dd9;--tf-431407:#f7ece9;--tf-450a0a:#f7e9e9;--tf-451a03:#f7eee9;--tf-475569:#475569;--tf-4a044e:#f6e9f7;--tf-4ade80:#4ade80;--tf-4c0519:#f7e9ed;--tf-555555:#725a5a;--tf-586174:#5a6272;--tf-5b9bd5:#5b9bd5;--tf-5c2d91:#5c2d91;--tf-5fd3e6:#20b3cb;--tf-60a5fa:#126bd9;--tf-6366f1:#1317d7;--tf-64748b:#64748b;--tf-66b5ff:#1279d9;--tf-67e8f9:#12c2d9;--tf-6ee7b7:#21c987;--tf-6f42c1:#6f42c1;--tf-6fa8ff:#1261d9;--tf-701a75:#f5e5f6;--tf-7c3aed:#7c3aed;--tf-7dd3fc:#1299d9;--tf-7f1d1d:#7f1d1d;--tf-818cf8:#1224d9;--tf-84cc16:#84cc16;--tf-854d0e:#f6eee4;--tf-8892b0:#5e698d;--tf-8b5cf6:#4e12d9;--tf-8e24aa:#8e24aa;--tf-8fb4dd:#3772b4;--tf-94a3b8:#5e718d;--tf-9aa0a6:#5a6672;--tf-9b26b6:#9b26b6;--tf-a5b4fc:#1234d9;--tf-a78bfa:#4412d9;--tf-a855f7:#7812d9;--tf-c00028:#c00028;--tf-c084fc:#7512d9;--tf-c4b5fd:#342277;--tf-c7d2fe:#223377;--tf-cbd5e1:#384b61;--tf-cc9900:#cc9900;--tf-cfcfcf:#725a5a;--tf-d31118:#d31118;--tf-dc2626:#dc2626;--tf-dc3545:#dc3545;--tf-e2001a:#e2001a;--tf-e2e8f0:#344965;--tf-e4002b:#e4002b;--tf-e60000:#e60000;--tf-e6007e:#e6007e;--tf-e6f2fb:#225377;--tf-e6f7ee:#25744a;--tf-e83e8c:#e83e8c;--tf-e8590c:#e8590c;--tf-e879f9:#bf12d9;--tf-e9ecef:#404d59;--tf-eab308:#eab308;--tf-ebf3fb:#224d77;--tf-ec4899:#d51674;--tf-ef4444:#d81212;--tf-f3eefb:#432277;--tf-f43f5e:#d91234;--tf-f472b6:#d9127a;--tf-f59e0b:#f59e0b;--tf-f5a623:#f5a623;--tf-f5c518:#f5c518;--tf-f87171:#d91212;--tf-f97316:#f97316;--tf-facc15:#facc15;--tf-fb7185:#d9122e;--tf-fb923c:#d96b12;--tf-fbbf24:#fbbf24;--tf-fca5a5:#d91212;--tf-fd7e14:#fd7e14;--tf-ff0032:#ff0032;--tf-ff6600:#ff6600;--tf-ff6666:#d91212;--tf-ff667f:#d91232;--tf-ff6900:#ff6900;--tf-ff6b00:#ff6b00;--tf-ffa366:#d96112;--tf-ffd400:#ffd400;--tf-ffd800:#ffd800;--tf-ffe066:#d9b112;--tf-fff3e6:#774e22;}
 
+/* ═══ I BLOCCHI CHE RESTANO SCURI ANCHE COL TEMA CHIARO ═════════════════
+   L'eroe in cima ad Analisi, PayStore, AI e Automatismi è nero PER SCELTA: le
+   palette dei marchi e dei grafici sono disegnate su quel fondo — misurate su
+   carta bianca stanno fra 1,4 e 3,0 di contrasto, cioè non si vedono. Quindi
+   il blocco resta scuro, e dentro la gerarchia dei testi deve restare quella
+   dello SCURO.
+
+   ⚠️ QUESTE REGOLE STAVANO IN UN `<style>` DENTRO analisi/page.tsx, cioè
+   esistevano solo su quella rotta. Su /amministrazione non c'erano: il fondo
+   restava blu notte (#0d1022 non è in nessuna lista di conversione) mentre
+   `html.light [class~="text-white"]` portava il titolo a #0f172a — titolo nero
+   su blu notte, contrasto misurato 1,40 su 4,5 richiesti. Sotto lo stesso
+   cielo: i quattro numeroni a 2,70, il centro della ciambella a 1,61, la
+   barra degli strumenti a 1,01 (invisibile) e i tooltip che spiegano i numeri
+   a 1,03, cioè scatole nere vuote. */
+@keyframes anFadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes anAurora{0%{transform:translate3d(-12%,-6%,0) scale(1)}50%{transform:translate3d(10%,8%,0) scale(1.15)}100%{transform:translate3d(-12%,-6%,0) scale(1)}}
+.an-in{animation:anFadeUp .5s cubic-bezier(.22,1,.36,1) both}
+.an-card{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+.an-card:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.18);box-shadow:0 18px 40px -18px rgba(0,0,0,.7)}
+html.light .an-scuro,
+html.light .an-scuro [class~="text-white"]{color:#f8fafc !important}
+html.light .an-scuro [class~="text-slate-200"]{color:#e2e8f0 !important}
+html.light .an-scuro [class~="text-slate-300"]{color:#cbd5e1 !important}
+html.light .an-scuro [class~="text-slate-400"]{color:#94a3b8 !important}
+html.light .an-scuro [class~="text-slate-500"]{color:#8494ad !important}
+html.light .an-scuro [class~="text-slate-600"]{color:#64748b !important}
+html.light .an-scuro [class~="text-emerald-300"]{color:#6ee7b7 !important}
+html.light .an-scuro [class~="text-amber-300"]{color:#fcd34d !important}
+html.light .an-scuro [class~="text-rose-300"]{color:#fda4af !important}
+html.light .an-scuro [class~="text-indigo-300"]{color:#a5b4fc !important}
+html.light .an-scuro [class*="bg-white/"]{background-color:rgba(255,255,255,.05) !important}
+html.light .an-scuro [class~="bg-white/15"]{background-color:rgba(255,255,255,.15) !important}
+html.light .an-scuro [class*="hover:bg-white/"]:hover{background-color:rgba(255,255,255,.10) !important}
+html.light .an-scuro [class*="border-white/"]{border-color:rgba(255,255,255,.12) !important}
+html.light .an-scuro [class*="bg-black/"]{background-color:rgba(0,0,0,.22) !important}
+html.light .an-scuro .glass-input{background:rgba(255,255,255,.07);color:#e2e8f0;border-color:rgba(255,255,255,.14)}
+/* ⚠️ #0d1022 e #111527 NON vanno nelle liste di conversione qui sotto: sono
+   l'eroe e il tooltip, e devono restare scuri in tutti e due i temi. */
+
 /* ═══ LIGHT MODE — correzioni da screenshot (03/08) ═══ */
 /* superfici scure per CLASSE bg-[#hex] → bianco */
 html.light [class*="bg-[#020617]"],html.light [class*="bg-[#0a0a0f]"],html.light [class*="bg-[#0b0d14]"],html.light [class*="bg-[#0b1220]"],html.light [class*="bg-[#0d1117]"],html.light [class*="bg-[#0d1424]"],html.light [class*="bg-[#0e1526]"],html.light [class*="bg-[#0f111a]"],html.light [class*="bg-[#0f1420]"],html.light [class*="bg-[#0f1426]"],html.light [class*="bg-[#0f172a]"],html.light [class*="bg-[#11141d]"],html.light [class*="bg-[#111827]"],html.light [class*="bg-[#12141f]"],html.light [class*="bg-[#141824]"],html.light [class*="bg-[#161925]"],html.light [class*="bg-[#161a26]"],html.light [class*="bg-[#161a2c]"],html.light [class*="bg-[#161b22]"],html.light [class*="bg-[#171622]"],html.light [class*="bg-[#172033]"],html.light [class*="bg-[#1a1d29]"],html.light [class*="bg-[#1a1f2e]"],html.light [class*="bg-[#1e2235]"],html.light [class*="bg-[#1f2937]"],html.light [class*="bg-[#252a40]"]{background-color:#ffffff !important;}
@@ -2435,8 +2475,12 @@ html.light .rvCarta-no-ko{color:#b91c1c}
    chiara — un esadecimale scritto qui non ce l'avrebbe. */
 .rvPill-tinta{border-color:color-mix(in srgb,var(--rv-acc) 42%,transparent);background:color-mix(in srgb,var(--rv-acc) 13%,transparent);color:color-mix(in srgb,var(--rv-acc) 62%,#ffffff)}
 .rvPill-tinta:hover{background:color-mix(in srgb,var(--rv-acc) 22%,transparent);color:#fff}
-html.light .rvPill-tinta{color:var(--rv-acc);background:color-mix(in srgb,var(--rv-acc) 11%,transparent);border-color:color-mix(in srgb,var(--rv-acc) 34%,transparent)}
-html.light .rvPill-tinta:hover{background:color-mix(in srgb,var(--rv-acc) 18%,transparent);color:var(--rv-acc)}
+/* ⚠️ MISURATO: con `--rv-acc` puro l'ambra dava 4,49 e il verde 4,43 su
+   carta, dove la soglia è 4,5. Il testo scende del 20% verso il nero — resta
+   lo stesso colore, ma leggibile: questa sezione la usa l'amministrazione, e
+   la usa in chiaro tutto il giorno. */
+html.light .rvPill-tinta{color:color-mix(in srgb,var(--rv-acc) 80%,#000);background:color-mix(in srgb,var(--rv-acc) 11%,transparent);border-color:color-mix(in srgb,var(--rv-acc) 34%,transparent)}
+html.light .rvPill-tinta:hover{background:color-mix(in srgb,var(--rv-acc) 18%,transparent);color:color-mix(in srgb,var(--rv-acc) 85%,#000)}
 .rvPill:active{transform:scale(.96)}
 .rvPill:focus-visible{outline:2px solid var(--rv-acc);outline-offset:2px}
 /* il contatore dentro la pastiglia: dice quante righe vedrai premendola */
@@ -2489,21 +2533,69 @@ html.light .psNum-sveglia{color:#a16207}
    c'è il rischio di confondersi… con dei colori sfumati ad alternanza delle
    righe, così che quando sono posizionato col mouse si vede bene qual è quella
    selezionata. Attualmente non si vede dove sono posizionato».
-   Undici colonne larghe uno schermo: fra la data a sinistra e lo stato a
-   destra l'occhio perde la riga, e cambiare lo stato della riga sbagliata qui
-   vuol dire dire «fatta» a una ricarica che non è partita. */
+
+   ⚠️ LA PRIMA VERSIONE ERA CONSEGNATA MORTA: usava `var(--tf-f8b516)`, che in
+   questo foglio NON ESISTE. Un `var()` non risolto invalida la dichiarazione,
+   quindi `background` e `box-shadow` tornavano al valore iniziale — misurato
+   col mouse davvero sopra una riga: `rgba(0,0,0,0)` e `none`. Peggio: sulle
+   righe pari l'hover CANCELLAVA la zebra, cioè passare il mouse schiariva di
+   meno. Il colore ora è scritto per esteso.
+
+   E i valori sono misurati: l'alternanza a .03 dava 1,06:1, cioè il 6% di
+   differenza su una tabella larga 1426 px — a occhio, niente. */
 .psTab{width:100%;border-collapse:separate;border-spacing:0}
 .psTab tbody tr{transition:background .12s,box-shadow .12s}
-.psTab tbody tr:nth-child(even){background:rgba(255,255,255,.028)}
-.psTab tbody tr:hover{background:color-mix(in srgb,var(--tf-f8b516) 13%,transparent);
-  box-shadow:inset 3px 0 0 var(--tf-f8b516),inset 0 0 0 1px rgba(248,181,22,.18)}
+.psTab tbody tr:nth-child(even){background:rgba(255,255,255,.05)}
+/* ⚠️ LE BARRE SONO DUE, a sinistra E a destra. Su una riga larga 1426 px un
+   segnalino solo a sinistra è a 1.270 px dalla colonna «Stato», che è
+   l'unica su cui l'amministrazione clicca: la riga va chiusa alle due
+   estremità, se no l'occhio la perde per strada. */
+.psTab tbody tr:hover{background:rgba(248,181,22,.13);
+  box-shadow:inset 4px 0 0 #f8b516,inset -4px 0 0 #f8b516,inset 0 0 0 1px rgba(248,181,22,.22)}
 .psTab tbody td{border-bottom:1px solid var(--tf-w60)}
-/* nel tema chiaro l'alternanza è una carta leggermente più calda, non un
+/* ── LA GEOMETRIA: dieci colonne su 1426 px ──────────────────────────
+   Le celle non avevano nessun respiro orizzontale: a 1180 px «Magliana
+   Multi» toccava «Alin Predica». E l'intestazione scorreva via dopo venti
+   righe su duecento disegnate. */
+.psTab th,.psTab td{padding-right:12px}
+.psTab th:first-child,.psTab td:first-child{padding-left:12px}
+.psTab thead th{position:sticky;top:0;z-index:3;background:var(--tf-0f111a);padding-top:8px;padding-bottom:8px}
+.psTab tbody td:first-child{font-variant-numeric:tabular-nums}
+/* «Chi» prendeva 333 px perché era l'unica senza vincolo: fra il nome e la
+   colonna dopo restavano duecento pixel di niente, ed è lì che si perde la riga */
+.psTab tbody td:nth-child(7){max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* LA CESURA: a sinistra COSA è stato venduto, a destra DOVE e COM'È ANDATA */
+.psTab th:nth-child(6),.psTab td:nth-child(6){border-left:1px solid var(--tf-w60)}
+/* nel tema chiaro l'alternanza è una carta leggermente più fredda, non un
    grigio: l'amministrazione lavora tutto il giorno in chiaro su questa pagina */
-html.light .psTab tbody tr:nth-child(even){background:rgba(15,23,42,.032)}
-html.light .psTab tbody tr:hover{background:rgba(248,181,22,.14);
-  box-shadow:inset 3px 0 0 #b45309,inset 0 0 0 1px rgba(180,83,9,.22)}
+html.light .psTab tbody tr:nth-child(even){background:rgba(15,23,42,.055)}
+html.light .psTab tbody tr:hover{background:rgba(248,181,22,.22);
+  box-shadow:inset 4px 0 0 #b45309,inset -4px 0 0 #b45309,inset 0 0 0 1px rgba(180,83,9,.35)}
 html.light .psTab tbody td{border-bottom-color:rgba(15,23,42,.08)}
+html.light .psTab thead th{background:#eef2f9}
+html.light .psTab th:nth-child(6),html.light .psTab td:nth-child(6){border-left-color:rgba(15,23,42,.08)}
+/* il menu con cui si dichiara che il credito di un cliente è partito: nel
+   tema chiaro era una scatola nera con dentro voci a 3:1 */
+.psMenuStato{background:#0d1022}
+html.light .psMenuStato{background:#fff;border-color:rgba(15,23,42,.12);box-shadow:0 14px 36px rgba(15,23,42,.16)}
+html.light .psMenuStato button:hover{background:rgba(79,70,229,.08)}
+/* il ↻ che rifà la ricarica — cioè eroga denaro — era la cosa più pallida
+   della riga nel tema chiaro: 1,59:1 */
+html.light .psRifai{border-color:rgba(67,56,202,.45);background:rgba(67,56,202,.10);color:#3730a3}
+html.light .psRifai:hover:not(:disabled){background:rgba(67,56,202,.20);border-color:#4338ca;color:#312e81}
+/* il contatore sulla tessera del marchio prendeva il colore del marchio: su
+   pastiglia bianca Poste misurava 1,43:1. Il colore resta al bordo. */
+.psMarchioN{color:#f8fafc}
+html.light .psMarchioN{color:#1e2952;background:#fff}
+/* ⚠️ IL BATTITO DEI DUE QUADRATI D'ALLARME. «4 senza scontrino» non può avere
+   lo stesso peso visivo di «0 senza scontrino»: sono clienti che hanno pagato
+   e non hanno il documento. Si ferma da solo per chi ha chiesto meno
+   animazioni al sistema operativo. */
+@keyframes psBattito{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.34)}50%{box-shadow:0 0 0 7px rgba(239,68,68,0)}}
+.rvRapido-sveglia{animation:psBattito 2.4s ease-out infinite}
+html.light .rvRapido-sveglia{animation-name:psBattitoChiaro}
+@keyframes psBattitoChiaro{0%,100%{box-shadow:0 0 0 0 rgba(185,28,28,.30)}50%{box-shadow:0 0 0 7px rgba(185,28,28,0)}}
+@media (prefers-reduced-motion:reduce){.rvRapido-sveglia{animation:none}}
 /* la ristampa e, sotto, da dove è arrivata la firma */
 .rvRistampa{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px}
 .rvRistampa-dev{font-size:10.5px;color:var(--tf-64748b);padding-left:2px}

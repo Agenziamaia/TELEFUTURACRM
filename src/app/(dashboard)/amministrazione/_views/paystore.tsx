@@ -84,8 +84,10 @@ type Taglio = { id: string; operatore: string; etichetta: string; valore: number
 type Dati = {
     da: string; a: string;
     totale: { quante: number; euro: number; euroPrima: number };
-    daGuardare: Riga[];
+    daGuardare: number;
     senzaScontrino: number;
+    rimasteIndietro: number;
+    troncato: boolean;
     perStato: { stato: string; quante: number }[];
     perGiorno: { giorno: string; quante: number; euro: number; parti: { operatore: string; nome: string; quante: number; euro: number }[] }[];
     perOperatore: { operatore: string; nome: string; quante: number; euro: number }[];
@@ -124,7 +126,7 @@ const STATI: Record<string, { testo: string; colore: string; sfondo: string }> =
     ok_automatico: { testo: "ok automatico", colore: "text-emerald-300", sfondo: "bg-emerald-500/15 border-emerald-400/40" },
     ok_manuale: { testo: "ok manuale", colore: "text-teal-300", sfondo: "bg-teal-500/12 border-teal-400/35" },
     fallita: { testo: "NON partita", colore: "text-rose-300", sfondo: "bg-rose-500/15 border-rose-400/40" },
-    annullata: { testo: "annullata", colore: "text-slate-500", sfondo: "bg-white/5 border-white/15" },
+    annullata: { testo: "annullata", colore: "text-slate-400", sfondo: "bg-white/5 border-white/15" },
 };
 const ORDINE_STATI = [...STATI_RICARICA];
 
@@ -133,7 +135,7 @@ const ORDINE_STATI = [...STATI_RICARICA];
    Verde tenue quando è tutto a posto — non deve attirare l'occhio: attira
    quando c'è qualcosa da fare. */
 const SCONTRINO: Record<string, { testo: string; classe: string; nota: string }> = {
-    emesso: { testo: "emesso", classe: "text-emerald-400/80 bg-emerald-500/[0.08] border-emerald-500/25", nota: "il registratore ha stampato lo scontrino" },
+    emesso: { testo: "emesso", classe: "text-emerald-300 bg-emerald-500/[0.08] border-emerald-500/25", nota: "il registratore ha stampato lo scontrino" },
     errore: { testo: "NON uscito", classe: "text-rose-200 bg-rose-500/20 border-rose-400/50 font-bold", nota: "il lavoro di stampa è fallito: l'amministrazione deve verificare" },
     in_pausa: { testo: "in pausa", classe: "text-amber-200 bg-amber-500/18 border-amber-400/45 font-bold", nota: "la vendita è stata messa da parte: lo scontrino non è ancora uscito" },
 };
@@ -162,6 +164,9 @@ export function PayStoreAdminView() {
     // "true" = solo quelle nate con un'attivazione, "false" = solo le sciolte
     const [origine, setOrigine] = useState("");
     const [giornoAperto, setGiornoAperto] = useState<string | null>(null);
+    /* ⚠️ IL GIORNO APERTO NON SOPRAVVIVE AL CAMBIO DI PERIODO: apro il primo
+       settembre, passo ad agosto, e il grafico resta intitolato «martedì 1
+       settembre» con dentro il vuoto. */
     const [vista, setVista] = useState<"registro" | "tagli">("registro");
     /* cosa comanda il pannello di destra: il giorno per giorno, oppure il
        dettaglio dei punti vendita quando si clicca la torta (Luca 01/09) */
@@ -179,6 +184,11 @@ export function PayStoreAdminView() {
         return { da: `${ym.y}-${mm}-01`, a: fine > oggiISO() ? oggiISO() : fine };
     }, [tipoP, ym, range]);
 
+    /* ⚠️ CAMBIANDO FILTRO O PERIODO SI RIPARTE DA 200. `setQuante` sapeva solo
+       crescere: dopo quattro «mostrane altre 500» ogni cambio di mese
+       ridisegnava duemiladuecento righe in un colpo. */
+    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stato, origine, allarme, operatore]);
+    useEffect(() => { setGiornoAperto(null); }, [periodo.da, periodo.a]);
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
         try {
@@ -238,9 +248,7 @@ export function PayStoreAdminView() {
        vedranno. */
     const senzaAltri = !negoziSel && !stato && !origine;
     const senzaScontrino = senzaAltri ? d.senzaScontrino : quanteCon("allarme", (r) => r.scontrino_stato === "errore");
-    const daGuardareDavvero = senzaAltri
-        ? d.daGuardare.filter(rimastaIndietro).length
-        : quanteCon("allarme", rimastaIndietro);
+    const daGuardareDavvero = senzaAltri ? d.rimasteIndietro : quanteCon("allarme", rimastaIndietro);
     /* ⚠️ IL GRAFICO PARLA DI GIORNI, e le ore le mostra solo se gliele chiedi
        (Luca 02/09): «questo grafico deve darmi l'andamento giorno per giorno,
        poi nel momento in cui io clicco su un giorno a quel punto mi esplode
@@ -260,7 +268,10 @@ export function PayStoreAdminView() {
         if (!aOre || !giornoDelleOre) return [];
         const m = new Map<number, { euro: number; ops: Map<string, { euro: number; quante: number }> }>();
         for (const r of d.ultime.filter((x) => x.creata_il.slice(0, 10) === giornoDelleOre)) {
-            const h = new Date(r.creata_il).getHours();
+            /* ⚠️ L'ORA È QUELLA DI ROMA. `getHours()` è l'ora del computer di
+               chi guarda: da un portatile con il fuso sbagliato l'istogramma
+               delle ore raccontava un'altra giornata. */
+            const h = Number(new Date(r.creata_il).toLocaleString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", hour12: false }).slice(0, 2));
             const c = m.get(h) || { euro: 0, ops: new Map() };
             c.euro += Number(r.importo || 0);
             const o = c.ops.get(r.operatore) || { euro: 0, quante: 0 };
@@ -376,7 +387,10 @@ export function PayStoreAdminView() {
                                     {logo
                                         ? <Image src={logo} alt={nomeOp(o)} width={140} height={44} className={OPERATORI_PAYSTORE.find((x) => x.id === o)?.zoom ? "psZoom" + String(OPERATORI_PAYSTORE.find((x) => x.id === o)?.zoom).replace(".", "") : ""} />
                                         : <span className="text-[11px] font-bold" style={{ color: col }}>{nomeOp(o)}</span>}
-                                    <span className="psMarchioN" style={{ color: col, borderColor: col + "66" }}>{q?.quante ?? 0}</span>
+                                    {/* il numero NON prende il colore del marchio: su pastiglia bianca
+                                        Poste misurava 1,43 di contrasto. Il marchio si riconosce dal
+                                        logo e dal bordo. */}
+                                    <span className="psMarchioN" style={{ borderColor: col + "66" }}>{q?.quante ?? 0}</span>
                                 </button>
                             );
                         })}
@@ -473,7 +487,7 @@ export function PayStoreAdminView() {
                                         giorni — e ogni volta che si guarda «Oggi» — la
                                         domanda utile è un'altra: a che ora si ricarica. */}
                                     {aOre ? (
-                                        <BarStack h={200} unit="€" oggi={-1} media={null}
+                                        <BarStack h={200} unit="€" oggi={-1} media={null} barraMax={110}
                                             giorni={perOra.map((h) => ({
                                                 n: h.ora, label: String(h.ora).padStart(2, "0"),
                                                 tot: h.euro,
@@ -492,7 +506,10 @@ export function PayStoreAdminView() {
                                             if (g) setGiornoAperto(giornoAperto === g.giorno ? null : g.giorno);
                                         }} className="cursor-pointer"
 >
-                                        <BarStack h={200} unit="€"
+                                        {/* ⚠️ una barra non può essere larga mezzo schermo: a
+                                            inizio mese i giorni sono due, e con `flex-1` diventavano
+                                            due lastroni di colore che non somigliano a un grafico */}
+                                        <BarStack h={200} unit="€" barraMax={110}
                                             giorni={d.perGiorno.map((g) => ({
                                                 n: Number(g.giorno.slice(8, 10)),
                                                 label: g.giorno.slice(8, 10) + "/" + g.giorno.slice(5, 7),
@@ -638,7 +655,12 @@ export function PayStoreAdminView() {
                                             className={cn("rvRapido rvT-rosso", on && "rvRapido-on", q.n > 0 && !on && "rvRapido-sveglia", !q.n && "rvRapido-off")}>
                                             <em className={cn(q.n > 0 && "psNum-sveglia")}>{q.n.toLocaleString("it-IT")}</em>
                                             <b>{q.et}{on ? " ✓" : ""}</b>
-                                            <small>{q.n ? q.sub : "tutto a posto"}</small>
+                                            {/* ⚠️ «TUTTO A POSTO» SOLO SE LO È DAVVERO. Con un
+                                                negozio scelto il numero è zero per quel negozio, ma
+                                                nel periodo possono esserci nove ricariche senza
+                                                scontrino: su un documento fiscale mancante quella
+                                                frase è il giudizio sbagliato. */}
+                                            <small>{q.n ? q.sub : senzaAltri ? "tutto a posto" : "nessuna con questi filtri"}</small>
                                         </button>
                                     );
                                 })}
@@ -647,8 +669,9 @@ export function PayStoreAdminView() {
 
                         <div className="rvHint psFascia-hint">
                             Premi un riquadro o una pastiglia per vedere solo quelle: il numero dice quante righe
-                            vedrai. I quattro numeri in cima restano quelli del periodo intero — se cambiassero
-                            anche loro, filtrare sembrerebbe aver incassato di meno.
+                            vedrai. ⚠️ Questi filtri agiscono <b>solo sulla lista</b>: i quattro numeri in cima e i
+                            grafici restano quelli del periodo intero, se no filtrare sembrerebbe aver incassato di
+                            meno. <b>Il marchio no</b>: quello in cima cambia anche i totali e i grafici.
                         </div>
                     </div>
 
@@ -706,8 +729,12 @@ export function PayStoreAdminView() {
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        {/* il filo fra le righe lo mette `.psTab`: scritto anche sul
+                                            `<tr>`, con `border-collapse:separate` i due bordi non si
+                                            fondevano e la riga restava separata da due fili di colori
+                                            diversi */}
                                         {righe.slice(0, quante).map((r) => (
-                                            <tr key={r.id} className="border-t border-white/5">
+                                            <tr key={r.id}>
                                                 <td className="py-1.5 text-slate-400 whitespace-nowrap">{new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                                                 <td className="text-slate-200 font-semibold">
                                                     {/* ⚠️ IL NOME LO DECIDE IL CODICE OPERATORE, non quello
@@ -716,7 +743,7 @@ export function PayStoreAdminView() {
                                                         recupero, e nell'elenco sembravano due operatori. */}
                                                     <MarchioRiga op={r.operatore} />
                                                 </td>
-                                                <td className="text-slate-500">
+                                                <td className="text-slate-400">
                                                     {/* ⚠️ NON UN TRATTINO MUTO. Luca 02/09: «ci sono
                                                         delle ricariche dove non è selezionato il taglio».
                                                         Misurate: nessuna nasce così da una vendita al banco —
@@ -728,8 +755,8 @@ export function PayStoreAdminView() {
                                                         ce l'hanno perché sono somme. Dirlo è meglio che
                                                         lasciare un trattino che sembra un difetto. */}
                                                     {r.taglio || (
-                                                        <span className="rvBadge rvBadge-empty" title={r.nota || "riga ricostruita dopo la vendita: si conosce l'importo, non il taglio premuto — di solito perché l'importo è una somma di più tagli"}>
-                                                            somma di tagli
+                                                        <span className="rvBadge rvBadge-empty" title={r.nota || "riga ricostruita dopo la vendita: si conosce l'importo, non il taglio premuto. Di solito perché l'importo è una somma di più tagli, che nel listino non esiste come pezzo singolo."}>
+                                                            taglio non registrato
                                                         </span>
                                                     )}
                                                     {r.con_attivazione && <span className="psConSim" title="ricarica della SIM appena venduta: il numero è quello dell'attivazione">📶</span>}
@@ -772,6 +799,20 @@ export function PayStoreAdminView() {
                                     ferma senza dirlo è un elenco che mente: qui le
                                     righe ci sono tutte, se ne disegnano un blocco
                                     per volta e il resto si chiede. */}
+                                {/* ⚠️ SE IL DATABASE HA TAGLIATO, LO DICE. Ventimila righe
+                                    sono nove mesi al ritmo di oggi, ma un «Periodo» su un anno
+                                    intero le supera — e un elenco che si ferma senza dirlo è un
+                                    elenco che mente. */}
+                                {d.troncato && (
+                                    <div className="rvNota rvNota-att mt-3">
+                                        <div className="rvNota-t">⚠️ L&apos;elenco è tagliato</div>
+                                        <div className="rvNota-s">
+                                            Il periodo scelto contiene più di 20.000 ricariche e il database ne consegna
+                                            al massimo quelle: le più vecchie restano fuori da questo elenco <b>e dai
+                                            totali qui sopra</b>. Restringi l&apos;intervallo di date.
+                                        </div>
+                                    </div>
+                                )}
                                 {righe.length > quante && (
                                     <div className="text-center pt-3">
                                         <button onClick={() => setQuante((q) => q + 500)} className="rvPill rvPill-sm rvPill-tinta rvT-indaco">
@@ -953,7 +994,11 @@ function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
             {pos && createPortal(
                 <>
                     <div className="fixed inset-0 z-[2000]" onClick={() => setPos(null)} />
-                    <div className="fixed z-[2001] rounded-xl border border-white/15 bg-[#0d1022] shadow-2xl p-1 min-w-[150px]"
+                    {/* ⚠️ il fondo passa da una classe, non da `bg-[#0d1022]`: quel colore
+                        non è in nessuna lista di conversione, quindi nel tema chiaro il
+                        menu restava una scatola nera con dentro voci a 3:1 — ed è il
+                        menu con cui si dichiara che il credito di un cliente è partito */}
+                    <div className="fixed z-[2001] rounded-xl border border-white/15 psMenuStato shadow-2xl p-1 min-w-[150px]"
                         style={{ left: pos.x, top: pos.y, transform: `translate(-100%, ${pos.sopra ? "-100%" : "0"})` }}>
                         {ORDINE_STATI.filter((x) => x !== r.stato).map((x) => (
                             <button key={x} onClick={() => void cambia(x)}

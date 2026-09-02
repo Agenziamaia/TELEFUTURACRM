@@ -209,7 +209,11 @@ export function AreaChart({ serie, ghost, oggi = -1, colore = "var(--tf-818cf8)"
    media: linea tratteggiata di riferimento (produzione media per giorno
    lavorativo); il giorno di OGGI pulsa e mostra il tratto che manca alla
    media come proiezione del giorno. */
-export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt", oraScatto = null }) {
+/* `barraMax`: quanto può diventare larga una singola barra. Serve quando i
+   giorni sono due o tre — a inizio mese, o guardando un periodo corto: con
+   `flex-1` due giorni diventano due lastroni di colore larghi mezzo schermo,
+   che non somigliano più a un grafico. Senza il parametro, tutto come prima. */
+export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt", oraScatto = null, barraMax = 0 }) {
     const [on, setOn] = useState(false);
     useEffect(() => { const t = setTimeout(() => setOn(true), 60); return () => clearTimeout(t); }, []);
     const max = Math.max(1, ...giorni.map((g) => g.tot), media || 0) * 1.08;
@@ -227,11 +231,12 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
                         <span className="absolute right-0 -top-4 text-[9px] font-bold text-slate-400 bg-[#0d1022]/70 px-1 rounded an-scuro">media {fmtPt(media)}/g</span>
                     </div>
                 )}
-                <div className="absolute inset-0 flex items-end gap-[3px]">
+                <div className={"absolute inset-0 flex items-end gap-[3px]" + (barraMax ? " justify-start" : "")}>
                     {giorni.map((g, i) => {
                         const manca = i === oggi && media > 0 && g.tot < media ? media - g.tot : 0;
                         return (
-                            <Tip key={i} block className="flex-1 h-full flex flex-col justify-end min-w-0 group/bar" tip={
+                            <Tip key={i} block className="flex-1 h-full flex flex-col justify-end min-w-0 group/bar"
+                                style={barraMax ? { maxWidth: barraMax } : undefined} tip={
                                 <div>
                                     <TipTitolo>{g.label}{i === oggi ? " · OGGI" : ""}{i === cRecord ? " · 🏆 record" : ""}</TipTitolo>
                                     <TipRiga l="totale" r={`${fmtPt(g.tot)} ${unit}`} />
@@ -272,7 +277,8 @@ export function BarStack({ giorni, oggi = -1, media = null, h = 180, unit = "pt"
             </div>
             <div className="flex gap-[3px] mt-1">
                 {giorni.map((g, i) => (
-                    <span key={i} className={cn("flex-1 text-center text-[8px] tabular-nums min-w-0", i === oggi ? "text-white font-black" : i === cRecord ? "text-amber-300 font-bold" : "text-slate-600", !(i === oggi || i === cRecord || ggDi(g) % 5 === 0 || i === 0) && "opacity-0")}>{ggDi(g)}</span>
+                    <span key={i} style={barraMax ? { maxWidth: barraMax } : undefined}
+                        className={cn("flex-1 text-center text-[8px] tabular-nums min-w-0", i === oggi ? "text-white font-black" : i === cRecord ? "text-amber-300 font-bold" : "text-slate-600", !(i === oggi || i === cRecord || ggDi(g) % 5 === 0 || i === 0) && "opacity-0")}>{ggDi(g)}</span>
                 ))}
             </div>
         </div>

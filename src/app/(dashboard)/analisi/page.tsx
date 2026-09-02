@@ -1051,11 +1051,11 @@ function AnalisiInner() {
         };
         return (
             <div className="space-y-5 pb-10">
-                <style>{`
-                    @keyframes anFadeUp { from { opacity:0; transform: translateY(14px); } to { opacity:1; transform:none; } }
-                    @keyframes anAurora { 0% { transform: translate3d(-12%, -6%, 0) scale(1); } 50% { transform: translate3d(10%, 8%, 0) scale(1.15); } 100% { transform: translate3d(-12%, -6%, 0) scale(1); } }
-                    .an-in { animation: anFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
-                `}</style>
+                {/* ⚠️ le animazioni e le regole del tema chiaro per i blocchi scuri sono
+                    passate in globals.css: scritte qui esistevano SOLO su questa rotta,
+                    e le stesse classi usate da PayStore, AI e Automatismi restavano
+                    inerti — con il titolo nero su fondo blu notte nel tema chiaro. */}
+                
                 <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d1022]/80 p-6 an-in an-scuro">
                     <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-25 blur-3xl" style={{ background: "radial-gradient(circle, var(--tf-818cf8), transparent 65%)", animation: "anAurora 16s ease-in-out infinite" }} />
                     <h1 className="relative text-2xl sm:text-3xl font-black text-white tracking-tight">📊 Analisi</h1>
