@@ -5747,7 +5747,13 @@ function CRM() {
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
   const _pickBrand=(b)=>{if(!b.ready)return;setPsFlow(false);if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{setPsAperta(null);setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  /* ⚠️ `margSkipCli` SI AZZERA QUI. Non lo faceva, e il salto dei dati cliente
+     restava acceso per tutta la sessione: una ricarica PayStore lo accende
+     (è vendita diretta, giustamente), e da lì in poi ogni vendita successiva —
+     una cover, un usato, una SIM — partiva «senza dati cliente» con lo step
+     Cliente già verde. Ad agosto il 21,7% delle marginalità risulta con
+     l'anagrafica saltata, e non c'è modo di sapere quante fossero volute. */
+  const fullReset=()=>{setMargSkipCli(false);setPsAperta(null);setMargFlow(false);setPsFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
@@ -6703,8 +6709,14 @@ function CRM() {
       const g = giacNegozio.get(cod);
       const ce = Number(g?.quantita ?? 0);
       const nome = (lista || []).find(m => m.codice === cod)?.product || cod;
-      if (ce <= 0) out.push({ ico: "📭", testo: `«${nome}» non c'è nel magazzino di ${selNeg}: non si può vendere`, dove: "carrello" });
-      else if (n > ce) out.push({ ico: "📦", testo: `di «${nome}» ne stai vendendo ${n} ma a magazzino ce ne sono ${ce}`, dove: "carrello" });
+      /* ⚠️ AVVISO, NON MURO. Una giacenza sbagliata non deve fermare un
+         incasso col cliente davanti: è lo stesso ragionamento per cui le voci
+         automatiche sono esentate qui sopra — «la SIM gliela stai dando».
+         Prima questa voce non fermava niente perché il pulsante apriva
+         comunque la cassa; da quando il pulsante blocca, senza `avviso`
+         chiuderebbe la vendita per un numero che non torna. */
+      if (ce <= 0) out.push({ ico: "📭", testo: `«${nome}» non c'è nel magazzino di ${selNeg}: la giacenza andrà sistemata`, dove: "carrello", avviso: true });
+      else if (n > ce) out.push({ ico: "📦", testo: `di «${nome}» ne stai vendendo ${n} ma a magazzino ce ne sono ${ce}`, dove: "carrello", avviso: true });
     });
     // lo stesso pezzo due volte: un IMEI è uno solo
     const visti = new Map();
@@ -7344,10 +7356,21 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
       if (soc.length > 1 && !localeDueCasse) out.push({ ico: "⛔", testo: `Nel carrello c'è merce di ${soc.map(_nomeSoc).join(" e ")}. In questo negozio la cassa è una sola, e la seconda società non ha un registratore su cui uscire. Togli una delle due e falla in una vendita a parte.`, dove: "carrello" }); }
     // ── il ramo SOLA MARGINALITÀ ha guardie tutte sue (dentro saveMargOnly):
     //    era rimasto fuori, quindi il suo bottone restava verde comunque
-    if (margFlow && !brand) {
+    /* ⚠️ LA STESSA CONDIZIONE CHE DISEGNA IL PULSANTE. Qui era `margFlow &&
+       !brand` (il FLUSSO), là `allG.length===0 && margItems.length>0` (il
+       CARRELLO): due misure della stessa cosa. Chi partiva da un brand, metteva
+       un accessorio e poi toglieva i prodotti del brand col cestino restava con
+       `brand` valorizzato e il carrello di sola marginalità — e prendeva il ramo
+       dei contratti, che chiede documento, contratti e attribuzione per una
+       vendita che non c'è più. Da quando il pulsante BLOCCA, quello non era più
+       un fastidio: era la cassa che non si apriva. */
+    if ((margFlow && !brand) || (cart.length === 0 && margItems.length > 0)) {
       margPriceMissing(margItems).forEach(m => out.push({ ico: "€", testo: `manca il prezzo di «${m.product}»`, dove: "carrello" }));
       margNumeroMancante(margItems).forEach(m => out.push({ ico: "📲", testo: `manca il numero da ricaricare per «${m.product}»`, dove: "carrello" }));
-      if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino non lo può stampare (Amministrazione → Fiscalità → Articoli)`, dove: "carrello" }));
+      /* anche questo era consultivo: lo scontrino lo decide il server, e se il
+         reparto manca lo dice lui — bloccare qui vorrebbe dire non poter più
+         vendere un articolo mal configurato finché non passa l'amministrazione */
+      if (posScontrinoAbilitato(selNeg)) senzaReparto(margItems).forEach(m => out.push({ ico: "🧾", testo: `«${m.product}» non ha un reparto IVA: lo scontrino potrebbe non stamparlo (Amministrazione → Fiscalità → Articoli)`, dove: "carrello", avviso: true }));
       mancanzeMagazzino(margItems).forEach(x => out.push(x));
       if (margItems.some(_usatoFinanziato)) {
         if (margSkipCli) out.push({ ico: "💳", testo: "usato con finanziamento: i dati del cliente sono obbligatori, non si può saltare", dove: "cliente" });
@@ -8617,7 +8640,16 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
         <div className="cart-head" style={{background:"linear-gradient(135deg,#1e293b,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"var(--tf-w600)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
+            <div><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"var(--tf-w600)",fontSize:13}}>{onlyMarg?(()=>{
+                /* ⚠️ CHI STA COMPRANDO SI DEVE VEDERE ANCHE QUI. Nel carrello di
+                   sola marginalità c'era scritto «Riepilogo vendite» e basta: il
+                   nome del cliente, o il fatto che non ce ne sia uno, non
+                   compariva da nessuna parte fra lo step Cliente e la cassa. Una
+                   vendita finita per sbaglio su «vendita diretta» non era più
+                   intercettabile. */
+                const nome=(tipoCliente==="business"?ana.ragioneSociale:`${ana.nome} ${ana.cognome}`).trim();
+                return margSkipCli?"🚫 Vendita senza dati cliente":(nome?`${nome} — Riepilogo vendite 💰`:"Riepilogo vendite 💰");
+              })():((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
               {!onlyMarg&&(ana.cf||ana.cellulare||ana.email||ana.iban)&&<div style={{marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
                 {ana.cf&&<span style={{fontSize:11,color:"var(--tf-w750)",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
                 {ana.cellulare&&<span style={{fontSize:11,color:"var(--tf-w750)"}}>📱 {ana.cellulare}</span>}
@@ -8798,19 +8830,27 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
               dove manca. */}
           {onlyMarg&&<button
             onClick={()=>{
-              if(_manca.length){
-                const primo=_manca[0];
+              /* ⚠️ SI BLOCCA SOLO SU CIÒ CHE FERMA DAVVERO. Le voci marcate
+                 `avviso` — giacenza a zero, reparto IVA mancante — prima non
+                 fermavano nessuno, perché il pulsante apriva comunque la
+                 finestra e poi la cassa. Trattarle come le altre voleva dire
+                 chiudere l'incasso col cliente davanti per un numero di
+                 magazzino che non torna. Si dicono, e si va avanti. */
+              const blocchi=_manca.filter(x=>!x.avviso);
+              if(blocchi.length){
+                const primo=blocchi[0];
                 if(primo.dove!=="carrello"){setShowCart(false);setVistaStep(primo.dove);}
-                sT("⚠️ Prima di incassare manca: "+_manca.map(x=>x.testo).join(" · "));
+                sT("⚠️ Prima di incassare manca: "+blocchi.map(x=>x.testo).join(" · "));
                 return;
               }
+              if(_manca.length) sT("⚠️ "+_manca.map(x=>x.testo).join(" · "));
               void saveMargOnly();
             }}
             disabled={margSaving}
-            className={cn("rvAzione",_manca.length?"rvAzione-att":"rvAzione-viola")} style={{marginLeft:"auto"}}
+            className={cn("rvAzione",_manca.some(x=>!x.avviso)?"rvAzione-att":"rvAzione-viola")} style={{marginLeft:"auto"}}
             title={_manca.length?"Manca: "+_manca.map(x=>x.testo).join(" · "):""}>
             {margSaving?"⏳ un attimo…"
-              :_manca.length?`🔒 Manca ${_manca.length===1?"una cosa":_manca.length+" cose"}`
+              :_manca.some(x=>!x.avviso)?`🔒 Manca ${_manca.filter(x=>!x.avviso).length===1?"una cosa":_manca.filter(x=>!x.avviso).length+" cose"}`
               :posScontrinoAbilitato(selNeg)?`🧾 Vai al pagamento (${margItems.length})`
               :`💾 Salva vendita (${margItems.length})`}
           </button>}
