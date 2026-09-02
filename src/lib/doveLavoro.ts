@@ -143,7 +143,7 @@ export function serveDichiarazione(ruolo?: string | null, id?: string | null): b
 /** Vero se questa persona lavora in un UFFICIO e non in un punto vendita:
  *  lì non c'è cassa, non si scontrina, e la domanda «in che negozio sei
  *  oggi?» non ha risposta. Vale anche per chi ha il ruolo giusto ma è
- *  assegnato all'Agenzia o all'Ufficio Commerciale. */
+ *  assegnato all'Agenzia o al Call Center. */
 export async function stoInUfficio(userId: string, primario?: string | null): Promise<boolean> {
     const { data: st } = await supabase.from("stores").select("name, is_ufficio");
     const uffici = new Set(((st ?? []) as { name: string; is_ufficio?: boolean | null }[])

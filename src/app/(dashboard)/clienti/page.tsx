@@ -2288,13 +2288,13 @@ export default function ClientiPage() {
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-400">Gestiti dal negozio</label>
-                                            {/* "Ufficio Commerciale" = anagrafiche nate dal call center
+                                            {/* "Call Center" = anagrafiche nate dal call center
                                                 (mig. 108): cosi' si includono/escludono dai ragionamenti
                                                 di marketing (es. SMS compleanno solo a chi e' stato in negozio) */}
                                             <SelectMulti
                                                 values={filterNegozioGestito}
                                                 onChange={(v) => { setFilterNegozioGestito(v); setCurrentPage(1); }}
-                                                opzioni={[...NEGOZI, "Ufficio Commerciale"]}
+                                                opzioni={[...NEGOZI, "Call Center"]}
                                                 className="w-full glass-input text-sm rounded-lg py-2"
                                             />
                                         </div>
