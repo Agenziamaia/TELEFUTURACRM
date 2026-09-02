@@ -69,8 +69,21 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
     // confermare dov'è già: non si scrive niente, ed è il caso più frequente
     if (attiva && attiva.sede === sede) return { ok: true, stato: "attiva", cambiato: false };
 
-    if (mie.includes(sede)) {
-        // è un suo turno: si sposta e basta, nessuna approvazione
+    /* ⚠️ CHI PUÒ APPROVARE NON CHIEDE IL PERMESSO A SÉ STESSO (Luca 02/09,
+       parlando di Marta Perrotta: «essendo operativa dentro un negozio le
+       serve la dichiarazione per fare gli scontrini, però è l'unica che, se
+       sceglie un punto vendita diverso da quello in cui è in turno, dopo aver
+       confermato può operare senza nessuna autorizzazione — perché
+       l'amministrativo è lei stessa»).
+       Scritto per RUOLO e non per persona: la regola vale per chiunque sieda
+       dall'altra parte del bancone dell'approvazione, e domani vale ancora se
+       Marta cambia ruolo o se qualcun altro entra in direzione. La conferma
+       gliela chiede la schermata; qui si prende atto. */
+    const io = await chiSei(userId);
+    const siAutorizza = PUO_APPROVARE.includes(String((io as { role?: string } | null)?.role || ""));
+
+    if (mie.includes(sede) || siAutorizza) {
+        // è un suo turno — o è lei stessa a poter autorizzare: si sposta e basta
         if (attiva) {
             await supabase.from("presenza_negozio")
                 .update({ stato: "chiusa", deciso_da: "cambio dichiarato", deciso_il: new Date().toISOString() })
@@ -78,6 +91,10 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
         }
         const { error } = await supabase.from("presenza_negozio").insert({
             user_id: userId, data, sede, origine: "turno", stato: "attiva",
+            sede_turno: mie.includes(sede) ? null : (mie[0] || null),
+            motivo: mie.includes(sede) ? null : (motivo || "autorizzata da sé: ha il potere di approvare"),
+            deciso_da: mie.includes(sede) ? null : nome,
+            deciso_il: mie.includes(sede) ? null : new Date().toISOString(),
         });
         /* DOPPIO CLIC (revisore 31/08): due richieste partite nello stesso
            istante leggono entrambe «nessuna attiva» e provano a scrivere; la
