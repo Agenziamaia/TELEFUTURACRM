@@ -202,7 +202,7 @@ export default function MagazzinoPage() {
         if (!user?.id) { setNegoziDoveLavoro([]); return; }
         let vivo = true;
         (async () => {
-            const { attiva, inAttesa } = await presenzaOggi(user.id);
+            const { attiva, inAttesa, errore } = await presenzaOggi(user.id);
             /* ⚠️ SENZA AUTORIZZAZIONE NON SI MUOVE MERCE (Luca 02/09:
                «registra vendita e magazzino devono essere bloccate fino a
                quando non c'è un'autorizzazione da parte di qualcuno»).
@@ -211,7 +211,10 @@ export default function MagazzinoPage() {
                scritto in scheda né quelli assegnati bastano da soli, perché
                altrimenti chi chiede di andare altrove continuerebbe a
                spedire dal proprio come se niente fosse. */
-            if (serveDichiarazione(user.role, user.id) && !attiva) {
+            /* se non si riesce a LEGGERE la dichiarazione non si blocca: il
+               problema è nostro, e fermare un magazzino per un pacchetto perso è
+               peggio del rischio che copre (revisore 02/09) */
+            if (!errore && serveDichiarazione(user.role, user.id) && !attiva) {
                 if (vivo) { setNegoziDoveLavoro([]); setAccessoInAttesa(!!inAttesa); }
                 return;
             }

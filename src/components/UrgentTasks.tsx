@@ -184,6 +184,11 @@ export function UrgentTasks() {
         return () => document.removeEventListener("mousedown", onDoc);
     }, []);
 
+    const fatta = async (id: string) => {
+        await supabase.from("admin_tasks").update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() }).eq("id", id);
+        setTasks((p) => p.filter((t) => t.id !== id));
+    };
+
     /* ⚠️ «FATTA» NON DECIDE NIENTE (Luca 02/09, misurato: 5 task su 5 marcate
        fatte, 4 richieste su 5 ancora in attesa). Chi premeva quel pulsante su
        una richiesta di accesso a un altro punto vendita chiudeva la task e
@@ -200,6 +205,14 @@ export function UrgentTasks() {
                 body: JSON.stringify({ id, esito }),
             });
             const j = await r.json().catch(() => ({}));
+            /* già decisa da qualcun altro: la task va chiusa lo stesso,
+               altrimenti resta nel fulmine di tutta la direzione per sempre —
+               e da qui il vecchio «✓ Fatta» non c'è più (revisore 02/09) */
+            if (r.status === 409) {
+                await fatta(t.id);
+                alert("Questa richiesta l'ha già decisa qualcun altro: tolgo la task.");
+                return;
+            }
             if (!r.ok || j?.error) throw new Error(j?.error || "non riuscita");
             setTasks((p) => p.filter((x) => x.id !== t.id));
         } catch (e) {
@@ -208,10 +221,6 @@ export function UrgentTasks() {
         setDecidendo(null);
     };
 
-    const fatta = async (id: string) => {
-        await supabase.from("admin_tasks").update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() }).eq("id", id);
-        setTasks((p) => p.filter((t) => t.id !== id));
-    };
 
     // Sempre visibile (anche a zero task: altrimenti non si scopre); il colore
     // ambra e il contatore compaiono solo quando c'e' qualcosa da fare.

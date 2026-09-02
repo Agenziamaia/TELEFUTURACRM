@@ -54,13 +54,17 @@ const oggiYmd = () => {
 
 const bello = (nome: string) => nome.charAt(0).toUpperCase() + nome.slice(1);
 
-/** Tutte le sedi del gruppo, con le loro insegne. Gli uffici restano fuori:
- *  non sono punti vendita e da lì non esce merce. */
+/** Tutte le sedi del gruppo, con le loro insegne.
+ *  ⚠️ GLI UFFICI CI SONO (revisore 02/09). Stavano fuori con la motivazione
+ *  «non sono punti vendita e da lì non esce merce» — che è falso: da Ufficio
+ *  Commerciale e Agenzia sono uscite 57 vendite negli ultimi trenta giorni.
+ *  Finché la dichiarazione era un dato da raccogliere, tenerli fuori era un
+ *  dettaglio; da quando è un cancello, vuol dire che chi lavora lì non può
+ *  dichiararsi da nessuna parte, e quindi non può più vendere. */
 export async function sediDelGruppo(): Promise<SedeLavoro[]> {
     const { data } = await supabase.from("stores").select("name, is_ufficio").order("name");
     const per = new Map<string, string[]>();
     (data ?? []).forEach((r: { name: string; is_ufficio?: boolean | null }) => {
-        if (r.is_ufficio) return;
         const k = sedeFisica(r.name);
         if (!k) return;
         const arr = per.get(k) || [];
@@ -128,15 +132,24 @@ export function serveDichiarazione(ruolo?: string | null, id?: string | null): b
 
 /** La presenza dichiarata oggi: quella ATTIVA (dove sta lavorando davvero) e
  *  l'eventuale richiesta ancora in attesa di approvazione. */
-export async function presenzaOggi(userId: string): Promise<{ attiva: Presenza | null; inAttesa: Presenza | null }> {
-    const { data } = await supabase.from("presenza_negozio")
+export async function presenzaOggi(userId: string): Promise<{ attiva: Presenza | null; inAttesa: Presenza | null; rifiutata: Presenza | null; errore: string | null }> {
+    /* ⚠️ L'ERRORE ESCE DA QUI (revisore 02/09). Prima si destrutturava solo
+       `data`: una select fallita — un blip di rete, un token scaduto —
+       tornava «nessuna dichiarazione», identica a chi non l'ha fatta. Con la
+       dichiarazione diventata un cancello, quello vuol dire fermare un
+       negozio per un pacchetto perso. Chi chiama deve poter distinguere
+       «non ha dichiarato» da «non sono riuscito a leggerlo», e sul secondo
+       caso lasciare passare con un avviso. */
+    const { data, error } = await supabase.from("presenza_negozio")
         .select("id, sede, origine, stato, sede_turno")
         .eq("user_id", userId).eq("data", oggiYmd())
-        .in("stato", ["attiva", "in_attesa"]);
+        .in("stato", ["attiva", "in_attesa", "rifiutata"]);
     const righe = (data ?? []) as Presenza[];
     return {
         attiva: righe.find((r) => r.stato === "attiva") ?? null,
         inAttesa: righe.find((r) => r.stato === "in_attesa") ?? null,
+        rifiutata: righe.find((r) => r.stato === "rifiutata") ?? null,
+        errore: error ? error.message : null,
     };
 }
 

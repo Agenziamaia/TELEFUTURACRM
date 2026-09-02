@@ -108,6 +108,27 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
         if (error && error.code !== "23505") return { ok: false, error: error.message };
     }
     const giaChiesta = (righe ?? []).find((r) => r.stato === "in_attesa" && r.sede === sede);
+    if (giaChiesta) {
+        /* ⚠️ LA RICHIESTA ORFANA (revisore 02/09). Chi premeva il vecchio
+           «✓ Fatta» chiudeva la task e lasciava la richiesta in attesa: da
+           quel momento non compariva più a nessuno, e uscire e rientrare non
+           la rigenerava — restava bloccato senza che nessuno potesse vederlo.
+           Se la richiesta c'è ancora ma nessuno ha più una task aperta, se ne
+           rifà una. */
+        const { data: aperte } = await supabase.from("admin_tasks")
+            .select("id").eq("tipo", "accesso_negozio").eq("done", false)
+            .like("link", `%presenza=${giaChiesta.id}%`).limit(1);
+        if (!aperte || !aperte.length) {
+            await supabase.from("admin_tasks").insert({
+                tipo: "accesso_negozio",
+                titolo: `🏪 ${nome} chiede di lavorare a ${sede}`,
+                dettaglio: `Richiesta ancora in attesa. Oggi risulta di turno a ${sedeTurno || "nessun negozio"}. Fino all'autorizzazione non può registrare vendite né muovere merce.`,
+                link: `/collaboratori?sezione=turni&presenza=${giaChiesta.id}`,
+                target_role: "direzione",
+                created_by: nome || null,
+            });
+        }
+    }
     if (!giaChiesta) {
         const { data: nata, error } = await supabase.from("presenza_negozio").insert({
             user_id: userId, data, sede, origine: "richiesta", stato: "in_attesa",
@@ -143,6 +164,9 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
     return { ok: true, stato: "in_attesa", sedeTurno, cambiato: true };
 }
 
+/** la data di oggi come la scrive la tabella */
+function oggi() { return new Date().toISOString().slice(0, 10); }
+
 async function chiSei(id: string) {
     const { data } = await supabase.from("app_users")
         .select("role, full_name, active").eq("id", id).maybeSingle();
@@ -162,7 +186,7 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabase.from("presenza_negozio")
         .select("id, user_id, data, sede, sede_turno, motivo, created_at, app_users(full_name)")
-        .eq("stato", "in_attesa").order("created_at", { ascending: false }).limit(100);
+        .eq("stato", "in_attesa").eq("data", oggi()).order("created_at", { ascending: false }).limit(100);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, richieste: data ?? [] });
 }

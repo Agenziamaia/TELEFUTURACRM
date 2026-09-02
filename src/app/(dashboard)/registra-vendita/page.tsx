@@ -5370,9 +5370,12 @@ function CRM() {
      "in attesa", né "non dichiarata". Gli altri ruoli — amministrazione,
      direzione, call center — non dichiarano niente e non vengono toccati.
      "carico" finché non si sa: non si blocca su un dato che non è arrivato. */
-  const [presenzaStato,setPresenzaStato]=useState<"carico"|"ok"|"attesa"|"assente">("carico");
+  const [presenzaStato,setPresenzaStato]=useState<"carico"|"ok"|"attesa"|"assente"|"rifiutata"|"illeggibile">("carico");
   const deveDichiarare = serveDichiarazione(user?.role, user?.id);
-  const bloccoAccesso = deveDichiarare && (presenzaStato==="attesa" || presenzaStato==="assente");
+  /* ⚠️ «illeggibile» NON blocca: se non riusciamo a leggere la dichiarazione
+     il problema è nostro, e fermare un negozio per un pacchetto perso è
+     peggio del rischio che copre. Si lascia passare, e si dice. */
+  const bloccoAccesso = deveDichiarare && (presenzaStato==="attesa" || presenzaStato==="assente" || presenzaStato==="rifiutata");
   /* IL NEGOZIO DICHIARATO ALL'ACCESSO. Il campo resta modificabile — Luca
      31/08: «lasciamolo, dallo precompilato, e nel momento in cui vanno a
      registrare una pratica per un altro punto vendita devono cambiarlo loro
@@ -5420,7 +5423,7 @@ function CRM() {
            successa. Il rimedio al blocco non è ignorarlo, è approvare in
            fretta — ed è per questo che l'approvazione arriva adesso anche
            sul fulmine. */
-        setPresenzaStato(p.attiva ? "ok" : p.inAttesa ? "attesa" : "assente");
+        setPresenzaStato(p.errore ? "illeggibile" : p.attiva ? "ok" : p.inAttesa ? "attesa" : p.rifiutata ? "rifiutata" : "assente");
         const dich = p.attiva;
         if (!dich) return;
         const dentro = negozi.filter(n => sedeFisica(n) === dich.sede);
@@ -7026,8 +7029,9 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
   );
   const mancanzeVendita = () => {
     const m = [];
-    if (bloccoAccesso) m.push(presenzaStato === "attesa"
-      ? "🔒 la tua richiesta di lavorare in un altro punto vendita è ancora DA AUTORIZZARE: finché non la approvano non puoi registrare"
+    if (bloccoAccesso) m.push(
+      presenzaStato === "attesa" ? "🔒 la tua richiesta di lavorare in un altro punto vendita è ancora DA AUTORIZZARE: chiedi all'amministrazione di aprire il ⚡ in alto a destra"
+      : presenzaStato === "rifiutata" ? "🔒 la tua richiesta di lavorare in un altro punto vendita è stata RIFIUTATA: parlane con l'amministrazione"
       : "🔒 non hai dichiarato dove stai lavorando oggi: esci e rientra, oppure chiedi all'amministrazione");
     // SOLO MARGINALITÀ (Luca 06/08): allegati tutti facoltativi — per un
     // accessorio spesso non ci sono i dati del cliente
@@ -8053,6 +8057,19 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
   const margMinOk=!!(_celMargOk&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
   const margLock=useRef(false);
   const saveMargOnly=async()=>{
+    /* ⚠️ IL CANCELLO VALE ANCHE QUI (revisore 02/09). Questo è il ramo della
+       MARGINALITÀ PURA — accessori, ricariche, SIM, usati — e non passava da
+       `mancanzeVendita()`: cioè il blocco dell'autorizzazione copriva tutto
+       tranne il 58% delle vendite, quelle che scaricano il magazzino. */
+    if (bloccoAccesso) {
+      sT(presenzaStato === "attesa"
+        ? "🔒 La tua richiesta di lavorare in un altro punto vendita è ancora da autorizzare: finché non la approvano non puoi registrare."
+        : presenzaStato === "rifiutata"
+        ? "🔒 La tua richiesta di lavorare in un altro punto vendita è stata rifiutata: parlane con l'amministrazione."
+        : "🔒 Non hai dichiarato dove stai lavorando oggi: esci e rientra, oppure chiedi all'amministrazione.");
+      return;
+    }
+
     { // due società non si scontrinano insieme: vale anche qui
       const _soc = societaInCarrello(margItems);
       if (_soc.length > 1 && !localeDueCasse) { sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}. In questo negozio la cassa è una sola, e la seconda società non ha un registratore su cui uscire.`); margLock.current=false; return; }
