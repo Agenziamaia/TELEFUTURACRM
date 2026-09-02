@@ -125,21 +125,49 @@ try {
 # "apertura fallita: MiraOposException" (visto a W3, Merulana, Acilia Multi). Il nostro
 # driver NON ne ha bisogno (i negozi senza MIRA_FP_SERVER stampano regolarmente, es.
 # Baleniere) e chiuderlo NON lo fa ripartire (verificato a W3: non e' un servizio).
-# Lo chiudiamo qui, prima di aprire: lo scontrino esce da solo, senza dover chiudere
-# SuiteMobile a mano su ogni PC ogni mattina.
-try { Get-Process -Name MIRA_FP_SERVER -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
+# NB (Acilia Multi 02/09): chiuderlo e aprire SUBITO non basta - il registratore
+# impiega un attimo a RILASCIARE la connessione. Quindi: chiudi, aspetta che il
+# processo sparisca + un margine, e ritenta l'apertura fino a 3 volte.
+function LiberaRegistratore {
+  try {
+    $smp = Get-Process -Name MIRA_FP_SERVER -ErrorAction SilentlyContinue
+    if ($smp) {
+      $smp | Stop-Process -Force -ErrorAction SilentlyContinue
+      for ($i = 0; $i -lt 15; $i++) {
+        if (-not (Get-Process -Name MIRA_FP_SERVER -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 200
+      }
+      Start-Sleep -Milliseconds 1200   # margine perche' il registratore rilasci la connessione
+      return $true
+    }
+  } catch { }
+  return $false
+}
 
 $fp = $null
-try {
-  $fp = New-Object MiraOposDll.FiscalPrinter('', 0, '', $true)
-  $fp.tipo_stampante = 'CUSTOM'
-  $fp.custom_kube = $true
-  $fp.apri_stampante($OposName, '', $false)
-  if (-not $fp.stampante_abilitata) { Esito $false "registratore non abilitato (OPOS '$OposName')" ""; exit 1 }
-} catch {
-  $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
-  Esito $false "apertura fallita: $($ex.Message)" ""
-  try { if ($fp) { $fp.chiudi_stampante() } } catch { }
+$openErr = $null
+$smVisto = $false
+for ($try = 1; $try -le 3; $try++) {
+  if (LiberaRegistratore) { $smVisto = $true }
+  try {
+    $fp = New-Object MiraOposDll.FiscalPrinter('', 0, '', $true)
+    $fp.tipo_stampante = 'CUSTOM'
+    $fp.custom_kube = $true
+    $fp.apri_stampante($OposName, '', $false)
+    if (-not $fp.stampante_abilitata) { Esito $false "registratore non abilitato (OPOS '$OposName')" ""; exit 1 }
+    $openErr = $null
+    break
+  } catch {
+    $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+    $openErr = $ex.Message
+    try { if ($fp) { $fp.chiudi_stampante() } } catch { }
+    $fp = $null
+    Start-Sleep -Milliseconds 700
+  }
+}
+if ($openErr) {
+  $hint = if ($smVisto) { " (MIRA_FP_SERVER chiuso ma registratore ancora occupato dopo 3 tentativi)" } else { " (nessun MIRA_FP_SERVER attivo: registratore occupato da altro o in errore)" }
+  Esito $false ("apertura fallita: " + $openErr + $hint) ""
   exit 1
 }
 
