@@ -5807,7 +5807,7 @@ function CRM() {
      insieme alle righe della vendita. Se fallisce, la vendita resta valida:
      è un registro, non un prerequisito — ma si urla in console e all'utente,
      perché una ricarica incassata e non registrata nessuno la ritrova. */
-  const registraRicariche=async(items,idPerVoce,azScontrino)=>{
+  const registraRicariche=async(items,idPerVoce,azScontrino,sospesa)=>{
     /* ⚠️ UNA RIGA PER RICARICA VERA, non per voce di carrello. Quaranta euro
        composti da due tagli da venti sono DUE operazioni che il fornitore
        deve eseguire, e domani saranno due chiamate all'API. Sullo scontrino
@@ -5837,6 +5837,13 @@ function CRM() {
     try{
       const r=await fetch("/api/vendita/paystore",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({negozio:selNeg,venditore:selVend,
+          /* ⚠️ IL CONTO IN SOSPESO NON È UNA RICARICA PAGATA (revisione ostile
+             02/09). Ogni riga del registro nasce «sospeso», che lì dentro vuol
+             dire «scontrinata e incassata, credito non ancora caricato»: chi
+             carica il credito a mano leggendo quel registro avrebbe erogato una
+             ricarica per una vendita mai pagata né documentata. Ora la riga lo
+             dice, e chi la legge sa di doversi fermare. */
+          sospesa: !!sospesa,
           /* la società con cui lo scontrino è appena uscito, passata dal
              modale fin qui. ⚠️ Era un `useRef`, e non veniva azzerato mai: nei
              negozi senza cassa fiscale — dove il modale non si apre e la
@@ -6483,7 +6490,7 @@ function CRM() {
          al registro delle ricariche, non in un riferimento condiviso: il
          registro deve dire con quale partita IVA è stata fatturata, e
          ricalcolarla laggiù vorrebbe dire due regole per lo stesso fatto. */
-      const r = await fn(extra?.azienda || null);
+      const r = await fn(extra?.azienda || null, { sospesa: !!extra?.sospesa });
       pendingCommit.current = null;
       const ct = extra?.contoTerzi || [];
       if (ct.length && Array.isArray(r) && r[0]?.id) {
@@ -7770,7 +7777,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
          prima dell'insert — quindi il modale se li porta dietro anche se la
          scrittura non è ancora avvenuta: è per questo che la task del bonifico
          continua a puntare alla vendita giusta. */
-      const commitFn = async (azScontrino) => {
+      const commitFn = async (azScontrino, opts) => {
         // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
         if (notaOn && promData) {
           await supabase.from("calendar_tasks").insert({
@@ -7899,7 +7906,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
            contratto — cliente che attiva una SIM e intanto ricarica un altro
            numero. Senza questa riga si registrerebbero solo le vendite di
            sole ricariche, cioè si perderebbero proprio quelle miste. */
-        await registraRicariche(margList, idPerVoce, azScontrino);
+        await registraRicariche(margList, idPerVoce, azScontrino, !!opts?.sospesa);
         venditaScritta.current = true;   // e l'autosave smette di risuscitarla
         clearDraft("crm_v9");            // adesso sì: la vendita esiste
         return contractRows;
@@ -8139,7 +8146,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
       // Premendo X sullo scontrino NON si salva niente. Il cliente/anagrafica è già
       // stato risolto sopra: un contatto senza vendita è innocuo. In caso di errore
       // la funzione LANCIA, così chi la chiama sa che il salvataggio non è riuscito.
-      const commitFn = async (azScontrino) => {
+      const commitFn = async (azScontrino, opts) => {
       const idPerVoce=new Map();
       const rows=margItems.map(mi=>{const idRiga=`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
         if(mi&&mi.paystore)idPerVoce.set(mi,idRiga);
@@ -8211,7 +8218,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         const _av = avvisiScarico(_sc);
         if (_av.length) { console.error("scarico magazzino:", _av.join(" · ")); setAvvisiMag(_av); }
       } catch (e) { console.error("scarico magazzino:", e); setAvvisiMag(["il magazzino non è stato aggiornato: " + (e?.message || "errore")]); }
-      await registraRicariche(margItems, idPerVoce, azScontrino);
+      await registraRicariche(margItems, idPerVoce, azScontrino, !!opts?.sospesa);
       return rows;
       };
       const _cliLabel=(margCliSel?margCliLabel(margCliSel):(ana.ragioneSociale||`${ana.nome||""} ${ana.cognome||""}`.trim()||"")).trim();

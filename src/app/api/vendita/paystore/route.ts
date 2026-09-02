@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const g = await accesso(request, "vendita/paystore");
     if (!g.ok) return g.risposta;
 
-    let body: { negozio?: string; venditore?: string; azienda?: string | null; soleRicariche?: boolean; voci?: Voce[] };
+    let body: { negozio?: string; venditore?: string; azienda?: string | null; soleRicariche?: boolean; sospesa?: boolean; voci?: Voce[] };
     try { body = await request.json(); } catch { return NextResponse.json({ error: "corpo non valido" }, { status: 400 }); }
 
     const voci = Array.isArray(body.voci) ? body.voci : [];
@@ -97,6 +97,14 @@ export async function POST(request: Request) {
             taglio: v.taglio || null,
             importo,
             stato: STATO_INIZIALE,
+            /* ⚠️ «SOSPESO» QUI VUOL DIRE «SCONTRINATA E INCASSATA, CREDITO NON
+               ANCORA CARICATO». Su un conto tenuto in sospeso non è vero né
+               l'uno né l'altro, e chi carica il credito leggendo il registro
+               erogherebbe una ricarica mai pagata. Lo stato non si può cambiare
+               (c'è un CHECK sul database), ma la riga lo dice. */
+            nota: body.sospesa
+                ? "⚠️ CONTO IN SOSPESO: il cliente NON ha ancora pagato e lo scontrino non è stato emesso. NON caricare il credito finché la vendita non è chiusa."
+                : null,
             contract_id: v.contractId || null,
             con_attivazione: v.conAttivazione ?? null,
             azienda,

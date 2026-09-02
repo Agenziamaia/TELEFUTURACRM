@@ -82,7 +82,7 @@ const ATTESA_STAMPA_MS = 25000;
 
 type Fase = "telefoni" | "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
-export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: (extra?: { contoTerzi?: { descrizione: string; imei: string; importo: number; forma: string }[]; azienda?: string | null }) => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
+export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: (extra?: { contoTerzi?: { descrizione: string; imei: string; importo: number; forma: string }[]; azienda?: string | null; sospesa?: boolean }) => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
 
     // Pagamento come lista di forme (max 3). Default: tutto in contanti.
     /* NESSUNA FORMA PRESELEZIONATA (Luca 31/08). Era «Contanti» di partenza:
@@ -662,6 +662,16 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     };
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
+    /** Toglie dalla coda un incasso che la cassa non ha ancora ritirato. */
+    const fermaIncasso = async (jobId: string) => {
+        try {
+            await fetch("/api/vendita/incasso/annulla", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId }),
+            });
+        } catch { /* se non ci si riesce, resta la scadenza del server */ }
+    };
+
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
         setFase("incasso");
         cancelCashRef.current = false;
@@ -680,7 +690,14 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 await new Promise((r) => setTimeout(r, POLL_MS));
                 // Annulla dal CRM (spec Francesco): l'operatore ferma l'attesa. Il cliente
                 // deve annullare anche sullo schermo della cassa se aveva già iniziato.
-                if (cancelCashRef.current) return { ok: false, cancelled: true, erroreMsg: "annullato dall'operatore" };
+                if (cancelCashRef.current) {
+                    /* SI TOGLIE DALLA CODA, se non l'ha ancora preso nessuno:
+                       lasciandolo lì, il tentativo successivo si metteva DIETRO
+                       e la macchina eseguiva prima quello abbandonato — cioè
+                       chiedeva i soldi due volte. */
+                    await fermaIncasso(jobId);
+                    return { ok: false, cancelled: true, erroreMsg: "annullato dall'operatore" };
+                }
                 const { data: row } = await supabase.from("print_jobs").select("status, result").eq("id", jobId).single();
                 if (row && (row.status === "done" || row.status === "error")) {
                     let out: any = {};
@@ -688,7 +705,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     const ok = row.status === "done" && out.ok !== false && !out.errore;
                     return { ok, incassato: out.incassato ?? (ok ? amount : 0), resto: out.resto ?? 0, erroreMsg: out.msg || (row.status === "error" ? "errore cassa" : "") };
                 }
-                if (Date.now() - start > CASH_TIMEOUT_MS) return { ok: false, erroreMsg: "tempo scaduto: agente non attivo o cassa non risponde" };
+                if (Date.now() - start > CASH_TIMEOUT_MS) {
+                    await fermaIncasso(jobId);
+                    return { ok: false, erroreMsg: "tempo scaduto: agente non attivo o cassa non risponde" };
+                }
             }
         } catch (e: any) {
             return { ok: false, erroreMsg: String(e?.message || e) };
@@ -1020,7 +1040,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const tieniInSospeso = async () => {
         if (onCommit) {
             setFase("stampa"); setMsg("Registro la vendita…");
-            const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null });
+            /* `sospesa` LO DICE AL REGISTRO DELLE RICARICHE: qui la vendita è
+               scritta ma NON pagata e NON scontrinata, e chi carica il credito
+               a mano deve saperlo (revisione ostile 02/09). */
+            const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null, sospesa: true });
             if (!c || !c.ok) {
                 setCommitFail(true); setFase("errore");
                 setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore") + "). Il conto NON è stato messo in sospeso: riprova, o annota la vendita a mano.");
@@ -1635,7 +1658,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     <div className="space-y-3 text-center py-1">
                         <div className="text-4xl">✅</div>
                         <p className="text-emerald-300 font-semibold">{msg}</p>
-                        {cashPortion > 0 && <p className="text-sm text-slate-300">Incassato {eur(incassato)} · Resto <span className="text-white font-bold">{eur(resto)}</span></p>}
+                        {/* ⚠️ ANCHE COL CARRELLO MISTO. `cashPortion` legge `righe`, lo
+                            stato del percorso a una società: in modo diviso vale sempre
+                            zero, e la schermata finale non diceva né quanto era entrato
+                            né quanto resto aveva dato la macchina — i due numeri del
+                            guasto di Magliana (revisione ostile 02/09). */}
+                        {(multiSocieta ? paidCash : cashPortion) > 0 && <p className="text-sm text-slate-300">Incassato {eur(incassato)} · Resto <span className="text-white font-bold">{eur(resto)}</span></p>}
                         {nuovoCoupon && (
                             <div className="text-left text-[12px] text-emerald-100 bg-emerald-500/10 border border-emerald-400/30 rounded-lg p-2">
                                 🎟️ Nuovo coupon resto: <b className="tracking-wide">{nuovoCoupon.code}</b> ({eur(nuovoCoupon.valore)}) — consegnalo al cliente.
