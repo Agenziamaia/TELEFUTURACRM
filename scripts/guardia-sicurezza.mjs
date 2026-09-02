@@ -33,6 +33,13 @@ const SENZA_SESSIONE = {
     "aircall/webhook": "chiamata da Aircall, protetta dal suo token",
     "whatsapp/triage": "girata dal cron",
     "email/triage": "girata dal cron",
+    /* L'EXE «Telefutura Cassa» manda qui lo stato del PC ogni minuto e le
+       segnalazioni dello staff. Non ha una sessione utente — è un programma su
+       una macchina in negozio — e si autentica col PRINT_AGENT_TOKEN nel corpo,
+       perché non puo' mandare intestazioni sue. Stessa protezione delle rotte
+       print/*, verificata riga per riga: senza questa voce il build restava
+       rosso e NIENTE andava in produzione. */
+    "agent/report": "agente di cassa, protetto dal suo token nel corpo",
     "print/enqueue": "agente di stampa, protetto dal suo token",
     "print/next": "agente di stampa, protetto dal suo token",
     "print/claim": "agente di stampa, protetto dal suo token",
