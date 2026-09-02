@@ -64,6 +64,24 @@ export async function GET(req: Request) {
     // se la pulizia fallisce lo si SCRIVE: un difetto che si richiude in
     // silenzio è il difetto di partenza, con un anno in più addosso
     if (ePul) console.error("pulizia job appesi:", negozio, ePul.message);
+
+    /* CONTANTI RIMASTI "PENDING" MENTRE L'AGENTE ERA GIU' (02/09/2026).
+       Diverso — e all'opposto — della cautela «MAI SUI CONTANTI» qui sopra:
+       quella protegge i "sent" (già ritirati: la cassa POTREBBE aver incassato,
+       segnarli falliti nasconderebbe soldi veri). Questi invece sono "pending":
+       NON sono MAI stati ritirati (l'agente era spento/non pollava), quindi la
+       cassa NON è mai partita e NON ha incassato NULLA. Lasciarli lì è il pericolo:
+       quando l'agente torna li ritira e fa partire la cassa per una vendita vecchia
+       o già pagata a mano → può prendere i contanti del cliente SUCCESSIVO (visto
+       stamattina a Castani/Baleniere/San Paolo). Dopo 5 min un pending cash_collect
+       è certamente abbandonato (nessun cliente aspetta la cassa 5 minuti) → si
+       annulla: SOLO status="pending" + kind="cash_collect". Gli scontrini fiscali
+       pending NON si toccano (usciranno al riavvio dell'agente). */
+    const { error: eCash } = await supabase.from("print_jobs")
+      .update({ status: "error", result: '{"ok":false,"msg":"cassa non attivata: agente offline, richiesta contanti scaduta dopo 5 minuti"}', updated_at: new Date().toISOString() })
+      .eq("negozio", negozio).eq("status", "pending").eq("kind", "cash_collect")
+      .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
+    if (eCash) console.error("scadenza contanti pending:", negozio, eCash.message);
   }
 
   let q = supabase.from("print_jobs").select("*").eq("status", "pending")
