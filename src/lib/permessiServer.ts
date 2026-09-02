@@ -84,6 +84,10 @@ export const SEZIONE_DI: Record<string, string> = {
     /* svuotare il deposito di transito dei documenti: sta nel pannello, e la
        rotta controlla anche il RUOLO */
     "file/transito": "/amministrazione",
+    /* le credenziali di pagamento: pannello, e la rotta controlla il RUOLO */
+    "paystore/credenziali": "/amministrazione?sez=paystore",
+    /* il documento di trasporto di un usato: sta in Usati */
+    "usati/ddt": "/usati",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".

@@ -199,7 +199,7 @@ export function PayStoreAdminView() {
     /* ⚠️ IL GIORNO APERTO NON SOPRAVVIVE AL CAMBIO DI PERIODO: apro il primo
        settembre, passo ad agosto, e il grafico resta intitolato «martedì 1
        settembre» con dentro il vuoto. */
-    const [vista, setVista] = useState<"registro" | "tagli">("registro");
+    const [vista, setVista] = useState<"registro" | "tagli" | "chiavi">("registro");
     /* cosa comanda il pannello di destra: il giorno per giorno, oppure il
        dettaglio dei punti vendita quando si clicca la torta (Luca 01/09) */
     const [destra, setDestra] = useState<"giorni" | "negozi">("giorni");
@@ -426,8 +426,8 @@ export function PayStoreAdminView() {
                             </div>
                         )}
                         <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
-                            {[{ id: "registro", label: "Registro" }, { id: "tagli", label: "Listino tagli" }].map((v) => (
-                                <button key={v.id} onClick={() => setVista(v.id as "registro" | "tagli")}
+                            {[{ id: "registro", label: "Registro" }, { id: "tagli", label: "Listino tagli" }, { id: "chiavi", label: "Credenziali" }].map((v) => (
+                                <button key={v.id} onClick={() => setVista(v.id as "registro" | "tagli" | "chiavi")}
                                     className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", vista === v.id ? "bg-white/15 text-white" : "text-slate-400 hover:text-white")}>{v.label}</button>
                             ))}
                         </div>
@@ -1004,6 +1004,7 @@ export function PayStoreAdminView() {
                     </div>
                 </>
             ) : (
+                vista === "chiavi" ? <CredenzialiPayStore /> :
                 <ListinoTagli tagli={d.tagli} onCambiato={() => void carica()} />
             )}
         </div>
@@ -1293,3 +1294,129 @@ function ListinoTagli({ tagli, onCambiato }: { tagli: Taglio[]; onCambiato: () =
 }
 
 export default PayStoreAdminView;
+
+/* ═══ LE CREDENZIALI, CARICATE UNA VOLTA E MAI PIÙ VISTE ══════════════════
+   Sedici terne, una per negozio e per società. Il foglio lo apre il BROWSER,
+   ne ricava le righe e le manda al server, che le cifra: non passano da un
+   file del progetto (dove finirebbero nel repository e da lì non si tolgono
+   più) né da nessun altro posto. Da quel momento la schermata dice
+   «configurata», mai il valore.
+
+   ⚠️ PRIMA SI GUARDA, POI SI SALVA. Il pulsante «guarda cosa farebbe» mostra
+   l'accoppiamento nome-PayStore → nostro negozio senza scrivere niente: una
+   credenziale agganciata al negozio sbagliato vuol dire far partire una
+   ricarica sul conto di un'altra società, ed è un errore che si vede solo
+   dall'estratto conto. */
+function CredenzialiPayStore() {
+    const [righe, setRighe] = useState<{ negozio: string; azienda: string; identificativo: string | null; attivo: boolean; aggiornato_il: string }[]>([]);
+    const [esiti, setEsiti] = useState<{ societa: string; identificativo: string; negozio: string | null; esito: string }[]>([]);
+    const [busy, setBusy] = useState(false);
+    const [ko, setKo] = useState("");
+
+    const carica = useCallback(async () => {
+        const r = await fetch("/api/paystore/credenziali").then((x) => x.json()).catch(() => null);
+        if (r?.ok) setRighe(r.righe || []); else setKo(r?.error || "non riesco a leggere le credenziali");
+    }, []);
+    useEffect(() => { void carica(); }, [carica]);
+
+    /* il foglio si legge QUI, nel browser: le colonne sono quelle che manda
+       PayStore — società, identificativo, client id, client secret, signing key */
+    const leggiFoglio = async (f: File): Promise<{ societa: string; identificativo: string; clientId: string; secret: string; signingKey: string }[]> => {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const griglia = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, blankrows: false }) as unknown as string[][];
+        const out: { societa: string; identificativo: string; clientId: string; secret: string; signingKey: string }[] = [];
+        let soc = "";
+        for (const r of griglia.slice(1)) {
+            const c = (r || []).map((x) => String(x ?? "").trim());
+            if (c[0]) soc = c[0];
+            if (!c[1] || !c[2]) continue;
+            out.push({ societa: soc, identificativo: c[1], clientId: c[2], secret: c[3] || "", signingKey: c[4] || "" });
+        }
+        return out;
+    };
+
+    const manda = async (f: File, prova: boolean) => {
+        if (busy) return;
+        setBusy(true); setKo(""); setEsiti([]);
+        try {
+            const lette = await leggiFoglio(f);
+            if (!lette.length) throw new Error("nel foglio non ho trovato righe con società, identificativo e client id");
+            const r = await fetch("/api/paystore/credenziali", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ righe: lette, prova }),
+            }).then((x) => x.json());
+            if (!r?.ok) throw new Error(r?.error || "non salvate");
+            setEsiti(r.esiti || []);
+            if (!prova) await carica();
+        } catch (e) { setKo((e as Error)?.message || "non riuscito"); }
+        finally { setBusy(false); }
+    };
+
+    return (
+        <div className="glass-card an-card rounded-2xl p-4 space-y-4">
+            <div>
+                <h3 className="text-sm font-bold text-white">🔐 Credenziali PayStore</h3>
+                <div className="rvNota-s mt-1">
+                    Una per negozio e per società. La ricarica parte sulla credenziale della <b>cassa</b> su cui è
+                    uscito lo scontrino — a Donna lo stesso bancone batte su due registratori di due società diverse.
+                    I segreti si cifrano sul server: da qui non si rileggono più, si vede solo che ci sono.
+                </div>
+            </div>
+
+            <div className="rvPillRow items-center">
+                <label className="rvPill rvPill-tinta rvT-indaco" style={{ cursor: "pointer" }}>
+                    👁 Guarda cosa farebbe
+                    <input type="file" accept=".xlsx,.xls" hidden disabled={busy}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) void manda(f, true); e.target.value = ""; }} />
+                </label>
+                <label className={cn("rvPill rvPill-on rvT-verde", busy && "opacity-50")} style={{ cursor: busy ? "default" : "pointer" }}>
+                    {busy ? "leggo…" : "✓ Carica e cifra"}
+                    <input type="file" accept=".xlsx,.xls" hidden disabled={busy}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) void manda(f, false); e.target.value = ""; }} />
+                </label>
+            </div>
+            {ko && <div className="rvNota rvNota-ko"><div className="rvNota-s">{ko}</div></div>}
+
+            {esiti.length > 0 && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="rvLab">Accoppiamento</div>
+                    <table className="psTab text-[12px] mt-1">
+                        <tbody>
+                            {esiti.map((e, i) => (
+                                <tr key={i}>
+                                    <td className="text-slate-400">{e.societa}</td>
+                                    <td className="text-slate-300">{e.identificativo}</td>
+                                    <td>{e.negozio ? <b className="text-white">→ {e.negozio}</b> : <span className="text-rose-300">→ nessun negozio</span>}</td>
+                                    <td className={cn("text-[11px]", /NON|nessun/.test(e.esito) ? "text-rose-300" : "text-emerald-300")}>{e.esito}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            <div>
+                <div className="rvLab">Configurate adesso ({righe.length})</div>
+                {righe.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-3">Nessuna credenziale caricata: le ricariche non possono ancora partire da sole.</p>
+                ) : (
+                    <table className="psTab text-[12px] mt-1">
+                        <tbody>
+                            {righe.map((r) => (
+                                <tr key={r.negozio + r.azienda}>
+                                    <td className="text-white font-semibold">{r.negozio}</td>
+                                    <td><span className="rvBadge rvBadge-acc">{SOCIETA[r.azienda] || r.azienda}</span></td>
+                                    <td className="text-slate-500">{r.identificativo || "—"}</td>
+                                    <td className="text-emerald-300">✓ configurata</td>
+                                    <td className="text-slate-500 text-[11px]">{new Date(r.aggiornato_il).toLocaleDateString("it-IT")}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
+    );
+}
