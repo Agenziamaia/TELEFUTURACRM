@@ -8785,7 +8785,35 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
           <button onClick={()=>setConfirmReset(true)} className="rvPill" style={{borderColor:"rgba(220,53,69,.5)",background:"rgba(220,53,69,.08)",color:"var(--tf-f87171)"}}>🗑️ Reset form</button>
           {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} className="rvPill" style={{borderColor:"rgba(139,92,246,.55)",background:"rgba(111,66,193,.10)",color:"var(--tf-a78bfa)"}}>+ Altro brand</button>}
-          {onlyMarg&&<button onClick={()=>setShowMargSave(true)} className={cn("rvAzione",_manca.length?"rvAzione-att":"rvAzione-viola")} style={{marginLeft:"auto"}} title={_manca.length?"Manca: "+_manca.map(x=>x.testo).join(" · "):""}>{_manca.length?`🔒 Manca ${_manca.length===1?"una cosa":_manca.length+" cose"}`:`💾 Salva Marginalità (${margItems.length})`}</button>}
+          {/* ⚠️ NIENTE FINESTRA IN MEZZO (Luca 02/09): «quel pop-up mi sembra più
+              una sovrapposizione, non capisco il senso: il processo è semplice,
+              seleziono tutto, vado sul carrello e vado al pagamento — e il
+              pagamento deve sfociare nella pagina dei metodi di pagamento, dove
+              mi chiede come voglio pagare e su quale cassa».
+              Aveva ragione: quella finestra ripeteva il carrello che si stava
+              già guardando e il cliente che sta nel suo passo, e in cambio
+              aggiungeva un clic prima di ogni incasso. Da qui si va dritti alla
+              cassa, che è dove si sceglie forma di pagamento, registratore e
+              società. Se manca qualcosa non si apre niente: si viene portati
+              dove manca. */}
+          {onlyMarg&&<button
+            onClick={()=>{
+              if(_manca.length){
+                const primo=_manca[0];
+                if(primo.dove!=="carrello"){setShowCart(false);setVistaStep(primo.dove);}
+                sT("⚠️ Prima di incassare manca: "+_manca.map(x=>x.testo).join(" · "));
+                return;
+              }
+              void saveMargOnly();
+            }}
+            disabled={margSaving}
+            className={cn("rvAzione",_manca.length?"rvAzione-att":"rvAzione-viola")} style={{marginLeft:"auto"}}
+            title={_manca.length?"Manca: "+_manca.map(x=>x.testo).join(" · "):""}>
+            {margSaving?"⏳ un attimo…"
+              :_manca.length?`🔒 Manca ${_manca.length===1?"una cosa":_manca.length+" cose"}`
+              :posScontrinoAbilitato(selNeg)?`🧾 Vai al pagamento (${margItems.length})`
+              :`💾 Salva vendita (${margItems.length})`}
+          </button>}
           {!onlyMarg&&(()=>{const _m=_manca;const _ok=tp>0&&!submitting&&_m.length===0;
             // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
             // il click chiude il riepilogo e porta dritto allo step mancante
@@ -8804,98 +8832,11 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload}
           cassaAccesa={posScontrinoAbilitato} stessoBanco={stessoMagazzino}
           comeUtente={viewAsUser?.id || null} />
-        {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-          <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
-            {/* ⚠️ IL TITOLO DICEVA UNA COSA CHE NON SUCCEDE. Emanuele, store
-                manager di Magliana, ha segnalato che «dà la possibilità di
-                salvare la vendita prima di aver fatto il pagamento». La vendita
-                in realtà NON si salva qui — con la cassa accesa questo pulsante
-                apre lo scontrino, e la vendita si scrive solo quando lo
-                scontrino esce — ma scritto così sembrava il contrario, e su una
-                ricarica «sembrare» basta a far credere che il credito parta
-                senza aver incassato.
-                Regola di Luca, 02/09: «il carrello, se non viene pagato — in
-                contanti con l'apertura del cassetto, o con carta sul carrello —
-                solo in quel momento è possibile registrare la vendita; e se c'è
-                una ricarica dentro, solo in quel momento parte il collegamento
-                con l'API di PayStore». */}
-            {(() => {
-              const _allaCassa = posScontrinoAbilitato(selNeg);
-              const _conRicarica = margItems.some(m => m && m.paystore);
-              return (<>
-                <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>
-                  {_allaCassa ? "🧾 Vai all'incasso" : "💾 Salva Vendita Prodotti"}
-                </div>
-                <div style={{fontSize:12,color:"var(--tf-64748b)",marginBottom:_allaCassa?10:16}}>
-                  {margItems.length} prodott{margItems.length===1?"o":"i"} nel carrello
-                </div>
-                {_allaCassa && (
-                  <div className="rvNota rvNota-att">
-                    <div className="rvNota-s">
-                    La vendita <b>non è ancora registrata</b>: si apre la cassa, si incassa
-                    {" "}(contanti col cassetto, oppure carta) e la vendita si scrive
-                    {" "}<b>solo quando lo scontrino è uscito</b>.
-                    {_conRicarica && <> E il credito della ricarica parte <b>solo</b> a quel punto: prima non esce niente.</>}
-                    </div>
-                  </div>
-                )}
-              </>);
-            })()}
-            <div style={{background:"rgba(111,66,193,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
-              {margItems.map((item,idx)=>(
-                <div key={idx} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(111,66,193,0.12)"}}>
-                  <span style={{fontWeight:600}}>{item.product} x{item.qty||1}{item.importo!=null?` — €${Number(item.importo).toFixed(2)}`:""}</span>
-                  {item.model&&<span style={{color:"var(--tf-64748b)"}}>{item.model}</span>}
-                </div>
-              ))}
-            </div>
-            {/* MOD-44c: i dati cliente vivono nello STEP CLIENTE — qui solo il
-                riepilogo; per modificarli si torna allo step 2 */}
-            {margSkipCli?(
-              <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"1px dashed rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"var(--tf-fbbf24)"}}>🚫 Vendita senza dati cliente</div>
-                  <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>Skip scelto nello step Cliente — viene registrato sulla vendita</div>
-                </div>
-                <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");}} className="rvPill rvPill-sm" style={{whiteSpace:"nowrap"}}>👤 Aggiungi dati</button>
-              </div>
-            ):(margCliSel?(
-              <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {margCliLabel(margCliSel)}</div>
-                  <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>{[margCliSel.cf_piva,margCliSel.cellulare].filter(Boolean).join(" • ")||"anagrafica esistente"}</div>
-                </div>
-                <button onClick={()=>setMargCliSel(null)} className="rvPill rvPill-sm" style={{whiteSpace:"nowrap"}}>✕ cambia</button>
-              </div>
-            ):((()=>{
-              // riepilogo dei dati compilati nello STEP CLIENTE (MOD-44c)
-              const f=_anaComeForm();
-              const nomeCli=(f.ragioneSociale||`${f.nome} ${f.cognome}`.trim()||f.cf||"").trim();
-              const sub=[f.cf,f.tel].filter(Boolean).join(" • ");
-              return nomeCli?(
-                <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {nomeCli}</div>
-                    <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>{sub||"dati dallo step Cliente"}</div>
-                  </div>
-                  <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");setShowAna(true);}} className="rvPill rvPill-sm" style={{whiteSpace:"nowrap"}}>✏️ Modifica</button>
-                </div>
-              ):(
-                <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"1px dashed rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:800,color:"var(--tf-fbbf24)"}}>⚠️ Nessun dato cliente</div>
-                    <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>Compila lo step Cliente (basta anche solo nome, cognome o CF) o salta da lì</div>
-                  </div>
-                  <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");setShowAna(true);}} className="rvPill rvPill-sm" style={{whiteSpace:"nowrap"}}>👤 Compila</button>
-                </div>
-              );
-            })()))}
-            <div style={{display:"flex",gap:10,marginTop:4}}>
-              <button onClick={chiudiMargSave} className="rvPill" style={{flex:1,padding:"11px 0"}}>← Annulla</button>
-              <button onClick={saveMargOnly} disabled={margSaving} className="rvAzione" style={{flex:1,padding:"11px 0"}}>{margSaving?"Salvataggio...":(posScontrinoAbilitato(selNeg)?"🧾 Apri la cassa e incassa":"✅ Salva vendita")}</button>
-            </div>
-          </div>
-        </div>}
+        {/* La finestra «Salva Vendita Prodotti» stava qui: tolta il 02/09 su
+            richiesta di Luca. Ripeteva il carrello e i dati cliente — due cose
+            che si vedono nei loro passi — e metteva un clic fra il carrello e
+            l'incasso. `showMargSave` resta come stato perché la ricerca cliente
+            lo guarda, ma non si accende più da nessuna parte. */}
         {/* #124: popup di conferma reset anche dentro il carrello */}
         {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
       </div>
