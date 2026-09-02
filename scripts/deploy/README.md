@@ -50,6 +50,40 @@ una volta: lo script se ne accorge, lo scrive nel log e riavvia lo stesso.
 
 Log: `/var/log/telefutura-webhook.log` (consegne) e `/var/log/telefutura-deploy.log` (deploy).
 
+## 02/09/2026 — fermo per due giorni: il fetch dal server non passava piu'
+
+Il webhook arrivava e il deploy partiva, ma moriva subito:
+
+```
+[2026-09-02T21:56:13] --- avvio deploy (da 0b03da9) ---
+error: RPC failed; HTTP 401 curl 22 The requested URL returned error: 401
+fatal: expected flush after ref listing
+ERRORE: git fetch fallito
+```
+
+Ha riprovato ogni due minuti per un'ora, sempre uguale — e nel frattempo il sito
+serviva `0b03da9`, cioe' l'ultima versione buona. **Nessuno se ne accorge da
+fuori**: il CRM funziona, e' solo fermo a ieri.
+
+Due cause sovrapposte:
+
+1. **Il remote puntava ancora a `Rahib9045/TELEFUTURACRM`** — il nome vecchio —
+   con dentro un token che nel frattempo era scaduto. Finche' il token era
+   valido il redirect di GitHub copriva il cambio di nome; scaduto quello,
+   401 secco.
+   Il repo e' **pubblico**, quindi il token non serve: il remote adesso e'
+   `https://github.com/Agenziamaia/TELEFUTURACRM.git`, senza credenziali.
+   Un segreto che non c'e' non scade.
+
+2. **Il protocollo git v2 non passa da questo server.** Anche col remote giusto,
+   `git fetch` chiedeva una username e usciva con `expected flush after ref
+   listing`; con `protocol.version=0` funziona al primo colpo. Impostato nel
+   repo (`git config --local protocol.version 0`).
+
+⚠️ **Se il deploy torna a fallire, il primo posto da guardare e' questo log** —
+non il codice. `tail -20 /var/log/telefutura-deploy.log` dice sempre a che punto
+si e' fermato, e `/var/log/telefutura-webhook.log` dice se GitHub aveva chiamato.
+
 ## Storia: perche' era rotto
 
 Restava fermo per **due** motivi indipendenti, entrambi silenziosi:
