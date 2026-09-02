@@ -167,14 +167,38 @@ function matricolaDoc(result: string | null): string | null {
    capire se ha fatto uno scontrino è la risposta sbagliata, e su quella
    risposta uno rifà lo scontrino e batte due volte. */
 type Esito = { et: string; tono: string; spiega: string };
-function esitoDi(stato: string, result: string | null, tentativi = 1): Esito | null {
+function esitoDi(stato: string, result: string | null, tentativi = 1, emessi = 0, inCoda = false, radiceFuori = false): Esito | null {
     /* ⚠️ «RIEMESSO», non «emesso» (Luca 02/09): se ci sono voluti due
        tentativi il documento è uscito, ma qualcosa era andato storto — e chi
        guarda l'elenco deve vederlo senza aprire la riga. Un «emesso» pulito
        su un documento rifatto nasconde proprio la cosa che si sta cercando. */
-    if (stato === "done") return tentativi > 1
-        ? { et: "riemesso", tono: "rvBadge-warn", spiega: `il primo tentativo non era andato a buon fine: il documento è uscito al tentativo n° ${tentativi}.` }
-        : null;
+    if (stato === "done") {
+        /* ⚠️⚠️ DUE DOCUMENTI FISCALI VERI PER LA STESSA VENDITA. È il caso che
+           l'unione delle righe rischiava di nascondere: primo tentativo chiuso
+           d'ufficio dopo dieci minuti, ristampa uscita, e poi l'agente del
+           negozio riporta in ritardo anche il primo — che torna «done». Due
+           numeri di documento, due volte l'importo nello Z di giornata.
+           Dirgli «riemesso» in giallo sarebbe la bugia peggiore della pagina:
+           qui è rosso, e si dice cosa fare. */
+        if (emessi > 1) return { et: "DOPPIO", tono: "rvBadge-ko",
+            spiega: `dal registratore sono usciti ${emessi} documenti fiscali per questa stessa vendita. L'importo è nello Z di giornata ${emessi} volte: annullane ${emessi - 1} DALLA CASSA, o la giornata non quadra.` };
+        /* uscito, ma ce n'è un altro ancora in coda: se parte, diventa doppio */
+        if (inCoda) return { et: "uscito + 1 in coda", tono: "rvBadge-ko",
+            spiega: "il documento è già uscito, ma c'è un altro tentativo ancora in coda sulla cassa: se parte lo batti due volte. Toglilo dalla coda o preparati ad annullarlo." };
+        /* ⚠️ NON si dice «il primo era andato male»: sui fallimenti di questa
+           pagina 40 su 46 sono «esito ignoto», cioè la carta può essere uscita
+           lo stesso. Si dice quello che si sa: che i tentativi sono stati due. */
+        /* ⚠️ ANCHE QUANDO I PRIMI TENTATIVI SONO FUORI DAL PERIODO. Il filtro
+           di ingresso è oggi→oggi: una ristampa guardata il giorno dopo perde
+           la radice, resta sola, e con il solo conteggio dei tentativi
+           sembrerebbe un documento pulito uscito al primo colpo — cioè
+           l'opposto di quello che Luca ha chiesto di far vedere. */
+        if (radiceFuori) return { et: "riemesso", tono: "rvBadge-warn",
+            spiega: "questo documento è la ristampa di un tentativo precedente, che è fuori dall'intervallo di date scelto: allarga le date indietro per vedere com'era andata la prima volta." };
+        if (tentativi > 1) return { et: "riemesso", tono: "rvBadge-warn",
+            spiega: `ci sono voluti ${tentativi} tentativi, e il numero qui accanto è quello del documento uscito. Del tentativo precedente non risulta un numero — ma se dal rullo era uscita comunque della carta, controlla in cassa prima di considerarlo chiuso.` };
+        return null;
+    }
     if (stato === "pending") return { et: "in coda", tono: "rvBadge-warn", spiega: "è ancora in attesa che la cassa lo ritiri." };
     if (stato === "sent") return { et: "in stampa", tono: "rvBadge-warn", spiega: "la cassa l'ha ritirato e sta stampando: fra poco si saprà com'è andata." };
     if (stato === "error") {
@@ -217,7 +241,7 @@ function uniscoTentativi(tutti: Doc[]): Doc[] {
        rete contro un anello di dati storti, che bloccherebbe la pagina. */
     const radiceDi = (d: Doc): string => {
         let cur = d, giri = 0;
-        while (cur.ristampaDi && perId.has(cur.ristampaDi) && giri++ < 20) cur = perId.get(cur.ristampaDi)!;
+        while (cur.ristampaDi && perId.has(cur.ristampaDi) && giri++ < 200) cur = perId.get(cur.ristampaDi)!;
         return cur.id;
     };
     const catene = new Map<string, Doc[]>();
@@ -227,24 +251,77 @@ function uniscoTentativi(tutti: Doc[]): Doc[] {
     }
     const out: Doc[] = [];
     for (const [radice, righe] of catene) {
-        const ordinate = [...righe].sort((a, b) => a.quando.localeCompare(b.quando));
+        /* ⚠️ ORDINE STABILE anche a parità di istante: `localeCompare` torna 0
+           e `sort` è stabile, quindi l'ordine restava quello di arrivo (dal più
+           NUOVO, come li legge la query) e «l'ultimo» diventava il più vecchio.
+           A parità decide l'id, che almeno è deterministico. */
+        const ordinate = [...righe].sort((a, b) =>
+            a.quando < b.quando ? -1 : a.quando > b.quando ? 1 : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         const primo = ordinate.find((d) => d.id === radice) || ordinate[0];
         const ultimo = ordinate[ordinate.length - 1];
+        /* ⚠️ QUALI TENTATIVI SONO USCITI DAVVERO. Ognuno di questi è un
+           documento fiscale con un suo numero, e ognuno pesa sullo Z di
+           giornata: se sono due, sono due — la pagina non li può fondere in
+           uno e far sparire metà dell'incasso. */
+        const usciti = ordinate.filter((d) => d.stato === "done");
+        /* IL TENTATIVO CHE PORTA IL DOCUMENTO: l'ultimo uscito se ce n'è uno,
+           se no l'ultimo provato.
+           ⚠️ Il CONTENUTO va preso da lui, non dal primo: la ristampa
+           RICOSTRUISCE l'XML (`api/vendita/ristampa`) — corregge l'indice IVA
+           del non riscosso e ribilancia i pagamenti — quindi lo scontrino
+           uscito è legittimamente diverso da quello tentato. Mostrare le righe
+           del tentativo fallito sotto il titolo «cosa è stato scontrinato»,
+           col reparto sbagliato, è esattamente il campo per cui quel pannello
+           esiste. */
+        const vero = usciti.length ? usciti[usciti.length - 1] : ultimo;
+        /* l'avviso più grave dei tentativi PRECEDENTI non deve sparire quando
+           l'ultimo è ancora in coda: «rimasto aperto» è il momento in cui il
+           rischio di batterlo due volte è più alto */
+        const prima = ordinate.filter((d) => d.id !== vero.id && d.stato === "error")
+            .map((d) => esitoDi(d.stato, d.result))
+            .find((e) => e && (e.et === "rimasto aperto" || e.et === "esito ignoto")) || null;
         out.push({
-            ...primo,
-            /* dall'ULTIMO tentativo: com'è andata, e il numero del documento
-               che è uscito davvero */
-            stato: ultimo.stato,
-            result: ultimo.result,
-            numero: ultimo.numero,
-            matricola: ultimo.matricola ?? primo.matricola,
+            ...vero,
+            /* la riga resta chiavata sulla RADICE: è l'id che usano il link
+               profondo delle task e la regola «una ristampa sola» sul server */
+            id: primo.id,
+            negozio: primo.negozio,
+            /* ⚠️ IL GIORNO È QUELLO DEL DOCUMENTO USCITO, non del primo
+               tentativo: un tentativo fallito alle 23:55 e la ristampa uscita
+               alle 00:03 sono due giornate fiscali diverse, e lo Z che porta
+               quell'importo è quello del giorno dopo. Datandolo al primo, né
+               l'una né l'altra giornata quadrava — e con il filtro di ingresso
+               (oggi→oggi) la riga non si vedeva affatto. */
+            quando: vero.quando,
+            cliente: primo.cliente ?? vero.cliente,
+            operatore: primo.operatore ?? vero.operatore,
+            contrattoId: primo.contrattoId ?? vero.contrattoId,
+            azienda: primo.azienda ?? vero.azienda,
+            ristampaDi: primo.ristampaDi,
+            prova: primo.prova || vero.prova,
+            stato: usciti.length ? "done" : ultimo.stato,
+            result: vero.result,
+            matricola: vero.matricola ?? primo.matricola,
+            emessi: usciti.length,
+            /* TUTTI i numeri usciti, per la ricerca e per il conto: chi
+               telefona con in mano lo scontrino del PRIMO tentativo deve
+               trovarlo scrivendo quel numero nella casella Cerca. */
+            numeriEmessi: usciti.map((d) => d.numero).filter(Boolean) as string[],
+            inCoda: usciti.length > 0 && (ultimo.stato === "pending" || ultimo.stato === "sent"),
+            /* la radice è FUORI dal periodo scelto: i tentativi veri sono più
+               di quelli che si vedono, e la riga non deve spacciarsi per un
+               documento uscito al primo colpo */
+            radiceFuori: !!primo.ristampaDi && !perId.has(primo.ristampaDi),
+            avvisoPrima: prima ? prima.spiega : null,
             tentativi: ordinate.length,
-            storia: ordinate.map((d) => ({ id: d.id, quando: d.quando, stato: d.stato, result: d.result })),
+            storia: ordinate.map((d) => ({ id: d.id, quando: d.quando, stato: d.stato, result: d.result, numero: d.numero })),
         });
     }
     /* ⚠️ una catena che ha la radice FUORI dal periodo scelto resta comunque
        una riga sola: la radice non si trova, quindi la ristampa fa catena per
-       conto suo — meglio una riga in più che una riga persa. */
+       conto suo — meglio una riga in più che una riga persa. Che sia un pezzo
+       di catena lo dice `radiceFuori`, se no una ristampa guardata il giorno
+       dopo sembrerebbe un documento pulito uscito al primo tentativo. */
     return out.sort((a, b) => b.quando.localeCompare(a.quando));
 }
 
@@ -277,7 +354,12 @@ type Doc = {
        due righe uguali fanno pensare a due scontrini emessi, che è la cosa
        peggiore da far credere a chi sta controllando la cassa. */
     tentativi: number;
-    storia: { id: string; quando: string; stato: string; result: string | null }[];
+    emessi: number;              // quanti tentativi sono usciti DAVVERO dal registratore
+    numeriEmessi: string[];      // i numeri fiscali di tutti i documenti usciti
+    inCoda: boolean;             // uno è uscito e un altro è ancora in coda
+    radiceFuori: boolean;        // il primo tentativo è fuori dal periodo scelto
+    avvisoPrima: string | null;  // l'avviso grave di un tentativo precedente
+    storia: { id: string; quando: string; stato: string; result: string | null; numero: string | null }[];
 };
 
 const NOME_PAG: Record<number, string> = { 0: "Contanti", 1: "Assegno", 2: "Carta / elettronico", 3: "Ticket", 4: "Non riscosso" };
@@ -303,6 +385,12 @@ function Documenti() {
     const [errore, setErrore] = useState("");
     const [caricando, setCaricando] = useState(false);
     const [quantiInTutto, setQuantiInTutto] = useState<number | null>(null);
+    /* ⚠️ QUANTE RIGHE SONO STATE LETTE DAVVERO, prima dell'unione dei
+       tentativi. Confrontare il `count` del database con `docs.length` — che
+       ora è il numero di righe FUSE — faceva scattare l'avviso «l'elenco è
+       troncato, stringi le date» a ogni ristampa: su una giornata da dodici
+       documenti, il che è falso e insegna a ignorare l'avviso. */
+    const [quanteGrezze, setQuanteGrezze] = useState(0);
     const [tuttiNegozi, setTuttiNegozi] = useState<string[]>([]);
     const [uffici, setUffici] = useState<string[]>([]);
 
@@ -376,6 +464,7 @@ function Documenti() {
             type Riga = { id: string; negozio: string; kind: string; status: string; result: string | null; request_xml: string | null; meta: Record<string, unknown> | null; created_at: string };
             const grezze = (data ?? []) as Riga[];
             setQuantiInTutto(count ?? null);
+            setQuanteGrezze(grezze.length);
             /* LE PROVE DI COLLEGAMENTO FUORI SUBITO: «== CHECK COLLATINA W3 ==»
                e' il tasto che verifica se la cassa risponde, non un documento. */
             const lette = grezze.map(r => ({ r, x: leggiXml(r.request_xml) })).filter(o => !o.x.diagnostica);
@@ -407,6 +496,7 @@ function Documenti() {
                     ristampaDi: (m.ristampaDi as string) || null,
                     righe, pagamenti,
                     tentativi: 1,
+                    emessi: 0, numeriEmessi: [], inCoda: false, radiceFuori: false, avvisoPrima: null,
                     storia: [],
                 };
             })));
@@ -455,7 +545,10 @@ function Documenti() {
         const q = cerca.trim().toLowerCase();
         if (q) {
             const qs = q.replace(/[\s./-]/g, "");
-            const dentro = (d.numero || "").toLowerCase().includes(q)
+            /* ⚠️ TUTTI i numeri usciti, non solo l'ultimo: se di questa vendita
+               sono usciti due documenti, il cliente ha in mano UNO dei due — e
+               cercando quel numero deve trovare la riga. */
+            const dentro = (d.numeriEmessi.length ? d.numeriEmessi : [d.numero || ""]).some((x) => x.toLowerCase().includes(q))
                 || (d.cliente || "").toLowerCase().includes(q)
                 || (d.matricola || "").toLowerCase().includes(q)
                 || d.righe.some(r => r.descrizione.toLowerCase().includes(q)
@@ -473,9 +566,14 @@ function Documenti() {
        degli id-documento che compaiono come `ristampaDi` di qualche altro job. Su
        questi il tasto «Rifai» non si ripropone — una ristampa sola per documento,
        la stessa regola blindata sul server (evita le tasse triplicate). */
+    /* ⚠️ SI LEGGE DALLA CATENA, non da `ristampaDi`. Dopo l'unione delle righe
+       la riga porta la radice, e la radice per definizione NON è una ristampa:
+       l'insieme restava vuoto e l'avviso non compariva più da nessuna parte.
+       Un documento con più di un tentativo — o che continua una catena
+       cominciata fuori periodo — è già stato rifatto una volta. */
     const giaRifatti = useMemo(() => {
         const s = new Set<string>();
-        (docs || []).forEach(d => { if (d.ristampaDi) s.add(d.ristampaDi); });
+        (docs || []).forEach(d => { if (d.tentativi > 1 || d.radiceFuori) s.add(d.id); });
         return s;
     }, [docs]);
     const conta = useMemo(() => {
@@ -486,7 +584,12 @@ function Documenti() {
            ne' righe ne' totale, quindi non si sa quanto vale. Moltiplicarlo
            per −1 sottraeva zero e faceva credere che il conto ne tenesse
            conto. Meglio dirlo sotto che fingerlo qui. */
-        const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova && !d.storno).reduce((a, d) => a + (d.totale || 0), 0);
+        /* ⚠️ UNA RIGA PUÒ VALERE DUE DOCUMENTI. Quando la doppia emissione è
+           reale, il registratore ha battuto l'importo due volte e lo Z di
+           giornata lo porta due volte: contarlo una sola perché in elenco
+           sta su una riga sola farebbe quadrare la pagina e non la cassa. */
+        const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova && !d.storno)
+            .reduce((a, d) => a + (d.totale || 0) * Math.max(1, d.emessi), 0);
         return {
             scontrini: s.length, fatture: f.length,
             valScontrini: somma(s), valFatture: somma(f),
@@ -520,11 +623,12 @@ function Documenti() {
 
     const esporta = () => {
         const righeCsv = [
-            ["Data", "Ora", "Negozio", "Tipo", "Numero", "Matricola", "Totale €", "Cliente", "Operatore", "Esito", "Voci"].join(";"),
+            ["Data", "Ora", "Negozio", "Tipo", "Numero", "Tutti i numeri usciti", "Tentativi", "Matricola", "Totale €", "Cliente", "Operatore", "Esito", "Voci"].join(";"),
             ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio,
                 d.storno ? "Annullo" : d.fiscale ? "Fiscale" : "Non fiscale",
-                d.numero || "", d.matricola || "", String(d.totale ?? "").replace(".", ","), d.cliente || "", d.operatore || "",
-                esitoDi(d.stato, d.result, d.tentativi)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
+                d.numero || "", d.numeriEmessi.join(" + "), String(d.tentativi),
+                d.matricola || "", String(d.totale ?? "").replace(".", ","), d.cliente || "", d.operatore || "",
+                esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
         ].join("\n");
         const a = document.createElement("a");
         a.href = URL.createObjectURL(new Blob(["﻿" + righeCsv], { type: "text/csv;charset=utf-8" }));
@@ -622,22 +726,23 @@ function Documenti() {
        tabella, con trecento righe caricate, compare a migliaia di pixel dalla
        riga che l'ha aperto — cioè fuori schermo. */
     const dettaglio = (d: Doc) => {
-        const es = esitoDi(d.stato, d.result, d.tentativi);
+        const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori);
         return (
             <div className="rvDett">
                 {/* LA STORIA DEI TENTATIVI, quando ce n'è più di uno: chi controlla
                     la cassa deve poter vedere che cosa è successo e quando, senza
                     andarsi a cercare due righe diverse in elenco. */}
-                {d.tentativi > 1 && (
+                {(d.tentativi > 1 || d.radiceFuori) && (
                     <div className="rvNota rvNota-info">
-                        <div className="rvNota-t">🖨️ {d.tentativi} tentativi di stampa</div>
+                        <div className="rvNota-t">🖨️ {d.tentativi} tentativ{d.tentativi === 1 ? "o" : "i"} di stampa{d.radiceFuori ? " — e i primi sono fuori dal periodo scelto" : ""}</div>
                         {d.storia.map((t, i) => {
-                            const e2 = esitoDi(t.stato, t.result, 1);
+                            const e2 = esitoDi(t.stato, t.result, 1, t.stato === "done" ? 1 : 0);
                             return (
                                 <div key={t.id} className="rvDettR">
                                     <span className="rvTab-min">{i + 1}°</span>
                                     <span>{new Date(t.quando).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                                     <span className={cn("rvBadge", e2 ? e2.tono : "rvBadge-ok")}>{e2 ? e2.et : "emesso"}</span>
+                                    {t.numero && <span className="rvBadge rvBadge-acc">n. {t.numero}</span>}
                                     {t.result && e2 && <span className="rvTab-min">{t.result.slice(0, 90)}</span>}
                                 </div>
                             );
@@ -647,6 +752,17 @@ function Documenti() {
                             se per caso fossero usciti entrambi la doppia emissione deve restare
                             visibile. Qui si leggono come un documento solo.
                         </div>
+                    </div>
+                )}
+                {/* ⚠️ L'AVVISO DI UN TENTATIVO PRECEDENTE RESTA A VISTA. Appena
+                    la ristampa entra in coda, la riga diventa «in coda» e il
+                    «rimasto aperto» di prima uscirebbe dalla nota principale —
+                    cioè proprio quando il rischio di batterlo due volte è più
+                    alto. */}
+                {d.avvisoPrima && (
+                    <div className="rvNota rvNota-ko">
+                        <div className="rvNota-t">⚠️ Un tentativo precedente può aver già stampato</div>
+                        <div className="rvNota-s">{d.avvisoPrima}</div>
                     </div>
                 )}
                 {es && (
@@ -883,8 +999,12 @@ function Documenti() {
                                     </td></tr>
                                 )}
                                 {righe.map(d => {
-                                    const apertaQui = aperto === d.id;
-                                    const es = esitoDi(d.stato, d.result, d.tentativi);
+                                    /* ⚠️ ANCHE PER L'ID DI UN TENTATIVO. Le task di correzione
+                                        create prima dell'unione portano `?doc=<id-della-ristampa>`:
+                                        ora quella riga è chiavata sulla radice, e senza questo
+                                        l'amministrazione clicca la task e non si apre niente. */
+                                    const apertaQui = aperto === d.id || (!!aperto && d.storia.some(t => t.id === aperto));
+                                    const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori);
                                     return (
                                         <Fragment key={d.id}>
                                             <tr onClick={() => setAperto(apertaQui ? null : d.id)}
@@ -895,9 +1015,14 @@ function Documenti() {
                                                 </td>
                                                 <td className="rvTab-min">{d.negozio}{d.azienda ? <><br /><span className="rvBadge rvBadge-acc">{d.azienda}</span></> : null}</td>
                                                 <td className="rvTab-min">
-                                                    {d.numero ? <b>n. {d.numero}</b>
-                                                        : d.matricola ? <span>cassa {d.matricola}</span>
-                                                            : <span>senza numero</span>}
+                                                    {/* ⚠️ SE SONO USCITI IN DUE, SI VEDONO IN DUE. Mostrare solo
+                                                        l'ultimo faceva sparire dall'elenco — e dalla ricerca — il
+                                                        numero del primo documento, quello che il cliente ha in mano. */}
+                                                    {d.numeriEmessi.length > 1
+                                                        ? <b className="text-rose-300">n. {d.numeriEmessi.join(" + n. ")}</b>
+                                                        : d.numero ? <b>n. {d.numero}</b>
+                                                            : d.matricola ? <span>cassa {d.matricola}</span>
+                                                                : <span>senza numero</span>}
                                                     <br />
                                                     {/* LA PASTIGLIA VERDE SOLO SU UN DOCUMENTO DAVVERO
                                                         EMESSO: «fiscale» accanto a «rimasto aperto» sono
@@ -912,9 +1037,10 @@ function Documenti() {
                                                     {/* ⚠️ QUANTE VOLTE ci si è provati. Sta accanto all'esito
                                                         perché è la stessa informazione: un documento uscito al
                                                         secondo tentativo non è come uno uscito al primo. */}
-                                                    {d.tentativi > 1 && (
-                                                        <span className="rvBadge rvBadge-empty ml-1" title={`${d.tentativi} tentativi di stampa per questo documento`}>
-                                                            {d.tentativi} tentativi
+                                                    {(d.tentativi > 1 || d.radiceFuori) && (
+                                                        <span className={cn("rvBadge ml-1", d.emessi > 1 ? "rvBadge-ko" : "rvBadge-warn")}
+                                                            title={`${d.tentativi} tentativi di stampa per questo documento${d.radiceFuori ? " nel periodo scelto: i primi sono più indietro" : ""}`}>
+                                                            🖨️ {d.tentativi}{d.radiceFuori ? "+" : ""} tentativi
                                                         </span>
                                                     )}
                                                 </td>
@@ -939,7 +1065,7 @@ function Documenti() {
                             Un elenco troncato in silenzio è un elenco che mente. */}
                         <div className="rvTab-pie">
                             {righe.length.toLocaleString("it-IT")} document{righe.length === 1 ? "o" : "i"}
-{quantiInTutto != null && quantiInTutto > (docs?.length || 0)
+{quantiInTutto != null && quantiInTutto > quanteGrezze
                                 ? ` — ma nel periodo scelto ce ne sono ${quantiInTutto.toLocaleString("it-IT")}: il database ne consegna al massimo ${TETTO.toLocaleString("it-IT")} per volta, e i più vecchi restano fuori da questo elenco e dai riquadri. Stringi l'intervallo di date.`
                                 : ""}
                             {conta.senzaNumero > 0 ? ` · ${conta.senzaNumero} senza numero: i registratori Custom non lo riportano al CRM, e quei documenti si cercano per matricola.` : ""}
