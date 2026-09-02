@@ -302,6 +302,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const [motivoDoc, setMotivoDoc] = useState("");
     const [togliBusy, setTogliBusy] = useState(false);
     const [togliKo, setTogliKo] = useState("");
+    /* ⚠️ SE IL FILE NON SI È MOSSO, CHI HA PREMUTO LO DEVE SAPERE. La rotta lo
+       dice nella risposta, e prima finiva nel cestino della memoria: la card
+       spariva e l'admin credeva di aver chiuso una cosa ancora aperta. */
+    const [togliNota, setTogliNota] = useState("");
     const togliDocumento = async () => {
         if (!docDaTogliere || togliBusy) return;
         setTogliBusy(true); setTogliKo("");
@@ -313,6 +317,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j?.error || "non è stato tolto");
             setDocDaTogliere(null); setMotivoDoc("");
+            setTogliNota(j?.nota || "");
             await reloadDocs();
         } catch (e) { setTogliKo((e as Error)?.message || "non è stato tolto"); }
         finally { setTogliBusy(false); }
@@ -996,6 +1001,13 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 </button>
                                 <button onClick={() => setDocDaTogliere(null)} disabled={togliBusy} className="rvCarta-no rvCarta-no-ko w-full mt-2 text-xs font-bold">Annulla</button>
                             </div>
+                        </div>
+                    )}
+                    {togliNota && (
+                        <div className="rvNota rvNota-att mb-3">
+                            <div className="rvNota-t">⚠️ Tolto dal fascicolo, ma il file è rimasto in magazzino</div>
+                            <div className="rvNota-s">{togliNota}</div>
+                            <button onClick={() => setTogliNota("")} className="rvPill rvPill-sm mt-2">ho capito</button>
                         </div>
                     )}
                     {tab === "documenti" && vedeAllegati && (<div className="space-y-4 animate-in fade-in duration-300">
