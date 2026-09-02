@@ -2414,3 +2414,16 @@ html.light .rvFirmaBanco{color:#9a5b00 !important}
 .psRifai{width:22px;height:22px;border-radius:7px;border:1px solid rgba(129,140,248,.45);background:rgba(99,102,241,.14);color:#a5b4fc;font-size:12px;line-height:1;cursor:pointer;flex:none}
 .psRifai:hover:not(:disabled){background:rgba(99,102,241,.28);border-color:rgba(129,140,248,.8);color:#fff}
 .psRifai:disabled{opacity:.3;cursor:not-allowed}
+/* la conferma di ciò che non si torna indietro: stessa finestra del popup
+   della carta, ma con il rosso al posto dell'indaco */
+.rvCarta-ko{border-color:rgba(239,68,68,.3)}
+.rvCarta-r-ko{border-color:rgba(239,68,68,.28);background:rgba(239,68,68,.07)}
+.rvCarta-ko-b{display:block;width:100%;margin-top:17px;padding:13px;border-radius:13px;border:0;cursor:pointer;font-size:13.5px;
+  font-weight:800;color:#fff;background:linear-gradient(135deg,#dc2626,#ef4444);box-shadow:0 14px 32px -14px rgba(220,38,38,.95)}
+.rvCarta-ko-b:hover{filter:brightness(1.08)}
+.rvCarta-ko-b:disabled,.rvCarta-ok:disabled,.rvCarta-no:disabled{opacity:.55;cursor:default}
+.rvCarta-no-ko{color:#f87171}
+.rvCarta-no-ko:hover{color:#fca5a5}
+html.light .rvCarta-ko{border-color:rgba(185,28,28,.28)}
+html.light .rvCarta-r-ko{background:rgba(185,28,28,.05);border-color:rgba(185,28,28,.2)}
+html.light .rvCarta-no-ko{color:#b91c1c}

@@ -19,6 +19,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { mandaInCassa } from "@/lib/accontoInCassa";
 import { stessoMagazzino } from "@/lib/negoziNomi";
 import PopupCarta from "@/components/PopupCarta";
+import ConfermaCancella from "@/components/ConfermaCancella";
 import CanaleFirma, { type Canale } from "@/components/CanaleFirma";
 import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
 import { stampaModulo, type DatiModulo } from "@/lib/moduloPratica";
@@ -1536,6 +1537,8 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
     onChiudi: () => void; onFatto: (msg: string) => Promise<void>;
 }) {
     const [busy, setBusy] = useState(false);
+    const [chiediCanc, setChiediCanc] = useState(false);
+    const [ferma, setFerma] = useState<string[] | null>(null);
     const [imei, setImei] = useState(pratica.imei || "");
     const [tracking, setTracking] = useState(pratica.tracking || "");
     const STATI = statiDi(pratica.sezione);
@@ -1571,32 +1574,21 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
        più niente a cui appartenere.
        Si scrive il protocollo per confermare: un clic solo, su una lista, è
        come si cancella la pratica sbagliata. */
-    const cancella = async () => {
-        const conferma = window.prompt(
-            `Cancellare ${pratica.protocollo}?\n\nSparisce la pratica, i suoi documenti e le righe nella scheda del cliente. Non si torna indietro.\n\nScrivi il protocollo per confermare:`);
-        if (!conferma) return;
-        if (conferma.trim().toUpperCase() !== pratica.protocollo.toUpperCase()) { window.alert("Protocollo diverso: non ho cancellato niente."); return; }
+    /* la fa il SERVER: dal browser i depositi sono chiusi, e la rimozione dei
+       file veniva negata in silenzio lasciando in giro documenti d'identità
+       senza più niente a cui appartenere */
+    const cancella = async (forza: boolean) => {
         setBusy(true);
         try {
-            /* la fa il SERVER: dal browser i depositi sono chiusi, e la
-               rimozione dei file veniva negata in silenzio lasciando in giro
-               documenti d'identità senza più niente a cui appartenere */
-            const chiedi = async (forza: boolean) => {
-                const r = await fetch("/api/pratiche/cancella", {
-                    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: pratica.id, forza }),
-                });
-                return r.json();
-            };
-            let j = await chiedi(false);
-            if (j?.ferma) {
-                const ok = window.confirm(
-                    `Attenzione su ${pratica.protocollo}:\n\n· ${(j.ferma as string[]).join("\n· ")}\n\nVuoi cancellarla lo stesso?`);
-                if (!ok) { setBusy(false); return; }
-                j = await chiedi(true);
-            }
+            const r = await fetch("/api/pratiche/cancella", {
+                method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: pratica.id, forza }),
+            });
+            const j = await r.json();
+            if (j?.ferma) { setFerma(j.ferma as string[]); setBusy(false); return; }
             if (j?.error) throw new Error(j.error);
             await onFatto(`🗑️ ${pratica.protocollo} cancellata${j?.avanzi ? " — " + j.avanzi : ""}`);
+            setChiediCanc(false);
             onChiudi();
         } catch (e) {
             window.alert("Non sono riuscito a cancellarla: " + (e instanceof Error ? e.message : "riprova"));
@@ -1654,7 +1646,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                 </div>
                 <div className="flex items-center gap-2">
                     {eAdmin && (
-                        <button onClick={cancella} disabled={busy} className="rvPill rvPill-ko" title="Cancella la pratica e i suoi documenti">
+                        <button onClick={() => { setFerma(null); setChiediCanc(true); }} disabled={busy} className="rvPill rvPill-ko" title="Cancella la pratica e i suoi documenti">
                             🗑️ Cancella
                         </button>
                     )}
@@ -1663,6 +1655,18 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                     </button>
                 </div>
             </div>
+
+            {chiediCanc && (
+                <ConfermaCancella busy={busy} ferma={ferma}
+                    titolo={`${pratica.protocollo} — ${String((pratica.cliente as { etichetta?: string }).etichetta || "")}`}
+                    righe={[
+                        "La pratica sparisce dall'elenco e dalla scheda del cliente.",
+                        "I documenti firmati e il documento d'identità vengono eliminati dall'archivio.",
+                        "Non si torna indietro.",
+                    ]}
+                    onAnnulla={() => { setChiediCanc(false); setFerma(null); }}
+                    onConferma={() => cancella(!!ferma)} />
+            )}
 
             {/* pipeline */}
             <div className="rvBox" style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
