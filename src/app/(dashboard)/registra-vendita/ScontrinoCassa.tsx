@@ -939,11 +939,23 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        fallita, il venditore preme «Chiudi» — 899 € nel cassetto, zero
        contratti, zero bozza, niente da cui ripartire. */
     const chiudiConCautela = () => {
-        if (data?.daRegistrare && fase !== "fatto") {
-            const soldiPresi = cashDone && incassato > 0;
-            const testo = soldiPresi
-                ? `Hai GIÀ incassato ${eur(incassato)} in contanti, ma la vendita non è ancora registrata.\n\nUscendo adesso il CRM non ne saprà niente: nessun contratto, nessuno scontrino.\n\nProva prima «Ristampa scontrino». Vuoi davvero uscire?`
-                : "Questa vendita NON è ancora registrata: si scrive quando lo scontrino è emesso.\n\nUscendo adesso la perdi.\n\nSe il cliente paga più tardi, usa «Tieni in sospeso».";
+        /* ⭐ SI CHIEDE SOLO SE CI SONO SOLDI DI MEZZO (Luca 02/09): «se clicco
+           sulla ×, perché magari ho sbagliato a mettere l'importo
+           dell'articolo, devo semplicemente poter chiudere quella sezione
+           tornando al carrello, senza nessun popup».
+           Ha ragione, e adesso è anche vero: il carrello non viene più buttato
+           all'apertura della cassa, quindi chiudere non perde niente — si
+           torna indietro a correggere il prezzo, che è il gesto per cui la ×
+           esiste. L'avviso a ogni chiusura era diventato rumore, e il rumore
+           si impara a scavalcare senza leggerlo.
+           RESTA dove serve davvero: quando la macchina ha GIÀ preso i contanti
+           e lo scontrino non è uscito. Lì uscire lascia i soldi nel cassetto e
+           niente a database — lo scenario dell'iPhone da 899 € — e non è una
+           chiusura, è una perdita. */
+        if (cashDone && incassato > 0 && fase !== "fatto") {
+            const testo = `Hai GIÀ incassato ${eur(incassato)} in contanti, ma la vendita non è ancora registrata.\n\n`
+                + `Uscendo adesso il CRM non ne saprà niente: nessun contratto, nessuno scontrino.\n\n`
+                + `Prova prima «Ristampa scontrino». Vuoi davvero uscire?`;
             if (!window.confirm(testo)) return;
         }
         onDone();

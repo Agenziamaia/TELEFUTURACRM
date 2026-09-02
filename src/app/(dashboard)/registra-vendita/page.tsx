@@ -5679,7 +5679,11 @@ function CRM() {
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
-    setSelVend(user?.name||"");setSelNeg(user?.negozio||"");};
+    /* IL NEGOZIO TORNA A QUELLO DICHIARATO STAMATTINA, non a quello in
+       scheda: da quando la tendina non c'è più, ripescare `primary_store`
+       dopo ogni vendita avrebbe spostato in silenzio l'insegna di chi lavora
+       altrove — e con lei la cassa e il magazzino. */
+    setSelVend(user?.name||"");setSelNeg(negDichiarato.current||user?.negozio||"");};
   // ── Auto-save every state change (solo dopo il ripristino della bozza) ──
   // #118: si salva l'intera vendita in corso (brand, prodotti, carrello, flusso).
   /* L'AUTOSAVE SI SPEGNE QUANDO LA VENDITA È SCRITTA (revisore 31/08).
@@ -6787,7 +6791,25 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
   /* Le voci che nel carrello ci sono ma sullo scontrino no: oggi solo il
      telefono a rate Vodafone, che si incassa per conto terzi. */
   const _fuoriScontrino = (mi) => !!(mi && mi.fuoriScontrino);
-  const chiudiScontrino = () => { venditaScritta.current = false; pendingCommit.current = null; setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
+  /* CHIUDERE LA CASSA NON È BUTTARE LA VENDITA (Luca 02/09). Prima la ×
+     chiamava `fullReset()` sempre: che la vendita fosse andata a buon fine o
+     che l'operatore volesse solo correggere un importo, il carrello spariva.
+     Adesso si guarda se la vendita è stata SCRITTA: se sì si riparte puliti,
+     se no si torna al carrello con tutto dentro, che è quello che serve
+     quando ci si accorge di un prezzo sbagliato davanti al cliente. */
+  const chiudiScontrino = () => {
+    /* IL SEGNALE GIUSTO È `pendingCommit`, non `venditaScritta`: quest'ultima
+       vuol dire «consegnata alla cassa» e nel flusso brand è già vera prima
+       che si registri niente. `runPendingCommit` invece azzera il riferimento
+       SOLO dopo aver scritto davvero la vendita (riga 6452): finché è pieno,
+       a database non c'è nulla e il carrello deve tornare indietro intero. */
+    const daScrivere = !!pendingCommit.current;
+    venditaScritta.current = false;
+    pendingCommit.current = null;
+    setScontrino(null);
+    if (daScrivere) setShowCart(true); else fullReset();
+    submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1);
+  };
   const chiudiVenditaFatta = () => { venditaScritta.current = false; setVenditaFatta(null); fullReset(); submitLock.current = false; setSubmitting(false); };
   // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
   // potrebbe avere una vendita in corso); rinfresca solo la lista dei sospesi.
@@ -8173,7 +8195,14 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
       if ((_scRows.length || _telMarg.length) && posScontrinoAbilitato(selNeg)) {
         // DIFFERITO: apri lo scontrino; la vendita si scrive SOLO a scontrino emesso.
         pendingCommit.current = commitFn;
-        _resetForm(); clearDraft("crm_v9");
+        /* ⚠️ IL CARRELLO NON SI AZZERA QUI (Luca 02/09): «se clicco sulla X,
+           perché magari ho sbagliato a mettere l'importo dell'articolo, devo
+           semplicemente poter chiudere quella sezione tornando al carrello».
+           Azzerarlo all'APERTURA della cassa voleva dire che chiudere la
+           finestra buttava dieci minuti di lavoro — ed è il motivo per cui
+           era nato il pop-up che chiedeva conferma. Adesso il carrello resta,
+           e si pulisce quando la vendita è davvero scritta (`fullReset` in
+           `chiudiScontrino`, che guarda `venditaScritta`). */
         /* `daRegistrare` ANCHE QUI (revisore 31/08): il differimento è nato in
            questo flusso, ma l'avviso di chiusura era finito solo sull'altro.
            Accessori e telefoni in contanti passano di qui tutto il giorno. */
