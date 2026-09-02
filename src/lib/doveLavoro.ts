@@ -101,6 +101,31 @@ export async function sediDiTurnoOggi(userId: string, nome: string): Promise<str
     return [...sedi];
 }
 
+/* ═══ CHI DEVE DICHIARARE DOVE LAVORA ════════════════════════════════════
+   Questa lista viveva dentro `_DoveLavoro.tsx`, cioè dentro il popup. Ma dal
+   02/09 la stessa regola decide anche CHI VIENE BLOCCATO senza dichiarazione:
+   se le due liste stanno in due file, il giorno che se ne aggiunge un ruolo
+   in una sola, qualcuno si ritrova bloccato senza che nessuno gli abbia mai
+   chiesto niente — oppure il contrario, e il blocco non serve a nulla.
+   Una lista sola, qui. */
+export const RUOLI_DI_NEGOZIO = [
+    "venditore", "store_manager", "tecnico", "agente",
+    /* IL DIRETTORE COMMERCIALE (Luca 31/08): «sta sui negozi tutti i giorni,
+       per cui anche a lui bisogna chiedere in che punto vendita lavora». */
+    "direttore_commerciale",
+];
+/* LE ECCEZIONI PER PERSONA (Luca 31/08). Il ruolo non basta sempre: Marta
+   Perrotta è direttore generale ma «fa molte coperture», quindi la domanda la
+   riguarda eccome. Si va per id, non per nome: i nomi si riscrivono.
+   Franca Arduini ha lo stesso ruolo e resta fuori — lei in negozio non ci sta. */
+export const ANCHE_LORO = ["7e3f04f6-f30b-4b4b-aea8-f732c45e1861"];   // Marta Perrotta
+
+/** Vero se a questa persona il CRM chiede dove sta lavorando — e quindi se,
+ *  senza una dichiarazione APPROVATA, non può vendere né muovere magazzino. */
+export function serveDichiarazione(ruolo?: string | null, id?: string | null): boolean {
+    return RUOLI_DI_NEGOZIO.includes(String(ruolo || "")) || ANCHE_LORO.includes(String(id || ""));
+}
+
 /** La presenza dichiarata oggi: quella ATTIVA (dove sta lavorando davvero) e
  *  l'eventuale richiesta ancora in attesa di approvazione. */
 export async function presenzaOggi(userId: string): Promise<{ attiva: Presenza | null; inAttesa: Presenza | null }> {
@@ -115,19 +140,10 @@ export async function presenzaOggi(userId: string): Promise<{ attiva: Presenza |
     };
 }
 
-/** Dichiara dove si sta lavorando. `sedeTurno` valorizzata = si sta chiedendo
- *  di andare ALTROVE, e la riga nasce in attesa di approvazione. */
-export async function dichiaraPresenza(
-    userId: string, sede: string, sedeTurno?: string | null, motivo?: string,
-): Promise<{ ok: boolean; error?: string; inAttesa?: boolean }> {
-    const richiesta = !!sedeTurno && sedeTurno !== sede;
-    const { error } = await supabase.from("presenza_negozio").insert({
-        user_id: userId, data: oggiYmd(), sede,
-        origine: richiesta ? "richiesta" : "turno",
-        stato: richiesta ? "in_attesa" : "attiva",
-        sede_turno: sedeTurno || null,
-        motivo: motivo || null,
-    });
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, inAttesa: richiesta };
-}
+/* ⚠️ `dichiaraPresenza` NON ESISTE PIÙ, ed è voluto. Scriveva la riga
+   direttamente dal browser, e dal 02/09 la tabella non accetta più scritture
+   da lì: la presenza la crea SOLO il server (`/api/turni/presenza`), che è
+   l'unico che può decidere se nasce «attiva» o «in attesa di
+   autorizzazione». Finché quella funzione restava qui, bastava richiamarla
+   per saltare l'approvazione — e il codice per farlo era già scritto. */
+

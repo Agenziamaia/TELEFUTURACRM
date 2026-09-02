@@ -45,7 +45,7 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
 import { useVisibleStores } from "@/lib/visibleStores";
-import { presenzaOggi } from "@/lib/doveLavoro";
+import { presenzaOggi, serveDichiarazione } from "@/lib/doveLavoro";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_MAGAZZINO, CAP_MAGAZZINO_VALORI } from "@/lib/capabilities";
 import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
@@ -193,22 +193,33 @@ export default function MagazzinoPage() {
        assegnati, e la sede DICHIARATA oggi — che è il modo in cui il CRM sa
        dove uno sta davvero lavorando. */
     const [negoziDoveLavoro, setNegoziDoveLavoro] = useState<string[]>([]);
+    const [accessoInAttesa, setAccessoInAttesa] = useState(false);
     useEffect(() => {
         if (!user?.id) { setNegoziDoveLavoro([]); return; }
         let vivo = true;
         (async () => {
+            const { attiva, inAttesa } = await presenzaOggi(user.id);
+            /* ⚠️ SENZA AUTORIZZAZIONE NON SI MUOVE MERCE (Luca 02/09:
+               «registra vendita e magazzino devono essere bloccate fino a
+               quando non c'è un'autorizzazione da parte di qualcuno»).
+               Per chi deve dichiarare dove lavora, l'unica chiave che apre un
+               magazzino è la dichiarazione APPROVATA di oggi: né il negozio
+               scritto in scheda né quelli assegnati bastano da soli, perché
+               altrimenti chi chiede di andare altrove continuerebbe a
+               spedire dal proprio come se niente fosse. */
+            if (serveDichiarazione(user.role, user.id) && !attiva) {
+                if (vivo) { setNegoziDoveLavoro([]); setAccessoInAttesa(!!inAttesa); }
+                return;
+            }
             const set = new Set<string>();
+            if (attiva?.sede) set.add(attiva.sede);
             if (user.negozio) set.add(user.negozio);
             const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
             (data ?? []).forEach((r: { store_name?: string | null }) => { if (r.store_name) set.add(String(r.store_name)); });
-            /* la sede dichiarata oggi vale SOLO se approvata: una richiesta in
-               attesa non apre ancora nessun magazzino */
-            const { attiva } = await presenzaOggi(user.id);
-            if (attiva?.sede) set.add(attiva.sede);
-            if (vivo) setNegoziDoveLavoro([...set]);
+            if (vivo) { setNegoziDoveLavoro([...set]); setAccessoInAttesa(false); }
         })();
         return () => { vivo = false; };
-    }, [user?.id, user?.negozio]);
+    }, [user?.id, user?.negozio, user?.role]);
     /* CHI VEDE QUANTO VALE IL MAGAZZINO (Luca 01/09). I due riquadri in cima
        alle Giacenze, affiancati, dicono il margine dell'intero magazzino: non
        è un dato da bancone. Il diritto si decide dalla rotellina in
@@ -385,7 +396,7 @@ export default function MagazzinoPage() {
                 <Trasferimenti unita={unita} quantita={quantita} negozi={negozi} aziende={aziende}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={user?.negozio || ""}
                     negoziVisibili={negoziVisibili} seesAll={seesAll} visibiliPronti={visibiliPronti}
-                    negoziDoveLavoro={negoziDoveLavoro}
+                    negoziDoveLavoro={negoziDoveLavoro} accessoInAttesa={accessoInAttesa}
                     gestisce={gestisce} puoCaricare={puoCaricare} utente={user?.name || "—"} ricarica={carica}
                     cercaIniziale={ddtCercato} />
             )}
@@ -2059,12 +2070,12 @@ async function chiudiDifferenza(
     return avvisi;
 }
 
-function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, negoziVisibili, negoziDoveLavoro, seesAll, visibiliPronti, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
+function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, negoziVisibili, negoziDoveLavoro, accessoInAttesa, seesAll, visibiliPronti, gestisce, puoCaricare, utente, ricarica, cercaIniziale }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
     mioNegozio: string; negoziVisibili: string[];
     /** i magazzini da cui questa persona può far USCIRE merce */
-    negoziDoveLavoro: string[]; seesAll: boolean; visibiliPronti: boolean;
+    negoziDoveLavoro: string[]; accessoInAttesa: boolean; seesAll: boolean; visibiliPronti: boolean;
     gestisce: boolean; puoCaricare: boolean; utente: string; ricarica: () => void;
     /** il documento su cui atterrare, quando ci si arriva dalla storia di un pezzo */
     cercaIniziale?: string;
@@ -2570,7 +2581,9 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                 )}
                 {gestisce && negoziPartenza.length === 0 && visibiliPronti && (
                     <span className="rvTab-min">
-                        Per spedire serve un magazzino tuo: dichiara dove stai lavorando oggi, o chiedi all&apos;amministrazione.
+                        {accessoInAttesa
+                            ? "🔒 La tua richiesta di lavorare in un altro punto vendita è ancora da autorizzare: finché non la approvano non puoi spedire merce."
+                            : "Per spedire serve un magazzino tuo: dichiara dove stai lavorando oggi, o chiedi all'amministrazione."}
                     </span>
                 )}
                 {puoCaricare && (

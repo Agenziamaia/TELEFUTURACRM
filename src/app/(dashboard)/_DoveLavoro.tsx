@@ -31,20 +31,13 @@ import { cn } from "@/utils";
 import {
     sediDelGruppo, sediDiTurnoOggi, presenzaOggi,
     type SedeLavoro,
+    RUOLI_DI_NEGOZIO, ANCHE_LORO,
 } from "@/lib/doveLavoro";
 
-/** I ruoli che stanno dietro a un bancone. Gli altri non vedono la schermata. */
-const RUOLI_DI_NEGOZIO = [
-    "venditore", "store_manager", "tecnico", "agente",
-    /* IL DIRETTORE COMMERCIALE (Luca 31/08): «sta sui negozi tutti i giorni,
-       per cui anche a lui bisogna chiedere in che punto vendita lavora». */
-    "direttore_commerciale",
-];
-/* LE ECCEZIONI PER PERSONA (Luca 31/08). Il ruolo non basta sempre: Marta
-   Perrotta è direttore generale ma «fa molte coperture», quindi la domanda la
-   riguarda eccome. Si va per id, non per nome: i nomi si riscrivono.
-   Franca Arduini ha lo stesso ruolo e resta fuori — lei in negozio non ci sta. */
-const ANCHE_LORO = ["7e3f04f6-f30b-4b4b-aea8-f732c45e1861"];   // Marta Perrotta
+/* I ruoli che stanno dietro a un bancone e le eccezioni per persona ora
+   vivono in `lib/doveLavoro.ts`: la stessa lista decide chi vede questa
+   schermata E chi resta bloccato senza dichiarazione. Due copie sarebbero
+   divergute al primo ruolo aggiunto. */
 
 /* Ha già risposto in QUESTO caricamento di pagina. È l'ultima rete: se la
    memoria del browser non è scrivibile, almeno non si chiede due volte di

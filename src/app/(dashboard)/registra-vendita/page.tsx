@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
+import { serveDichiarazione } from "@/lib/doveLavoro";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
 import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF, venditoreLavoraIn } from "@/lib/matchAppuntamento";
 import { registraContrattoBrands, registraContrattoAlbero, contrattoRichiestoPer } from "@/lib/contrattoAllegato";
@@ -5364,6 +5365,14 @@ function CRM() {
   const { user, viewAsUser } = useAuth();
   const [selVend,setSelVend]=useState("");
   const [selNeg,setSelNeg]=useState("");
+  /* ⚠️ IL CANCELLO DELL'ACCESSO (Luca 02/09). Chi deve dichiarare dove
+     lavora e non ha una dichiarazione APPROVATA non registra vendite: né
+     "in attesa", né "non dichiarata". Gli altri ruoli — amministrazione,
+     direzione, call center — non dichiarano niente e non vengono toccati.
+     "carico" finché non si sa: non si blocca su un dato che non è arrivato. */
+  const [presenzaStato,setPresenzaStato]=useState<"carico"|"ok"|"attesa"|"assente">("carico");
+  const deveDichiarare = serveDichiarazione(user?.role, user?.id);
+  const bloccoAccesso = deveDichiarare && (presenzaStato==="attesa" || presenzaStato==="assente");
   /* IL NEGOZIO DICHIARATO ALL'ACCESSO. Il campo resta modificabile — Luca
      31/08: «lasciamolo, dallo precompilato, e nel momento in cui vanno a
      registrare una pratica per un altro punto vendita devono cambiarlo loro
@@ -5400,14 +5409,19 @@ function CRM() {
         const { presenzaOggi } = await import("@/lib/doveLavoro");
         const { sedeFisica } = await import("@/lib/negoziNomi");
         const p = await presenzaOggi(user.id);
-        /* ⚠️ VALE ANCHE LA DICHIARAZIONE IN ATTESA (revisione ostile 02/09).
-           `presenzaOggi` separa «attiva» da «in attesa»: chi chiede di lavorare
-           in un altro negozio resta in attesa finché non lo approvano, e da
-           quando la tendina non c'è più quello voleva dire NON POTER VENDERE.
-           Misurato: quattro persone in questo stato oggi, fra cui chi non ha
-           nessun negozio in scheda. L'approvazione serve a coprire i turni,
-           non a decidere se si può battere uno scontrino. */
-        const dich = p.attiva || p.inAttesa;
+        /* ⚠️ SOLO LA DICHIARAZIONE APPROVATA (Luca 02/09, che ha deciso il
+           contrario di quanto scritto qui stamattina: «registra vendita e
+           magazzino devono essere bloccate fino a quando non c'è
+           un'autorizzazione da parte di qualcuno»).
+           La ragione è che una dichiarazione in attesa vale quanto una
+           dichiarazione fatta da sé: chi scrive «oggi sto a San Paolo» e
+           batte subito lo scontrino ha scelto da solo il negozio di
+           attribuzione, e l'approvazione diventa una firma su una cosa già
+           successa. Il rimedio al blocco non è ignorarlo, è approvare in
+           fretta — ed è per questo che l'approvazione arriva adesso anche
+           sul fulmine. */
+        setPresenzaStato(p.attiva ? "ok" : p.inAttesa ? "attesa" : "assente");
+        const dich = p.attiva;
         if (!dich) return;
         const dentro = negozi.filter(n => sedeFisica(n) === dich.sede);
         if (!dentro.length) return;
@@ -7012,6 +7026,9 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
   );
   const mancanzeVendita = () => {
     const m = [];
+    if (bloccoAccesso) m.push(presenzaStato === "attesa"
+      ? "🔒 la tua richiesta di lavorare in un altro punto vendita è ancora DA AUTORIZZARE: finché non la approvano non puoi registrare"
+      : "🔒 non hai dichiarato dove stai lavorando oggi: esci e rientra, oppure chiedi all'amministrazione");
     // SOLO MARGINALITÀ (Luca 06/08): allegati tutti facoltativi — per un
     // accessorio spesso non ci sono i dati del cliente
     if (!(margFlow && !brand) && !attachments.some(a => a.type === "documento")) m.push("🪪 documento del cliente (step Allegati)");

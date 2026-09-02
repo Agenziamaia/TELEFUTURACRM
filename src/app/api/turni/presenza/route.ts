@@ -109,11 +109,12 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
     }
     const giaChiesta = (righe ?? []).find((r) => r.stato === "in_attesa" && r.sede === sede);
     if (!giaChiesta) {
-        const { error } = await supabase.from("presenza_negozio").insert({
+        const { data: nata, error } = await supabase.from("presenza_negozio").insert({
             user_id: userId, data, sede, origine: "richiesta", stato: "in_attesa",
             sede_turno: sedeTurno, motivo: motivo || null,
-        });
+        }).select("id").single();
         if (error && error.code !== "23505") return { ok: false, error: error.message };
+        const idRichiesta = (nata as { id?: string } | null)?.id || "";
         /* LA TASK ALL'AMMINISTRAZIONE la scrive il SERVER, non il browser: se
            la scrive il client, basta chiudere la scheda un attimo prima e la
            richiesta resta invisibile a chi la deve approvare. */
@@ -121,7 +122,12 @@ async function dichiara(userId: string, nome: string, sede: string, motivo: stri
             tipo: "accesso_negozio",
             titolo: `🏪 ${nome} chiede di lavorare a ${sede}`,
             dettaglio: `Oggi risulta di turno a ${sedeTurno || "nessun negozio"}. Ha chiesto di lavorare a ${sede}${motivo.trim() ? ` — «${motivo.trim()}»` : ""}. Fino all'approvazione continua a lavorare su ${sedeTurno || "nessun negozio"}. Si approva da Collaboratori → Turni.`,
-            link: "/collaboratori?sezione=turni",
+            /* ⚠️ L'ID DELLA RICHIESTA VIAGGIA NEL LINK. Serve al fulmine per
+               decidere da lì: prima la task portava solo alla sezione, e chi
+               premeva «fatta» chiudeva la task lasciando la persona in attesa
+               per sempre — misurato il 02/09: 5 task chiuse, 4 richieste
+               ancora aperte. */
+            link: idRichiesta ? `/collaboratori?sezione=turni&presenza=${idRichiesta}` : "/collaboratori?sezione=turni",
             /* TUTTO IL DIREZIONALE, non solo l'amministrazione (Luca 31/08:
                «abilita tutto il reparto… io, Claudia, Sandra, Franca e
                Marta»). La coda `direzione` è esattamente quella: la leggono
@@ -214,11 +220,16 @@ export async function POST(req: Request) {
         .eq("id", b.id).eq("stato", "in_attesa");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // la task dell'amministrazione si chiude da sola: è stata evasa
+    /* ⚠️ SI CHIUDE LA SUA TASK, NON QUELLE DEGLI ALTRI. Prima si cercava con
+       `ilike '%<sede>%'` sul testo: decidere una richiesta per «donna»
+       chiudeva OGNI task aperta che nominasse «donna» — e il testo contiene
+       sia la sede chiesta sia quella di turno, quindi con chiavi corte come
+       «san» ci finiva dentro mezzo gruppo. Ora si va per id, che viaggia nel
+       link della task. */
     await supabase.from("admin_tasks")
         .update({ done: true, done_by: io_.full_name || "—", done_at: new Date().toISOString() })
         .eq("tipo", "accesso_negozio").eq("done", false)
-        .ilike("dettaglio", `%${riga.sede}%`);
+        .like("link", `%presenza=${riga.id}%`);
 
     return NextResponse.json({ ok: true, stato: approva ? "attiva" : "rifiutata" });
 }

@@ -184,6 +184,30 @@ export function UrgentTasks() {
         return () => document.removeEventListener("mousedown", onDoc);
     }, []);
 
+    /* ⚠️ «FATTA» NON DECIDE NIENTE (Luca 02/09, misurato: 5 task su 5 marcate
+       fatte, 4 richieste su 5 ancora in attesa). Chi premeva quel pulsante su
+       una richiesta di accesso a un altro punto vendita chiudeva la task e
+       lasciava la persona in attesa per sempre — convinto di aver autorizzato.
+       Ora la decisione si prende da qui, e la task si chiude di conseguenza. */
+    const [decidendo, setDecidendo] = useState<string | null>(null);
+    const decidiAccesso = async (t: Task, esito: "approva" | "rifiuta") => {
+        const id = (t.link || "").match(/presenza=([0-9a-f-]{36})/i)?.[1] || "";
+        if (!id) { alert("Non trovo la richiesta collegata a questa task: aprila da Collaboratori → Turni."); return; }
+        setDecidendo(t.id);
+        try {
+            const r = await fetch("/api/turni/presenza", {
+                method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, esito }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || j?.error) throw new Error(j?.error || "non riuscita");
+            setTasks((p) => p.filter((x) => x.id !== t.id));
+        } catch (e) {
+            alert("Non sono riuscito a " + (esito === "approva" ? "approvare" : "rifiutare") + ": " + ((e as Error)?.message || "riprova"));
+        }
+        setDecidendo(null);
+    };
+
     const fatta = async (id: string) => {
         await supabase.from("admin_tasks").update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() }).eq("id", id);
         setTasks((p) => p.filter((t) => t.id !== id));
@@ -227,7 +251,18 @@ export function UrgentTasks() {
                                 fatta cosa? Chiudere QUELLA task vuol dire una cosa
                                 precisa — che i soldi sono arrivati — e chi la preme
                                 deve leggerlo sul pulsante, non nel testo sopra. */}
-                            {!t.synthetic && (
+                            {!t.synthetic && t.tipo === "accesso_negozio" ? (
+                                <div className="mt-1.5 flex gap-1.5">
+                                    <button onClick={() => decidiAccesso(t, "approva")} disabled={decidendo === t.id}
+                                        className="text-[11px] px-2 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 font-bold disabled:opacity-50">
+                                        {decidendo === t.id ? "…" : "✓ Autorizza l'accesso"}
+                                    </button>
+                                    <button onClick={() => decidiAccesso(t, "rifiuta")} disabled={decidendo === t.id}
+                                        className="text-[11px] px-2 py-1 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 hover:bg-rose-500/25 font-bold disabled:opacity-50">
+                                        ✕ Rifiuta
+                                    </button>
+                                </div>
+                            ) : !t.synthetic && (
                                 <button onClick={() => fatta(t.id)}
                                     className="mt-1.5 text-[11px] px-2 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 font-bold">
                                     {t.tipo === "scontrino_bonifico" ? "✓ Bonifico verificato" : "✓ Fatta"}
