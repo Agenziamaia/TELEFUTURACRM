@@ -1554,6 +1554,9 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
     const accImporto = Number(acc.importo) || 0;
     const saldo = Math.round((Number(pratica.valore) - accImporto) * 100) / 100;
     const serveImeiArrivo = !!t && t.imei === "arrivo" && prossimo === "in_negozio";
+    /* la copia firmata: quella digitale archiviata da noi, oppure il PDF
+       caricato quando si è firmato su carta */
+    const firmatoPath = pratica.firma?.firmato?.path || pratica.firma?.modulo?.path || "";
     const ggAperta = giorniLavorativi(pratica.created_at, oggiIso());
     const ggAvviso = pratica.avviso_pronto_il ? giorniLavorativi(pratica.avviso_pronto_il, oggiIso()) : null;
 
@@ -1701,19 +1704,15 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
 
                 <div className="rvBox">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Firma e documenti</p>
-                    <Voce et="Firmato" v={pratica.firma?.via === "otp" ? "📲 col codice" : "🖊️ su carta"} />
-                    {/* DA DOVE (Luca 01/09). Il registro DocuSeal dice il dispositivo,
-                        ma bisognava aprire il PDF: qui si legge a colpo d'occhio, e un
-                        computer — mentre il link è partito verso un telefono — vuol
-                        dire quasi sempre che ha firmato il banco. */}
-                    {pratica.firma?.via === "otp" && (
-                        pratica.firma.dispositivo
-                            ? <Voce et="Firmato da" v={`${pratica.firma.daComputer ? "⚠️ " : "📱 "}${pratica.firma.dispositivo}`}
-                                avviso={pratica.firma.daComputer ? "un computer: se il link l'ha aperto il negozio, la firma non è del cliente" : undefined} />
-                            : <Voce et="Firmato da" v="— non rilevato" avviso="il registro delle firme non si è potuto leggere: non vuol dire che sia tutto a posto" />
+                    {/* le righe «Firmato: col codice» e «Documento: archiviato»
+                        se ne sono andate (Luca 02/09): dicevano a parole quello
+                        che i bottoni qui sotto già mostrano, e il dispositivo —
+                        l'unica cosa che serviva — sta accanto alla ristampa. */}
+                    {pratica.firma?.daComputer && (
+                        <p className="rvFirmaBanco text-[11px]">
+                            ⚠️ raccolta da un computer: se il link l&apos;ha aperto il negozio, quella firma non è del cliente.
+                        </p>
                     )}
-                    <Voce et="Documento d'identità" v={pratica.firma?.identita ? "✅ archiviato" : "⛔ mancante"} />
-                    {pratica.firma?.via === "cartacea" && <Voce et="Modulo firmato" v={pratica.firma?.modulo ? "✅ allegato" : "⛔ mancante"} />}
                     {/* I DOCUMENTI SI APRONO. Un archivio che non si può aprire
                         è un archivio che nessuno controlla: il giorno della
                         contestazione serve il foglio, non la casella spuntata. */}
@@ -1823,16 +1822,40 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                                 Tocca {chiMuove === "admin" ? "all'amministrazione" : chiMuove === "tecnico" ? "al laboratorio" : "al negozio"}: «{STATI[prossimo].label}».
                             </p>
                         )}
-                        <button type="button" className="rvPill rvPill-sm" onClick={() => stampaModulo({
-                            protocollo: pratica.protocollo, tipologia: pratica.tipologia, negozio: pratica.negozio, operatore: pratica.operatore,
-                            cliente: pratica.cliente as DatiModulo["cliente"], valore: Number(pratica.valore),
-                            acconto: pratica.acconto as DatiModulo["acconto"],
-                            righe: (pratica.righe || []).map((r) => ({ descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note })),
-                            dispositivo: pratica.dispositivo, imei: pratica.imei,
-                            tempoMedio: tempoMedio(pratica.tipologia, pratica.approvvigionamento),
-                        })}>
-                            <Printer className="w-3.5 h-3.5 inline mr-1 -mt-0.5" /> Ristampa il modulo
-                        </button>
+                        {/* ⚠️ RISTAMPARE VUOL DIRE IL FOGLIO FIRMATO (Luca 02/09).
+                            Prima questo bottone rigenerava il modulo VUOTO dai dati:
+                            un foglio identico ma senza firma, che al banco sembra
+                            l'originale e non lo è. Se la copia firmata c'è si apre
+                            quella; il modulo nuovo resta solo per chi non ha ancora
+                            firmato, e lo dice nel nome. */}
+                        <div className="rvRistampa">
+                            {firmatoPath ? (
+                                <button type="button" className="rvPill rvPill-sm" onClick={() => apriAllegato(firmatoPath)}>
+                                    <Printer className="w-3.5 h-3.5 inline mr-1 -mt-0.5" /> Ristampa il modulo firmato
+                                </button>
+                            ) : (
+                                <button type="button" className="rvPill rvPill-sm" onClick={() => stampaModulo({
+                                    protocollo: pratica.protocollo, tipologia: pratica.tipologia, negozio: pratica.negozio, operatore: pratica.operatore,
+                                    cliente: pratica.cliente as DatiModulo["cliente"], valore: Number(pratica.valore),
+                                    acconto: pratica.acconto as DatiModulo["acconto"],
+                                    righe: (pratica.righe || []).map((r) => ({ descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note })),
+                                    dispositivo: pratica.dispositivo, imei: pratica.imei,
+                                    tempoMedio: tempoMedio(pratica.tipologia, pratica.approvvigionamento),
+                                })}>
+                                    <Printer className="w-3.5 h-3.5 inline mr-1 -mt-0.5" /> Stampa il modulo da firmare
+                                </button>
+                            )}
+                            {/* dove è stata raccolta la firma, sotto il bottone: chi
+                                ristampa vuole sapere anche da dove è arrivata */}
+                            {pratica.firma?.via === "otp" && (
+                                <span className={cn("rvRistampa-dev", pratica.firma.daComputer && "rvFirmaBanco")}>
+                                    {pratica.firma.dispositivo
+                                        ? <>{pratica.firma.daComputer ? "⚠️ firmato da un computer · " : "📱 firmato da "}{pratica.firma.dispositivo}</>
+                                        : "dispositivo non rilevato"}
+                                </span>
+                            )}
+                            {pratica.firma?.via === "cartacea" && <span className="rvRistampa-dev">🖊️ firmato su carta al banco</span>}
+                        </div>
                         {(pratica.stato === "in_negozio" || pratica.stato === "pronta") && !pratica.avviso_pronto_il && (
                             <button onClick={avvisaPronto} disabled={busy}
                                 className="rvPill rvPill-si">
