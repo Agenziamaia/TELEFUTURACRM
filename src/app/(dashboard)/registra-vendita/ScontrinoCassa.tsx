@@ -335,7 +335,37 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        codice (revisore 01/09). Senza questa aggiunta il modale chiedeva «chi
        emette lo scontrino?» per una vendita di merce, e la ragione sociale
        finiva scelta a mano invece che seguire il prodotto. */
+    /* ⭐ E VALE ANCHE PER LE RICARICHE (Luca 02/09): «così come i servizi
+       devono poter scegliere dove scontrinare anche le ricariche: nel momento
+       in cui vado a fare una ricarica devo poter decidere dove fare lo
+       scontrino».
+       VERIFICATO, non dato per scontato: una ricarica è una voce di
+       `marg_items` con `azienda` NULL e `codice_magazzino` NULL — misurato sul
+       database, tutte e diciotto — e la riga che il carrello manda qui porta
+       quindi `azienda: null, codice: null`. Cade dentro questa condizione
+       esattamente come un'assistenza o un backup: la domanda si faceva già.
+       Quello che NON si faceva era dirlo. La domanda diceva «Sono tutti
+       servizi», e una ricarica nessuno la chiama servizio: chi la vendeva
+       leggeva una domanda che sembrava di qualcun altro, la scavalcava, e lo
+       scontrino usciva sulla società preimpostata. Adesso la domanda nomina
+       quello che c'è nel carrello.
+       ⚠️ E RESTA VERO IL CONTRARIO (Luca, stessa frase): «sempre che questi
+       servizi non siano gli unici articoli all'interno del carrello». Basta un
+       prodotto di magazzino — che una società ce l'ha, ed è un fatto — perché
+       la domanda sparisca: la ricarica segue il prodotto sul suo scontrino, e
+       non si chiede niente. È la riga qui sotto, e non cambia. */
     const soloServizi = !!data && !telefoni.length && !itemsTutte.some((i) => i.azienda || i.codice);
+    /** Le parole della domanda seguono quello che c'è davvero nel carrello:
+     *  «ricariche» a chi vende ricariche, «servizi» a chi vende servizi. Non
+     *  cambia nessuna regola — cambia solo il nome della cosa che si sta
+     *  scontrinando, che è l'unico motivo per cui la domanda veniva saltata. */
+    const _cosaCe = useMemo(() => {
+        const nRic = itemsTutte.filter((i) => i.ricarica === true).length;
+        const nAltro = itemsTutte.length - nRic;
+        if (nRic && nAltro) return "Ricariche e servizi";
+        if (nRic) return nRic > 1 ? "Ricariche" : "Ricarica";
+        return "Servizi";
+    }, [itemsTutte]);
     const [insegne, setInsegne] = useState<string[]>([]);
     const [cassaSel, setCassaSel] = useState<string | null>(null);
     // Coupon sconto (spec Francesco): abbassa l'imponibile. Il residuo rigenera un nuovo coupon.
@@ -382,6 +412,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setFase(tel.length ? "telefoni" : "scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false); setErroreDi("");
         setAssegna({}); setRighePerAz({});
+        /* una nuova vendita non eredita una riga rimasta «in mano» da quella
+           prima: sarebbe un riquadro acceso senza niente che lo tenga */
+        trascinoRef.current = null; setTrascino(null); setSopra(null);
         setAziende([]); setAziendaSel(null);
         setCouponInput("");
         setCoupon(cIn ? { code: cIn.code, valore: Number(cIn.valore) || 0, sconto: sc } : null);
@@ -497,6 +530,25 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        nello stesso istante superavano entrambi la guardia dell'incasso, che si
        scrive dopo due `await`, e la macchina si apriva DUE volte. */
     const inCorso = useRef(false);
+
+    /* ═══ IL TRASCINAMENTO SI DEVE VEDERE ═══════════════════════════════════
+       Luca 02/09: «passandoci sopra col mouse vedo e mi rendo conto che posso
+       trascinarlo da una parte all'altra».
+       Il trascinamento c'era già, ma era CIECO: la riga presa restava identica
+       e il riquadro di arrivo non si accendeva. Chi provava non capiva se
+       stesse succedendo qualcosa, mollava a metà, e concludeva che non si
+       poteva fare.
+       Due segnali, e bastano: quale riga ho in mano (`trascino`) e dove la
+       sto per lasciare (`sopra`).
+       ⚠️ ANCHE UN RIFERIMENTO, non solo lo stato. `onDragOver` deve decidere
+       SUBITO se accettare il rilascio — chiamare `preventDefault()` è l'unico
+       modo di dire «qui si può» — e al primo evento lo stato può non essere
+       ancora arrivato: con il solo stato, il primo riquadro sfiorato rifiutava
+       la riga. Il riferimento è aggiornato nello stesso istante del `dragstart`. */
+    const trascinoRef = useRef<number | null>(null);
+    const [trascino, setTrascino] = useState<number | null>(null);
+    const [sopra, setSopra] = useState<string | null>(null);
+    const mollaTrascinamento = () => { trascinoRef.current = null; setTrascino(null); setSopra(null); };
 
     /* ⚠️ CHI DECIDE LA SOCIETÀ È IL SERVER, NON QUESTA PAGINA (Luca 02/09).
        Guardare `i.azienda` non bastava: la riga del telefono che nasce da una
@@ -660,6 +712,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         +(righePerAz[az] || []).filter((r) => isFormaCash(r.forma)).reduce((a, r) => a + (Number(r.importo) || 0), 0).toFixed(2));
 
     const contantiTotali = +sezioni.reduce((a, s2) => a + contantiDi(s2.azienda), 0).toFixed(2);
+
+    /** CHI EMETTERÀ, quando non lo sceglie l'operatore. Serve solo a scriverlo
+     *  accanto alla domanda del cassetto: «la decide la merce» senza dire QUALE
+     *  lascia in piedi il dubbio che fa scambiare le due domande. */
+    const emittenti = multiSocieta
+        ? sezioni.map((s2) => s2.label)
+        : (aziendeMerce.length === 1
+            ? [aziende.find((x) => x.code === aziendeMerce[0])?.label || aziendeMerce[0]]
+            : []);
 
     /* SPOSTA UN SERVIZIO DA UNA SEZIONE ALL'ALTRA. La merce non si sposta: la
        sua società è un fatto, non una preferenza. */
@@ -1120,7 +1181,19 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             {/* PIÙ LARGO (Luca 31/08): a `max-w-md` i tre pulsanti di pagamento
                 finivano a «Co… Ca… Bo…» — tre etichette tagliate che bisogna
                 indovinare, sull'ultimo gesto della vendita. Lo spazio c'è. */}
-            <div className="glass-panel w-full max-w-2xl p-6 space-y-4 my-auto">
+            {/* ⭐ E ANCORA PIÙ LARGO CON DUE SOCIETÀ, MA SOLO LÌ (Luca 02/09):
+                «mi piacerebbe invece allargare molto quella finestra, in quel
+                caso solo, e metterli di lato».
+                A 672px i due scontrini stanno per forza uno sotto l'altro, e
+                per confrontarli — o per trascinare una voce dall'uno all'altro
+                — bisogna scorrere: cioè il gesto che deve essere ovvio diventa
+                il più scomodo della finestra. A 1024 stanno affiancati e si
+                vedono insieme.
+                ⚠️ `w-full` TIENE IL TETTO: su un 1024×768 il massimo diventa
+                992px (la finestra meno il margine), non 1024, quindi non esce
+                mai dallo schermo. E la vendita a UNA società resta a
+                `max-w-2xl`, identica a ieri: è il 99% dei casi e non si tocca. */}
+            <div className={"glass-panel w-full p-6 space-y-4 my-auto " + (multiSocieta ? "max-w-5xl" : "max-w-2xl")}>
                 <div className="flex items-baseline justify-between">
                     <h3 className="text-lg font-bold text-white">🧾 Incasso &amp; Scontrino</h3>
                     <div className="flex items-center gap-2">
@@ -1134,6 +1207,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     </div>
                 </div>
 
+                {/* ⚠️ CON DUE SCONTRINI QUESTO ELENCO È UN DOPPIONE, e costa
+                    176px in una finestra che a 768px già non ci sta. Le stesse
+                    voci stanno tutte, una per una, dentro le due sezioni qui
+                    sotto — divise per società, che è l'informazione in più.
+                    Sparisce SOLO nella schermata del pagamento: nelle altre
+                    fasi (stampa, fatto, errore) le sezioni non ci sono e
+                    l'elenco resta l'unico posto dove si legge cosa si è
+                    venduto. */}
+                {!(multiSocieta && fase === "scelta") && (
                 <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-40 overflow-y-auto">
                     {itemsTutte.map((r, i) => (
                         <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
@@ -1142,6 +1224,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         </div>
                     ))}
                 </div>
+                )}
 
                 <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Totale</span>
@@ -1320,33 +1403,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             dire emettere uno scontrino con la partita IVA sbagliata.
                             Il carrello misto non arriva più fin qui: si ferma quando si
                             aggiunge il secondo prodotto (`addMargItem`). */}
-                        {aziende.length > 1 && !soloServizi && (
-                            <p className="text-[11px] text-slate-500">
-                                🏢 La ragione sociale la decide la merce: ogni riga esce dalla società su cui è caricata.
-                            </p>
-                        )}
-                        {/* SOLI SERVIZI: qui la merce non c'è, quindi non c'è niente
-                            che possa decidere al posto dell'operatore. È l'unico caso
-                            in cui la domanda si fa — e si fa solo dove le società che
-                            possono emettere in questo locale sono più d'una. */}
-                        {aziende.length > 1 && soloServizi && (
-                            <div>
-                                <p className="text-[11px] text-slate-500 mb-1.5">
-                                    Sono tutti servizi: chi emette lo scontrino?
-                                </p>
-                                <div className="flex gap-2">
-                                    {aziende.map((a) => (
-                                        <button key={a.code} type="button" onClick={() => setAziendaSel(a.code)}
-                                            className={"flex-1 py-2.5 rounded-xl border text-xs font-bold transition "
-                                                + (aziendaSel === a.code
-                                                    ? "bg-sky-500/25 border-sky-400/60 text-white"
-                                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                                            🏢 {a.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        {/* ⬇️ LE DUE DOMANDE — chi emette lo scontrino e in quale
+                            cassetto entrano i contanti — sono scese in fondo, dove si
+                            sceglie come paga il cliente: è lì che Luca ha chiesto di
+                            trovarle («nel momento in cui andiamo a chiedere il metodo
+                            di pagamento»). Il blocco si chiama «Dove va questa
+                            vendita» e sta subito sotto le forme di pagamento. */}
 
                         {/* Coupon: sconto che abbassa l'imponibile (sostituisce "Altro") */}
                         <div className="space-y-1.5">
@@ -1381,10 +1443,31 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             funziona sempre. */}
                         {multiSocieta && (
                             <div className="space-y-3">
-                                <p className="text-[11px] text-slate-400">
-                                    Nel carrello c&apos;è merce di <b className="text-slate-200">{sezioni.length} società</b>: sono due scontrini,
-                                    ognuno con il suo incasso. La merce sta dove la mette il magazzino; i servizi li sposti tu.
+                                <p className="text-[11px] text-slate-300">
+                                    Nel carrello c&apos;è merce di <b className="text-white">{sezioni.length} società</b>: sono {sezioni.length} scontrini,
+                                    ognuno con il suo incasso. <span className="text-slate-400">📦 la merce sta dove la mette il magazzino e non si muove;</span>{" "}
+                                    <span className="text-sky-200">🔧 servizi e ricariche li sposti tu — trascinali, o usa il pulsante →.</span>
                                 </p>
+                                {/* ⭐ AFFIANCATI, NON UNO SOTTO L'ALTRO (Luca 02/09): «ho
+                                    fatto una simulazione e ho visto che questi vengono
+                                    messi uno sotto l'altro. Mi piacerebbe invece […]
+                                    metterli di lato, una a fianco all'altra».
+                                    Due scontrini si confrontano, non si leggono in fila:
+                                    e una voce si trascina dall'uno all'altro solo se
+                                    l'altro è a schermo nello stesso momento. Sotto i
+                                    1024px si torna in colonna — a quel punto affiancarli
+                                    li spezzerebbe soltanto, e gli undici negozi con una
+                                    cassa sola qui non ci arrivano nemmeno.
+                                    ⚠️ E NON `lg:` (revisione ostile 02/09, difetto mio):
+                                    `lg` scatta a 1024px ESATTI, misurati sulla finestra
+                                    AL NETTO della barra di scorrimento. Su un 1024×768 —
+                                    che è uno dei due monitor di riferimento — con la barra
+                                    classica di Windows la media query vede 1009px e NON
+                                    scatta: le due sezioni tornavano una sotto l'altra
+                                    proprio sullo schermo per cui erano state affiancate.
+                                    La mia misura non l'aveva visto perché Chrome headless
+                                    girava con `--hide-scrollbars`. A 960 il margine c'è. */}
+                                <div className="grid grid-cols-1 min-[960px]:grid-cols-2 gap-3 items-start">
                                 {sezioni.map((s2) => {
                                     const altre = sezioni.filter((x) => x.azienda !== s2.azienda);
                                     const rr = righePerAz[s2.azienda] || [];
@@ -1392,50 +1475,168 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                     const manca = +(s2.totale - somma).toFixed(2);
                                     const quadra = s2.totale <= 0.005 || (Math.abs(manca) < 0.005 && rr.every((r) => Number(r.importo) > 0 && !!r.forma));
                                     const contanti = contantiDi(s2.azienda);
+                                    /* IL RIQUADRO SOTTO IL PUNTATORE. Si accende solo se
+                                       la riga che si ha in mano può DAVVERO finire qui:
+                                       niente merce, e non quella che già ci sta. Un
+                                       riquadro che si accende e poi rifiuta è peggio di
+                                       uno che non si accende. */
+                                    const bersaglio = sopra === s2.azienda;
+                                    /** Questa riga può passare su questo riquadro? */
+                                    const _accetta = (k: number | null) => {
+                                        if (k == null) return false;
+                                        const riga = itemsTutte[k];
+                                        if (!riga || _azDi(riga, k)) return false;          // la merce non si sposta
+                                        return !s2.righe.some((x) => x.k === k);            // ed è già qui
+                                    };
                                     return (
                                         <div key={s2.azienda}
-                                            onDragOver={(e) => { e.preventDefault(); }}
+                                            onDragOver={(e) => {
+                                                /* `preventDefault` È il consenso al rilascio: senza,
+                                                   il browser mostra il divieto e `onDrop` non arriva.
+                                                   Si legge il RIFERIMENTO e non lo stato, che al primo
+                                                   evento può non essere ancora arrivato. */
+                                                if (!_accetta(trascinoRef.current)) return;
+                                                e.preventDefault();
+                                                e.dataTransfer.dropEffect = "move";
+                                                if (sopra !== s2.azienda) setSopra(s2.azienda);
+                                            }}
+                                            onDragLeave={(e) => {
+                                                /* passando su un FIGLIO il browser manda `dragleave`
+                                                   al padre: senza questo controllo il riquadro
+                                                   lampeggiava a ogni voce attraversata. */
+                                                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                                                setSopra((x) => (x === s2.azienda ? null : x));
+                                            }}
                                             onDrop={(e) => {
                                                 e.preventDefault();
-                                                const k = Number(e.dataTransfer.getData("text/plain"));
-                                                const riga = itemsTutte[k];
-                                                if (riga && !_azDi(riga, k)) spostaServizio(riga, k, s2.azienda);
+                                                /* ⚠️ LA RIGA LA DICE IL RIFERIMENTO, NON IL PACCHETTO
+                                                   DEL BROWSER (revisione ostile 02/09). Qui c'era
+                                                   `Number(e.dataTransfer.getData("text/plain"))`, e
+                                                   `Number("")` fa ZERO: un rilascio che non viene da
+                                                   questa finestra — un file, un link, del testo da
+                                                   un'altra scheda — sarebbe passato per la riga 0 e
+                                                   l'avrebbe spostata sull'altro scontrino in silenzio.
+                                                   Perché arrivasse fin qui bastava che la sorgente
+                                                   sparisse a metà trascinamento (il `dragend` allora
+                                                   non arriva e il riferimento resta pieno). È una voce
+                                                   che esce con la partita IVA sbagliata, quindi si
+                                                   legge il riferimento e si pretende un intero. */
+                                                const k = trascinoRef.current;
+                                                mollaTrascinamento();
+                                                if (!Number.isInteger(k)) return;
+                                                const riga = itemsTutte[k as number];
+                                                if (riga && !_azDi(riga, k as number)) spostaServizio(riga, k as number, s2.azienda);
                                             }}
-                                            className={"rounded-2xl border p-3 space-y-2.5 transition-colors "
-                                                + (quadra ? "border-emerald-400/40 bg-emerald-500/[0.06]" : "border-white/10 bg-white/[0.03]")}>
+                                            className={"relative rounded-2xl border p-3 space-y-2.5 transition-all "
+                                                + (bersaglio
+                                                    ? "border-sky-300 bg-sky-500/[0.07] ring-2 ring-sky-300/80 shadow-xl shadow-sky-900/30"
+                                                    : quadra ? "border-emerald-400/40 bg-emerald-500/[0.06]" : "border-white/10 bg-white/[0.03]")}>
+
+                                            {/* L'INVITO STA SOPRA, NON DENTRO IL FLUSSO: aggiungere
+                                                un elemento mentre si trascina sposta quello che c'è
+                                                sotto il puntatore e fa rimbalzare il trascinamento.
+                                                In posizione assoluta e trasparente ai click non
+                                                sposta niente e non ruba nessun evento. */}
+                                            {bersaglio && (
+                                                <span className="pointer-events-none absolute -top-2.5 right-3 rounded-full bg-sky-400 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-950 shadow-lg">
+                                                    ⤵ Rilascia qui
+                                                </span>
+                                            )}
 
                                             <div className="flex items-baseline justify-between gap-2">
                                                 <span className="text-sm font-extrabold text-white truncate">🏢 {s2.label}</span>
                                                 <span className="text-base font-extrabold text-emerald-300 shrink-0">{eur(s2.totale)}</span>
                                             </div>
 
-                                            <div className="space-y-1">
-                                                {s2.righe.map(({ i, k }) => (
+                                            <div className="space-y-1.5">
+                                                {s2.righe.map(({ i, k }) => {
+                                                    /* ⚠️ LA MERCE È INCHIODATA E SI DEVE VEDERE (Luca
+                                                       02/09): «i prodotti che fanno parte del magazzino
+                                                       e che devono per forza stare in quello scontrino
+                                                       rimangono fermi lì, mentre quegli altri magari
+                                                       hanno un colore diverso».
+                                                       Prima le due righe si distinguevano solo per una
+                                                       velatura azzurra e un'emoji: chi provava a
+                                                       trascinare la merce non capiva perché non si
+                                                       muoveva. Adesso la merce è grigia, ferma, con il
+                                                       lucchetto; il servizio è azzurro, col bordo
+                                                       tratteggiato e la presa — e al passaggio del
+                                                       mouse si solleva. Il segnale arriva PRIMA di
+                                                       provare, che è il punto. */
+                                                    const mobile = !_azDi(i, k);
+                                                    const presa = trascino === k;
+                                                    return (
                                                     <div key={k}
-                                                        draggable={!_azDi(i, k)}
-                                                        onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(k)); }}
-                                                        className={"flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs "
-                                                            + (_azDi(i, k) ? "bg-white/5 text-slate-300" : "bg-sky-500/10 text-sky-100 cursor-grab active:cursor-grabbing")}>
-                                                        <span className="shrink-0">{_azDi(i, k) ? "📦" : "🔧"}</span>
-                                                        <span className="flex-1 min-w-0 truncate">{i.description}</span>
-                                                        <span className="shrink-0 font-semibold">{eur(Number(i.unitPrice) * (Number(i.qty) > 0 ? Number(i.qty) : 1))}</span>
-                                                        {!_azDi(i, k) && altre.map((o) => (
-                                                            <button key={o.azienda} type="button" title={`Sposta su ${o.label}`}
-                                                                onClick={() => spostaServizio(i, k, o.azienda)}
-                                                                className="shrink-0 rounded-md px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold">→</button>
-                                                        ))}
+                                                        draggable={mobile}
+                                                        onDragStart={(e) => {
+                                                            /* ⚠️ SOLO SE LA RIGA SI PUÒ SPOSTARE (revisione
+                                                               ostile 02/09). `draggable` è false sulla merce,
+                                                               ma trascinando una SELEZIONE DI TESTO l'evento
+                                                               parte dallo span figlio e sale fin qui: la riga
+                                                               bloccata si disegnava «in mano» — il contrario
+                                                               del segnale che questa modifica deve dare — e
+                                                               sporcava il riferimento. */
+                                                            if (!mobile) return;
+                                                            e.dataTransfer.setData("text/plain", String(k));
+                                                            e.dataTransfer.effectAllowed = "move";
+                                                            trascinoRef.current = k; setTrascino(k);
+                                                        }}
+                                                        onDragEnd={mollaTrascinamento}
+                                                        title={mobile
+                                                            ? "Trascinalo sull'altro scontrino, o usa il pulsante →"
+                                                            : "La società la decide il magazzino: questa riga non si sposta"}
+                                                        className={"flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs min-h-[44px] transition-all "
+                                                            + (!mobile
+                                                                ? "bg-white/5 text-slate-300 border border-transparent cursor-default"
+                                                                : presa
+                                                                    /* ⚠️ NIENTE `border-2` QUI: un bordo più
+                                                                       spesso alza la riga di due pixel proprio
+                                                                       mentre la si sta trascinando, e la sezione
+                                                                       sotto il puntatore si muove. L'anello non
+                                                                       occupa spazio. */
+                                                                    ? "bg-sky-500/25 text-white border border-dashed border-sky-300 ring-2 ring-inset ring-sky-300/70 opacity-50 cursor-grabbing"
+                                                                    : "bg-sky-500/10 text-sky-100 border border-dashed border-sky-400/50 cursor-grab active:cursor-grabbing hover:bg-sky-500/25 hover:border-sky-300 hover:shadow-lg hover:shadow-sky-900/30")}>
+                                                        <span className="shrink-0" aria-hidden="true">{mobile ? "🔧" : "📦"}</span>
+                                                        {/* ⚠️ LA QUANTITÀ VA SCRITTA ANCHE QUI (revisione
+                                                            ostile 02/09, difetto mio). L'elenco in cima —
+                                                            che con due scontrini adesso non c'è — era
+                                                            l'unico posto che scriveva «×3», e il prezzo
+                                                            mostrato è già quello moltiplicato: restava
+                                                            «Sim Wind3 — € 30,00» e nessun modo di
+                                                            controllare il totale contro il carrello,
+                                                            proprio davanti al cliente che paga. */}
+                                                        <span className="flex-1 min-w-0 truncate">{i.description}{(i.qty ?? 1) > 1 ? ` ×${i.qty}` : ""}</span>
+                                                        <span className="shrink-0 font-semibold tabular-nums">{eur(Number(i.unitPrice) * (Number(i.qty) > 0 ? Number(i.qty) : 1))}</span>
+                                                        {mobile
+                                                            /* ⭐ IL PULSANTE PER IL DITO (Luca 02/09). Misurava
+                                                               23×20 px: sotto il minimo di 44, cioè il
+                                                               polpastrello copriva il bersaglio e prendeva
+                                                               quello che c'era intorno. Sui banconi tattili
+                                                               è l'unico modo di spostare una voce — il
+                                                               trascinamento col dito lì non c'è. */
+                                                            ? altre.map((o) => (
+                                                                <button key={o.azienda} type="button"
+                                                                    title={`Sposta su ${o.label}`} aria-label={`Sposta «${i.description}» su ${o.label}`}
+                                                                    onClick={() => spostaServizio(i, k, o.azienda)}
+                                                                    className="shrink-0 w-11 h-11 flex items-center justify-center rounded-xl border border-sky-400/50 bg-sky-500/20 hover:bg-sky-400/40 hover:border-sky-300 text-base font-extrabold text-white transition-colors">→</button>
+                                                            ))
+                                                            /* la merce tiene il posto del pulsante, se no le
+                                                               due colonne di prezzi non si allineano */
+                                                            : <span className="shrink-0 w-11 h-11 flex items-center justify-center text-slate-300 text-base" aria-hidden="true" title="Fissa: è merce di magazzino">🔒</span>}
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                                 {!s2.righe.length && (
-                                                    <p className="text-[11px] text-slate-500 italic py-2 text-center">
-                                                        Niente in questo scontrino: trascina qui un servizio, o non verrà emesso.
+                                                    <p className={"text-[11px] italic py-3 text-center rounded-lg border border-dashed transition-colors "
+                                                        + (bersaglio ? "border-sky-300 text-sky-100 bg-sky-500/10" : "border-white/15 text-slate-400")}>
+                                                        Niente in questo scontrino: trascina qui un servizio o una ricarica, o non verrà emesso.
                                                     </p>
                                                 )}
                                             </div>
 
                                             {s2.totale > 0.005 && (
                                                 <div className="space-y-2">
-                                                    <p className="text-[11px] text-slate-500">Come paga il cliente</p>
+                                                    <p className="text-[11px] text-slate-400">Come paga il cliente</p>
                                                     {rr.map((r, ri) => (
                                                         <div key={ri} className="flex gap-2 items-center">
                                                             {(!r.forma || FORME_A_MANO.some((f) => f.code === r.forma)) ? (
@@ -1471,13 +1672,14 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                             )}
 
                                             {contanti > 0 && (
-                                                <p className="text-[11px] text-slate-500">
+                                                <p className="text-[11px] text-slate-400">
                                                     {eur(contanti)} in contanti — si incassano una volta sola, insieme all&apos;altro scontrino.
                                                 </p>
                                             )}
                                         </div>
                                     );
                                 })}
+                                </div>
                                 {/* SE IL PULSANTE È SPENTO, SI DICE PERCHÉ e cosa fare:
                                     un pulsante grigio senza spiegazione manda a
                                     cercare l'errore nel posto sbagliato. */}
@@ -1582,27 +1784,129 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                         </div>
                         )}
 
-                        {/* A QUALE CASSA INCASSO — solo dove il locale ha più
-                            insegne, e solo se ci sono contanti da prendere. Lo
-                            scontrino esce comunque dal registratore della
-                            società che possiede la merce: qui si sceglie solo
-                            dove il cliente mette i soldi. */}
-                        {insegne.length > 1 && (multiSocieta ? contantiTotali : cashRounded) > 0 && (
-                            <div>
-                                <p className="text-[11px] text-slate-500 mb-1.5">
-                                    Il cliente paga {multiSocieta ? `i ${eur(contantiTotali)} in contanti ` : ""}alla cassa di…
+                        {/* ═══ DUE DOMANDE DIVERSE CHE SI SOMIGLIAVANO TROPPO ═══════
+                            Luca 02/09: «la selezione della cash machine ad oggi viene
+                            confusa con quella dello scontrino: è importante evidenziare
+                            bene che in quel momento stanno selezionando la CASH MACHINE,
+                            e dargli la possibilità di selezionare invece in quale CASSA
+                            fare lo scontrino».
+
+                            Ha ragione, ed era prevedibile: erano due file di pulsanti
+                            identici — stessa forma, stessa misura, stessa etichetta in
+                            grigio da undici pixel — a mezzo metro l'uno dall'altro, uno
+                            in cima alla finestra e uno in fondo. L'unica differenza era
+                            l'emoji, e a Magliana perfino i NOMI si somigliano: la
+                            società si chiama «Telefutura 2 S.R.L. · Magliana Multi» e il
+                            cassetto «Magliana Multi».
+
+                            Sono due cose di natura diversa e adesso lo dicono:
+                            • 🧾 LA CASSA — quale società emette il documento. È un fatto
+                              FISCALE: sbagliarla vuol dire una partita IVA sbagliata su
+                              una carta che resta.
+                            • 💶 IL CASSETTO — dove il cliente mette i soldi. È un fatto
+                              FISICO: la macchina davanti a cui sta.
+                            Parole diverse (CASSA / CASSETTO), icone diverse, colori
+                            diversi (azzurro / verde), e ognuna dice a voce cosa NON
+                            decide. Stanno vicine di proposito — è il momento in cui si
+                            ragiona di soldi — ma dentro due riquadri separati.
+
+                            Compare nei quattro LOCALI che hanno due insegne dentro —
+                            Magliana, Collatina, Acilia, Donna — che però sono SETTE
+                            postazioni, non quattro: chi lavora a Magliana W3 e chi lavora
+                            a Magliana Multi entrano con due nomi diversi e vedono
+                            entrambi le due società (`stessoMagazzino` guarda la prima
+                            parola del nome). Misurato su `pos_rt`: 7 nomi-negozio su 15
+                            hanno `aziende.length === 2` — Acilia Multi, Acilia VS,
+                            Collatina Multi, Collatina W3, Donna, Magliana Multi,
+                            Magliana W3. Negli altri OTTO — Baleniere, Castani,
+                            Garbatella, Libia, Mazzini, Merulana, Promontori, San Paolo —
+                            `aziende` e `insegne` hanno un elemento solo e qui non esce
+                            niente: la finestra è quella di sempre.
+                            (A Donna il riquadro del cassetto non esce comunque: i due
+                            registratori li serve lo stesso agente, quindi il cassetto è
+                            uno solo e non c'è niente da scegliere.) */}
+                        {(aziende.length > 1 || insegne.length > 1) && (
+                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2.5">
+                                <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
+                                    Dove va questa vendita
                                 </p>
-                                <div className="flex gap-2">
-                                    {insegne.map((n) => (
-                                        <button key={n} type="button" onClick={() => setCassaSel(n)}
-                                            className={"flex-1 py-2.5 rounded-xl border text-xs font-bold transition "
-                                                + (cassaSel === n
-                                                    ? "bg-emerald-500/25 border-emerald-400/60 text-white"
-                                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                                            💶 {n}
-                                        </button>
-                                    ))}
-                                </div>
+
+                                {/* ① LA CASSA FISCALE — chi firma il documento */}
+                                {aziende.length > 1 && (
+                                    <div className="rounded-xl border border-sky-400/40 bg-sky-500/[0.09] p-2.5 space-y-2">
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-base leading-none shrink-0" aria-hidden="true">🧾</span>
+                                            <span className="text-xs font-extrabold uppercase tracking-wide text-sky-100">
+                                                La cassa · chi emette lo scontrino
+                                            </span>
+                                        </div>
+                                        {soloServizi ? (
+                                            <>
+                                                {/* LA DOMANDA NOMINA QUELLO CHE C'È NEL CARRELLO.
+                                                    «Sono tutti servizi» a chi sta vendendo una ricarica
+                                                    sembrava la domanda di qualcun altro. */}
+                                                <p className="text-[11px] text-slate-300">
+                                                    {_cosaCe} senza merce: nessun prodotto può decidere al posto tuo.
+                                                    <b className="text-sky-100"> Scegli su quale cassa esce la carta</b> — è la partita IVA che ci finisce sopra.
+                                                </p>
+                                                <div className="flex gap-2 flex-wrap">
+                                                    {aziende.map((a) => (
+                                                        <button key={a.code} type="button" onClick={() => setAziendaSel(a.code)}
+                                                            aria-pressed={aziendaSel === a.code}
+                                                            className={"flex-1 min-w-[150px] min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-bold transition "
+                                                                + (aziendaSel === a.code
+                                                                    ? "bg-sky-500/35 border-sky-300 text-white shadow-lg shadow-sky-900/30"
+                                                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white")}>
+                                                            <span aria-hidden="true">{aziendaSel === a.code ? "✅" : "🏢"}</span>
+                                                            <span className="truncate">{a.label}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            /* CON LA MERCE NON SI SCEGLIE, e va detto qui — non in
+                                               una riga grigia in cima alla finestra, dove nessuno la
+                                               collegava alla domanda del cassetto. Si nomina anche
+                                               CHI emetterà: senza il nome, «la decide la merce»
+                                               lascia esattamente il dubbio che apre lo scambio. */
+                                            <p className="text-[11px] text-slate-300">
+                                                La decide la merce: ogni riga esce dalla società su cui è caricata
+                                                {emittenti.length ? <> — <b className="text-sky-100">{emittenti.join(" e ")}</b></> : null}.
+                                                Qui non c&apos;è niente da scegliere.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* ② IL CASSETTO — dove entrano i contanti. Solo dove le
+                                    insegne sono più d'una e solo se contanti ce ne sono. */}
+                                {insegne.length > 1 && (multiSocieta ? contantiTotali : cashRounded) > 0 && (
+                                    <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/[0.09] p-2.5 space-y-2">
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-base leading-none shrink-0" aria-hidden="true">💶</span>
+                                            <span className="text-xs font-extrabold uppercase tracking-wide text-emerald-100">
+                                                Il cassetto · dove entrano i contanti
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-300">
+                                            La <b className="text-emerald-100">cash machine</b> davanti a cui sta il cliente: prende {eur(multiSocieta ? contantiTotali : cashRounded)} e dà il resto.
+                                            <b className="text-emerald-100"> Non cambia chi emette lo scontrino.</b>
+                                        </p>
+                                        <div className="flex gap-2 flex-wrap">
+                                            {insegne.map((n) => (
+                                                <button key={n} type="button" onClick={() => setCassaSel(n)}
+                                                    aria-pressed={cassaSel === n}
+                                                    className={"flex-1 min-w-[150px] min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-bold transition "
+                                                        + (cassaSel === n
+                                                            ? "bg-emerald-500/35 border-emerald-300 text-white shadow-lg shadow-emerald-900/30"
+                                                            : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white")}>
+                                                    <span aria-hidden="true">{cassaSel === n ? "✅" : "💶"}</span>
+                                                    <span className="truncate">{n}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
