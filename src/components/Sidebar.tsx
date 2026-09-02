@@ -351,14 +351,26 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                 }
                                 return (
                                     <div key={hub.name} className="space-y-0.5">
-                                        <div className="flex items-center gap-0.5">
+                                        {/* ⚠️ LA PASTIGLIA COPRE TUTTA LA RIGA, FRECCIA COMPRESA
+                                            (Luca 02/09): «questa selezione col mouse non è uguale,
+                                            una è estesa fino alla freccia e l'altra no».
+                                            Qui dentro ci sono due azioni — il collegamento e
+                                            l'apertura del sotto-menu — e per questo lo sfondo
+                                            stava solo sul collegamento: la riga si illuminava a
+                                            metà, mentre le voci a gruppo (Call Center) sono un
+                                            bottone solo e si illuminavano tutte.
+                                            Ora l'aspetto lo porta il riquadro che le contiene
+                                            entrambe, e i due comandi ci vivono dentro trasparenti:
+                                            si vede una riga sola, ma continuano a fare due cose
+                                            diverse. */}
+                                        <div className={cn("nav-link p-0 gap-0", inHub ? "active" : "")}>
                                             <Link
                                                 href={hub.href}
                                                 onClick={() => {
                                                     setIsOpen?.(false);
                                                     setExpandedGroups((prev) => ({ ...prev, [hub.name]: true }));
                                                 }}
-                                                className={cn("nav-link flex-1", inHub ? "active" : "")}
+                                                className="flex-1 flex items-center gap-3 px-4 py-2 rounded-xl"
                                             >
                                                 <HubIcon className={cn("w-5 h-5", inHub ? "text-indigo-400" : "text-slate-500")} />
                                                 {hub.name}
@@ -366,7 +378,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                             <button
                                                 type="button"
                                                 onClick={() => toggleGroup(hub.name)}
-                                                className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                                className="px-4 py-2.5 rounded-xl text-slate-500 hover:text-slate-300"
                                                 aria-label={isExpanded ? "Chiudi sotto-menu" : "Apri sotto-menu"}
                                             >
                                                 {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}

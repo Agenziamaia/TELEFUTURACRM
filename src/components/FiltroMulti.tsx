@@ -11,6 +11,26 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 
+/* ⚠️ IN SU O IN GIÙ, secondo lo spazio che c'è (Luca 02/09, sulla correzione
+   stato degli Usati: «si bugga in visibilità perché esplode la tendina verso
+   il basso ma chiaramente non c'è spazio»). È lo stesso difetto che era già
+   stato sistemato a mano in tre schermate diverse: qui si chiude alla radice,
+   una volta per tutte le tendine del CRM.
+   Aprendo verso l'alto ci si aggancia con `bottom`, non con `top`: l'altezza
+   la decide il contenuto, e con `top` bisognerebbe conoscerla prima di
+   disegnare. */
+const POSIZIONA = (r: DOMRect) => {
+    const MIN = 180, MAX = 288;                 // sotto i 180px non ci sta niente
+    const sotto = window.innerHeight - r.bottom - 8;
+    const sopra = r.top - 8;
+    const inSu = sotto < MIN && sopra > sotto;
+    return {
+        ...(inSu ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+        left: r.left, width: Math.max(r.width, 230),
+        maxH: Math.max(120, Math.min(MAX, inSu ? sopra : sotto)),
+    };
+};
+
 export function FiltroMulti({ values, onChange, opzioni, className = "", disabled = false,
     etichettaTutti = "Tutti", testoDisabilitato, etichette }: {
     values: string[] | null;
@@ -26,7 +46,7 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
     const [testo, setTesto] = useState("");
     const box = useRef<HTMLDivElement | null>(null);
     const menu = useRef<HTMLDivElement | null>(null);
-    const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxH: number } | null>(null);
 
     // chiusura al click fuori (campo E tendina: la tendina sta nel portal) + Esc
     useEffect(() => {
@@ -48,7 +68,7 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
         if (!aperta) { setPos(null); return; }
         const update = () => {
             const r = box.current?.getBoundingClientRect();
-            if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 230) });
+            if (r) setPos(POSIZIONA(r));
         };
         update();
         window.addEventListener("scroll", update, true);
@@ -86,7 +106,7 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
     const menuBody = pos ? (
         <div ref={menu}
             className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-hidden"
-            style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH }}>
             <button type="button"
                 onMouseDown={(e) => { e.preventDefault(); onChange(tutte ? [] : null); }}
                 className="w-full text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider text-indigo-300 hover:bg-indigo-500/20 border-b border-white/10">

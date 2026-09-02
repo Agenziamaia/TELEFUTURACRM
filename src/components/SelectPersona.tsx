@@ -14,6 +14,26 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+/* ⚠️ IN SU O IN GIÙ, secondo lo spazio che c'è (Luca 02/09, sulla correzione
+   stato degli Usati: «si bugga in visibilità perché esplode la tendina verso
+   il basso ma chiaramente non c'è spazio»). È lo stesso difetto che era già
+   stato sistemato a mano in tre schermate diverse: qui si chiude alla radice,
+   una volta per tutte le tendine del CRM.
+   Aprendo verso l'alto ci si aggancia con `bottom`, non con `top`: l'altezza
+   la decide il contenuto, e con `top` bisognerebbe conoscerla prima di
+   disegnare. */
+const POSIZIONA = (r: DOMRect) => {
+    const MIN = 180, MAX = 288;                 // sotto i 180px non ci sta niente
+    const sotto = window.innerHeight - r.bottom - 8;
+    const sopra = r.top - 8;
+    const inSu = sotto < MIN && sopra > sotto;
+    return {
+        ...(inSu ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+        left: r.left, width: Math.max(r.width, 230),
+        maxH: Math.max(120, Math.min(MAX, inSu ? sopra : sotto)),
+    };
+};
+
 /** Variante GENERICA per qualsiasi filtro (Luca 30/07: "tutte le tendine
  *  identiche a questa"): stessa estetica e stesso comportamento — si scrive
  *  per filtrare o si sceglie col mouse; campo vuoto = nessun filtro.
@@ -58,7 +78,7 @@ export function SelectPersona({
     const [aperta, setAperta] = useState(false);
     const box = useRef<HTMLDivElement | null>(null);
     const menu = useRef<HTMLDivElement | null>(null);
-    const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxH: number } | null>(null);
 
     // il valore scelto fuori si riflette dentro (es. reset dei filtri)
     useEffect(() => { setTesto(value); }, [value]);
@@ -80,7 +100,7 @@ export function SelectPersona({
         if (!aperta) { setPos(null); return; }
         const update = () => {
             const r = box.current?.getBoundingClientRect();
-            if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 230) });
+            if (r) setPos(POSIZIONA(r));
         };
         update();
         window.addEventListener("scroll", update, true);
@@ -114,8 +134,8 @@ export function SelectPersona({
 
     const menuBody = pos && (filtrate.length > 0 || comuni.length > 0 || q) ? (
         <div ref={menu}
-            className="select-persona-menu fixed z-[4000] max-h-72 overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5"
-            style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            className="select-persona-menu fixed z-[4000] overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5"
+            style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH }}>
             {comuni.length > 0 && (
                 <>
                     <div className="px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Più comuni</div>
@@ -195,7 +215,7 @@ export function SelectMulti({
     const [aperta, setAperta] = useState(false);
     const box = useRef<HTMLDivElement | null>(null);
     const menu = useRef<HTMLDivElement | null>(null);
-    const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxH: number } | null>(null);
 
     useEffect(() => {
         const h = (e: MouseEvent) => {
@@ -212,7 +232,7 @@ export function SelectMulti({
         if (!aperta) { setPos(null); return; }
         const update = () => {
             const r = box.current?.getBoundingClientRect();
-            if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 230) });
+            if (r) setPos(POSIZIONA(r));
         };
         update();
         window.addEventListener("scroll", update, true);
@@ -236,8 +256,8 @@ export function SelectMulti({
 
     const menuBody = pos ? (
         <div ref={menu}
-            className="select-persona-menu fixed z-[4000] max-h-72 overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5"
-            style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            className="select-persona-menu fixed z-[4000] overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5"
+            style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH }}>
             {tuttiLabel && !q && (
                 <button type="button"
                     onMouseDown={(e) => { e.preventDefault(); onChange([]); setTesto(""); setAperta(false); }}
