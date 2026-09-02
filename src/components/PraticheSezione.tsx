@@ -330,7 +330,21 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
         if (inCasa) { setApprovv((v) => (v ? v : "disponibile")); return; }
         setApprovv((v) => (v === "disponibile" ? "da_ordinare" : v));
     }, [perArticoli, righe.length, inCasa]);
-    const totale = perArticoli ? totaleRighe(righe) : (Number(String(valore).replace(",", ".")) || 0);
+    /* ⚠️ ZERO È UN PREZZO, VUOTO NO (Luca 02/09): «l'assistenza non te la fa
+       generare se il prezzo è zero, però ci sono dei casi in cui ingressiamo
+       dell'assistenza a zero e comunque facciamo firmare il contratto e
+       archiviamo tutti i dati — magari è un prodotto in garanzia, o facciamo
+       una cortesia a un cliente. Questo non significa che deve essere
+       possibile andare avanti quando il campo è VUOTO: se c'è scritto zero è
+       diverso.»
+       Fino a ieri i due casi erano indistinguibili, perché `Number("")` fa 0
+       come `Number("0")`: il controllo `totale > 0` li bocciava insieme. Ora
+       si guarda se il campo è stato SCRITTO, e il valore si legge solo se lo
+       è. Un prezzo dimenticato resta un prezzo dimenticato. */
+    const valoreTxt = String(valore ?? "").trim();
+    const valoreN = Number(valoreTxt.replace(",", "."));
+    const valoreScritto = valoreTxt !== "" && Number.isFinite(valoreN) && valoreN >= 0;
+    const totale = perArticoli ? totaleRighe(righe) : (valoreScritto ? Math.round(valoreN * 100) / 100 : 0);
     /* la voce che finirà sullo scontrino: la sceglie il contenuto della
        pratica, non l'operatore */
     const voceAcconto = sezione === "assistenze" ? "Acconto-Assistenza"
@@ -342,7 +356,7 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
     const serveImei = !!t && t.imei === "apertura";
     const contenutoOk = !t ? false : (perArticoli
         ? righe.length > 0
-        : !!(dev.brand.trim() && dev.modello.trim() && totale > 0 && (!serveImei || imei.trim().length >= 6)))
+        : !!(dev.brand.trim() && dev.modello.trim() && valoreScritto && (!serveImei || imei.trim().length >= 6)))
         && (!t.approvvigionamento || (!!approvv && (approvv !== "altro_negozio" || !!attesaDa)))
         && (t.noteInterne !== "obbligatorie" || noteInt.trim().length > 0);
     const accontoOk = pctAcconto === null ? false
@@ -1018,6 +1032,19 @@ function PassoDispositivo({ dev, onCambia, imei, onImei, serveImei, valore, onVa
                         className="rvIn" style={{ maxWidth: 170, fontSize: 21, fontWeight: 800 }} />
                     <span className="rvTab-min" style={{ flex: "1 1 220px", lineHeight: 1.45 }}>{nota}</span>
                 </div>
+                {/* ⚠️ ZERO SI PUÒ SCRIVERE, ed è giusto che si veda che è stato
+                    scelto e non dimenticato: la garanzia e la cortesia sono
+                    lavorazioni come le altre — stesso contratto, stessa firma,
+                    stessi dati archiviati — e valgono zero. */}
+                {(() => {
+                    const t = String(valore ?? "").trim();
+                    return t !== "" && Number(t.replace(",", ".")) === 0;
+                })() ? (
+                    <div className="rvHint" style={{ marginTop: 8 }}>
+                        🎁 <b>Lavorazione a zero</b>: va bene — in garanzia o per cortesia. Il contratto si firma
+                        e la pratica si archivia come tutte le altre, semplicemente non si incassa niente.
+                    </div>
+                ) : null}
             </div>
         </div>
     );
