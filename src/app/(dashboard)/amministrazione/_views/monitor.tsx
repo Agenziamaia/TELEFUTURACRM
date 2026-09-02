@@ -9,7 +9,7 @@ import { cn } from "@/utils";
 type Store = {
   negozio: string; custom: boolean; fiscale: boolean; abilitato: boolean;
   agenteVistoSecFa: number | null; pending: number; oldestPendingSec: number | null;
-  errori2h: number; ultimoStato: string | null; stato: "ok" | "warn" | "down";
+  errori2h: number; ultimoStato: string | null; stato: "ok" | "warn" | "down" | "chiuso"; chiusuraOggi?: boolean;
 };
 
 const fmtAge = (s: number | null) => s == null ? "—" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`;
@@ -102,13 +102,14 @@ export function MonitorNegoziView() {
 
   useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
 
-  const n = { ok: 0, warn: 0, down: 0 };
+  const n = { ok: 0, warn: 0, down: 0, chiuso: 0 };
   (stores || []).forEach((s) => { n[s.stato]++; });
 
   const COL: Record<string, { bar: string; badge: string; lab: string }> = {
     ok: { bar: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-400/30", lab: "OK" },
     warn: { bar: "bg-amber-500", badge: "bg-amber-500/15 text-amber-300 border-amber-400/30", lab: "ATTENZIONE" },
     down: { bar: "bg-rose-500", badge: "bg-rose-500/15 text-rose-300 border-rose-400/30", lab: "GIÙ" },
+    chiuso: { bar: "bg-slate-600", badge: "bg-slate-500/15 text-slate-400 border-slate-400/20", lab: "CHIUSO" },
   };
 
   return (
@@ -122,6 +123,7 @@ export function MonitorNegoziView() {
           <span className="px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-400/30 text-rose-200">🔴 {n.down} giù</span>
           <span className="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-400/30 text-amber-200">🟡 {n.warn} attenzione</span>
           <span className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-200">🟢 {n.ok} ok</span>
+          {n.chiuso > 0 && <span className="px-3 py-1.5 rounded-full bg-slate-500/10 border border-slate-400/20 text-slate-400">⚫ {n.chiuso} chiusi</span>}
         </div>
       </div>
 
@@ -146,7 +148,8 @@ export function MonitorNegoziView() {
               <div key={s.negozio} className={"relative overflow-hidden rounded-xl border px-4 py-3 "
                 + (s.stato === "down" ? "bg-rose-500/[0.07] border-rose-400/30"
                   : s.stato === "warn" ? "bg-amber-500/[0.05] border-amber-400/20"
-                    : "bg-white/[0.03] border-white/10")}>
+                    : s.stato === "chiuso" ? "bg-white/[0.02] border-white/5 opacity-55"
+                      : "bg-white/[0.03] border-white/10")}>
                 <span className={"absolute left-0 top-0 bottom-0 w-1 " + c.bar} />
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="font-bold text-white truncate">{s.negozio}</span>
