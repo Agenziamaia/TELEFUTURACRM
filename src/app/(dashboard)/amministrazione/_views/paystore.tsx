@@ -23,6 +23,7 @@
    può interrogare. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { RefreshCw, ChevronLeft, ChevronRight, AlertTriangle, Plus, Power, Trash2, Check } from "lucide-react";
 import { cn } from "@/utils";
@@ -691,29 +692,55 @@ function NumeroMancante({ r, onCambiato }: { r: Riga; onCambiato: () => void }) 
    quando qualcuno l'ha caricato, «NON partita» quando è andata storta — e
    quella è la riga che conta, perché il cliente ha già pagato. */
 function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
-    const [apre, setApre] = useState(false);
+    /* ⚠️ IL MENU ESCE DAL CONTENITORE, altrimenti non si vede. La tabella sta
+       dentro un `overflow-x-auto` — serve a far scorrere le colonne su uno
+       schermo stretto — e un contenitore che scorre in orizzontale TAGLIA
+       anche in verticale: il menu dell'ultima riga finiva sotto il bordo e non
+       si poteva cliccare (Luca 02/09), e aprirlo verso l'alto non sarebbe
+       bastato, perché lo avrebbe tagliato dall'altra parte.
+       Perciò va in un portale, in posizione fissa, con le coordinate prese dal
+       pulsante: fuori dal contenitore non lo taglia più niente. Sopra o sotto
+       lo decide lo spazio che c'è. */
+    const [pos, setPos] = useState<{ x: number; y: number; sopra: boolean } | null>(null);
     const [lavoro, setLavoro] = useState(false);
     const st = STATI[r.stato] || { testo: r.stato, colore: "text-slate-400", sfondo: "bg-white/5 border-white/15" };
+    const ALTEZZA_MENU = 132;   // tre voci più i bordi
+
+    /* se la pagina scorre, un menu in posizione fissa resterebbe dov'era:
+       si chiude, che è quello che uno si aspetta */
+    useEffect(() => {
+        if (!pos) return;
+        const chiudi = () => setPos(null);
+        window.addEventListener("scroll", chiudi, true);
+        window.addEventListener("resize", chiudi);
+        return () => { window.removeEventListener("scroll", chiudi, true); window.removeEventListener("resize", chiudi); };
+    }, [pos]);
 
     const cambia = async (stato: string) => {
         setLavoro(true);
         try {
             const x = await fetch("/api/paystore/registro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "stato", id: r.id, stato }) });
             if (x.ok) onCambiato();
-        } finally { setLavoro(false); setApre(false); }
+        } finally { setLavoro(false); setPos(null); }
     };
 
     return (
-        <div className="relative">
-            <button onClick={() => setApre(!apre)} disabled={lavoro}
+        <>
+            <button onClick={(e) => {
+                if (pos) { setPos(null); return; }
+                const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const sopra = window.innerHeight - b.bottom < ALTEZZA_MENU;
+                setPos({ x: b.right, y: sopra ? b.top - 4 : b.bottom + 4, sopra });
+            }} disabled={lavoro}
                 title={r.stato_da ? `${STATI[r.stato]?.testo} — ${r.stato_da}, ${r.stato_il ? new Date(r.stato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}` : "clicca per cambiare"}
                 className={cn("px-2 py-0.5 rounded-lg border text-[11px] font-bold whitespace-nowrap", st.sfondo, st.colore)}>
                 {st.testo} ▾
             </button>
-            {apre && (
+            {pos && createPortal(
                 <>
-                    <div className="fixed inset-0 z-20" onClick={() => setApre(false)} />
-                    <div className="absolute right-0 z-30 mt-1 rounded-xl border border-white/15 bg-[#0d1022] shadow-xl p-1 min-w-[150px]">
+                    <div className="fixed inset-0 z-[2000]" onClick={() => setPos(null)} />
+                    <div className="fixed z-[2001] rounded-xl border border-white/15 bg-[#0d1022] shadow-2xl p-1 min-w-[150px]"
+                        style={{ left: pos.x, top: pos.y, transform: `translate(-100%, ${pos.sopra ? "-100%" : "0"})` }}>
                         {ORDINE_STATI.filter((x) => x !== r.stato).map((x) => (
                             <button key={x} onClick={() => void cambia(x)}
                                 className={cn("block w-full text-left px-3 py-1.5 rounded-lg text-[12px] font-semibold hover:bg-white/10", STATI[x].colore)}>
@@ -721,9 +748,8 @@ function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
                             </button>
                         ))}
                     </div>
-                </>
-            )}
-        </div>
+                </>, document.body)}
+        </>
     );
 }
 
