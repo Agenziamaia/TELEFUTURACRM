@@ -1714,7 +1714,10 @@ function CallerPageInner() {
                 // e' GESTITA dal caller che ha chiamato, con sede l'ufficio
                 // commerciale — distinta dai clienti acquisiti in negozio.
                 creato_da: c.caller || currentCaller,
-                acquisito_da: "Ufficio Commerciale",
+                /* rinominato il 02/09: «Ufficio Commerciale» era il call center e si
+                   chiamava come l'ufficio amministrativo — stessa prima parola, e mezzo
+                   CRM li considerava lo stesso posto. */
+                acquisito_da: "Call Center",
             };
             // COERENZA CF ↔ NOME (Luca 24/08): consumer sul CF, business sul
             // CF del referente. Annulla = niente anagrafica: correggi la lead.

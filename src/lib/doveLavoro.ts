@@ -118,12 +118,14 @@ export const RUOLI_DI_NEGOZIO = [
        punto vendita, che di fatto sono i ruoli di consulente, di store
        manager, di direttore commerciale». Consulente qui si chiama
        `venditore`.
-       ⚠️ FUORI `tecnico` e `agente`: il tecnico sta in laboratorio e l'agente
-       gira, e nessuno dei due batte scontrini — la dichiarazione serve a
-       sapere da quale cassa esce lo scontrino, non a fare l'appello. Con loro
-       dentro, un agente senza negozio in scheda restava bloccato ogni
-       santo giorno senza che ci fosse una risposta giusta da dare. */
-    "venditore", "store_manager",
+       ⚠️ I TECNICI CI SONO (Luca 02/09, correggendosi): «i tecnici non stanno
+       in laboratorio, ce n'è solo uno — Fadel — che ci lavora anche, ma il
+       laboratorio è dentro un punto vendita». Quindi stanno a bancone come
+       gli altri, e la domanda gliela si fa.
+       ⚠️ FUORI `agente`: l'agente gira, non ha un negozio in scheda e non
+       batte scontrini. Con lui dentro restava bloccato ogni santo giorno
+       senza che ci fosse una risposta giusta da dargli. */
+    "venditore", "store_manager", "tecnico",
     /* IL DIRETTORE COMMERCIALE (Luca 31/08): «sta sui negozi tutti i giorni,
        per cui anche a lui bisogna chiedere in che punto vendita lavora». */
     "direttore_commerciale",
@@ -143,7 +145,7 @@ export function serveDichiarazione(ruolo?: string | null, id?: string | null): b
 /** Vero se questa persona lavora in un UFFICIO e non in un punto vendita:
  *  lì non c'è cassa, non si scontrina, e la domanda «in che negozio sei
  *  oggi?» non ha risposta. Vale anche per chi ha il ruolo giusto ma è
- *  assegnato all'Agenzia o all'Ufficio Commerciale. */
+ *  assegnato all'Agenzia o al Call Center. */
 export async function stoInUfficio(userId: string, primario?: string | null): Promise<boolean> {
     const { data: st } = await supabase.from("stores").select("name, is_ufficio");
     const uffici = new Set(((st ?? []) as { name: string; is_ufficio?: boolean | null }[])

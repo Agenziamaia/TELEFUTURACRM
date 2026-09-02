@@ -145,6 +145,13 @@ export function DoveLavoro() {
     const mie = diTurno ?? [];
     const sedeDiTurno = mie[0] || null;
     const fuoriTurno = !!scelta && !mie.includes(scelta);
+    /* ⚠️ CHI APPROVA NON CHIEDE IL PERMESSO A SÉ (Luca 02/09, su Marta
+       Perrotta). Il cartello e il bottone cambiano di conseguenza: non
+       «serve l'ok dell'amministrazione» — l'amministrazione è lei — ma un
+       avviso che sta scegliendo un negozio diverso da quello in cui è in
+       turno, e un bottone che chiede conferma invece di chiedere permesso.
+       Per ruolo, non per persona: gli stessi che possono approvare. */
+    const siAutorizza = ["amministrativo", "direttore_generale", "admin", "dev"].includes(String(user?.role || ""));
 
     const conferma = async () => {
         if (!scelta || salvando) return;
@@ -239,14 +246,16 @@ export function DoveLavoro() {
 
                 {fuoriTurno && (
                     <div className="rvNota rvNota-att" style={{ marginTop: 10 }}>
-                        <div className="rvNota-t">Serve l&apos;ok dell&apos;amministrazione</div>
+                        <div className="rvNota-t">{siAutorizza ? "Attenzione: non è il tuo turno" : "Serve l'ok dell'amministrazione"}</div>
                         <div className="rvNota-s">
-                            {sedeDiTurno
-                                ? <>Intanto continui a lavorare su <b>{sedi.find((s) => s.sede === sedeDiTurno)?.etichetta || sedeDiTurno}</b>, dove sei di turno: appena approvano, si sposta.</>
-                                : <>Oggi non risulti a turno da nessuna parte: fino all&apos;approvazione non potrai registrare vendite.</>}
+                            {siAutorizza
+                                ? <>Oggi risulti {sedeDiTurno ? <>di turno a <b>{sedi.find((s) => s.sede === sedeDiTurno)?.etichetta || sedeDiTurno}</b></> : <>senza turno</>}, e stai scegliendo un punto vendita diverso. Puoi farlo — l&apos;autorizzazione la dai tu — ma da qui in poi scontrini e magazzino saranno di quel negozio.</>
+                                : sedeDiTurno
+                                    ? <>Intanto continui a lavorare su <b>{sedi.find((s) => s.sede === sedeDiTurno)?.etichetta || sedeDiTurno}</b>, dove sei di turno: appena approvano, si sposta.</>
+                                    : <>Oggi non risulti a turno da nessuna parte: fino all&apos;approvazione non potrai registrare vendite.</>}
                         </div>
                         <label className="rvCampo rvCampo-lg" style={{ marginTop: 8 }}>
-                            <span className="rvLab">Perché sei lì</span>
+                            <span className="rvLab">{siAutorizza ? "Perché sei lì (resta scritto)" : "Perché sei lì"}</span>
                             <input className="rvIn" value={motivo} onChange={(e) => setMotivo(e.target.value)}
                                 placeholder="cambio con un collega, apertura straordinaria…" />
                         </label>
@@ -257,7 +266,7 @@ export function DoveLavoro() {
 
                 <div className="rvBarra rvBarra-c" style={{ marginTop: 14, justifyContent: "flex-end" }}>
                     <button type="button" onClick={conferma} disabled={!scelta || salvando} className="rvAzione">
-                        {salvando ? "…" : fuoriTurno ? "Chiedi l'accesso" : "Sono qui"}
+                        {salvando ? "…" : fuoriTurno ? (siAutorizza ? "Sì, lavoro qui oggi" : "Chiedi l'accesso") : "Sono qui"}
                     </button>
                 </div>
             </div>
