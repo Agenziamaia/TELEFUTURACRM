@@ -45,7 +45,7 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { cn } from "@/utils";
 import { splitNegozi, stessoMagazzino } from "@/lib/negoziNomi";
 import { useVisibleStores } from "@/lib/visibleStores";
-import { presenzaOggi, serveDichiarazione } from "@/lib/doveLavoro";
+import { presenzaOggi, serveDichiarazione, stoInUfficio } from "@/lib/doveLavoro";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_MAGAZZINO, CAP_MAGAZZINO_VALORI } from "@/lib/capabilities";
 import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
@@ -214,7 +214,8 @@ export default function MagazzinoPage() {
             /* se non si riesce a LEGGERE la dichiarazione non si blocca: il
                problema è nostro, e fermare un magazzino per un pacchetto perso è
                peggio del rischio che copre (revisore 02/09) */
-            if (!errore && serveDichiarazione(user.role, user.id) && !attiva) {
+            const inUfficio = !attiva && await stoInUfficio(user.id, user.negozio);
+            if (!errore && !inUfficio && serveDichiarazione(user.role, user.id) && !attiva) {
                 if (vivo) { setNegoziDoveLavoro([]); setAccessoInAttesa(!!inAttesa); }
                 return;
             }

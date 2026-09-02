@@ -54,17 +54,18 @@ const oggiYmd = () => {
 
 const bello = (nome: string) => nome.charAt(0).toUpperCase() + nome.slice(1);
 
-/** Tutte le sedi del gruppo, con le loro insegne.
- *  ⚠️ GLI UFFICI CI SONO (revisore 02/09). Stavano fuori con la motivazione
- *  «non sono punti vendita e da lì non esce merce» — che è falso: da Ufficio
- *  Commerciale e Agenzia sono uscite 57 vendite negli ultimi trenta giorni.
- *  Finché la dichiarazione era un dato da raccogliere, tenerli fuori era un
- *  dettaglio; da quando è un cancello, vuol dire che chi lavora lì non può
- *  dichiararsi da nessuna parte, e quindi non può più vendere. */
+/** Tutte le sedi del gruppo, con le loro insegne. Gli uffici restano fuori.
+ *  ⚠️ E la ragione non è che da lì non si venda — ci vendono eccome, 57
+ *  vendite in trenta giorni. È che da un ufficio non si SCONTRINA: non c'è
+ *  un registratore di cassa, e la dichiarazione serve proprio a sapere da
+ *  quale cassa esce lo scontrino. Chi è assegnato all'Agenzia o all'Ufficio
+ *  Commerciale sta già dove deve stare, e chiedergli «in che negozio sei
+ *  oggi?» non ha risposta (Luca 02/09). */
 export async function sediDelGruppo(): Promise<SedeLavoro[]> {
     const { data } = await supabase.from("stores").select("name, is_ufficio").order("name");
     const per = new Map<string, string[]>();
     (data ?? []).forEach((r: { name: string; is_ufficio?: boolean | null }) => {
+        if (r.is_ufficio) return;
         const k = sedeFisica(r.name);
         if (!k) return;
         const arr = per.get(k) || [];
@@ -113,7 +114,16 @@ export async function sediDiTurnoOggi(userId: string, nome: string): Promise<str
    chiesto niente — oppure il contrario, e il blocco non serve a nulla.
    Una lista sola, qui. */
 export const RUOLI_DI_NEGOZIO = [
-    "venditore", "store_manager", "tecnico", "agente",
+    /* Luca, 02/09, elencandoli: «le persone che lavorano all'interno di un
+       punto vendita, che di fatto sono i ruoli di consulente, di store
+       manager, di direttore commerciale». Consulente qui si chiama
+       `venditore`.
+       ⚠️ FUORI `tecnico` e `agente`: il tecnico sta in laboratorio e l'agente
+       gira, e nessuno dei due batte scontrini — la dichiarazione serve a
+       sapere da quale cassa esce lo scontrino, non a fare l'appello. Con loro
+       dentro, un agente senza negozio in scheda restava bloccato ogni
+       santo giorno senza che ci fosse una risposta giusta da dare. */
+    "venditore", "store_manager",
     /* IL DIRETTORE COMMERCIALE (Luca 31/08): «sta sui negozi tutti i giorni,
        per cui anche a lui bisogna chiedere in che punto vendita lavora». */
     "direttore_commerciale",
@@ -128,6 +138,23 @@ export const ANCHE_LORO = ["7e3f04f6-f30b-4b4b-aea8-f732c45e1861"];   // Marta P
  *  senza una dichiarazione APPROVATA, non può vendere né muovere magazzino. */
 export function serveDichiarazione(ruolo?: string | null, id?: string | null): boolean {
     return RUOLI_DI_NEGOZIO.includes(String(ruolo || "")) || ANCHE_LORO.includes(String(id || ""));
+}
+
+/** Vero se questa persona lavora in un UFFICIO e non in un punto vendita:
+ *  lì non c'è cassa, non si scontrina, e la domanda «in che negozio sei
+ *  oggi?» non ha risposta. Vale anche per chi ha il ruolo giusto ma è
+ *  assegnato all'Agenzia o all'Ufficio Commerciale. */
+export async function stoInUfficio(userId: string, primario?: string | null): Promise<boolean> {
+    const { data: st } = await supabase.from("stores").select("name, is_ufficio");
+    const uffici = new Set(((st ?? []) as { name: string; is_ufficio?: boolean | null }[])
+        .filter((r) => r.is_ufficio).map((r) => r.name));
+    if (!uffici.size) return false;
+    const suoi = new Set<string>();
+    if (primario) suoi.add(primario);
+    const { data: us } = await supabase.from("user_stores").select("store_name").eq("user_id", userId);
+    (us ?? []).forEach((r: { store_name?: string | null }) => { if (r.store_name) suoi.add(String(r.store_name)); });
+    if (!suoi.size) return false;                    // senza assegnazioni non si deduce niente
+    return [...suoi].every((n) => uffici.has(n));    // TUTTE le sue sedi sono uffici
 }
 
 /** La presenza dichiarata oggi: quella ATTIVA (dove sta lavorando davvero) e

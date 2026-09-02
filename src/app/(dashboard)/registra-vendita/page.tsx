@@ -5423,6 +5423,11 @@ function CRM() {
            successa. Il rimedio al blocco non è ignorarlo, è approvare in
            fretta — ed è per questo che l'approvazione arriva adesso anche
            sul fulmine. */
+        /* chi è assegnato SOLO a un ufficio non viene mai chiesto e mai
+           bloccato: lì non c'è cassa, e la dichiarazione serve a sapere da
+           quale cassa esce lo scontrino (Luca 02/09) */
+        const { stoInUfficio } = await import("@/lib/doveLavoro");
+        if (!p.attiva && await stoInUfficio(user.id, user.negozio)) { setPresenzaStato("ok"); return; }
         setPresenzaStato(p.errore ? "illeggibile" : p.attiva ? "ok" : p.inAttesa ? "attesa" : p.rifiutata ? "rifiutata" : "assente");
         const dich = p.attiva;
         if (!dich) return;

@@ -31,7 +31,7 @@ import { cn } from "@/utils";
 import {
     sediDelGruppo, sediDiTurnoOggi, presenzaOggi,
     type SedeLavoro,
-    RUOLI_DI_NEGOZIO, ANCHE_LORO,
+    RUOLI_DI_NEGOZIO, ANCHE_LORO, stoInUfficio,
 } from "@/lib/doveLavoro";
 
 /* I ruoli che stanno dietro a un bancone e le eccezioni per persona ora
@@ -65,6 +65,9 @@ export function DoveLavoro() {
 
     const guarda = useCallback(async () => {
         if (!user?.id || !deveRispondere(user)) { setServe(false); return; }
+        /* e nemmeno a chi è assegnato SOLO a un ufficio: lì non c'è cassa,
+           non si scontrina, e «in che negozio sei oggi?» non ha risposta */
+        if (await stoInUfficio(user.id, (user as { negozio?: string }).negozio)) { setServe(false); return; }
         /* SI CHIEDE A OGNI ACCESSO (Luca 31/08), non una volta al giorno: chi
            esce e rientra lo fa quasi sempre perché è cambiato qualcosa. Il
            confronto è fra l'istante dell'accesso e quello dell'ultima risposta:
