@@ -50,6 +50,10 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_MAGAZZINO, CAP_MAGAZZINO_VALORI } from "@/lib/capabilities";
 import { ddtHtml, ddtRaccolta, type AziendaDdt, type NegozioDdt, type VettoreDdt, type DatiDdt, type RigaDdt as RigaStampa } from "@/lib/ddtDocumento";
 import { storiaCompleta, pezzoOra, NOME_EVENTO, type EventoPezzo } from "@/lib/magazzinoStoria";
+
+/* Il magazzino centrale: sta in ufficio, dove vivono l'amministrazione e la
+   logistica. Si vede da tutti, ci mette le mani solo l'amministrazione. */
+const MAGAZZINO_UFFICIO = "Ufficio";
 /* Il RAGIONAMENTO sui trasferimenti — le situazioni in cui della merce si
    muove fra punti vendita, e cosa deve succedere in ognuna — sta tutto in
    src/lib/trasferimenti.ts. Qui si usa, non si ripete. */
@@ -308,7 +312,16 @@ export default function MagazzinoPage() {
                    nasconde i conti che non tornano non serve a niente. */
                 supabase.from("mag_giacenze").select("codice,negozio,azienda,quantita,in_arrivo").or("quantita.neq.0,in_arrivo.gt.0").range(from, to) as never),
         ]);
-        setNegozi(((st.data ?? []) as { name: string; is_ufficio?: boolean | null }[]).filter(s => !s.is_ufficio).map(s => s.name));
+        /* ⚠️ L'UFFICIO È UN MAGAZZINO, E SI DEVE VEDERE (Luca 02/09): «l'ufficio
+           è il nostro magazzino principale… deve essere un posto che risulta
+           dentro il magazzino quando seleziono tutti, perché se qualcuno non ha
+           un telefono deve poter vedere che quel telefono esiste in ufficio e
+           quindi fare richiesta all'amministrazione per l'invio».
+           Gli altri uffici restano fuori: non hanno merce, e riempirebbero le
+           tendine di posti dove non c'è niente da prendere. Chi ci può METTERE
+           LE MANI è un'altra cosa, e la decide `puoToccareUfficio`. */
+        setNegozi(((st.data ?? []) as { name: string; is_ufficio?: boolean | null }[])
+            .filter(s => !s.is_ufficio || s.name === MAGAZZINO_UFFICIO).map(s => s.name));
         setUnita((un.data ?? []) as Unita[]);
         /* IL NOME, IL VALORE E DI CHI È (Luca 31/08). L'anagrafica serviva per
            descrizione e prezzo; ora porta anche `gruppo` e `marca`, perché è
@@ -2247,11 +2260,21 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        San Paolo, e nessuno se ne sarebbe accorto se non guardando le
        giacenze. Adesso si parte solo da un magazzino che si ha in
        visibilità — la direzione e l'amministrazione da tutti, come prima. */
+    /* ⚠️ DAL MAGAZZINO DELL'UFFICIO SPEDISCE SOLO L'AMMINISTRAZIONE (Luca
+       02/09): «gli unici ruoli a poter accedere a questo magazzino, anche in
+       termini di trasferimento, devono essere dall'amministrazione in su».
+       Vederlo lo vedono tutti — serve proprio a quello: un negozio che non ha
+       un telefono deve poter sapere che in ufficio c'è, e chiederlo. Ma
+       prenderlo da lì è un'altra cosa.
+       ⚠️ `seesAll` NON basta: la vede tutta anche la direzione commerciale, che
+       il magazzino centrale non lo tocca. Il cancello è `puoCaricare`, cioè
+       amministrativo in su — lo stesso della cancellazione di una pratica. */
     const negoziPartenza = useMemo(() => {
-        if (seesAll) return negozi;
+        const senzaUfficio = (l: string[]) => puoCaricare ? l : l.filter(n => n !== MAGAZZINO_UFFICIO);
+        if (seesAll) return senzaUfficio(negozi);
         if (!negoziDoveLavoro.length) return [];
-        return negozi.filter(n => negoziDoveLavoro.some(m => stessoMagazzino(n, m)));
-    }, [seesAll, negozi, negoziDoveLavoro]);
+        return senzaUfficio(negozi.filter(n => negoziDoveLavoro.some(m => stessoMagazzino(n, m))));
+    }, [seesAll, negozi, negoziDoveLavoro, puoCaricare]);
     const conteggi = useMemo(() => {
         const ora = Date.now();
         const out = {} as Record<Situazione, number>;
