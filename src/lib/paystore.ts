@@ -19,7 +19,19 @@
 
 import { createHash, createHmac, randomUUID, randomBytes } from "node:crypto";
 
-const BASE = process.env.PAYSTORE_BASE_URL || "https://api-test.paystore.it/api/partner/v1";
+/* ═══ COLLAUDO E PRODUZIONE SONO DUE MONDI ════════════════════════════════
+   ⚠️ L'INDIRIZZO SEGUE LA CREDENZIALE, NON LA VARIABILE D'AMBIENTE. Era uno
+   solo, letto da `PAYSTORE_BASE_URL`, e puntava al collaudo. Con le credenziali
+   vere caricate dal pannello, ogni ricarica sarebbe partita verso
+   `api-test.paystore.it` con una terna `ps_live_`: rifiutata, con un errore che
+   parla di autenticazione e non dice la cosa vera — che stiamo bussando alla
+   porta sbagliata.
+   Il prefisso della credenziale dice l'ambiente, e l'ambiente dice l'indirizzo. */
+const BASE_COLLAUDO = process.env.PAYSTORE_BASE_URL || "https://api-test.paystore.it/api/partner/v1";
+const BASE_PRODUZIONE = process.env.PAYSTORE_BASE_URL_LIVE || "https://api.paystore.it/api/partner/v1";
+const baseDi = (c: { clientId: string }) => c.clientId.startsWith("ps_test_") ? BASE_COLLAUDO : BASE_PRODUZIONE;
+/** L'indirizzo di default, per chi non ha ancora una credenziale in mano. */
+const BASE = BASE_COLLAUDO;
 
 /* ═══ UNA TERNA PER NEGOZIO, NON UNA PER SERVER ════════════════════════════
    Luca 02/09: «sono arrivate tutte le credenziali API di PayStore: ne hanno
@@ -50,7 +62,7 @@ export const credenzialeAmbiente = (): Credenziale | null => {
 export const inCollaudo = (c?: Credenziale | null) => String((c || credenzialeAmbiente())?.clientId || "").startsWith("ps_test_");
 export const configurato = () => !!credenzialeAmbiente();
 
-const PATH_BASE = (() => { try { return new URL(BASE).pathname.replace(/\/$/, ""); } catch { return "/api/partner/v1"; } })();
+const pathDi = (base: string) => { try { return new URL(base).pathname.replace(/\/$/, ""); } catch { return "/api/partner/v1"; } };
 
 export type EsitoPs<T> =
     | { ok: true; dati: T; replay?: boolean }
@@ -74,7 +86,7 @@ async function accessToken(c: Credenziale): Promise<string> {
     const inCorso = tokenInCorso.get(k);
     if (inCorso) return inCorso;                    // due ricariche insieme = una sola richiesta
     const p = (async () => {
-        const r = await fetch(BASE + "/oauth/token", {
+        const r = await fetch(baseDi(c) + "/oauth/token", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ grant_type: "client_credentials", client_id: c.clientId, client_secret: c.clientSecret }),
@@ -143,7 +155,8 @@ async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unkno
     const c = opts?.cred ?? credenzialeAmbiente();
     if (!c) return { ok: false, stato: 0, errore: "non_configurato", descrizione: "Mancano le credenziali PayStore", definitivo: true };
     const { clientId: CLIENT_ID, signingKey: SIGNING_KEY } = c;
-    const pathEQuery = PATH_BASE + percorso;
+    const base = baseDi(c);
+    const pathEQuery = pathDi(base) + percorso;
     /* ⚠️ il corpo si serializza UNA volta sola e da qui in poi è quella
        stringa: si firma quella e si spedisce quella */
     const body = opts?.body !== undefined ? JSON.stringify(opts.body) : undefined;
@@ -174,7 +187,7 @@ async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unkno
 
     let r: Response;
     try {
-        r = await fetch(BASE + percorso, { method: metodo, headers, body, signal: AbortSignal.timeout(45000) });
+        r = await fetch(base + percorso, { method: metodo, headers, body, signal: AbortSignal.timeout(45000) });
     } catch (e) {
         /* rete caduta o timeout: l'esito è IGNOTO, non fallito. Chi chiama
            deve riconciliare, non dare per scontato che non sia partita. */

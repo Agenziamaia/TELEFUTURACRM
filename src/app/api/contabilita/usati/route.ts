@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isAdminOrAbove } from "@/lib/roles";
-import { usatiVenduti, usatiComprati, INTESTAZIONI, inRiga } from "@/lib/contabilitaUsati";
+import { usatiVenduti, usatiComprati, INTESTAZIONI, inRiga, meseAppenaChiuso, meseInCorso } from "@/lib/contabilitaUsati";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,15 +31,6 @@ async function soloDirezione(g: { sess: { id: string } }) {
     return { nome: u?.full_name || g.sess.id };
 }
 
-/** Il mese scorso, in giorni di Roma. */
-function meseScorso() {
-    const o = new Date();
-    const y = o.getUTCMonth() === 0 ? o.getUTCFullYear() - 1 : o.getUTCFullYear();
-    const m = o.getUTCMonth() === 0 ? 12 : o.getUTCMonth();
-    const ultimo = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const mm = String(m).padStart(2, "0");
-    return { da: `${y}-${mm}-01`, a: `${y}-${mm}-${String(ultimo).padStart(2, "0")}` };
-}
 
 export async function GET(request: Request) {
     const _g = await accesso(request, "contabilita/usati");
@@ -49,7 +40,11 @@ export async function GET(request: Request) {
     const req = request;
 
     const url = new URL(req.url);
-    const def = meseScorso();
+    /* ⚠️ SI APRE SUL MESE IN CORSO. Il resoconto parla del mese chiuso, ma chi
+       apre questa sezione durante il mese vuole vedere quello che sta
+       succedendo — e le righe da completare prima che il file parta. Il mese da
+       mandare ha il suo riquadro in cima. */
+    const def = meseInCorso();
     const da = url.searchParams.get("da") || def.da;
     const a = url.searchParams.get("a") || def.a;
 
@@ -85,7 +80,7 @@ export async function GET(request: Request) {
        arriva quando il commercialista ha già il file in mano. */
     const oggi = new Date();
     const gg = Number(oggi.toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" }).slice(8, 10));
-    const scorso = meseScorso();
+    const scorso = meseAppenaChiuso();
     const { data: giaInviato } = await supabaseAdmin.from("contabilita_usati_inviati")
         .select("mese, esito, inviato_il, destinatari, da_confermare")
         .eq("mese", scorso.da).maybeSingle();
@@ -139,22 +134,52 @@ export async function PATCH(request: Request) {
     if ("ko" in g) return g.ko;
     const req = request;
 
-    const b = await req.json().catch(() => ({})) as
-        { id?: number; aziendaAcquisto?: string | null; aziendaVendita?: string | null };
+    const b = await req.json().catch(() => ({})) as {
+        id?: number; aziendaAcquisto?: string | null; aziendaVendita?: string | null;
+        costoContabile?: number | string | null; venditaContabile?: number | string | null;
+    };
     if (!b.id) return NextResponse.json({ error: "manca il telefono" }, { status: 400 });
+
+    /** Un prezzo scritto a mano: numero o «vuoto» (= torna a valere la regola). */
+    const prezzo = (v: unknown): { ok: true; val: number | null } | { ok: false } => {
+        if (v === undefined) return { ok: true, val: undefined as unknown as null };
+        if (v === null || v === "") return { ok: true, val: null };
+        const n = Number(String(v).replace(",", "."));
+        /* ⚠️ NIENTE NEGATIVI E NIENTE ASSURDI. Questa cifra finisce su una
+           fattura fra due società: un segno meno o un ordine di grandezza
+           sbagliato non si scopre più a valle. */
+        return Number.isFinite(n) && n >= 0 && n <= 100000 ? { ok: true, val: n } : { ok: false };
+    };
     const valida = (v: unknown) => v === "T1" || v === "T2" || v === null || v === "";
     if (!valida(b.aziendaAcquisto) || !valida(b.aziendaVendita)) {
         return NextResponse.json({ error: "la società può essere solo T1 o T2" }, { status: 400 });
     }
 
     const { data: prima } = await supabaseAdmin.from("usati")
-        .select("id, imei, azienda_acquisto, azienda_vendita, status_history").eq("id", b.id).maybeSingle();
+        .select("id, imei, azienda_acquisto, azienda_vendita, status_history, purchase_price, sold_price").eq("id", b.id).maybeSingle();
     if (!prima) return NextResponse.json({ error: "telefono non trovato" }, { status: 404 });
     const p = prima as { azienda_acquisto: string | null; azienda_vendita: string | null; status_history: Record<string, unknown> | null };
 
     const campi: Record<string, unknown> = {};
     if (b.aziendaAcquisto !== undefined) campi.azienda_acquisto = b.aziendaAcquisto || null;
     if (b.aziendaVendita !== undefined) campi.azienda_vendita = b.aziendaVendita || null;
+
+    /* ⚠️ I PREZZI CONTABILI NON TOCCANO L'ARCHIVIO. `purchase_price` e
+       `sold_price` restano quello che è successo davvero: qui si scrive solo
+       come va nel file. Sovrascrivere l'archivio vorrebbe dire perdere per
+       sempre il margine vero del telefono. */
+    let prezziToccati = false;
+    for (const [chiave, colonna] of [["costoContabile", "costo_contabile"], ["venditaContabile", "vendita_contabile"]] as const) {
+        const v = (b as Record<string, unknown>)[chiave];
+        if (v === undefined) continue;
+        const p = prezzo(v);
+        if (!p.ok) return NextResponse.json({ error: `«${v}» non è un prezzo valido` }, { status: 400 });
+        campi[colonna] = p.val; prezziToccati = true;
+    }
+    if (prezziToccati) {
+        campi.prezzi_corretti_da = g.nome;
+        campi.prezzi_corretti_il = new Date().toISOString();
+    }
     if (!Object.keys(campi).length) return NextResponse.json({ error: "niente da cambiare" }, { status: 400 });
 
     /* ⚠️ `status_history` È UN OGGETTO CON CHIAVE LO STATO, non una lista: una

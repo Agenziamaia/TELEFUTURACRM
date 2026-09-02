@@ -63,10 +63,19 @@ export type RigaContabilita = {
     /** true quando manca la società d'acquisto: non si può dire niente. */
     daConfermare: boolean;
     acquistoReale: number;
-    /** null = costo non registrato: nel file esce vuoto, non a 100. */
+    /** Quello che va nel file: la correzione a mano se c'è, se no la regola.
+     *  null = costo non registrato, e nel file esce vuoto — non a 100. */
     acquistoFile: number | null;
     /** null = non ancora venduto: la colonna del prezzo resta vuota. */
     vendita: number | null;
+    /** Il prezzo di vendita come va nel file: la correzione a mano se c'è. */
+    venditaFile: number | null;
+    /** Da dove viene `acquistoFile`: serve a colorarlo e a spiegarlo.
+     *  «reale» = è la cifra pagata · «regola» = alzata al minimo di 100 €
+     *  «mano» = deciso da una persona · «ignoto» = costo non registrato. */
+    origineCosto: "reale" | "regola" | "mano" | "ignoto";
+    origineVendita: "reale" | "mano" | "nessuna";
+    corretti: { chi: string; quando: string } | null;
     /** In quale foglio sta questa riga: cambia cosa si può affermare. */
     lato: "venduto" | "comprato";
     compratoIl: string | null;
@@ -85,6 +94,8 @@ type Grezza = {
     purchase_price: number | null; sold_price: number | null; sale_price: number | null;
     purchase_date: string | null; sold_date: string | null; doc_acquisto: string | null;
     status_history: Record<string, unknown> | null;
+    costo_contabile: number | null; vendita_contabile: number | null;
+    prezzi_corretti_da: string | null; prezzi_corretti_il: string | null;
 };
 
 /** L'ultima correzione a mano della società, se c'è stata. La cronologia di un
@@ -111,6 +122,19 @@ function componi(r: Grezza, lato: "venduto" | "comprato"): RigaContabilita {
        cliente ha pagato davvero, e su un invenduto non esiste. */
     const venduto = lato === "venduto" || !!r.sold_date;
     const vendita = venduto ? Number(r.sold_price ?? r.sale_price ?? 0) : null;
+
+    /* ⚠️ LA CORREZIONE A MANO VINCE SU TUTTO, e non si ricalcola. È la
+       decisione di una persona su un numero che diventerà una fattura: la
+       regola dei 100 € è un ripiego per quando nessuno ha deciso, non
+       un'autorità che sovrascrive chi ha deciso. */
+    const aMano = r.costo_contabile != null;
+    const daRegola = acquistoPerCommercialista(acquisto);
+    const acquistoFile = aMano ? Number(r.costo_contabile) : daRegola;
+    const origineCosto: RigaContabilita["origineCosto"] =
+        aMano ? "mano"
+            : daRegola == null ? "ignoto"
+                : daRegola !== acquisto ? "regola" : "reale";
+    const venditaFile = r.vendita_contabile != null ? Number(r.vendita_contabile) : vendita;
     return {
         id: r.id, imei: String(r.imei || ""), modello: String(r.model || ""),
         negozio: r.store, lato,
@@ -126,15 +150,17 @@ function componi(r: Grezza, lato: "venduto" | "comprato"): RigaContabilita {
            negozio, sommerse insieme a quelle che mancano davvero. */
         daConfermare: !r.azienda_acquisto || (lato === "venduto" && !r.azienda_vendita),
         acquistoReale: acquisto,
-        acquistoFile: acquistoPerCommercialista(acquisto),
-        vendita,
+        acquistoFile, origineCosto,
+        vendita, venditaFile,
+        origineVendita: r.vendita_contabile != null ? "mano" : venduto ? "reale" : "nessuna",
+        corretti: r.prezzi_corretti_il ? { chi: r.prezzi_corretti_da || "—", quando: r.prezzi_corretti_il } : null,
         compratoIl: r.purchase_date, vendutoIl: r.sold_date,
         documentoAcquisto: r.doc_acquisto,
         corretta: ultimaCorrezione(r.status_history),
     };
 }
 
-const CAMPI = "id, imei, model, store, azienda_acquisto, azienda_vendita, purchase_price, sold_price, sale_price, purchase_date, sold_date, doc_acquisto, status_history";
+const CAMPI = "id, imei, model, store, azienda_acquisto, azienda_vendita, purchase_price, sold_price, sale_price, purchase_date, sold_date, doc_acquisto, status_history, costo_contabile, vendita_contabile, prezzi_corretti_da, prezzi_corretti_il";
 
 /** Gli usati VENDUTI in un periodo. `da`/`a` sono giorni (YYYY-MM-DD). */
 export async function usatiVenduti(da: string, a: string): Promise<RigaContabilita[]> {
@@ -163,6 +189,7 @@ export const INTESTAZIONI = [
     "Società che ha comprato", "Società che ha venduto", "Fattura tra società",
     "Comprato il", "Costo reale", `Costo per la contabilità (min. ${ACQUISTO_MINIMO} €)`,
     "Venduto il", "Prezzo di vendita", "Documento d'acquisto", "Società corretta a mano",
+    "Da dove viene il costo", "Prezzi corretti a mano da",
 ];
 
 const giorno = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("it-IT") : "";
@@ -178,8 +205,42 @@ export const inRiga = (r: RigaContabilita) => [
     giorno(r.compratoIl),
     r.acquistoReale > 0 ? r.acquistoReale : "costo non registrato",
     r.acquistoFile ?? "costo non registrato",
-    giorno(r.vendutoIl), r.vendita ?? "", r.documentoAcquisto || "",
+    giorno(r.vendutoIl), r.venditaFile ?? "", r.documentoAcquisto || "",
     /* ⚠️ ANCHE NEL FILE. Il commercialista deve poter distinguere una società
        che viene dal documento d'acquisto da una scritta a mano da noi. */
     r.corretta ? `${r.corretta.chi} il ${giorno(r.corretta.quando)}` : "",
+    /* ⚠️ IL COMMERCIALISTA DEVE SAPERE DA DOVE VIENE OGNI CIFRA. Un costo
+       alzato dalla regola e uno deciso da una persona non sono la stessa cosa,
+       e da un numero secco non si distinguono. */
+    ({ reale: "pagato", regola: "portato al minimo di 100 €", mano: "deciso a mano", ignoto: "costo non registrato" })[r.origineCosto],
+    r.corretti ? `${r.corretti.chi} il ${giorno(r.corretti.quando)}` : "",
 ];
+
+/* ═══ IL MESE APPENA CHIUSO ════════════════════════════════════════════════
+   ⚠️ ERA SCRITTO DUE VOLTE, e in due modi diversi: il pannello contava i mesi
+   in UTC, il lavoro automatico sul giorno di Roma. Divergevano 19 ore l'anno —
+   sempre fra mezzanotte e le due del 1° del mese — e in quella finestra il
+   pannello mostrava un mese e l'email ne avrebbe mandato un altro, interrogando
+   pure la riga sbagliata del registro degli invii.
+   Roma vince: il mese contabile è quello italiano. */
+export function meseAppenaChiuso() {
+    const oggiRoma = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+    const [y, m] = oggiRoma.split("-").map(Number);
+    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+    const ultimo = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+    const mm = String(pm).padStart(2, "0");
+    return {
+        da: `${py}-${mm}-01`, a: `${py}-${mm}-${String(ultimo).padStart(2, "0")}`,
+        etichetta: new Date(Date.UTC(py, pm - 1, 1)).toLocaleDateString("it-IT", { month: "long", year: "numeric", timeZone: "UTC" }),
+    };
+}
+
+/** Il mese in corso: è quello che l'amministrazione guarda tutti i giorni,
+ *  mentre il resoconto parla di quello prima. */
+export function meseInCorso() {
+    const oggiRoma = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+    const [y, m] = oggiRoma.split("-").map(Number);
+    const ultimo = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const mm = String(m).padStart(2, "0");
+    return { da: `${y}-${mm}-01`, a: `${y}-${mm}-${String(ultimo).padStart(2, "0")}` };
+}

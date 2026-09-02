@@ -79,7 +79,8 @@ export const AUTOMATISMI: Automatismo[] = [
             {
                 chiave: "destinatari", tipo: "email", nome: "Destinatari",
                 spiega: "A chi arriva il resoconto. Uno per riga.",
-                predefinito: ["studioandreavincioni@gmail.com"],
+                /* il commercialista, dato da Luca il 02/09: Andrea Fabrizi */
+                predefinito: ["a.fabrizi@adrianco.it"],
             },
         ],
         prova: {

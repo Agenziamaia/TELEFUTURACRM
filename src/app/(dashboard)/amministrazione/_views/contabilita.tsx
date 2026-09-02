@@ -19,7 +19,11 @@ type Riga = {
     id: number; imei: string; modello: string; negozio: string | null;
     aziendaAcquisto: string | null; aziendaVendita: string | null;
     daFatturare: boolean; daConfermare: boolean;
-    acquistoReale: number; acquistoFile: number | null; vendita: number | null; lato: "venduto" | "comprato";
+    acquistoReale: number; acquistoFile: number | null; vendita: number | null; venditaFile: number | null;
+    origineCosto: "reale" | "regola" | "mano" | "ignoto";
+    origineVendita: "reale" | "mano" | "nessuna";
+    corretti: { chi: string; quando: string } | null;
+    lato: "venduto" | "comprato";
     compratoIl: string | null; vendutoIl: string | null; documentoAcquisto: string | null;
     corretta: { chi: string; quando: string } | null;
 };
@@ -36,8 +40,18 @@ type Dati = {
 const SOC: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
 const eur = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const giorno = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("it-IT", { day: "2-digit", month: "short" }) : "—";
-const primoDelMeseScorso = () => { const o = new Date(); const d = new Date(Date.UTC(o.getUTCFullYear(), o.getUTCMonth() - 1, 1)); return d.toISOString().slice(0, 10); };
-const ultimoDelMeseScorso = () => { const o = new Date(); const d = new Date(Date.UTC(o.getUTCFullYear(), o.getUTCMonth(), 0)); return d.toISOString().slice(0, 10); };
+/* ⚠️ IL MESE IN CORSO, non quello chiuso. Chi apre questa sezione durante il
+   mese vuole vedere quello che sta succedendo e completare le righe prima che
+   il file parta; il mese da mandare ha il suo riquadro in cima. E si conta col
+   giorno di Roma, che è il mese contabile: con `getUTCMonth()` il 1° alle 00:30
+   italiane si sarebbe ancora nel mese prima. */
+const oggiRoma = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+const primoDelMese = () => oggiRoma().slice(0, 8) + "01";
+const ultimoDelMese = () => {
+    const [y, m] = oggiRoma().split("-").map(Number);
+    const u = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return `${y}-${String(m).padStart(2, "0")}-${String(u).padStart(2, "0")}`;
+};
 
 /* ── LE SEZIONI DELL'HUB. Oggi una; la lista è qui perché aggiungerne una
       seconda sia una riga, non un lavoro. ─────────────────────────────────── */
@@ -82,8 +96,8 @@ export function ContabilitaView() {
 }
 
 function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
-    const [da, setDa] = useState(primoDelMeseScorso());
-    const [a, setA] = useState(ultimoDelMeseScorso());
+    const [da, setDa] = useState(primoDelMese());
+    const [a, setA] = useState(ultimoDelMese());
     const [d, setD] = useState<Dati | null>(null);
     const [caricando, setCaricando] = useState(true);
     const [ko, setKo] = useState("");
@@ -108,12 +122,12 @@ function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
 
     /** Correggere una società a mano: è il modo di completare i telefoni che il
      *  file storico non conosceva. */
-    const cambia = async (id: number, campo: "aziendaAcquisto" | "aziendaVendita", valore: string) => {
+    const cambia = async (id: number, campo: string, valore: string) => {
         setSalvo(id);
         try {
             const r = await fetch("/api/contabilita/usati", {
                 method: "PATCH", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, [campo]: valore || null }),
+                body: JSON.stringify({ id, [campo]: valore === "" ? null : valore }),
             }).then((x) => x.json());
             if (!r?.ok) throw new Error(r?.error || "non salvata");
             await carica();
@@ -312,11 +326,25 @@ function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
                                                         <td className="text-right text-slate-400">
                                                             {r.acquistoReale > 0 ? eur(r.acquistoReale) : <span className="text-rose-300/80 text-[11px]">non registrato</span>}
                                                         </td>
-                                                        <td className={cn("text-right font-semibold", r.acquistoFile == null ? "text-rose-300" : r.acquistoFile !== r.acquistoReale ? "text-amber-300" : "text-slate-300")}
-                                                            title={r.acquistoFile == null ? "Nessun costo d'acquisto registrato: nel file esce vuoto, non a 100 €" : r.acquistoFile !== r.acquistoReale ? `Comprato a ${eur(r.acquistoReale)}: nel file va a 100 € come da regola` : ""}>
-                                                            {r.acquistoFile == null ? "—" : eur(r.acquistoFile)}
+                                                        {/* ⚠️ QUESTO CAMPO SI SCRIVE, e quello che ci si scrive VINCE.
+                                                            Luca 02/09: «dammi la possibilità di modificare a mano tutti i
+                                                            prezzi, evidenziando quelli già modificati dalla regola; quelle
+                                                            modifiche devono essere le ufficiali e il file deve contenerle».
+                                                            Il colore dice da dove viene la cifra: ambra = alzata dalla
+                                                            regola dei 100, indaco = decisa da una persona, rosso = costo
+                                                            che non abbiamo. */}
+                                                        <td className="text-right">
+                                                            <PrezzoContabile r={r} campo="costoContabile"
+                                                                valore={r.acquistoFile} origine={r.origineCosto}
+                                                                inCorso={salvo === r.id} onCambia={cambia} />
                                                         </td>
-                                                        <td className="text-right text-emerald-300 font-semibold">{r.vendita != null ? eur(r.vendita) : "—"}</td>
+                                                        <td className="text-right">
+                                                            {r.lato === "venduto" || r.vendita != null ? (
+                                                                <PrezzoContabile r={r} campo="venditaContabile"
+                                                                    valore={r.venditaFile} origine={r.origineVendita === "mano" ? "mano" : "reale"}
+                                                                    inCorso={salvo === r.id} onCambia={cambia} />
+                                                            ) : <span className="text-slate-600">—</span>}
+                                                        </td>
                                                         <td className="text-[11px] text-slate-500">{giorno(r[lista.quando])}</td>
                                                     </tr>
                                                 ))}
@@ -344,5 +372,50 @@ function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
                 </div>
             </>) : null}
         </div>
+    );
+}
+
+/* ═══ UN PREZZO CHE VA AL COMMERCIALISTA ═══════════════════════════════════
+   Si legge, si corregge, e dice sempre da dove viene.
+
+   ⚠️ IL COLORE NON È DECORAZIONE. Un costo alzato dalla regola dei 100 € e uno
+   deciso da una persona sono due cose diverse davanti a una fattura, e da un
+   numero secco non si distinguono. Ambra = alzato dalla regola · indaco =
+   deciso a mano · rosso = costo che non abbiamo · grigio = la cifra pagata.
+
+   ⚠️ E SI SCRIVE SOLO QUANDO SI ESCE DAL CAMPO. Salvare a ogni tasto vorrebbe
+   dire mandare al server «1», «12», «120» mentre uno digita 1200 — e ogni
+   passaggio marcherebbe la riga come corretta a mano. */
+function PrezzoContabile({ r, campo, valore, origine, inCorso, onCambia }: {
+    r: Riga; campo: string; valore: number | null;
+    origine: "reale" | "regola" | "mano" | "ignoto";
+    inCorso: boolean; onCambia: (id: number, campo: string, valore: string) => void;
+}) {
+    const [bozza, setBozza] = useState<string | null>(null);
+    const mostrato = bozza ?? (valore == null ? "" : String(valore));
+    const tinta = origine === "mano" ? "text-indigo-300 border-indigo-400/50"
+        : origine === "regola" ? "text-amber-300 border-amber-400/50"
+            : origine === "ignoto" ? "text-rose-300 border-rose-400/40"
+                : "text-slate-300 border-white/10";
+    const perche = origine === "mano" ? `Deciso a mano${r.corretti ? ` da ${r.corretti.chi}` : ""} — vince sulla regola`
+        : origine === "regola" ? `Comprato a ${eur(r.acquistoReale)}: portato al minimo di 100 € come da regola. Scrivi qui per decidere un'altra cifra.`
+            : origine === "ignoto" ? "Nessun costo registrato: nel file esce vuoto. Scrivi qui la cifra giusta."
+                : "È la cifra vera. Si può cambiare: quello che scrivi finisce nel file.";
+    return (
+        <span className="inline-flex items-center gap-1 justify-end" title={perche}>
+            {origine === "mano" && <span className="text-[10px]">✍️</span>}
+            <input
+                value={mostrato} disabled={inCorso} inputMode="decimal" placeholder="—"
+                onChange={(e) => setBozza(e.target.value)}
+                onBlur={() => {
+                    if (bozza == null) return;
+                    const pulito = bozza.trim();
+                    const uguale = pulito === (valore == null ? "" : String(valore));
+                    setBozza(null);
+                    if (!uguale) onCambia(r.id, campo, pulito);
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setBozza(null); }}
+                className={cn("glass-input !h-7 px-2 text-[11px] rounded-lg w-[92px] text-right font-semibold", tinta)} />
+        </span>
     );
 }

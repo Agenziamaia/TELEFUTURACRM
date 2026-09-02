@@ -25,6 +25,7 @@
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { registraConsumo } from "@/lib/ai/consumi";
 import { chat, estimateCost, hasKey, MODEL_FAST } from "./deepseek";
+import { tettoPer } from "./modelli";
 
 export const TRIAGE_VERSIONE = 1;          // alzarla = riclassificare tutto
 const FINESTRA_GG = 35;                    // il widget guarda 30 giorni: margine
@@ -171,7 +172,14 @@ async function classificaUna(conv: { id: string; customer_name: string | null; l
         // a 220 e perfino a 500 il JSON veniva soffocato («risposta non
         // JSON», ~40% delle chiamate delle prime corse del 26/08). Il JSON
         // vero pesa ~60 token; si paga solo il generato (~0,04 cent/chat).
-        model: MODEL_FAST, maxTokens: 1600, temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
+        /* ⚠️ IL TETTO LO DICE IL CATALOGO, NON UN NUMERO SCRITTO QUI.
+           `deepseek-v4-flash` RAGIONA prima di rispondere, e il ragionamento
+           consuma il tetto: il catalogo (src/lib/ai/modelli.ts) fissa 3000 come
+           minimo, misurato — «~300-1200 per chat» proprio su questo triage.
+           Qui c'era 1600: sulle chat corte bastava, sulle lunghe il pensiero se
+           lo mangiava tutto e usciva una risposta VUOTA, contata come «risposta
+           non JSON». Sono i 4 errori per corsa che si vedevano nell'hub. */
+        model: MODEL_FAST, maxTokens: tettoPer(MODEL_FAST), temperature: 0.1, timeoutMs: 25000, responseFormat: "json_object",
     });
     const out = estraiJson(res.message.content || "");
     // risposta rotta o stato sconosciuto → NIENTE upsert: la chat resta alle

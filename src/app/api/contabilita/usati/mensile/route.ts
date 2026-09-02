@@ -6,7 +6,7 @@ import { eUnLavoroAutomatico } from "@/lib/cronParola";
 import { parametriAutomatismo } from "@/lib/automatismiConfig";
 import { inviaEmail } from "@/lib/email";
 import { casellaMittente } from "@/lib/emailCredenziali";
-import { usatiVenduti, usatiComprati, INTESTAZIONI, inRiga, NOME_SOCIETA } from "@/lib/contabilitaUsati";
+import { usatiVenduti, usatiComprati, INTESTAZIONI, inRiga, NOME_SOCIETA, meseAppenaChiuso } from "@/lib/contabilitaUsati";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,20 +49,6 @@ async function destinatari(): Promise<{ a: string[]; scartati: string[]; errore?
     };
 }
 
-function meseScorso() {
-    /* ⚠️ IL MESE SI CALCOLA SUL GIORNO DI ROMA. Il 1° alle 00:30 italiane è
-       ancora il 31 in UTC: con `getUTCMonth()` il lavoro del 3 avrebbe potuto
-       riferirsi al mese sbagliato al cambio dell'ora legale. */
-    const oggiRoma = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
-    const [y, m] = oggiRoma.split("-").map(Number);
-    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
-    const ultimo = new Date(Date.UTC(py, pm, 0)).getUTCDate();
-    const mm = String(pm).padStart(2, "0");
-    return {
-        da: `${py}-${mm}-01`, a: `${py}-${mm}-${String(ultimo).padStart(2, "0")}`,
-        etichetta: new Date(Date.UTC(py, pm - 1, 1)).toLocaleDateString("it-IT", { month: "long", year: "numeric" }),
-    };
-}
 
 async function excel(venduti: Riga[], comprati: Riga[]): Promise<Buffer> {
     const XLSX = await import("xlsx");
@@ -91,7 +77,7 @@ export async function POST(request: Request) {
     }
 
     const b = await req.json().catch(() => ({})) as { forza?: boolean; prova?: boolean };
-    const mese = meseScorso();
+    const mese = meseAppenaChiuso();
 
     const { data: gia } = await supabaseAdmin.from("contabilita_usati_inviati")
         .select("mese, esito, inviato_il").eq("mese", mese.da).maybeSingle();
