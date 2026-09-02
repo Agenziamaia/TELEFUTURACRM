@@ -49,6 +49,8 @@ const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Lug
    indietro» proprio nelle ore in cui uno le va a guardare. */
 const oggiISO = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const primoDelMese = () => oggiISO().slice(0, 8) + "01";
+/** il giorno di N giorni fa, in ora di Roma */
+const giornoMeno = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const eur = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const eurC = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 2 });
 /* ⚠️ I COLORI VERI DEI MARCHI, gli stessi del resto del CRM (Luca 01/09:
@@ -150,6 +152,13 @@ export function PayStoreAdminView() {
     /* «senza scontrino» e «rimaste indietro»: due pulsanti che filtrano la
        lista, non due elenchi da leggere */
     const [allarme, setAllarme] = useState("");
+    /* ⚠️ LE GIÀ FATTE DEI GIORNI SCORSI NON STANNO IN ELENCO (Luca 02/09): «le
+       ricariche dei giorni PRECEDENTI che sono in ok devono nascondersi».
+       Una ricarica chiusa e passata non chiede più niente a nessuno: sta in
+       mezzo e basta. Quelle di OGGI restano — la giornata è ancora aperta e
+       serve vedere cosa è uscito dal banco. Si riaprono con questo
+       interruttore, premendo lo stato «ok», o tornando indietro col periodo. */
+    const [mostraChiuse, setMostraChiuse] = useState(false);
     /* ⚠️ QUANTE SE NE DISEGNANO, non quante ne arrivano. Il server manda tutte
        le righe del periodo — a trenta giorni sono un paio di migliaia — e la
        pagina ne disegna un blocco per volta, dicendo sempre quante ne restano.
@@ -225,7 +234,18 @@ export function PayStoreAdminView() {
        sull'insieme intero, «Donna» + «senza scontrino» mostrava 7 sul quadrato
        e ZERO righe sotto. Il numero su un pulsante deve dire quante righe si
        vedranno premendolo. */
+    /* già fatta, e di un giorno che non è oggi */
+    const chiusaVecchia = (r: Riga) =>
+        (r.stato === "ok_automatico" || r.stato === "ok_manuale") && r.creata_il.slice(0, 10) < oggiS;
+    /* ⚠️ TRE MODI DI RIVEDERLE, e sono tutti espliciti: l'interruttore, il
+       filtro sullo stato «ok» (chiederle è già chiedere di vederle), e il
+       periodo che non arriva a oggi — cioè quando si torna indietro a
+       guardare una giornata chiusa, dove nascondere le fatte vorrebbe dire
+       mostrare una giornata vuota. */
+    const periodoPassato = periodo.a < oggiS;
+    const mostraTutte = mostraChiuse || periodoPassato || stato === "ok_automatico" || stato === "ok_manuale";
     const F = {
+        chiuse: (r: Riga) => mostraTutte || !chiusaVecchia(r),
         negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
         stato: (r: Riga) => !stato || r.stato === stato,
         origine: (r: Riga) => !origine || String(r.con_attivazione === true) === origine,
@@ -234,12 +254,18 @@ export function PayStoreAdminView() {
             || (allarme === "indietro" && rimastaIndietro(r)),
     };
     const tutte = d.ultime;
-    const righe = tutte.filter((r) => F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
+    const righe = tutte.filter((r) => F.chiuse(r) && F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
+    /* quante ne sta tenendo da parte: si dice, se no sembra che manchino */
+    const nascoste = mostraTutte ? 0
+        : tutte.filter((r) => chiusaVecchia(r) && F.negozio(r) && F.origine(r) && F.allarme(r)).length;
     /** quante righe resterebbero premendo questo pulsante, con quello che è
      *  già premuto adesso */
-    const quanteCon = (tranne: keyof typeof F, cond: (r: Riga) => boolean) =>
+    /* ⚠️ `tranne` è una LISTA. Le pastiglie degli stati «ok» devono contare
+       anche le righe che il nascondimento tiene fuori: premerle è il modo di
+       farle riapparire, e un pulsante che dice 0 non lo preme nessuno. */
+    const quanteCon = (tranne: (keyof typeof F)[], cond: (r: Riga) => boolean) =>
         tutte.filter((r) => cond(r) && (Object.keys(F) as (keyof typeof F)[])
-            .every((k) => k === tranne || F[k](r))).length;
+            .every((k) => tranne.includes(k) || F[k](r))).length;
     /* ⚠️ I DUE ALLARMI SI CONTANO SUL PERIODO INTERO, dal server, quando non
        c'è nessun altro filtro attivo: sono l'unica ragione per cui uno apre
        questa schermata di fretta, e devono dire il numero vero anche se la
@@ -247,8 +273,8 @@ export function PayStoreAdminView() {
        contano quello che il filtro lascia — se no promettono righe che non si
        vedranno. */
     const senzaAltri = !negoziSel && !stato && !origine;
-    const senzaScontrino = senzaAltri ? d.senzaScontrino : quanteCon("allarme", (r) => r.scontrino_stato === "errore");
-    const daGuardareDavvero = senzaAltri ? d.rimasteIndietro : quanteCon("allarme", rimastaIndietro);
+    const senzaScontrino = senzaAltri ? d.senzaScontrino : quanteCon(["allarme"], (r) => r.scontrino_stato === "errore");
+    const daGuardareDavvero = senzaAltri ? d.rimasteIndietro : quanteCon(["allarme"], rimastaIndietro);
     /* ⚠️ IL GRAFICO PARLA DI GIORNI, e le ore le mostra solo se gliele chiedi
        (Luca 02/09): «questo grafico deve darmi l'andamento giorno per giorno,
        poi nel momento in cui io clicco su un giorno a quel punto mi esplode
@@ -580,6 +606,40 @@ export function PayStoreAdminView() {
                         compariva «togli i filtri» e la riga non ci stava più. */}
                     <div className="glass-card an-card rounded-2xl p-4 psFascia">
                         <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+                            {/* ⚠️ IL PERIODO STA ANCHE QUI (Luca 02/09): «tra i filtri il
+                                range per filtrare per data, così posso tornare indietro e a
+                                quel punto posso vedere tutti i dati». È lo STESSO stato del
+                                selettore in cima — un controllo solo, due posti dove si
+                                prende — perché due periodi diversi che si contraddicono
+                                sarebbero peggio di nessun periodo. Tornare indietro rimette
+                                in elenco anche le già fatte, che di oggi sono nascoste. */}
+                            <div className="rvCampo">
+                                <span className="rvLab">Quando</span>
+                                <div className="rvPillRow items-center">
+                                    {[
+                                        { id: "oggi", et: "Oggi", da: oggiISO(), a: oggiISO() },
+                                        { id: "ieri", et: "Ieri", da: giornoMeno(1), a: giornoMeno(1) },
+                                        { id: "7gg", et: "7 giorni", da: giornoMeno(6), a: oggiISO() },
+                                        { id: "mese", et: "Mese", da: primoDelMese(), a: oggiISO() },
+                                    ].map((v) => {
+                                        const on = tipoP === "range" && range.da === v.da && range.a === v.a;
+                                        return (
+                                            <button key={v.id} aria-pressed={on}
+                                                onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); }}
+                                                className={cn("rvPill rvPill-sm rvPill-tinta rvT-ambra", on && "rvPill-on")}>
+                                                {v.et}{on ? " ✓" : ""}
+                                            </button>
+                                        );
+                                    })}
+                                    <input type="date" value={periodo.da} max={oggiISO()} title="dal"
+                                        onChange={(e) => { setTipoP("range"); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
+                                        className="an-data glass-input px-2 py-1 rounded-lg text-xs" />
+                                    <span className="text-[11px] text-slate-500">→</span>
+                                    <input type="date" value={periodo.a} min={periodo.da} max={oggiISO()} title="al"
+                                        onChange={(e) => { setTipoP("range"); setRange({ da: periodo.da, a: e.target.value }); }}
+                                        className="an-data glass-input px-2 py-1 rounded-lg text-xs" />
+                                </div>
+                            </div>
                             <div className="rvCampo">
                                 <span className="rvLab">Dove</span>
                                 {/* i negozi sono quattordici: una tendina, non quattordici
@@ -589,14 +649,14 @@ export function PayStoreAdminView() {
                                     più grande di tutta la fascia. */}
                                 <FiltroMulti values={negoziSel} onChange={setNegoziSel} opzioni={d.negozi}
                                     etichettaTutti="Tutti i negozi" className="min-w-[200px] max-w-[240px]"
-                                    etichette={Object.fromEntries(d.negozi.map((n) => [n, `${n} · ${quanteCon("negozio", (r) => String(r.negozio || "") === n)}`]))} />
+                                    etichette={Object.fromEntries(d.negozi.map((n) => [n, `${n} · ${quanteCon(["negozio"], (r) => String(r.negozio || "") === n)}`]))} />
                             </div>
 
                             <div className="rvCampo">
                                 <span className="rvLab">Com&apos;è andata</span>
                                 <div className="rvPillRow">
                                     {ORDINE_STATI.map((x) => {
-                                        const n = quanteCon("stato", (r) => r.stato === x);
+                                        const n = quanteCon(["stato", "chiuse"], (r) => r.stato === x);
                                         if (!n && x !== "sospeso") return null;
                                         const on = stato === x;
                                         return (
@@ -607,6 +667,22 @@ export function PayStoreAdminView() {
                                             </button>
                                         );
                                     })}
+                                    {/* ⚠️ QUANTE NE STA TENENDO DA PARTE. Nascondere in silenzio
+                                        è come non averle mai registrate: il numero c'è, e si
+                                        riaprono con un clic. */}
+                                    {nascoste > 0 && (
+                                        <button onClick={() => setMostraChiuse(true)}
+                                            title="le ricariche già fatte nei giorni scorsi: chiuse e passate, non chiedono più niente"
+                                            className="rvPill rvPill-sm rvPill-tinta rvT-grigio">
+                                            👁 mostra le già fatte<span className="rvPillN">{nascoste}</span>
+                                        </button>
+                                    )}
+                                    {mostraChiuse && (
+                                        <button onClick={() => setMostraChiuse(false)} aria-pressed
+                                            className="rvPill rvPill-sm rvPill-tinta rvT-grigio rvPill-on">
+                                            👁 già fatte in elenco ✓
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -620,12 +696,12 @@ export function PayStoreAdminView() {
                                                 aria-pressed={on} className={cn("rvPill rvPill-sm rvPill-tinta rvT-indaco", on && "rvPill-on")}
                                                 title={o.conAttivazione ? "vendute insieme a un'attivazione" : "ricariche vendute da sole"}>
                                                 {o.conAttivazione ? "con attivazione" : "sciolte"}{on ? " ✓" : ""}
-                                                <span className="rvPillN">{quanteCon("origine", (r) => (r.con_attivazione === true) === o.conAttivazione)}</span>
+                                                <span className="rvPillN">{quanteCon(["origine"], (r) => (r.con_attivazione === true) === o.conAttivazione)}</span>
                                             </button>
                                         );
                                     })}
                                     {(negoziSel || stato || origine || allarme || operatore) && (
-                                        <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
+                                        <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); setMostraChiuse(false); }}
                                             className="rvPill rvPill-sm rvPill-via">✕ togli i filtri</button>
                                     )}
                                 </div>
