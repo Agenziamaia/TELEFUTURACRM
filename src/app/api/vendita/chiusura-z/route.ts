@@ -6,8 +6,6 @@ import { buildRequestXml } from "@/lib/fiscalprint";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_RT = process.env.RT_DEVICE_URL || "http://192.168.1.219";
-
 // Chiusura fiscale giornaliera — Report Z (spec Francesco #4). Mette in coda un
 // comando zReport per OGNI RT del negozio (multi-societario: una chiusura per P.IVA),
 // o per un singolo RT se si passa azienda/deviceUrl.
@@ -32,11 +30,26 @@ export async function POST(req: Request) {
     if (b.deviceUrl) {
         targets = [{ azienda: b.azienda || null, rt_url: b.deviceUrl }];
     } else {
-        let q = supabase.from("pos_rt").select("azienda, rt_url").eq("negozio", negozio);
+        let q = supabase.from("pos_rt").select("negozio, azienda, rt_url").eq("negozio", negozio);
         if (b.azienda) q = q.eq("azienda", b.azienda);
         const { data } = await q;
-        targets = (data || []).map((r: any) => ({ azienda: r.azienda, rt_url: r.rt_url }));
-        if (!targets.length) targets = [{ azienda: null, rt_url: DEFAULT_RT }];
+        targets = (data || []).map((r: any) => ({ azienda: r.azienda, rt_url: r.rt_url, negozio: r.negozio }));
+        /* ⚠️ NIENTE REGISTRATORE DI RIPIEGO (revisione 02/09). Qui c'era
+           `RT_DEVICE_URL || "http://192.168.1.219"`, e quella variabile
+           d'ambiente non esiste: quell'indirizzo è **la cassa T1 di Donna
+           Olimpia**. Un negozio senza righe in `pos_rt` — perché lo si
+           rinomina, o perché la riga si perde — mandava la sua **chiusura
+           fiscale, irreversibile e trasmessa all'Agenzia**, sul registratore
+           di un altro negozio e di un'altra partita IVA.
+           Sullo scontrino questo stesso ripiego era già stato tolto il 31/08;
+           qui era rimasto. Meglio una chiusura che non parte, e lo dice, che
+           una chiusura che parte nel posto sbagliato. */
+        if (!targets.length) {
+            return NextResponse.json({
+                error: `«${negozio}» non ha nessun registratore censito: la chiusura non parte. `
+                    + "Controlla Amministrazione → Fiscalità prima di chiudere la giornata.",
+            }, { status: 400 });
+        }
     }
 
     const xml = buildRequestXml("z_report");
@@ -45,7 +58,14 @@ export async function POST(req: Request) {
     const chiusure: any[] = [];
     for (const t of targets) {
         const { data, error } = await supabase.from("print_jobs").insert({
-            negozio,
+            /* IL LAVORO È DI CHI POSSIEDE IL REGISTRATORE, non di chi preme il
+               pulsante: l'agente ritira i lavori col NOME ESATTO del suo
+               negozio. Ad Acilia le due casse sono entrambe locali («custom»),
+               e l'unico modo di distinguerle è il nome: intestare la Z di
+               Acilia VS ad «Acilia Multi» la farebbe ritirare dall'agente
+               sbagliato, cioè chiudere la cassa dell'altro banco. Lo scontrino
+               questa regola ce l'ha già; qui mancava. */
+            negozio: (t as { negozio?: string }).negozio || negozio,
             device_url: t.rt_url,
             kind: "z_report",
             request_xml: xml,
