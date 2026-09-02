@@ -54,6 +54,10 @@ type StatoCron = {
     ultima_il: string | null; ultima_esito: string | null; ultimo_errore: string | null;
     corse_7g: number; ko_7g: number; aperte: number;
     sql_corse_7g: number; sql_ko_7g: number;
+    /* ⚠️ GLI STESSI CONTI, MA DI OGGI. È la differenza fra «si è rotto una
+       volta» e «è rotto adesso»: senza, una chiamata caduta lunedì teneva la
+       scheda rossa fino alla domenica dopo. */
+    corse_24h: number; ko_24h: number; ultimo_ko_il: string | null;
 };
 type Giorno = { giorno: string; jobname: string; ok: number; ko: number };
 
@@ -123,7 +127,7 @@ export function AutomatismiView() {
 
     /* LA SALUTE DI UN AUTOMATISMO, in una parola sola. «Fermo» batte tutto:
        un lavoro spento non fallisce mai, e sembrerebbe sanissimo. */
-    const salute = useCallback((a: Automatismo): { stato: "fermo" | "guasto" | "muto" | "ok" | "ignoto"; perche: string } => {
+    const salute = useCallback((a: Automatismo): { stato: "fermo" | "guasto" | "instabile" | "muto" | "ok" | "ignoto"; perche: string } => {
         const trovati = a.lavori.map((l) => ({ l, j: perNome.get(l.nome) }));
         // BASTA UNO CHE MANCA: se sparisce la rete di sicurezza e resta la
         // corsa vera, la scheda non deve restare verde
@@ -133,9 +137,24 @@ export function AutomatismiView() {
         if (lavori.some((j) => !j.active)) return { stato: "fermo", perche: "spento: non parte più" };
         const ko = lavori.reduce((t, j) => t + Number(j.ko_7g || 0), 0);
         const corse = lavori.reduce((t, j) => t + Number(j.corse_7g || 0), 0);
-        if (ko > 0) return { stato: "guasto", perche: `${ko} chiamate su ${corse} non sono arrivate, in sette giorni` };
+        const ko24 = lavori.reduce((t, j) => t + Number(j.ko_24h || 0), 0);
+        const corse24 = lavori.reduce((t, j) => t + Number(j.corse_24h || 0), 0);
+        /* ⚠️ GUASTO VUOL DIRE «ADESSO». Il giudizio guardava sette giorni: una
+           sola chiamata caduta lunedì lasciava la scheda rossa fino alla
+           domenica dopo — chi ripara qualcosa non vedeva nessuna differenza, e
+           chi legge non sapeva dire se il guasto fosse di adesso o di mercoledì
+           scorso. Un cruscotto che dice «rotto» per una settimana dopo la
+           riparazione smette di essere creduto, e il giorno che si rompe
+           davvero nessuno ci fa caso.
+           Tre gradini: l'ULTIMA chiamata caduta = guasto; cadute nelle ultime
+           24 ore ma l'ultima buona = instabile; solo più vecchie = in salute,
+           e lo si dice sotto. */
+        const ultimaKo = lavori.some((j) => j.ultima_esito && j.ultima_esito !== "ok" && j.ultima_esito !== "in corso");
+        if (ultimaKo) return { stato: "guasto", perche: `l'ultima chiamata non è arrivata${ko24 > 1 ? ` (${ko24} nelle ultime 24 ore)` : ""}` };
+        if (ko24 > 0) return { stato: "instabile", perche: `${ko24} chiamat${ko24 === 1 ? "a" : "e"} su ${corse24} non arrivate nelle ultime 24 ore, ma l'ultima è andata bene` };
         const sqlKo = lavori.reduce((t, j) => t + Number(j.sql_ko_7g || 0), 0);
         if (sqlKo > 0) return { stato: "guasto", perche: `${sqlKo} corse non sono nemmeno partite, in sette giorni` };
+        if (ko > 0) return { stato: "ok", perche: `${corse} chiamate, ${ko} non arrivate — ma nessuna nelle ultime 24 ore` };
         if (!corse) return { stato: "muto", perche: lavori.some((j) => Number(j.aperte || 0) > 0) ? "chiamate partite e nessuna risposta ancora raccolta" : "non è partito negli ultimi sette giorni" };
         return { stato: "ok", perche: `${corse} chiamate, tutte arrivate` };
     }, [perNome]);
@@ -146,8 +165,9 @@ export function AutomatismiView() {
         guasto: "text-rose-200 bg-rose-500/12 border-rose-500/35",
         fermo: "text-amber-200 bg-amber-500/12 border-amber-400/35",
         ignoto: "text-violet-200 bg-violet-500/12 border-violet-500/35",
+        instabile: "text-amber-200 bg-amber-500/12 border-amber-500/35",
     } as const;
-    const PAROLA = { ok: "in salute", muto: "silenzioso", guasto: "guasto", fermo: "fermo", ignoto: "non trovato" } as const;
+    const PAROLA = { ok: "in salute", muto: "silenzioso", guasto: "guasto", instabile: "instabile", fermo: "fermo", ignoto: "non trovato" } as const;
 
     // ── la main page: i numeri, non l'elenco ──────────────────────────────
     const numeri = useMemo(() => {
