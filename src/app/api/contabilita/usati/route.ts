@@ -89,8 +89,14 @@ export async function GET(request: Request) {
     const { data: giaInviato } = await supabaseAdmin.from("contabilita_usati_inviati")
         .select("mese, esito, inviato_il, destinatari, da_confermare")
         .eq("mese", scorso.da).maybeSingle();
+    /* ⚠️ NON SPARISCE QUANDO L'INVIO È FALLITO. Il controllo era «entro il 3,
+       oppure se non risulta niente»: con una riga «fallito» in tabella, dal 4 in
+       poi la preview svaniva — e l'amministrazione non aveva nessun segnale che
+       il commercialista non avesse ricevuto niente. Adesso resta finché il mese
+       non è partito DAVVERO. */
+    const inviatoDavvero = (giaInviato as { esito?: string } | null)?.esito === "inviato";
     let preview: unknown = null;
-    if (gg <= 3 || !giaInviato) {
+    if (gg <= 3 || !inviatoDavvero) {
         const [v, c] = await Promise.all([usatiVenduti(scorso.da, scorso.a), usatiComprati(scorso.da, scorso.a)]);
         preview = {
             mese: scorso.da, da: scorso.da, a: scorso.a,
@@ -99,6 +105,7 @@ export async function GET(request: Request) {
             daFatturare: v.filter((r) => r.daFatturare).length,
             parteIl: 3, giorniAllInvio: Math.max(0, 3 - gg),
             gia: giaInviato || null,
+            fallito: !!giaInviato && !inviatoDavvero,
         };
     }
 
@@ -112,8 +119,11 @@ export async function GET(request: Request) {
             daFatturare: venduti.filter((r) => r.daFatturare).length,
             daConfermare: venduti.filter((r) => r.daConfermare).length,
             comprati: comprati.length,
-            valoreVenduto: venduti.reduce((s, r) => s + r.vendita, 0),
-            valoreAcquistoFile: venduti.reduce((s, r) => s + r.acquistoFile, 0),
+            valoreVenduto: venduti.reduce((s, r) => s + (r.vendita || 0), 0),
+            valoreAcquistoFile: venduti.reduce((s, r) => s + (r.acquistoFile || 0), 0),
+            /* ⚠️ QUANTI NON HANNO UN COSTO REGISTRATO: è il numero che dice
+               quanto del file è basato su un dato che non abbiamo. */
+            senzaCosto: venduti.filter((r) => r.acquistoFile == null).length,
         },
     });
 }

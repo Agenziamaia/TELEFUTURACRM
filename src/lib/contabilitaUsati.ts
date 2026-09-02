@@ -32,9 +32,19 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 /** Il minimo che il commercialista vede come costo d'acquisto. */
 export const ACQUISTO_MINIMO = 100;
 
-/** Il prezzo d'acquisto come va nel file: mai sotto il minimo. */
-export const acquistoPerCommercialista = (v: number | null | undefined) =>
-    Math.max(Number(v || 0), ACQUISTO_MINIMO);
+/** Il prezzo d'acquisto come va nel file: mai sotto il minimo — ma solo se un
+ *  costo c'è.
+ *
+ *  ⚠️ ZERO NON VUOL DIRE «GRATIS», VUOL DIRE «NON REGISTRATO». 74 telefoni
+ *  arrivano dal vecchio gestionale senza prezzo d'acquisto. Portandoli a 100
+ *  come gli altri, il resoconto di agosto avrebbe dichiarato 27.561 € di costo
+ *  nati da un `max()` — e quella cifra sarebbe finita nel corpo dell'email
+ *  come importo da fatturare fra le due società.
+ *  Un costo che non conosciamo si dice, non si arrotonda. */
+export const acquistoPerCommercialista = (v: number | null | undefined): number | null => {
+    const n = Number(v || 0);
+    return n > 0 ? Math.max(n, ACQUISTO_MINIMO) : null;
+};
 
 export const NOME_SOCIETA: Record<string, string> = {
     T1: "Telefutura S.r.l.",
@@ -53,8 +63,12 @@ export type RigaContabilita = {
     /** true quando manca la società d'acquisto: non si può dire niente. */
     daConfermare: boolean;
     acquistoReale: number;
-    acquistoFile: number;
-    vendita: number;
+    /** null = costo non registrato: nel file esce vuoto, non a 100. */
+    acquistoFile: number | null;
+    /** null = non ancora venduto: la colonna del prezzo resta vuota. */
+    vendita: number | null;
+    /** In quale foglio sta questa riga: cambia cosa si può affermare. */
+    lato: "venduto" | "comprato";
     compratoIl: string | null;
     vendutoIl: string | null;
     documentoAcquisto: string | null;
@@ -88,17 +102,29 @@ function ultimaCorrezione(storia: Record<string, unknown> | null): { chi: string
     return ultima;
 }
 
-function componi(r: Grezza): RigaContabilita {
+function componi(r: Grezza, lato: "venduto" | "comprato"): RigaContabilita {
     const acquisto = Number(r.purchase_price || 0);
-    /* il prezzo effettivo di vendita, non quello di vetrina: `sold_price` è
-       quello che il cliente ha pagato davvero */
-    const vendita = Number(r.sold_price ?? r.sale_price ?? 0);
+    /* ⚠️ IL PREZZO DI VENDITA SOLO SE È STATO VENDUTO. Il ripiego su
+       `sale_price` metteva il prezzo di VETRINA nella colonna «prezzo di
+       vendita» di telefoni ancora in negozio: nel foglio dei comprati di agosto
+       erano 41.449 € di ricavi mai incassati. `sold_price` è quello che il
+       cliente ha pagato davvero, e su un invenduto non esiste. */
+    const venduto = lato === "venduto" || !!r.sold_date;
+    const vendita = venduto ? Number(r.sold_price ?? r.sale_price ?? 0) : null;
     return {
         id: r.id, imei: String(r.imei || ""), modello: String(r.model || ""),
-        negozio: r.store,
+        negozio: r.store, lato,
         aziendaAcquisto: r.azienda_acquisto, aziendaVendita: r.azienda_vendita,
-        daFatturare: !!r.azienda_acquisto && !!r.azienda_vendita && r.azienda_acquisto !== r.azienda_vendita,
-        daConfermare: !r.azienda_acquisto || !r.azienda_vendita,
+        /* ⚠️ LA FATTURA LA DICE SOLO IL FOGLIO DEI VENDUTI. Un telefono comprato
+           e venduto nello stesso mese sta in tutti e due, e con la stessa
+           colonna a «SÌ» nulla impediva di emettere due fatture per lo stesso
+           apparecchio: in agosto erano 32 su 32. */
+        daFatturare: lato === "venduto"
+            && !!r.azienda_acquisto && !!r.azienda_vendita && r.azienda_acquisto !== r.azienda_vendita,
+        /* ⚠️ E UN INVENDUTO NON PUÒ AVERE UNA SOCIETÀ DI VENDITA. Pretenderla
+           faceva uscire rosse 204 righe che erano solo telefoni ancora in
+           negozio, sommerse insieme a quelle che mancano davvero. */
+        daConfermare: !r.azienda_acquisto || (lato === "venduto" && !r.azienda_vendita),
         acquistoReale: acquisto,
         acquistoFile: acquistoPerCommercialista(acquisto),
         vendita,
@@ -117,7 +143,7 @@ export async function usatiVenduti(da: string, a: string): Promise<RigaContabili
         .gte("sold_date", da + "T00:00:00Z").lte("sold_date", a + "T23:59:59Z")
         .order("sold_date", { ascending: false }).limit(20000);
     if (error) throw new Error(error.message);
-    return ((data || []) as Grezza[]).map(componi);
+    return ((data || []) as Grezza[]).map((r) => componi(r, "venduto"));
 }
 
 /** Gli usati COMPRATI in un periodo: servono al resoconto mensile, che li
@@ -128,7 +154,7 @@ export async function usatiComprati(da: string, a: string): Promise<RigaContabil
         .gte("purchase_date", da + "T00:00:00Z").lte("purchase_date", a + "T23:59:59Z")
         .order("purchase_date", { ascending: false }).limit(20000);
     if (error) throw new Error(error.message);
-    return ((data || []) as Grezza[]).map(componi);
+    return ((data || []) as Grezza[]).map((r) => componi(r, "comprato"));
 }
 
 /** Le colonne del file, nell'ordine in cui il commercialista le legge. */
@@ -144,10 +170,15 @@ const giorno = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("i
 export const inRiga = (r: RigaContabilita) => [
     r.imei, r.modello, r.negozio || "",
     r.aziendaAcquisto ? NOME_SOCIETA[r.aziendaAcquisto] || r.aziendaAcquisto : "— da confermare",
-    r.aziendaVendita ? NOME_SOCIETA[r.aziendaVendita] || r.aziendaVendita : "— da confermare",
-    r.daFatturare ? "SÌ" : r.daConfermare ? "?" : "no",
-    giorno(r.compratoIl), r.acquistoReale, r.acquistoFile,
-    giorno(r.vendutoIl), r.vendita, r.documentoAcquisto || "",
+    /* su un telefono non ancora venduto la casella resta vuota: non è un dato
+       che manca, è un dato che non esiste ancora */
+    r.aziendaVendita ? NOME_SOCIETA[r.aziendaVendita] || r.aziendaVendita
+        : r.lato === "venduto" ? "— da confermare" : "",
+    r.lato === "comprato" ? "" : r.daFatturare ? "SÌ" : r.daConfermare ? "?" : "no",
+    giorno(r.compratoIl),
+    r.acquistoReale > 0 ? r.acquistoReale : "costo non registrato",
+    r.acquistoFile ?? "costo non registrato",
+    giorno(r.vendutoIl), r.vendita ?? "", r.documentoAcquisto || "",
     /* ⚠️ ANCHE NEL FILE. Il commercialista deve poter distinguere una società
        che viene dal documento d'acquisto da una scritta a mano da noi. */
     r.corretta ? `${r.corretta.chi} il ${giorno(r.corretta.quando)}` : "",

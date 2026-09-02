@@ -280,12 +280,22 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback,aziendaVe
           ...(aziendaVendita?{azienda_vendita:aziendaVendita}:{}),
           status_history:{...hist,venduto:{date:new Date().toISOString(),operatore:`${mi.vendor||mi.venditore||vendFallback||"—"} — scarico da Registra Vendita`}}};
         let {error}=await supabase.from("usati").update(upd).eq("id",row.id);
-        if(error&&/column/i.test(error.message||"")){
+        /* ⚠️ IL RIPIEGO SI RESTRINGE A CIÒ CHE MANCA DAVVERO. Il controllo è un
+           regex sul MESSAGGIO d'errore: qualunque errore che nomini una colonna
+           — un vincolo, una regola di accesso, un trigger — ci finiva dentro, e
+           il telefono passava a «venduto» senza società di vendita, con l'unica
+           traccia in un `console.error` che non legge nessuno. */
+        if(error&&/column .* does not exist/i.test(error.message||"")){
           // fallback difensivo se client_id/sold_price non esistessero ancora
           const{client_id:_c,sold_price:_s,azienda_vendita:_av,...rest}=upd;
           ({error}=await supabase.from("usati").update(rest).eq("id",row.id));
         }
-        if(error)console.error("Scarico usato fallito:",error.message);
+        if(error){
+          console.error("Scarico usato fallito:",error.message);
+          /* ⚠️ E SI DICE. Un usato che non si scarica resta «in vendita» mentre
+             il cliente se l'è portato via: senza avviso nessuno lo scopre. */
+          try{alert(`⚠️ Il telefono usato ${u.imei||""} NON è stato scaricato dal magazzino usati (${error.message}). Segnalalo all'amministrazione: risulta ancora in vendita.`);}catch{}
+        }
       }catch(e){console.error("Scarico usato fallito:",e);}
     }
   }
@@ -6540,7 +6550,15 @@ function CRM() {
          al registro delle ricariche, non in un riferimento condiviso: il
          registro deve dire con quale partita IVA è stata fatturata, e
          ricalcolarla laggiù vorrebbe dire due regole per lo stesso fatto. */
-      const r = await fn(extra?.azienda || null, { sospesa: !!extra?.sospesa });
+      /* ⚠️ `azienda` E `aziendaScontrino` NON SONO LA STESSA COSA, ed è per
+         questo che ce ne sono due. La prima vale solo quando il carrello è di
+         soli servizi — altrimenti la società la decide la merce, e scriverla
+         sarebbe una supposizione. La seconda è la società con cui lo scontrino
+         è USCITO, e si sa sempre: serve ai TELEFONI USATI, che un magazzino non
+         ce l'hanno e quindi non hanno nessun altro modo di sapere chi li ha
+         venduti. Senza, bastava vendere un usato insieme a una cover perché la
+         società di vendita restasse vuota — proprio il caso normale. */
+      const r = await fn(extra?.azienda || null, { sospesa: !!extra?.sospesa, aziendaScontrino: extra?.aziendaScontrino || null });
       pendingCommit.current = null;
       const ct = extra?.contoTerzi || [];
       if (ct.length && Array.isArray(r) && r[0]?.id) {
@@ -7956,7 +7974,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
 
         // scarico magazzino usati: i telefoni scelti dal magazzino passano a
         // "venduto" su Gestione Usati, con prezzo effettivo e cliente collegato
-        await scaricaUsatiVenduti(margList, clientId, dateStr, selVend, azScontrino || null);
+        await scaricaUsatiVenduti(margList, clientId, dateStr, selVend, opts?.aziendaScontrino || azScontrino || null);
         /* SCARICO DEL MAGAZZINO (Luca 29/08). Va DOPO: la vendita è già scritta
            e lo scontrino può essere già stampato — se il movimento non parte si
            annota e si prosegue. Un magazzino disallineato si sistema, una
@@ -8296,7 +8314,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
           if(attRows.length)await supabase.from("contract_attachments").insert(attRows);
         }
       }catch{/* allegati best-effort: la vendita e' gia' salva */}
-      await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend, azScontrino || null);
+      await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend, opts?.aziendaScontrino || azScontrino || null);
       try {
         const _sc = await scaricaVendita(margItems, selNeg, rows[0]?.id || null, selVend);
         const _av = avvisiScarico(_sc);

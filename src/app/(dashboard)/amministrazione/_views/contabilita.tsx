@@ -19,13 +19,13 @@ type Riga = {
     id: number; imei: string; modello: string; negozio: string | null;
     aziendaAcquisto: string | null; aziendaVendita: string | null;
     daFatturare: boolean; daConfermare: boolean;
-    acquistoReale: number; acquistoFile: number; vendita: number;
+    acquistoReale: number; acquistoFile: number | null; vendita: number | null; lato: "venduto" | "comprato";
     compratoIl: string | null; vendutoIl: string | null; documentoAcquisto: string | null;
     corretta: { chi: string; quando: string } | null;
 };
 type Preview = {
     mese: string; da: string; a: string; venduti: number; comprati: number;
-    daConfermare: number; daFatturare: number; parteIl: number; giorniAllInvio: number;
+    daConfermare: number; daFatturare: number; parteIl: number; giorniAllInvio: number; fallito?: boolean;
     gia: { esito: string; inviato_il: string; destinatari: string[] | null; da_confermare: number | null } | null;
 };
 type Dati = {
@@ -179,6 +179,15 @@ function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
                                     {d.preview.daFatturare ? ` · ${d.preview.daFatturare} da fatturare fra società` : ""}
                                 </span>
                             </div>
+                            {d.preview.fallito && (
+                                <div className="rvNota rvNota-ko" style={{ marginTop: 8 }}>
+                                    <div className="rvNota-t">⛔ L'ultimo invio è fallito</div>
+                                    <div className="rvNota-s">
+                                        Il commercialista non ha ricevuto niente. Si rimanda dall'hub Automatismi
+                                        → «Telefoni usati al commercialista».
+                                    </div>
+                                </div>
+                            )}
                             <p className="text-[11px] text-slate-500 mt-1">
                                 {d.preview.gia?.esito === "inviato"
                                     ? `Già inviato il ${new Date(d.preview.gia.inviato_il).toLocaleDateString("it-IT")}${d.preview.gia.destinatari?.length ? ` a ${d.preview.gia.destinatari.join(", ")}` : ""}.`
@@ -300,12 +309,14 @@ function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
                                                                 </select>
                                                             </td>
                                                         ))}
-                                                        <td className="text-right text-slate-400">{eur(r.acquistoReale)}</td>
-                                                        <td className={cn("text-right font-semibold", r.acquistoFile !== r.acquistoReale ? "text-amber-300" : "text-slate-300")}
-                                                            title={r.acquistoFile !== r.acquistoReale ? `Comprato a ${eur(r.acquistoReale)}: nel file va a 100 € come da regola` : ""}>
-                                                            {eur(r.acquistoFile)}
+                                                        <td className="text-right text-slate-400">
+                                                            {r.acquistoReale > 0 ? eur(r.acquistoReale) : <span className="text-rose-300/80 text-[11px]">non registrato</span>}
                                                         </td>
-                                                        <td className="text-right text-emerald-300 font-semibold">{lista.id === "venduti" ? eur(r.vendita) : "—"}</td>
+                                                        <td className={cn("text-right font-semibold", r.acquistoFile == null ? "text-rose-300" : r.acquistoFile !== r.acquistoReale ? "text-amber-300" : "text-slate-300")}
+                                                            title={r.acquistoFile == null ? "Nessun costo d'acquisto registrato: nel file esce vuoto, non a 100 €" : r.acquistoFile !== r.acquistoReale ? `Comprato a ${eur(r.acquistoReale)}: nel file va a 100 € come da regola` : ""}>
+                                                            {r.acquistoFile == null ? "—" : eur(r.acquistoFile)}
+                                                        </td>
+                                                        <td className="text-right text-emerald-300 font-semibold">{r.vendita != null ? eur(r.vendita) : "—"}</td>
                                                         <td className="text-[11px] text-slate-500">{giorno(r[lista.quando])}</td>
                                                     </tr>
                                                 ))}

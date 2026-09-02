@@ -95,7 +95,11 @@ export async function POST(request: Request) {
 
     const { data: gia } = await supabaseAdmin.from("contabilita_usati_inviati")
         .select("mese, esito, inviato_il").eq("mese", mese.da).maybeSingle();
-    if (gia && (gia as { esito: string }).esito === "inviato" && !b.forza) {
+    /* ⚠️ LA PROVA NON SI FA FERMARE DAL «GIÀ INVIATO». Il controllo stava prima
+       del ramo di prova: dopo un invio riuscito, il pulsante «Cosa manderebbe»
+       rispondeva «saltato» invece di dire cosa manderebbe — cioè smetteva di
+       funzionare proprio quando serviva per controllare. */
+    if (gia && (gia as { esito: string }).esito === "inviato" && !b.forza && !b.prova) {
         return NextResponse.json({ ok: true, saltato: "già inviato", mese: mese.da, quando: (gia as { inviato_il: string }).inviato_il });
     }
 
@@ -127,15 +131,21 @@ export async function POST(request: Request) {
 
     /* il riassunto delle fatture da fare, per società: è la prima cosa che il
        commercialista cerca, e leggerla dal file richiede di aprirlo */
-    const perCoppia = new Map<string, { quante: number; valore: number }>();
+    const perCoppia = new Map<string, { quante: number; valore: number; senzaCosto: number }>();
     for (const r of daFatturare) {
         const k = `${r.aziendaAcquisto}→${r.aziendaVendita}`;
-        const v = perCoppia.get(k) || { quante: 0, valore: 0 };
-        v.quante++; v.valore += r.acquistoFile; perCoppia.set(k, v);
+        const v = perCoppia.get(k) || { quante: 0, valore: 0, senzaCosto: 0 };
+        /* ⚠️ NEL TOTALE DA FATTURARE ENTRA SOLO QUELLO CHE HA UN COSTO VERO.
+           Sommare i «non registrati» come 100 € avrebbe messo nel corpo
+           dell'email un importo infragruppo nato da un arrotondamento. */
+        v.quante++; v.valore += r.acquistoFile ?? 0;
+        if (r.acquistoFile == null) v.senzaCosto++;
+        perCoppia.set(k, v);
     }
     const righeCoppie = [...perCoppia.entries()].map(([k, v]) => {
         const [da, a] = k.split("→");
-        return `<li><b>${NOME_SOCIETA[da] || da} → ${NOME_SOCIETA[a] || a}</b>: ${v.quante} telefon${v.quante === 1 ? "o" : "i"}, ${v.valore.toLocaleString("it-IT", { style: "currency", currency: "EUR" })} di costo</li>`;
+        const nota = v.senzaCosto ? ` <i>(${v.senzaCosto} sen\u007Aa costo registrato, non compres${v.senzaCosto === 1 ? "o" : "i"} nel totale)</i>` : "";
+        return `<li><b>${NOME_SOCIETA[da] || da} → ${NOME_SOCIETA[a] || a}</b>: ${v.quante} telefon${v.quante === 1 ? "o" : "i"}, ${v.valore.toLocaleString("it-IT", { style: "currency", currency: "EUR" })} di costo${nota}</li>`;
     }).join("");
 
     const corpo = `
