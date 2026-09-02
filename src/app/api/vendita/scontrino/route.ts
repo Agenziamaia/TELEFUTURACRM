@@ -372,6 +372,64 @@ export async function POST(req: Request) {
     const pagamentiPerAzienda: Record<string, any[]> =
         (b.pagamentiPerAzienda && typeof b.pagamentiPerAzienda === "object") ? b.pagamentiPerAzienda : {};
 
+    /* ═══ L'ULTIMO CANCELLO PRIMA DEL RULLO (revisione ostile 02/09) ═════════
+       Questo blocco esiste perché il browser può sbagliare, e uno scontrino
+       fiscale sbagliato non si corregge con un aggiornamento.
+
+       ① DUE SCONTRINI SENZA DUE PAGAMENTI NON SI FANNO. Se il carrello si
+          divide in più società ma il modale non ha mandato i pagamenti divisi,
+          fin qui uscivano DUE documenti entrambi a «CONTANTE» — qualunque cosa
+          avesse pagato il cliente, e con la cassa automatica chiamata una volta
+          sola. Adesso si rifiuta prima di stampare: meglio un errore al banco
+          che due documenti commerciali che certificano contante mai entrato.
+       ② LA SOMMA DEVE FARE IL TOTALE. Un centesimo di troppo lascia il
+          documento APERTO sulla cassa, con mezzo scontrino sul rullo: è
+          successo a Garbatella il 01/09 e si vede nella fotografia. Qui si
+          controlla PRIMA, invece di scoprirlo dalla carta.
+       ③ LA FORMA DEVE ESISTERE. `formaPagamento()` su un nome inventato torna
+          `undefined` e si ripiegava su CONTANTE in silenzio.
+       ④ IL REGISTRATORE NE ACCETTA TRE. La quarta veniva tagliata senza dirlo,
+          e il documento restava aperto della differenza. */
+    {
+        const chiavi = Object.keys(pagamentiPerAzienda);
+        if (nGruppi > 1 && !chiavi.length) {
+            return NextResponse.json({
+                error: "Questo carrello contiene merce di più società e va emesso come più scontrini, "
+                    + "ognuno con il suo pagamento. Riapri la finestra dell'incasso: se le sezioni non compaiono, "
+                    + "fai le due vendite separate invece di rischiare due documenti sbagliati.",
+            }, { status: 400 });
+        }
+        for (const [az, righeP] of Object.entries(pagamentiPerAzienda)) {
+            if (!Array.isArray(righeP)) return NextResponse.json({ error: `pagamenti di ${az}: formato non valido` }, { status: 400 });
+            if (righeP.length > 3) {
+                return NextResponse.json({ error: `${az}: il registratore accetta al massimo 3 forme di pagamento, ne sono arrivate ${righeP.length}.` }, { status: 400 });
+            }
+            for (const r of righeP) {
+                if (!formaPagamento(String(r?.forma))) {
+                    return NextResponse.json({ error: `${az}: «${String(r?.forma || "")}» non è una forma di pagamento che il registratore conosce.` }, { status: 400 });
+                }
+                if (!(Number(r?.importo) > 0)) {
+                    return NextResponse.json({ error: `${az}: c'è una riga di pagamento senza importo.` }, { status: 400 });
+                }
+            }
+            const gruppo = gruppi[az];
+            if (!gruppo) {
+                return NextResponse.json({ error: `sono arrivati i pagamenti di ${az}, ma in questo scontrino non c'è niente di quella società.` }, { status: 400 });
+            }
+            const totGruppo = +(gruppo.reduce((t, i) => t + i.unitPrice * i.quantity, 0)).toFixed(2);
+            const somma = +righeP.reduce((t: number, r: any) => t + (Number(r?.importo) || 0), 0).toFixed(2);
+            /* UN CENTESIMO DI TOLLERANZA, non di più: l'arrotondamento dei
+               contanti a 5 centesimi lo ricompone `xmlFiscalReceipt`, ma uno
+               scarto vero deve fermarsi qui. */
+            if (Math.abs(somma - totGruppo) > 0.05) {
+                return NextResponse.json({
+                    error: `${az}: i pagamenti fanno ${somma.toFixed(2)} € ma la merce ne vale ${totGruppo.toFixed(2)} €. `
+                        + "Il registratore rifiuterebbe il totale e il documento resterebbe aperto a metà.",
+                }, { status: 400 });
+            }
+        }
+    }
+
     const buildPayments = (defaultAmount?: number, az?: string) => {
         const suoi = az && Array.isArray(pagamentiPerAzienda[az]) ? pagamentiPerAzienda[az].slice(0, 3) : null;
         const lista = (suoi && suoi.length) ? suoi : ((pagamentiIn.length && nGruppi === 1) ? pagamentiIn : null);
@@ -409,9 +467,12 @@ export async function POST(req: Request) {
         const totale = +(items.reduce((t, i) => t + i.unitPrice * i.quantity, 0)).toFixed(2);
         /* I PAGAMENTI DI QUESTA SOCIETÀ: quelli che il modale ha raccolto nella
            sua sezione, o — se il carrello è di una società sola — quelli unici. */
-        const suoiPagamenti: any[] = (Array.isArray(pagamentiPerAzienda[az]) && pagamentiPerAzienda[az].length)
+        /* `slice(0, 3)` COME NEL FISCALE: senza, la prova stampava quattro righe
+           e il fiscale tre — cioè la modalità di prova mostrava uno scontrino
+           che quello vero non avrebbe mai emesso. */
+        const suoiPagamenti: any[] = ((Array.isArray(pagamentiPerAzienda[az]) && pagamentiPerAzienda[az].length)
             ? pagamentiPerAzienda[az]
-            : ((pagamentiIn.length && nGruppi === 1) ? pagamentiIn : []);
+            : ((pagamentiIn.length && nGruppi === 1) ? pagamentiIn : [])).slice(0, 3);
         // lo sconto coupon vale solo col singolo scontrino (nGruppi===1 → un solo giro).
         const scontoGruppo = nGruppi === 1 ? Math.min(couponSconto, totale) : 0;
         const netTotale = +(totale - scontoGruppo).toFixed(2);
@@ -499,7 +560,13 @@ export async function POST(req: Request) {
        saltare, e un avviso che si può saltare non è un avviso. Non blocca né
        ritarda la vendita — se la scrittura fallisce, pazienza. */
     try {
-        const aBonifico = pagamentiIn.filter((p: any) => String(p?.forma || "").toUpperCase() === "BONIFICO" && Number(p?.importo) > 0);
+        /* ⚠️ ANCHE QUELLI DELLE SINGOLE SOCIETÀ (revisione ostile 02/09).
+           Guardava solo il pagamento unico: con lo scontrino diviso in due, un
+           bonifico dentro una delle due sezioni non generava NESSUNA task, e
+           l'amministrazione non sapeva di doverlo aspettare. È esattamente il
+           buco per cui questo controllo è nato. */
+        const _tuttiPag: any[] = [...pagamentiIn, ...Object.values(pagamentiPerAzienda).flat()];
+        const aBonifico = _tuttiPag.filter((p: any) => String(p?.forma || "").toUpperCase() === "BONIFICO" && Number(p?.importo) > 0);
         if (aBonifico.length) {
             const quanto = aBonifico.reduce((t: number, p: any) => t + Number(p.importo || 0), 0);
             const euro = quanto.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

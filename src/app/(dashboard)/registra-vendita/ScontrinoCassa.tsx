@@ -482,6 +482,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        secondo non c'è un re-render, e uno stato letto qui sarebbe ancora quello
        di prima — cioè il primo cassetto si riaprirebbe. */
     const cashFatti = useRef<Record<string, boolean>>({});
+    /* UN SOLO GIRO PER VOLTA. `conferma` non aveva nessun lucchetto: due clic
+       nello stesso istante superavano entrambi la guardia di `cashFatti`, che
+       si scrive dopo due `await`, e la macchina si apriva DUE volte. */
+    const inCorso = useRef(false);
 
     /* LE SOCIETÀ CHE LA MERCE IMPONE. Solo quelle: se in carrello ci sono solo
        servizi la domanda è un'altra (chi emette), ed è già risolta sopra. */
@@ -516,26 +520,68 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        comune che c'è. Se la riga «Finanziamento 1.359,90» finisse nella sezione
        sbagliata, uno scontrino direbbe di aver incassato soldi mai visti e
        l'altro non quadrerebbe. */
-    const nonRiscossiPerAz = useMemo(() => {
+    const _nonRiscossi = useMemo(() => {
         const out: Record<string, { forma: string; importo: number }[]> = {};
+        const orfani: { descrizione: string; importo: number }[] = [];
         telefoni.filter((t) => DOMANDE_TELEFONO[t.modo].scontrino).forEach((t) => {
             const forma = importi[t.chiave]?.forma || DOMANDE_TELEFONO[t.modo].forma || "";
             const importo = _n(importi[t.chiave]?.resto);
             if (!forma || importo <= 0) return;
-            const suaRiga = itemsTutte.find((i) => i.codice && t.codice && i.codice === t.codice);
-            const az = suaRiga?.azienda || aziendeMerce[0];
-            if (!az) return;
+
+            /* ⚠️ NON SI CERCA PER `codice`: la riga del telefono in carrello è
+               la voce automatica «Telefono TNP (listino)», che il codice NON
+               ce l'ha — lo dice il commento poco sopra e lo confermano le
+               righe vere salvate. Cercando così la ricerca falliva SEMPRE e si
+               ripiegava sulla «prima società che capita nell'ordine del
+               carrello»: il non riscosso finiva sullo scontrino sbagliato, la
+               sezione non quadrava e il pulsante restava spento per sempre —
+               vicolo cieco, con permuta + finanziato che è la combinazione più
+               comune che c'è (revisione ostile 02/09).
+               Si cerca come fa `_righeCorrette`: prima l'IMEI, che dal 01/09 le
+               righe se lo portano dietro, poi il codice se lo porta una riga
+               sola, poi le parole in comune fra le righe che possono essere un
+               telefono. */
+            let riga = t.imei ? itemsTutte.find((i) => String(i.description || "").includes(String(t.imei))) : undefined;
+            if (!riga && t.codice) {
+                const cand = itemsTutte.filter((i) => !!i.codice && String(i.codice) === String(t.codice));
+                if (cand.length === 1) riga = cand[0];
+            }
+            if (!riga) {
+                const pt = _parole(t.descrizione);
+                const paga = +(_n(importi[t.chiave]?.anticipo) + importo).toFixed(2);
+                let meglio = 0, prezzoMeglio = -1;
+                itemsTutte.forEach((r) => {
+                    if (Number(r.reparto) !== 2) return;
+                    const prezzo = Number(r.unitPrice) * (Number(r.qty) > 0 ? Number(r.qty) : 1);
+                    if (!(prezzo + 0.02 >= paga)) return;
+                    const pr = _parole(r.description);
+                    let n = 0; pt.forEach((w) => { if (pr.has(w)) n++; });
+                    if (n >= 2 && (n > meglio || (n === meglio && prezzo > prezzoMeglio))) { meglio = n; prezzoMeglio = prezzo; riga = r; }
+                });
+            }
+
+            const az = riga?.azienda;
+            /* SE NON SI SA DI CHI È, NON SI INDOVINA. Attribuirlo alla società
+               sbagliata farebbe incassare in contanti un importo finanziato. */
+            if (!az) { orfani.push({ descrizione: t.descrizione, importo }); return; }
             (out[az] ||= []);
             const g = out[az].find((x) => x.forma === forma);
             if (g) g.importo = +(g.importo + importo).toFixed(2); else out[az].push({ forma, importo });
         });
-        return out;
-    }, [telefoni, importi, itemsTutte, aziendeMerce]);
+        return { perAz: out, orfani };
+    }, [telefoni, importi, itemsTutte]);
+    const nonRiscossiPerAz = _nonRiscossi.perAz;
 
     /* OGNI SEZIONE NASCE COL SUO IMPORTO GIÀ SCRITTO e col cassetto della sua
        insegna: è la risposta giusta nove volte su dieci, e chi vuole cambiarla
        la cambia. Si rifà quando cambiano gli importi, non a ogni respiro. */
-    const _firmaSez = sezioni.map((s2) => `${s2.azienda}:${s2.totale}`).join("|");
+    /* LA FIRMA COMPRENDE ANCHE IL NEGOZIO. `aziende` arriva dal database DOPO
+       il primo render: senza il negozio nella firma l'effetto non rigirava, e
+       `cassaPerAz` restava col ripiego del primo giro — cioè a Magliana i
+       contanti di Telefutura 2 finivano nel cassetto di Magliana W3.
+       E il ripiego giusto è IL NEGOZIO IN CUI SI STA, non quello della
+       società: «faccio pagare il cliente da me» (Luca 31/08). */
+    const _firmaSez = sezioni.map((s2) => `${s2.azienda}:${s2.totale}:${s2.negozio}`).join("|");
     useEffect(() => {
         if (!sezioni.length) return;
         setRighePerAz((vecchie) => {
@@ -560,7 +606,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         });
         setCassaPerAz((vecchie) => {
             const out: Record<string, string> = {};
-            sezioni.forEach((s2) => { out[s2.azienda] = vecchie[s2.azienda] || s2.negozio; });
+            sezioni.forEach((s2) => {
+                out[s2.azienda] = vecchie[s2.azienda]
+                    || (insegne.includes(data?.negozio || "") ? (data?.negozio as string) : s2.negozio);
+            });
             return out;
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -568,7 +617,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
 
     /* IL BILANCIO SI FA SEZIONE PER SEZIONE: uno scontrino che non quadra non
        esce, e non deve bloccare l'altro senza dire quale dei due è. */
-    const sezioniOk = sezioni.every((s2) => {
+    /* IL COUPON NON VALE SU DUE SCONTRINI: il server lo scarta (`nGruppi === 1`)
+       e le sezioni chiedono il PIENO, mentre l'intestazione mostra il totale
+       scontato. Due numeri che si contraddicono a schermo, e si poteva premere
+       «Emetti» incassando il pieno. */
+    const sezioniOk = !_nonRiscossi.orfani.length && !(coupon && scontoCoupon > 0) && sezioni.every((s2) => {
         const rr = righePerAz[s2.azienda] || [];
         const somma = +rr.reduce((a, r) => a + (Number(r.importo) || 0), 0).toFixed(2);
         return s2.totale <= 0.005 || (Math.abs(somma - s2.totale) < 0.005 && rr.every((r) => Number(r.importo) > 0 && !!r.forma));
@@ -677,6 +730,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     if (!data) return null;
 
     const conferma = async () => {
+        if (inCorso.current) return;
+        inCorso.current = true;
+        try { await _conferma(); } finally { inCorso.current = false; }
+    };
+    const _conferma = async () => {
         if (multiSocieta) {
             /* SI DICE QUALE DELLE DUE non torna: «manca qualcosa» davanti a due
                sezioni costringe a ricontrollarle entrambe. */
@@ -970,11 +1028,21 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const removeRiga = (i: number) => setRighe((rs) => (rs.length <= 1 ? rs : rs.filter((_, k) => k !== i)));
 
     return createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        /* ⚠️ LA FINESTRA DEVE POTER SCORRERE (revisione design 02/09). Con due
+           sezioni, un telefono finanziato e tre voci per parte il pannello
+           misura 1116px: l'intestazione usciva sopra e «Incassa ed emetti»
+           restava 149px SOTTO la piega — e non si scorreva, perché l'overlay
+           è `fixed` e non partecipa allo scorrimento della pagina. Cioè il
+           pagamento non si poteva concludere, su nessun monitor: ne servivano
+           1148px utili, che un 1920×1080 a schermo intero non ha.
+           `items-start` e non `items-center`: centrato, un pannello più alto
+           della finestra si taglia in cima e la parte sopra non si raggiunge
+           nemmeno scorrendo. */
+        <div className="fixed inset-0 z-[120] overflow-y-auto flex items-start justify-center p-4 bg-black/60 backdrop-blur-sm">
             {/* PIÙ LARGO (Luca 31/08): a `max-w-md` i tre pulsanti di pagamento
                 finivano a «Co… Ca… Bo…» — tre etichette tagliate che bisogna
                 indovinare, sull'ultimo gesto della vendita. Lo spazio c'è. */}
-            <div className="glass-panel w-full max-w-2xl p-6 space-y-4">
+            <div className="glass-panel w-full max-w-2xl p-6 space-y-4 my-auto">
                 <div className="flex items-baseline justify-between">
                     <h3 className="text-lg font-bold text-white">🧾 Incasso &amp; Scontrino</h3>
                     <div className="flex items-center gap-2">
@@ -1347,10 +1415,28 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                         </div>
                                     );
                                 })}
-                                {!!coupon && (
-                                    <p className="text-[11px] text-amber-300">
-                                        ⚠️ Il coupon non si applica quando gli scontrini sono due: toglilo, oppure fai le due vendite separate.
-                                    </p>
+                                {/* SE IL PULSANTE È SPENTO, SI DICE PERCHÉ e cosa fare:
+                                    un pulsante grigio senza spiegazione manda a
+                                    cercare l'errore nel posto sbagliato. */}
+                                {!!_nonRiscossi.orfani.length && (
+                                    <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-2.5">
+                                        <p className="text-xs font-bold text-rose-200">Non riesco a capire su quale scontrino va il finanziamento</p>
+                                        <p className="text-[11px] text-rose-100/80 mt-1">
+                                            {_nonRiscossi.orfani.map((o) => `${o.descrizione} (${eur(o.importo)})`).join(" · ")} — non trovo la sua riga
+                                            nel carrello, quindi non so a quale società appartiene. Metterlo su quella sbagliata
+                                            farebbe incassare in contanti un importo finanziato: <b>fai le due vendite separate</b>.
+                                        </p>
+                                    </div>
+                                )}
+                                {!!coupon && scontoCoupon > 0 && (
+                                    <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5">
+                                        <p className="text-xs font-bold text-amber-200">Il coupon non vale su due scontrini</p>
+                                        <p className="text-[11px] text-amber-100/80 mt-1">
+                                            Lo sconto di {eur(scontoCoupon)} il registratore lo applica a un documento solo, e qui ne
+                                            escono due: le sezioni chiedono il totale pieno. <b>Togli il coupon</b> e usalo su una
+                                            vendita sola, oppure fai le due vendite separate.
+                                        </p>
+                                    </div>
                                 )}
                             </div>
                         )}

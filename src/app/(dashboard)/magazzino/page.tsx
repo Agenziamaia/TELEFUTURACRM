@@ -2883,9 +2883,15 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
     /* LE SOCIETÀ CHE QUEL NEGOZIO HA DAVVERO A MAGAZZINO. Non quelle
        dell'anagrafica: a Donna la tabella dice T2, ma sullo scaffale ci sono
        135 pezzi di T1 e 4 di T2. */
+    /* ⚠️ ANCHE LE SOCIETÀ SONO QUELLE DEL LOCALE. Era rimasto il confronto sul
+       nome esatto mentre i pezzi si erano già allargati alla sede: l'insegna
+       senza giacenze proprie usciva con `soc = ""`, cioè `azienda_da: null`,
+       e il documento veniva numerato dal trigger con una regola diversa da
+       quella mostrata a schermo — «Trasferimento tra sedi» a video e cessione
+       fra società nei fatti, o viceversa (revisione ostile 02/09). */
     const societa = useMemo(() => Array.from(new Set([
-        ...unita.filter(u => u.negozio === da && u.stato === "disponibile").map(u => u.azienda),
-        ...quantita.filter(q => q.negozio === da && q.quantita > 0).map(q => q.azienda),
+        ...unita.filter(u => stessoMagazzino(u.negozio, da) && u.stato === "disponibile").map(u => u.azienda),
+        ...quantita.filter(q => stessoMagazzino(q.negozio, da) && q.quantita > 0).map(q => q.azienda),
     ].filter(Boolean) as string[])).sort(), [unita, quantita, da]);
     useEffect(() => { setSoc(societa.length === 1 ? societa[0] : ""); setPezzi(new Set()); setQta({}); }, [da, societa]);
 
@@ -2937,7 +2943,14 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
         stessoMagazzino(g.negozio, da) && (!soc || g.azienda === soc) && Number(g.quantita) > 0
         && (!q || `${g.descrizione} ${g.codice}`.toLowerCase().includes(q))),
         [quantita, da, soc, q]);
-    const perCodice = useMemo(() => new Map(sfusi.map(g => [g.codice, g])), [sfusi]);
+    /* ⚠️ LA CHIAVE COMPRENDE L'INSEGNA (revisione ostile 02/09). Da quando i
+       pezzi arrivano da tutto il locale, lo stesso codice può comparire due
+       volte — ad Acilia «Earbuds» sta 23 volte al Multi e 19 al VS, stessa
+       società. Con la chiave sul solo codice le due righe condividevano la
+       casella della quantità, e questa mappa ne teneva UNA: il tetto «a
+       scaffale» e l'insegna di partenza guardavano quella sbagliata. */
+    const _kQta = (g: { codice: string; negozio: string; azienda?: string | null }) => `${g.codice}|${g.negozio}|${g.azienda || ""}`;
+    const perCodice = useMemo(() => new Map(sfusi.map(g => [_kQta(g), g])), [sfusi]);
 
 
     const scelti = Object.entries(qta).filter(([, n]) => Number(n) > 0);
@@ -2949,7 +2962,7 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
     const insegneScelte = useMemo(() => {
         const set = new Set<string>();
         Array.from(pezzi).forEach(id => { const u = unita.find(x => x.id === id); if (u) set.add(u.negozio); });
-        Array.from(scelti).forEach(([cod]) => { const g = perCodice.get(cod); if (g) set.add(g.negozio); });
+        Array.from(scelti).forEach(([k]) => { const g = perCodice.get(k); if (g) set.add(g.negozio); });
         return Array.from(set);
     }, [pezzi, scelti, unita, perCodice]);
     const daEffettivo = insegneScelte.length === 1 ? insegneScelte[0] : da;
@@ -2979,8 +2992,8 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
         if (insegneScelte.length > 1) out.push(`stai spedendo merce che sta in due insegne diverse (${insegneScelte.join(" e ")}): un documento parte da una sola. Scegli la società, oppure fai due trasferimenti`);
         if (societa.length > 1 && !soc) out.push("scegli di quale società è la merce: un documento ne trasporta una sola");
         if (!totPezzi) out.push("non hai scelto niente da spedire");
-        scelti.forEach(([cod, n]) => {
-            const g = perCodice.get(cod);
+        scelti.forEach(([k, n]) => {
+            const g = perCodice.get(k);
             if (g && Number(n) > Number(g.quantita)) out.push(`di «${g.descrizione}» ne stai spedendo ${n} ma a ${g.negozio} ce ne sono ${g.quantita}`);
         });
         return out;
@@ -3026,16 +3039,28 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
                     ddt_id: d.id, riga: i + 1, codice: u!.codice, descrizione: u!.descrizione,
                     unita_id: u!.id, seriale: u!.seriale, quantita: 1,
                     valore_unitario: u!.valore ?? anagrafica.get(u!.codice || "")?.prezzo ?? null,
-                    negozio_da: da, negozio_a: aNome, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
+                    /* L'INSEGNA VERA, non la tendina: la testata usa già
+                       `daEffettivo`, e righe e movimento devono dire la stessa
+                       cosa. Con due nomi diversi il `trasferimento_out` andava
+                       contro un'insegna che quella merce non ce l'ha, il
+                       trigger creava una giacenza NEGATIVA e quella vera non
+                       veniva mai scalata: merce creata dal nulla. */
+                    negozio_da: daEffettivo, negozio_a: aNome, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
                     stato: fuori ? "uscita" : "in_viaggio",
                 })),
-                ...scelti.map(([cod, n], i) => {
-                    const g = perCodice.get(cod)!;
+                ...scelti.map(([k, n], i) => {
+                    const g = perCodice.get(k)!;
                     return {
-                        ddt_id: d.id, riga: pezzi.size + i + 1, codice: cod, descrizione: g.descrizione,
+                        ddt_id: d.id, riga: pezzi.size + i + 1, codice: g.codice, descrizione: g.descrizione,
                         unita_id: null, seriale: null, quantita: Number(n),
-                        valore_unitario: anagrafica.get(cod)?.prezzo ?? null,
-                        negozio_da: da, negozio_a: aNome, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
+                        valore_unitario: anagrafica.get(g.codice)?.prezzo ?? null,
+                        /* L'INSEGNA VERA, non la tendina: la testata usa già
+                       `daEffettivo`, e righe e movimento devono dire la stessa
+                       cosa. Con due nomi diversi il `trasferimento_out` andava
+                       contro un'insegna che quella merce non ce l'ha, il
+                       trigger creava una giacenza NEGATIVA e quella vera non
+                       veniva mai scalata: merce creata dal nulla. */
+                    negozio_da: daEffettivo, negozio_a: aNome, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
                         stato: fuori ? "uscita" : "in_viaggio",
                     };
                 }),
@@ -3077,13 +3102,21 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
             // le quantità: un movimento, e il saldo si muove da sé
             let uscitaOk = true;
             if (scelti.length) {
-                const { error: em } = await supabase.from("mag_movimenti").insert(scelti.map(([cod, n]) => ({
-                    codice: cod, negozio: da, azienda: soc || d.azienda_da,
+                const { error: em } = await supabase.from("mag_movimenti").insert(scelti.map(([k, n]) => {
+                  const g = perCodice.get(k)!;
+                  return {
+                    /* IL MOVIMENTO SCARICA L'INSEGNA DOVE LA MERCE STA DAVVERO,
+                       e con la sua società: era la tendina, e con due insegne
+                       nello stesso locale scaricava quella sbagliata — il
+                       trigger creava una giacenza negativa e quella vera
+                       restava intatta. */
+                    codice: g.codice, negozio: g.negozio, azienda: g.azienda || soc || d.azienda_da,
                     tipo: fuori ? "rettifica" : "trasferimento_out",
                     quantita: fuori ? -Number(n) : Number(n),
                     ddt_id: d.id, operatore: utente,
                     nota: fuori ? `reso a ${aNome} — DDT n.${d.numero}` : `trasferimento a ${aNome} — DDT n.${d.numero}`,
-                })));
+                  };
+                }));
                 if (em) {
                     uscitaOk = false;
                     /* LE RIGHE A QUANTITÀ SI CHIUDONO SUBITO (revisore 31/08).
@@ -3214,13 +3247,13 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
                         {disponibili.length > 200 && <div className="rvTab-min">…e altri {disponibili.length - 200}: scrivi qualcosa per restringere.</div>}
                         {!!sfusi.length && <div className="rvDettT mt-2">Merce a quantità <span className="rvLabX">(accessori, SIM: prima non si poteva spedire)</span></div>}
                         {sfusi.slice(0, 200).map(g => (
-                            <div key={g.codice + g.azienda} className="rvDettR">
+                            <div key={_kQta(g)} className="rvDettR">
                                 <span className="rvTab-nome">{g.descrizione}</span>
                                 <span className="rvTab-cod">{g.codice}</span>
                                 <span className="rvTab-min">a scaffale <b className="rvGiac rvGiac-si">{g.quantita}</b></span>
                                 <span className="rvSpazio" />
-                                <input type="number" min={0} max={g.quantita} value={qta[g.codice] ?? ""} placeholder="0"
-                                    onChange={e => setQta(p => ({ ...p, [g.codice]: Number(e.target.value) }))}
+                                <input type="number" min={0} max={g.quantita} value={qta[_kQta(g)] ?? ""} placeholder="0"
+                                    onChange={e => setQta(p => ({ ...p, [_kQta(g)]: Number(e.target.value) }))}
                                     className="rvQta" />
                             </div>
                         ))}

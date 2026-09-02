@@ -6769,7 +6769,17 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
          Telefutura 2 lo deve emettere Telefutura 2, non la società che
          l'operatore ha lasciato selezionata. Il server raggruppa già per
          azienda, quindi un carrello misto esce come due scontrini. */
-      azienda: mi.azienda ?? null,
+      /* ⚠️ LA SOCIETÀ CON LO STESSO RIPIEGO CHE USA IL BLOCCO (revisione 02/09).
+         Qui c'era `mi.azienda ?? null`, senza guardare il magazzino: gli
+         articoli a QUANTITÀ — SIM, accessori, kasko, cioè i pulsanti più
+         premuti — arrivavano al modale con la società VUOTA. Due guasti veri:
+         si disegnavano come servizi spostabili, e si poteva mandare un
+         accessorio di Telefutura 2 sullo scontrino di Telefutura; e il modale
+         non si accorgeva delle due società, quindi chiedeva UN pagamento
+         mentre il server — che il ripiego ce l'ha (`societaDelCodice`) —
+         emetteva DUE scontrini. `_socDi` è la stessa funzione con cui questo
+         file decide il blocco del carrello misto: una regola sola. */
+      azienda: _socDi(mi),
       /* serve SOLO al modale, per preimpostare la società giusta quando il
          carrello è di sole ricariche: il server non lo legge (lì la ricarica
          si riconosce dalla voce di catalogo, che è il dato autoritativo) */
