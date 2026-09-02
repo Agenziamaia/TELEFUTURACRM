@@ -2607,3 +2607,76 @@ html.light .rvRapido-sveglia{animation-name:psBattitoChiaro}
 .rvRistampa{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px}
 .rvRistampa-dev{font-size:10.5px;color:var(--tf-64748b);padding-left:2px}
 html.light .rvRistampa-dev{color:#64748b}
+
+/* ═══ CONTABILITÀ · LA TABELLA DEGLI USATI ════════════════════════════════
+   Luca 03/09, con lo screenshot: «le celle non sono sufficientemente grandi,
+   ha un problema di design».
+
+   ⚠️ RIUSAVA `.psTab`, ED È LÌ L'ERRORE. Quella tabella è disegnata per un
+   ELENCO da leggere: celle senza respiro verticale, una colonna troncata a
+   200 px, altezza di riga dettata dal testo. Qui dentro invece ci sono
+   TENDINE e CAMPI DA SCRIVERE, che hanno bisogno di stare in piedi: infilati
+   in una riga alta quanto una riga di testo venivano tagliati a metà —
+   «Telefutura 2» e «— da confermare» si leggevano mozzati.
+   Una tabella in cui si scrive non è una tabella che si legge. */
+.ctbTab{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+/* ⚠️ L'INTESTAZIONE SI ALLINEA AL SUO CONTENUTO. `th` di default è centrata:
+   sopra una colonna di testo allineato a sinistra galleggiava in mezzo, e
+   l'occhio non capiva più quale titolo appartenesse a quale colonna. */
+.ctbTab thead th{
+  position:sticky;top:0;z-index:3;background:var(--tf-0f111a);
+  padding:9px 10px;font-size:10px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--tf-64748b);white-space:nowrap;text-align:left}
+.ctbTab thead th.ctbC-eur{text-align:right}
+/* ⚠️ IL RESPIRO VERTICALE È LA CORREZIONE, non un abbellimento: 10px sopra e
+   sotto sono quelli che permettono a una tendina alta 32 di non toccare la
+   riga vicina. */
+.ctbTab tbody td{padding:10px;border-bottom:1px solid var(--tf-w60);vertical-align:middle}
+.ctbTab tbody tr:nth-child(even){background:rgba(255,255,255,.035)}
+.ctbTab tbody tr:hover{background:rgba(129,140,248,.10);
+  box-shadow:inset 3px 0 0 #818cf8,inset -3px 0 0 #818cf8}
+/* le due tinte che dicono cosa fare, e restano visibili anche in hover */
+.ctbTab tbody tr.ctbFatt{background:rgba(245,158,11,.07)}
+.ctbTab tbody tr.ctbConf{background:rgba(248,113,113,.07)}
+
+/* LA GEOMETRIA. Con `table-layout:fixed` le intestazioni stanno davvero sopra
+   la loro colonna: prima «VENDUTO A» galleggiava sopra il campo sbagliato e
+   «DATE» era schiacciata al bordo. */
+.ctbTab .ctbC-tel{width:26%}
+.ctbTab .ctbC-soc{width:15%}
+.ctbTab .ctbC-eur{width:11%;text-align:right}
+.ctbTab .ctbC-data{width:11%;white-space:nowrap}
+
+.ctbTel{font-size:12.5px;font-weight:700;color:var(--tf-f8fafc);
+  display:flex;align-items:center;gap:5px;line-height:1.25}
+/* il marchio della correzione a mano: un segno, non un'etichetta */
+.ctbTel .rvBadge{padding:1px 5px;font-size:9px;line-height:1.3}
+.ctbImei{font-size:10.5px;color:var(--tf-64748b);font-family:ui-monospace,monospace;margin-top:2px}
+.ctbMano{font-size:10px;color:color-mix(in srgb,var(--tf-818cf8) 85%,#fff);margin-top:2px}
+
+/* ⚠️ TENDINE E CAMPI ALTI 32px, non 28: sotto quella soglia il testo a 11.5px
+   con il suo padding non ci sta, e il browser lo taglia invece di stringerlo.
+   `line-height:1` sull'input serve allo stesso scopo. */
+.ctbSel,.ctbNum{
+  height:32px;line-height:1;box-sizing:border-box;
+  border-radius:9px;border:1px solid var(--tf-w100);background:var(--tf-w30);
+  font-size:11.5px;font-weight:600;color:var(--tf-e2e8f0);
+  padding:0 8px;width:100%;transition:border-color .12s,background .12s}
+.ctbSel{appearance:none;-webkit-appearance:none;padding-right:24px;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,var(--tf-8892b0) 50%),linear-gradient(135deg,var(--tf-8892b0) 50%,transparent 50%);
+  background-position:calc(100% - 13px) 14px,calc(100% - 8px) 14px;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.ctbSel:focus,.ctbNum:focus{outline:none;border-color:var(--tf-818cf8);background:var(--tf-w40)}
+.ctbNum{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;max-width:104px;margin-left:auto;display:block}
+/* da dove viene la cifra: il colore è l'unica cosa che distingue un costo
+   pagato da uno alzato dalla regola o deciso a mano */
+.ctbNum-regola{border-color:rgba(245,158,11,.55);color:var(--tf-fbbf24)}
+.ctbNum-mano{border-color:rgba(129,140,248,.6);color:var(--tf-a5b4fc)}
+.ctbNum-ignoto{border-color:rgba(248,113,113,.5);color:var(--tf-f87171)}
+.ctbSel-vuoto{border-color:rgba(248,113,113,.45);color:var(--tf-f87171)}
+.ctbVuoto{color:var(--tf-64748b);text-align:right;display:block}
+
+html.light .ctbTab thead th{background:#f1f5f9;color:#475569}
+html.light .ctbTab tbody tr:nth-child(even){background:rgba(15,23,42,.035)}
+html.light .ctbTab tbody tr:hover{background:rgba(79,70,229,.09)}
+html.light .ctbSel,html.light .ctbNum{background:#fff;border-color:#cbd5e1;color:#0f172a}

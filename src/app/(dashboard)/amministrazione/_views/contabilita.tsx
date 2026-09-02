@@ -280,76 +280,71 @@ function UsatiContabilita({ onIndietro }: { onIndietro: () => void }) {
                             {aperto && (
                                 <div className="px-4 pb-4">
                                     <div className="overflow-x-auto">
-                                        <table className="psTab text-[12px] w-full">
+                                        <table className="ctbTab">
                                             <thead>
-                                                <tr className="text-[10px] uppercase tracking-widest text-slate-500">
-                                                    <th className="text-left">Telefono</th>
-                                                    <th className="text-left">Comprato da</th>
-                                                    <th className="text-left">Venduto da</th>
-                                                    <th className="text-right">Costo</th>
-                                                    <th className="text-right" title="Il costo come va nel file: mai sotto 100 €">Per il file</th>
-                                                    <th className="text-right">Venduto a</th>
-                                                    <th className="text-left">Date</th>
+                                                <tr>
+                                                    <th className="ctbC-tel">Telefono</th>
+                                                    <th className="ctbC-soc">Comprato da</th>
+                                                    <th className="ctbC-soc">Venduto da</th>
+                                                    <th className="ctbC-eur">Costo</th>
+                                                    <th className="ctbC-eur" title="Il costo come va nel file: mai sotto 100 €, oppure quello che scrivi tu">Per il file</th>
+                                                    {/* ⚠️ SUI COMPRATI QUESTA COLONNA NON ESISTE. Un telefono
+                                                        ancora in negozio non ha un prezzo di vendita, e una
+                                                        colonna piena di trattini è rumore che allarga la
+                                                        tabella e basta. */}
+                                                    {lista.id === "venduti" && <th className="ctbC-eur">Venduto a</th>}
+                                                    <th className="ctbC-data">{lista.id === "venduti" ? "Venduto il" : "Comprato il"}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {righe.map((r) => (
-                                                    <tr key={r.id} className={cn(r.daConfermare ? "bg-rose-400/[0.06]" : r.daFatturare && "bg-amber-400/[0.06]")}>
+                                                    <tr key={r.id} className={cn(r.daConfermare ? "ctbConf" : r.daFatturare && "ctbFatt")}>
                                                         <td>
-                                                            <div className="text-white font-semibold flex items-center gap-1.5">
+                                                            <div className="ctbTel">
                                                                 {r.modello || "—"}
                                                                 {r.corretta && (
                                                                     <span className="rvBadge rvBadge-acc" title={`${r.corretta.chi} — ${new Date(r.corretta.quando).toLocaleString("it-IT")}`}>✍️</span>
                                                                 )}
                                                             </div>
-                                                            <div className="text-[10px] text-slate-600 font-mono">{r.imei}</div>
+                                                            <div className="ctbImei">{r.imei}</div>
                                                             {r.corretta && (
-                                                                <div className="text-[10px] text-indigo-300/80 mt-0.5">
-                                                                    società scritta a mano da {r.corretta.chi.split(" — ")[0]}
-                                                                </div>
+                                                                <div className="ctbMano">società scritta a mano da {r.corretta.chi.split(" — ")[0]}</div>
                                                             )}
                                                         </td>
                                                         {(["aziendaAcquisto", "aziendaVendita"] as const).map((campo) => (
                                                             <td key={campo}>
-                                                                {/* ⚠️ SI PUÒ SCRIVERE, ma resta segnato chi l'ha fatto: questa
-                                                                    società finisce su una fattura fra due società vere. */}
+                                                                {/* ⚠️ SI PUÒ SCRIVERE, ma resta segnato chi l'ha fatto:
+                                                                    questa società finisce su una fattura fra due
+                                                                    società vere. */}
                                                                 <select value={r[campo] || ""} disabled={salvo === r.id}
                                                                     onChange={(e) => void cambia(r.id, campo, e.target.value)}
-                                                                    className={cn("glass-input !h-7 px-2 text-[11px] rounded-lg",
-                                                                        !r[campo] && "text-rose-300 border-rose-400/40")}>
+                                                                    className={cn("ctbSel", !r[campo] && "ctbSel-vuoto")}>
                                                                     <option value="">— da confermare</option>
                                                                     <option value="T1">{SOC.T1}</option>
                                                                     <option value="T2">{SOC.T2}</option>
                                                                 </select>
                                                             </td>
                                                         ))}
-                                                        <td className="text-right text-slate-400">
+                                                        <td className="ctbC-eur text-slate-400">
                                                             {r.acquistoReale > 0 ? eur(r.acquistoReale) : <span className="text-rose-300/80 text-[11px]">non registrato</span>}
                                                         </td>
-                                                        {/* ⚠️ QUESTO CAMPO SI SCRIVE, e quello che ci si scrive VINCE.
-                                                            Luca 02/09: «dammi la possibilità di modificare a mano tutti i
-                                                            prezzi, evidenziando quelli già modificati dalla regola; quelle
-                                                            modifiche devono essere le ufficiali e il file deve contenerle».
-                                                            Il colore dice da dove viene la cifra: ambra = alzata dalla
-                                                            regola dei 100, indaco = decisa da una persona, rosso = costo
-                                                            che non abbiamo. */}
-                                                        <td className="text-right">
+                                                        <td>
                                                             <PrezzoContabile r={r} campo="costoContabile"
                                                                 valore={r.acquistoFile} origine={r.origineCosto}
                                                                 inCorso={salvo === r.id} onCambia={cambia} />
                                                         </td>
-                                                        <td className="text-right">
-                                                            {r.lato === "venduto" || r.vendita != null ? (
+                                                        {lista.id === "venduti" && (
+                                                            <td>
                                                                 <PrezzoContabile r={r} campo="venditaContabile"
                                                                     valore={r.venditaFile} origine={r.origineVendita === "mano" ? "mano" : "reale"}
                                                                     inCorso={salvo === r.id} onCambia={cambia} />
-                                                            ) : <span className="text-slate-600">—</span>}
-                                                        </td>
-                                                        <td className="text-[11px] text-slate-500">{giorno(r[lista.quando])}</td>
+                                                            </td>
+                                                        )}
+                                                        <td className="ctbC-data text-[11px] text-slate-500">{giorno(r[lista.quando])}</td>
                                                     </tr>
                                                 ))}
                                                 {!righe.length && (
-                                                    <tr><td colSpan={7} className="text-center text-slate-600 py-6 text-xs">
+                                                    <tr><td colSpan={lista.id === "venduti" ? 7 : 6} className="text-center text-slate-600 py-6 text-xs">
                                                         {soloDaFatturare ? "Niente da sistemare qui." : "Nessun telefono in questo periodo."}
                                                     </td></tr>
                                                 )}
@@ -393,17 +388,15 @@ function PrezzoContabile({ r, campo, valore, origine, inCorso, onCambia }: {
 }) {
     const [bozza, setBozza] = useState<string | null>(null);
     const mostrato = bozza ?? (valore == null ? "" : String(valore));
-    const tinta = origine === "mano" ? "text-indigo-300 border-indigo-400/50"
-        : origine === "regola" ? "text-amber-300 border-amber-400/50"
-            : origine === "ignoto" ? "text-rose-300 border-rose-400/40"
-                : "text-slate-300 border-white/10";
+    const tinta = origine === "mano" ? "ctbNum-mano"
+        : origine === "regola" ? "ctbNum-regola"
+            : origine === "ignoto" ? "ctbNum-ignoto" : "";
     const perche = origine === "mano" ? `Deciso a mano${r.corretti ? ` da ${r.corretti.chi}` : ""} — vince sulla regola`
         : origine === "regola" ? `Comprato a ${eur(r.acquistoReale)}: portato al minimo di 100 € come da regola. Scrivi qui per decidere un'altra cifra.`
             : origine === "ignoto" ? "Nessun costo registrato: nel file esce vuoto. Scrivi qui la cifra giusta."
                 : "È la cifra vera. Si può cambiare: quello che scrivi finisce nel file.";
     return (
-        <span className="inline-flex items-center gap-1 justify-end" title={perche}>
-            {origine === "mano" && <span className="text-[10px]">✍️</span>}
+        <span title={perche}>
             <input
                 value={mostrato} disabled={inCorso} inputMode="decimal" placeholder="—"
                 onChange={(e) => setBozza(e.target.value)}
@@ -415,7 +408,7 @@ function PrezzoContabile({ r, campo, valore, origine, inCorso, onCambia }: {
                     if (!uguale) onCambia(r.id, campo, pulito);
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setBozza(null); }}
-                className={cn("glass-input !h-7 px-2 text-[11px] rounded-lg w-[92px] text-right font-semibold", tinta)} />
+                className={cn("ctbNum", tinta)} />
         </span>
     );
 }
