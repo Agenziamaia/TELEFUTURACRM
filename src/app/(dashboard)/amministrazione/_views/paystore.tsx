@@ -1312,10 +1312,13 @@ function CredenzialiPayStore() {
     const [esiti, setEsiti] = useState<{ societa: string; identificativo: string; negozio: string | null; esito: string }[]>([]);
     const [busy, setBusy] = useState(false);
     const [ko, setKo] = useState("");
+    type Firma = { negozio: string; azienda: string | null; ricariche: number; ok: boolean; firmerebbe: string | null; perche: string | null };
+    const [verifica, setVerifica] = useState<Firma[]>([]);
 
     const carica = useCallback(async () => {
         const r = await fetch("/api/paystore/credenziali").then((x) => x.json()).catch(() => null);
-        if (r?.ok) setRighe(r.righe || []); else setKo(r?.error || "non riesco a leggere le credenziali");
+        if (r?.ok) { setRighe(r.righe || []); setVerifica(r.verifica || []); }
+        else setKo(r?.error || "non riesco a leggere le credenziali");
     }, []);
     useEffect(() => { void carica(); }, [carica]);
 
@@ -1390,6 +1393,38 @@ function CredenzialiPayStore() {
                                     <td className="text-slate-300">{e.identificativo}</td>
                                     <td>{e.negozio ? <b className="text-white">→ {e.negozio}</b> : <span className="text-rose-300">→ nessun negozio</span>}</td>
                                     <td className={cn("text-[11px]", /NON|nessun/.test(e.esito) ? "text-rose-300" : "text-emerald-300")}>{e.esito}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* ⚠️ LA PROVA DA FARE PRIMA DI EROGARE UN EURO, e non costa niente.
+                Firmare con la terna di un altro punto vendita addebita il SUO
+                plafond, e non dà nessun errore: ce ne si accorge a fine mese, su
+                ricariche già erogate. È l'unico errore che dopo non si scopre
+                più — quindi si guarda prima, qui. */}
+            {verifica.length > 0 && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="rvLab">
+                        Chi firmerebbe cosa — {verifica.filter((v) => v.ok).length}/{verifica.length} coperte
+                    </div>
+                    <div className="rvNota-s mt-1 mb-2">
+                        Per ogni negozio e società che nel registro ha davvero delle ricariche, la credenziale che
+                        partirebbe. Nessuna ricarica viene eseguita: è solo una lettura.
+                    </div>
+                    <table className="psTab text-[12px]">
+                        <tbody>
+                            {verifica.map((v, i) => (
+                                <tr key={i}>
+                                    <td className="text-white font-semibold">{v.negozio}</td>
+                                    <td><span className="rvBadge rvBadge-acc">{SOCIETA[v.azienda || ""] || v.azienda || "—"}</span></td>
+                                    <td className="text-slate-500 text-[11px]">{v.ricariche} ricarich{v.ricariche === 1 ? "e" : "e"}</td>
+                                    <td className={v.ok ? "text-emerald-300" : "text-rose-300"}>
+                                        {v.ok ? <>✓ {v.firmerebbe}</> : "⛔ scoperta"}
+                                    </td>
+                                    <td className="text-[11px] text-slate-500">{v.perche || ""}</td>
                                 </tr>
                             ))}
                         </tbody>

@@ -3,6 +3,7 @@ import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isAdminOrAbove } from "@/lib/roles";
 import { cifraSegreto } from "@/lib/totp";
+import { credenzialeDi } from "@/lib/paystoreCredenziali";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +58,39 @@ async function risolviNegozio(identificativo: string, azienda: string): Promise<
 
 const SOCIETA: Record<string, string> = { "telefutura": "T1", "telefutura 2": "T2" };
 
+/* ═══ CHI FIRMEREBBE COSA ══════════════════════════════════════════════════
+   La prova da fare PRIMA di erogare un euro, e non costa niente: per ogni
+   coppia (negozio, società) che esiste davvero nel registro delle ricariche,
+   si chiede al CRM quale credenziale userebbe.
+
+   ⚠️ PERCHÉ È LA PRIMA. Firmare con la terna di un altro punto vendita addebita
+   il suo plafond, e non c'è nessun errore a schermo: ce ne si accorge a fine
+   mese, quando i conti non tornano, su ricariche già erogate. È l'unico errore
+   che dopo non si scopre più — quindi si guarda prima. */
+async function chiFirmerebbe() {
+    const { data } = await supabaseAdmin.from("paystore_ricariche")
+        .select("negozio, azienda").not("negozio", "is", null).limit(20000);
+    const coppie = new Map<string, { negozio: string; azienda: string | null; quante: number }>();
+    for (const r of ((data || []) as { negozio: string; azienda: string | null }[])) {
+        const k = `${r.negozio}|${r.azienda || ""}`;
+        const v = coppie.get(k) || { negozio: r.negozio, azienda: r.azienda, quante: 0 };
+        v.quante++; coppie.set(k, v);
+    }
+    const righe = [];
+    for (const c of [...coppie.values()].sort((a, b) => a.negozio.localeCompare(b.negozio))) {
+        const e = await credenzialeDi(c.negozio, c.azienda);
+        righe.push({
+            negozio: c.negozio, azienda: c.azienda, ricariche: c.quante,
+            ok: e.ok,
+            /* ⚠️ MAI IL SEGRETO, nemmeno un pezzo: solo il nome che PayStore ha
+               dato alla terna, che è quello che si confronta col loro foglio. */
+            firmerebbe: e.ok ? e.identificativo : null,
+            perche: e.ok ? null : e.errore,
+        });
+    }
+    return righe;
+}
+
 export async function GET(req: Request) {
     const g = await accesso(req, "paystore/credenziali");
     if (!g.ok) return g.risposta;
@@ -69,7 +103,13 @@ export async function GET(req: Request) {
     const { data } = await supabaseAdmin.from("paystore_credenziali")
         .select("negozio, azienda, identificativo, attivo, aggiornato_il")
         .order("azienda").order("negozio");
-    return NextResponse.json({ ok: true, righe: data || [] });
+    /* la verifica è sempre inclusa: è la cosa che si guarda aprendo la scheda,
+       non un pulsante nascosto */
+    const verifica = await chiFirmerebbe();
+    return NextResponse.json({
+        ok: true, righe: data || [], verifica,
+        scoperte: verifica.filter((v) => !v.ok).length,
+    });
 }
 
 export async function POST(req: Request) {
